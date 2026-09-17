@@ -39,6 +39,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
+import { isTcAddress } from '$shared/tc-address';
 import { parseInviteUri } from '$shared/utils/invite-uri';
 import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invite-consent';
 import { getMainWindow } from '../../../main/state';
@@ -128,10 +129,14 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     grant.catch(() => {});
 
     // Prompt labels: the host's pretty name when the daemon sends one (older
-    // daemons omit it → the dialed address), and "Untitled" for a blank title.
-    // The stored guest session keeps the raw title; its settings row applies
-    // the same fallback on render.
-    const hostLabel = nonBlank(start.prettyHostname) ?? nonBlank(start.hostname) ?? connection.host;
+    // daemons omit it → the dialed address, or "Unknown host" when that is an
+    // opaque tc address), and "Untitled" for a blank title. The stored guest
+    // session keeps the raw title and address; its settings row applies the
+    // same fallbacks on render.
+    const hostLabel =
+      nonBlank(start.prettyHostname) ??
+      nonBlank(start.hostname) ??
+      (isTcAddress(connection.host) ? m.connection_unknownHost_label() : connection.host);
     const workspaceTitle = nonBlank(start.workspaceTitle) ?? m.workspace_links_untitled_label();
 
     await clipboard.writeText(start.userCode);

@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import type { Workspace } from '$shared/types';
+import { TC_ADDRESS } from '../../../test/fixtures/tc-address.fixture';
 import {
   HostedRosterOperationError,
   type HostedRoster,
@@ -252,6 +253,33 @@ describe('GuestSessionsSettings', () => {
     // Not yet captured: the address stays the primary label, with nothing to repeat.
     expect(within(pending).getByText('tc2.example.ts.net')).toBeTruthy();
     expect(pending.querySelector('[data-guest-address]')).toBeNull();
+  });
+
+  it('never shows an opaque tc address: "Unknown host" until the hostname arrives, then the hostname alone', () => {
+    mocks.sessions = [
+      { ...guest, label: TC_ADDRESS, tcAddress: TC_ADDRESS, hostname: null },
+      {
+        ...guest,
+        id: 'guest-2',
+        label: TC_ADDRESS,
+        tcAddress: TC_ADDRESS,
+        hostname: 'Clement’s Mac Studio',
+      },
+      { ...guest, id: 'guest-3', label: '10.0.0.9', hostname: null },
+    ];
+    render(GuestSessionsSettings);
+    const joined = screen.getByTestId('guest-sessions-joined');
+    const pending = joined.querySelector('[data-session-id="guest-1"]') as HTMLElement;
+    const captured = joined.querySelector('[data-session-id="guest-2"]') as HTMLElement;
+    const ip = joined.querySelector('[data-session-id="guest-3"]') as HTMLElement;
+
+    expect(within(pending).getByText('Unknown host')).toBeTruthy();
+    expect(pending.querySelector('[data-guest-address]')).toBeNull();
+    expect(within(captured).getByText('Clement’s Mac Studio')).toBeTruthy();
+    expect(captured.querySelector('[data-guest-address]')).toBeNull();
+    expect(joined.textContent).not.toContain(TC_ADDRESS);
+    // A plain IP is still a readable address and stays the primary label.
+    expect(within(ip).getByText('10.0.0.9')).toBeTruthy();
   });
 
   it('nests the joined workspaces under their host, each with its own Leave', () => {

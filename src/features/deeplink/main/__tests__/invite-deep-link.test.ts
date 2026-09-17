@@ -144,6 +144,7 @@ import {
   InviteTransportError,
   type InviteTransportCode,
 } from '../../../backend/main/invite-connection';
+import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 import { handleInviteDeepLink, routeInviteLinkFromOs } from '../invite-deep-link';
 
 const SECRET = 'invite-secret-value-xyz';
@@ -766,6 +767,27 @@ describe('handleInviteDeepLink — consent prompt labels', () => {
     redeemStart.mockResolvedValue(START);
     await handleInviteDeepLink(LINK);
     expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ hostLabel: '192.168.1.10' });
+  });
+
+  it('reads "Unknown host" when the only address is an opaque tc address, and stores the tc address raw', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    openInviteConnection.mockResolvedValue({
+      host: TC_ADDRESS,
+      via: 'tunnel',
+      redeemStart,
+      redeemWait,
+      close,
+    });
+    redeemStart.mockResolvedValue(START);
+
+    await handleInviteDeepLink(
+      `intent://invite?v=1&host=&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=${TC_ADDRESS}`,
+    );
+
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ hostLabel: 'Unknown host' });
+    expect(guestAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ label: TC_ADDRESS, host: TC_ADDRESS, tcAddress: TC_ADDRESS }),
+    );
   });
 
   it('a blank workspace title reads "Untitled" in the modal and the native box, but is stored raw', async () => {
