@@ -205,6 +205,28 @@ describe('MarkdownViewer static rendering', () => {
     expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
   });
 
+  it('keeps image actions interactive across streaming HTML updates', async () => {
+    const content = '![streamed image](workspace-asset://asset-123)';
+    const view = render(MarkdownViewer, { props: { content, isStreaming: true } });
+    const image = await waitFor(() => {
+      const element = view.container.querySelector<HTMLImageElement>('img');
+      expect(element?.tabIndex).toBe(0);
+      return element!;
+    });
+    image.focus();
+    const trigger = await screen.findByRole('button', { name: /image options/i });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+
+    await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    await view.rerender({ content: content + '\n\nA new streamed paragraph.' });
+    await waitFor(() => expect(view.container.textContent).toContain('A new streamed paragraph.'));
+    expect(trigger.isConnected).toBe(true);
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+  });
+
   it.each([
     ['recursive', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
     ['inline', 'workspace-asset://ws-abc/demo.mp4?backend=bad%2Froute', 'ws-abc'],
