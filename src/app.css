@@ -470,13 +470,6 @@ textarea::placeholder {
   animation: tool-pulse 1.5s infinite;
 }
 
-/* Pause animations when page is hidden (controlled via JS class on body) */
-.animations-paused .animate-tool-pulse,
-.animations-paused .streaming-cursor,
-.animations-paused .animate-shimmer {
-  animation-play-state: paused !important;
-}
-
 /* Message container animations */
 @keyframes message-slide-up {
   from {
@@ -763,8 +756,10 @@ body.panel-resizing webview {
 
 /* ===== Reduced motion support ===== */
 /* Follows `--motion-reduced` (OS preference or battery saver), see tokens.css */
-/* The window lifecycle marks actual CSS animation targets. An html descendant
-   blanket would invalidate the entire transcript on every focus change. */
+/* The window lifecycle marks the targets of looping CSS animations only; finite
+   entrances and flashes run to completion while blurred instead of freezing at
+   frame 0 and replaying on focus. An html descendant blanket would invalidate
+   the entire transcript on every focus change. */
 [data-window-animation-paused],
 [data-window-animation-paused]::before,
 [data-window-animation-paused]::after {

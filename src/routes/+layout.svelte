@@ -46,8 +46,9 @@
     const handleWindowBlur = () => setWindowBlurred(true);
     const handleWindowFocus = () => setWindowBlurred(false);
 
-    // `data-window-blurred` pauses ambient motion (app.css keyframes, the
-    // shared frame clock, aurora, mark motion). The HUD pop-out is a monitoring
+    // `data-window-blurred` pauses ambient motion (looping app.css keyframes via
+    // pauseWindowAnimations below, the shared frame clock, aurora, mark motion);
+    // one-shot entrances and flashes keep running. The HUD pop-out is a monitoring
     // surface watched on a second display while another window holds focus, so
     // it never sets the attribute: its takeover choreography must play unfocused,
     // and any attribute already present on <html> is cleared on mount.

@@ -1,4 +1,12 @@
-/** Pause CSS animations on their targets, without invalidating every descendant of html. */
+/**
+ * Pause looping CSS animations on their targets while the window is blurred, without
+ * invalidating every descendant of html.
+ *
+ * Only a `CSSAnimation` whose timing has `iterations === Infinity` (spinner, pulse,
+ * shimmer) is marked. A finite animation is a one-shot entrance or flash and keeps
+ * playing to completion in the background, so nothing freezes at frame 0 and replays
+ * in a burst on refocus. Plain WAAPI animations (Svelte transitions) are never touched.
+ */
 export function pauseWindowAnimations(root: HTMLElement) {
   const pausedTargets = new Set<Element>();
   const pauseAttribute = 'data-window-animation-paused';
@@ -10,7 +18,8 @@ export function pauseWindowAnimations(root: HTMLElement) {
     for (const animation of animations) {
       if (
         !(animation instanceof CSSAnimation) ||
-        (animation.playState !== 'running' && animation.playState !== 'paused')
+        (animation.playState !== 'running' && animation.playState !== 'paused') ||
+        animation.effect?.getTiming().iterations !== Infinity
       )
         continue;
       const target = (animation.effect as KeyframeEffect | null)?.target;

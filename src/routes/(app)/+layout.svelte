@@ -322,22 +322,6 @@
     // Remove the static drag region from app.html now that Svelte's own drag region is active
     document.getElementById('app-drag-region')?.remove();
 
-    // ===== PERF: Animation pause when tab hidden =====
-    // Adds/removes 'animations-paused' class on body to pause CSS animations
-    // when the page is not visible, reducing GPU usage
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        document.body.classList.add('animations-paused');
-      } else {
-        document.body.classList.remove('animations-paused');
-      }
-    };
-    // Set initial state
-    if (document.hidden) {
-      document.body.classList.add('animations-paused');
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
     // ===== Link tooltip on hover =====
     // Attach tooltip handler to document.body so hovering over any <a> in the
     // app shows the link tooltip (URL + Cmd+Click hint).
@@ -837,7 +821,6 @@
         'sveltekit:navigation-error',
         handleNavigationError as EventListener,
       );
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
       disposeInterruptedAgents();

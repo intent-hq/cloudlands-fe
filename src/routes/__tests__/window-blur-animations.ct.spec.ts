@@ -223,8 +223,48 @@ test('teardown resumes retained targets and removes the focus observer', async (
   await expect.poll(state).toBe('running');
 });
 
+test('leaves finite animations running while blurred', async ({ mount, page }) => {
+  await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+  await mount(WindowBlurAnimationProbe);
+  const loop = page.getByTestId('ambient-animation-probe');
+  const oneShot = page.getByTestId('one-shot-animation-probe');
+  const describe = (locator: typeof loop) =>
+    locator.evaluate((node) => {
+      const animation = node.getAnimations()[0];
+      return {
+        marked: node.hasAttribute('data-window-animation-paused'),
+        iterations: animation?.effect?.getTiming().iterations,
+        state: animation?.playState,
+        time: Number(animation?.currentTime),
+      };
+    });
+
+  await expect(oneShot).toBeVisible();
+  expect((await describe(loop)).iterations).toBe(Infinity);
+  expect((await describe(oneShot)).iterations).toBe(1);
+  await expect.poll(async () => (await describe(oneShot)).state).toBe('running');
+
+  await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+  await expect.poll(async () => (await describe(loop)).state).toBe('paused');
+  expect((await describe(loop)).marked).toBe(true);
+  const blurred = await describe(oneShot);
+  expect(blurred.marked).toBe(false);
+  expect(blurred.state).toBe('running');
+  await expect.poll(async () => (await describe(oneShot)).time).toBeGreaterThan(blurred.time);
+  expect((await describe(oneShot)).marked).toBe(false);
+
+  await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+  await expect.poll(async () => (await describe(loop)).state).toBe('running');
+  const focused = await describe(oneShot);
+  expect(focused.marked).toBe(false);
+  expect(focused.state).toBe('running');
+});
+
 for (const activation of ['mounted', 'class-change'] as const) {
-  test(`preserves delayed animations ${activation} while blurred`, async ({ mount, page }) => {
+  test(`leaves delayed finite animations ${activation} while blurred running`, async ({
+    mount,
+    page,
+  }) => {
     await mount(WindowBlurAnimationProbe);
     await page.evaluate(() => {
       document.documentElement.setAttribute('data-window-blurred', '');
@@ -254,33 +294,114 @@ for (const activation of ['mounted', 'class-change'] as const) {
       node.className = 'delayed-probe';
       if (mode === 'mounted') document.body.append(node);
     }, activation);
+    const probe = page.locator('#delayed-probe');
+    const marked = () =>
+      probe.evaluate((node) => node.hasAttribute('data-window-animation-paused'));
     const animations = () =>
-      page.locator('#delayed-probe').evaluate((node) =>
+      probe.evaluate((node) =>
         node.getAnimations({ subtree: true }).map((animation) => ({
           state: animation.playState,
-          time: animation.currentTime,
+          time: Number(animation.currentTime),
         })),
       );
-    await expect.poll(animations).toEqual([
-      { state: 'paused', time: 0 },
-      { state: 'paused', time: 0 },
-      { state: 'paused', time: 0 },
-    ]);
+    await expect.poll(async () => (await animations()).length).toBe(3);
+    const before = await animations();
+    expect(before.map((animation) => animation.state)).toEqual(['running', 'running', 'running']);
     await page.evaluate(async () => {
       for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
     });
-    expect(await animations()).toEqual([
-      { state: 'paused', time: 0 },
-      { state: 'paused', time: 0 },
-      { state: 'paused', time: 0 },
-    ]);
+    const after = await animations();
+    expect(after.map((animation) => animation.state)).toEqual(['running', 'running', 'running']);
+    for (const [index, animation] of after.entries()) {
+      expect(animation.time).toBeGreaterThan(before[index].time);
+    }
+    expect(await marked()).toBe(false);
     await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
     await expect
-      .poll(async () =>
-        (await animations()).every(
-          (animation) => animation.state === 'running' && Number(animation.time) > 0,
-        ),
-      )
-      .toBe(true);
+      .poll(async () => (await animations()).map((animation) => animation.state))
+      .toEqual(['running', 'running', 'running']);
+    expect(await marked()).toBe(false);
   });
 }
+
+test('lets a short finite animation finish while blurred and does not replay it on focus', async ({
+  mount,
+  page,
+}) => {
+  await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+  await mount(WindowBlurAnimationProbe);
+  const loop = page.getByTestId('ambient-animation-probe');
+  const shortOneShot = page.getByTestId('short-one-shot-animation-probe');
+  const loopPlayState = () => loop.evaluate((node) => node.getAnimations()[0]?.playState);
+  const describeShortOneShot = () =>
+    shortOneShot.evaluate((node) => {
+      const animation = node.getAnimations()[0];
+      return {
+        marked: node.hasAttribute('data-window-animation-paused'),
+        count: node.getAnimations().length,
+        state: animation?.playState,
+        time: Number(animation?.currentTime),
+      };
+    });
+
+  await expect(shortOneShot).toBeVisible();
+  await expect.poll(loopPlayState).toBe('paused');
+  await expect.poll(async () => (await describeShortOneShot()).state).toBe('finished');
+  const finishedWhileBlurred = await describeShortOneShot();
+  expect(finishedWhileBlurred.marked).toBe(false);
+  expect(finishedWhileBlurred.count).toBe(1);
+
+  await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+  await expect.poll(loopPlayState).toBe('running');
+  expect(await describeShortOneShot()).toEqual(finishedWhileBlurred);
+});
+
+test('marks only the loop when a loop and a one-shot start while blurred', async ({
+  mount,
+  page,
+}) => {
+  await mount(WindowBlurAnimationProbe);
+  await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+  await expect
+    .poll(() =>
+      page
+        .getByTestId('ambient-animation-probe')
+        .evaluate((node) => node.getAnimations()[0]?.playState),
+    )
+    .toBe('paused');
+  await page.evaluate(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes late-motion { to { opacity: .5; } }
+      #late-loop { width: 10px; height: 10px; animation: late-motion 10s linear infinite; }
+      #late-one-shot { width: 10px; height: 10px; animation: late-motion 10s linear both; }
+    `;
+    document.head.append(style);
+    for (const id of ['late-loop', 'late-one-shot']) {
+      const node = document.createElement('div');
+      node.id = id;
+      document.body.append(node);
+    }
+  });
+  const describe = (id: string) =>
+    page.locator(`#${id}`).evaluate((node) => {
+      const animation = node.getAnimations()[0];
+      return {
+        marked: node.hasAttribute('data-window-animation-paused'),
+        state: animation?.playState,
+        time: Number(animation?.currentTime),
+      };
+    });
+  await expect.poll(async () => (await describe('late-loop')).state).toBe('paused');
+  expect((await describe('late-loop')).marked).toBe(true);
+  const oneShot = await describe('late-one-shot');
+  expect(oneShot.marked).toBe(false);
+  expect(oneShot.state).toBe('running');
+  await expect
+    .poll(async () => (await describe('late-one-shot')).time)
+    .toBeGreaterThan(oneShot.time);
+  expect((await describe('late-one-shot')).marked).toBe(false);
+  await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+  await expect.poll(async () => (await describe('late-loop')).state).toBe('running');
+  expect((await describe('late-one-shot')).state).toBe('running');
+});
