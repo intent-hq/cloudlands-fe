@@ -90,17 +90,22 @@ function gh(args) {
   }
 }
 
-/** The real `gh` boundary; tests inject a fake with the same shape. */
-export function createGhRunner({ tmpDir }) {
+/**
+ * The real `gh` boundary; tests inject a fake with the same shape, or a fake
+ * `run` to assert the exact `gh` argv.
+ */
+export function createGhRunner({ tmpDir, run = gh }) {
   return {
-    api: (path) => JSON.parse(gh(['api', path])),
+    api: (path) => JSON.parse(run(['api', path])),
+    // `--allow-escape-sequences`: the list reporter's ANSI colours make gh
+    // refuse to emit the log otherwise.
     jobLog: (repo, jobId) =>
-      gh(['api', '--allow-escape-sequences', `repos/${repo}/actions/jobs/${jobId}/logs`]),
+      run(['api', '--allow-escape-sequences', `repos/${repo}/actions/jobs/${jobId}/logs`]),
     // The Playwright JSON report of a shard artifact, or null when the artifact
     // has none (uploaded before the JSON reporter existed).
     jsonReport: (repo, runId, artifactName) => {
       const dest = join(tmpDir, artifactName);
-      gh(['run', 'download', runId, '--repo', repo, '--name', artifactName, '--dir', dest]);
+      run(['run', 'download', runId, '--repo', repo, '--name', artifactName, '--dir', dest]);
       const file = join(dest, REPORT_PATH);
       return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
     },

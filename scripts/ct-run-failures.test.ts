@@ -4,6 +4,7 @@ import {
   DEFAULT_REPO,
   UsageError,
   collectRun,
+  createGhRunner,
   main,
   parseArgs,
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -201,6 +202,37 @@ describe('collectRun shard resolution', () => {
       collectRun({ runId: RUN_ID, repo: DEFAULT_REPO, attempt: undefined, runner }).shards,
     ).toEqual([]);
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('createGhRunner gh argv', () => {
+  it('passes --allow-escape-sequences for job logs and downloads artifacts into the temp dir', () => {
+    const argv: string[][] = [];
+    const run = (args: string[]) => {
+      argv.push(args);
+      return args[0] === 'api' && !args.includes('--allow-escape-sequences') ? '{"ok":true}' : '';
+    };
+    const runner = createGhRunner({ tmpDir: '/tmp/ct-run-failures-test', run });
+
+    expect(runner.api('repos/o/r/actions/runs/1/jobs')).toEqual({ ok: true });
+    runner.jobLog('o/r', 42);
+    expect(runner.jsonReport('o/r', RUN_ID, 'playwright-ct-report-1-of-4')).toBeNull();
+
+    expect(argv).toEqual([
+      ['api', 'repos/o/r/actions/runs/1/jobs'],
+      ['api', '--allow-escape-sequences', 'repos/o/r/actions/jobs/42/logs'],
+      [
+        'run',
+        'download',
+        RUN_ID,
+        '--repo',
+        'o/r',
+        '--name',
+        'playwright-ct-report-1-of-4',
+        '--dir',
+        '/tmp/ct-run-failures-test/playwright-ct-report-1-of-4',
+      ],
+    ]);
   });
 });
 
