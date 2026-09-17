@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
-const { layoutsStore, ownClientIdStore, dispatchMock } = vi.hoisted(() => {
+const { layoutsStore, ownClientIdStore, mountedLeasesStore, dispatchMock } = vi.hoisted(() => {
   // Minimal svelte-store-contract writable (vi.hoisted runs before imports).
   function miniWritable<T>(initial: T) {
     let value = initial;
@@ -30,6 +30,7 @@ const { layoutsStore, ownClientIdStore, dispatchMock } = vi.hoisted(() => {
   return {
     layoutsStore: miniWritable<Record<string, unknown>>({}),
     ownClientIdStore: miniWritable<string | null>('cli-own'),
+    mountedLeasesStore: miniWritable<Record<string, Record<string, true>>>({}),
     dispatchMock: vi.fn(),
   };
 });
@@ -40,6 +41,10 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
 
 vi.mock('$store/renderer/slices/browser-clients/browser-clients-selectors', () => ({
   selectOwnClientId: () => ownClientIdStore,
+}));
+
+vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectMountedBrowserTabLeases: () => mountedLeasesStore,
 }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
@@ -54,6 +59,11 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 import OffscreenWebviewHost from './OffscreenWebviewHost.svelte';
+import {
+  acquireBrowserTabMount,
+  releaseBrowserTabMount,
+  tabStateReducer,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
 
 function browserLayout(tabs: Array<{ id: string; url?: string; hostClientId?: string }>) {
   return {
@@ -86,6 +96,7 @@ describe('OffscreenWebviewHost', () => {
   beforeEach(() => {
     layoutsStore.set({});
     ownClientIdStore.set('cli-own');
+    mountedLeasesStore.set({});
     dispatchMock.mockClear();
     invokeMock.mockClear();
     (window as unknown as { electronAPI: { invoke: typeof invokeMock } }).electronAPI = {
@@ -134,6 +145,61 @@ describe('OffscreenWebviewHost', () => {
     await waitFor(() =>
       expect(mountedTabIds(container).sort()).toEqual(['tab-legacy', 'tab-mirror', 'tab-own']),
     );
+  });
+
+  it('excludes retained mounts, but hosts never-visited tabs and resumes after cache eviction', async () => {
+    let state = tabStateReducer(undefined, acquireBrowserTabMount('tab-retained', 'mount-1'));
+    mountedLeasesStore.set(state.mountedBrowserTabLeases);
+    layoutsStore.set({
+      'ws-bg': browserLayout([{ id: 'tab-retained' }, { id: 'tab-unvisited' }]),
+    });
+    const { container, rerender } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set(['ws-bg']) },
+    });
+    await rerender({ excludedWorkspaceIds: new Set() });
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-unvisited']));
+    const unvisited = container.querySelector('webview');
+
+    state = tabStateReducer(state, releaseBrowserTabMount('tab-retained', 'mount-1'));
+    mountedLeasesStore.set(state.mountedBrowserTabLeases);
+    await waitFor(() =>
+      expect(mountedTabIds(container).sort()).toEqual(['tab-retained', 'tab-unvisited']),
+    );
+    expect(container.querySelector('[data-offscreen-webview-tab="tab-unvisited"]')).toBe(unvisited);
+
+    state = tabStateReducer(state, acquireBrowserTabMount('tab-retained', 'mount-2'));
+    mountedLeasesStore.set(state.mountedBrowserTabLeases);
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-unvisited']));
+  });
+
+  it('waits for a panel mount to release before hosting a newly hidden owned tab', async () => {
+    const state = tabStateReducer(undefined, acquireBrowserTabMount('tab-owned', 'mount-1'));
+    mountedLeasesStore.set(state.mountedBrowserTabLeases);
+    layoutsStore.set({
+      'ws-shown': {
+        panels: {},
+        hiddenTabs: {
+          ids: ['tab-owned'],
+          map: {
+            'tab-owned': {
+              id: 'tab-owned',
+              type: 'browser',
+              browserUrl: 'https://example.test/owned',
+              ownerAgentId: 'agent-1',
+            },
+          },
+        },
+      },
+    });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set(['ws-shown']) },
+    });
+    expect(mountedTabIds(container)).toEqual([]);
+    mountedLeasesStore.set(
+      tabStateReducer(state, releaseBrowserTabMount('tab-owned', 'mount-1'))
+        .mountedBrowserTabLeases,
+    );
+    await waitFor(() => expect(mountedTabIds(container)).toEqual(['tab-owned']));
   });
 
   it('registers a mounted webview for CDP on dom-ready', async () => {

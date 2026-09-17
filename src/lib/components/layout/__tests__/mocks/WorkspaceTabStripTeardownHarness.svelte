@@ -9,28 +9,39 @@
   let {
     activeWorkspaceId = 'ws-1',
     siblingGate = 'bounds-cleared',
+    measureInsetWhileTracking,
     onError,
     onProbeMounted,
   }: {
     activeWorkspaceId?: string | null;
     siblingGate?: 'bounds-cleared' | 'tracking-idle';
+    measureInsetWhileTracking?: () => number;
     onError?: (error: unknown) => void;
     onProbeMounted?: () => void;
   } = $props();
 
   let showSibling = $state(false);
-  let horizontalPositionTrackingKey = $state(0);
+  let trackingKey = $state(0);
+  let measuredInsetPx = $state(0);
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
+  const horizontalPositionTrackingKey = $derived(trackingKey + measuredInsetPx);
   const siblingOpen = $derived(
     showSibling &&
       (siblingGate === 'bounds-cleared' ? activeTabBounds === null : !activeTabTracking),
   );
 
+  // Mirrors WindowTitleBar's layout measurement: a parent effect that runs in the
+  // same batch as the strip's tracking report writes state feeding the key.
+  $effect(() => {
+    if (!measureInsetWhileTracking || !activeTabTracking) return;
+    measuredInsetPx = measureInsetWhileTracking();
+  });
+
   export function update(next: { showSibling?: boolean; horizontalPositionTrackingKey?: number }) {
     if (next.showSibling !== undefined) showSibling = next.showSibling;
     if (next.horizontalPositionTrackingKey !== undefined) {
-      horizontalPositionTrackingKey = next.horizontalPositionTrackingKey;
+      trackingKey = next.horizontalPositionTrackingKey;
     }
   }
 </script>

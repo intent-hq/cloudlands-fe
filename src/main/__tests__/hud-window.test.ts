@@ -26,7 +26,11 @@ interface MockWindow {
   focus: ReturnType<typeof vi.fn>;
   show: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
-  webContents: { isDestroyed: () => boolean; getURL: () => string };
+  webContents: {
+    isDestroyed: () => boolean;
+    getURL: () => string;
+    setBackgroundThrottling: ReturnType<typeof vi.fn>;
+  };
   _closedHandlers: Array<() => void>;
   _destroy: () => void;
 }
@@ -51,6 +55,7 @@ function makeWindow(
     webContents: {
       isDestroyed: () => false,
       getURL: () => opts.url ?? '',
+      setBackgroundThrottling: vi.fn(),
     },
     _closedHandlers: [],
     _destroy: () => {
@@ -148,6 +153,23 @@ describe('registerHudWindow / findExistingHudWindow (per-backend)', () => {
     const regular = makeWindow({ url: 'http://127.0.0.1:5190/workspace/x', backendId: 'local' });
     electronMocks.getAllWindows.mockReturnValue([regular]);
     expect(findExistingHudWindow('local')).toBeNull();
+  });
+
+  it('disables background throttling on every registered HUD window', () => {
+    const localHud = makeWindow({ url: 'about:blank', backendId: 'local' });
+    const remoteHud = makeWindow({ url: 'about:blank', backendId: 'remote-a' });
+    registerHudWindow(asBw(localHud));
+    registerHudWindow(asBw(remoteHud));
+    expect(localHud.webContents.setBackgroundThrottling).toHaveBeenCalledWith(false);
+    expect(remoteHud.webContents.setBackgroundThrottling).toHaveBeenCalledWith(false);
+  });
+
+  it('leaves unregistered windows throttled by default', () => {
+    const regular = makeWindow({ url: 'http://127.0.0.1:5190/workspace/x', backendId: 'local' });
+    electronMocks.getAllWindows.mockReturnValue([regular]);
+    findExistingHudWindow('local');
+    isTrackedHudWindow(asBw(regular));
+    expect(regular.webContents.setBackgroundThrottling).not.toHaveBeenCalled();
   });
 });
 

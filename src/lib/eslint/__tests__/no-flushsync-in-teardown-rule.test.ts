@@ -134,8 +134,13 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
       `),
     );
 
-    expect(messages.map((message) => message.line)).toEqual([14]);
-    expect(messages[0]?.message).toContain('reportActiveTabTracking() (which calls flushSync)');
+    expect(messages.map((message) => [message.line, message.messageId])).toEqual([
+      [11, 'flushSyncInEffect'],
+      [14, 'flushSyncInTeardown'],
+    ]);
+    for (const message of messages) {
+      expect(message.message).toContain('reportActiveTabTracking() (which calls flushSync)');
+    }
   });
 
   it('reports flushSync inside the destroy() of an action used with use:', async () => {
@@ -198,7 +203,303 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
     expect(messages[0]?.message).toContain('onMount');
   });
 
-  it('allows flushSync in the $effect body, event handlers, and action update()', async () => {
+  it('reports flushSync called directly from an $effect or $effect.pre body', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let isClosing = $state(false);
+        $effect(() => {
+          flushSync(() => {
+            isClosing = true;
+          });
+        });
+        $effect.pre(() => {
+          if (isClosing) flushSync();
+        });
+      `),
+    );
+
+    expect(messages.map((message) => [message.ruleId, message.line])).toEqual([
+      [RULE_ID, 6],
+      [RULE_ID, 11],
+    ]);
+    expect(messages[0]?.messageId).toBe('flushSyncInEffect');
+    expect(messages[0]?.message).toContain('the body of $effect');
+    expect(messages[0]?.message).toContain("reading 'schedule'");
+    expect(messages[0]?.message).toContain('sveltejs/svelte#18546');
+    expect(messages[1]?.message).toContain('the body of $effect.pre');
+  });
+
+  it('reports a parameter-guarded helper whose default flushes when called from an effect body (pre-fix WorkspaceTabStrip pattern)', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let { onActiveTabTrackingChange } = $props();
+        let layoutTracking = false;
+        let dragTracking = false;
+        let draggedWorkspaceId = $state<string | null>(null);
+        const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
+        const reportActiveTabTracking = ({ sync = true } = {}) =>
+          run(sync, () => onActiveTabTrackingChange?.(layoutTracking || dragTracking));
+        $effect(() => {
+          layoutTracking = true;
+          reportActiveTabTracking();
+          const tick = () => {
+            layoutTracking = false;
+            reportActiveTabTracking();
+          };
+          const frame = requestAnimationFrame(tick);
+          return () => {
+            cancelAnimationFrame(frame);
+            layoutTracking = false;
+            reportActiveTabTracking({ sync: false });
+          };
+        });
+        $effect(() => {
+          dragTracking = draggedWorkspaceId !== null;
+          reportActiveTabTracking({ sync: true });
+          reportActiveTabTracking({ sync: false });
+          return () => {
+            dragTracking = false;
+            reportActiveTabTracking({ sync: false });
+          };
+        });
+      `),
+    );
+
+    expect(
+      messages.map((message) => [
+        message.line,
+        message.messageId,
+        message.message.split(' runs ')[0],
+      ]),
+    ).toEqual([
+      [13, 'flushSyncInEffect', 'reportActiveTabTracking() (which calls flushSync)'],
+      [27, 'flushSyncInEffect', 'reportActiveTabTracking() (which calls flushSync)'],
+    ]);
+  });
+
+  it('reports a same-file helper that flushes unconditionally when called from an effect body (pre-fix ResponseGroup pattern)', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let isExpanded = $state(true);
+        let isClosing = $state(false);
+        let isStreaming = $state(false);
+        let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+        function setExpanded(nextExpanded: boolean) {
+          if (nextExpanded === isExpanded) return;
+          if (!isExpanded) return;
+          flushSync(() => {
+            isClosing = true;
+          });
+          isExpanded = false;
+        }
+        function scheduleCollapse() {
+          collapseTimer = setTimeout(() => {
+            setExpanded(false);
+            collapseTimer = null;
+          }, 800);
+        }
+        $effect(() => {
+          if (isStreaming) {
+            setExpanded(false);
+          } else {
+            scheduleCollapse();
+          }
+        });
+      `),
+    );
+
+    expect(
+      messages.map((message) => [
+        message.line,
+        message.messageId,
+        message.message.split(' runs ')[0],
+      ]),
+    ).toEqual([[24, 'flushSyncInEffect', 'setExpanded() (which calls flushSync)']]);
+  });
+
+  it('reports a helper declared inside the effect and called from its body, not its listener registrations (pre-fix overflow effect pattern)', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let { onBoundsChange } = $props();
+        let strip: HTMLElement | null = null;
+        $effect(() => {
+          const node = strip;
+          if (!node) return;
+          const updateOverflow = () => {
+            flushSync(() => onBoundsChange?.(node.getBoundingClientRect()));
+          };
+          updateOverflow();
+          const observer = new ResizeObserver(updateOverflow);
+          observer.observe(node);
+          node.addEventListener('scroll', updateOverflow);
+          return () => {
+            observer.disconnect();
+            node.removeEventListener('scroll', updateOverflow);
+          };
+        });
+      `),
+    );
+
+    expect(
+      messages.map((message) => [
+        message.line,
+        message.messageId,
+        message.message.split(' runs ')[0],
+      ]),
+    ).toEqual([[12, 'flushSyncInEffect', 'updateOverflow() (which calls flushSync)']]);
+  });
+
+  it('attributes a flush to the rAF/timer callback that runs it, not to the effect body that schedules it', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let { onChange } = $props();
+        let layoutTracking = false;
+        const emit = () => flushSync(() => onChange?.(layoutTracking));
+        $effect(() => {
+          const tick = () => {
+            layoutTracking = false;
+            emit();
+          };
+          const frame = requestAnimationFrame(tick);
+          const timer = setTimeout(() => flushSync(), 0);
+          queueMicrotask(() => emit());
+          return () => {
+            cancelAnimationFrame(frame);
+            clearTimeout(timer);
+          };
+        });
+      `),
+    );
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it('attributes synchronous iteration callbacks and IIFEs to the enclosing effect body', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let items = $state<string[]>([]);
+        $effect(() => {
+          items.forEach(() => flushSync());
+          (() => flushSync())();
+          (function () { flushSync(); })();
+          new Set(items).forEach((item) => { void item; flushSync(); });
+          items.map((item) => { flushSync(); return item; });
+          items.some((item) => (item ? flushSync() : false));
+          [...items].reduce((acc, item) => { flushSync(); return acc + item; }, '');
+        });
+      `),
+    );
+
+    expect(messages.map((message) => [message.line, message.messageId])).toEqual([
+      [6, 'flushSyncInEffect'],
+      [7, 'flushSyncInEffect'],
+      [8, 'flushSyncInEffect'],
+      [9, 'flushSyncInEffect'],
+      [10, 'flushSyncInEffect'],
+      [11, 'flushSyncInEffect'],
+      [12, 'flushSyncInEffect'],
+    ]);
+  });
+
+  it('follows a flush inside a forEach callback back to the same-file helper that iterates (pre-fix overflow reporter pattern)', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        const reporters = new Set<() => void>();
+        function reportAll(sync = true) {
+          reporters.forEach((report) => {
+            report();
+            if (sync) flushSync();
+          });
+        }
+        $effect(() => {
+          reportAll();
+          reportAll(false);
+          return () => reportAll();
+        });
+      `),
+    );
+
+    expect(
+      messages.map((message) => [
+        message.line,
+        message.messageId,
+        message.message.split(' runs ')[0],
+      ]),
+    ).toEqual([
+      [12, 'flushSyncInEffect', 'reportAll() (which calls flushSync)'],
+      [14, 'flushSyncInTeardown', 'reportAll() (which calls flushSync)'],
+    ]);
+  });
+
+  it('keeps deferred callbacks scheduled from an iteration callback, and iteration in event handlers, unreported', async () => {
+    const messages = await lintSvelte(
+      component(
+        `
+        import { flushSync } from 'svelte';
+        let items = $state<string[]>([]);
+        let el: HTMLElement;
+        $effect(() => {
+          items.forEach(() => requestAnimationFrame(() => flushSync()));
+          items.forEach(() => setTimeout(() => flushSync(), 0));
+          items.forEach(() => el.addEventListener('click', () => flushSync()));
+          items.forEach(() => Promise.resolve().then(() => flushSync()));
+          const observer = new ResizeObserver(() => flushSync());
+          observer.observe(el);
+          return () => observer.disconnect();
+        });
+        function handleClick() {
+          items.forEach(() => flushSync());
+          (() => flushSync())();
+        }
+      `,
+        '<button onclick={handleClick}></button>',
+      ),
+    );
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it('does not treat a function-valued reduce initialValue or a forEach thisArg as the iteration callback', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        let items = $state<string[]>([]);
+        $effect(() => {
+          items.reduce((acc) => acc, () => flushSync());
+          items.forEach(() => {}, () => flushSync());
+          items.map((item) => item, { run: () => flushSync() });
+        });
+      `),
+    );
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it('reports both an effect body flush and a cleanup flush in the same effect with distinct messages', async () => {
+    const messages = await lintSvelte(
+      component(`
+        import { flushSync } from 'svelte';
+        $effect(() => {
+          flushSync();
+          return () => flushSync();
+        });
+      `),
+    );
+
+    expect(messages.map((message) => [message.line, message.messageId])).toEqual([
+      [5, 'flushSyncInEffect'],
+      [6, 'flushSyncInTeardown'],
+    ]);
+  });
+
+  it('allows flushSync in event handlers and action update()', async () => {
     const messages = await lintSvelte(
       component(
         `
@@ -207,8 +508,6 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
         let dragged = $state<string | null>(null);
         const emit = (value: string | null) => flushSync(() => onChange?.(value));
         $effect(() => {
-          emit(dragged);
-          flushSync();
           return () => {
             dragged = null;
           };
@@ -249,7 +548,7 @@ describe('no-flushsync-in-teardown ESLint rule', () => {
           run(sync, () => onBoundsChange?.(bounds));
         $effect(() => {
           layoutTracking = true;
-          reportTracking();
+          reportTracking({ sync: false });
           return () => {
             layoutTracking = false;
             reportTracking({ sync: false });
