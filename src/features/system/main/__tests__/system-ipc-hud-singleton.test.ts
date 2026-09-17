@@ -24,6 +24,7 @@ const electronMocks = vi.hoisted(() => {
     static fromWebContents = vi.fn(() => undefined);
 
     id: number;
+    options: Record<string, unknown>;
     destroyed = false;
     minimized = false;
     loadedUrl: string | null = null;
@@ -50,8 +51,9 @@ const electronMocks = vi.hoisted(() => {
       send: vi.fn(),
     };
 
-    constructor(_options: Record<string, unknown>) {
+    constructor(options: Record<string, unknown>) {
       this.id = constructed.length + 1;
+      this.options = options;
       constructed.push(this);
     }
 
@@ -174,6 +176,17 @@ describe('HUD window singleton via WINDOW.OPEN_NEW', () => {
     await openNew({ sender: {} }, { route: '/workspace/ws-1' });
     await openNew({ sender: {} }, { route: '/workspace/ws-2' });
     expect(electronMocks.constructed).toHaveLength(2);
+  });
+
+  it('creates the HUD window with background throttling disabled; other windows keep the default', async () => {
+    const openNew = handlerFor(WINDOW_CHANNELS.OPEN_NEW);
+    await openNew({ sender: {} }, { route: '/hud' });
+    await openNew({ sender: {} }, { route: '/workspace/ws-1' });
+
+    expect(electronMocks.constructed).toHaveLength(2);
+    const [hud, workspace] = electronMocks.constructed;
+    expect(hud.options.webPreferences).toMatchObject({ backgroundThrottling: false });
+    expect(workspace.options.webPreferences).not.toHaveProperty('backgroundThrottling');
   });
 
   it('registers the page-title listener on HUD and workspace windows', async () => {
