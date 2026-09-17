@@ -91,6 +91,7 @@
     "test:playwright": "playwright test",
     "test:playwright:manual:catalog": "playwright test --config=playwright.manual.config.ts test/catalog-manual-review.capture.spec.ts",
     "test:playwright:manual:baseline": "playwright test --config=playwright.manual.config.ts test/current-main-baseline.spec.ts",
+    "test:playwright:manual:browser-lifetime": "playwright test --config=playwright.manual.config.ts test/electron-browser-lifetime.spec.ts",
     "test:ct": "node scripts/run-ct-tests.mjs",
     "test:playwright:ui": "playwright test --ui",
     "test:playwright:headed": "playwright test --headed",
