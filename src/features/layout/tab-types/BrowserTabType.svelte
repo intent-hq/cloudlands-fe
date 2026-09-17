@@ -14,7 +14,9 @@
   import BrowserViewerTab from '$lib/components/browser/BrowserViewerTab.svelte';
   import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
-  import { navigateToAgent } from '$lib/utils/workspace-navigation';
+  import { findSourcePanelId } from '$lib/utils/workspace-navigation';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import {
     BROWSER_VIEWPORT_CHANGE_EVENT,
     browserViewportAction,
@@ -62,6 +64,16 @@
   const ownerAgentName = $derived(
     tab.ownerAgentId ? resolveOwnerName(tab.ownerAgentId, $agents$, tab.ownerAgentName) : undefined,
   );
+  function openOwnerAgent(event: MouseEvent) {
+    if (!tab.ownerAgentId) return;
+    appStore.dispatch(
+      openAgentTabRequested(workspaceId, {
+        agentId: tab.ownerAgentId,
+        sourcePanelId: findSourcePanelId(event.target),
+        openInAdjacentPanel: isCmdClickModifier({ event }),
+      }),
+    );
+  }
   const headerContext = getPanelHeaderContext();
   $effect(() => {
     if (!headerContext || !isActive || !tab.ownerAgentId) return;
@@ -89,7 +101,7 @@
         <InlineAgentAvatar
           agentId={tab.ownerAgentId}
           agentName={ownerAgentName}
-          onclick={() => void navigateToAgent(tab.ownerAgentId!)}
+          onclick={openOwnerAgent}
         />
       </span>
     {/key}
