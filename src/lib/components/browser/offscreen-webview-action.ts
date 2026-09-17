@@ -121,9 +121,21 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
   // `destroyed` hook (gated on webContentsId so a handed-off tab survives);
   // here we release the renderer-side handle so a recreated guest's
   // dom-ready registers again instead of being skipped by the id gate.
+  // Reparenting also fires `destroyed` for the old guest, possibly after
+  // the replacement is attached or ready; the event carries no guest id,
+  // so probe the guest the element holds NOW (webview methods throw
+  // synchronously when the cached guest id is unset or dead) and leave a
+  // live replacement alone — resetting domReady on it would stall
+  // syncDesiredUrl until its next navigation.
   // The URL is reduced to origin + path: OAuth close pages carry codes and
   // tokens in the query/fragment.
   const handleDestroyed = () => {
+    try {
+      webview.getURL?.();
+      return;
+    } catch {
+      // The current guest is really gone.
+    }
     logger.warn('Offscreen webview guest was destroyed', {
       tabId: current.tabId,
       url: describeUrlForLog(current.url),

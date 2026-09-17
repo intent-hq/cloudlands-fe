@@ -317,11 +317,6 @@
   // guest re-registers (registerTab re-applies viewport emulation).
   let lastRegisteredWebContentsId: number | undefined;
 
-  // The guest webContentsId observed at the latest dom-ready, tracked
-  // independently of CDP registration (which needs a tabId) so the
-  // `destroyed` listener can tell a replaced guest from a closed one.
-  let attachedWebContentsId: number | undefined;
-
   // Keyboard interceptor script to inject into webview
   // Since webview runs in a separate process, keyboard events don't bubble up.
   // We inject a script that captures keyboard shortcuts and logs special messages
@@ -414,7 +409,6 @@
       const handleDomReady = () => {
         webviewReady = true;
         logger.debug('Webview ready', { url: currentWebviewUrl });
-        attachedWebContentsId = liveGuestWebContentsId(currentWebview);
 
         // Inject keyboard interceptor on initial load
         injectKeyboardInterceptor();
@@ -583,14 +577,23 @@
     webviewListeners.push({ event, handler });
   }
 
-  // getWebContentsId() throws while the element holds no attached guest
-  // (Electron's WebViewImpl.reset() clears it on disconnect); undefined
-  // here means exactly that.
-  function liveGuestWebContentsId(target: EmbeddedBrowserWebview): number | undefined {
+  // Synchronous probe of the guest the element holds RIGHT NOW.
+  // getWebContentsId() only reads the cached guestInstanceId and throws
+  // while it is unset (WebViewImpl.reset() ran on disconnect): 'none'.
+  // getURL() additionally round-trips through invokeSync and throws when
+  // the main process no longer knows that guest: 'dead'. A result, even an
+  // empty string, means a 'live' guest.
+  function probeGuest(target: EmbeddedBrowserWebview): 'none' | 'live' | 'dead' {
     try {
-      return target.getWebContentsId();
+      target.getWebContentsId();
     } catch {
-      return undefined;
+      return 'none';
+    }
+    try {
+      target.getURL?.();
+      return 'live';
+    } catch {
+      return 'dead';
     }
   }
 
@@ -621,28 +624,18 @@
     // SAME viewInstanceId channel and creates a new guest. The old guest's
     // `destroyed` is forwarded by lib/browser/guest-view-manager
     // sendToEmbedder to that channel in a later IPC task, i.e. after the
-    // element is connected again — either before the new guest attaches
-    // (getWebContentsId() throws) or after (it returns the new guest's id).
-    // A guest that closed itself never runs reset(), so the element still
-    // reports the id seen at its dom-ready: only that case is a page close.
-    // Assumed ordering: the old guest is detached by the sync detachGuest
-    // IPC on disconnect, so its `destroyed` lands before the new guest's
-    // dom-ready. Not covered (treated as a close; the refresh button
-    // recovers): a `destroyed` that lands after the new guest's dom-ready,
-    // or after it attached when the old guest never reached dom-ready.
+    // element is connected again — with no ordering guarantee relative to
+    // the new guest's attach or dom-ready. The event carries no guest id,
+    // so instead of comparing ids we probe the guest the element holds NOW:
+    // none yet (replacement still being created) or a live one (attached or
+    // already ready) means this `destroyed` is stale. A self-closed guest
+    // never runs reset(), so its element keeps the dead id — the only case
+    // that is a page close.
     addWebviewListener('destroyed', () => {
       const target = webviewRef;
-      const currentId = target ? liveGuestWebContentsId(target) : undefined;
-      if (
-        !target?.isConnected ||
-        currentId === undefined ||
-        (attachedWebContentsId !== undefined && currentId !== attachedWebContentsId)
-      ) {
-        logger.debug('Ignoring destroyed event for a replaced guest', {
-          tabId,
-          attachedWebContentsId,
-          currentWebContentsId: currentId,
-        });
+      const guest = target ? probeGuest(target) : 'none';
+      if (!target?.isConnected || guest !== 'dead') {
+        logger.debug('Ignoring destroyed event for a replaced guest', { tabId, guest });
         return;
       }
       // Origin + path only: OAuth close pages carry codes/tokens in the URL.
@@ -657,7 +650,6 @@
       canGoBack = false;
       canGoForward = false;
       lastRegisteredWebContentsId = undefined;
-      attachedWebContentsId = undefined;
       errorMessage = m.browser_embedded_pageClosed_error();
       isGuestDestroyed = true;
     });
