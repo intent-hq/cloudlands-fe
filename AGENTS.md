@@ -557,11 +557,11 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   not a parking lot — remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
-- **`mount()` failing with "Execution context was destroyed, most likely because of a
-  navigation" is the known context-reuse race, not a component bug.** The message is
-  Playwright's rewrite of any CDP error on the mount evaluate, so it does not name a
-  cause by itself; every recorded incident so far (intent-hq/intent#4373, #5236, #5249)
-  has been the reuse reset. ct-core reuses one browser context + page per worker; between
+- **A known cause of `mount()` failing with "Execution context was destroyed, most likely
+  because of a navigation" is the context-reuse race.** The message is Playwright's
+  rewrite of any CDP error on the mount evaluate, so it does not name a cause by itself;
+  every recorded incident so far (intent-hq/intent#4373, #5236, #5249) has been the reuse
+  reset, not a component bug. ct-core reuses one browser context + page per worker; between
   tests it resets that page (navigate to `about:blank`, clear the origin, navigate back to
   the CT host), and the reset can race the next `mount()`'s `Runtime.callFunctionOn` —
   whether the previous test was another spec's last cell or the same spec's previous
