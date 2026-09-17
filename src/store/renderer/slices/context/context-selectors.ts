@@ -80,7 +80,7 @@ export const selectWorkspaceContextAttachments = store.createSelector(
             block,
             agentId,
             messageId: message.id,
-            hydrationStatus: entry?.status,
+            hydration: entry,
           });
         }
       }

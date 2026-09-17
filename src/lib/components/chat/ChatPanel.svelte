@@ -1832,6 +1832,7 @@
     setInputValue: (text) => (inputValue = text),
     contextItems: getContextItems,
     setContextItems,
+    contextItemsAreScoped: true,
     applyEditorContent: (text) => inputComponent?.setContent?.(text),
     onSaveError: (err) => {
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });

@@ -2,10 +2,7 @@
   import type { ContextAttachment } from '$store/renderer/slices/context/context-types';
   import { Button } from '$lib/components/ui/button';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
-  import {
-    resolveAttachmentImageUrl,
-    evictAttachmentImageUrl,
-  } from '$lib/components/chat/attachment-image-url';
+  import { observeAttachmentImageUrl } from '$lib/components/chat/attachment-image-url';
   import { m } from '$shared/paraglide/messages.js';
   import Fa from 'svelte-fa';
   import { faImage } from '@fortawesome/free-solid-svg-icons';
@@ -25,7 +22,8 @@
   let resolvedUrl = $state<string | null>(null);
   let failedUrl = $state<string | null>(null);
   let open = $state(false);
-  let waitingForOriginal = $state(false);
+  let pendingHydration = $state.raw<{ previous: ContextAttachment['hydration'] } | null>(null);
+  let imageObserver: ReturnType<typeof observeAttachmentImageUrl> | null = null;
   let openerElement = $state<HTMLButtonElement | null>(null);
   const imageUrl = $derived(
     image.block.attachmentId
@@ -35,34 +33,41 @@
         : null,
   );
 
-  // Resolve the existing attachment URL seam for this DOM image; ignore stale completions.
+  // Own the URL observation for this DOM image, including retry and cleanup.
   $effect(() => {
     const attachmentId = image.block.attachmentId;
     const owner = workspaceId;
     resolvedUrl = null;
-    let current = true;
-    if (attachmentId)
-      void resolveAttachmentImageUrl(owner, attachmentId).then((url) => {
-        if (current) resolvedUrl = url;
-      });
+    failedUrl = null;
+    if (!attachmentId) return;
+    const observer = observeAttachmentImageUrl(owner, attachmentId, (url) => {
+      resolvedUrl = url;
+      failedUrl = null;
+    });
+    imageObserver = observer;
     return () => {
-      current = false;
+      observer.dispose();
+      imageObserver = null;
     };
   });
 
   $effect(() => {
     if (
-      waitingForOriginal &&
-      (image.hydrationStatus === 'loaded' || image.hydrationStatus === 'error')
+      pendingHydration &&
+      image.hydration !== pendingHydration.previous &&
+      (image.hydration?.status === 'loaded' || image.hydration?.status === 'error')
     ) {
-      waitingForOriginal = false;
+      pendingHydration = null;
       if (imageUrl) open = true;
     }
   });
 
   function preview() {
     if (image.block.dataTruncated && onHydrate) {
-      waitingForOriginal = true;
+      if (pendingHydration) return;
+      // Selector emissions can coalesce loading away. Wait for a different
+      // cache entry so a retry cannot mistake the previous error for its result.
+      pendingHydration = { previous: image.hydration };
       onHydrate();
     } else if (imageUrl) open = true;
   }
@@ -75,7 +80,7 @@
   class="aspect-square h-auto w-full min-w-0 overflow-hidden rounded-md border border-border bg-muted/30 p-0 cursor-zoom-in"
   aria-label={m.chat_imageBlock_viewFullSize_ariaLabel({ alt: name })}
   title={name}
-  aria-busy={image.hydrationStatus === 'loading'}
+  aria-busy={image.hydration?.status === 'loading' || pendingHydration !== null}
   disabled={(!imageUrl || failedUrl === imageUrl) && !(image.block.dataTruncated && onHydrate)}
   onclick={preview}
 >
@@ -88,8 +93,7 @@
       class="size-full object-cover"
       onerror={() => {
         failedUrl = imageUrl;
-        if (image.block.attachmentId)
-          evictAttachmentImageUrl(workspaceId, image.block.attachmentId);
+        imageObserver?.imageFailed();
       }}
     />
   {:else}

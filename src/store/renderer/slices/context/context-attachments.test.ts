@@ -9,7 +9,12 @@ import {
 } from '../transient-ui/transient-ui-slice';
 import { selectComposerContextItems } from '../transient-ui/transient-ui-selectors';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import { chatStateReducer, messageBlockHydrated } from '../chat-state/chat-state-slice';
+import {
+  chatStateReducer,
+  messageBlockHydrated,
+  messageBlockHydrationRequested,
+  messageBlockHydrationFailed,
+} from '../chat-state/chat-state-slice';
 
 function stateWithMessages(messages: AgentMessage[] = []): StoreState {
   return {
@@ -166,6 +171,44 @@ describe('workspace context attachments', () => {
     expect(selectWorkspaceContextAttachments.select(state, 'one')).toEqual([]);
   });
 
+  it('exposes a new hydration entry when a retry repeats the same error without a loading emission', () => {
+    const state = stateWithMessages([
+      {
+        id: 'message',
+        role: 'user',
+        timestamp: '2026-01-01',
+        contentBlocks: [
+          {
+            id: 'image',
+            type: 'image',
+            mimeType: 'image/png',
+            data: 'cHJldmlldw==',
+            dataTruncated: true,
+          },
+        ],
+      },
+    ]);
+    state.chatState = chatStateReducer(
+      state.chatState,
+      messageBlockHydrationFailed('agent-1', 'message', 'image', 'offline'),
+    );
+    const previous = selectWorkspaceContextAttachments.select(state, 'one')[0].hydration;
+    const retry = chatStateReducer(
+      chatStateReducer(
+        state.chatState,
+        messageBlockHydrationRequested('agent-1', 'message', 'image'),
+      ),
+      messageBlockHydrationFailed('agent-1', 'message', 'image', 'offline'),
+    );
+    const current = selectWorkspaceContextAttachments.select(
+      { ...state, chatState: retry },
+      'one',
+    )[0].hydration;
+    expect(current?.status).toBe('error');
+    expect(current).not.toBe(previous);
+    expect(current).toBe(retry.byAgentId['agent-1'].hydratedBlocks?.['message|image']);
+  });
+
   it('keeps distinct slim images and replaces a thumbnail with the hydrated original', () => {
     const state = stateWithMessages([
       {
@@ -196,6 +239,9 @@ describe('workspace context attachments', () => {
     };
     const images = selectWorkspaceContextAttachments.select(hydrated, 'one');
     expect(images.map((image) => image.block.data)).toEqual(['b3JpZ2luYWw=', 'cHJldmlldw==']);
-    expect(images[0].hydrationStatus).toBe('loaded');
+    expect(images[0].hydration).toBe(
+      hydrated.chatState.byAgentId['agent-1'].hydratedBlocks?.['message|first'],
+    );
+    expect(images[0].hydration?.status).toBe('loaded');
   });
 });

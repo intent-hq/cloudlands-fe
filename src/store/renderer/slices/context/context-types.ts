@@ -7,6 +7,7 @@
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { ContextItem } from '$features/context/types';
 import type { ContentBlock } from '$shared/types';
+import type { HydratedBlockEntry } from '../chat-state/chat-state-types';
 
 /** Presentation of an existing draft or user-message attachment; never stored separately. */
 export interface ContextAttachment {
@@ -16,7 +17,7 @@ export interface ContextAttachment {
   agentId?: string;
   messageId?: string;
   placementStatus?: 'placing' | 'failed' | 'placed';
-  hydrationStatus?: 'loading' | 'loaded' | 'error';
+  hydration?: HydratedBlockEntry;
 }
 
 export type ContextWorkspaceState = {

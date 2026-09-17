@@ -401,7 +401,7 @@ vi.mock('svelte-fa', async () => ({
 
 import ChatPanel from '../ChatPanel.svelte';
 import RetainedChatPanelOwnershipHarness from './RetainedChatPanelOwnershipHarness.svelte';
-import { clearDraftCacheForTests } from '../chat-draft-cache';
+import { clearDraftCacheForTests, setCachedDraft } from '../chat-draft-cache';
 import {
   clearCachedChatScroll,
   clearChatScrollCacheForTests,
@@ -2187,6 +2187,54 @@ describe('ChatPanel mounted lifecycle', () => {
       shouldFollowBottom: true,
     });
   });
+
+  it.each([false, true])(
+    'preserves incoming shared attachments when changing pairs (cached=%s)',
+    async (cached) => {
+      const incoming = {
+        id: 'incoming',
+        type: 'file' as const,
+        label: 'incoming.png',
+        imageData: 'aW5jb21pbmc=',
+        imageMimeType: 'image/png',
+      };
+      const outgoing = { ...incoming, id: 'outgoing', label: 'outgoing.png' };
+      mocks.transientUi = transientUiReducer(
+        transientUiReducer(
+          initialTransientUi,
+          setComposerContextItems('workspace-a', 'agent-a', [outgoing]),
+        ),
+        setComposerContextItems('workspace-b', 'agent-b', [incoming]),
+      );
+      if (cached) setCachedDraft('workspace-b', 'agent-b', { text: '', attachments: [] });
+      const restore = deferred<null>();
+      mocks.draftGet.mockImplementation((workspaceId: string) =>
+        workspaceId === 'workspace-a' ? Promise.resolve(null) : restore.promise,
+      );
+      const view = render(ChatPanel, {
+        props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+      });
+      await tick();
+      await view.rerender({ workspace: workspace('workspace-b'), agentId: 'agent-b' });
+      await tick();
+      expect(selectComposerContextItems.select(appStore.state, 'workspace-b', 'agent-b')).toEqual([
+        incoming,
+      ]);
+      expect(selectComposerContextItems.select(appStore.state, 'workspace-a', 'agent-a')).toEqual([
+        outgoing,
+      ]);
+      expect(screen.getByTestId('mock-context-incoming')).toBeTruthy();
+      expect(screen.getByTestId('mock-rich-input').getAttribute('data-input-locked')).toBe(
+        String(!cached),
+      );
+      restore.resolve(null);
+      await Promise.resolve();
+      await tick();
+      expect(screen.getByTestId('mock-context-incoming')).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(550);
+      expect(mocks.draftSet).toHaveBeenCalledWith('workspace-b', 'agent-b', '', [incoming]);
+    },
+  );
 
   it('keeps draft restore and save ownership with the rebound workspace and agent', async () => {
     const draftA = deferred<{ text: string }>();
