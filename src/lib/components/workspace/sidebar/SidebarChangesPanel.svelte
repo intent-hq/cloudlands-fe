@@ -461,8 +461,11 @@
         Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
           appStore.dispatch(refreshRequested(workspaceId)),
-          // Also refresh aheadOfTrunk, hasRemote, and isContentMergedToTrunk for merged state detection
-          Promise.resolve(appStore.dispatch(refreshAcceptChangesStatus(workspaceId))),
+          // Also refresh aheadOfTrunk, hasRemote, and isContentMergedToTrunk for merged state detection.
+          // accept-changes.getStatus is refused for a collaborator, so only the owner dispatches it.
+          ...(isOwner
+            ? [Promise.resolve(appStore.dispatch(refreshAcceptChangesStatus(workspaceId)))]
+            : []),
         ]),
         timeoutPromise,
       ]);
