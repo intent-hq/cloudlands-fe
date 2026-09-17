@@ -3795,8 +3795,6 @@
   "inviteConsent_modal_why_description": "The host's Intent verifies who is joining through GitHub — sign in to prove your identity. Intent waits until GitHub confirms or the code expires.",
   "inviteConsent_modal_hostLearns_title": "What the host learns",
   "inviteConsent_modal_hostLearns_description": "Your GitHub username, account ID, display name and avatar. Nothing else — no permissions are granted, the host cannot access your repositories or private data, and the sign-in token is used once by the host to look up your account and never stored.",
-  "inviteConsent_modal_stored_title": "What is stored on this machine",
-  "inviteConsent_modal_stored_description": "A credential for this host's workspace. You can remove it from the guest session later.",
   "inviteConsent_modal_waiting_label": "Waiting for GitHub…",
   "inviteConsent_modal_cancelButton_label": "Cancel",
   "inviteConsent_modal_dismiss_ariaLabel": "Close invite dialog",
