@@ -92,6 +92,17 @@
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
+  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import {
+    presencePersonName,
+    type PresenceCircle,
+    type PresenceCircleAction,
+  } from '$features/presence/components/presence-person';
+  import {
+    selectWorkspacePresenceFocusTargets,
+    selectWorkspacePresencePeople,
+  } from '$store/renderer/slices/presence/presence-selectors';
+  import { navigateToAgent, navigateToNote } from '$lib/utils/workspace-navigation';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -425,6 +436,43 @@
         }
       : null,
   );
+
+  // Multiplayer presence row: everybody else on this shared workspace. An
+  // avatar takes the viewer to where that person looks right now (their agent
+  // chat, else their note); with no such focus it opens the owner's Share
+  // screen and stays inert for a non-owner.
+  const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
+  const presenceFocusTargets$ = selectWorkspacePresenceFocusTargets(workspaceIdStore);
+  const presencePersonAction = $derived.by(() => {
+    const targets = $presenceFocusTargets$;
+    const agents = $workspaceAgentSessions$;
+    const allNotes = $notes;
+    const share = shareAction?.onClick ?? null;
+    return (person: PresenceCircle): PresenceCircleAction => {
+      const name = presencePersonName(person);
+      const target = targets[person.principalId];
+      if (target?.kind === 'agent') {
+        const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
+        return {
+          label: m.workspace_progressCard_presenceOnAgent_tooltip({ name, agent }),
+          onSelect: () => void navigateToAgent(target.agentId),
+        };
+      }
+      if (target?.kind === 'note') {
+        const note = allNotes.find((n) => String(n.id) === target.noteId)?.title ?? '';
+        return {
+          label: m.workspace_progressCard_presenceOnNote_tooltip({ name, note }),
+          onSelect: () => void navigateToNote(target.noteId),
+        };
+      }
+      return {
+        label: person.online
+          ? m.workspace_progressCard_presenceInWorkspace_tooltip({ name })
+          : m.workspace_progressCard_presenceOffline_tooltip({ name }),
+        onSelect: share,
+      };
+    };
+  });
 
   const transferAction: MenuAction | null = $derived(
     $workspace
@@ -1046,6 +1094,16 @@
           </TooltipRich>
         {/if}
       </div>
+      {#if $presencePeople$.length > 0}
+        <div class="flex h-5 w-full min-w-0 items-center" data-sidebar-presence-row>
+          <PresenceAvatarStack
+            people={$presencePeople$}
+            size={18}
+            action={presencePersonAction}
+            class="pl-0.5"
+          />
+        </div>
+      {/if}
       <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
       <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>

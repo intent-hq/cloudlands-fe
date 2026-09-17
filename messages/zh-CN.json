@@ -1633,6 +1633,10 @@
   "workspace_progressCard_base_label": "基准 {ref}",
   "workspace_progressCard_copied_label": "已复制",
   "workspace_progressCard_copyPath_ariaLabel": "复制工作区路径",
+  "workspace_progressCard_presenceOnAgent_tooltip": "{name} · 正在查看 {agent}",
+  "workspace_progressCard_presenceOnNote_tooltip": "{name} · 正在查看 {note}",
+  "workspace_progressCard_presenceInWorkspace_tooltip": "{name} · 在此工作区中",
+  "workspace_progressCard_presenceOffline_tooltip": "{name} · 离线",
   "workspace_checkoutModePill_tooltip": "检出模式：{label}",
   "workspace_checkoutModePill_cow_label": "CoW",
   "workspace_checkoutModePill_worktree_label": "工作树",
@@ -6438,11 +6442,6 @@
   "presence_typing_one": "{name} 正在输入…",
   "presence_typing_two_label": "{first} 和 {second} 正在输入…",
   "presence_typing_many": "{first} 和另外 {count} 人正在输入…",
-  "workspace_hoverCard_people_label": "成员",
-  "workspace_hoverCard_personViewing_label": "正在查看",
-  "workspace_hoverCard_personOnline_label": "在线",
-  "workspace_hoverCard_personOffline_label": "离线",
-  "workspace_hoverCard_personRemove_ariaLabel": "移除 {name}",
   "presence_avatarStack_onlyYou_label": "这里只有你",
   "presence_person_you_label": "{name}（你）"
 }
