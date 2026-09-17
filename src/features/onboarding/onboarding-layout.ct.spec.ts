@@ -69,6 +69,9 @@ test('starter suggestions have tight text gaps and preserve keyboard selection a
   const editor = component.locator('.rich-textarea [contenteditable=true]');
   const options = component.getByRole('option');
   await expect(options).toHaveCount(4);
+  // Inter is `font-display: swap`: until the woff2 lands, the fallback-font heading above the
+  // composer wraps to a second 48px line, so a baseline measured before the swap is stale.
+  await page.evaluate(() => document.fonts.ready);
   const measureGeometry = () =>
     options.evaluateAll((elements) =>
       elements.map((element) => {
