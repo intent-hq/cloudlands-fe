@@ -328,11 +328,23 @@ describe('Dropdown compatibility modes', () => {
   });
 
   it.each([false, true])(
-    'lets unconsumed Escape dismiss from supplemental controls (portal=%s)',
+    'keeps supplemental controls outside the listbox and lets unconsumed Escape dismiss (portal=%s)',
     async (portal) => {
       render(DropdownSupplementHarness, { props: { portal } });
       const trigger = screen.getByRole('button', { name: /Alpha/ });
       await fireEvent.click(trigger);
+      const listbox = screen.getByRole('listbox');
+      const options = screen.getAllByRole('option');
+      expect(options).toHaveLength(2);
+      expect(options.every((option) => listbox.contains(option))).toBe(true);
+      for (const name of ['Configure option', 'Header action', 'Footer action']) {
+        expect(listbox.contains(screen.getByRole('button', { name }))).toBe(false);
+      }
+      const result = await axe.run(document.body, {
+        runOnly: ['aria-required-children', 'aria-required-parent', 'nested-interactive'],
+      });
+      expect(result.violations).toEqual([]);
+
       const supplemental = screen.getByRole('button', { name: 'Configure option' });
       const consumeEscape = (event: KeyboardEvent) => {
         if (event.key === 'Escape') event.stopPropagation();
@@ -341,11 +353,23 @@ describe('Dropdown compatibility modes', () => {
       supplemental.focus();
       await fireEvent.keyDown(supplemental, { key: 'Escape' });
       expect(trigger.getAttribute('aria-expanded')).toBe('true');
-      await fireEvent.keyDown(supplemental, { key: 'ArrowDown' });
-      await fireEvent.keyDown(supplemental, { key: 'Enter' });
+      for (const key of [
+        'ArrowDown',
+        'ArrowUp',
+        'Home',
+        'End',
+        'PageDown',
+        'PageUp',
+        'Enter',
+        ' ',
+      ]) {
+        expect(await fireEvent.keyDown(supplemental, { key })).toBe(true);
+      }
+      await fireEvent.click(supplemental);
       expect(JSON.parse(screen.getByTestId('supplement-result').textContent!)).toMatchObject({
         value: 'alpha',
         changes: 0,
+        actions: 1,
       });
       await fireEvent.keyDown(supplemental, { key: 'Escape' });
       expect(trigger.getAttribute('aria-expanded')).toBe('false');

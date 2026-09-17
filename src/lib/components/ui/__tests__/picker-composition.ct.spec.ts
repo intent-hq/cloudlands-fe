@@ -20,12 +20,22 @@ for (const portal of [false, true]) {
     expect(
       await supplemental.evaluate((element) => element.parentElement?.closest('button')),
     ).toBeNull();
-    await supplemental.focus();
+    expect(
+      await supplemental.evaluate((element) => element.closest('[role="listbox"]')),
+    ).toBeNull();
+    await page.getByRole('button', { name: 'Footer action' }).focus();
+    await page.keyboard.press('Tab');
+    await expect(supplemental).toBeFocused();
     await supplemental.press('Enter');
     await expect(page.getByTestId('supplement-result')).toHaveText(
       JSON.stringify({ value: 'alpha', changes: 0, actions: 1 }),
     );
     await expect(menu).toBeVisible();
+    await supplemental.press('Escape');
+    const trigger = page.getByRole('button', { name: 'Alpha', exact: true });
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await trigger.click();
     await page.getByRole('button', { name: 'Header action' }).press('Enter');
     await page.getByRole('button', { name: 'Footer action' }).press('Enter');
     await expect(page.getByTestId('slot-actions')).toHaveText(

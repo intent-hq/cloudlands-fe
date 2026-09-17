@@ -8,6 +8,11 @@
   padding: 0;
 }
 
+/* Resize controls use only the line, not a Button hover/pressed surface. */
+.app-resize-handle > [data-slot='button-surface'] {
+  display: none;
+}
+
 .app-resize-handle::before {
   content: '';
   position: absolute;
@@ -18,11 +23,6 @@
   transition:
     background-color var(--motion-fast) var(--ease-standard),
     opacity var(--motion-fast) var(--ease-standard);
-}
-
-/* Explicit indicators remain discoverable before the pointer reaches their hit area. */
-.app-resize-handle[data-resize-indicator='short']::before {
-  opacity: 0.45;
 }
 
 .app-resize-handle[data-resize-axis='x'] {
