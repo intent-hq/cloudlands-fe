@@ -102,7 +102,9 @@
     selectWorkspacePresenceFocusTargets,
     selectWorkspacePresencePeople,
   } from '$store/renderer/slices/presence/presence-selectors';
-  import { navigateToAgent, navigateToNote } from '$lib/utils/workspace-navigation';
+  import { findSourcePanelId, navigateToNote } from '$lib/utils/workspace-navigation';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -447,6 +449,7 @@
     const targets = $presenceFocusTargets$;
     const agents = $workspaceAgentSessions$;
     const allNotes = $notes;
+    const wsId = $workspace?.id ? String($workspace.id) : undefined;
     const share = shareAction?.onClick ?? null;
     return (person: PresenceCircle): PresenceCircleAction => {
       const name = presencePersonName(person);
@@ -455,7 +458,16 @@
         const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';
         return {
           label: m.workspace_progressCard_presenceOnAgent_tooltip({ name, agent }),
-          onSelect: () => void navigateToAgent(target.agentId),
+          onSelect: wsId
+            ? (event) =>
+                appStore.dispatch(
+                  openAgentTabRequested(wsId, {
+                    agentId: target.agentId,
+                    sourcePanelId: findSourcePanelId(event.target),
+                    openInAdjacentPanel: isCmdClickModifier({ event }),
+                  }),
+                )
+            : null,
         };
       }
       if (target?.kind === 'note') {

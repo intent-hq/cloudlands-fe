@@ -16,12 +16,12 @@ export type PresenceCircle = PresenceIdentity &
 
 /**
  * What makes one avatar of a stack a button: its accessible label (also the
- * tooltip) and what selecting it does — `null` leaves the avatar inert
- * (`aria-disabled`).
+ * tooltip) and what selecting it does, given the originating click — `null`
+ * leaves the avatar inert (`aria-disabled`).
  */
 export interface PresenceCircleAction {
   label: string;
-  onSelect: (() => void) | null;
+  onSelect: ((event: MouseEvent) => void) | null;
 }
 
 /** The ring around an avatar: the owner blue, an online member green, an offline member grey. */
