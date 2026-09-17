@@ -1065,6 +1065,8 @@
   "workspace_branchDisplay_shiftClickCopy_label": "Maj+clic pour copier",
   "workspace_branchDisplay_trunkChange_tooltip": "Branche principale - cliquer pour changer",
   "workspace_branchDisplay_trunkLocked_tooltip": "Branche principale (non modifiable après un push)",
+  "workspace_branchDisplay_trunkOwnerOnly_tooltip": "Branche principale (seul le propriétaire de l'espace de travail peut la modifier)",
+  "workspace_branchDisplay_workingOnReadOnly_tooltip": "Vous travaillez sur la branche {branch} (seul le propriétaire de l'espace de travail peut la renommer).",
   "workspace_branchDisplay_workingOn_tooltip": "Vous travaillez sur la branche {branch}. Cliquez pour changer le nom.",
   "workspace_branchSelector_completeAuth_description": "Terminez l'autorisation dans votre navigateur",
   "workspace_branchSelector_connectGithub_label": "Connecter GitHub",

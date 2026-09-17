@@ -82,6 +82,10 @@
     onFileClicked?: (path: string, staged: boolean) => void;
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
+    /** Owner-only controls (auto-commit toggle, per-group commit via
+     * `accept-changes.execute`) render only when true; stage / unstage /
+     * revert (`git.stage` / `git.unstage` / `git.discard`) stay for members. */
+    isOwner?: boolean;
   }
 
   let {
@@ -95,6 +99,7 @@
     onFileClicked,
     openPanelTabs = [],
     activePanelTab,
+    isOwner = true,
   }: Props = $props();
 
   // Transition functions matching parent's animation coordination
@@ -640,34 +645,41 @@
     activeColor="bg-warning"
   >
     {#snippet action()}
-      <!-- Auto-commit toggle -->
-      <div class="-my-0.5 ml-auto flex min-w-0 items-center justify-end gap-2">
-        <Tooltip
-          content={$autoCommitEnabled
-            ? m.workspace_fileChanges_autoCommitOn_tooltip()
-            : m.workspace_fileChanges_autoCommitOff_tooltip()}
-          side="right"
-          contentClass="w-[12rem]"
-          class="min-w-0 items-center justify-end gap-2"
-          disableHoverableContent={false}
-          disableCloseOnTriggerClick={true}
+      <!-- Auto-commit toggle (workspace.setAutoCommit is owner-only) -->
+      {#if isOwner}
+        <div
+          class="-my-0.5 ml-auto flex min-w-0 items-center justify-end gap-2"
+          data-testid="auto-commit-toggle"
         >
-          <span class="text-ui min-w-0 truncate text-subtle">
-            {m.workspace_commitDrawer_autoCommit_label()}
-          </span>
-          <Switch
-            size="xs"
-            checked={$autoCommitEnabled}
-            class="shrink-0"
-            ariaLabel={m.workspace_commitDrawer_autoCommit_label()}
-            onCheckedChange={() => {
-              if (workspaceId) {
-                appStore.dispatch(setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled));
-              }
-            }}
-          />
-        </Tooltip>
-      </div>
+          <Tooltip
+            content={$autoCommitEnabled
+              ? m.workspace_fileChanges_autoCommitOn_tooltip()
+              : m.workspace_fileChanges_autoCommitOff_tooltip()}
+            side="right"
+            contentClass="w-[12rem]"
+            class="min-w-0 items-center justify-end gap-2"
+            disableHoverableContent={false}
+            disableCloseOnTriggerClick={true}
+          >
+            <span class="text-ui min-w-0 truncate text-subtle">
+              {m.workspace_commitDrawer_autoCommit_label()}
+            </span>
+            <Switch
+              size="xs"
+              checked={$autoCommitEnabled}
+              class="shrink-0"
+              ariaLabel={m.workspace_commitDrawer_autoCommit_label()}
+              onCheckedChange={() => {
+                if (workspaceId) {
+                  appStore.dispatch(
+                    setAutoCommitEnabled(workspaceId as string, !$autoCommitEnabled),
+                  );
+                }
+              }}
+            />
+          </Tooltip>
+        </div>
+      {/if}
     {/snippet}
 
     {#if hasUnstaged}
@@ -759,7 +771,9 @@
                     >
                       <Fa icon={faPlus} class="h-2.5! w-2.5!" />
                     </Button>
-                    {#if commitState === 'active'}
+                    {#if !isOwner}
+                      <!-- Group commit runs through accept-changes.execute (owner-only) -->
+                    {:else if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
                           <IntentMarkLoader size={10} class="text-primary-ink" />
@@ -785,6 +799,7 @@
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5"
+                        data-testid="group-commit-button"
                         tooltip={m.workspace_fileChanges_stageAndCommit_tooltip()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
@@ -981,7 +996,9 @@
                     >
                       <Fa icon={faMinus} class="h-2.5! w-2.5!" />
                     </Button>
-                    {#if commitState === 'active'}
+                    {#if !isOwner}
+                      <!-- Group commit runs through accept-changes.execute (owner-only) -->
+                    {:else if commitState === 'active'}
                       <Tooltip content="Committing..." side="top">
                         <span class="h-5 w-5 flex items-center justify-center">
                           <IntentMarkLoader size={10} class="text-primary-ink" />
@@ -1007,6 +1024,7 @@
                         variant="ghost-light"
                         size="icon-xs"
                         class="h-5 w-5"
+                        data-testid="group-commit-button"
                         tooltip={m.workspace_commitDrawer_commit_label()}
                         onclick={(e: MouseEvent) => {
                           e.stopPropagation();
