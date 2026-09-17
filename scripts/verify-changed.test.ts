@@ -736,6 +736,11 @@ describe('verification planning', () => {
     expect(testRunner('tests/unit/edge-cases.test.ts')).toBe('vitest');
     expect(testRunner('src/test/factories/__tests__/workspace.factory.test.ts')).toBe('vitest');
     expect(testRunner('src/lib/__tests__/button.ct.spec.ts')).toBe('ct');
+    // Only the files playwright-ct.config.ts discovers (`**/*.ct.spec.ts`) are
+    // CT; vitest.config.ts excludes just that pattern, so a `.ct.test.ts` under
+    // `src/` is a Vitest suite, not a CT one.
+    expect(testRunner('src/x/y.ct.test.ts')).toBe('vitest');
+    expect(testRunner('src/x/y.ct.spec.tsx')).toBe('vitest');
     expect(testRunner('scripts/verify-changed.test.ts')).toBe('vitest');
     expect(testRunner('src/lib/example.ts')).toBeNull();
   });

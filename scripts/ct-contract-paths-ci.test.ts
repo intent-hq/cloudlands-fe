@@ -1,4 +1,5 @@
-// @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-contract-paths.mjs
+// @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-contract-paths.mjs,
+//   playwright/ct-spec-pattern.mjs
 // @vitest-environment node
 
 /**
@@ -23,6 +24,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const WORKFLOW_PATH = '.github/workflows/intent-pr.yml';
 const MODULE_PATH = 'scripts/ct-contract-paths.mjs';
+// The module's one local import; the workflow runs in a full checkout.
+const SPEC_PATTERN_PATH = 'playwright/ct-spec-pattern.mjs';
 const CLI_INVOCATION = `${MODULE_PATH} --diff`;
 const CT_OUTPUT = 'needs.release-fast-path.outputs.ct_required';
 const FAST_PATH_OUTPUT = 'needs.release-fast-path.outputs.fast_path';
@@ -98,7 +101,8 @@ function commitFile(root: string, file: string, content: string) {
 }
 
 // A checkout shaped like the release-fast-path job: the real module under
-// scripts/, one base commit and one head commit on top of it.
+// scripts/ (plus the shared spec-pattern module it imports), one base commit
+// and one head commit on top of it.
 function checkoutWith(headFile: string, moduleSource?: string) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
@@ -106,6 +110,8 @@ function checkoutWith(headFile: string, moduleSource?: string) {
   git(root, 'config', 'user.email', 'ct-contract-paths-ci@example.invalid');
   git(root, 'config', 'commit.gpgsign', 'false');
   mkdirSync(join(root, 'scripts'), { recursive: true });
+  mkdirSync(join(root, 'playwright'), { recursive: true });
+  copyFileSync(resolve(SPEC_PATTERN_PATH), join(root, SPEC_PATTERN_PATH));
   if (moduleSource === undefined) copyFileSync(resolve(MODULE_PATH), join(root, MODULE_PATH));
   else writeFileSync(join(root, MODULE_PATH), moduleSource);
   commitFile(root, 'src/base.ts', '');

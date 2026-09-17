@@ -6,6 +6,7 @@ import os from 'os';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { resolveCtPortConfig } from './playwright/ct-port';
+import { CT_TEST_DIR, CT_TEST_MATCH } from './playwright/ct-spec-pattern.mjs';
 import { resolveCtWorkers } from './playwright/ct-workers';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -49,8 +50,10 @@ if (!process.env.CI && !process.env.TEST_WORKER_INDEX) {
  * own dependency tree so the versions always align.
  */
 export default defineConfig({
-  testDir: './src',
-  testMatch: '**/*.ct.spec.ts',
+  /* Shared with the change classifiers in scripts/ct-contract-paths.mjs and
+     scripts/verify-changed.mjs — see playwright/ct-spec-pattern.mjs. */
+  testDir: `./${CT_TEST_DIR}`,
+  testMatch: CT_TEST_MATCH,
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

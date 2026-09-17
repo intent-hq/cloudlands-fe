@@ -4,6 +4,12 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
+import {
+  CT_TEST_DIR,
+  ctGeometryScene,
+  hasCtSpecSuffix,
+  isCtSpec,
+} from '../playwright/ct-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
@@ -54,10 +60,10 @@ const FORMAT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
-const CT_TEST_RE = /\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/;
-// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore),
-// playwright-ct.config.ts (testDir ./src) and the runner-owned excludes in
-// vitest.config.ts / tests/integration/vitest.integration.config.ts.
+// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore)
+// and the runner-owned excludes in vitest.config.ts /
+// tests/integration/vitest.integration.config.ts. The CT pattern is not mirrored:
+// `isCtSpec` and playwright-ct.config.ts both read playwright/ct-spec-pattern.mjs.
 const PLAYWRIGHT_TEST_RE = /^test\/.*\.spec\.ts$/;
 const PLAYWRIGHT_MANUAL_RE =
   /(?:^|\/)(?:catalog-manual-review\.capture|current-main-baseline)\.spec\.ts$/;
@@ -192,8 +198,8 @@ export function collectChangedFiles(root = REPO_ROOT, options = {}) {
 
 function listCtTests(root) {
   const files = [];
-  walk(resolve(root, 'src'), root, files);
-  return files.filter((file) => CT_TEST_RE.test(file));
+  walk(resolve(root, CT_TEST_DIR), root, files);
+  return files.filter(isCtSpec);
 }
 
 function importTargets(source, testPath, root) {
@@ -219,10 +225,9 @@ function importTargets(source, testPath, root) {
 }
 
 function geometrySnapshotTargets(testPath, root, readText) {
-  const match = testPath.match(/^(.*\/)?([^/]+)\.geometry\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/);
-  if (!match) return new Set();
-  const directory = match[1] ?? '';
-  const scene = match[2];
+  const geometry = ctGeometryScene(testPath);
+  if (!geometry) return new Set();
+  const { directory, scene } = geometry;
   const targets = new Set([
     `${directory}__geometry__/${scene}.geometry.json`,
     ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
@@ -275,7 +280,8 @@ export function testRunner(file) {
   if (file.startsWith('tests/integration/')) {
     return INTEGRATION_TEST_RE.test(file) ? 'integration' : 'manual';
   }
-  if (CT_TEST_RE.test(file)) return file.startsWith('src/') ? 'ct' : 'manual';
+  if (isCtSpec(file)) return 'ct';
+  if (hasCtSpecSuffix(file)) return 'manual';
   if (VISUAL_TEST_RE.test(file) || VITEST_EXCLUDED_RE.test(file)) return 'manual';
   return 'vitest';
 }
