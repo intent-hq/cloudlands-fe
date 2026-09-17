@@ -590,11 +590,13 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
     `Runtime.executionContextsCleared` / `Page.frameNavigated` (to `about:blank` or the CT
     host URL) sequence in the milliseconds before the failing mount confirms the reuse
     reset; `Inspector.targetCrashed` is a renderer crash and a different investigation.
-    Only the replayed entries with no navigation or clear is inconclusive: it shows nothing
-    disturbed the page after attach, not that the page was healthy — the reset may have
-    run before the recorder started, so fall back to a `DEBUG=pw:protocol` run or a trace
-    for the setup window. The recorder never fails a test — a `cdp-lifecycle-recorder`
-    annotation reports when it could not start or attach.
+    Only the replayed entries with no navigation or clear is inconclusive: it means no
+    recorded evidence of navigation or context clearing after attach — the recorded
+    methods are a selection and a CDP error need not emit one — not that the page was
+    healthy or that the test's own code is at fault; inspect a `DEBUG=pw:protocol` run or
+    a trace, which also cover the setup window, before drawing a conclusion. The recorder
+    never fails a test — a `cdp-lifecycle-recorder` annotation reports when it could not
+    start or attach.
 
 ### Testing — every feature/fix against a mock BE
 
