@@ -430,6 +430,39 @@ describe('markdown-processor blank-line round trip', () => {
     expect(html.match(/<ul/g)).toHaveLength(1);
   });
 
+  it('keeps one list when blank lines follow a continuation line', async () => {
+    const html = await processMarkdownToHTML('- a\n  continued\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(1);
+    expect(html.match(/<li/g)).toHaveLength(2);
+  });
+
+  it('keeps one list when blank lines follow a multi-line item', async () => {
+    const html = await processMarkdownToHTML('- a\n  line two\n  line three\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(1);
+    expect(html.match(/<li/g)).toHaveLength(2);
+  });
+
+  it('keeps one list when blank lines follow a nested item', async () => {
+    const html = await processMarkdownToHTML('- a\n  - nested\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(2);
+    expect(html.match(/<li/g)).toHaveLength(3);
+  });
+
+  it('keeps one ordered list when blank lines follow a deeply nested item', async () => {
+    const html = await processMarkdownToHTML('1. a\n   - x\n     - y\n\n\n2. b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ol/g)).toHaveLength(1);
+    expect(html.match(/<ul/g)).toHaveLength(2);
+    expect(html.match(/<li/g)).toHaveLength(4);
+  });
+
   it('round-trips an empty paragraph between a paragraph and a list', async () => {
     const markdown = processHTMLToMarkdown('<p>a</p><p></p><ul><li><p>item</p></li></ul>');
 
