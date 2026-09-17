@@ -398,6 +398,24 @@ describe('verification planning', () => {
     }
   });
 
+  it('keeps CT specs and geometry goldens on the related lane, not the full suite', () => {
+    const geometryTest = 'src/lib/components/ui/button/button.geometry.ct.spec.ts';
+    const golden = 'src/lib/components/ui/button/__geometry__/button.geometry.json';
+    const root = fixtureRoot({
+      [geometryTest]: "import Preview from './button.preview.svelte';",
+      'src/lib/components/ui/button/button.preview.svelte': '<button />',
+      [golden]: '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [geometryTest] }).checks.map(
+        (check) => check.id,
+      );
+    for (const file of [geometryTest, golden]) {
+      expect(ids([file]), file).toContain('ct-related');
+      expect(ids([file]), file).not.toContain('ct-full');
+    }
+  });
+
   describe('suites declaring verify:changed triggers', () => {
     const driftTest = 'scripts/inline-ipc-channels.test.ts';
     const catalogTest = 'src/lib/components/__tests__/catalog.test.ts';

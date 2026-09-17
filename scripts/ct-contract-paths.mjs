@@ -15,6 +15,14 @@ import { fileURLToPath } from 'node:url';
 // list, via `node scripts/ct-contract-paths.mjs --diff <base> <head>`.
 // cloudlands-fe#2441 rewrote `tokens.css`, `app.css` and `run-ct-tests.mjs` with
 // no CT run and was ejected from the merge queue with 40 CT failures.
+//
+// The workflow's `ct_required` additionally covers the CT test artifacts
+// themselves — `src/**/*.ct.{spec,test}.*` and the geometry goldens
+// `src/**/__geometry__/*.geometry.json` (`isCtTestArtifact`) — so a PR that
+// edits specs or baselines gets CT signal on pull_request. Those are NOT contract
+// paths: `verify:changed` keeps selecting the narrower `ct-related` lane for
+// them locally. cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped
+// on the PR and was ejected from the merge queue three times.
 export const CT_CONTRACT_FILES = Object.freeze([
   'src/app.css',
   'playwright-ct.config.ts',
@@ -30,6 +38,11 @@ export const CT_CONTRACT_PATHS = Object.freeze([
   ...CT_CONTRACT_FILES,
   ...CT_CONTRACT_DIRECTORIES.map((directory) => `${directory}**`),
 ]);
+
+// Mirrors `CT_TEST_RE` in `scripts/verify-changed.mjs` (scoped to `src/`, the
+// CT `testDir`) and the golden path `geometrySnapshotTargets` derives there.
+const CT_TEST_ARTIFACT_RE =
+  /^src\/(?:.*\/)?(?:[^/]+\.ct\.(?:test|spec)\.[cm]?[jt]sx?|__geometry__\/[^/]+\.geometry\.json)$/;
 
 const OUTPUT_KEY = 'ct_required';
 
@@ -47,8 +60,12 @@ export function isCtContractPath(file) {
   );
 }
 
+export function isCtTestArtifact(file) {
+  return CT_TEST_ARTIFACT_RE.test(normalize(file));
+}
+
 export function ctRequired(files) {
-  return files.some(isCtContractPath);
+  return files.some((file) => isCtContractPath(file) || isCtTestArtifact(file));
 }
 
 // `-z` keeps paths verbatim (no `core.quotePath` escaping of non-ASCII names) and
