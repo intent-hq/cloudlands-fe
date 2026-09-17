@@ -22,11 +22,11 @@ import {
 } from '$store/renderer/slices/presence/presence-slice';
 import type { PresenceState } from '$store/renderer/slices/presence/presence-types';
 import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { warmImport } from '../../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
-  const navigateToAgent = vi.fn(() => Promise.resolve());
   const navigateToNote = vi.fn(() => Promise.resolve());
   const notes = [] as Note[];
   const agents = [] as Array<{ id: string; name: string; isStreaming: boolean }>;
@@ -58,7 +58,6 @@ const mocks = vi.hoisted(() => {
     Object.assign(() => readable(getter()), { select: getter });
   return {
     dispatch,
-    navigateToAgent,
     navigateToNote,
     notes,
     agents,
@@ -74,8 +73,8 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ state: () => mocks.state, dispatch: mocks.dispatch });
 });
 
-vi.mock('$lib/utils/workspace-navigation', () => ({
-  navigateToAgent: mocks.navigateToAgent,
+vi.mock('$lib/utils/workspace-navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/workspace-navigation')>()),
   navigateToNote: mocks.navigateToNote,
 }));
 
@@ -223,7 +222,6 @@ warmImport(() => import('../WorkspaceProgressCard.svelte'));
 describe('WorkspaceProgressCard presence row', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
-    mocks.navigateToAgent.mockClear();
     mocks.navigateToNote.mockClear();
     mocks.notes.length = 0;
     mocks.agents.length = 0;
@@ -261,7 +259,13 @@ describe('WorkspaceProgressCard presence row', () => {
 
     expect(personButton('ada').getAttribute('aria-label')).toContain('Coordinator');
     await fireEvent.click(personButton('ada'));
-    expect(mocks.navigateToAgent).toHaveBeenCalledWith('agent-1');
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      openAgentTabRequested('ws-1', {
+        agentId: 'agent-1',
+        sourcePanelId: undefined,
+        openInAdjacentPanel: false,
+      }),
+    );
 
     expect(personButton('bob').getAttribute('aria-label')).toContain('Design');
     await fireEvent.click(personButton('bob'));
@@ -279,8 +283,28 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'Shared Workspace' }),
     );
-    expect(mocks.navigateToAgent).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: openAgentTabRequested.type }),
+    );
     expect(mocks.navigateToNote).not.toHaveBeenCalled();
+  });
+
+  it('opens the agent chat in an adjacent panel on a modifier click from within a panel', async () => {
+    mocks.agents.push({ id: 'agent-1', name: 'Coordinator', isStreaming: false });
+    const { container } = await renderProgressCard();
+    const panel = document.createElement('div');
+    panel.setAttribute('data-panel-id', 'panel-7');
+    panel.append(container);
+    document.body.append(panel);
+
+    await fireEvent.click(personButton('ada'), { ctrlKey: true });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      openAgentTabRequested('ws-1', {
+        agentId: 'agent-1',
+        sourcePanelId: 'panel-7',
+        openInAdjacentPanel: true,
+      }),
+    );
   });
 
   it('leaves such a person inert for a non-owner', async () => {
@@ -291,10 +315,17 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: openShareDialog.type }),
     );
-    expect(mocks.navigateToAgent).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: openAgentTabRequested.type }),
+    );
     expect(mocks.navigateToNote).not.toHaveBeenCalled();
-    // ada's agent focus still navigates regardless of role.
+    // ada's agent focus still opens the chat regardless of role.
     await fireEvent.click(personButton('ada'));
-    expect(mocks.navigateToAgent).toHaveBeenCalledWith('agent-1');
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: openAgentTabRequested.type,
+        payload: ['ws-1', expect.objectContaining({ agentId: 'agent-1' })],
+      }),
+    );
   });
 });
