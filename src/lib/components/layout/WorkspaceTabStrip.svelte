@@ -158,7 +158,7 @@
   const ACTIVE_TAB_EDGE_GAP = 2;
   const POINTER_DRAG_THRESHOLD = 4;
   const activeTabBoundsPollers = new Set<() => void>();
-  const activeTabBoundsReporters = new Set<() => void>();
+  const activeTabBoundsReporters = new Set<(sync?: boolean) => void>();
   const activeTabBoundsControllers = new Map<string, (active: boolean) => void>();
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
@@ -280,7 +280,7 @@
     const strip = stripElement;
     if (!strip) return;
     void renderedTabOrder;
-    const updateOverflow = () => {
+    const updateOverflow = (sync = true) => {
       isOverflowing = pendingOutroOverflow ?? strip.scrollWidth > strip.clientWidth;
       const fadeState = getWorkspaceTabScrollFadeState(
         strip.scrollLeft,
@@ -289,17 +289,19 @@
       );
       hasHiddenTabsLeft = fadeState.left;
       hasHiddenTabsRight = fadeState.right;
-      activeTabBoundsReporters.forEach((report) => report());
+      activeTabBoundsReporters.forEach((report) => report(sync));
     };
-    refreshOverflow = updateOverflow;
-    updateOverflow();
-    const observer = new ResizeObserver(updateOverflow);
+    const updateOverflowSync = () => updateOverflow();
+    refreshOverflow = updateOverflowSync;
+    // Effect bodies must not flush synchronously; event/rAF callers stay sync.
+    updateOverflow(false);
+    const observer = new ResizeObserver(updateOverflowSync);
     observer.observe(strip);
-    strip.addEventListener('scroll', updateOverflow);
+    strip.addEventListener('scroll', updateOverflowSync);
     return () => {
       observer.disconnect();
-      strip.removeEventListener('scroll', updateOverflow);
-      if (refreshOverflow === updateOverflow) refreshOverflow = () => {};
+      strip.removeEventListener('scroll', updateOverflowSync);
+      if (refreshOverflow === updateOverflowSync) refreshOverflow = () => {};
     };
   });
   $effect(() => {

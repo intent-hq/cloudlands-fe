@@ -14,6 +14,20 @@ import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
+import {
+  effectFlushSyncCalls,
+  resetEffectFlushSyncCalls,
+} from '$lib/components/chat/__tests__/mocks/effect-flush-sync-spy.svelte';
+
+// Count `flushSync` calls made from inside effect bodies: a nested flush during
+// an outer batch nulls the batch, and the next effect in that traversal that
+// writes state crashes in `schedule_effect` (sveltejs/svelte#18546).
+vi.mock('svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('svelte')>();
+  const { wrapFlushSync } =
+    await import('$lib/components/chat/__tests__/mocks/effect-flush-sync-spy.svelte');
+  return { ...actual, flushSync: wrapFlushSync(actual.flushSync) };
+});
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -1085,6 +1099,30 @@ describe('WorkspaceTabStrip', () => {
 
       expectSiblingMounted(container, errors);
       expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
+    });
+
+    it('reports active-tab bounds from the overflow effect without flushing synchronously', async () => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      resetEffectFlushSyncCalls();
+      const { container, errors } = renderHarness('bounds-cleared');
+      expect(effectFlushSyncCalls()).toBe(0);
+
+      try {
+        flushSync(() => emitTabOrder(['ws-2', 'ws-1', 'ws-3']));
+      } catch (error) {
+        errors.push(error);
+      }
+      await tick();
+
+      expect(errors).toEqual([]);
+      expect(effectFlushSyncCalls()).toBe(0);
+      expect(container.querySelector('[data-teardown-boundary-failed]')).toBeNull();
+      expect(container.querySelector('[data-active-tab-bounds="set"]')).toBeTruthy();
+      expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
     });
   });
 
