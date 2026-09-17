@@ -90,6 +90,19 @@ function isBlockedProtocol(url: string): boolean {
   }
 }
 
+/**
+ * Reduce a URL to origin + pathname for diagnostic logs: userinfo, query and
+ * fragment are dropped so OAuth codes/tokens never reach the log file.
+ */
+function describeUrlForLog(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`.substring(0, 100);
+  } catch {
+    return '';
+  }
+}
+
 function isDevServerUrl(parsed: URL): boolean {
   if (process.env.NODE_ENV !== 'development') {
     return false;
@@ -505,7 +518,7 @@ export function setupWebviewSecurity(): void {
       (contents as unknown as NodeJS.EventEmitter).on('close', () => {
         logger.info('Webview guest requested window.close(); Electron will destroy the guest', {
           guestId,
-          url: contents.getURL().substring(0, 100),
+          url: describeUrlForLog(contents.getURL()),
         });
       });
       contents.once('destroyed', () => {

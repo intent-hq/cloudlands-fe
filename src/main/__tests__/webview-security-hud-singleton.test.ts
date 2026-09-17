@@ -289,7 +289,15 @@ describe('isWebviewPopupWindow', () => {
       return mock.mock.calls.find(([e]) => e === event)?.[1] as (() => void) | undefined;
     }
 
-    it('logs a guest close at info level with a truncated URL and its id', () => {
+    function loggedCloseUrl(): string {
+      const logged = loggerMocks.info.mock.calls.find(([msg]) =>
+        String(msg).includes('window.close()'),
+      )?.[1] as { url: string } | undefined;
+      if (!logged) throw new Error('close diagnostic was not logged');
+      return logged.url;
+    }
+
+    it('logs a guest close at info level with the URL reduced to origin + path and its id', () => {
       const longUrl = 'https://auth.example.com/callback?' + 'code=' + 'x'.repeat(200);
       const { contentsOn } = attachWebviewContents({ id: 31, url: longUrl });
 
@@ -299,12 +307,34 @@ describe('isWebviewPopupWindow', () => {
 
       expect(loggerMocks.info).toHaveBeenCalledWith(
         expect.stringContaining('window.close()'),
-        expect.objectContaining({ guestId: 31, url: longUrl.substring(0, 100) }),
+        expect.objectContaining({ guestId: 31, url: 'https://auth.example.com/callback' }),
       );
-      const logged = loggerMocks.info.mock.calls.find(([msg]) =>
-        String(msg).includes('window.close()'),
-      )?.[1] as { url: string };
-      expect(logged.url).toHaveLength(100);
+      expect(loggedCloseUrl()).not.toContain('code=');
+    });
+
+    it('never logs userinfo, query or fragment of a short OAuth callback URL', () => {
+      const callbackUrl =
+        'https://u:pw@auth.example.com/cb?code=SECRETCODE&state=s1#access_token=TOK';
+      const { contentsOn } = attachWebviewContents({ id: 33, url: callbackUrl });
+
+      findListener(contentsOn, 'close')!();
+
+      const url = loggedCloseUrl();
+      expect(url).toBe('https://auth.example.com/cb');
+      expect(url).not.toContain('SECRETCODE');
+      expect(url).not.toContain('TOK');
+      expect(url).not.toContain('u:pw');
+    });
+
+    it('truncates an over-long origin + path to the shared 100-char log limit', () => {
+      const longPath = 'https://auth.example.com/' + 'p'.repeat(200) + '?code=SECRETCODE';
+      const { contentsOn } = attachWebviewContents({ id: 34, url: longPath });
+
+      findListener(contentsOn, 'close')!();
+
+      const url = loggedCloseUrl();
+      expect(url).toHaveLength(100);
+      expect(url).not.toContain('SECRETCODE');
     });
 
     it('logs the guest destruction once at debug level with its id', () => {
