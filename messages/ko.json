@@ -1381,6 +1381,7 @@
   "workspace_links_other_label": "기타",
   "workspace_links_remoteSpace_label": "원격 스페이스",
   "workspace_links_untitled_label": "제목 없음",
+  "connection_unknownHost_label": "알 수 없는 호스트",
   "workspace_mcpServers_enabledCount_label": "{count}개 활성화됨",
   "workspace_mcpServers_manageServers_label": "서버 관리",
   "workspace_mcpServers_serverIcon_alt": "{name} 아이콘",
