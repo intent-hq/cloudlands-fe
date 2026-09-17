@@ -1382,6 +1382,7 @@
   "workspace_links_other_label": "其他",
   "workspace_links_remoteSpace_label": "远程空间",
   "workspace_links_untitled_label": "未命名",
+  "connection_unknownHost_label": "未知主机",
   "workspace_mcpServers_enabledCount_label": "已启用 {count} 个",
   "workspace_mcpServers_manageServers_label": "管理服务器",
   "workspace_mcpServers_serverIcon_alt": "{name} 图标",
