@@ -1,10 +1,16 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_REPO,
+  GH_MAX_BUFFER,
+  GhError,
   UsageError,
   collectRun,
   createGhRunner,
+  gh,
   main,
   parseArgs,
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -13,6 +19,7 @@ import {
 
 const RUN_ID = '35200851715';
 const RUN_URL = `https://github.com/intent-hq/cloudlands-fe/actions/runs/${RUN_ID}`;
+const PAGE_1 = 'per_page=100&page=1';
 
 describe('parseArgs', () => {
   it('accepts a bare run id with defaults', () => {
@@ -140,18 +147,27 @@ const LOG_WITHOUT_SUMMARY = [
   `${T}##[error]Process completed with exit code 137.`,
 ].join('\n');
 
+type Page = Record<string, unknown>;
+// A listing fixture is one page (served for page 1 only) or an explicit page array.
+function servePage(fixture: Page | Page[], path: string) {
+  const page = Number(new URL(path, 'https://api.github.com/').searchParams.get('page'));
+  const pages = Array.isArray(fixture) ? fixture : [fixture];
+  if (page < 1 || page > pages.length) throw new Error(`unexpected page ${page} for ${path}`);
+  return pages[page - 1];
+}
+
 function fakeRunner({
   logs = {} as Record<number, string>,
-  jobs = JOBS,
-  artifacts = ARTIFACTS,
+  jobs = JOBS as Page | Page[],
+  artifacts = ARTIFACTS as Page | Page[],
   latestAttempt = 1,
 } = {}) {
   const calls: string[] = [];
   const runner = {
     api: (path: string) => {
       calls.push(`api ${path}`);
-      if (path.includes('/artifacts')) return artifacts;
-      if (path.includes('/jobs')) return jobs;
+      if (path.includes('/artifacts')) return servePage(artifacts, path);
+      if (path.includes('/jobs')) return servePage(jobs, path);
       if (path.endsWith(`/actions/runs/${RUN_ID}`)) return { run_attempt: latestAttempt };
       throw new Error(`unexpected api path ${path}`);
     },
@@ -211,8 +227,8 @@ describe('collectRun shard resolution', () => {
     // Green shard 1: no download, no log. Expired artifact for shard 3 and
     // missing artifact for shard 4: never downloaded.
     expect(calls).toEqual([
-      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/jobs?per_page=100`,
-      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/artifacts?per_page=100`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/jobs?${PAGE_1}`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/artifacts?${PAGE_1}`,
       'download playwright-ct-report-2-of-4',
       'log 33',
       'log 44',
@@ -224,8 +240,75 @@ describe('collectRun shard resolution', () => {
     const { attempt } = collectRun({ runId: RUN_ID, repo: DEFAULT_REPO, attempt: 2, runner });
     expect(attempt).toBe(2);
     expect(calls[0]).toBe(
-      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/attempts/2/jobs?per_page=100`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/attempts/2/jobs?${PAGE_1}`,
     );
+  });
+
+  it('follows jobs and artifacts pagination past a full first page', () => {
+    const filler = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        id: 1000 + i,
+        name: `${prefix} ${i}`,
+        conclusion: 'success',
+        run_attempt: 1,
+        expired: false,
+      }));
+    const jobs = [
+      { total_count: 101, jobs: filler('Unit', 100) },
+      {
+        total_count: 101,
+        jobs: [
+          { id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 },
+        ],
+      },
+    ];
+    const artifacts = [
+      { total_count: 101, artifacts: filler('coverage', 100) },
+      {
+        total_count: 101,
+        artifacts: [{ id: 900, name: 'playwright-ct-report-2-of-4', expired: false }],
+      },
+    ];
+    const { runner, calls } = fakeRunner({ jobs, artifacts });
+    const { shards } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: undefined,
+      runner,
+    });
+    expect(
+      shards.map((s: { shard: number; source: string | null }) => [s.shard, s.source]),
+    ).toEqual([[2, 'json']]);
+    expect(calls).toEqual([
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/jobs?${PAGE_1}`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/jobs?per_page=100&page=2`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/artifacts?${PAGE_1}`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/artifacts?per_page=100&page=2`,
+      'download playwright-ct-report-2-of-4',
+    ]);
+  });
+
+  it('stops paginating at total_count when the last page is full', () => {
+    const jobs = {
+      total_count: 100,
+      jobs: Array.from({ length: 100 }, (_, i) => ({
+        id: 1000 + i,
+        name: i === 99 ? 'Component Tests (shard 1/4)' : `Unit ${i}`,
+        conclusion: 'success',
+        run_attempt: 1,
+      })),
+    };
+    const { runner, calls } = fakeRunner({ jobs });
+    const { shards } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: undefined,
+      runner,
+    });
+    expect(shards).toHaveLength(1);
+    expect(calls.filter((c) => c.includes('/jobs'))).toEqual([
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/jobs?${PAGE_1}`,
+    ]);
   });
 
   it('lists only the required-lane cases when a red shard 1 is followed by a green advisory lane', () => {
@@ -325,7 +408,7 @@ describe('collectRun shard resolution', () => {
       'artifacts are run-wide; attempt 1 is not the latest (2), using job logs',
     );
     expect(calls).toEqual([
-      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/attempts/1/jobs?per_page=100`,
+      `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}/attempts/1/jobs?${PAGE_1}`,
       `api repos/${DEFAULT_REPO}/actions/runs/${RUN_ID}`,
       'log 33',
     ]);
@@ -386,6 +469,87 @@ describe('createGhRunner gh argv', () => {
         '/tmp/ct-run-failures-test/playwright-ct-report-1-of-4',
       ],
     ]);
+  });
+});
+
+// --- real subprocess boundary ---------------------------------------------------
+
+/**
+ * Put a fake `gh` executable first on PATH. It answers the jobs / artifacts
+ * listings for one red shard 2 (no artifact) and streams `log` for its job log.
+ */
+function installFakeGh(log: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'ct-run-failures-fake-gh-'));
+  writeFileSync(join(dir, 'job.log'), log);
+  const jobs = {
+    total_count: 1,
+    jobs: [{ id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 }],
+  };
+  const script = [
+    `#!${process.execPath}`,
+    "const { readFileSync } = require('node:fs');",
+    'const args = process.argv.slice(2);',
+    'const target = args[args.length - 1];',
+    `if (args[0] === 'api' && args[1] === '--allow-escape-sequences') process.stdout.write(readFileSync(${JSON.stringify(join(dir, 'job.log'))}, 'utf8'));`,
+    "else if (args[0] === 'api' && target.includes('/artifacts')) process.stdout.write(JSON.stringify({ total_count: 0, artifacts: [] }));",
+    `else if (args[0] === 'api' && target.includes('/jobs')) process.stdout.write(${JSON.stringify(JSON.stringify(jobs))});`,
+    "else { process.stderr.write('fake gh: unexpected ' + args.join(' ')); process.exit(1); }",
+    '',
+  ].join('\n');
+  writeFileSync(join(dir, 'gh'), script);
+  chmodSync(join(dir, 'gh'), 0o755);
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${dir}:${previousPath ?? ''}`;
+  return () => {
+    process.env.PATH = previousPath;
+    rmSync(dir, { recursive: true, force: true });
+  };
+}
+
+describe('gh subprocess boundary', () => {
+  const cleanups: Array<() => void> = [];
+  afterEach(() => {
+    while (cleanups.length) cleanups.pop()?.();
+  });
+
+  // Build output, retry traces, then the summary: well past Node's default 1 MiB.
+  const BIG_LOG = [
+    ...requiredLaneHeader(2),
+    ...Array.from({ length: 20_000 }, (_, i) => `${T}  build chunk ${i} ${'x'.repeat(48)}`),
+    ...REQUIRED_FAILED_SUMMARY,
+  ].join('\n');
+
+  it('lists the cases of a >1 MiB job log through the real gh runner with exit 0', () => {
+    expect(Buffer.byteLength(BIG_LOG)).toBeGreaterThan(1024 * 1024);
+    cleanups.push(installFakeGh(BIG_LOG));
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = main([RUN_ID, '--json'], {
+      stdout: { write: (s: string) => stdout.push(s) },
+      stderr: { write: (s: string) => stderr.push(s) },
+    });
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout.join(''));
+    expect(parsed.totals).toEqual({ failed: 1, flaky: 0, redShards: 1 });
+    expect(parsed.shards[0].source).toBe('log');
+    expect(parsed.shards[0].cases).toEqual([REQUIRED_CASE]);
+    expect(stderr.join('')).not.toMatch(/error:/);
+  });
+
+  it('names the buffer limit when gh output exceeds maxBuffer', () => {
+    cleanups.push(installFakeGh(BIG_LOG));
+    const args = ['api', '--allow-escape-sequences', 'repos/o/r/actions/jobs/22/logs'];
+    expect(GH_MAX_BUFFER).toBe(64 * 1024 * 1024);
+    let caught: unknown;
+    try {
+      gh(args, { maxBuffer: 4096 });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(GhError);
+    expect((caught as Error).message).toBe(
+      'gh api --allow-escape-sequences output exceeded the 4096 byte buffer limit',
+    );
   });
 });
 

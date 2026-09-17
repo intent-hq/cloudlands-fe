@@ -82,12 +82,42 @@ export function parseArgs(argv) {
   return opts;
 }
 
-function gh(args) {
+// A raw job log (build output, retry traces, then the summary) can exceed
+// Node's default 1 MiB `maxBuffer`, which would kill `gh` mid-stream.
+export const GH_MAX_BUFFER = 64 * 1024 * 1024;
+
+/** Run `gh` and return its stdout; `maxBuffer` is overridable for tests only. */
+export function gh(args, { maxBuffer = GH_MAX_BUFFER } = {}) {
   try {
-    return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return execFileSync('gh', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer,
+    });
   } catch (error) {
+    const command = `gh ${args.slice(0, 2).join(' ')}`;
+    if (error?.code === 'ENOBUFS')
+      throw new GhError(`${command} output exceeded the ${maxBuffer} byte buffer limit`);
     const stderr = String(error?.stderr ?? '').trim();
-    throw new GhError(`gh ${args.slice(0, 2).join(' ')} failed${stderr ? `: ${stderr}` : ''}`);
+    throw new GhError(`${command} failed${stderr ? `: ${stderr}` : ''}`);
+  }
+}
+
+const PER_PAGE = 100;
+
+/**
+ * Follow a paginated listing (`jobs`, `artifacts`) page by page and return the
+ * concatenated `key` items; a short page or reaching `total_count` ends it.
+ */
+function listAll(runner, path, key) {
+  const items = [];
+  for (let page = 1; ; page += 1) {
+    const payload = runner.api(`${path}?per_page=${PER_PAGE}&page=${page}`);
+    const chunk = Array.isArray(payload?.[key]) ? payload[key] : [];
+    items.push(...chunk);
+    const total = payload?.total_count;
+    if (chunk.length < PER_PAGE || (typeof total === 'number' && items.length >= total))
+      return items;
   }
 }
 
@@ -127,12 +157,12 @@ const NO_SUMMARY_NOTE = 'red, no test summary found — see job URL';
 export function collectRun({ runId, repo, attempt, runner }) {
   const jobsPath =
     attempt === undefined
-      ? `repos/${repo}/actions/runs/${runId}/jobs?per_page=100`
-      : `repos/${repo}/actions/runs/${runId}/attempts/${attempt}/jobs?per_page=100`;
-  const jobsPayload = runner.api(jobsPath);
-  const jobs = parseCtJobs(jobsPayload);
+      ? `repos/${repo}/actions/runs/${runId}/jobs`
+      : `repos/${repo}/actions/runs/${runId}/attempts/${attempt}/jobs`;
+  const allJobs = listAll(runner, jobsPath, 'jobs');
+  const jobs = parseCtJobs(allJobs);
   if (jobs.length === 0) return { shards: [], attempt, warnings: [] };
-  const resolvedAttempt = attempt ?? jobsPayload?.jobs?.[0]?.run_attempt;
+  const resolvedAttempt = attempt ?? allJobs[0]?.run_attempt;
 
   const warnings = [];
   // Artifacts are run-wide and carry no attempt number, so a re-run overwrites
@@ -153,8 +183,8 @@ export function collectRun({ runId, repo, attempt, runner }) {
     const name = `playwright-ct-report-${job.shard}-of-${job.shardCount}`;
     let artifact;
     if (useArtifacts) {
-      artifacts ??= runner.api(`repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`);
-      artifact = (artifacts?.artifacts ?? []).find((a) => a?.name === name && !a.expired);
+      artifacts ??= listAll(runner, `repos/${repo}/actions/runs/${runId}/artifacts`, 'artifacts');
+      artifact = artifacts.find((a) => a?.name === name && !a.expired);
     }
     const report = artifact ? runner.jsonReport(repo, runId, name) : null;
     if (report) return { ...job, source: 'json', cases: casesFromJsonReport(report) };
