@@ -10,14 +10,17 @@ on:
   # merge-queue-only — it skips on pull_request (the gate accepts that
   # skip) and runs only on merge_group, where the gate requires its
   # success. test-ct always runs on merge_group and ALSO on pull_request
-  # when the PR diff touches a CT-contract path (the token/stylesheet
+  # when the PR diff is CT-relevant: a CT-contract path (the token/stylesheet
   # contract, the CT harness, the dependency manifests — the one list in
-  # scripts/ct-contract-paths.mjs, evaluated by release-fast-path as
-  # ct_required); otherwise it skips on pull_request and the gate accepts
+  # scripts/ct-contract-paths.mjs) or a CT spec / geometry golden, both
+  # classified by that module and evaluated by release-fast-path as
+  # ct_required; otherwise it skips on pull_request and the gate accepts
   # that skip only because ct_required says so (cloudlands-fe#2441 rewrote
   # tokens.css with green PR CI and was ejected from the queue with 40 CT
-  # failures). Merge groups are created by the repo's own ruleset from
-  # already-filed PRs, so they need no same-repo fork guard.
+  # failures; cloudlands-fe#2533 changed 22 specs and 1 golden with CT
+  # skipped on the PR and was ejected three times). Merge groups are created
+  # by the repo's own ruleset from already-filed PRs, so they need no
+  # same-repo fork guard.
   # pr-title / conflict-markers / release-fast-path are PR-metadata /
   # PR-diff checks that stay pull_request-only — the gate accepts their
   # skip on merge_group (release PRs therefore run full CI in the queue,
@@ -353,8 +356,9 @@ jobs:
   # exist).
   # The same checkout + base fetch also computes CT relevance: ct_required
   # is 'true' when the PR diff touches a CT-contract path (the one list in
-  # scripts/ct-contract-paths.mjs, shared with verify:changed), which makes
-  # test-ct run on pull_request (see test-ct / gate). Fail-safe the other
+  # scripts/ct-contract-paths.mjs, shared with verify:changed) or a CT spec /
+  # geometry golden (same module), which makes test-ct run on pull_request
+  # (see test-ct / gate). Fail-safe the other
   # way round from fast_path: the script prints ct_required=true on any
   # internal error, and the step writes 'true' if the script exits non-zero
   # or prints nothing — a broken relevance check runs CT, never skips it.
@@ -743,19 +747,20 @@ jobs:
   # installed via the run-ct-tests.mjs launcher so their version matches the
   # CT-aligned playwright runner (1.58.x, NOT the repo's top-level playwright
   # — see monorepo#1586), and the binary cache is keyed on that same version.
-  # MERGE-QUEUE ALWAYS, PLUS CT-CONTRACT PRs (see the trigger comment): the
+  # MERGE-QUEUE ALWAYS, PLUS CT-RELEVANT PRs (see the trigger comment): the
   # ~20 min of shard wall time stays off ordinary PR pushes — the suite runs
   # once per queue entry against the merged tree, where the gate requires
-  # it — but a PR whose diff touches a CT-contract path (release-fast-path's
-  # ct_required output, computed from scripts/ct-contract-paths.mjs) runs
-  # the full matrix on pull_request too, so a token/stylesheet/harness change
-  # gets CT signal before it can be ejected from the queue (cloudlands-fe#2441).
+  # it — but a PR whose diff touches a CT-contract path or a CT spec /
+  # geometry golden (release-fast-path's ct_required output, computed from
+  # scripts/ct-contract-paths.mjs) runs the full matrix on pull_request too,
+  # so a token/stylesheet/harness/spec/golden change gets CT signal before it
+  # can be ejected from the queue (cloudlands-fe#2441, cloudlands-fe#2533).
   # On every other pull_request the whole matrix reports 'skipped' and the
   # gate accepts that skip only when ct_required is exactly 'false'.
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
     # The event term runs this matrix on every merge_group; the ct_required
-    # term adds CT-contract pull_requests (release-fast-path is
+    # term adds CT-relevant pull_requests (release-fast-path is
     # pull_request-only, so the output is empty in the queue and the term is
     # vacuous there). The route.result guard is kept for the same reasons as
     # test-integration: it subsumes the old explicit same-repo `if:` guard
@@ -1187,7 +1192,8 @@ jobs:
   # succeed outright like test-integration; on pull_request its skip is
   # accepted only via an OUTPUT, never the skipped status itself — either
   # fast_path == 'true' (release-shaped PR) or ct_required == 'false' (the
-  # diff touches no CT-contract path). ct_required == 'true' means the
+  # diff touches no CT-contract path, CT spec, or geometry golden).
+  # ct_required == 'true' means the
   # matrix had to run and must have succeeded, and an EMPTY ct_required (a
   # failed release-fast-path job, a fork PR) rejects the skip too —
   # fail-safe, symmetric with check_heavy. Fork PRs stay red regardless:
@@ -1293,7 +1299,8 @@ jobs:
           check_queue_only "test-integration" "${{ needs.test-integration.result }}"
           # test-ct: must succeed on merge_group; on pull_request a skip is
           # accepted only via an output — fast_path == 'true' (release-shaped
-          # PR) or ct_required == 'false' (no CT-contract path in the diff).
+          # PR) or ct_required == 'false' (no CT-contract path, CT spec, or
+          # geometry golden in the diff).
           # ct_required == 'true' or EMPTY (failed release-fast-path job, fork
           # PR) rejects the skip: fail-safe, never fail-open.
           if [ "${{ github.event_name }}" = "merge_group" ]; then
@@ -1313,7 +1320,7 @@ jobs:
                 return 0
               fi
               if [ "$2" = "skipped" ] && [ "$CT_REQUIRED" = "false" ]; then
-                echo "$1 skipped — the diff touches no CT-contract path (ct_required=false), accepted"
+                echo "$1 skipped — the diff touches no CT-contract path, CT spec, or geometry golden (ct_required=false), accepted"
                 return 0
               fi
               echo "$1 result '$2' not acceptable (ct_required='$CT_REQUIRED', fast_path='$FAST_PATH')"

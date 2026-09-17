@@ -7,7 +7,9 @@
  * `verify:changed` consumes the list locally; the PR workflow must consume the
  * same module so `test-ct` runs on `pull_request` when the diff touches a
  * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
- * CT failures after green PR CI). The step script and the gate script are
+ * CT failures after green PR CI) or a CT spec / geometry golden
+ * (cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped on the PR and
+ * was ejected three times). The step script and the gate script are
  * extracted from the workflow and executed under bash across a scenario table,
  * and the `test-ct` `if:` expression is evaluated the same way, so the
  * assertions hold against runtime behaviour rather than source spelling.
@@ -151,15 +153,25 @@ describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
       return { ...result, output: readFileSync(output, 'utf8').trim() };
     };
 
-    it('writes ct_required=true when the diff touches a CT-contract path', () => {
-      const { root, base } = checkoutWith('src/lib/styles/tokens.css');
+    it.each([
+      ['a CT-contract path', 'src/lib/styles/tokens.css'],
+      ['a CT spec', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
+      [
+        'a geometry golden',
+        'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
+      ],
+    ])('writes ct_required=true when the diff touches %s', (_name, file) => {
+      const { root, base } = checkoutWith(file);
       const result = runStep(root, base);
       expect(result.status, result.stderr).toBe(0);
       expect(result.output).toBe('ct_required=true');
     });
 
-    it('writes ct_required=false when the diff touches no CT-contract path', () => {
-      const { root, base } = checkoutWith('src/features/agent/view.svelte');
+    it.each([
+      ['a .svelte component only', 'src/features/agent/view.svelte'],
+      ['a CT spec outside src/', 'test/added.ct.spec.ts'],
+    ])('writes ct_required=false when the diff touches %s', (_name, file) => {
+      const { root, base } = checkoutWith(file);
       const result = runStep(root, base);
       expect(result.status, result.stderr).toBe(0);
       expect(result.output).toBe('ct_required=false');
@@ -220,7 +232,7 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['CT-contract PR', {}, true],
+    ['CT-relevant PR (contract path, spec, or golden)', {}, true],
     ['ordinary PR', { ctRequired: 'false' }, false],
     ['release-shaped PR touching package.json', { fastPath: 'true' }, false],
     ['PR whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],

@@ -9,6 +9,7 @@ import {
   changedFiles,
   ctRequired,
   isCtContractPath,
+  isCtTestArtifact,
   main,
 } from './ct-contract-paths.mjs';
 
@@ -94,6 +95,8 @@ describe('isCtContractPath', () => {
     'packages/cloudlands-fe/package.json',
     'e2e/playwright/index.ts',
     '.github/workflows/intent-pr.yml',
+    'src/lib/components/ui/button/button.geometry.ct.spec.ts',
+    'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
   ])('does not match %s', (file) => {
     expect(isCtContractPath(file)).toBe(false);
   });
@@ -114,11 +117,55 @@ describe('isCtContractPath', () => {
   });
 });
 
+describe('isCtTestArtifact', () => {
+  it.each([
+    'src/lib/components/ui/button/button.geometry.ct.spec.ts',
+    'src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts',
+    'src/top-level.ct.spec.ts',
+    'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
+    './src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
+  ])('matches %s', (file) => {
+    expect(isCtTestArtifact(file)).toBe(true);
+  });
+
+  it.each([
+    'test/added.ct.spec.ts',
+    'e2e/button.ct.spec.ts',
+    'src/lib/button.test.ts',
+    'src/lib/button.spec.ts',
+    'src/lib/button.visual.spec.ts',
+    'src/lib/button.ct.test.ts',
+    'src/lib/button.ct.spec.js',
+    'src/lib/button.ct.spec.tsx',
+    'src/lib/button.ct.spec.mts',
+    'src/lib/button.ct.spec.ts.snap',
+    'src/lib/components/ui/button/button.svelte',
+    'src/lib/components/workspace/workspace-hover-card.geometry.json',
+    'src/lib/components/workspace/__geometry__/nested/workspace-hover-card.geometry.json',
+    'src/lib/components/workspace/__geometry__/workspace-hover-card.json',
+    'playwright/__geometry__/scene.geometry.json',
+    'src/app.css',
+  ])('does not match %s', (file) => {
+    expect(isCtTestArtifact(file)).toBe(false);
+  });
+});
+
 describe('ctRequired and main', () => {
   it('requires CT when any changed file is a contract path', () => {
     expect(ctRequired(['src/lib/example.ts', 'src/lib/styles/tokens.css'])).toBe(true);
     expect(ctRequired(['src/lib/example.ts', 'scripts/verify-changed.mjs'])).toBe(false);
     expect(ctRequired([])).toBe(false);
+  });
+
+  it('requires CT when any changed file is a CT spec or geometry golden', () => {
+    expect(ctRequired(['src/lib/components/ui/button/button.geometry.ct.spec.ts'])).toBe(true);
+    expect(
+      ctRequired(['src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json']),
+    ).toBe(true);
+    expect(ctRequired(['test/added.ct.spec.ts'])).toBe(false);
+    expect(ctRequired(['src/lib/components/ui/button/button.ct.test.ts'])).toBe(false);
+    expect(ctRequired(['src/lib/components/ui/button/button.ct.spec.js'])).toBe(false);
+    expect(ctRequired(['src/lib/components/ui/button/button.svelte'])).toBe(false);
   });
 
   it('prints one ct_required line from the injected diff', () => {
@@ -196,6 +243,28 @@ describe('--diff against a git repository', () => {
     git(root, 'rm', '-q', 'src/lib/styles/tokens.css');
     git(root, 'commit', '-q', '-m', 'remove tokens');
     expect(runCli(root, '--diff', 'main', 'deleted').stdout).toBe('ct_required=true\n');
+  });
+
+  it('prints ct_required=true for a spec-only, a golden-only, and a deleted-golden diff', () => {
+    const root = gitRepository();
+    const golden = 'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json';
+    commitFile(root, golden, '{}');
+    branch(root, 'spec-only', 'src/lib/components/ui/button/button.geometry.ct.spec.ts');
+    expect(runCli(root, '--diff', 'main', 'spec-only')).toEqual({
+      status: 0,
+      stdout: 'ct_required=true\n',
+      stderr: '',
+    });
+    branch(root, 'golden-only', golden);
+    expect(runCli(root, '--diff', 'main', 'golden-only').stdout).toBe('ct_required=true\n');
+    branch(root, 'golden-deleted');
+    git(root, 'rm', '-q', golden);
+    git(root, 'commit', '-q', '-m', 'remove golden');
+    expect(runCli(root, '--diff', 'main', 'golden-deleted').stdout).toBe('ct_required=true\n');
+    branch(root, 'svelte-only', 'src/lib/components/ui/button/button.svelte');
+    expect(runCli(root, '--diff', 'main', 'svelte-only').stdout).toBe('ct_required=false\n');
+    branch(root, 'spec-outside-src', 'test/added.ct.spec.ts');
+    expect(runCli(root, '--diff', 'main', 'spec-outside-src').stdout).toBe('ct_required=false\n');
   });
 
   it('keeps non-ASCII paths verbatim instead of the quoted form git prints by default', () => {

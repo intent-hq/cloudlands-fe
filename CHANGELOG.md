@@ -4,6 +4,30 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.162.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.5...v2.162.0) (2026-09-17)
+
+
+### 🚀 Features
+
+* align workspace sidebars and panel controls ([#2533](https://github.com/intent-hq/cloudlands-fe/issues/2533)) ([8eb767a](https://github.com/intent-hq/cloudlands-fe/commit/8eb767aa6f81b8627785b7cb0956822320ae29cb))
+* **pr-monitor:** show monitoring paused status when pausedUntil is set ([#2551](https://github.com/intent-hq/cloudlands-fe/issues/2551)) ([b779dee](https://github.com/intent-hq/cloudlands-fe/commit/b779deef0948b92fb82aea4902ef3f46895d06ab))
+* show Queued state in GitHub PR link hover card ([#2562](https://github.com/intent-hq/cloudlands-fe/issues/2562)) ([7255097](https://github.com/intent-hq/cloudlands-fe/commit/72550971602adf28d692f7328ec3c3bb63a0a092))
+* simplify settings navigation and setup controls ([#2532](https://github.com/intent-hq/cloudlands-fe/issues/2532)) ([94918d1](https://github.com/intent-hq/cloudlands-fe/commit/94918d18f8655e39d6c8d8c6d4fd9663f8f37a0f))
+* standardize shared controls and picker interactions ([#2530](https://github.com/intent-hq/cloudlands-fe/issues/2530)) ([41c3428](https://github.com/intent-hq/cloudlands-fe/commit/41c3428a2686cf37453633d88d90ce822d3ab40b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.70 ([#2568](https://github.com/intent-hq/cloudlands-fe/issues/2568)) ([5ef7319](https://github.com/intent-hq/cloudlands-fe/commit/5ef73194db547c12b938471b7a2ca7d0d54f33ba))
+* **ct:** isolate browser context per test in chat-content-columns spec ([#2553](https://github.com/intent-hq/cloudlands-fe/issues/2553)) ([e7e78f8](https://github.com/intent-hq/cloudlands-fe/commit/e7e78f8c01647c69974b270d580ae3b8e6cf7ca8))
+* **hud:** exempt the HUD window from the window-blur animation pause ([#2560](https://github.com/intent-hq/cloudlands-fe/issues/2560)) ([4f52f1c](https://github.com/intent-hq/cloudlands-fe/commit/4f52f1cfd3613d1f1e9fab3f76fa3c71fa8576c8))
+* **hud:** remove Pass/Fail badge from the SYSTEM panel ([#2552](https://github.com/intent-hq/cloudlands-fe/issues/2552)) ([f367a04](https://github.com/intent-hq/cloudlands-fe/commit/f367a04c8aba41e6c1b632b7f7635621b066bfd6))
+* preserve chat images and refine composer interactions ([#2531](https://github.com/intent-hq/cloudlands-fe/issues/2531)) ([898107a](https://github.com/intent-hq/cloudlands-fe/commit/898107a1432d5bd24f049220057f6711e9bd1a44))
+* recover embedded browser tabs from destroyed webview guests and suppress stale detach errors ([#2554](https://github.com/intent-hq/cloudlands-fe/issues/2554)) ([1fa3f53](https://github.com/intent-hq/cloudlands-fe/commit/1fa3f53214fe07f156abadd6ce7d75ebcd43dbb6))
+* **settings:** show the auto memory budget and clear the queue hint on stream evidence ([#2558](https://github.com/intent-hq/cloudlands-fe/issues/2558)) ([7809d5d](https://github.com/intent-hq/cloudlands-fe/commit/7809d5d38bd48dd83df73aa0127baf812c7d835a))
+* **test:** mock presentation deps in browser.ipc pooled-remote cases ([#2566](https://github.com/intent-hq/cloudlands-fe/issues/2566)) ([a51e5eb](https://github.com/intent-hq/cloudlands-fe/commit/a51e5eb44a3498e9a97336a82284ae52c6e060d8))
+* **test:** scrub host Node injection from unit-test child processes ([#2550](https://github.com/intent-hq/cloudlands-fe/issues/2550)) ([6d3425f](https://github.com/intent-hq/cloudlands-fe/commit/6d3425ff92acc0722cc78dbc0cdf082d8c8fee5f))
+
 ## [2.161.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.4...v2.161.5) (2026-09-17)
 
 
