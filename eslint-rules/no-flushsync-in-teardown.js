@@ -16,6 +16,17 @@
 // reassigned in the helper body — counts as a flush.
 // Analysis is lexical: a flush inside a nested callback (rAF, forEach, ...) is
 // attributed to that callback, not to the helper that schedules it.
+//
+// The same flushSync reachability is rejected inside the body of an $effect /
+// $effect.pre callback. Svelte 5.56 `schedule_effect()` dereferences
+// `current_batch` unconditionally and `Batch.flush()` nulls it in `finally`, so
+// a nested flushSync() during an outer batch traversal nulls the batch; the next
+// effect in that traversal that writes state throws
+// `TypeError: Cannot read properties of null (reading 'schedule')` (upstream
+// sveltejs/svelte#18546; caught by ErrorBoundary:MainLayout in v2.161.3 via
+// WorkspaceTabStrip and ResponseGroup effect bodies). Only the callback that
+// directly encloses the call counts as the effect body: a flush inside a rAF /
+// timer callback the body schedules runs outside the traversal.
 
 const FUNCTION_TYPES = new Set([
   'FunctionDeclaration',
@@ -253,6 +264,17 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
     return null;
   }
 
+  // The source text of the `$effect` / `$effect.pre` whose callback directly
+  // encloses `node`, or null. Lexical: a nested callback (rAF, timer, ...) is
+  // its own function, so a flush inside it is not the effect body.
+  function findEffectBodyHost(node) {
+    const fn = getEnclosingFunction(node);
+    if (!fn) return null;
+    const host = getCallbackHost(fn);
+    if (host !== '$effect' && host !== '$effect.pre') return null;
+    return sourceCode.getText(unwrapParent(fn).parent.callee);
+  }
+
   // What a value expression contributes to a guard: 'undefined' (the global
   // `undefined` or `void`), 'falsy' (a falsy literal), 'forward' (some other
   // binding), or 'unknown' (anything else — treated as truthy).
@@ -426,7 +448,13 @@ function createAnalyzer(sourceCode, actionIdentifiers) {
     return { state: 'on' };
   }
 
-  return { findTeardownKind, getConditionGuards, evaluateGuardArgument, getParameterGuard };
+  return {
+    findTeardownKind,
+    findEffectBodyHost,
+    getConditionGuards,
+    evaluateGuardArgument,
+    getParameterGuard,
+  };
 }
 
 function getGuardId(guard) {
@@ -452,12 +480,14 @@ export default {
     type: 'problem',
     docs: {
       description:
-        'Disallow flushSync (directly or through a same-file helper) inside Svelte effect cleanups, onDestroy callbacks, and action destroy methods',
+        'Disallow flushSync (directly or through a same-file helper) inside Svelte effect bodies, effect cleanups, onDestroy callbacks, and action destroy methods',
     },
     schema: [],
     messages: {
       flushSyncInTeardown:
         '{{call}} runs inside {{teardown}}. flushSync flushes unrelated dirty effects while Svelte is still destroying, and any component mounted by that flush throws effect_in_teardown (intent-hq/intent#4550). Skip the synchronous flush on teardown paths.',
+      flushSyncInEffect:
+        "{{call}} runs inside the body of {{host}}. A nested flushSync nulls the batch that is still traversing effects, and the next effect in that traversal that writes state throws TypeError: Cannot read properties of null (reading 'schedule') (sveltejs/svelte#18546; the ErrorBoundary:MainLayout crash in v2.161.3). Write the state and let the batch settle, or defer the flush to a rAF/event callback.",
     },
   },
 
@@ -497,6 +527,15 @@ export default {
               node: call,
               messageId: 'flushSyncInTeardown',
               data: { call: label, teardown },
+            });
+            continue;
+          }
+          const host = analyzer.findEffectBodyHost(call);
+          if (host) {
+            context.report({
+              node: call,
+              messageId: 'flushSyncInEffect',
+              data: { call: label, host },
             });
             continue;
           }

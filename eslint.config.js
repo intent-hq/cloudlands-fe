@@ -766,6 +766,10 @@ export default [
   // flushSync from an $effect cleanup, onDestroy callback, or action destroy()
   // flushes unrelated effects mid-teardown; any component mounted by that flush
   // throws effect_in_teardown (intent-hq/intent#4550, shipped in v2.141.0).
+  // flushSync from an $effect / $effect.pre body nulls the batch still traversing
+  // effects; the next effect that writes state throws `Cannot read properties of
+  // null (reading 'schedule')` (sveltejs/svelte#18546; ErrorBoundary:MainLayout
+  // crash in v2.161.3 via WorkspaceTabStrip and ResponseGroup).
   {
     files: ['**/*.svelte'],
     plugins: {
