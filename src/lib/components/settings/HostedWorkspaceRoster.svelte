@@ -6,7 +6,8 @@
    * control (`workspace.members.remove` refuses the owner).
    */
   import { onMount } from 'svelte';
-  import { Button } from '$lib/components/ui/button';
+  import { ListView } from '$lib/components/patterns/collection';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import type { Workspace } from '$shared/types';
@@ -85,30 +86,37 @@
 </script>
 
 <section class="px-6 py-5" data-testid="hosted-workspace-roster" data-workspace-id={workspace.id}>
-  <h3 class="text-sm font-medium text-foreground">{workspace.title}</h3>
+  <h3 class="type-body font-medium text-foreground">{workspace.title}</h3>
   {#if $roster$.status === 'loading' && $roster$.members.length === 0}
-    <p class="mt-2 text-sm text-muted-foreground" role="status">
+    <p class="mt-2 type-body text-muted-foreground" role="status">
       {m.settings_guestSessions_roster_loading_label()}
     </p>
   {:else if $roster$.status === 'withheld'}
     <p
-      class="mt-2 text-sm text-muted-foreground"
+      class="mt-2 type-body text-muted-foreground"
       role="status"
       data-testid="hosted-roster-withheld"
     >
       {m.settings_guestSessions_roster_withheld()}
     </p>
   {:else if $roster$.status === 'error' && $roster$.members.length === 0}
-    <p class="mt-2 text-sm text-danger" role="alert">
+    <p class="mt-2 type-body text-danger" role="alert">
       {m.settings_guestSessions_roster_error()}
     </p>
   {:else}
-    <ul class="mt-2 divide-y divide-border">
-      {#each $roster$.members as member (member.principalId)}
-        <li class="flex items-center justify-between gap-3 py-2">
+    <ListView
+      virtualize={false}
+      items={$roster$.members}
+      getKey={(member) => member.principalId}
+      getText={(member) => memberLabel(member)}
+      ariaLabel={workspace.title}
+      class="mt-2 overflow-visible"
+    >
+      {#snippet row({ item: member })}
+        <div class="flex items-center justify-between gap-3 py-2">
           <div class="min-w-0">
-            <p class="truncate text-sm text-foreground">{memberLabel(member)}</p>
-            <p class="truncate text-xs text-muted-foreground">
+            <p class="truncate type-body text-foreground">{memberLabel(member)}</p>
+            <p class="truncate type-caption text-muted-foreground">
               {member.role === 'owner'
                 ? m.settings_guestSessions_role_owner_label()
                 : m.settings_guestSessions_role_collaborator_label()}
@@ -127,16 +135,16 @@
               {m.settings_guestSessions_remove_label()}
             </Button>
           {/if}
-        </li>
-      {/each}
-    </ul>
+        </div>
+      {/snippet}
+    </ListView>
   {/if}
   {#if removeError}
     <div
       class="mt-3 flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
     >
-      <p class="text-sm text-danger">{removeError}</p>
+      <p class="type-body text-danger">{removeError}</p>
       <Button
         variant="ghost"
         disabled={!removeTarget || $removingIds$.includes(removeTarget.principalId)}

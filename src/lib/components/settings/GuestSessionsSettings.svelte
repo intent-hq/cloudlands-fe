@@ -8,7 +8,8 @@
    * (*Open*, *Leave host*: best-effort `principal.revokeSelf`, then the local
    * delete and window teardown).
    */
-  import { Button } from '$lib/components/ui/button';
+  import { ListView } from '$lib/components/patterns/collection';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import HostedWorkspaceRoster from './HostedWorkspaceRoster.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -83,17 +84,17 @@
 
 <div class="space-y-8" data-testid="guest-sessions-settings">
   <div>
-    <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+    <h2 class="type-title mb-3 text-foreground">
       {m.settings_guestSessions_title()}
     </h2>
-    <p class="max-w-2xl text-sm text-muted-foreground">
+    <p class="max-w-2xl type-body text-muted-foreground">
       {m.settings_guestSessions_description()}
     </p>
   </div>
 
   {#if !$isCollaboratorOnly$}
     <div data-testid="guest-sessions-hosting">
-      <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+      <h3 class="type-title mb-3 text-foreground">
         {m.settings_guestSessions_hosting_title()}
       </h3>
       {#if $hosted$.length > 0}
@@ -104,10 +105,10 @@
         </div>
       {:else}
         <div class="rounded-xl border border-dashed border-border bg-card p-8 text-center">
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_guestSessions_hosting_empty_title()}
           </p>
-          <p class="mt-1 text-sm text-muted-foreground">
+          <p class="mt-1 type-body text-muted-foreground">
             {m.settings_guestSessions_hosting_empty_description()}
           </p>
         </div>
@@ -116,28 +117,35 @@
   {/if}
 
   <div data-testid="guest-sessions-joined">
-    <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+    <h3 class="type-title mb-3 text-foreground">
       {m.settings_guestSessions_joined_title()}
     </h3>
     {#if !$loaded$}
       <p
-        class="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground"
+        class="rounded-xl border border-border bg-card p-6 type-body text-muted-foreground"
         role="status"
       >
         {m.settings_guestSessions_loading_label()}
       </p>
     {:else if $sessions$.length > 0}
-      <ul class="flex flex-col overflow-hidden rounded-xl bg-card divide-y divide-border">
-        {#each $sessions$ as session (session.id)}
+      <ListView
+        virtualize={false}
+        items={$sessions$}
+        getKey={(session) => session.id}
+        getText={(session) => session.label}
+        ariaLabel={m.settings_guestSessions_joined_title()}
+        class="overflow-visible rounded-xl bg-card"
+      >
+        {#snippet row({ item: session })}
           {@const open = $openIds$.includes(session.id)}
           {@const connected = open && $connectedIds$.includes(session.id)}
-          <li
+          <div
             class="flex items-center justify-between gap-3 px-6 py-4"
             data-session-id={session.id}
           >
             <div class="min-w-0">
-              <p class="truncate text-sm text-foreground">{session.label}</p>
-              <p class="truncate text-xs text-muted-foreground">
+              <p class="truncate type-body text-foreground">{session.label}</p>
+              <p class="truncate type-caption text-muted-foreground">
                 <!-- Status only for a host with a window (pooled client); a
                      joined host that was never opened has no status. -->
                 {#if open}
@@ -166,15 +174,15 @@
                   : m.settings_guestSessions_leave_label()}
               </Button>
             </div>
-          </li>
-        {/each}
-      </ul>
+          </div>
+        {/snippet}
+      </ListView>
     {:else}
       <div class="rounded-xl border border-dashed border-border bg-card p-8 text-center">
-        <p class="text-sm font-medium text-foreground">
+        <p class="type-body font-medium text-foreground">
           {m.settings_guestSessions_joined_empty_title()}
         </p>
-        <p class="mt-1 text-sm text-muted-foreground">
+        <p class="mt-1 type-body text-muted-foreground">
           {m.settings_guestSessions_joined_empty_description()}
         </p>
       </div>
@@ -187,7 +195,7 @@
       role="alert"
       data-testid="guest-sessions-open-error"
     >
-      <p class="text-sm text-danger">{openError}</p>
+      <p class="type-body text-danger">{openError}</p>
     </div>
   {/if}
 
@@ -196,7 +204,7 @@
       class="flex items-center justify-between gap-3 rounded-md border border-danger/30 bg-danger-background/10 p-3"
       role="alert"
     >
-      <p class="text-sm text-danger">{leaveError}</p>
+      <p class="type-body text-danger">{leaveError}</p>
       <Button
         variant="ghost"
         disabled={!leaveTarget || leavingId !== null}
