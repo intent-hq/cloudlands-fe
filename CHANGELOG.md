@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.161.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.3...v2.161.4) (2026-09-17)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.67 ([#2543](https://github.com/intent-hq/cloudlands-fe/issues/2543)) ([c3e16cd](https://github.com/intent-hq/cloudlands-fe/commit/c3e16cd049a3ede2627e386ec0632f889605eab2))
+* preserve retained browser guest ownership across workspace switches ([#2537](https://github.com/intent-hq/cloudlands-fe/issues/2537)) ([a810410](https://github.com/intent-hq/cloudlands-fe/commit/a8104104b40bd68abc5c033e391d93245eed0d00))
+* **workspace-card:** compact micro key-slot badge and square its corners ([#2538](https://github.com/intent-hq/cloudlands-fe/issues/2538)) ([ae90a5c](https://github.com/intent-hq/cloudlands-fe/commit/ae90a5c008795bd40ab41834aad50a4b568ac678))
+
 ## [2.161.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.161.2...v2.161.3) (2026-09-16)
 
 
