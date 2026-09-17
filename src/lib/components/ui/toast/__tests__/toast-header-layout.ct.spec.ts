@@ -1,5 +1,16 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/test';
 import Preview from '../toast-header.preview.svelte';
+
+// Wait for a toast to finish Sonner's enter transition before reading geometry.
+async function settle(page: Page, toast: Locator) {
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveAttribute('data-mounted', 'true');
+  await page.evaluate(() => document.fonts.ready);
+  await toast.evaluate((node) =>
+    Promise.all(node.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
+  );
+}
 
 const contracts = [
   { status: 'downloaded', width: 320 },
@@ -17,14 +28,7 @@ for (const { status, width } of contracts) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(Preview, { props: { status } });
     const toast = page.locator('[data-sonner-toast]');
-    await expect(toast).toBeVisible();
-    await expect(toast).toHaveAttribute('data-mounted', 'true');
-    await page.evaluate(() => document.fonts.ready);
-    await toast.evaluate((node) =>
-      Promise.all(
-        node.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
-      ),
-    );
+    await settle(page, toast);
     const geometry = await toast.evaluate((node) => {
       const box = (selector: string) =>
         node.querySelector(selector)?.getBoundingClientRect().toJSON();
@@ -100,13 +104,7 @@ for (const { status, width } of [
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(Preview, { props: { status } });
     const toast = page.locator('[data-sonner-toast]');
-    await expect(toast).toHaveAttribute('data-mounted', 'true');
-    await page.evaluate(() => document.fonts.ready);
-    await toast.evaluate((node) =>
-      Promise.all(
-        node.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
-      ),
-    );
+    await settle(page, toast);
     const geometry = await toast.evaluate((node) => {
       const title = node.querySelector('[data-title],.toast-title')!;
       const rect = title.getBoundingClientRect();
@@ -157,17 +155,24 @@ for (const { status, width } of [
 
 test('keeps a component undo action beside its title', async ({ mount, page }) => {
   await page.setViewportSize({ width: 320, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(Preview, { props: { status: 'undo' } });
   const toast = page.locator('[data-sonner-toast]');
-  await expect(toast).toHaveAttribute('data-mounted', 'true');
-  const title = toast.locator('[data-title]');
   const action = toast.getByRole('button', { name: /Undo/ });
   await expect(action).toBeVisible();
-  const a = (await title.boundingBox())!;
-  const b = (await action.boundingBox())!;
-  const lineHeight = await title.evaluate((node) =>
-    Number.parseFloat(getComputedStyle(node).lineHeight),
-  );
+  await settle(page, toast);
+  // Read title and action in one frame so the two rects share a layout.
+  const { a, b, lineHeight } = await toast.evaluate((node) => {
+    const title = node.querySelector('[data-title]')!;
+    const undo = Array.from(node.querySelectorAll('button')).find((button) =>
+      /Undo/.test(button.textContent ?? ''),
+    )!;
+    return {
+      a: title.getBoundingClientRect().toJSON(),
+      b: undo.getBoundingClientRect().toJSON(),
+      lineHeight: Number.parseFloat(getComputedStyle(title).lineHeight),
+    };
+  });
   expect(Math.abs(a.y + lineHeight / 2 - b.y - b.height / 2)).toBeLessThanOrEqual(1);
   expect(b.x - a.x - a.width).toBeGreaterThanOrEqual(8);
   await toast.getByRole('button', { name: /Close|Dismiss/i }).press('Enter');
@@ -179,10 +184,11 @@ test('preserves collapsed standard copy and both actions without a visible stack
   page,
 }) => {
   await page.setViewportSize({ width: 420, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(Preview, { props: { status: 'plain', stacked: true } });
   const front = page.locator('[data-sonner-toast][data-front="true"]');
   const rear = page.locator('[data-sonner-toast][data-front="false"]');
-  await expect(front).toHaveAttribute('data-mounted', 'true');
+  await settle(page, front);
   await expect(rear.locator('[data-title]')).toHaveCSS('opacity', '0');
   await expect(rear.locator('[data-description]')).toHaveCSS('opacity', '0');
   await expect(rear.locator('[data-description]')).toHaveCSS('pointer-events', 'none');
