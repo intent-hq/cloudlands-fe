@@ -7,7 +7,7 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
-import { mkdtemp, realpath, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
@@ -22,9 +22,18 @@ let guestServer: Server;
 let guestUrl: string;
 let baseUrl: string;
 let cdpBundle: string;
+let bundleDir: string;
 const fixture = resolve('test/fixtures/browser-lifetime');
+/**
+ * Budget for the explicit-close / archive polls. Each guestSnapshot round bounds
+ * its per-guest probes to 2 s (see guestSnapshot) and probes the up-to-four
+ * guests in parallel, so one round of a guest mid-destruction costs ~2-4 s;
+ * 20 s guarantees at least five rounds on top of the default 5 s that already
+ * covered the observed destruction latency when no probe hung.
+ */
+const GUEST_TEARDOWN_TIMEOUT_MS = 20_000;
 test.beforeAll(async () => {
-  const bundleDir = await mkdtemp(join(tmpdir(), 'intent-browser-lifetime-code-'));
+  bundleDir = await mkdtemp(join(tmpdir(), 'intent-browser-lifetime-code-'));
   cdpBundle = join(bundleDir, 'cdp.cjs');
   await build({
     configFile: false,
@@ -123,6 +132,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await server?.close();
   if (guestServer) await new Promise<void>((done) => guestServer.close(() => done()));
+  if (bundleDir) await rm(bundleDir, { recursive: true, force: true });
 });
 
 async function launch(owned: boolean) {
@@ -149,7 +159,11 @@ async function launch(owned: boolean) {
   try {
     await page.waitForFunction(() => 'lifetimeFixture' in window);
   } catch (error) {
-    await app.close();
+    try {
+      await app.close();
+    } finally {
+      await rm(profile, { recursive: true, force: true });
+    }
     throw error;
   }
   return { app, page, profile };
@@ -158,24 +172,36 @@ async function launch(owned: boolean) {
 async function guestSnapshot(app: ElectronApplication) {
   return app.evaluate(async ({ webContents }) => {
     const evidence = (globalThis as any).lifetimeEvidence;
+    // executeJavaScript on a guest that is mid-destruction never settles, which
+    // hung the explicit-close poll's predicate until its budget expired even
+    // though the guest was already gone; bound every probe.
+    const probe = (wc: { executeJavaScript(code: string): Promise<unknown> }, script: string) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      return Promise.race([
+        wc.executeJavaScript(script),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), 2000);
+        }),
+      ])
+        .catch(() => null)
+        .finally(() => clearTimeout(timer));
+    };
     const live = await Promise.all(
       webContents
         .getAllWebContents()
-        .filter((wc) => wc.getType() === 'webview')
+        .filter((wc) => wc.getType() === 'webview' && !wc.isDestroyed())
         .map(async (wc) => ({
           id: wc.id,
           url: wc.getURL(),
           muted: wc.isAudioMuted(),
-          viewport: await wc
-            .executeJavaScript(
-              '({ width: innerWidth, height: innerHeight, visualWidth: visualViewport?.width, visualHeight: visualViewport?.height, devicePixelRatio })',
-            )
-            .catch(() => null),
-          state: await wc
-            .executeJavaScript(
-              '({ marker: window.documentMarker, draft: document.querySelector("#draft")?.value, count: window.inMemoryCount })',
-            )
-            .catch(() => null),
+          viewport: await probe(
+            wc,
+            '({ width: innerWidth, height: innerHeight, visualWidth: visualViewport?.width, visualHeight: visualViewport?.height, devicePixelRatio })',
+          ),
+          state: await probe(
+            wc,
+            '({ marker: window.documentMarker, draft: document.querySelector("#draft")?.value, count: window.inMemoryCount })',
+          ),
         })),
     );
     const cdp = (globalThis as any).lifetimeCdp;
@@ -334,6 +360,37 @@ function navigationCount(observation: any, tabId: string) {
     .filter((url: string) => url.endsWith(`tab=${tabId}`)).length;
 }
 
+/** Writes evidence (including one final guest snapshot), then always closes Electron and removes the profile. */
+async function teardown(
+  app: ElectronApplication,
+  page: Page,
+  profile: string,
+  observations: any[],
+  testInfo: TestInfo,
+) {
+  try {
+    if (observations.length === 0) {
+      console.log(JSON.stringify(await record(app, page, 'startup failure')));
+    }
+    observations.push({
+      label: 'teardown',
+      ...(await guestSnapshot(app).catch((error: Error) => ({ error: error.message }))),
+    });
+    const evidencePath = testInfo.outputPath('electron-lifetime-evidence.json');
+    await writeFile(evidencePath, JSON.stringify({ profile, observations }, null, 2));
+    await testInfo.attach('electron-lifetime-evidence', {
+      path: evidencePath,
+      contentType: 'application/json',
+    });
+  } finally {
+    try {
+      await app.close();
+    } finally {
+      await rm(profile, { recursive: true, force: true });
+    }
+  }
+}
+
 for (const owned of [false, true]) {
   for (const rapid of [false, true]) {
     test(`workspace A/B preserves ${owned ? 'agent-owned' : 'user'} guests (${rapid ? 'rapid' : 'ordinary'})`, async ({}, testInfo) => {
@@ -471,16 +528,7 @@ for (const owned of [false, true]) {
           }
         }
       } finally {
-        if (observations.length === 0) {
-          console.log(JSON.stringify(await record(app, page, 'startup failure')));
-        }
-        const evidencePath = testInfo.outputPath('electron-lifetime-evidence.json');
-        await writeFile(evidencePath, JSON.stringify({ profile, observations }, null, 2));
-        await testInfo.attach('electron-lifetime-evidence', {
-          path: evidencePath,
-          contentType: 'application/json',
-        });
-        await app.close();
+        await teardown(app, page, profile, observations, testInfo);
       }
     });
   }
@@ -508,13 +556,7 @@ for (const owned of [false, true]) {
         }),
       });
     } finally {
-      const evidencePath = testInfo.outputPath('electron-lifetime-evidence.json');
-      await writeFile(evidencePath, JSON.stringify({ profile, observations }, null, 2));
-      await testInfo.attach('electron-lifetime-evidence', {
-        path: evidencePath,
-        contentType: 'application/json',
-      });
-      await app.close();
+      await teardown(app, page, profile, observations, testInfo);
     }
   });
 
@@ -565,28 +607,25 @@ for (const owned of [false, true]) {
       }
       await page.evaluate(() => (window as any).lifetimeFixture.close('A-1', true));
       await expect
-        .poll(async () =>
-          (await guestSnapshot(app)).live.some((guest) => guest.url.endsWith('tab=A-1')),
+        .poll(
+          async () =>
+            (await guestSnapshot(app)).live.some((guest) => guest.url.endsWith('tab=A-1')),
+          { timeout: GUEST_TEARDOWN_TIMEOUT_MS },
         )
         .toBe(false);
       observations.push(await record(app, page, 'explicit close'));
       expect(observations.at(-1).records.A.visible).not.toContain('A-1');
       await page.evaluate(() => (window as any).lifetimeFixture.archive('A'));
       await expect
-        .poll(async () =>
-          (await guestSnapshot(app)).live.some((guest) => guest.url.includes('tab=A-')),
+        .poll(
+          async () => (await guestSnapshot(app)).live.some((guest) => guest.url.includes('tab=A-')),
+          { timeout: GUEST_TEARDOWN_TIMEOUT_MS },
         )
         .toBe(false);
       observations.push(await record(app, page, 'archive'));
       expect(observations.at(-1).records.A).toBeUndefined();
     } finally {
-      const evidencePath = testInfo.outputPath('electron-lifetime-evidence.json');
-      await writeFile(evidencePath, JSON.stringify({ profile, observations }, null, 2));
-      await testInfo.attach('electron-lifetime-evidence', {
-        path: evidencePath,
-        contentType: 'application/json',
-      });
-      await app.close();
+      await teardown(app, page, profile, observations, testInfo);
     }
   });
 }
