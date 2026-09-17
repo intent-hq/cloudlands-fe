@@ -466,7 +466,7 @@ const EMPTY_PARAGRAPH_MARKER_REGEX = /\u0000/g;
 const FENCE_OPEN_REGEX = /^ {0,3}(`{3,}|~{3,})/;
 const TASK_BLOCK_OPEN_REGEX = /^@@@tasks?(?:[ \t]|$)/;
 const TASK_BLOCK_CLOSE_REGEX = /^@@@\s*$/;
-const LIST_ITEM_REGEX = /^ {0,3}(?:[-*+]|\d+[.)])\s/;
+const LIST_ITEM_REGEX = /^[ \t]*(?:[-*+]|\d+[.)])\s/;
 const INDENTED_LINE_REGEX = /^(?: {2,}|\t)/;
 
 /**
@@ -476,8 +476,9 @@ const INDENTED_LINE_REGEX = /^(?: {2,}|\t)/;
  * `processHTMLToMarkdown`), so a run of k blank lines between two blocks stands
  * for k-1 empty paragraphs, a leading run of k for k, and a trailing run of k
  * for k-1. Each becomes a `<p></p>` HTML block that marked passes through.
- * Blank lines inside fenced code, `@@@task` blocks, between two list items and
- * before an indented line keep their markdown meaning and are left alone.
+ * Blank lines inside fenced code, `@@@task` blocks, inside a list (between two
+ * items, after a continuation line, at any nesting) and before an indented line
+ * keep their markdown meaning and are left alone.
  */
 function expandBlankLinesToEmptyParagraphs(markdown: string): string {
   const lines = markdown.split('\n');
@@ -489,7 +490,9 @@ function expandBlankLinesToEmptyParagraphs(markdown: string): string {
   let inTaskBlock = false;
   let pendingBlank: string[] = [];
   let sawContent = false;
-  let previousLine = '';
+  // A list marker (at any indent) enters list context, indented continuation
+  // lines stay in it, and any other content line leaves it.
+  let inList = false;
 
   const pushEmptyParagraphs = (count: number): void => {
     for (let i = 0; i < count; i++) out.push('<p></p>', '');
@@ -506,7 +509,7 @@ function expandBlankLinesToEmptyParagraphs(markdown: string): string {
     } else if (
       count >= 2 &&
       !INDENTED_LINE_REGEX.test(nextLine) &&
-      !(LIST_ITEM_REGEX.test(previousLine) && LIST_ITEM_REGEX.test(nextLine))
+      !(inList && LIST_ITEM_REGEX.test(nextLine))
     ) {
       out.push('');
       pushEmptyParagraphs(count - 1);
@@ -528,13 +531,11 @@ function expandBlankLinesToEmptyParagraphs(markdown: string): string {
       ) {
         fence = null;
       }
-      previousLine = line;
       continue;
     }
     if (inTaskBlock) {
       out.push(line);
       if (TASK_BLOCK_CLOSE_REGEX.test(line)) inTaskBlock = false;
-      previousLine = line;
       continue;
     }
     if (line.trim() === '') {
@@ -545,7 +546,11 @@ function expandBlankLinesToEmptyParagraphs(markdown: string): string {
     flushBlankRun(line);
     sawContent = true;
     out.push(line);
-    previousLine = line;
+    if (LIST_ITEM_REGEX.test(line)) {
+      inList = true;
+    } else if (!INDENTED_LINE_REGEX.test(line)) {
+      inList = false;
+    }
 
     const openMatch = FENCE_OPEN_REGEX.exec(line);
     if (openMatch) {
