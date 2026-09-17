@@ -119,5 +119,26 @@ describe('root +layout.svelte window focus lifecycle', () => {
       view.unmount();
       expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
     });
+
+    it('clears a preseeded blurred attribute on mount with the Electron bridge present', () => {
+      window.history.pushState({}, '', '/hud');
+      document.documentElement.setAttribute('data-window-blurred', '');
+      const on = vi.fn(() => 'listener:window:focus');
+      const offById = vi.fn();
+      window.electronAPI = { on, offById } as unknown as ElectronAPI;
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      render(RootLayout);
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+    });
+
+    it('clears a preseeded blurred attribute on mount without the Electron bridge', () => {
+      window.history.pushState({}, '', '/hud');
+      document.documentElement.setAttribute('data-window-blurred', '');
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      render(RootLayout);
+      expect(document.documentElement.hasAttribute('data-window-blurred')).toBe(false);
+    });
   });
 });
