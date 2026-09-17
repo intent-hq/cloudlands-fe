@@ -69,6 +69,9 @@ test('starter suggestions have tight text gaps and preserve keyboard selection a
   const editor = component.locator('.rich-textarea [contenteditable=true]');
   const options = component.getByRole('option');
   await expect(options).toHaveCount(4);
+  // Inter is `font-display: swap`: until the woff2 lands, the fallback-font heading above the
+  // composer wraps to a second 48px line, so a baseline measured before the swap is stale.
+  await page.evaluate(() => document.fonts.ready);
   const measureGeometry = () =>
     options.evaluateAll((elements) =>
       elements.map((element) => {
@@ -114,7 +117,17 @@ test('starter suggestions have tight text gaps and preserve keyboard selection a
   await page.keyboard.press('Enter');
   await expect(editor).toContainText(original.trim());
   await expect(options).toHaveCount(0);
-  await editor.fill('');
+  // Clear through ProseMirror's own keymap. `fill('')` sets a DOM range and
+  // presses Delete; ProseMirror only reads the DOM selection on the async
+  // `selectionchange` task, so under load the Delete keydown can run against
+  // its stale collapsed caret at the end of the text, where
+  // `stopNativeHorizontalDelete` preventDefaults the key and nothing is
+  // deleted (intent-hq/intent#5270). Mod-A and Backspace are both handled by
+  // ProseMirror commands, so its selection can never be out of sync.
+  await editor.focus();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('Backspace');
+  await expect(editor).not.toContainText(original.trim());
   await expect(options).toHaveCount(4);
   const before = await options.allTextContents();
   await component.locator('#suggestion-shuffle').click();
