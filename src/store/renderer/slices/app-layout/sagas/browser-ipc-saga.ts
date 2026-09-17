@@ -44,6 +44,7 @@ import {
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
+import { requestBrowserTabRecovery } from '../../tab-state/tab-state-slice';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
@@ -561,6 +562,14 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
       .filter((tab) => tab.type === 'browser')
       .map((tab) => toReplyTab(tab, true)),
   ];
+
+  if (
+    requestId &&
+    typeof data.recoverTabId === 'string' &&
+    browserTabs.some((tab) => tab.tabId === data.recoverTabId)
+  ) {
+    yield* put(requestBrowserTabRecovery(data.recoverTabId, requestId));
+  }
 
   // Echo the requestId back so main resolves the matching pending request
   // (concurrent requests must not consume each other's replies).

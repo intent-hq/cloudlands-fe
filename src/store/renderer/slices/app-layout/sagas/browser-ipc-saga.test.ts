@@ -1702,6 +1702,48 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
+  it.each(['tab-a', 'missing', undefined])(
+    'routes recovery only for an existing requested browser tab: %s',
+    async (recoverTabId) => {
+      const dispatch = vi.fn();
+      state = {
+        panelLayout: {
+          byWorkspaceId: {
+            'ws-a': {
+              panels: { one: { tabs: [{ id: 'tab-a', ...TAB('http://a/') }] } },
+            },
+          },
+        },
+      };
+      const task = start(dispatch);
+      try {
+        await emit(
+          { workspaceId: 'ws-a', requestId: 'req-1', recoverTabId },
+          'browser:list-tabs-request',
+        );
+        expect(dispatch.mock.calls).toEqual(
+          recoverTabId === 'tab-a'
+            ? [
+                [
+                  {
+                    type: 'tabState/requestBrowserTabRecovery',
+                    payload: ['tab-a', 'req-1'],
+                  },
+                ],
+              ]
+            : [],
+        );
+        expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+          requestId: 'req-1',
+          tabs: [{ tabId: 'tab-a', url: 'http://a/', title: 'Browser', closable: true }],
+        });
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
+
   it('replies with an empty tab list for a held workspace with no browser tabs', async () => {
     const task = start();
     state = {

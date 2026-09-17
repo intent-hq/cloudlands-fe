@@ -35,6 +35,14 @@ const GUEST_TEARDOWN_TIMEOUT_MS = 20_000;
 test.beforeAll(async () => {
   bundleDir = await mkdtemp(join(tmpdir(), 'intent-browser-lifetime-code-'));
   cdpBundle = join(bundleDir, 'cdp.cjs');
+  const entry = join(bundleDir, 'entry.ts');
+  await writeFile(
+    entry,
+    [
+      `export { embeddedBrowserCdp } from ${JSON.stringify(resolve('src/features/browser/main/embedded-browser-cdp-service.ts'))};`,
+      `export { executeActions } from ${JSON.stringify(resolve('src/features/browser/main/browser-action-executor.ts'))};`,
+    ].join('\n'),
+  );
   await build({
     configFile: false,
     logLevel: 'error',
@@ -45,18 +53,30 @@ test.beforeAll(async () => {
         resolveId(id) {
           if (id === '../../../shared/logger') return '\0fixture-logger';
           if (id === '../../system/main/system.ipc') return '\0fixture-window-routing';
+          if (id === './browser-capture-service') return '\0fixture-capture';
+          if (id === '../../backend/main/backend.ipc') return '\0fixture-backend';
         },
         load(id) {
           if (id === '\0fixture-logger')
             return 'export class Logger { info() {} debug() {} warn() {} error() {} }';
           if (id === '\0fixture-window-routing')
-            return 'export function sendToWorkspaceWindows() { throw new Error("Unexpected production window routing in isolated fixture"); }';
+            return `import { BrowserWindow } from 'electron';
+              export function sendToWorkspaceWindows(workspaceId, channel, payload) {
+                const windows = BrowserWindow.getAllWindows();
+                for (const window of windows) window.webContents.send(channel, payload);
+                return { windowCount: windows.length, browserClientsNotified: false, delivered: windows.length > 0 };
+              }
+              export function getWindowIdForWorkspace() { return undefined; }
+              export function getWindowIdsForWorkspace() { return BrowserWindow.getAllWindows().map(w => w.id); }`;
+          if (id === '\0fixture-capture') return 'export const browserCapture = {};';
+          if (id === '\0fixture-backend')
+            return 'export function getBackendClient() { throw new Error("No daemon in isolated fixture"); }';
         },
       },
     ],
     ssr: { noExternal: true },
     build: {
-      ssr: resolve('src/features/browser/main/embedded-browser-cdp-service.ts'),
+      ssr: entry,
       outDir: bundleDir,
       emptyOutDir: false,
       minify: false,
@@ -275,6 +295,7 @@ async function record(app: ElectronApplication, page: Page, label: string) {
     label,
     ...(await guestSnapshot(app)),
     records: await page.evaluate(() => (window as any).lifetimeFixture.records()),
+    urls: await page.evaluate(() => (window as any).lifetimeFixture.urls()),
     elements: await page.evaluate(() =>
       Array.from(document.querySelectorAll('webview')).map((element) => {
         const measure = (node: Element) => {
@@ -397,6 +418,108 @@ async function teardown(
       await rm(profile, { recursive: true, force: true });
     }
   }
+}
+
+for (const hidden of [false, true]) {
+  test(`explicit navigation recovers a self-closed offscreen ${hidden ? 'hidden' : 'background'} guest without focus changes`, async ({}, testInfo) => {
+    test.setTimeout(120_000);
+    const { app, page, profile } = await launch(true);
+    const observations: any[] = [];
+    try {
+      await ready(app, 'B-1');
+      if (hidden) await page.evaluate(() => (window as any).lifetimeFixture.close('B-1'));
+      observations.push(await record(app, page, 'before guest self-close'));
+      const initial = await page.evaluate(() => (window as any).lifetimeFixture.records());
+      await app.evaluate(async ({ webContents }) => {
+        const guest = webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('tab=B-1'));
+        if (!guest) throw new Error('Missing B-1 guest');
+        await guest.executeJavaScript('setTimeout(() => window.close(), 0); true');
+      });
+      await expect
+        .poll(() => app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-1')))
+        .toBe(false);
+      const closedGuests = await app.evaluate(
+        () => (globalThis as any).lifetimeEvidence.guests.length,
+      );
+      await app.evaluate(() => (globalThis as any).lifetimeCdp.listAllTabs('B'));
+      await page.waitForTimeout(150);
+      expect(await app.evaluate(() => (globalThis as any).lifetimeEvidence.guests.length)).toBe(
+        closedGuests,
+      );
+      const url = `${guestUrl}/recovered?tab=B-1`;
+      const result = await app.evaluate(
+        (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
+        url,
+      );
+      expect(result).toMatchObject({
+        success: true,
+        results: [{ action: 'navigate', success: true, result: { tabId: 'B-1', url } }],
+      });
+      const registered = await app.evaluate(() =>
+        (globalThis as any).lifetimeCdp.waitForTabRegistration('B-1', 3000),
+      );
+      expect(registered, 'explicit navigation must replace the dead guest').toBe(true);
+      await expect
+        .poll(async () => (await guestSnapshot(app)).live.some((guest) => guest.url === url))
+        .toBe(true);
+      await expect
+        .poll(() => page.evaluate(() => (window as any).lifetimeFixture.urls()['B-1']))
+        .toBe(url);
+      expect(await page.evaluate(() => (window as any).lifetimeFixture.records())).toEqual(initial);
+      expect(await page.evaluate(() => (window as any).lifetimeFixture.errors())).toEqual([]);
+      observations.push(await record(app, page, 'after explicit recovery'));
+      const recovered = observations.at(-1).live.find((guest: any) => guest.url === url);
+      const original = observations[0].live.find((guest: any) => guest.url.endsWith('tab=B-1'));
+      expect(recovered.id).not.toBe(original.id);
+      const nextUrl = `${guestUrl}/second?tab=B-1`;
+      const nextResult = await app.evaluate(
+        (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
+        nextUrl,
+      );
+      expect(nextResult.success).toBe(true);
+      await expect
+        .poll(async () => (await guestSnapshot(app)).live.some((guest) => guest.url === nextUrl))
+        .toBe(true);
+      await expect
+        .poll(() => page.evaluate(() => (window as any).lifetimeFixture.urls()['B-1']))
+        .toBe(nextUrl);
+      await expect
+        .poll(() =>
+          app.evaluate(({ webContents }, id) => webContents.fromId(id)?.isLoading(), recovered.id),
+        )
+        .toBe(false);
+      observations.push(await record(app, page, 'after second navigation settles'));
+      const settled = observations.at(-1);
+      expect(settled.live.find((guest: any) => guest.id === recovered.id)?.url).toBe(nextUrl);
+      expect(settled.urls['B-1']).toBe(nextUrl);
+      expect(settled.records).toEqual(initial);
+      expect(
+        settled.guests
+          .find((guest: any) => guest.id === recovered.id)
+          .navigations.filter((url: string) => url !== 'about:blank'),
+      ).toEqual([url, nextUrl]);
+      await page.evaluate(() => (window as any).lifetimeFixture.close('B-1', true));
+      await expect
+        .poll(() => app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-1')))
+        .toBe(false);
+      const removedResult = await app.evaluate(
+        (_electron, url) => (globalThis as any).lifetimeNavigate('B-1', url),
+        nextUrl,
+      );
+      expect(removedResult.success).toBe(false);
+      expect(await app.evaluate(() => (globalThis as any).lifetimeCdp.isTabMounted('B-1'))).toBe(
+        false,
+      );
+      await page.evaluate(() => (window as any).lifetimeFixture.archive('B'));
+      await expect
+        .poll(async () =>
+          (await guestSnapshot(app)).live.some((guest) => guest.url.includes('tab=B-')),
+        )
+        .toBe(false);
+    } finally {
+      await teardown(app, page, profile, observations, testInfo);
+    }
+  });
 }
 
 for (const owned of [false, true]) {

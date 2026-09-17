@@ -1512,6 +1512,7 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('workspace-a', 'tab-hidden');
       expect(embeddedBrowserCdp.evaluate).toHaveBeenCalled();
       expect(result.results[0]?.warning).toContain('not currently visible');
     });
