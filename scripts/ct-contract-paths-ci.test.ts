@@ -280,8 +280,16 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     expect(env).toBe(`          CT_REQUIRED: \${{ ${CT_OUTPUT} }}`);
   });
 
+  it('depends on route', () => {
+    const start = gate.indexOf('    needs:');
+    expect(start).toBeGreaterThan(-1);
+    const end = gate.findIndex((text, index) => index > start && text.trim() === ']');
+    expect(gate.slice(start, end).some((text) => text.trim() === 'route,')).toBe(true);
+  });
+
   const results = (ct: string, event = 'pull_request') => ({
     EVENT_NAME: event,
+    RESULT_route: 'success',
     RESULT_pr_title: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_conflict_markers: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_checks: 'success',
@@ -290,6 +298,15 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
   });
+
+  // What a route failure (or fork-PR skip) leaves behind: every job that
+  // runs on route's runners is skipped, so its result is 'skipped'.
+  const heavySkipped = {
+    RESULT_checks: 'skipped',
+    RESULT_build_web: 'skipped',
+    RESULT_test: 'skipped',
+    RESULT_test_integration: 'skipped',
+  };
 
   const runGate = (env: Record<string, string>) => bash(script, env, tmpdir());
 
@@ -327,6 +344,27 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     [
       'PR, no contract path, CT cancelled',
       { ...results('cancelled'), FAST_PATH: 'false', CT_REQUIRED: 'false' },
+      1,
+    ],
+    [
+      'PR, release fast path, route failed, heavy jobs skipped',
+      { ...results('skipped'), ...heavySkipped, RESULT_route: 'failure', FAST_PATH: 'true' },
+      1,
+    ],
+    [
+      'merge_group, release fast path, route failed, heavy jobs skipped',
+      {
+        ...results('skipped', 'merge_group'),
+        ...heavySkipped,
+        RESULT_route: 'failure',
+        FAST_PATH: 'true',
+        CT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'fork PR, route skipped, heavy jobs skipped',
+      { ...results('skipped'), ...heavySkipped, RESULT_route: 'skipped', FAST_PATH: '' },
       1,
     ],
     [
@@ -381,4 +419,19 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     const result = runGate(env);
     expect(result.status, result.stdout + result.stderr).toBe(expected);
   });
+
+  it.each(['pull_request', 'merge_group'])(
+    'on %s a route failure is rejected by the route check, not by a heavy-job fall-through',
+    (event) => {
+      const result = runGate({
+        ...results('skipped', event),
+        ...heavySkipped,
+        RESULT_route: 'failure',
+        FAST_PATH: 'true',
+        CT_REQUIRED: 'true',
+      });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toMatch(/^route result 'failure' not acceptable/m);
+    },
+  );
 });
