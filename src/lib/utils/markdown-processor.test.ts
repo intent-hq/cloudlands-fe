@@ -270,3 +270,182 @@ describe('markdown-processor inline workspace file videos', () => {
     editor.destroy();
   });
 });
+
+describe('markdown-processor blank-line round trip', () => {
+  const countEmptyParagraphs = (html: string): number => {
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    return Array.from(container.querySelectorAll('p')).filter((p) => p.innerHTML === '').length;
+  };
+
+  const emptyParagraphs = (count: number): string => '<p></p>'.repeat(count);
+
+  const loadIntoEditor = async (markdown: string) => {
+    const html = await processMarkdownToHTML(markdown, { workspaceId: 'ws-abc' });
+    const editor = new Editor(
+      createEditorConfig({
+        element: document.createElement('div'),
+        content: html,
+        editable: true,
+        onUpdate: () => {},
+        useMarkdown: true,
+        workspace: { id: 'ws-abc' },
+        enableMentions: false,
+      }),
+    );
+    await tick();
+    return editor;
+  };
+
+  it.each([1, 2, 3])(
+    'serializes %i empty paragraph(s) between two paragraphs as extra blank lines',
+    (count) => {
+      const markdown = processHTMLToMarkdown(`<p>a</p>${emptyParagraphs(count)}<p>b</p>`);
+
+      expect(markdown).toBe(`a${'\n'.repeat(count + 2)}b`);
+    },
+  );
+
+  it.each([1, 2, 3])(
+    'renders %i empty paragraph(s) between two paragraphs from the serialized form',
+    async (count) => {
+      const html = await processMarkdownToHTML(`a${'\n'.repeat(count + 2)}b`);
+
+      expect(countEmptyParagraphs(html)).toBe(count);
+      expect(html).toMatch(/<p>a<\/p>/);
+      expect(html).toMatch(/<p>b<\/p>/);
+    },
+  );
+
+  it.each([1, 2, 3])(
+    'round-trips %i empty paragraph(s) at document start, between and at document end',
+    async (count) => {
+      const editorHtml = `${emptyParagraphs(count)}<p>a</p>${emptyParagraphs(count)}<p>b</p>${emptyParagraphs(count)}`;
+      const markdown = processHTMLToMarkdown(editorHtml);
+
+      const editor = await loadIntoEditor(markdown);
+      try {
+        const paragraphs = editor.getJSON().content ?? [];
+        expect(paragraphs.map((node) => node.content?.[0]?.text ?? '')).toEqual([
+          ...Array<string>(count).fill(''),
+          'a',
+          ...Array<string>(count).fill(''),
+          'b',
+          ...Array<string>(count).fill(''),
+        ]);
+        expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+      } finally {
+        await tick();
+        editor.destroy();
+      }
+    },
+  );
+
+  it('keeps the trailing form stable across repeated saves', async () => {
+    let markdown = processHTMLToMarkdown('<p>a</p><p></p><p></p>');
+    for (let i = 0; i < 3; i++) {
+      const editor = await loadIntoEditor(markdown);
+      try {
+        const next = processHTMLToMarkdown(editor.getHTML());
+        expect(next).toBe(markdown);
+        markdown = next;
+      } finally {
+        await tick();
+        editor.destroy();
+      }
+    }
+  });
+
+  it('drops the single empty paragraph the editor appends after a trailing heading', async () => {
+    expect(processHTMLToMarkdown('<h1>Heading</h1><p></p>')).toBe('# Heading');
+    expect(processHTMLToMarkdown('<ul><li><p>item</p></li></ul><p></p>')).toBe('- item');
+
+    const editor = await loadIntoEditor('# Heading');
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' edited');
+      await tick();
+      expect((editor.getJSON().content ?? []).map((node) => node.type)).toEqual([
+        'heading',
+        'paragraph',
+      ]);
+      expect(processHTMLToMarkdown(editor.getHTML())).toBe('# Heading edited');
+    } finally {
+      await tick();
+      editor.destroy();
+    }
+  });
+
+  it('keeps two empty paragraphs typed after a trailing heading', async () => {
+    const markdown = processHTMLToMarkdown('<h1>Heading</h1><p></p><p></p>');
+
+    expect(markdown).toBe('# Heading\n\n\n\n');
+
+    const editor = await loadIntoEditor(markdown);
+    try {
+      expect((editor.getJSON().content ?? []).map((node) => node.type)).toEqual([
+        'heading',
+        'paragraph',
+        'paragraph',
+      ]);
+      expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+    } finally {
+      await tick();
+      editor.destroy();
+    }
+  });
+
+  it('does not change a single paragraph separator or a single trailing newline', async () => {
+    expect(countEmptyParagraphs(await processMarkdownToHTML('a\n\nb'))).toBe(0);
+    expect(countEmptyParagraphs(await processMarkdownToHTML('a\n\nb\n'))).toBe(0);
+    expect(countEmptyParagraphs(await processMarkdownToHTML('a\n\nb\n\n'))).toBe(0);
+  });
+
+  it('leaves blank lines inside fenced code blocks untouched', async () => {
+    const html = await processMarkdownToHTML('```js\nconst a = 1;\n\n\n\nconst b = 2;\n```');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html).toContain('const a = 1;\n\n\n\nconst b = 2;');
+  });
+
+  it('leaves blank lines inside @@@task blocks untouched', async () => {
+    const html = await processMarkdownToHTML('@@@task\n# Title\n\n\n\nBody\n@@@', {
+      taskBlockRenderMode: 'content',
+    });
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+  });
+
+  it('leaves blank lines inside ws-block fences untouched', async () => {
+    const block =
+      '```ws-block\n{"type":"cli","id":"cli-1","command":"ls",\n\n\n"description":"list"}\n```';
+    const html = await processMarkdownToHTML(block);
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+  });
+
+  it('keeps a loose list with blank lines between items as one list', async () => {
+    const html = await processMarkdownToHTML('- a\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(1);
+  });
+
+  it('round-trips an empty paragraph between a paragraph and a list', async () => {
+    const markdown = processHTMLToMarkdown('<p>a</p><p></p><ul><li><p>item</p></li></ul>');
+
+    expect(markdown).toBe('a\n\n\n- item');
+
+    const editor = await loadIntoEditor(markdown);
+    try {
+      expect((editor.getJSON().content ?? []).map((node) => node.type)).toEqual([
+        'paragraph',
+        'paragraph',
+        'bulletList',
+      ]);
+      expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+    } finally {
+      await tick();
+      editor.destroy();
+    }
+  });
+});
