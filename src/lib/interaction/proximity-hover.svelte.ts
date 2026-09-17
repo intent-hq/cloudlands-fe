@@ -115,9 +115,13 @@ export function createProximityHover(
           pixels(style.paddingBottom) +
           pixels(style.borderTopWidth) +
           pixels(style.borderBottomWidth));
+    // Computed lengths serialize to a few decimals while rects keep the full
+    // layout fraction, so an untransformed menu can read as scale 0.999998.
+    // Snap that noise to 1; a real entrance scale is orders of magnitude larger.
+    const snapUnit = (scale: number) => (Math.abs(scale - 1) < 1e-3 ? 1 : scale);
     return {
-      x: width > 0 ? rect.width / width || 1 : 1,
-      y: height > 0 ? rect.height / height || 1 : 1,
+      x: snapUnit(width > 0 ? rect.width / width || 1 : 1),
+      y: snapUnit(height > 0 ? rect.height / height || 1 : 1),
     };
   };
 
