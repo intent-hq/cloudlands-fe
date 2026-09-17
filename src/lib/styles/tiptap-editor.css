@@ -1302,8 +1302,17 @@ code.is-file-path:focus {
    `--remote-cursor-anchor` name) and their containing block is the positioned
    `.ProseMirror` root, so the tag is sized to its content instead of being
    bounded by the zero-width span and can fall back to the other side of the
-   caret when it would overflow the editor: to the left near the right edge,
-   below the line on the first line of the document. */
+   caret when it would overflow the editor. The browser measures the overflow
+   of each placement against the editor's box on every layout (caret move,
+   resize, name change): the tag extends right from the caret, flips to end at
+   the caret when that would leave the right edge, clamps to the editor's left
+   edge when both orientations overflow, and drops below the line only on the
+   first line of the document. */
+@position-try --remote-cursor-tag-start {
+  left: 0;
+  right: auto;
+}
+
 .remote-cursor {
   display: inline;
   anchor-name: var(--remote-cursor-anchor);
@@ -1328,8 +1337,10 @@ code.is-file-path:focus {
   bottom: anchor(top);
   position-try-fallbacks:
     flip-inline,
+    --remote-cursor-tag-start,
     flip-block,
-    flip-block flip-inline;
+    flip-block flip-inline,
+    --remote-cursor-tag-start flip-block;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
