@@ -716,6 +716,7 @@
       headerActions={oneShotActions}
       inline
       inlineRowClass={SUBSCRIPTION_ROW_GEOMETRY_CLASS}
+      typographyClass={SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS}
       onclick={(event) => openWatchedAgent(event, watchedAgentId)}
       readOnly={!!isolatedPreview}
     />

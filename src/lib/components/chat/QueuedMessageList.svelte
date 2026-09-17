@@ -650,6 +650,8 @@
                   <Textarea
                     bind:ref={editTextarea}
                     bind:value={editContent}
+                    autoResize
+                    minHeight={0}
                     onkeydown={handleKeydown}
                     onblur={handleEditBlur}
                     rows={1}
