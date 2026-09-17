@@ -61,7 +61,7 @@
 {#snippet avatar(person: PresenceCircle)}
   {@const ring = presencePersonRing(person)}
   <span
-    class="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-background font-medium leading-none text-white {ring
+    class="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-background font-medium leading-none text-primary-foreground {ring
       ? RING_CLASS[ring]
       : ''}"
     style:width="{size}px"
