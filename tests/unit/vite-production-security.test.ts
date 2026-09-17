@@ -24,7 +24,6 @@ import {
   canReuseGeneratedParaglide,
   compileWithInputsHash,
   ensureGeneratedParaglide,
-  ensureRepoParaglide,
   generateParaglide,
   paraglideLockPath,
   publishOrder,
@@ -180,6 +179,32 @@ function runParaglideBuildStart({
   return JSON.parse(result.stdout);
 }
 
+/**
+ * Runs the real `ensureRepoParaglide` (real `@inlang/paraglide-js` compiler)
+ * against `rootDir` in a child process: the compiler spawns a worker thread
+ * that inherits Vitest's fork `execArgv`, which Node rejects in-process.
+ */
+function runEnsureRepoParaglide({
+  rootDir,
+  ifStale = false,
+}: {
+  rootDir: string;
+  ifStale?: boolean;
+}): boolean {
+  const scriptUrl = pathToFileURL(resolve('scripts/paraglide-inputs-hash.mjs')).href;
+  const script = `
+    import { ensureRepoParaglide } from ${JSON.stringify(scriptUrl)};
+    const ok = await ensureRepoParaglide(${JSON.stringify({ rootDir, ifStale })});
+    process.stdout.write(JSON.stringify({ ok }));
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    env: { ...process.env, INTENT_BUILD_TARGET: 'web' },
+  });
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout).ok;
+}
+
 /** Every file under `dir` with its mtime and content, for "nothing was rewritten" checks. */
 function snapshotDir(dir: string): Record<string, { mtimeMs: number; content: string }> {
   const snapshot: Record<string, { mtimeMs: number; content: string }> = {};
@@ -302,18 +327,18 @@ describe('generated Paraglide reuse in the UI preview', () => {
   const recordSidecar = (paths: FixturePaths) =>
     compileWithInputsHash({ ...paths, compile: fakeCompile });
 
-  it('a startup after generate:i18n writes nothing and keeps the sidecar (real compiler)', async () => {
+  it('a startup after generate:i18n writes nothing and keeps the sidecar (real compiler)', () => {
     // What vitest.config.ts / vite.config.mjs run from buildStart: the locked
     // if-stale ensure over output the CLI published. Upstream's plugin in this
     // spot rewrote outputs in place and unlinked the sidecar on every start.
     const { root, paths } = createParaglideFixtureRoot({ realProject: true });
     fixtures.push(root);
-    await expect(ensureRepoParaglide({ rootDir: root })).resolves.toBe(true);
+    expect(runEnsureRepoParaglide({ rootDir: root })).toBe(true);
     expect(readFileSync(join(paths.outdir, 'runtime.js'), 'utf8')).toContain(PARAGLIDE_IS_SERVER);
     const published = snapshotDir(paths.outdir);
     expect(Object.keys(published)).toContain(PARAGLIDE_INPUTS_HASH_FILE);
 
-    await expect(ensureRepoParaglide({ rootDir: root, ifStale: true })).resolves.toBe(true);
+    expect(runEnsureRepoParaglide({ rootDir: root, ifStale: true })).toBe(true);
 
     expect(snapshotDir(paths.outdir)).toEqual(published);
     expect(canReuseGeneratedParaglide(paths)).toBe(true);
