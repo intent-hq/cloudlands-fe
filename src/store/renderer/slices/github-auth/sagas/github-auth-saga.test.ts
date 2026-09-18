@@ -156,6 +156,42 @@ describe('githubAuthSaga', () => {
     await run.task.toPromise();
   });
 
+  it('forwards the reconnect option to the client so an existing connection can be re-authorized (#5206)', async () => {
+    mocks.startAuth.mockResolvedValue({
+      success: true,
+      userCode: 'WXYZ',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.checkAuthComplete.mockResolvedValue({
+      success: true,
+      data: { isComplete: false, user: null },
+    });
+    const run = harness({ ...initialState, isAuthenticated: true });
+    run.channel.put(startGitHubAuth({ reconnect: true }));
+    await settle();
+
+    expect(mocks.startAuth.mock.calls).toEqual([[{ reconnect: true }]]);
+    expect(run.dispatched).toEqual([
+      { type: 'githubAuth/setAuthenticating', payload: [true] },
+      { type: 'githubAuth/setOAuthInfo', payload: { oauthUrl: null, needsScopeUpdate: false } },
+      {
+        type: 'githubAuth/setDeviceFlowInfo',
+        payload: [
+          {
+            userCode: 'WXYZ',
+            verificationUri: 'https://github.test',
+            expiresIn: 900,
+            interval: 5,
+          },
+        ],
+      },
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('surfaces the exact start failure without polling', async () => {
     mocks.startAuth.mockResolvedValue({ success: false, error: 'device denied' });
     const run = harness();

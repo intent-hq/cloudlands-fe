@@ -565,6 +565,36 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
+    it('start with reconnect forwards to github.connect even when a token is configured (#5206)', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: '',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: null,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          userCode: 'WXYZ-5678',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        });
+
+      const result = await mockInvoke(GITHUB_AUTH_CHANNELS.START_AUTH, { reconnect: true });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.connect');
+      expect(result).toEqual({
+        success: true,
+        oauthUrl: 'https://github.com/login/device',
+        userCode: 'WXYZ-5678',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 899,
+        interval: 5,
+      });
+    });
+
     it('start forwards to github.connect and carries the device-flow codes (§5.27)', async () => {
       mockedRequest
         .mockResolvedValueOnce({
@@ -651,6 +681,28 @@ describe('integrations-bridge-seeder', () => {
           },
         },
       });
+    });
+
+    it('poll stays incomplete while a reconnect device flow is pending on top of a configured token (#5206)', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        isConfigured: true,
+        oauthUrl: 'https://github.com/login/device',
+        configuredButNeedsUpdate: false,
+        updatedScopes: '',
+        deviceFlow: {
+          status: 'pending',
+          userCode: 'WXYZ-5678',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        },
+      });
+
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+        success: true,
+        data: { isComplete: false, user: null },
+      });
+      expect(mockedRequest).not.toHaveBeenCalledWith('github.getUser');
     });
 
     it('poll stays incomplete (user null) while the PAT does not validate', async () => {
