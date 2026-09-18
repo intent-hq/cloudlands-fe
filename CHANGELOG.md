@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.164.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.2...v2.164.3) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.75 ([#2626](https://github.com/intent-hq/cloudlands-fe/issues/2626)) ([a101155](https://github.com/intent-hq/cloudlands-fe/commit/a101155f752fa24a22a5ab60d0f9ed448c45baf3))
+* **chat:** keep context picker open and clear checked context after send ([#2612](https://github.com/intent-hq/cloudlands-fe/issues/2612)) ([76f77b1](https://github.com/intent-hq/cloudlands-fe/commit/76f77b128bb63fd63e48060fe51ce666092f6991))
+* **ct:** settle the empty-composer prompt inset before sampling the queue baseline ([#2613](https://github.com/intent-hq/cloudlands-fe/issues/2613)) ([5bedf37](https://github.com/intent-hq/cloudlands-fe/commit/5bedf3763cc3245284852c82313916e89593600f))
+* **initializer:** keep typed branch filter across background fetches and return focus to the trigger after Enter ([#2614](https://github.com/intent-hq/cloudlands-fe/issues/2614)) ([221e21e](https://github.com/intent-hq/cloudlands-fe/commit/221e21e6efae55e66afc97d19a595e13fa35c18a))
+* name the unreachable machine in the daemon-stopped overlay ([#2623](https://github.com/intent-hq/cloudlands-fe/issues/2623)) ([c88adee](https://github.com/intent-hq/cloudlands-fe/commit/c88adee1b6ef9e730c9f20b88f5b133c42b10dff))
+* **settings:** Move Tailcat attribution into General licenses ([#2600](https://github.com/intent-hq/cloudlands-fe/issues/2600)) ([1256fd0](https://github.com/intent-hq/cloudlands-fe/commit/1256fd026f91f909e0ee0939371c9aaa368f58f1))
+* **test:** keep the Vitest fork --no-sparkplug flag out of worker_threads execArgv ([#2605](https://github.com/intent-hq/cloudlands-fe/issues/2605)) ([34f6ae4](https://github.com/intent-hq/cloudlands-fe/commit/34f6ae4f48ae438020d398bb3e9a98057909e793))
+* **workspace:** pin Create-button progress bar to the button edge ([#2609](https://github.com/intent-hq/cloudlands-fe/issues/2609)) ([f0661cb](https://github.com/intent-hq/cloudlands-fe/commit/f0661cb3039f2a8501eee98fadb8f62831eb027b))
+
 ## [2.164.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.1...v2.164.2) (2026-09-18)
 
 
