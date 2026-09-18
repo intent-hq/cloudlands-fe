@@ -5741,6 +5741,7 @@
   "deeplink_inviteError_denied": "Se canceló el inicio de sesión en GitHub.",
   "deeplink_inviteError_flowExpired": "El código de GitHub caducó antes de introducirse.",
   "deeplink_inviteError_workspaceFull": "Este espacio de trabajo está lleno. Pide al propietario que libere un puesto.",
+  "deeplink_inviteError_ownerSelfJoin": "Eres el propietario de este host, así que no puedes unirte como invitado. Ábrelo desde tus daemons emparejados.",
   "deeplink_inviteError_certMismatch": "El host presentó un certificado inesperado. Pide al propietario un enlace nuevo.",
   "deeplink_inviteError_generic": "No se pudo contactar con el host o rechazó la invitación.",
   "deeplink_inviteError_tailcatUnavailable": "Esta compilación no incluye un cliente de túnel, así que solo se puede llegar al host por una dirección directa. Pide al propietario un enlace con un host directo.",

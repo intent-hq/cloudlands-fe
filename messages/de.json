@@ -5741,6 +5741,7 @@
   "deeplink_inviteError_denied": "Die GitHub-Anmeldung wurde abgebrochen.",
   "deeplink_inviteError_flowExpired": "Der GitHub-Code ist abgelaufen, bevor er eingegeben wurde.",
   "deeplink_inviteError_workspaceFull": "Dieser Workspace ist voll. Bitte den Besitzer, einen Platz freizugeben.",
+  "deeplink_inviteError_ownerSelfJoin": "Du besitzt diesen Host, daher kann er nicht als Gast beigetreten werden. Öffne ihn stattdessen über deine gekoppelten Daemons.",
   "deeplink_inviteError_certMismatch": "Der Host hat ein unerwartetes Zertifikat vorgelegt. Bitte den Besitzer um einen neuen Link.",
   "deeplink_inviteError_generic": "Der Host war nicht erreichbar oder hat die Einladung abgelehnt.",
   "deeplink_inviteError_tailcatUnavailable": "Dieser Build enthält keinen Tunnel-Client, daher ist der Host nur über eine direkte Adresse erreichbar. Bitte den Besitzer um einen Link mit direktem Host.",

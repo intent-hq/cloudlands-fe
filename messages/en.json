@@ -5741,6 +5741,7 @@
   "deeplink_inviteError_denied": "GitHub sign-in was cancelled.",
   "deeplink_inviteError_flowExpired": "The GitHub code expired before it was entered.",
   "deeplink_inviteError_workspaceFull": "This workspace is full. Ask the owner to free a seat.",
+  "deeplink_inviteError_ownerSelfJoin": "You own this host, so it cannot be joined as a guest. Open it from your paired daemons instead.",
   "deeplink_inviteError_certMismatch": "The host presented an unexpected certificate. Ask the owner for a new link.",
   "deeplink_inviteError_generic": "The host could not be reached or refused the invite.",
   "deeplink_inviteError_tailcatUnavailable": "This build has no tunnel client, so the host can only be reached at a direct address. Ask the owner for a link with a direct host.",

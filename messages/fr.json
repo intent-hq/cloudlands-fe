@@ -5741,6 +5741,7 @@
   "deeplink_inviteError_denied": "La connexion GitHub a été annulée.",
   "deeplink_inviteError_flowExpired": "Le code GitHub a expiré avant d’être saisi.",
   "deeplink_inviteError_workspaceFull": "Cet espace de travail est complet. Demandez au propriétaire de libérer une place.",
+  "deeplink_inviteError_ownerSelfJoin": "Vous êtes propriétaire de cet hôte : impossible de le rejoindre en tant qu'invité. Ouvrez-le depuis vos démons appairés.",
   "deeplink_inviteError_certMismatch": "L’hôte a présenté un certificat inattendu. Demandez un nouveau lien au propriétaire.",
   "deeplink_inviteError_generic": "L’hôte est injoignable ou a refusé l’invitation.",
   "deeplink_inviteError_tailcatUnavailable": "Cette version ne contient pas de client tunnel : l’hôte n’est joignable que par une adresse directe. Demandez au propriétaire un lien avec un hôte direct.",
