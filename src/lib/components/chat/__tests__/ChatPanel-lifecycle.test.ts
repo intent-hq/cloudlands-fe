@@ -2081,6 +2081,15 @@ describe('ChatPanel mounted lifecycle', () => {
 
     expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe('');
     expect(mocks.draftClear).toHaveBeenCalledWith('workspace-a', 'agent-a');
+    // The checked multi-panel context rode along with this send, so it is
+    // released before the backend draft clear is issued.
+    const clearCheckedIndex = mocks.dispatch.mock.calls.findIndex(
+      ([action]) => action?.type === 'multiPanelContext/clearChecked',
+    );
+    expect(clearCheckedIndex).toBeGreaterThanOrEqual(0);
+    expect(mocks.dispatch.mock.invocationCallOrder[clearCheckedIndex]).toBeLessThan(
+      mocks.draftClear.mock.invocationCallOrder[0],
+    );
 
     draft.resolve({ text: 'send this once' });
     await Promise.resolve();
@@ -2337,9 +2346,11 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.click(screen.getByTestId('mock-input-submit'));
     await tick();
 
-    // The clear is still pending, yet the scroll + re-lock already happened.
+    // The clear is still pending, yet the scroll + re-lock already happened,
+    // and the checked multi-panel context was already released.
     expect(mocks.draftClear).toHaveBeenCalledWith('workspace-a', 'agent-a');
     expect(vi.mocked(scrollToBottomUtil)).toHaveBeenCalledWith(scrollContainer);
+    expect(dispatchedTypes()).toContain('multiPanelContext/clearChecked');
 
     // Follow was re-engaged: the unmount-time cache records follow=true.
     view.unmount();
