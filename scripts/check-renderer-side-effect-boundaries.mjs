@@ -10,7 +10,7 @@ import ts from 'typescript';
 // classification, intended owner, and retained-UI rationale). Update this reviewed
 // snapshot only after inspecting that report; the default command fails closed.
 const REVIEWED_INVENTORY_DIGEST =
-  '5493e18b3be1d1521b780f1bb82e3c9109279224761525a10a5680494cbfa8a7';
+  'f3935146121106659c6b841375144de0401a994dd0a1e369e5ee54ec7ac763f1';
 const REVIEWED_INVENTORY_COUNTS = {
   'approved lifecycle seam :: async-subscription': 2,
   'approved lifecycle seam :: client-ipc': 3,
@@ -18,17 +18,17 @@ const REVIEWED_INVENTORY_COUNTS = {
   'approved lifecycle seam :: ipc': 4,
   'approved lifecycle seam :: timer': 6,
   'component-local UI behavior :: dom-subscription': 326,
-  'component-local UI behavior :: timer': 298,
+  'component-local UI behavior :: timer': 300,
   'infrastructure adapter :: async-subscription': 16,
   'infrastructure adapter :: client-ipc': 337,
   'infrastructure adapter :: dom-subscription': 5,
-  'infrastructure adapter :: ipc': 85,
+  'infrastructure adapter :: ipc': 86,
   'infrastructure adapter :: ipc-registration': 141,
   'infrastructure adapter :: service-factory': 5,
   'infrastructure adapter :: timer': 52,
   'saga-owned business logic :: async-subscription': 54,
   'saga-owned business logic :: client-ipc': 344,
-  'saga-owned business logic :: debounce-retry-poll': 17,
+  'saga-owned business logic :: debounce-retry-poll': 18,
   'saga-owned business logic :: dom-subscription': 162,
   'saga-owned business logic :: ipc': 129,
   'saga-owned business logic :: ipc-registration': 1,
