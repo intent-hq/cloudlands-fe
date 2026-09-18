@@ -590,7 +590,7 @@ describe('openBackendWindow connect-before-open', () => {
     expect(guestStore.getDecryptedToken).toHaveBeenCalledTimes(2);
   });
 
-  it('a guest re-join with windows open rebuilds the client and replays the reconnect marker', async () => {
+  it('a guest re-join with windows open rebuilds the client and replays the reconnect marker only once it has connected', async () => {
     guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
     guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
     const send = installWindow(GUEST.id);
@@ -606,18 +606,76 @@ describe('openBackendWindow connect-before-open', () => {
     for (const listener of guestStore.replacedListeners) listener(GUEST.id);
 
     // No further open: the live window's client is rebuilt on the fresh
-    // credential and told to re-subscribe, exactly like an owner re-pair.
+    // credential. Its socket is still dialing (host offline: `connecting` →
+    // `disconnected` on the client's own backoff), so no `connected` may
+    // reach the window yet — a fabricated one dismisses the daemon-loss
+    // overlay until the next real drop re-arms it (guest-window flicker).
+    let fresh: ReturnType<typeof mod.getBackendClientForConnection>;
     await vi.waitFor(() => {
-      expect(send).toHaveBeenCalledWith(
-        'backend:status',
-        expect.objectContaining({ status: 'connected', reconnected: true }),
-      );
+      fresh = mod.getBackendClientForConnection(GUEST.id);
+      expect(fresh).toBeDefined();
+      expect(fresh).not.toBe(stale);
     });
-    const fresh = mod.getBackendClientForConnection(GUEST.id);
-    expect(fresh).toBeDefined();
-    expect(fresh).not.toBe(stale);
     expect((fresh?.getConfig() as { token?: string }).token).toBe('guest-token-v2');
+    const rebuilt = fresh as unknown as { emit(event: string, arg?: unknown): void };
+    rebuilt.emit('status', 'connecting');
+    rebuilt.emit('status', 'disconnected');
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const statuses = send.mock.calls
+      .filter(([channel]) => channel === 'backend:status')
+      .map(([, payload]) => (payload as { status: string }).status);
+    expect(statuses).toEqual(['connecting', 'disconnected']);
+    expect(reconnected).not.toHaveBeenCalled();
+
+    // The genuine connect carries the plain `connected`, then the replayed
+    // marker tells consumers to re-subscribe, exactly like an owner re-pair.
+    rebuilt.emit('status', 'connecting');
+    rebuilt.emit('status', 'connected');
+    const pushes = send.mock.calls
+      .filter(([channel]) => channel === 'backend:status')
+      .map(([, payload]) => payload as { status: string; reconnected?: boolean });
+    expect(pushes.slice(-2)).toEqual([
+      expect.objectContaining({ status: 'connected' }),
+      expect.objectContaining({ status: 'connected', reconnected: true }),
+    ]);
+    expect(pushes.slice(-2)[0]).not.toHaveProperty('reconnected');
+    expect(reconnected).toHaveBeenCalledTimes(1);
     expect(reconnected).toHaveBeenCalledWith(GUEST.id);
+  });
+
+  it('a rebuilt guest client evicted before it ever connects never replays the reconnect marker', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const send = installWindow(GUEST.id);
+    const { mod } = await loadModule();
+    const reconnected = vi.fn();
+    mod.onAnyBackendReconnected(reconnected);
+
+    await mod.openBackendWindow(GUEST.id);
+    const stale = mod.getBackendClientForConnection(GUEST.id);
+
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v2');
+    for (const listener of guestStore.replacedListeners) listener(GUEST.id);
+    let rebuilt: ReturnType<typeof mod.getBackendClientForConnection>;
+    await vi.waitFor(() => {
+      rebuilt = mod.getBackendClientForConnection(GUEST.id);
+      expect(rebuilt).toBeDefined();
+      expect(rebuilt).not.toBe(stale);
+    });
+    send.mockClear();
+
+    // Evicted (forgotten / replaced again) while still dialing: a late
+    // `connected` from the superseded instance owes nothing to the window.
+    mod.disconnectBackendClient(GUEST.id);
+    (rebuilt as unknown as { emit(event: string, arg?: unknown): void }).emit(
+      'status',
+      'connected',
+    );
+    expect(send).not.toHaveBeenCalledWith(
+      'backend:status',
+      expect.objectContaining({ reconnected: true }),
+    );
+    expect(reconnected).not.toHaveBeenCalled();
   });
 
   it('a guest forgotten on another device (sync tombstone) evicts the pooled client and closes its windows', async () => {
@@ -2459,14 +2517,29 @@ describe('connections:* IPC handlers', () => {
     expect(lifecycle.events.map((e) => e.type)).toEqual(['dispose', 'construct', 'start']);
     expect(openOrFocus).not.toHaveBeenCalled();
     expect(store.setActiveId).not.toHaveBeenCalled();
-    // The replayed reconnect marker reaches the backend's windows so daemon
-    // event subscriptions re-subscribe against the new client.
+    const reconnectMarkers = () =>
+      send.mock.calls.filter(
+        ([c, payload]) =>
+          c === 'backend:status' && (payload as { reconnected?: boolean }).reconnected === true,
+      );
+    // The rebuilt client is still dialing: no `connected` (and no marker) may
+    // reach its windows until the fresh socket has actually connected.
+    expect(reconnectMarkers()).toHaveLength(0);
     expect(
       send.mock.calls.some(
         ([c, payload]) =>
-          c === 'backend:status' && (payload as { reconnected?: boolean }).reconnected === true,
+          c === 'backend:status' && (payload as { status?: string }).status === 'connected',
       ),
-    ).toBe(true);
+    ).toBe(false);
+    // On the genuine connect the replayed reconnect marker reaches the
+    // backend's windows so daemon event subscriptions re-subscribe against
+    // the new client.
+    (
+      mod.getBackendClientForConnection('remote-1') as unknown as {
+        emit(event: string, arg?: unknown): void;
+      }
+    ).emit('status', 'connected');
+    expect(reconnectMarkers()).toHaveLength(1);
   });
 
   it('connections:add refreshes an active client without touching windows', async () => {

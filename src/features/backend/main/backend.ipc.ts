@@ -886,6 +886,53 @@ export function disconnectBackendClient(id: string): void {
 }
 
 /**
+ * Replay the reconnect marker for a client rebuilt under live windows once
+ * it has GENUINELY connected. `connectBackendClient` resolves as soon as the
+ * client is constructed and started — its socket is still dialing — so a
+ * `status: 'connected'` pushed at that point tells the window's renderer the
+ * backend is healthy while the real status is `connecting`: the daemon-loss
+ * overlay dismisses on the fabricated `connected` and re-arms its grace timer
+ * on the next real `disconnected`, which reads as the overlay flickering
+ * whenever the host is unreachable. The rebuilt client's FIRST connect is a
+ * plain `connected`, not a `reconnected`, so the marker is still owed — it
+ * just waits for that connect. A client that is evicted or replaced before
+ * connecting never replays.
+ */
+function replayReconnectOnceConnected(id: string, rebuilt: JsonRpcClient): void {
+  let replayed = false;
+  const replay = (): void => {
+    if (replayed || backendClients.get(id) !== rebuilt) return;
+    replayed = true;
+    broadcast(
+      BACKEND.STATUS,
+      {
+        status: 'connected',
+        reconnected: true,
+        transport: formatTransportInfo(
+          rebuilt.getConfig(),
+          getPinnedVersion(),
+          rebuilt.getConnectedVia(),
+        ),
+        reconnectAttempts: rebuilt.getReconnectAttempts(),
+        ...daemonUpdateMarker(id),
+      },
+      id,
+    );
+    backendReconnectForwarder.emit('reconnected', id);
+  };
+  if (rebuilt.getStatus() === 'connected') {
+    replay();
+    return;
+  }
+  const onStatus = (status: ConnectionStatus): void => {
+    if (status !== 'connected') return;
+    rebuilt.off('status', onStatus);
+    replay();
+  };
+  rebuilt.on('status', onStatus);
+}
+
+/**
  * A guest re-join (or a keychain sync applying a newer record) replaces the
  * session's credential — and possibly its principal — in place under the
  * SAME id. Anything built on the old credential is invalidated at once: the
@@ -905,22 +952,7 @@ function onGuestCredentialReplaced(id: string): void {
   if (!hadLiveClient) return;
   void enqueueConnectionOperation(async () => {
     const rebuilt = await connectBackendClient(id);
-    broadcast(
-      BACKEND.STATUS,
-      {
-        status: 'connected',
-        reconnected: true,
-        transport: formatTransportInfo(
-          rebuilt.getConfig(),
-          getPinnedVersion(),
-          rebuilt.getConnectedVia(),
-        ),
-        reconnectAttempts: rebuilt.getReconnectAttempts(),
-        ...daemonUpdateMarker(id),
-      },
-      id,
-    );
-    backendReconnectForwarder.emit('reconnected', id);
+    replayReconnectOnceConnected(id, rebuilt);
   }).catch((error: unknown) => {
     logger.warn('Failed to rebuild guest client after credential replacement', {
       id,
@@ -3350,29 +3382,13 @@ function registerConnectionsHandlers(): void {
             // destroying any windows. The caller opens/focuses it through
             // connections:open.
             const rebuilt = await connectBackendClient(connection.id);
-            // The rebuilt client's FIRST connect is a plain `connected`, not a
-            // `reconnected`, and this backend's windows stay alive across the
-            // swap. Replay the reconnect marker exactly as the instance's own
-            // `reconnected` handler would, so main-process services and
-            // renderer consumers holding daemon `events.subscribe` leases
-            // re-subscribe against the new client (requests queue until the
-            // fresh socket connects, T8).
-            broadcast(
-              BACKEND.STATUS,
-              {
-                status: 'connected',
-                reconnected: true,
-                transport: formatTransportInfo(
-                  rebuilt.getConfig(),
-                  getPinnedVersion(),
-                  rebuilt.getConnectedVia(),
-                ),
-                reconnectAttempts: rebuilt.getReconnectAttempts(),
-                ...daemonUpdateMarker(connection.id),
-              },
-              connection.id,
-            );
-            backendReconnectForwarder.emit('reconnected', connection.id);
+            // This backend's windows stay alive across the swap. Replay the
+            // reconnect marker exactly as the instance's own `reconnected`
+            // handler would — once the fresh socket has connected — so
+            // main-process services and renderer consumers holding daemon
+            // `events.subscribe` leases re-subscribe against the new client
+            // (requests queue until then, T8).
+            replayReconnectOnceConnected(connection.id, rebuilt);
           }
           await broadcastConnectionsChanged();
           return {
