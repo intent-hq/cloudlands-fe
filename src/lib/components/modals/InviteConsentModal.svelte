@@ -96,14 +96,14 @@
         tabindex="-1"
         onkeydown={handleKeydown}
       >
-        <div class="flex items-start justify-between gap-4 px-6 pt-6">
-          <div class="flex items-start gap-4">
+        <div class="flex items-center justify-between gap-4 px-6 pt-6">
+          <div class="flex min-w-0 items-center gap-4">
             <div
-              class="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/20"
+              class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/20"
             >
               <Fa icon={faShieldHalved} size="lg" />
             </div>
-            <div>
+            <div class="min-w-0">
               <h2 id={dialogTitleId} class="text-lg font-semibold leading-6">
                 {m.inviteConsent_modal_title({
                   workspaceTitle: payload.workspaceTitle,
@@ -115,7 +115,7 @@
           <Button
             variant="ghost"
             size="icon-sm"
-            class="-mr-1 mt-0.5 text-subtle hover:text-foreground"
+            class="-mr-1 shrink-0 text-subtle hover:text-foreground"
             aria-label={m.inviteConsent_modal_dismiss_ariaLabel()}
             onclick={cancel}
           >
