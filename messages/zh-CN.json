@@ -5758,6 +5758,7 @@
   "deeplink_inviteError_denied": "GitHub 登录已取消。",
   "deeplink_inviteError_flowExpired": "GitHub 代码在输入前已过期。",
   "deeplink_inviteError_workspaceFull": "此工作区已满。请让所有者释放一个名额。",
+  "deeplink_inviteError_ownerSelfJoin": "你是此主机的所有者，因此无法以访客身份加入。请改从已配对的守护进程打开它。",
   "deeplink_inviteError_certMismatch": "主机出示了意外的证书。请向所有者索取新链接。",
   "deeplink_inviteError_generic": "无法连接主机，或主机拒绝了邀请。",
   "deeplink_inviteError_tailcatUnavailable": "此版本不包含隧道客户端，因此只能通过直接地址连接主机。请向所有者索取包含直接主机的链接。",
