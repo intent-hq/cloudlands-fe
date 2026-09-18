@@ -640,10 +640,12 @@ const ATTENTION_CARD_STATES: ReadonlySet<HudCardStateKey> = new Set<HudCardState
  * the strip on the attention reason (a generic localized "awaiting your
  * input" line) — the workspace status text must never mask pending attention.
  *
- * A `failed` card always gets a `failed` snippet: the first failed-bucket
- * agent's §5.5 `stopReason` (read from the tracked session) is the error the
- * user needs, and when no stopReason is known the empty text renders a
- * generic failed line — never the workspace status message.
+ * A `failed` card always gets a `failed` snippet: the first unmuted
+ * failed-bucket agent's §5.5 `stopReason` (read from the tracked session) is
+ * the error the user needs — a muted agent (§5.5 `notificationsMuted`) never
+ * alerts, so it never supplies the snippet — and when no stopReason is known
+ * the empty text renders a generic failed line — never the workspace status
+ * message.
  */
 function cardAttentionSnippet(
   state: StoreState,
@@ -651,7 +653,9 @@ function cardAttentionSnippet(
   agents: HudCardAgent[],
 ): HudCardAttentionSnippet | null {
   if (stateKey === 'failed') {
-    const failed = agents.find((agent) => agent.bucket === 'failed');
+    const failed = agents.find(
+      (agent) => agent.bucket === 'failed' && !isMutedAgent(state, agent.id),
+    );
     const stopReason = failed ? state.agentSessions?.byAgentId[failed.id]?.stopReason : null;
     return {
       kind: 'failed',

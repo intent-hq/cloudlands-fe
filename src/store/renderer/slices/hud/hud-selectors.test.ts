@@ -3298,6 +3298,46 @@ describe('selectHudWorkspaceCards', () => {
     });
   });
 
+  it('failed card snippet skips a muted failed agent (§5.5 notificationsMuted)', () => {
+    // The muted root failed first in agent order; the unmuted child's
+    // stopReason is the one the strip surfaces.
+    const withUnmutedSibling = gatedState(
+      {
+        root: {
+          status: 'error',
+          notificationsMuted: true,
+          stopReason: 'Muted provider error',
+          messages: [],
+        },
+        child: { status: 'error', stopReason: 'Child sandbox crashed', messages: [] },
+      },
+      [],
+      'failed',
+    );
+    expect(selectHudWorkspaceCards.select(withUnmutedSibling)[0].attentionSnippet).toEqual({
+      kind: 'failed',
+      text: 'Child sandbox crashed',
+    });
+    // Only a muted agent failed: the strip keeps the generic failed line and
+    // never leaks the muted agent's stopReason.
+    const onlyMuted = gatedState(
+      {
+        root: {
+          status: 'error',
+          notificationsMuted: true,
+          stopReason: 'Muted provider error',
+          messages: [],
+        },
+      },
+      [],
+      'failed',
+    );
+    expect(selectHudWorkspaceCards.select(onlyMuted)[0].attentionSnippet).toEqual({
+      kind: 'failed',
+      text: '',
+    });
+  });
+
   it('failed card without a known stopReason falls back to the empty failed snippet (never the status text)', () => {
     // Summary-only hydration: no tracked session carries a stopReason. The
     // strip must still swap to the generic failed line — the workspace

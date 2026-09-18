@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   restore: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
+  dismiss: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -33,7 +34,7 @@ vi.mock('$lib/client', () => ({
 }));
 vi.mock('$lib/components/patterns/notify', async () => ({
   ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
-  notify: { warning: mocks.warning, error: mocks.error },
+  notify: { warning: mocks.warning, error: mocks.error, dismiss: mocks.dismiss },
 }));
 
 import {
@@ -41,6 +42,7 @@ import {
   getPendingAgentDeletion,
   listPendingAgentDeletions,
 } from '$features/agent/utils/pending-agent-deletions';
+import { agentAttentionToastId } from '$features/agent/agent-attention-toast-service';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { store as appStore } from '$store/renderer/store';
 import type { AgentSession } from '$shared/types';
@@ -350,6 +352,35 @@ describe('agentMutationSaga', () => {
     expect(dispatched).toContainEqual(
       updateSession(A1, { notificationsMuted: false, hasUnread: true }),
     );
+    await stop(task);
+  });
+
+  it('muting dismisses the sticky attention toast the agent already raised; unmuting does not', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: true });
+    const { channel, task } = start({ [A1]: session(A1, { attentionRequestKind: 'blocker' }) });
+    const mute = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(mute);
+    await expect(mute.promise).resolves.toBeUndefined();
+    await settle();
+    expect(mocks.dismiss).toHaveBeenCalledWith(agentAttentionToastId(A1));
+
+    mocks.dismiss.mockClear();
+    const unmute = setAgentNotificationsMutedRequested(WS, A1, false);
+    channel.put(unmute);
+    await expect(unmute.promise).resolves.toBeUndefined();
+    await settle();
+    expect(mocks.dismiss).not.toHaveBeenCalled();
+    await stop(task);
+  });
+
+  it('a rejected mute leaves the attention toast in place', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: false, error: 'mute rejected' });
+    const { channel, task } = start({ [A1]: session(A1, { attentionRequestKind: 'blocker' }) });
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+    await expect(action.promise).rejects.toThrow('mute rejected');
+    await settle();
+    expect(mocks.dismiss).not.toHaveBeenCalled();
     await stop(task);
   });
 

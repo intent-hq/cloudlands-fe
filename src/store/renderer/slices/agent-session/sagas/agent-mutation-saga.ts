@@ -16,6 +16,7 @@ import {
   setPendingAgentDeletion,
   type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
+import { dismissAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
 import { readAgentSession } from '$features/agent/agent-read-service';
 import { appClient } from '$lib/client';
 import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -395,6 +396,9 @@ function* setNotificationsMuted(
       throw new Error(result.error || m.agent_mutation_setNotificationsMutedFailed_error());
     yield* put(action.success(undefined as never));
     settled = true;
+    // A muted agent never alerts: drop the sticky attention toast it may
+    // already have raised — the service only skips NEW toasts for muted agents.
+    if (notificationsMuted) yield* call(dismissAgentAttentionToast, agentId);
   } catch (error) {
     const failure = mutationError(error, m.agent_mutation_setNotificationsMutedFailed_error());
     if (previous !== undefined) {
