@@ -5,8 +5,9 @@
 // Resolves the run's `Component Tests (shard N/M)` jobs via `gh`, reads each
 // red shard's JSON report from its `playwright-ct-report-N-of-M` artifact and
 // falls back to the job log's list-reporter summary when the artifact is
-// missing, expired, or predates the JSON reporter. Parsing lives in
-// ct-run-failures-lib.mjs; this file owns argv, `gh`, and the temp dir.
+// missing, expired, gone by download time, or predates the JSON reporter.
+// Parsing lives in ct-run-failures-lib.mjs; this file owns argv, `gh`, and
+// the temp dir.
 //
 // Exit codes: 0 listing produced (with or without failures), 2 usage error or
 // no CT jobs in the run, 3 `gh` failure (its stderr is surfaced verbatim).
@@ -38,6 +39,15 @@ Exit codes: 0 listing printed, 2 usage error or no CT jobs, 3 gh failure.`;
 
 export class UsageError extends Error {}
 export class GhError extends Error {}
+/** A `gh run download` failure meaning the artifact vanished since it was listed. */
+export class ArtifactGoneError extends GhError {}
+
+// `gh run download` re-lists the run and skips expired artifacts, so one
+// deleted or expired since our own listing surfaces as "no artifact matches";
+// a 404/410 on the archive itself is the same race one step later. Anything
+// else (auth, network, a 404 on the listing) stays a plain `GhError`.
+const ARTIFACT_GONE =
+  /error downloading .*: HTTP (?:404|410)\b|no artifact matches any of the names or patterns provided|no valid artifacts found to download/;
 
 /** Parse argv (without node/script) into options; throws `UsageError`. */
 export function parseArgs(argv) {
@@ -133,10 +143,17 @@ export function createGhRunner({ tmpDir, run = gh }) {
     jobLog: (repo, jobId) =>
       run(['api', '--allow-escape-sequences', `repos/${repo}/actions/jobs/${jobId}/logs`]),
     // The Playwright JSON report of a shard artifact, or null when the artifact
-    // has none (uploaded before the JSON reporter existed).
+    // has none (uploaded before the JSON reporter existed). Throws
+    // `ArtifactGoneError` when the artifact vanished since it was listed.
     jsonReport: (repo, runId, artifactName) => {
       const dest = join(tmpDir, artifactName);
-      run(['run', 'download', runId, '--repo', repo, '--name', artifactName, '--dir', dest]);
+      try {
+        run(['run', 'download', runId, '--repo', repo, '--name', artifactName, '--dir', dest]);
+      } catch (error) {
+        if (error instanceof GhError && ARTIFACT_GONE.test(error.message))
+          throw new ArtifactGoneError(error.message);
+        throw error;
+      }
       const file = join(dest, REPORT_PATH);
       return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
     },
@@ -195,7 +212,17 @@ export function collectRun({ runId, repo, attempt, runner }) {
         artifact = matching[0];
       }
     }
-    const report = artifact ? runner.jsonReport(repo, runId, name) : null;
+    let report = null;
+    if (artifact) {
+      try {
+        report = runner.jsonReport(repo, runId, name);
+      } catch (error) {
+        if (!(error instanceof ArtifactGoneError)) throw error;
+        warnings.push(
+          `shard ${job.shard}/${job.shardCount}: artifact ${name} disappeared before it could be downloaded; using job logs`,
+        );
+      }
+    }
     if (report) return { ...job, source: 'json', cases: casesFromJsonReport(report) };
     const fullLog = runner.jobLog(repo, job.jobId);
     // Only the required lane's segment: on shard 1 the advisory quarantine
