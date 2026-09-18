@@ -119,7 +119,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     const grant = connection.redeemWait(start.flowId, start.expiresIn * 1000 + WAIT_MARGIN_MS);
     grant.catch(() => {});
 
-    clipboard.writeText(start.userCode);
+    await clipboard.writeText(start.userCode);
     if (!(await showDeviceCode(start.userCode, start.verificationUri, start.workspaceTitle))) {
       logger.info('User cancelled the invite device flow');
       return;
