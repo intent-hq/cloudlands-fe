@@ -182,12 +182,10 @@
     'labs-multiplayer': 'labs',
     multiplayer: 'labs',
   };
-
   function resolveHashTab(targetId: string): SettingsTab | undefined {
     const targetTab = hashToTab[targetId] ?? resolveHashToTarget(targetId)?.tab;
     return targetTab && isSettingsTab(targetTab) ? targetTab : undefined;
   }
-
   function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
     if (tabParam === 'accounts') return 'providers';
     if (
@@ -203,7 +201,6 @@
     if (tabParam === 'system' || tabParam === 'tools' || tabParam === 'git-workspace')
       return 'setup';
   }
-
   function resolveTabFromUrl(tabParam: string | null, targetId: string): SettingsTab {
     const targetTab = resolveHashTab(targetId);
     if (targetTab) return targetTab;
