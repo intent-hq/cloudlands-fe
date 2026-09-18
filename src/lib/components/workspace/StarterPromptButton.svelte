@@ -37,7 +37,9 @@
       rounded-full
       text-sm font-medium
       cursor-pointer
-      transition-all duration-200 {isHovered ? 'hovered' : ''}
+      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isHovered
+      ? 'hovered'
+      : ''}
     "
   >
     <Fa icon={faWandMagicSparkles} />

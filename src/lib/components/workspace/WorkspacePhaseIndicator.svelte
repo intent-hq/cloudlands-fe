@@ -52,7 +52,7 @@
       {cy}
       r={['planning', 'building'].includes(phase) ? 0 : circleR}
       fill={color}
-      style="transition: r 0.3s ease-out"
+      style="transition: r var(--spring-slow) var(--spring-slow-ease)"
     /> -->
 
     {#if phase === 'planning'}{:else if phase === 'building'}
@@ -67,7 +67,7 @@
         stroke-dasharray="{pieFilled} {pieCircumference}"
         stroke-dashoffset={pieCircumference * 0.25}
         transform="rotate(-90 {cx} {cy})"
-        style="transition: stroke-dasharray 0.3s ease-out"
+        style="transition: stroke-dasharray var(--spring-slow) var(--spring-slow-ease)"
       />
     {:else if phase === 'reviewing'}
       <circle {cx} {cy} r={circleR * 0.6} fill={color} />

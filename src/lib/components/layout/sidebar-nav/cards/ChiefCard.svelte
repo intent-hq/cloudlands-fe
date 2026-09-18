@@ -393,7 +393,7 @@
         {/if}
       </div>
       <div
-        class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-150 motion-reduce:transition-none {collapsed
+        class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {collapsed
           ? 'pointer-events-none -mr-1 w-0 opacity-0'
           : 'mr-0 w-6 opacity-100'}"
       >

@@ -481,7 +481,7 @@
             ondblclick={(e) => handleDoubleClick(note, e)}
             oncontextmenu={(e) => handleContextMenu(e, note)}
             class={cn(
-              'note-row relative w-full transition-[opacity,border-color,border-top-width] duration-150 flex items-center group/note min-w-0',
+              'note-row relative w-full transition-[opacity,border-color,border-top-width] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none flex items-center group/note min-w-0',
               isDragging && 'opacity-50',
               isDragOver && 'border-t-2 border-accent',
             )}
@@ -768,7 +768,7 @@
                   : m.workspace_notesPanel_collapse_ariaLabel()}
               >
                 <div
-                  class="transition-transform duration-150 ease-out"
+                  class="transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                   class:rotate-90={isCollapsed}
                 >
                   <Fa icon={faChevronDown} size="10" />

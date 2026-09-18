@@ -897,7 +897,7 @@
     }}
     class="relative shrink-0 {isResizing || disableWidthTransition
       ? ''
-      : 'transition-[width,min-width,max-width] mx-auto duration-300 ease-(--ease-emphasized-out)'} {!doSkipResize &&
+      : 'transition-[width,min-width,max-width] mx-auto duration-spring-slow ease-spring-slow motion-reduce:transition-none'} {!doSkipResize &&
     actualWidth === 0
       ? 'overflow-hidden'
       : ''} {className}"
@@ -907,7 +907,7 @@
   >
     <!-- Panel content slot -->
     <div
-      class="h-full min-h-0 transition-opacity duration-300 ease-(--ease-emphasized-out) {!doSkipResize &&
+      class="h-full min-h-0 transition-opacity duration-spring-slow ease-spring-slow motion-reduce:transition-none {!doSkipResize &&
       actualWidth === 0
         ? 'opacity-0'
         : 'opacity-100'}"
@@ -942,7 +942,7 @@
   <div
     class="relative flex flex-col {isResizing
       ? ''
-      : 'transition-[height] duration-200 ease-out'} {className}"
+      : 'transition-[height] duration-spring-slow ease-spring-slow motion-reduce:transition-none'} {className}"
     style={doSkipResize
       ? ''
       : `height: ${actualHeight}px; min-height: ${minHeight}px; max-height: ${maxHeight}px;`}

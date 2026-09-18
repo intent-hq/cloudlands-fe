@@ -170,7 +170,7 @@
     inset: 0;
     border-radius: 50%;
     background: radial-gradient(transparent, hsl(var(--primary) / 0.2), hsl(var(--primary) / 0.8));
-    animation: pulse-expand 2s ease-out infinite;
+    animation: pulse-expand 2s var(--spring-slow-ease) infinite;
     pointer-events: none;
   }
 
