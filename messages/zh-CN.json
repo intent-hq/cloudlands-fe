@@ -6409,6 +6409,7 @@
   "workspace_share_invite_anyone_label": "任何拥有链接的人",
   "workspace_share_invite_pinned_label": "仅限 {login}",
   "workspace_share_invite_expires_label": "{when}过期",
+  "workspace_share_invite_reusable_label": "可重复使用 · {count} 人已加入",
   "workspace_share_revoke_label": "撤销",
   "workspace_share_revoke_ariaLabel": "撤销邀请：{audience}",
   "workspace_share_revokeFailed_error": "无法撤销邀请",
