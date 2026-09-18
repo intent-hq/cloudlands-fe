@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 import ErrorBoundary from '../ErrorBoundary.svelte';
 
 const children = createRawSnippet(() => ({
@@ -10,11 +11,12 @@ const children = createRawSnippet(() => ({
 }));
 
 // A child that throws `error` during render for the first `failures` renders, then renders
-// normally. `failures = Infinity` never recovers.
-function throwingChildren(error: Error, failures: number) {
+// normally. `failures = Infinity` never recovers. `onRender` observes every render attempt.
+function throwingChildren(error: Error, failures: number, onRender?: () => void) {
   let attempts = 0;
   return createRawSnippet(() => ({
     render: () => {
+      onRender?.();
       if (attempts++ < failures) throw error;
       return '<div data-testid="boundary-child">child content</div>';
     },
@@ -41,7 +43,10 @@ async function dispatchWindowError(
 }
 
 describe('ErrorBoundary', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it('keeps rendering the child when the stale webview guest detach error is thrown', async () => {
     const onError = vi.fn();
@@ -147,6 +152,45 @@ describe('ErrorBoundary', () => {
       // Initial render plus a bounded number of resets — never an unbounded retry loop.
       expect(renders).toBeGreaterThan(1);
       expect(renders).toBeLessThanOrEqual(5);
+    });
+
+    it('does not replenish retries on elapsed time while every retry keeps failing', async () => {
+      // Each failing render attempt costs 2s of wall time; retries are still consecutive
+      // failures, so the boundary must settle on the error UI instead of recovering.
+      let clock = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => clock);
+      const onError = vi.fn();
+      let renders = 0;
+      const children = throwingChildren(new Error('Invalid guestInstanceId: 3'), 6, () => {
+        renders++;
+        clock += 2000;
+      });
+      render(ErrorBoundary, { props: { children, onError } });
+      for (let i = 0; i < 10; i++) await settle();
+
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.queryByTestId('boundary-child')).toBeNull();
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(renders).toBeLessThanOrEqual(5);
+    });
+
+    it('lets an explicit retry recover after the automatic retries were exhausted', async () => {
+      const onError = vi.fn();
+      // Fails the initial render, the automatic retries, and the first renders after the
+      // explicit retry, then recovers within the replenished budget.
+      const children = throwingChildren(new Error('Invalid guestInstanceId: 3'), 7);
+      render(ErrorBoundary, { props: { children, onError } });
+      for (let i = 0; i < 10; i++) await settle();
+      expect(screen.getByRole('alert')).toBeTruthy();
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.lib_errorBoundary_tryAgain_label() }),
+      );
+      for (let i = 0; i < 10; i++) await settle();
+
+      expect(screen.getByTestId('boundary-child')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(onError).toHaveBeenCalledTimes(1);
     });
   });
 });

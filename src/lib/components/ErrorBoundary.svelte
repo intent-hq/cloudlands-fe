@@ -48,23 +48,29 @@
 
   // Once <svelte:boundary> catches a render-time error it destroys the subtree and renders the
   // `failed` snippet regardless of what `onerror` does. Benign errors are recovered by calling
-  // the boundary's reset(); the retry budget keeps a persistently failing child from looping.
-  const BENIGN_RESET_LIMIT = 3;
-  const BENIGN_RESET_WINDOW_MS = 5000;
+  // the boundary's reset(). Consecutive failed resets are capped so a persistently failing
+  // child cannot loop; the count only replenishes after a retry render survives a full
+  // event-loop turn (Svelte reports a failed retry in a microtask, before the timeout fires)
+  // or on an explicit user retry — never on elapsed wall time alone.
+  const BENIGN_CONSECUTIVE_RESET_LIMIT = 3;
   let benignResetCount = 0;
-  let benignResetWindowStart = 0;
+  let benignResetHealthyTimer: ReturnType<typeof setTimeout> | undefined;
 
   function tryRecoverFromBenignRenderError(reset: () => void): boolean {
-    const now = Date.now();
-    if (now - benignResetWindowStart > BENIGN_RESET_WINDOW_MS) {
-      benignResetCount = 0;
-      benignResetWindowStart = now;
-    }
-    if (benignResetCount >= BENIGN_RESET_LIMIT) return false;
+    clearTimeout(benignResetHealthyTimer);
+    if (benignResetCount >= BENIGN_CONSECUTIVE_RESET_LIMIT) return false;
     benignResetCount++;
     // Svelte forbids calling reset() synchronously from within onerror.
     queueMicrotask(reset);
+    benignResetHealthyTimer = setTimeout(() => {
+      benignResetCount = 0;
+    }, 0);
     return true;
+  }
+
+  function retryAfterRenderError(reset: () => void) {
+    benignResetCount = 0;
+    reset();
   }
 
   // Sync error prop to state (needed for +error.svelte where page.error updates after mount)
@@ -326,7 +332,7 @@
     {@render errorDisplay(
       err.message || m.lib_errorBoundary_unexpected_error(),
       err.stack || '',
-      reset,
+      () => retryAfterRenderError(reset),
     )}
   {/snippet}
 
