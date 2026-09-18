@@ -151,6 +151,7 @@
     shell: 'setup',
     workspace: 'setup',
     notifications: 'app-behavior',
+    licenses: 'app-behavior',
     updates: 'app-behavior',
     language: 'display',
     theme: 'display',
