@@ -213,7 +213,7 @@
 
   {#if offline}
     <div
-      class="flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning"
+      class="flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning-ink"
       data-browser-viewer-offline-banner
       role="status"
     >
