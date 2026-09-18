@@ -24,6 +24,7 @@ import {
   canReuseGeneratedParaglide,
   compileWithInputsHash,
   ensureGeneratedParaglide,
+  ensureRepoParaglide,
   generateParaglide,
   paraglideLockPath,
   publishOrder,
@@ -181,28 +182,28 @@ function runParaglideBuildStart({
 
 /**
  * Runs the real `ensureRepoParaglide` (real `@inlang/paraglide-js` compiler)
- * against `rootDir` in a child process: the compiler spawns a worker thread
- * that inherits Vitest's fork `execArgv`, which Node rejects in-process.
+ * against `rootDir` in-process, with `INTENT_BUILD_TARGET=web` set for the
+ * duration like the buildStart children. Where the `@lix-js/sdk` native addon
+ * does not load (CI), the compiler falls back to a worker thread constructed
+ * with an explicit `execArgv: process.execArgv`; that works inside the Vitest
+ * fork only because `src/test-setup.ts` strips the fork-only `--no-sparkplug`
+ * flag from `process.execArgv` before tests run.
  */
-function runEnsureRepoParaglide({
+async function runEnsureRepoParaglide({
   rootDir,
   ifStale = false,
 }: {
   rootDir: string;
   ifStale?: boolean;
-}): boolean {
-  const scriptUrl = pathToFileURL(resolve('scripts/paraglide-inputs-hash.mjs')).href;
-  const script = `
-    import { ensureRepoParaglide } from ${JSON.stringify(scriptUrl)};
-    const ok = await ensureRepoParaglide(${JSON.stringify({ rootDir, ifStale })});
-    process.stdout.write(JSON.stringify({ ok }));
-  `;
-  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-    encoding: 'utf8',
-    env: { ...process.env, INTENT_BUILD_TARGET: 'web' },
-  });
-  expect(result.status, result.stderr).toBe(0);
-  return JSON.parse(result.stdout).ok;
+}): Promise<boolean> {
+  const previous = process.env.INTENT_BUILD_TARGET;
+  process.env.INTENT_BUILD_TARGET = 'web';
+  try {
+    return await ensureRepoParaglide({ rootDir, ifStale });
+  } finally {
+    if (previous === undefined) delete process.env.INTENT_BUILD_TARGET;
+    else process.env.INTENT_BUILD_TARGET = previous;
+  }
 }
 
 /** Every file under `dir` with its mtime and content, for "nothing was rewritten" checks. */
@@ -327,18 +328,18 @@ describe('generated Paraglide reuse in the UI preview', () => {
   const recordSidecar = (paths: FixturePaths) =>
     compileWithInputsHash({ ...paths, compile: fakeCompile });
 
-  it('a startup after generate:i18n writes nothing and keeps the sidecar (real compiler)', () => {
+  it('a startup after generate:i18n writes nothing and keeps the sidecar (real compiler)', async () => {
     // What vitest.config.ts / vite.config.mjs run from buildStart: the locked
     // if-stale ensure over output the CLI published. Upstream's plugin in this
     // spot rewrote outputs in place and unlinked the sidecar on every start.
     const { root, paths } = createParaglideFixtureRoot({ realProject: true });
     fixtures.push(root);
-    expect(runEnsureRepoParaglide({ rootDir: root })).toBe(true);
+    await expect(runEnsureRepoParaglide({ rootDir: root })).resolves.toBe(true);
     expect(readFileSync(join(paths.outdir, 'runtime.js'), 'utf8')).toContain(PARAGLIDE_IS_SERVER);
     const published = snapshotDir(paths.outdir);
     expect(Object.keys(published)).toContain(PARAGLIDE_INPUTS_HASH_FILE);
 
-    expect(runEnsureRepoParaglide({ rootDir: root, ifStale: true })).toBe(true);
+    await expect(runEnsureRepoParaglide({ rootDir: root, ifStale: true })).resolves.toBe(true);
 
     expect(snapshotDir(paths.outdir)).toEqual(published);
     expect(canReuseGeneratedParaglide(paths)).toBe(true);
