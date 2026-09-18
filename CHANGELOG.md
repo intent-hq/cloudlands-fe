@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.164.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.0...v2.164.1) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* **motion:** pause only looping CSS animations on window blur ([#2584](https://github.com/intent-hq/cloudlands-fe/issues/2584)) ([fa5c696](https://github.com/intent-hq/cloudlands-fe/commit/fa5c696bdf3c57520791075247b8afe6224e68b2))
+
 ## [2.164.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.163.1...v2.164.0) (2026-09-18)
 
 
