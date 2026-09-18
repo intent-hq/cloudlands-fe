@@ -209,6 +209,43 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(onchange.mock.calls[1][0].detail).toEqual({ branch: 'feature/task-29' });
   });
 
+  it('local repo: turning "work directly" off closes the menu and returns focus to the trigger', async () => {
+    mockGetBranches.mockResolvedValue({
+      branches: ['main'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+    const onSkipIsolationChange = vi.fn();
+    const { container } = render(BranchSelector, {
+      props: {
+        repoPath: '/tmp/repo',
+        repoType: 'local',
+        value: 'main',
+        skipIsolation: true,
+        onSkipIsolationChange,
+      },
+    });
+
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
+    await openDropdown(container);
+    const trigger = container.querySelector('button')!;
+    const toggle = await screen.findByRole('button', {
+      name: m.workspace_branchSelector_workDirectlyOnBranch_label({ branch: 'main' }),
+    });
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+
+    // Disabling the toggle closes the content directly (no selectBranch) —
+    // the unmounted toggle must not strand focus on <body> (#5197).
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(onSkipIsolationChange).toHaveBeenCalledWith(false));
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('Search or enter branch name...')).toBeNull(),
+    );
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
   it.each([
     ['explicit', true],
     ['persisted', false],

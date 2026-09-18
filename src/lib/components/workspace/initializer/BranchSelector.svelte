@@ -1048,7 +1048,15 @@
     // Fetch branch status for the newly selected branch
     fetchBranchStatus(branch);
 
-    // Close the dropdown
+    closeMenu();
+  }
+
+  /**
+   * Close the dropdown and hand keyboard focus back to the trigger when it
+   * was actually open. Every programmatic close goes through here so the
+   * search input / toggle unmount never strands focus on <body>.
+   */
+  function closeMenu() {
     const wasOpen = isOpen;
     isOpen = false;
     if (wasOpen) void restoreTriggerFocus();
@@ -1872,7 +1880,7 @@
                   // When enabling skip isolation, select current branch (keep skipIsolation on)
                   selectBranch(currentBranch, true);
                 }
-                isOpen = false;
+                closeMenu();
               }}
               wrapContent={false}
               class="w-full h-auto flex items-start gap-3 px-2 py-1 rounded-md text-left whitespace-normal cursor-pointer"
@@ -1890,7 +1898,7 @@
                   if (enabling) {
                     selectBranch(currentBranch, true);
                   }
-                  isOpen = false;
+                  closeMenu();
                 }}
               />
               <div class="items-start flex-1 min-w-0 text-sm font-normal -mt-0.25">
