@@ -1150,6 +1150,67 @@ describe('followBottom policy', () => {
     action.destroy();
   });
 
+  it('pins from the lease settle when the container opts out of native anchoring', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    container.style.overflowAnchor = 'none';
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    const mutation = beforeFollowBottomMutation(child);
+    scrollHeight += 18;
+    mutation.request();
+    expect(scrollTop).toBe(618);
+
+    // The terminal tick restores the natural box in the same step that
+    // releases the lease. Releasing also drops the element's resize
+    // observation, so without a native anchor nothing pins the viewport
+    // before the next frame — the settle itself snaps to the new maximum.
+    scrollHeight += 24;
+    mutation.settle();
+    expect(scrollTop).toBe(642);
+    runSettleTail();
+    expect(scrollTop).toBe(642);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
+  it('keeps an opted-out container at the bottom through a disclosure intro end', () => {
+    const child = document.createElement('div');
+    container.append(child);
+    container.style.overflowAnchor = 'none';
+    const action = followBottom(container, { follow: true });
+    runSettleTail();
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      height: '40px',
+      opacity: '1',
+      paddingTop: '0px',
+      paddingBottom: '0px',
+      marginTop: '0px',
+      marginBottom: '0px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const intro = safeDisclosureTransition(child, {}, { direction: 'in' });
+
+    // Regression (intent#5373): a late final frame lands the intro end from a
+    // low t, so the natural-height restore is the round's largest growth. A
+    // same-frame reader ordered after the tick must still see an exact pin.
+    intro.tick?.(0.6, 0.4);
+    scrollHeight += 24;
+    intro.tick?.(0.6, 0.4);
+    expect(scrollTop).toBe(624);
+    scrollHeight += 16;
+    intro.tick?.(1, 0);
+    expect(scrollTop).toBe(640);
+    expect(hasActiveFollowBottomMutation(container)).toBe(false);
+    runSettleTail();
+    expect(scrollTop).toBe(640);
+    expect(animationFrames).toHaveLength(0);
+    action.destroy();
+  });
+
   it('re-acquires a reversed disclosure lease without reading geometry inside the tick', () => {
     const child = document.createElement('div');
     container.append(child);
