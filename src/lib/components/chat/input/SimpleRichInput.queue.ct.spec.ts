@@ -86,12 +86,16 @@ test('preserves the empty composer and insets prompt text below expanded and col
   await expect(header).toHaveCount(0);
   await expect.poll(queueEditorGap).toBe(0);
   await expect.poll(() => input.boundingBox()).toEqual(emptyBox);
-  const restoredTextInset = await input.evaluate(
-    (node) =>
-      node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
-      node.getBoundingClientRect().top,
-  );
-  expect(restoredTextInset).toBe(geometry.top);
+  // The prompt paragraph can still be mid-relayout after the queue collapses (the
+  // container's box is unchanged because the editor absorbs the queue height), so wait
+  // for the inset to settle instead of reading it once (intent-hq/intent#5324).
+  const restoredTextInset = () =>
+    input.evaluate(
+      (node) =>
+        node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
+        node.getBoundingClientRect().top,
+    );
+  await expect.poll(restoredTextInset).toBe(geometry.top);
 });
 
 for (const streaming of [false, true]) {
