@@ -135,15 +135,26 @@ const GUEST_SESSION: GuestSessionRecord = {
 /**
  * Store state holding `workspace` as the daemon listed it, in a window bound
  * to `backendId`: the local default (owner window) or `GUEST_SESSION.id` (a
- * window opened for a host joined as a guest).
+ * window opened for a host joined as a guest). `PRE_BIND` leaves the
+ * connections list unreceived: the guest list knows a joined host but the
+ * window's backend id is still the boot-time default, so its identity has
+ * not settled.
  */
-function seedState(workspace: Workspace, backendId = 'local'): void {
+const PRE_BIND = Symbol('pre-bind');
+function seedState(workspace: Workspace, backendId: string | typeof PRE_BIND = 'local'): void {
   mocks.storeState.current = {
     workspace: workspaceReducer(workspaceInitialState, setWorkspaceEntity(workspace)),
-    connections: connectionsReducer(
-      connectionsInitialState,
-      connectionsListReceived({ connections: [], activeId: backendId, windowBackendId: backendId }),
-    ),
+    connections:
+      backendId === PRE_BIND
+        ? connectionsInitialState
+        : connectionsReducer(
+            connectionsInitialState,
+            connectionsListReceived({
+              connections: [],
+              activeId: backendId,
+              windowBackendId: backendId,
+            }),
+          ),
     guestSessions: guestSessionsReducer(
       guestSessionsInitialState,
       guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
@@ -154,7 +165,7 @@ function seedState(workspace: Workspace, backendId = 'local'): void {
 async function openContextMenu(
   workspace: Workspace,
   onOpenInNewWindow?: () => void,
-  backendId?: string,
+  backendId?: string | typeof PRE_BIND,
 ) {
   seedState(workspace, backendId);
   const { container } = render(WorkspaceCard, { props: { workspace, onOpenInNewWindow } });
@@ -230,6 +241,16 @@ describe('WorkspaceCard context menu owner gating', () => {
       );
     },
   );
+
+  // Boot order: the guest list has arrived with a joined host but the
+  // connections list has not bound the window's backend id yet, so the
+  // window cannot be told apart from a guest one. The row reporting `owner`
+  // must not make the actions flash before the identity settles.
+  it('hides the owner-only actions before the window backend binding lands, even for a row reporting myRole owner', async () => {
+    await openContextMenu(makeWorkspace({ myRole: 'owner' }), vi.fn(), PRE_BIND);
+
+    expect(menuItemNames()).toEqual(['Open in New Window']);
+  });
 
   it('keeps the full menu in an owner window that merely knows a joined host', async () => {
     await openContextMenu(makeWorkspace({ myRole: 'owner' }), vi.fn(), 'local');
