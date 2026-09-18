@@ -23,7 +23,7 @@ Quick routing guide for AI agents. Start here, then open the smallest relevant d
 - Never hand-write motion durations or physical colors; use `$lib/motion` and semantic tokens.
 - Never add a raw control, direct toast/native dialog, bespoke settings row, or feature-owned dialog root.
 - Ratchets only shrink: do not raise `scripts/ui-component-guardrails.ts` ceilings or expand lint baselines.
-- Run `pnpm exec tsx scripts/generate-design-cheatsheet.ts --check` with the focused lint/tests.
+- Run `pnpm run lint:design-cheatsheet` (part of `pnpm run lint`) with the focused lint/tests; regenerate the cheatsheet with `pnpm exec tsx scripts/generate-design-cheatsheet.ts`.
 
 ## Project layout
 

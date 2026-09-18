@@ -25,6 +25,7 @@ describe('generated design-system cheatsheet', () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.message).toContain('missing');
+    expect(result.message).toContain('DESIGN_SYSTEM_CHEATSHEET.md');
     expect(result.message).toContain('pnpm exec tsx scripts/generate-design-cheatsheet.ts');
     expect(result.message).not.toContain('stale');
   });
@@ -38,6 +39,8 @@ describe('generated design-system cheatsheet', () => {
     const stale = await runDesignCheatsheetGenerator('check', target);
     expect(stale.exitCode).toBe(1);
     expect(stale.message).toContain('stale');
+    expect(stale.message).toContain('DESIGN_SYSTEM_CHEATSHEET.md');
+    expect(stale.message).toContain('pnpm exec tsx scripts/generate-design-cheatsheet.ts');
   });
 
   it('keeps the committed cheatsheet current with the pattern manifest', async () => {

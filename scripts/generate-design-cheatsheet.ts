@@ -203,23 +203,24 @@ export async function runDesignCheatsheetGenerator(
   target = cheatsheetPath,
 ): Promise<{ exitCode: number; message: string }> {
   const generated = await generateDesignCheatsheet();
+  const displayPath = path.relative(projectRoot, target);
   if (mode === 'check') {
     if (!fs.existsSync(target)) {
       return {
         exitCode: 1,
-        message: `Design-system cheatsheet is missing at ${target}. Run \`${regenerateCommand}\`.`,
+        message: `${displayPath} is missing. Run \`${regenerateCommand}\`.`,
       };
     }
     return fs.readFileSync(target, 'utf8') === generated
-      ? { exitCode: 0, message: 'Design-system cheatsheet is current.' }
+      ? { exitCode: 0, message: `${displayPath} is current.` }
       : {
           exitCode: 1,
-          message: `Design-system cheatsheet is stale. Run \`${regenerateCommand}\`.`,
+          message: `${displayPath} is stale. Run \`${regenerateCommand}\`.`,
         };
   }
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, generated);
-  return { exitCode: 0, message: `Wrote ${path.relative(projectRoot, target)}.` };
+  return { exitCode: 0, message: `Wrote ${displayPath}.` };
 }
 
 function invokedAsCli(): boolean {
