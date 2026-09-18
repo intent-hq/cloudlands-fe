@@ -4825,6 +4825,55 @@ describe('guest-sessions:* IPC handlers', () => {
           await vi.waitFor(() => expect(reads()).toBe(before + 3));
         });
 
+        it('a registry read crossing a reconnect never sends a stale subscribe on the new socket', async () => {
+          let nextSub = 1;
+          rpc.handler = async (method) => {
+            if (method === 'events.subscribe')
+              return { subscriptionId: `guest-ws-sub-${nextSub++}` };
+            if (method === 'workspace.list') return { workspaces: [] };
+            return {};
+          };
+          installGuest();
+          guestStore.setWorkspaces.mockResolvedValue(true);
+          const { mod } = await loadModule();
+          mod.registerBackendHandlers();
+          const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as EventClient;
+          const reads = () => rpc.calls.filter((m) => m === 'workspace.list').length;
+
+          // The hello's registry read (a real file read in production) is held
+          // while the socket drops and redials underneath it.
+          const pendingReads: Array<(value: typeof GUEST) => void> = [];
+          guestStore.findById.mockImplementation(
+            () => new Promise((resolve) => pendingReads.push(resolve)),
+          );
+          guest.hello(hello);
+          await vi.waitFor(() => expect(pendingReads.length).toBeGreaterThan(0));
+          expect(subscribes()).toBe(0);
+
+          guest.emit('status', 'disconnected');
+          guest.emit('status', 'connecting');
+          guestStore.findById.mockResolvedValue(GUEST);
+          guest.hello(hello);
+          await vi.waitFor(() => expect(subscribes()).toBe(1));
+          guest.emit('status', 'connected');
+
+          // The old reads settle: they must not issue a second subscribe.
+          for (const resolve of pendingReads) resolve(GUEST);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          expect(subscribes()).toBe(1);
+
+          // The live lease is the new socket's, and it routes.
+          const before = reads();
+          guest.emit(
+            'notification',
+            workspaceEvent('guest-ws-sub-1', 'workspace:updated', {
+              workspaceId: 'ws-guest',
+              changes: { title: 'Fresh' },
+            }),
+          );
+          await vi.waitFor(() => expect(reads()).toBe(before + 1));
+        });
+
         it('a subscribe answered after the socket dropped is discarded', async () => {
           const releases: Array<(value: unknown) => void> = [];
           rpc.handler = async (method) => {
