@@ -229,7 +229,8 @@ function storeState(
     userPreferences: userPreferencesInitialState,
     tabState: { currentTabId: activeWorkspaceId },
     connections: { activeId: activeBackendId, windowBackendId: activeBackendId },
-    guestSessions: guestSessionsInitialState,
+    // Settled owner window: guest list received, no host joined.
+    guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
     workspaceAgents: { byWorkspaceId: {} },
     workspace: { workspaces: createCollection('id') },
   };

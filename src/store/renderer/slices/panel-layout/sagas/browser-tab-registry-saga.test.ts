@@ -166,7 +166,8 @@ function start(
     },
     daemonHealth: { health: opts.health ?? 'healthy', connectionGeneration: 1 },
     connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
-    guestSessions: guestSessionsInitialState,
+    // Settled owner window: guest list received, no host joined.
+    guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
     workspace: {
       workspaces: createCollection(
         'id',
