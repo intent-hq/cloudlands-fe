@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.165.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.2...v2.165.3) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* prevent Vim parser crashes and remove unrendered terminals ([#2658](https://github.com/intent-hq/cloudlands-fe/issues/2658)) ([f16d0d3](https://github.com/intent-hq/cloudlands-fe/commit/f16d0d342d98a74114cf674b71d89d8bd5264af4))
+
 ## [2.165.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.1...v2.165.2) (2026-09-18)
 
 
