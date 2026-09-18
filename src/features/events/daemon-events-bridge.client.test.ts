@@ -2762,6 +2762,42 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     });
   });
 
+  it('startup-window preemption (§7.2 interrupt stream:end WITHOUT messageId): the un-named accumulator finalizes clean — no Stopped indicator on a turn the daemon never marked (intent-hq/intent#5380)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // The accumulator holds the previous turn's blocks under MESSAGE_ID.
+    streamPartialTurn(handler);
+    expectPartialBlocksIntact(readAssistantMessages()[0]);
+
+    // An interrupt-priority send lands while the daemon has NO live-turn slot
+    // to flush (turn startup after a process eviction, §7.2 "pre-first-token
+    // stop"): the emit carries `stopReason` + `interruptReason` but no
+    // `messageId`, because no interrupted row was persisted. Nothing in the
+    // daemon's transcript names MESSAGE_ID as interrupted. Documented §7.2
+    // payload only — the daemon never emits `streamId`.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].metadata?.interrupted).toBeUndefined();
+    expect(assistantMessages[0].metadata?.stopReason).toBeUndefined();
+    expect(assistantMessages[0].metadata?.interruptReason).toBeUndefined();
+    expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
+      false,
+    );
+  });
+
   it('agent preemption mid-stream (§7.2 interruptedBy agent): the reason-specific label resolves LIVE without a reload', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

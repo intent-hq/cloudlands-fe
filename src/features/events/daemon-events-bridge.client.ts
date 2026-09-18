@@ -1131,7 +1131,15 @@ function handleStreamEndEvent(event: WorkspaceEvent, workspaceId: string): void 
     blockCount: trailingBlocks.length,
   });
   if (state && (!messageId || state.messageId === messageId)) {
-    dispatchStreamUpdate(agentId, state, 'complete', endMetadata);
+    // The terminal metadata (stopReason / finishReason / interrupt
+    // attribution) mirrors the persisted row the event names. A terminal
+    // WITHOUT `messageId` persisted no row (PROTOCOL §7.2: an interrupt that
+    // landed during turn startup, before any live-turn slot existed) — it
+    // still closes the accumulator, but stamping its interrupt marker onto
+    // the accumulated turn would flag a row the daemon never marked
+    // (intent-hq/intent#5380: stale "Interrupted by a new message" under a
+    // normally completed turn).
+    dispatchStreamUpdate(agentId, state, 'complete', messageId ? endMetadata : undefined);
     streamsByAgent.delete(agentId);
     return;
   }
