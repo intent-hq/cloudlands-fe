@@ -131,7 +131,9 @@ interface InviteCredential {
  * or revoked credential — from the returning-guest join; `proof-invalid` /
  * `proof-expired` / `github-unreachable` — `invite.prove` could not verify
  * the gist, the nonce is spent or past `nonceExpiresAt`, or the host could
- * not reach GitHub — from intentd #1967). The closed set is the ONLY
+ * not reach GitHub — from intentd #1967; `owner-self-join` — the proven or
+ * presented identity is the host owner's own account, which never joins its
+ * own host as a guest — from intentd #1986). The closed set is the ONLY
  * server-authored text that ever leaves {@link InviteRpcError}: a code
  * outside it maps to `null`.
  */
@@ -147,6 +149,7 @@ const INVITE_ERROR_CODES = [
   'proof-invalid',
   'proof-expired',
   'github-unreachable',
+  'owner-self-join',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];
