@@ -271,9 +271,16 @@ for (const { name, width, height, position } of [
     const warning = menu.getByText(/Uncommitted changes/);
     await expect(warning).toBeVisible();
     await expectViewportBounded(menu);
-    expect(
-      (await warning.boundingBox())!.y + (await warning.boundingBox())!.height,
-    ).toBeLessThanOrEqual((await search.boundingBox())!.y);
+    // Read both rects in one frame: the warning mounts asynchronously and the menu
+    // repositions when it grows, so separate boundingBox() reads can straddle that move.
+    const { warningBottom, searchTop } = await warning.evaluate(
+      (element, input) => ({
+        warningBottom: element.getBoundingClientRect().bottom,
+        searchTop: input!.getBoundingClientRect().top,
+      }),
+      await search.elementHandle(),
+    );
+    expect(warningBottom).toBeLessThanOrEqual(searchTop);
     const results = page.getByTestId('branch-results');
     expect(await results.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
     await results.hover();
