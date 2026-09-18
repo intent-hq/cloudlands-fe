@@ -617,6 +617,24 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
   });
 
+  it('selects a component test through the Svelte components its host imports, one hop only', () => {
+    const root = fixtureRoot({
+      'src/lib/__tests__/progress.ct.spec.ts': "import Host from './ProgressHost.svelte';",
+      'src/lib/__tests__/ProgressHost.svelte':
+        "import Progress from '../Progress.svelte';\nimport { fixtures } from './fixtures';",
+      'src/lib/__tests__/fixtures.ts': '',
+      'src/lib/Progress.svelte': "import Button from './Button.svelte';",
+      'src/lib/Button.svelte': '<button />',
+    });
+    const ctTests = ['src/lib/__tests__/progress.ct.spec.ts'];
+    const options = { root, ctTests };
+
+    expect(findRelatedCtTests(['src/lib/__tests__/ProgressHost.svelte'], options)).toEqual(ctTests);
+    expect(findRelatedCtTests(['src/lib/Progress.svelte'], options)).toEqual(ctTests);
+    expect(findRelatedCtTests(['src/lib/__tests__/fixtures.ts'], options)).toEqual([]);
+    expect(findRelatedCtTests(['src/lib/Button.svelte'], options)).toEqual([]);
+  });
+
   it('selects scene geometry for previews, fixtures, snapshots, and imported components', () => {
     const geometryTest = 'src/lib/components/workspace/workspace-hover-card.geometry.ct.spec.ts';
     const root = fixtureRoot({

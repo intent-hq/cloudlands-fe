@@ -337,8 +337,10 @@ staged, unstaged, deleted, and untracked frontend files, plus the commits since
 `git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given; an
 empty change set exits 2 instead of passing silently. Add `--dry-run` to inspect the
 selected commands without running them. The command runs scoped Prettier and ESLint,
-related Vitest tests, directly imported colocated component tests, and only the
-renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
+related Vitest tests, colocated component tests that import the changed file directly or
+through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
+module the host imports, or to a component two hops deep, does not select the spec), and
+only the renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
 select a conservative suite instead of silently skipping coverage. Any code change (or a
 `knip.jsonc` / `package.json` / `tsconfig*.json` change) also runs knip repo-wide (~3 s,
 also chained into `pnpm run lint`): dead-code detection is a whole-program check, so it

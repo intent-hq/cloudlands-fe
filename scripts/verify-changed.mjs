@@ -247,6 +247,20 @@ function geometrySnapshotTargets(testPath, root, readText) {
   return targets;
 }
 
+// A CT spec usually mounts a host/harness `.svelte` that composes the component
+// under test, so follow one hop through each directly imported `.svelte` file
+// and add the `.svelte` files it imports (mirrors `geometrySnapshotTargets`).
+function hostComponentTargets(targets, root, readText) {
+  const hosted = new Set();
+  for (const host of [...targets].filter((target) => target.endsWith('.svelte'))) {
+    if (!existsSync(resolve(root, host))) continue;
+    for (const imported of importTargets(readText(host), host, root)) {
+      if (imported.endsWith('.svelte')) hosted.add(imported);
+    }
+  }
+  return hosted;
+}
+
 export function findRelatedCtTests(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
   const ctTests = options.ctTests ?? listCtTests(root);
@@ -260,6 +274,7 @@ export function findRelatedCtTests(files, options = {}) {
   for (const test of ctTests) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
+    for (const hosted of hostComponentTargets(targets, root, readText)) targets.add(hosted);
     const geometryTargets = geometrySnapshotTargets(test, root, readText);
     if (files.some((file) => geometryTargets.has(file))) selected.add(test);
     else if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
