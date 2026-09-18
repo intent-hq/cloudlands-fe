@@ -49,9 +49,19 @@ export interface WorkspaceInvite {
   pinLogin?: string;
   createdAt: string;
   expiresAt: string;
+  /** Last redemption (a reusable invite stays open across redemptions). */
   redeemedAt?: string;
   redeemedByPrincipalId?: string;
   revokedAt?: string;
+  /**
+   * `true` when the link stays open across redemptions (unpinned invites,
+   * daemons ≥ intent-hq/intentd#1988); a pinned invite is single-use. Absent
+   * on a daemon that predates reusable links, where every invite is
+   * single-use.
+   */
+  reusable?: boolean;
+  /** Memberships the link created so far; absent on a daemon that predates it. */
+  redemptionCount?: number;
 }
 
 /**
