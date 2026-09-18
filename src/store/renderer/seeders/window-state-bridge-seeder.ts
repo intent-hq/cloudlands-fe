@@ -147,12 +147,13 @@ export function registerWindowCycleFocusBridge(): void {
 }
 
 /**
- * Forward the window-close invoke (`window:close`, the Cmd+W cascade's window
- * step once no workspace tab remains) to the registered main-process handler
- * (system.ipc.ts — closes the requesting window). Resolves undefined without
- * a bridge (browser dev build): the layout only passes `closeWindow` into the
- * cascade when the Electron bridge is present, so the web build never reaches
- * this path. Idempotent.
+ * Forward the window-close invoke (`window:close` — the Cmd+W cascade's window
+ * step once no workspace tab remains, and the guest-offline overlay's "Close
+ * window") to the registered main-process handler (system.ipc.ts — closes the
+ * SENDER window, opening a local window first when it is the app's last live
+ * window). Resolves undefined without a bridge (browser dev build): the layout
+ * only passes `closeWindow` into the cascade when the Electron bridge is
+ * present, so the web build never reaches this path. Idempotent.
  */
 export function registerWindowCloseBridge(): void {
   registerMockIpcHandler(IPC_CHANNELS.WINDOW.CLOSE, async (payload?: unknown) => {

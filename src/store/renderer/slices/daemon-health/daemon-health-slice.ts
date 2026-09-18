@@ -141,6 +141,13 @@ export const spawnSidecarRequested = createAction('daemonHealth/spawnSidecarRequ
 export const openLocalAndSpawnRequested = createAction('daemonHealth/openLocalAndSpawnRequested');
 
 /**
+ * User asked to close this window from a guest window's offline-host overlay.
+ * The daemon-health saga invokes window:close; main owns the close (and opens
+ * a local window first when this is the app's last live window).
+ */
+export const closeWindowRequested = createAction('daemonHealth/closeWindowRequested');
+
+/**
  * backend:open-local-and-spawn resolved ok. The initiating window stays bound
  * to its own (dead) backend, so no 'connected' backend:status event ever
  * reaches it to clear the pending flag — this action is that reset.
