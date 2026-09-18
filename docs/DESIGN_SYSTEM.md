@@ -132,7 +132,7 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 - Never import `svelte-sonner` directly; route transient feedback through `notify`.
 - Never call `window.alert`, `window.confirm`, or `window.prompt`; use the Confirm pattern.
 - Never import `svelte/motion` or `svelte/transition` outside `$lib/motion`.
-- Never use arbitrary duration, easing, background, or text-color utilities; use semantic tokens.
+- Never use arbitrary or Tailwind-scale duration/easing utilities (`duration-300`, `ease-out`), or arbitrary background/text-color utilities; use semantic tokens.
 - Never mount `Dialog.Root` directly in a feature; use `FormDialog` or the Confirm service.
 - Never hand-compose settings row layout from primitives; use `SettingsFieldRow` for bespoke controls, or define a schema and render `SettingsForm` for a settings section.
 

@@ -267,6 +267,9 @@ scriptTester.run('no-adhoc-transitions', noAdhocTransitions, {
 svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
   valid: [
     '<div class="duration-spring-fast ease-[var(--spring-fast-ease)] bg-card text-foreground" />',
+    '<div class="duration-spring-slow ease-spring-slow motion-reduce:transition-none" />',
+    '<div class="duration-spring-moderate-exit ease-spring-exit" />',
+    '<div class="hover:duration-spring-fast group-hover:ease-spring-fast motion-safe:duration-spring-slow-exit" />',
     '<div class="border-border ring-ring outline-muted fill-current stroke-foreground divide-border accent-primary caret-foreground" />',
     '<div class="border-[var(--border)] ring-[var(--ring)] fill-[var(--foreground)]" style="color: hsl(var(--foreground)); border-color: var(--border)" />',
     '<style>.tokenized { color: hsl(var(--foreground)); background: var(--card); }</style>',
@@ -301,6 +304,22 @@ svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
     {
       code: '<script>const classes = `ease-[linear] text-[#fff]`;</script>',
       errors: [{ messageId: 'arbitraryMotion' }, { messageId: 'arbitraryColor' }],
+    },
+    {
+      code: '<div class="duration-300 ease-out" />',
+      errors: [{ messageId: 'arbitraryMotion' }, { messageId: 'arbitraryMotion' }],
+    },
+    {
+      code: '<div class="hover:duration-150 motion-safe:group-hover:ease-in-out" />',
+      errors: [{ messageId: 'arbitraryMotion' }, { messageId: 'arbitraryMotion' }],
+    },
+    {
+      code: '<div class="duration-initial ease-linear ease-in ease-initial" />',
+      errors: Array.from({ length: 4 }, () => ({ messageId: 'arbitraryMotion' })),
+    },
+    {
+      code: '<script>const classes = `transition-opacity duration-75 ${open ? "ease-out" : "ease-in"}`;</script>',
+      errors: Array.from({ length: 3 }, () => ({ messageId: 'arbitraryMotion' })),
     },
     {
       code: '<div class="border-red-500 ring-blue-400 outline-amber-600 fill-green-500 stroke-purple-300 divide-gray-200 accent-pink-500 caret-orange-700" />',

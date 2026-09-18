@@ -70,7 +70,8 @@ export default {
       },
     ],
     messages: {
-      arbitraryMotion: 'Use `design motion tokens` instead — /sandbox/tokens',
+      arbitraryMotion:
+        'Use `duration-spring-* / ease-spring-* utilities or $lib/motion` instead — /sandbox/tokens',
       arbitraryColor: 'Use `semantic color tokens` instead — /sandbox/tokens',
       physicalPalette: 'Use `semantic color tokens` instead — /sandbox/tokens',
       cssColor: 'Use `semantic CSS color tokens` instead — /sandbox/tokens',

@@ -10,8 +10,11 @@ const utilityBoundaryEnd = String.raw`(?=$|[\s"'\x60])`;
 const variants = String.raw`(?:[^\s:"'\x60]+:)*`;
 const arbitraryColor = String.raw`(#[\da-fA-F]{3,8}|(?:rgba?|hsla?)\([^\]\r\n]+\))`;
 
+const arbitraryMotion = String.raw`(?:duration|ease)-\[(?!var\()[^\]\r\n]+\]`;
+const tailwindMotionScale = String.raw`duration-(?:\d+|initial)|ease-(?:linear|in-out|in|out|initial)`;
+
 const motionUtility = new RegExp(
-  String.raw`${utilityBoundaryStart}(${variants}(?:duration|ease)-\[(?!var\()[^\]\r\n]+\])${utilityBoundaryEnd}`,
+  String.raw`${utilityBoundaryStart}(${variants}(?:${arbitraryMotion}|${tailwindMotionScale}))${utilityBoundaryEnd}`,
   'g',
 );
 const arbitraryColorUtility = new RegExp(
