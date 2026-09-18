@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.165.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.3...v2.165.0) (2026-09-18)
+
+
+### 🚀 Features
+
+* **lint:** report Tailwind numeric duration and keyword easing utilities ([#2629](https://github.com/intent-hq/cloudlands-fe/issues/2629)) ([8136e2f](https://github.com/intent-hq/cloudlands-fe/commit/8136e2f8f7632dd5bcedb2ca1d521f2f56c74055))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.76 ([#2636](https://github.com/intent-hq/cloudlands-fe/issues/2636)) ([5b8fe06](https://github.com/intent-hq/cloudlands-fe/commit/5b8fe06f31aaf9971eaaea3d3a4971bdd7fada11))
+* **design-system:** commit the generated cheatsheet in-repo and enforce it in lint ([#2624](https://github.com/intent-hq/cloudlands-fe/issues/2624)) ([ab63975](https://github.com/intent-hq/cloudlands-fe/commit/ab639755c569c6f33528b96419c6132b3d59e1fa))
+
 ## [2.164.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.2...v2.164.3) (2026-09-18)
 
 
