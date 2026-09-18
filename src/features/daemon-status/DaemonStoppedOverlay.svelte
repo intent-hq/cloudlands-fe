@@ -18,9 +18,9 @@
    * component issues no wire requests itself). Offers actionable recovery when
    * the connection is down (T20, Open-only — no action retargets this window):
    * "Start local intentd" in a local window (spawns the app-managed sidecar) /
-   * "Open local" in a remote window (spawns if needed and opens the local
+   * "Switch to Local" in a remote window (spawns if needed and opens the local
    * backend's windows), the sidecar retry when the supervisor gave up
-   * restarting, plus one-click Open actions for the other saved backends so
+   * restarting, plus one-click open actions for the other saved backends so
    * the user can fail over without opening the daemon-status menu.
    */
   import { page } from '$app/stores';
@@ -148,8 +148,8 @@
   const isSidecarFailure = $derived(($sidecarStartupFailed$ || $sidecarGaveUp$) && !isExternalMode);
   // Local recovery is offered in any external mode — external-uds AND
   // external-ws (T20). In a local window the action just spawns the on-demand
-  // sidecar ("Start local intentd"); in a remote window it becomes "Open local"
-  // — spawn (if needed) plus open/focus the local backend's windows, leaving
+  // sidecar ("Start local intentd"); in a remote window it becomes "Switch to
+  // Local" — spawn (if needed) plus open/focus the local backend's windows, leaving
   // THIS window on its own backend (Open-only: no overlay action retargets a
   // window). Once a spawn is in flight (or failed), the section stays visible
   // even if a status broadcast flips the transport to sidecar-uds mid-spawn —
@@ -163,7 +163,7 @@
   const isRemoteWindow = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
 
   // Other saved backends the user can open windows for without leaving this
-  // one (T20, Open-only). Excludes the local entry — "Open local" / "Start
+  // one (T20, Open-only). Excludes the local entry — "Switch to Local" / "Start
   // local intentd" is its dedicated action — and this window's own backend.
   const otherConnections = $derived(
     $connections$.filter((c) => !c.isLocal && c.id !== $activeConnectionId$),
@@ -213,21 +213,29 @@
     return conn.label;
   }
 
-  // Connection details for the lost external daemon (#1750): prefer this
-  // window's connection record's `hostname (host:port)` label (captured from
-  // host.status on first connect); fall back to the transport target (sanitized
-  // WS URL or UDS socket path) when the window's backend is the local entry
-  // (external-uds adoption) or the record has not loaded.
+  // Machine name for the unreachable external daemon (#1750): prefer this
+  // window's connection record's `hostname` (the machine's pretty name captured
+  // from host.status on first connect), then its user-given label, then the
+  // raw host; fall back to the transport target (sanitized WS URL or UDS
+  // socket path) when the window's backend is the local entry (external-uds
+  // adoption) or the record has not loaded. `null` keeps the generic copy.
   const activeConnection = $derived(
     $connections$.find((c) => c.id === $activeConnectionId$) ?? null,
   );
-  const externalTargetLabel = $derived.by(() => {
-    if (activeConnection && !activeConnection.isLocal) return connectionLabel(activeConnection);
-    return $transport$?.target ?? null;
+  const machineName = $derived.by(() => {
+    if (activeConnection && !activeConnection.isLocal) {
+      const name =
+        activeConnection.hostname?.trim() ||
+        activeConnection.label?.trim() ||
+        activeConnection.host?.trim();
+      if (name) return name;
+    }
+    const target = $transport$?.target?.trim();
+    return target || null;
   });
 
   function handleSpawnSidecar() {
-    // Remote window: "Open local" — main spawns the sidecar (if needed) and
+    // Remote window: "Switch to Local" — main spawns the sidecar (if needed) and
     // opens/focuses the local backend's windows in one main-side action, so
     // recovery completes even if this renderer goes away mid-flight. This
     // window keeps its own (dead) backend and this overlay.
@@ -284,6 +292,10 @@
             {$sidecarStartupFailed$
               ? m.daemonStatus_overlay_startupFailedTitle_label()
               : m.daemonStatus_overlay_stoppedUnexpectedlyTitle_label()}
+          {:else if isExternalMode && machineName}
+            {$hasEverConnected$
+              ? m.daemonStatus_overlay_machineLostTitle_label({ machine: machineName })
+              : m.daemonStatus_overlay_cannotConnectMachineTitle_label({ machine: machineName })}
           {:else if !$hasEverConnected$}
             {m.daemonStatus_overlay_cannotConnectTitle_label()}
           {:else}
@@ -316,6 +328,12 @@
                   })
                 : m.daemonStatus_overlay_gaveUp_description()}
             {/if}
+          {:else if isExternalMode && machineName}
+            {$hasEverConnected$
+              ? m.daemonStatus_overlay_externalLostMachine_description({ machine: machineName })
+              : m.daemonStatus_overlay_externalNeverConnectedMachine_description({
+                  machine: machineName,
+                })}
           {:else if isExternalMode}
             {#if $hasEverConnected$}
               {m.daemonStatus_overlay_externalLost_description()}
@@ -328,20 +346,6 @@
             {m.daemonStatus_overlay_neverConnected_description()}
           {/if}
         </p>
-
-        {#if !isSidecarFailure && !isAuthRejected && isExternalMode && externalTargetLabel}
-          <p
-            class="mt-2 truncate font-mono text-xs text-muted-foreground"
-            title={externalTargetLabel}
-            data-testid="daemon-stopped-connection-details"
-          >
-            {$hasEverConnected$
-              ? m.daemonStatus_overlay_externalLostDetail_label({ target: externalTargetLabel })
-              : m.daemonStatus_overlay_externalNeverConnectedDetail_label({
-                  target: externalTargetLabel,
-                })}
-          </p>
-        {/if}
 
         {#if !isSidecarFailure && !isAuthRejected}
           <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
@@ -477,7 +481,7 @@
               {#if $spawnPending$}
                 {m.daemonStatus_overlay_startingIntentd_label()}
               {:else if isRemoteWindow}
-                {m.daemonStatus_overlay_openLocal_label()}
+                {m.daemonStatus_overlay_switchToLocal_label()}
               {:else}
                 {m.daemonStatus_overlay_startLocalIntentd_label()}
               {/if}
@@ -491,7 +495,7 @@
 
             <p class="mt-2 text-xs text-muted-foreground">
               {isRemoteWindow
-                ? m.daemonStatus_overlay_openLocalDataNote_label()
+                ? m.daemonStatus_overlay_switchToLocalNote_label()
                 : isExternalMode
                   ? m.daemonStatus_overlay_externalDataNote_label()
                   : m.daemonStatus_overlay_dataDirNote_label()}
@@ -514,7 +518,7 @@
                   onclick={() => handleOpenConnection(conn.id)}
                   data-testid="daemon-stopped-open-backend"
                 >
-                  {m.daemonStatus_overlay_openBackend_label({ label: connectionLabel(conn) })}
+                  {connectionLabel(conn)}
                 </Button>
               {/each}
             </div>

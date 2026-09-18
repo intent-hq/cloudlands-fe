@@ -314,7 +314,7 @@ describe('DaemonStoppedOverlay', () => {
     render(DaemonStoppedOverlay);
     await showOverlay(externalTransport);
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
-    expect(overlay()!.textContent).toContain('external intentd daemon was lost');
+    expect(overlay()!.textContent).toContain('was lost');
     // External mode gets the "local intentd instead of the remote server" note,
     // not the local data-dir caveat.
     expect(overlay()!.textContent).toContain('instead of the remote server');
@@ -325,10 +325,10 @@ describe('DaemonStoppedOverlay', () => {
     render(DaemonStoppedOverlay);
     await showOverlay({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
-    expect(overlay()!.textContent).toContain('external intentd daemon was lost');
+    expect(overlay()!.textContent).toContain('was lost');
   });
 
-  it('shows the lost connection details from the active connection record (#1750)', async () => {
+  it('names the machine from the active connection record in the title and description (#1750)', async () => {
     const remote: ConnectionRecord = {
       id: 'conn-1',
       label: '192.168.1.20:5181',
@@ -347,23 +347,26 @@ describe('DaemonStoppedOverlay', () => {
       }),
     );
     await showOverlay({ mode: 'external-ws', target: 'wss:192.168.1.20:5181' });
-    const details = screen.getByTestId('daemon-stopped-connection-details');
-    expect(details.textContent).toContain('Lost connection to studio.local (192.168.1.20:5181)');
+    expect(screen.getByRole('alertdialog', { name: /studio\.local/ })).toBeTruthy();
+    expect(document.getElementById('daemon-stopped-description')!.textContent).toContain(
+      'studio.local',
+    );
+    // The machine name lives in the title/description; no separate detail line.
+    expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
   });
 
-  it('falls back to the transport target for the details line when no remote record is active (#1750)', async () => {
+  it('falls back to the transport target as the machine name when no remote record is active (#1750)', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(externalTransport);
     // external-uds adoption: the active connection is the local entry, so the
     // socket path from the transport is the best available target detail.
-    const details = screen.getByTestId('daemon-stopped-connection-details');
-    expect(details.textContent).toContain('Lost connection to /tmp/i.sock');
+    expect(screen.getByRole('alertdialog', { name: /\/tmp\/i\.sock/ })).toBeTruthy();
   });
 
-  it('hides the connection-details line in sidecar mode', async () => {
+  it('does not name the transport target in sidecar mode', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(sidecarTransport);
-    expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
+    expect(overlay()!.textContent).not.toContain('/tmp/i.sock');
   });
 
   it('shows the reconnect attempt count in the retrying line (#1750)', async () => {
@@ -566,7 +569,7 @@ describe('DaemonStoppedOverlay', () => {
   it('says "could not connect" with the sidecar fallback when never connected in external posture', async () => {
     render(DaemonStoppedOverlay);
     await showOverlayNeverConnected(externalTransport);
-    expect(overlay()!.textContent).toContain('Could not connect to the external intentd daemon');
+    expect(overlay()!.textContent).toContain('Could not connect to the intentd daemon');
     expect(overlay()!.textContent).not.toContain('was lost');
     // Buttons follow the same transport-mode rules as the lost-connection posture.
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
@@ -634,15 +637,15 @@ describe('DaemonStoppedOverlay', () => {
       );
     }
 
-    it('offers "Open local" and routes it through backend:open-local-and-spawn', async () => {
+    it('offers "Switch to Local" and routes it through backend:open-local-and-spawn', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       bindWindowToRemote();
 
       const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
-      expect(button.textContent).toContain('Open local');
-      // The remote-window note explains this window keeps its own backend.
-      expect(overlay()!.textContent).toContain('stays connected to the remote backend');
+      expect(button.textContent).toContain('Switch to Local');
+      // The remote-window note explains the action targets the local daemon.
+      expect(overlay()!.textContent).toContain('local intentd daemon running on this machine');
 
       await fireEvent.click(button);
       await vi.waitFor(() => {
@@ -668,14 +671,14 @@ describe('DaemonStoppedOverlay', () => {
       expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
     });
 
-    it('lists other backends as "Open …" actions that dispatch openConnectionRequested', async () => {
+    it('lists other backends by name (no "Open" prefix) as actions that dispatch openConnectionRequested', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       bindWindowToRemote();
 
       const openButtons = screen.getAllByTestId('daemon-stopped-open-backend');
       expect(openButtons).toHaveLength(1);
-      expect(openButtons[0].textContent).toContain('Open');
+      expect(openButtons[0].textContent).not.toContain('Open');
       expect(openButtons[0].textContent).toContain('Other Mac');
 
       const dispatchSpy = vi.spyOn(appStore, 'dispatch');
@@ -866,19 +869,19 @@ describe('DaemonStoppedOverlay', () => {
       );
     });
 
-    it('hides the connection-details line and attempt counter in the token-rejected state (#957)', async () => {
+    it('hides the machine-named title and attempt counter in the token-rejected state (#957)', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport, { reconnectAttempts: 3 });
       activateRemote();
-      // Before the rejection latches, the external posture shows the lost
-      // connection details for the active remote.
-      expect(screen.getByTestId('daemon-stopped-connection-details')).toBeTruthy();
+      // Before the rejection latches, the external posture names the active
+      // remote in the title.
+      expect(screen.getByRole('alertdialog', { name: /Studio Mac/ })).toBeTruthy();
 
       rejectAuth(401);
 
       // The auth-rejected copy already names host:port; the generic external
-      // details line and the retrying/attempt counter would be misleading.
-      expect(screen.queryByTestId('daemon-stopped-connection-details')).toBeNull();
+      // title and the retrying/attempt counter would be misleading.
+      expect(screen.queryByRole('alertdialog', { name: /Studio Mac/ })).toBeNull();
       expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
     });
 
