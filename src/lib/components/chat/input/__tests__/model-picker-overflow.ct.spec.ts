@@ -85,13 +85,28 @@ test('composer model content aligns with text while its hover target extends on 
   expect(Math.abs(geometry.leftInset - geometry.rightInset)).toBeLessThan(1);
   expect(geometry.labelClipped).toBe(false);
   await expectHitTarget(trigger);
-  const rest = (await trigger.boundingBox())!;
+  // The composer rows above the action bar can still be settling vertically after the
+  // fill, so two absolute boundingBox() reads can straddle that shift (intent#5340).
+  // Hover may only change paint on the trigger itself, so measure its box against its
+  // action bar, with both rects read in one frame.
+  const triggerInBar = () =>
+    trigger.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      const bar = button.closest('[data-chat-input-action-bar]')!.getBoundingClientRect();
+      return {
+        left: rect.left - bar.left,
+        top: rect.top - bar.top,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+  const rest = await triggerInBar();
   const background = await trigger.evaluate((el) => getComputedStyle(el).backgroundColor);
   await trigger.hover();
   await expect
     .poll(() => trigger.evaluate((el) => getComputedStyle(el).backgroundColor))
     .not.toBe(background);
-  expect(await trigger.boundingBox()).toEqual(rest);
+  expect(await triggerInBar()).toEqual(rest);
 });
 
 test('model labels stay normal weight through pointer and keyboard selection', async ({
