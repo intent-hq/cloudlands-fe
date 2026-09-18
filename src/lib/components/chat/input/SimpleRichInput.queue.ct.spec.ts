@@ -13,12 +13,31 @@ test('preserves the empty composer and insets prompt text below expanded and col
   await expect(editor).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   await expect(editor.locator('p')).toHaveAttribute('data-placeholder', /.+/);
+  const surfaceTextInset = () =>
+    input.evaluate(
+      (node) =>
+        node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
+        node.getBoundingClientRect().top,
+    );
+  // With no queue the prompt text sits directly below the composer and editor
+  // paddings. Settle on that before sampling the baseline: a single early read
+  // raced the first layout on CI (intent-hq/intent#5324) and pinned a baseline
+  // the restored composer could never match.
+  const emptyTextInset = await input.evaluate((node) => {
+    const editor = node.querySelector('.tiptap-editor')!;
+    return (
+      parseFloat(getComputedStyle(node).paddingTop) +
+      parseFloat(getComputedStyle(editor).paddingTop)
+    );
+  });
+  await expect.poll(surfaceTextInset).toBe(emptyTextInset);
   const geometry = await input.evaluate((node) => {
     const surface = node.getBoundingClientRect();
     const text = node.querySelector('.tiptap-editor p')!.getBoundingClientRect();
     const actions = node.querySelector('.action-bar')!.getBoundingClientRect();
     return { top: text.top - surface.top, bottom: actions.top - text.bottom };
   });
+  expect(geometry.top).toBe(emptyTextInset);
   expect(geometry.top).toBeGreaterThanOrEqual(8);
   expect(geometry.top).toBeLessThanOrEqual(12);
   expect(Math.abs(geometry.bottom - geometry.top)).toBeLessThanOrEqual(4);
@@ -86,16 +105,7 @@ test('preserves the empty composer and insets prompt text below expanded and col
   await expect(header).toHaveCount(0);
   await expect.poll(queueEditorGap).toBe(0);
   await expect.poll(() => input.boundingBox()).toEqual(emptyBox);
-  // The prompt paragraph can still be mid-relayout after the queue collapses (the
-  // container's box is unchanged because the editor absorbs the queue height), so wait
-  // for the inset to settle instead of reading it once (intent-hq/intent#5324).
-  const restoredTextInset = () =>
-    input.evaluate(
-      (node) =>
-        node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
-        node.getBoundingClientRect().top,
-    );
-  await expect.poll(restoredTextInset).toBe(geometry.top);
+  await expect.poll(surfaceTextInset).toBe(geometry.top);
 });
 
 for (const streaming of [false, true]) {
