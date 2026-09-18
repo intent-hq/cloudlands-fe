@@ -74,6 +74,7 @@
     setWorkspaceEntity,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import {
+    selectHidesOwnerWorkspaceActions,
     selectWorkspaceById,
     selectWorkspaceProgressActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -125,6 +126,9 @@
   const sidebarSide$ = selectSidebarSide();
   const notes = selectAllNotes(workspaceIdStore);
   const workspace = selectWorkspaceById(workspaceIdStore);
+  // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
+  // daemon for collaborators (`require_owner`), so the menu hides them up front.
+  const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
   // BE-owned task progress rollup served verbatim from the workspace-tasks slice
   // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
   const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
@@ -488,7 +492,7 @@
   });
 
   const transferAction: MenuAction | null = $derived(
-    $workspace
+    $workspace && !$hidesOwnerActions$
       ? {
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
@@ -974,8 +978,8 @@
                 onUnarchive={handleUnarchive}
                 {isArchived}
                 onClose={handleDropdownClose}
-                showDeleteOption={true}
-                showArchiveOption={true}
+                showDeleteOption={!$hidesOwnerActions$}
+                showArchiveOption={!$hidesOwnerActions$}
                 showFileNameCopy={false}
                 showFileActions={true}
                 {additionalActions}
