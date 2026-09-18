@@ -49,7 +49,7 @@
   <div bind:this={containerElement} class={cn('relative', className)}>
     <Menu.Trigger
       bind:ref={triggerElement}
-      class="flex-shrink-0 flex items-center justify-center w-6 h-full hover:bg-sidebar/50 transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-ink focus-visible:ring-offset-2"
+      class="flex-shrink-0 flex items-center justify-center w-6 h-full hover:bg-sidebar/50 transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-ink focus-visible:ring-offset-2"
       aria-label={m.ui_tabOverflow_showMore_ariaLabel()}
       title={m.ui_tabOverflow_more_tooltip()}
     >

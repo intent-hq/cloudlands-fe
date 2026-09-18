@@ -142,7 +142,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-500 border',
+      'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-spring-slow ease-spring-slow motion-reduce:transition-none border',
       cardClickable ? 'cursor-pointer border-transparent' : 'cursor-default border-border',
       (ready || needsAction) && 'border-border',
       installed && brand.isLight && 'text-slate-800',
@@ -169,7 +169,7 @@
     <div
       data-testid="provider-card-artwork"
       class={cn(
-        'absolute inset-0 rounded-lg transition-all transform duration-700 ease-out',
+        'absolute inset-0 rounded-lg transition-all transform duration-spring-slow ease-spring-slow motion-reduce:transition-none',
         !installed && 'opacity-0 translate-y-full',
         installed && 'opacity-100',
       )}
@@ -179,7 +179,7 @@
     <!-- Icon in top-left -->
     <span
       class={cn(
-        'relative z-10 transition-all transform origin-center duration-300',
+        'relative z-10 transition-all transform origin-center duration-spring-slow ease-spring-slow motion-reduce:transition-none',
         provider.statusLoading && 'animate-pulse',
       )}
     >

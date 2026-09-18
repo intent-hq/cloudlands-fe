@@ -275,7 +275,7 @@
               scrollToBottom(scrollContainer);
             }
           }}
-          class="absolute bottom-24 right-6 p-2 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-all duration-200 shadow-lg"
+          class="absolute bottom-24 right-6 p-2 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none shadow-lg"
           aria-label={m.chat_agentThread_scrollToBottom_ariaLabel()}
         >
           <svg

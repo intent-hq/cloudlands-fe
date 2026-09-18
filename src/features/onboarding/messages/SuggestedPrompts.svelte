@@ -83,7 +83,7 @@
         variant="ghost"
         type="button"
         class="flex items-center gap-2.5 rounded-lg border border-border bg-card/30
-               px-3 py-2.5 text-left text-sm transition-all duration-150
+               px-3 py-2.5 text-left text-sm transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none
                hover:bg-card/60 hover:border-border hover:shadow-sm
                disabled:opacity-40 disabled:cursor-not-allowed
                cursor-pointer"

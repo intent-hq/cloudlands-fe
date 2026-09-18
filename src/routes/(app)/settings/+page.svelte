@@ -777,7 +777,7 @@
                   label={m.settings_font_notes_label()}
                 >
                   {#snippet descriptionContent()}<span
-                      class="type-body text-subtle mt-0.5 transition-all duration-200"
+                      class="type-body text-subtle mt-0.5 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                       class:font-mono={$isNoteMonospace}
                     >
                       {m.settings_font_notes_description()}
@@ -810,7 +810,7 @@
                   label={m.settings_font_agentChat_label()}
                 >
                   {#snippet descriptionContent()}<span
-                      class="type-body text-subtle mt-0.5 transition-all duration-200"
+                      class="type-body text-subtle mt-0.5 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                       class:font-mono={$agentFontStyle === 'monospace'}
                     >
                       {m.settings_font_agentChat_description()}
