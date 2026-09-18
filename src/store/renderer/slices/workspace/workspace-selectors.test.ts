@@ -14,6 +14,7 @@ import {
 } from './workspace-slice';
 import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
 import {
+  selectHidesOwnerWorkspaceActions,
   selectIsCollaboratorOnlyClient,
   selectIsWorkspaceHostLocal,
   selectWorkflowStage,
@@ -271,6 +272,45 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
       ),
     ).toBe(false);
     expect(selectIsCollaboratorOnlyClient.select(loadedState([]))).toBe(false);
+  });
+
+  describe('selectHidesOwnerWorkspaceActions', () => {
+    it('hides the owner-only actions for a workspace whose myRole is collaborator, in any window', () => {
+      const collaborator = loadedState([makeWorkspace({ myRole: 'collaborator' })]);
+      expect(selectHidesOwnerWorkspaceActions.select(collaborator, WS_ID)).toBe(true);
+      expect(
+        selectHidesOwnerWorkspaceActions.select(guestAware(collaborator, GUEST_SESSION.id), WS_ID),
+      ).toBe(true);
+    });
+
+    it('keeps them for an owned workspace and for a pre-w3 daemon that omits myRole in an owner window', () => {
+      expect(
+        selectHidesOwnerWorkspaceActions.select(
+          loadedState([makeWorkspace({ myRole: 'owner' })]),
+          WS_ID,
+        ),
+      ).toBe(false);
+      expect(selectHidesOwnerWorkspaceActions.select(loadedState([makeWorkspace()]), WS_ID)).toBe(
+        false,
+      );
+      expect(
+        selectHidesOwnerWorkspaceActions.select(
+          guestAware(loadedState([makeWorkspace()]), 'local'),
+          WS_ID,
+        ),
+      ).toBe(false);
+    });
+
+    it('hides them in a guest window while the workspace row or its myRole has not arrived', () => {
+      const guestUnloaded = guestAware(loadedState([], false), GUEST_SESSION.id);
+      expect(selectHidesOwnerWorkspaceActions.select(guestUnloaded, WS_ID)).toBe(true);
+      const guestRoleless = guestAware(loadedState([makeWorkspace()]), GUEST_SESSION.id);
+      expect(selectHidesOwnerWorkspaceActions.select(guestRoleless, WS_ID)).toBe(true);
+    });
+
+    it('does not hide them in an owner window for an unknown workspace id', () => {
+      expect(selectHidesOwnerWorkspaceActions.select(loadedState([]), 'ws-missing')).toBe(false);
+    });
   });
 });
 

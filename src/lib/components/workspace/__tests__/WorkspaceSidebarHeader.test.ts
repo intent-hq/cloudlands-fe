@@ -41,7 +41,28 @@ const mocks = vi.hoisted(() => {
       }),
       { select: () => value },
     );
-  return { dispatch, update, clipboardWrite, toastSuccess, toastError, selector, storeState };
+  const liveSelector = <T>(read: () => T) =>
+    Object.assign(
+      () => ({
+        subscribe(run: (v: T) => void) {
+          run(read());
+          return () => {};
+        },
+      }),
+      { select: read },
+    );
+  const role = { hidesOwnerActions: false };
+  return {
+    dispatch,
+    update,
+    clipboardWrite,
+    toastSuccess,
+    toastError,
+    selector,
+    liveSelector,
+    role,
+    storeState,
+  };
 });
 
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -97,6 +118,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
   })),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesOwnerWorkspaceActions: mocks.liveSelector(() => mocks.role.hidesOwnerActions),
 }));
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
@@ -180,6 +205,7 @@ describe('WorkspaceSidebarHeader status message', () => {
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
     mocks.storeState.workspace.pendingTitleMutations = {};
+    mocks.role.hidesOwnerActions = false;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -502,5 +528,32 @@ describe('WorkspaceSidebarHeader status message', () => {
     await screen.findByRole('menu');
 
     expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+  });
+
+  it('offers Transfer and Delete to the workspace owner', async () => {
+    await renderHeader({ myRole: 'owner' });
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Workspace actions' }), {
+      key: 'Enter',
+    });
+    await screen.findByRole('menu');
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete Workspace…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Toggle Sidebar' })).toBeTruthy();
+  });
+
+  it('hides Transfer and Delete from a collaborator while keeping the rest of the menu', async () => {
+    mocks.role.hidesOwnerActions = true;
+    await renderHeader({ myRole: 'collaborator' });
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Workspace actions' }), {
+      key: 'Enter',
+    });
+    await screen.findByRole('menu');
+
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete Workspace…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Toggle Sidebar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move sidebar to right' })).toBeTruthy();
   });
 });
