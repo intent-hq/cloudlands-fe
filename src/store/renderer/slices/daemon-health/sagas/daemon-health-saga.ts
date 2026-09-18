@@ -21,6 +21,7 @@ import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
 import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
 import {
+  closeWindowRequested,
   connectionStatusChanged,
   fetchSidecarRunLogFailed,
   fetchSidecarRunLogRequested,
@@ -90,6 +91,12 @@ async function invokeOpenLocalAndSpawn() {
   if (!window.electronAPI) throw new Error('electronAPI is not available');
   return (await window.electronAPI.invoke(BACKEND.OPEN_LOCAL_AND_SPAWN)) as
     { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
+}
+
+async function invokeCloseWindow() {
+  if (!window.electronAPI) throw new Error('electronAPI is not available');
+  return (await window.electronAPI.invoke(IPC_CHANNELS.WINDOW.CLOSE)) as
+    { success: boolean } | undefined;
 }
 
 async function invokeSidecarRunLog(): Promise<SidecarRunLog> {
@@ -430,6 +437,15 @@ function* openLocalAndSpawnSaga() {
   }
 }
 
+function* closeWindowSaga() {
+  try {
+    yield* call(invokeCloseWindow);
+  } catch {
+    // Main owns the close; a bridge failure leaves the window (and its
+    // overlay) as they are.
+  }
+}
+
 function* fetchSidecarRunLogSaga() {
   try {
     const log = yield* call(invokeSidecarRunLog);
@@ -442,6 +458,7 @@ function* fetchSidecarRunLogSaga() {
 function* watchDaemonControls() {
   yield* takeEvery(spawnSidecarRequested, spawnSidecarSaga);
   yield* takeEvery(openLocalAndSpawnRequested, openLocalAndSpawnSaga);
+  yield* takeEvery(closeWindowRequested, closeWindowSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
 }
