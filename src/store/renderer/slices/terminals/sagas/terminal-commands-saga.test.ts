@@ -23,6 +23,14 @@ import {
   terminalsReducer,
 } from '../terminals-slice';
 import { terminalCommandsSaga } from './terminal-commands-saga';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+
+/** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
+const ownerWindowSlices = {
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+  guestSessions: guestSessionsInitialState,
+};
 
 const settle = async () => {
   for (let i = 0; i < 6; i += 1) await Promise.resolve();
@@ -40,14 +48,14 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
     return action;
   };
   const task = runSaga(
-    { channel: input, dispatch, getState: () => ({ terminals, workspace }) },
+    { channel: input, dispatch, getState: () => ({ ...ownerWindowSlices, terminals, workspace }) },
     terminalCommandsSaga,
   );
   const send = (action: unknown) => {
     terminals = terminalsReducer(terminals, action as never);
     input.put(action as never);
   };
-  const getState = () => ({ terminals, workspace }) as never;
+  const getState = () => ({ ...ownerWindowSlices, terminals, workspace }) as never;
   return { dispatched, send, task, getState };
 }
 

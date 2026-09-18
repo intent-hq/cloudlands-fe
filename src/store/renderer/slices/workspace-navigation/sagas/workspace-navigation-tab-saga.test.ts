@@ -10,6 +10,14 @@ import {
   panelLayoutReducer as rawPanelLayoutReducer,
 } from '../../panel-layout/panel-layout-slice';
 import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+
+/** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
+const ownerWindowSlices = {
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+  guestSessions: guestSessionsInitialState,
+};
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
@@ -152,6 +160,7 @@ describe('workspaceNavigationTabSaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const state = {
+      ...ownerWindowSlices,
       panelLayout: {
         byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-focused' } },
       },
@@ -220,6 +229,7 @@ describe('workspaceNavigationTabSaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const state = {
+      ...ownerWindowSlices,
       panelLayout: {
         byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-focused' } },
       },
