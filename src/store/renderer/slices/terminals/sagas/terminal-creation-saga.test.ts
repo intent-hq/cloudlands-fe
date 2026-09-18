@@ -41,7 +41,8 @@ function startSaga(myRole: 'owner' | 'collaborator' = 'owner') {
       dispatch: (action: { type: string; payload?: unknown }) => dispatched.push(action),
       getState: () => ({
         connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
-        guestSessions: guestSessionsInitialState,
+        // Settled owner window: guest list received, no host joined.
+        guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
         panelLayout: { byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-1' } } },
         workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole }]) },
       }),

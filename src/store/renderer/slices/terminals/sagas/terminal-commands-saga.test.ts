@@ -29,7 +29,8 @@ import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 /** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
 const ownerWindowSlices = {
   connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
-  guestSessions: guestSessionsInitialState,
+  // Settled owner window: guest list received, no host joined.
+  guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
 };
 
 const settle = async () => {
