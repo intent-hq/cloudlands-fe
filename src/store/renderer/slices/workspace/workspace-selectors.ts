@@ -151,12 +151,15 @@ export const selectWorkspaceIsWaiting = store.createSelector<[wsId: string], boo
  * daemon refuses on those administrator-only methods and on `/tunnel`
  * regardless of the workspace role it reports — so the window reads as
  * collaborator whatever `myRole` says (an invite joined with the host owner's
- * own GitHub account reuses the primary principal and reports `owner`).
- * Absent `myRole` (older daemon, non-member, unknown workspace) in an owner
- * window reads as owner-equivalent.
+ * own GitHub account reuses the primary principal and reports `owner`) — and
+ * until the window's guest/owner identity has settled
+ * (`selectWindowIdentitySettled`), since under the boot-time default a guest
+ * window reads as an owner window. Absent `myRole` (older daemon, non-member,
+ * unknown workspace) in a settled owner window reads as owner-equivalent.
  */
 export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string], boolean>(
   (state, wsId) =>
+    !selectWindowIdentitySettled.select(state) ||
     selectIsGuestWindow.select(state) ||
     selectWorkspaceById.select(state, wsId)?.myRole === 'collaborator',
 );
@@ -169,11 +172,14 @@ export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string]
  * `myRole` the row carries, and before it has arrived: a guest window is
  * never an owner seat, so neither an unloaded row nor a row the daemon
  * reports as `owner` (the host owner's own account joining its own invite)
- * may expose them. Absent `myRole` in an owner window keeps owner semantics
- * (older daemon).
+ * may expose them. The same holds while the window's identity is still the
+ * boot-time default (`selectWindowIdentitySettled` false): a guest window is
+ * not identifiable yet, so the actions stay hidden rather than flash. Absent
+ * `myRole` in a settled owner window keeps owner semantics (older daemon).
  */
 export const selectHidesOwnerWorkspaceActions = store.createSelector<[wsId: string], boolean>(
   (state, wsId) =>
+    !selectWindowIdentitySettled.select(state) ||
     selectIsGuestWindow.select(state) ||
     selectWorkspaceById.select(state, wsId)?.myRole === 'collaborator',
 );
