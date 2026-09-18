@@ -375,10 +375,7 @@ function* setNotificationsMuted(
   // Optimistic flip so the menu label / indicator respond immediately; the
   // `agent:updated` push re-derives the same fields through normalizeAgent.
   const previous = yield* selectAgentSession.effect(agentId);
-  const rollback =
-    previous !== undefined
-      ? { notificationsMuted: previous.notificationsMuted, hasUnread: previous.hasUnread }
-      : null;
+  const previousMuted = previous?.notificationsMuted;
   if (previous !== undefined) {
     yield* put(
       updateSession(agentId, {
@@ -400,10 +397,18 @@ function* setNotificationsMuted(
     settled = true;
   } catch (error) {
     const failure = mutationError(error, m.agent_mutation_setNotificationsMutedFailed_error());
-    if (rollback) {
+    if (previous !== undefined) {
+      // Re-derive unread from the live session rather than the pre-request
+      // snapshot: a message or seen-marker may have landed while the RPC was
+      // pending, and only the mute flag itself is being rolled back.
       const current = yield* selectAgentSession.effect(agentId);
-      if (current?.notificationsMuted === notificationsMuted) {
-        yield* put(updateSession(agentId, rollback));
+      if (current !== undefined && current.notificationsMuted === notificationsMuted) {
+        yield* put(
+          updateSession(agentId, {
+            notificationsMuted: previousMuted,
+            hasUnread: deriveAgentHasUnread({ ...current, notificationsMuted: previousMuted }),
+          }),
+        );
       }
     }
     yield* call(showError, failure.message);

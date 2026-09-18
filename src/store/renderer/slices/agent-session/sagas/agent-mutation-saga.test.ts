@@ -375,6 +375,70 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
+  it('rollback re-derives unread from a newer assistant message that landed mid-request', async () => {
+    const pending = Promise.withResolvers<{ success: boolean; error?: string }>();
+    mocks.setNotificationsMuted.mockReturnValue(pending.promise);
+    const seen = session(A1, {
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-1',
+      hasUnread: false,
+      metadata: { lastSeenMessageId: 'm-1' },
+    });
+    const { channel, dispatch, dispatched, task, getState } = start(
+      { [A1]: seen },
+      { live: true },
+    );
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+    await settle();
+    expect(mocks.setNotificationsMuted).toHaveBeenCalledTimes(1);
+
+    dispatch(updateSession(A1, { lastMessageId: 'm-2', lastMessageRole: 'assistant' }));
+    pending.resolve({ success: false, error: 'mute rejected' });
+
+    await expect(action.promise).rejects.toThrow('mute rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates.at(-1)).toEqual(
+      updateSession(A1, { notificationsMuted: undefined, hasUnread: true }),
+    );
+    const final = selectAgentSession.select(getState() as never, A1);
+    expect(final?.notificationsMuted).toBeUndefined();
+    expect(final?.hasUnread).toBe(true);
+    await stop(task);
+  });
+
+  it('rollback re-derives unread after the seen marker advanced mid-request', async () => {
+    const pending = Promise.withResolvers<{ success: boolean; error?: string }>();
+    mocks.setNotificationsMuted.mockReturnValue(pending.promise);
+    const unread = session(A1, {
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-9',
+      hasUnread: true,
+      metadata: { lastSeenMessageId: 'm-5' },
+    });
+    const { channel, dispatch, dispatched, task, getState } = start(
+      { [A1]: unread },
+      { live: true },
+    );
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+    await settle();
+    expect(mocks.setNotificationsMuted).toHaveBeenCalledTimes(1);
+
+    dispatch(updateSession(A1, { metadata: { lastSeenMessageId: 'm-9' } }));
+    pending.resolve({ success: false, error: 'mute rejected' });
+
+    await expect(action.promise).rejects.toThrow('mute rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates.at(-1)).toEqual(
+      updateSession(A1, { notificationsMuted: undefined, hasUnread: false }),
+    );
+    const final = selectAgentSession.select(getState() as never, A1);
+    expect(final?.notificationsMuted).toBeUndefined();
+    expect(final?.hasUnread).toBe(false);
+    await stop(task);
+  });
+
   it('restores an immediately deleted session once and rejects on daemon failure', async () => {
     mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
     const { channel, dispatched, task } = start();
