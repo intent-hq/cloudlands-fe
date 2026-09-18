@@ -189,6 +189,15 @@ async function loadRateHistory(): Promise<void> {
 const hydratedAgentWorkspaceIds = new Set<string>();
 
 /**
+ * In-flight `agent.list` hydration per workspace. `subscribe()` and the
+ * hydration pass start concurrently, so an agent-family event can arrive
+ * before its (possibly muted) session is in the slice — `handleEvent` parks
+ * the takeover check of such an unknown agent on this promise and re-runs the
+ * mute gate once the list has landed. Entries drop as each hydration settles.
+ */
+const pendingAgentHydrationByWorkspaceId = new Map<string, Promise<void>>();
+
+/**
  * Request the agent list for every HUD-visible (non-archived, non-deleted)
  * workspace not yet hydrated this session. The AgentLite projection (§5.5)
  * carries the persisted `lastAgentResponse`, which `bulkUpsertSessions`
@@ -209,7 +218,12 @@ function hydrateVisibleWorkspaceAgents(): void {
     if (hydratedAgentWorkspaceIds.has(workspaceId)) continue;
     hydratedAgentWorkspaceIds.add(workspaceId);
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
-    void hydrateHudWorkspaceAgents(workspaceId);
+    const hydration = hydrateHudWorkspaceAgents(workspaceId).finally(() => {
+      if (pendingAgentHydrationByWorkspaceId.get(workspaceId) === hydration) {
+        pendingAgentHydrationByWorkspaceId.delete(workspaceId);
+      }
+    });
+    pendingAgentHydrationByWorkspaceId.set(workspaceId, hydration);
   }
 }
 
@@ -268,7 +282,7 @@ function isDuplicateStatusUpdate(trigger: HudTakeoverTrigger): boolean {
   return previous === trigger.detail;
 }
 
-function handleEvent(event: WorkspaceEvent): void {
+function handleEvent(event: WorkspaceEvent, isLive: () => boolean = () => true): void {
   const workspaceId = typeof event.workspaceId === 'string' ? event.workspaceId : '';
   const data =
     event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>) : {};
@@ -304,9 +318,38 @@ function handleEvent(event: WorkspaceEvent): void {
   // a no-op until the overlay registers its listener). The name resolver
   // backfills agent display names off the live session slice so a banner
   // never renders a raw agent UUID; the mute resolver keeps muted agents
-  // (§5.5 `notificationsMuted`) from opening a takeover.
-  const trigger = mapEventToTakeoverTrigger(event, resolveAgentDisplayName, isAgentMuted);
-  if (trigger && !isDuplicateStatusUpdate(trigger)) emitTakeoverTrigger(trigger);
+  // (§5.5 `notificationsMuted`) from opening a takeover. An agent-family
+  // event whose agent is not yet in the session slice while its workspace's
+  // agent.list hydration is still in flight waits for that hydration before
+  // the mute gate runs — otherwise a muted agent's `agent:started` /
+  // `agent:failed` / `agent:stream:end` (no payload stamp) racing the list
+  // would take over the screen.
+  const emitTrigger = () => {
+    if (!isLive()) return;
+    const trigger = mapEventToTakeoverTrigger(event, resolveAgentDisplayName, isAgentMuted);
+    if (trigger && !isDuplicateStatusUpdate(trigger)) emitTakeoverTrigger(trigger);
+  };
+  const agentId = typeof data.agentId === 'string' ? data.agentId : undefined;
+  const pendingHydration = workspaceId
+    ? pendingAgentHydrationByWorkspaceId.get(workspaceId)
+    : undefined;
+  if (
+    pendingHydration &&
+    agentId &&
+    HUD_TAKEOVER_EVENT_TYPES.includes(type) &&
+    readAgentSession(agentId) === undefined
+  ) {
+    void pendingHydration.then(emitTrigger);
+    return;
+  }
+  emitTrigger();
+}
+
+function readAgentSession(agentId: string): { notificationsMuted?: unknown } | undefined {
+  const state = appStore.state as {
+    agentSessions?: { byAgentId?: Record<string, { notificationsMuted?: unknown }> };
+  };
+  return state.agentSessions?.byAgentId?.[agentId];
 }
 
 /**
@@ -315,10 +358,7 @@ function handleEvent(event: WorkspaceEvent): void {
  * workspace by `hydrateVisibleWorkspaceAgents`); unknown agents are unmuted.
  */
 function isAgentMuted(agentId: string): boolean {
-  const state = appStore.state as {
-    agentSessions?: { byAgentId?: Record<string, { notificationsMuted?: unknown }> };
-  };
-  return state.agentSessions?.byAgentId?.[agentId]?.notificationsMuted === true;
+  return readAgentSession(agentId)?.notificationsMuted === true;
 }
 
 /**
@@ -371,6 +411,7 @@ export function startHudSubscription(): () => void {
   lastStatusUpdateTextByWorkspaceId.clear();
   delegatedRowEmittedAgentIds.clear();
   hydratedAgentWorkspaceIds.clear();
+  pendingAgentHydrationByWorkspaceId.clear();
   appStore.dispatch(hudActivated());
 
   // Per-backend grid-filter restore + persist-on-change (thin localStorage
@@ -409,7 +450,7 @@ export function startHudSubscription(): () => void {
     const envelopeId = extractSubscriptionId(notification.params);
     if (envelopeId !== undefined && envelopeId !== subscriptionId) return;
     const event = extractEvent(notification.params);
-    if (event) handleEvent(event);
+    if (event) handleEvent(event, () => !disposed);
   });
 
   // RESUB-1: the daemon's subscription registry is empty after a restart —
