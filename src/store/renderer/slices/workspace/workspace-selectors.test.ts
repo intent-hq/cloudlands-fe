@@ -16,6 +16,7 @@ import { initialState as daemonHealthInitialState } from '../daemon-health/daemo
 import {
   selectHidesOwnerWorkspaceActions,
   selectIsCollaboratorOnlyClient,
+  selectIsWorkspaceCollaborator,
   selectIsWorkspaceHostLocal,
   selectWorkflowStage,
   selectWorkspaceActivePrSummary,
@@ -308,8 +309,63 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
       expect(selectHidesOwnerWorkspaceActions.select(guestRoleless, WS_ID)).toBe(true);
     });
 
+    it('hides them in a guest window even when the daemon reports myRole owner (host owner joined its own invite)', () => {
+      const guestOwnerRole = guestAware(
+        loadedState([makeWorkspace({ myRole: 'owner' })]),
+        GUEST_SESSION.id,
+      );
+      expect(selectHidesOwnerWorkspaceActions.select(guestOwnerRole, WS_ID)).toBe(true);
+    });
+
     it('does not hide them in an owner window for an unknown workspace id', () => {
       expect(selectHidesOwnerWorkspaceActions.select(loadedState([]), 'ws-missing')).toBe(false);
+    });
+  });
+
+  describe('selectIsWorkspaceCollaborator', () => {
+    it('follows myRole in an owner window', () => {
+      expect(
+        selectIsWorkspaceCollaborator.select(
+          loadedState([makeWorkspace({ myRole: 'collaborator' })]),
+          WS_ID,
+        ),
+      ).toBe(true);
+      expect(
+        selectIsWorkspaceCollaborator.select(
+          loadedState([makeWorkspace({ myRole: 'owner' })]),
+          WS_ID,
+        ),
+      ).toBe(false);
+      expect(selectIsWorkspaceCollaborator.select(loadedState([makeWorkspace()]), WS_ID)).toBe(
+        false,
+      );
+      expect(
+        selectIsWorkspaceCollaborator.select(
+          guestAware(loadedState([makeWorkspace()]), 'local'),
+          WS_ID,
+        ),
+      ).toBe(false);
+    });
+
+    it('is true in a guest window whatever myRole the row carries, or before the row arrives', () => {
+      expect(
+        selectIsWorkspaceCollaborator.select(
+          guestAware(loadedState([makeWorkspace({ myRole: 'owner' })]), GUEST_SESSION.id),
+          WS_ID,
+        ),
+      ).toBe(true);
+      expect(
+        selectIsWorkspaceCollaborator.select(
+          guestAware(loadedState([makeWorkspace()]), GUEST_SESSION.id),
+          WS_ID,
+        ),
+      ).toBe(true);
+      expect(
+        selectIsWorkspaceCollaborator.select(
+          guestAware(loadedState([], false), GUEST_SESSION.id),
+          WS_ID,
+        ),
+      ).toBe(true);
     });
   });
 });
