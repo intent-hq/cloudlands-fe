@@ -41,3 +41,50 @@ for (const via of ['pointer', 'keyboard'] as const) {
     await expect(page.getByRole('menu')).toHaveCount(0);
   });
 }
+
+type CtFixtures = Parameters<Parameters<typeof test>[1]>[0];
+
+async function openNestedSubmenu(mount: CtFixtures['mount'], page: CtFixtures['page']) {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 900, height: 700 });
+  const component = await mount(OverlayCatalogPreview, {
+    props: { componentId: 'menu', fixture: menuFixtures[0] },
+  });
+  const trigger = component.getByRole('button', { name: 'Open catalog menu' });
+  await trigger.click();
+  const more = page.getByRole('menuitem', { name: 'More actions' });
+  await more.focus();
+  await page.keyboard.press('ArrowRight');
+  const archive = page.getByRole('menuitem', { name: 'Archive' });
+  await expect(archive).toBeFocused();
+  return { trigger, more, archive };
+}
+
+test('catalog nested submenu closes by keyboard layer by layer and returns focus', async ({
+  mount,
+  page,
+}) => {
+  const { trigger, more, archive } = await openNestedSubmenu(mount, page);
+
+  // ArrowLeft closes only the submenu; the parent stays open with its sub-trigger focused.
+  await page.keyboard.press('ArrowLeft');
+  await expect(archive).toHaveCount(0);
+  await expect(more).toBeFocused();
+  await expect(page.getByRole('menu')).toHaveCount(1);
+
+  // Escape from inside the submenu dismisses every layer and restores trigger focus.
+  await page.keyboard.press('ArrowRight');
+  await expect(archive).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
+test('catalog nested submenu dismisses every layer on an outside pointer', async ({
+  mount,
+  page,
+}) => {
+  await openNestedSubmenu(mount, page);
+  await page.mouse.click(880, 680);
+  await expect(page.getByRole('menu')).toHaveCount(0);
+});
