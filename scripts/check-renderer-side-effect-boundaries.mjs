@@ -10,7 +10,7 @@ import ts from 'typescript';
 // classification, intended owner, and retained-UI rationale). Update this reviewed
 // snapshot only after inspecting that report; the default command fails closed.
 const REVIEWED_INVENTORY_DIGEST =
-  '0b5b52169fd3b39a968087d08bd43cab5efea23afce979fe22e07e01e34092c2';
+  '5493e18b3be1d1521b780f1bb82e3c9109279224761525a10a5680494cbfa8a7';
 const REVIEWED_INVENTORY_COUNTS = {
   'approved lifecycle seam :: async-subscription': 2,
   'approved lifecycle seam :: client-ipc': 3,
