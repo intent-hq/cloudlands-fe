@@ -43,7 +43,7 @@
 <Button
   variant="ghost"
   type="button"
-  class="note-node-card flex items-center gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-200 cursor-pointer
+  class="note-node-card flex items-center gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer
     bg-muted/30 hover:bg-muted/50
     {isActive ? 'ring-1 ring-primary-ink/30' : ''} {glowClass}"
   {onclick}
@@ -73,7 +73,7 @@
   .note-glow-active {
     position: relative;
     box-shadow: 0 0 12px 2px rgba(147, 51, 234, 0.3);
-    animation: note-glow-pulse 2s ease-in-out infinite;
+    animation: note-glow-pulse calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
   }
 
   .note-glow-active::before {

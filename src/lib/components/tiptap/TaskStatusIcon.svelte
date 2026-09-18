@@ -106,7 +106,7 @@
       r="{colors.innerCircleRPercentage * 0.5}%"
       fill={colors.fill}
       clip-path={normalizedStatus === 'in_progress' ? `url(#half-clip-${uniqueId})` : 'none'}
-      class="transition-all duration-300 origin-center"
+      class="transition-all duration-spring-slow ease-spring-slow motion-reduce:transition-none origin-center"
     />
 
     <circle
@@ -116,7 +116,7 @@
       stroke={colors.stroke}
       stroke-width="2.5"
       fill="none"
-      class="transition-all duration-300"
+      class="transition-all duration-spring-slow ease-spring-slow motion-reduce:transition-none"
     />
 
     {#if normalizedStatus === 'not_started' || normalizedStatus === 'waiting'}

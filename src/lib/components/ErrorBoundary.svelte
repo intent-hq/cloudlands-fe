@@ -218,7 +218,9 @@
         <!-- Vertically stacked content, all centered -->
         <div class="flex flex-col items-center text-center space-y-6">
           <!-- Warning Icon - Large and centered -->
-          <div class="animate-in fade-in zoom-in duration-300 mt-5">
+          <div
+            class="animate-in fade-in zoom-in duration-spring-slow ease-spring-slow motion-reduce:animate-none mt-5"
+          >
             <Fa icon={faTriangleExclamation} size={40} class="text-subtle" />
           </div>
 

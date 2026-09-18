@@ -308,7 +308,7 @@
   <div
     class="fixed bottom-4 right-4 z-50 w-96 bg-background border border-border rounded-lg shadow-xl flex flex-col {isCollapsed
       ? 'max-h-[44px]'
-      : 'max-h-[400px]'} transition-all duration-200"
+      : 'max-h-[400px]'} transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
   >
     <!-- Content (shown when not collapsed) -->
     {#if !isCollapsed}

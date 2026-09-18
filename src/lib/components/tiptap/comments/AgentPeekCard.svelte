@@ -164,7 +164,7 @@
 {:else}
   <!-- Full mode (used for both compact and full display modes) -->
   <div
-    class="flex flex-col bg-background rounded w-full min-w-[180px] transition-all duration-200"
+    class="flex flex-col bg-background rounded w-full min-w-[180px] transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
     class:max-w-[380px]={!isCollapsed}
     class:cursor-pointer={isCollapsed}
     class:border={!isCollapsed}

@@ -951,7 +951,7 @@
             {#if goToLineNumber != null && goToLineNumber > 0}
               <Button
                 variant="ghost"
-                class="w-full px-3 py-2 flex items-center gap-3 text-left rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors duration-50"
+                class="w-full px-3 py-2 flex items-center gap-3 text-left rounded-md bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none"
                 onclick={() => {
                   if (goToLineNumber != null && goToLineNumber > 0) {
                     dispatchWindowEvent('workspace:go-to-line', { line: goToLineNumber });

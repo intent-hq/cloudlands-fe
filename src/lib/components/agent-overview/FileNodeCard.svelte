@@ -57,7 +57,7 @@
 <Button
   variant="ghost"
   type="button"
-  class="file-node-card flex gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-200 cursor-pointer
+  class="file-node-card flex gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer
     bg-muted/30 hover:bg-muted/50
     {isActive ? 'ring-1 ring-primary-ink/30' : ''} {glowClass}"
   {onclick}
@@ -93,7 +93,7 @@
   .file-glow-active {
     position: relative;
     box-shadow: 0 0 12px 2px rgba(59, 130, 246, 0.3);
-    animation: file-glow-pulse 2s ease-in-out infinite;
+    animation: file-glow-pulse calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
   }
 
   .file-glow-active::before {

@@ -116,7 +116,7 @@
 <Portal>
   <!-- Comment Dialog -->
   <div
-    class="fixed z-[15] bg-card rounded-lg shadow-lg border border-border p-3 w-80 animate-in fade-in slide-in-from-top-2 duration-200"
+    class="fixed z-[15] bg-card rounded-lg shadow-lg border border-border p-3 w-80 animate-in fade-in slide-in-from-top-2 duration-spring-moderate ease-spring-moderate motion-reduce:animate-none"
     style="left: {x}px; top: {y}px; transform: translateX(20px);"
   >
     <!-- Content Textarea -->
