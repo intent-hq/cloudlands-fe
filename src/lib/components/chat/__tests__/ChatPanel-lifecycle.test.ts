@@ -2359,6 +2359,47 @@ describe('ChatPanel mounted lifecycle', () => {
     });
   });
 
+  it('folds a same-frame editor selection into the send cleanup instead of re-checking it', async () => {
+    mocks.draftGet.mockResolvedValue(null);
+    mocks.draftClear.mockResolvedValue({ ok: true });
+    render(ChatPanel, {
+      props: { workspace: workspace('workspace-a'), agentId: 'agent-a' },
+    });
+    await tick();
+
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'send with a selection made this frame' },
+    });
+    window.dispatchEvent(
+      new CustomEvent('editor:selection-change', {
+        detail: {
+          text: 'const answer = 42;',
+          file: 'src/app.ts',
+          language: 'typescript',
+          source: 'editor',
+        },
+      }),
+    );
+    // The selection write is still deferred to the next animation frame.
+    expect(dispatchedTypes()).not.toContain('multiPanelContext/setSelection');
+
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
+
+    // The deferred write lands before the checked context is released, so the
+    // selection is part of the cleared set rather than a survivor of it.
+    const types = dispatchedTypes();
+    const setSelectionIndex = types.indexOf('multiPanelContext/setSelection');
+    const clearCheckedIndex = types.indexOf('multiPanelContext/clearChecked');
+    expect(setSelectionIndex).toBeGreaterThanOrEqual(0);
+    expect(clearCheckedIndex).toBeGreaterThan(setSelectionIndex);
+
+    // Any frame left in the queue must not re-check the selection after cleanup.
+    while (frames.length > 0) flushFrame();
+    await tick();
+    expect(dispatchedTypes().lastIndexOf('multiPanelContext/setSelection')).toBe(setSelectionIndex);
+  });
+
   it('re-engages follow and scrolls to the bottom on edit-and-regenerate when scrolled up', async () => {
     mocks.draftGet.mockResolvedValue(null);
     mocks.agentMessages.set([

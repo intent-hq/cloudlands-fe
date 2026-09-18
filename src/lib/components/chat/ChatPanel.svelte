@@ -4876,7 +4876,10 @@
       draftManager.invalidatePendingRestore();
       setContextItems([]);
       // Checked panels/selections were folded into this send; uncheck them so
-      // they do not ride along with the next message.
+      // they do not ride along with the next message. A selection write still
+      // deferred to the next frame must land first, or it would re-check
+      // itself after the cleanup.
+      flushPendingSelectionWrites();
       appStore.dispatch(clearMultiPanelChecked());
       inputValue = '';
       inputComponent?.clear();
