@@ -6409,6 +6409,7 @@
   "workspace_share_invite_anyone_label": "リンクを知っている全員",
   "workspace_share_invite_pinned_label": "{login} のみ",
   "workspace_share_invite_expires_label": "{when}に期限切れ",
+  "workspace_share_invite_reusable_label": "再利用可能 · {count}人が参加",
   "workspace_share_revoke_label": "取り消す",
   "workspace_share_revoke_ariaLabel": "招待を取り消す: {audience}",
   "workspace_share_revokeFailed_error": "招待を取り消せませんでした",

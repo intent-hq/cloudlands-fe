@@ -2,9 +2,13 @@
   /**
    * ShareWorkspaceDialog — the owner-side sharing surface (multiplayer w4).
    *
-   * Creates one-shot `intent://invite` links (optionally pinned to a GitHub
-   * login), lists the open invites with Copy link + Revoke, and lists the
-   * member roster with Remove. Gated on the GitHub connection: members are identified by
+   * Creates `intent://invite` links (optionally pinned to a GitHub login;
+   * an unpinned link is reusable until it expires or is revoked, a pinned
+   * one is single-use), lists the open invites with Copy link + Revoke, and
+   * lists the member roster with Remove. A reusable row is labelled
+   * "Reusable · N joined" from the daemon's `reusable` / `redemptionCount`;
+   * a daemon that predates those fields (every link single-use) shows the
+   * pinned presentation for every row. Gated on the GitHub connection: members are identified by
    * their GitHub account, so a daemon without a configured login cannot mint
    * invites and the dialog shows a connect-first state instead.
    *
@@ -263,6 +267,20 @@
     return invite.pinLogin
       ? m.workspace_share_invite_pinned_label({ login: `@${invite.pinLogin}` })
       : m.workspace_share_invite_anyone_label();
+  }
+
+  /** The row's secondary line: reuse + join count for a reusable link, then the expiry. */
+  function inviteDetail(
+    invite: Pick<WorkspaceInvite, 'reusable' | 'redemptionCount' | 'expiresAt'>,
+  ): string {
+    const expires = m.workspace_share_invite_expires_label({
+      when: formatRelativeTime(invite.expiresAt),
+    });
+    if (invite.reusable !== true) return expires;
+    const reusable = m.workspace_share_invite_reusable_label({
+      count: formatInteger(invite.redemptionCount ?? 0),
+    });
+    return `${reusable} · ${expires}`;
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -535,10 +553,8 @@
                   >
                     <div class="min-w-0">
                       <div class="truncate text-sm">{inviteAudience(invite)}</div>
-                      <div class="text-xs text-subtle">
-                        {m.workspace_share_invite_expires_label({
-                          when: formatRelativeTime(invite.expiresAt),
-                        })}
+                      <div class="text-xs text-subtle" data-testid="share-invite-detail">
+                        {inviteDetail(invite)}
                       </div>
                     </div>
                     <div class="flex shrink-0 items-center gap-1">
