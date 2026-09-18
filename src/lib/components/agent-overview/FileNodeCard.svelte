@@ -93,7 +93,7 @@
   .file-glow-active {
     position: relative;
     box-shadow: 0 0 12px 2px rgba(59, 130, 246, 0.3);
-    animation: file-glow-pulse calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
+    animation: file-glow-pulse 2s ease-in-out infinite;
   }
 
   .file-glow-active::before {

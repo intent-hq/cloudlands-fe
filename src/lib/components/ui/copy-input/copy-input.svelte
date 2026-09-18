@@ -266,7 +266,7 @@
 <style>
   .copy-input-draw {
     stroke-dashoffset: 1;
-    animation: copy-input-draw var(--spring-fast) var(--spring-fast-ease) forwards;
+    animation: copy-input-draw var(--spring-fast) ease-out forwards;
   }
 
   @keyframes copy-input-draw {

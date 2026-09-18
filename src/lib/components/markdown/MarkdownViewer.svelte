@@ -979,7 +979,7 @@
     background-size: 200% 100%;
     opacity: 0.15;
     border-radius: 0.25rem;
-    animation: task-skeleton-shimmer calc(var(--spring-slow) * 6) var(--spring-slow-ease) infinite;
+    animation: task-skeleton-shimmer 1.5s ease-in-out infinite;
   }
 
   @keyframes task-skeleton-shimmer {

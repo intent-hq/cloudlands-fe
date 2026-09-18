@@ -942,7 +942,7 @@
   <div
     class="relative flex flex-col {isResizing
       ? ''
-      : 'transition-[height] duration-spring-slow ease-spring-slow motion-reduce:transition-none'} {className}"
+      : 'transition-[height] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none'} {className}"
     style={doSkipResize
       ? ''
       : `height: ${actualHeight}px; min-height: ${minHeight}px; max-height: ${maxHeight}px;`}

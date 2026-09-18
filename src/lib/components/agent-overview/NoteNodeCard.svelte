@@ -73,7 +73,7 @@
   .note-glow-active {
     position: relative;
     box-shadow: 0 0 12px 2px rgba(147, 51, 234, 0.3);
-    animation: note-glow-pulse calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
+    animation: note-glow-pulse 2s ease-in-out infinite;
   }
 
   .note-glow-active::before {

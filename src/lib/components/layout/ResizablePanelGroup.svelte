@@ -420,9 +420,7 @@
         ? 'hidden'
         : ''}"
       style="{orientation === 'vertical' ? 'height' : 'width'}: {isCollapsed ? '0' : size + '%'};
-             transition: {isResizing
-        ? 'none'
-        : 'all var(--spring-moderate) var(--spring-moderate-ease)'};"
+             transition: {isResizing ? 'none' : 'all 0.2s ease-out'};"
       data-panel-id={panel.id}
     >
       {#if children}

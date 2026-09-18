@@ -4,13 +4,12 @@ import { onReducedMotionChange, prefersReducedMotion } from '$lib/utils/reduced-
 
 /**
  * Main-thread replacement for Tailwind's `animate-pulse` on streaming
- * operational-row icons: same 2 s `cubic-bezier(0.4, 0, 0.6, 1)` dip to 50 %
- * opacity, but written as an inline style from the shared 30 fps clock
- * (quantised so a slot writes only when the value changes) instead of a
- * compositor opacity animation. A compositor animation inside the chat panel's
- * nested rounded clips forces masked render surfaces that are re-drawn every
- * vsync; an inline style does not promote a layer, so the compositor draws only
- * when the value changes.
+ * operational-row icons: same 2 s ease-in-out dip to 50 % opacity, but written
+ * as an inline style from the shared 30 fps clock (quantised so a slot writes
+ * only when the value changes) instead of a compositor opacity animation. A
+ * compositor animation inside the chat panel's nested rounded clips forces
+ * masked render surfaces that are re-drawn every vsync; an inline style does
+ * not promote a layer, so the compositor draws only when the value changes.
  * Under reduced motion (`prefersReducedMotion()`) the driver stays off and the
  * icon holds its normal opacity, as the stylesheet froze `animate-pulse` before.
  */
