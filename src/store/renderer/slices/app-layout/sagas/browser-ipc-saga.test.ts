@@ -49,7 +49,8 @@ const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 /** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
 const ownerWindowSlices = {
   connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
-  guestSessions: guestSessionsInitialState,
+  // Settled owner window: guest list received, no host joined.
+  guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
 };
 
 const NOW = new Date('2026-07-31T00:00:00.000Z').getTime();
