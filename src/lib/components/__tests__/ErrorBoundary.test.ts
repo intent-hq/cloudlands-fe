@@ -9,6 +9,24 @@ const children = createRawSnippet(() => ({
   render: () => '<div data-testid="boundary-child">child content</div>',
 }));
 
+// A child that throws `error` during render for the first `failures` renders, then renders
+// normally. `failures = Infinity` never recovers.
+function throwingChildren(error: Error, failures: number) {
+  let attempts = 0;
+  return createRawSnippet(() => ({
+    render: () => {
+      if (attempts++ < failures) throw error;
+      return '<div data-testid="boundary-child">child content</div>';
+    },
+  }));
+}
+
+// Boundary error handling and reset() each run in their own microtask; let them all settle.
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await tick();
+}
+
 async function dispatchWindowError(
   init: ErrorEventInit,
   options: { defaultPrevented?: boolean } = {},
@@ -84,5 +102,51 @@ describe('ErrorBoundary', () => {
     expect(screen.getByTestId('boundary-child')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  describe('errors thrown during child render', () => {
+    it('keeps the child content visible when a benign error is thrown during render', async () => {
+      const onError = vi.fn();
+      render(ErrorBoundary, {
+        props: { children: throwingChildren(new Error('Invalid guestInstanceId: 3'), 1), onError },
+      });
+      await settle();
+
+      expect(screen.getByTestId('boundary-child')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('still shows the error UI for an unrelated render error', async () => {
+      const onError = vi.fn();
+      const thrown = new Error('boom');
+      render(ErrorBoundary, { props: { children: throwingChildren(thrown, 1), onError } });
+      await settle();
+
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.queryByTestId('boundary-child')).toBeNull();
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError).toHaveBeenCalledWith(thrown);
+    });
+
+    it('falls back to the error UI when a benign render error keeps recurring', async () => {
+      const onError = vi.fn();
+      let renders = 0;
+      const children = createRawSnippet(() => ({
+        render: () => {
+          renders++;
+          throw new Error('Invalid guestInstanceId: 3');
+        },
+      }));
+      render(ErrorBoundary, { props: { children, onError } });
+      for (let i = 0; i < 10; i++) await settle();
+
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.queryByTestId('boundary-child')).toBeNull();
+      expect(onError).toHaveBeenCalledTimes(1);
+      // Initial render plus a bounded number of resets — never an unbounded retry loop.
+      expect(renders).toBeGreaterThan(1);
+      expect(renders).toBeLessThanOrEqual(5);
+    });
   });
 });

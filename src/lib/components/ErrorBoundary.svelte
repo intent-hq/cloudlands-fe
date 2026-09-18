@@ -46,6 +46,27 @@
   let showDetails = $state(false);
   let copyFeedback = $state(false);
 
+  // Once <svelte:boundary> catches a render-time error it destroys the subtree and renders the
+  // `failed` snippet regardless of what `onerror` does. Benign errors are recovered by calling
+  // the boundary's reset(); the retry budget keeps a persistently failing child from looping.
+  const BENIGN_RESET_LIMIT = 3;
+  const BENIGN_RESET_WINDOW_MS = 5000;
+  let benignResetCount = 0;
+  let benignResetWindowStart = 0;
+
+  function tryRecoverFromBenignRenderError(reset: () => void): boolean {
+    const now = Date.now();
+    if (now - benignResetWindowStart > BENIGN_RESET_WINDOW_MS) {
+      benignResetCount = 0;
+      benignResetWindowStart = now;
+    }
+    if (benignResetCount >= BENIGN_RESET_LIMIT) return false;
+    benignResetCount++;
+    // Svelte forbids calling reset() synchronously from within onerror.
+    queueMicrotask(reset);
+    return true;
+  }
+
   // Sync error prop to state (needed for +error.svelte where page.error updates after mount)
   $effect(() => {
     if (initialError) {
@@ -293,9 +314,9 @@
 {/snippet}
 
 <svelte:boundary
-  onerror={(error: unknown) => {
+  onerror={(error: unknown, reset: () => void) => {
     const err = error instanceof Error ? error : new Error(String(error));
-    if (classifyBenignError(err) !== null) return;
+    if (classifyBenignError(err) !== null && tryRecoverFromBenignRenderError(reset)) return;
     logger.error(`[ErrorBoundary] Render error in ${componentName}:`, err);
     if (onError) onError(err);
   }}
