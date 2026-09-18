@@ -2,10 +2,25 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import CatalogFixtureList from './CatalogFixtureList.svelte';
 import CatalogShell from './CatalogShell.svelte';
 import { getCatalogEntry } from './catalog';
+import { getCatalogRenderer } from './catalog-renderers';
+
+// Holds the ContentField family import (used only by the readiness regression below)
+// until the test releases it, standing in for a slow cold transform of a lazy chunk.
+const contentFieldImportGate = vi.hoisted(() => {
+  let release!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { opened, release };
+});
+vi.mock('./renderers/ContentFieldCatalogPreview.svelte', async (importActual) => {
+  await contentFieldImportGate.opened;
+  return importActual();
+});
 
 afterEach(() => {
   cleanup();
@@ -17,10 +32,12 @@ async function renderEntry(slug: string) {
   const entry = getCatalogEntry(slug);
   expect(entry).toBeDefined();
   const rendered = render(CatalogFixtureList, { props: { entry: entry! } });
-  // The first lazy family import also runs through Vite's test transform pipeline.
-  await waitFor(
-    () => expect(rendered.container.querySelector('[data-catalog-preview] > *')).not.toBeNull(),
-    { timeout: 10_000 },
+  // The first lazy family import also runs through Vite's test transform pipeline, so
+  // readiness awaits that import (the same promise the component renders from) rather
+  // than racing it against a wall clock; only the mount itself is polled afterwards.
+  await getCatalogRenderer(slug);
+  await waitFor(() =>
+    expect(rendered.container.querySelector('[data-catalog-preview] > *')).not.toBeNull(),
   );
   return rendered;
 }
@@ -345,5 +362,31 @@ describe('CatalogFixtureList real previews', () => {
     section.unmount();
     await renderEntry('settings-field-row');
     expect(screen.getByLabelText('Notification volume')).toBeTruthy();
+  });
+
+  it('keeps preview readiness bound to the lazy family import instead of a wall clock', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    let settled: 'pending' | 'resolved' | 'rejected' = 'pending';
+    const ready = renderEntry('card').then(
+      (rendered) => {
+        settled = 'resolved';
+        return rendered;
+      },
+      (error: unknown) => {
+        settled = 'rejected';
+        throw error;
+      },
+    );
+    ready.catch(() => {});
+    try {
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(settled).toBe('pending');
+      contentFieldImportGate.release();
+      const { container } = await ready;
+      expect(container.querySelector('[data-catalog-preview="card"] > *')).not.toBeNull();
+    } finally {
+      contentFieldImportGate.release();
+      vi.useRealTimers();
+    }
   });
 });
