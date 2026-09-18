@@ -65,6 +65,7 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-slice', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
+  selectHidesOwnerWorkspaceActions: mocks.selector(() => false),
 }));
 
 // The hover card's own store wiring is irrelevant here; the hover-intent
