@@ -721,8 +721,15 @@
   // for every provider, so a bare pick is attributed to the loaded group that
   // contains the row rather than blanket-attributed to the default provider.
   // A legacy compound prefix (persisted ids) still wins outright; when several
-  // groups own the same bare id — or no loaded group owns it — the default
-  // provider keeps priority (the intent-hq/monorepo#1657 contract).
+  // groups own the same bare id the default provider keeps priority (the
+  // intent-hq/monorepo#1657 contract). The per-agent group — the effective
+  // provider's models when that provider is outside the enabled set (disabled
+  // locally, or never enabled in a guest window, where the host's settings
+  // are administrator-only and `providers.enabled` never hydrates) — is
+  // consulted too, so a pick from it attributes to the agent's provider. With
+  // no owning group, an agent-bound picker attributes the bare id to the
+  // session's own provider (what the daemon resolves a bare `agent.setModel`
+  // id against when `providerId` is absent); otherwise the default provider.
   function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
     const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
     if (legacyProviderId) return { providerId: legacyProviderId, modelId };
@@ -741,7 +748,10 @@
     for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
       if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
     }
-    return { providerId: $defaultProviderId$, modelId };
+    if (agentProviderModels && matchesIn(effectiveProviderId, agentProviderModels)) {
+      return { providerId: normalizeProviderId(effectiveProviderId), modelId };
+    }
+    return { providerId: explicitProviderId ?? $defaultProviderId$, modelId };
   }
 
   async function applyBackendModelUpdate(model: string) {
