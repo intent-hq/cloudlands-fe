@@ -167,11 +167,14 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (arg): Promise<Sta
   }
 });
 
-// A still-pending device flow means the user has not authorized yet even
-// when a (previous) token validates — a reconnect must not complete early.
+// The daemon clears the `deviceFlow` slot only when a flow authorizes; a
+// pending flow means the user has not entered the code yet, and a terminal
+// `expired` / `denied` / `error` flow stays in the slot (§5.27). A reconnect
+// runs on top of a still-valid token, so `isConfigured` alone would report a
+// not-yet-authorized or failed re-authorization as complete (intent#5206).
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN, async () => {
   const status = await githubAuthStatus();
-  const isComplete = status?.isConfigured === true && status.deviceFlow?.status !== 'pending';
+  const isComplete = status?.isConfigured === true && !status.deviceFlow;
   const user = isComplete ? await liveIntegrations.githubUser() : null;
   return { success: true, data: { user, isComplete } };
 });

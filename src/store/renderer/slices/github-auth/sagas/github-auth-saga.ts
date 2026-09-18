@@ -108,7 +108,10 @@ function* initialize(): SagaGenerator<void> {
         oauthUrl: state.oauthUrl ?? null,
       }),
     );
-    if (!state.isAuthenticated && validPendingFlow(state.deviceFlow)) {
+    // A pending flow is resumed whether or not a token is configured: a
+    // reconnect (intent#5206) keeps the old token valid while the user
+    // authorizes, and a settings remount must not drop the in-flight code.
+    if (validPendingFlow(state.deviceFlow)) {
       yield* put(setAuthenticating(true));
       yield* put(
         setDeviceFlowInfo({

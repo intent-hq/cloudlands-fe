@@ -192,6 +192,63 @@ describe('githubAuthSaga', () => {
     await run.task.toPromise();
   });
 
+  it('initialize resumes a pending reconnect flow even though the old token is still configured (#5206)', async () => {
+    mocks.getAuthState.mockResolvedValue({
+      isAuthenticated: true,
+      requiresDaemonAuth: false,
+      user: { login: 'octo', name: null, email: null, avatar_url: 'avatar' },
+      oauthUrl: 'https://github.com/login/device',
+      deviceFlow: {
+        status: 'pending',
+        userCode: 'WXYZ',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 899,
+        interval: 5,
+      },
+    });
+    mocks.checkAuthComplete.mockResolvedValue({
+      success: true,
+      data: { isComplete: false, user: null },
+    });
+    const run = harness();
+    run.channel.put(initializeGitHubAuth());
+    await settle();
+
+    expect(mocks.checkAuthComplete.mock.calls).toEqual([[]]);
+    expect(run.dispatched).toEqual([
+      {
+        type: 'githubAuth/setAuthState',
+        payload: {
+          isAuthenticated: true,
+          requiresDaemonAuth: false,
+          user: { login: 'octo', name: null, email: null, avatar_url: 'avatar' },
+          needsScopeUpdate: false,
+          oauthUrl: 'https://github.com/login/device',
+        },
+      },
+      { type: 'githubAuth/setAuthenticating', payload: [true] },
+      {
+        type: 'githubAuth/setDeviceFlowInfo',
+        payload: [
+          {
+            userCode: 'WXYZ',
+            verificationUri: 'https://github.com/login/device',
+            expiresIn: 899,
+            interval: 5,
+          },
+        ],
+      },
+    ]);
+    expect(run.state().deviceFlow).toEqual({
+      userCode: 'WXYZ',
+      verificationUri: 'https://github.com/login/device',
+      expiresIn: 899,
+      interval: 5,
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('surfaces the exact start failure without polling', async () => {
     mocks.startAuth.mockResolvedValue({ success: false, error: 'device denied' });
     const run = harness();
