@@ -87,9 +87,10 @@ export default {
     function collect(node, value) {
       const attribute = closestSvelteAttribute(node);
       const name = attributeName(attribute);
-      const found = name === 'style' ? [] : physicalUtilityViolations(value);
+      const isInlineStyle = attribute?.type === 'SvelteStyleDirective' || name === 'style';
+      const found = isInlineStyle ? [] : physicalUtilityViolations(value);
       if (name === 'style') found.push(...cssDeclarationViolations(value, true));
-      if (name === 'fill' || name === 'stroke') {
+      else if (name === 'fill' || name === 'stroke') {
         found.push(...physicalCssColorViolations(value, 'svgColor'));
       }
       for (const violation of found) {
@@ -115,7 +116,9 @@ export default {
       },
       'Program:exit'() {
         const baselineCount = options.baseline?.[filename] ?? 0;
-        for (const violation of violations.slice(baselineCount)) {
+        const motion = violations.filter((violation) => violation.messageId === 'arbitraryMotion');
+        const other = violations.filter((violation) => violation.messageId !== 'arbitraryMotion');
+        for (const violation of [...motion, ...other.slice(baselineCount)]) {
           context.report({ node: violation.node, messageId: violation.messageId });
         }
       },

@@ -179,7 +179,7 @@
         {#if closeButton || onclose}
           <div
             class={cn(
-              'transition-opacity duration-spring-moderate ease-spring-moderate close-button-container',
+              'transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none close-button-container',
               active || isHovered ? 'opacity-100' : 'opacity-0 pointer-events-none',
             )}
           >
@@ -188,7 +188,7 @@
             {:else}
               <Button
                 type="button"
-                class="close-button flex items-center justify-center w-5 h-5 rounded hover:bg-foreground/10 active:bg-foreground/20 transition-[background-color,color,border-color,box-shadow,transform] duration-spring-moderate ease-spring-moderate shrink-0 -mr-2 opacity-50"
+                class="close-button flex items-center justify-center w-5 h-5 rounded hover:bg-foreground/10 active:bg-foreground/20 transition-[background-color,color,border-color,box-shadow,transform] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none shrink-0 -mr-2 opacity-50"
                 onclick={(e) => {
                   e.stopPropagation();
                   onclose?.(e);

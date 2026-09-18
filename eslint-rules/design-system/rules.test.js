@@ -275,6 +275,9 @@ svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
     '<style>.tokenized { color: hsl(var(--foreground)); background: var(--card); }</style>',
     '<div style="background-image: url(#abc)" /><style>#abc { color: var(--foreground); }</style>',
     '<div style="transition: all 0.2s ease-out" /><circle style="transition: r 0.3s ease-out" />',
+    '<div style:transition="all 0.2s ease-out" style:animation-timing-function="ease-in" />',
+    '<div style:color="hsl(var(--foreground))" style:transition={`opacity 0.2s ${easing}`} />',
+    '<div class="duration-spring-fast! hover:ease-spring-fast! !duration-spring-slow-exit" />',
     {
       code: '<div class="border-red-500" style="color: #abc" />',
       filename: projectFile('src/features/brand/Mark.svelte'),
@@ -319,6 +322,18 @@ svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
       errors: [{ messageId: 'arbitraryMotion' }],
     },
     {
+      code: '<div class="ease-out" style:transition="all 0.2s ease-out" />',
+      errors: [{ messageId: 'arbitraryMotion' }],
+    },
+    {
+      code: '<div class="duration-300! ease-out! duration-[120ms]!" />',
+      errors: Array.from({ length: 3 }, () => ({ messageId: 'arbitraryMotion' })),
+    },
+    {
+      code: '<div class="!duration-300 hover:duration-300! md:!ease-out motion-safe:group-hover:ease-in-out!" />',
+      errors: Array.from({ length: 4 }, () => ({ messageId: 'arbitraryMotion' })),
+    },
+    {
       code: '<div class="duration-initial ease-linear ease-in ease-initial" />',
       errors: Array.from({ length: 4 }, () => ({ messageId: 'arbitraryMotion' })),
     },
@@ -350,6 +365,18 @@ svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
       filename: projectFile('src/features/legacy/Panel.svelte'),
       options: [{ baseline: { 'src/features/legacy/Panel.svelte': 2 } }],
       errors: [{ messageId: 'physicalPalette' }],
+    },
+    {
+      code: '<div class="border-red-500 duration-300" />',
+      filename: projectFile('src/features/legacy/Panel.svelte'),
+      options: [{ baseline: { 'src/features/legacy/Panel.svelte': 1 } }],
+      errors: [{ messageId: 'arbitraryMotion' }],
+    },
+    {
+      code: '<div class="duration-300 border-red-500 text-blue-500" style="color: #abc" />',
+      filename: projectFile('src/features/legacy/Panel.svelte'),
+      options: [{ baseline: { 'src/features/legacy/Panel.svelte': 2 } }],
+      errors: [{ messageId: 'arbitraryMotion' }, { messageId: 'cssColor' }],
     },
   ],
 });

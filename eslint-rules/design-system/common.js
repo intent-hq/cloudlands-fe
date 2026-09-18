@@ -14,7 +14,7 @@ const arbitraryMotion = String.raw`(?:duration|ease)-\[(?!var\()[^\]\r\n]+\]`;
 const tailwindMotionScale = String.raw`duration-(?:\d+|initial)|ease-(?:linear|in-out|in|out|initial)`;
 
 const motionUtility = new RegExp(
-  String.raw`${utilityBoundaryStart}(${variants}(?:${arbitraryMotion}|${tailwindMotionScale}))${utilityBoundaryEnd}`,
+  String.raw`${utilityBoundaryStart}(${variants}!?(?:${arbitraryMotion}|${tailwindMotionScale})!?)${utilityBoundaryEnd}`,
   'g',
 );
 const arbitraryColorUtility = new RegExp(
