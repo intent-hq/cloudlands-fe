@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import { SettingsFieldRow, SettingsSection } from '$lib/components/patterns/settings';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import {
@@ -519,15 +519,6 @@
       class="mt-1.5 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
       >{m.settings_footer_support()}</a
     >
-    <!-- tailcat ships bundled (resources/tailcat, BSD-3-Clause); its license
-           text is packaged next to the binary as tailcat.LICENSE. -->
-    <a
-      href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="mt-1 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-      >{m.settings_footer_tailcatAttribution()}</a
-    >
   </div>
 {/snippet}
 
@@ -946,6 +937,18 @@
             </div>
           </div>
           <NotificationSettings />
+
+          <SettingsSection id="licenses" title={m.settings_licenses_title_label()} class="mb-6">
+            <div class="px-6 py-4">
+              <a
+                href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="type-body cursor-pointer text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                >{m.settings_licenses_tailcat_description()}</a
+              >
+            </div>
+          </SettingsSection>
         {/if}
 
         <!-- Agent Behavior -->
