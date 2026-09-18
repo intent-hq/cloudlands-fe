@@ -1619,6 +1619,44 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     expect(mockNotificationInstances.length).toBe(1);
   });
 
+  it('suppresses via the notificationsMuted fast path: no banner, no notification:show, no agent.list read', async () => {
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent({ notificationsMuted: true }));
+
+    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    expect(mockNotificationInstances.length).toBe(0);
+    // No renderer sound event either — a muted agent is fully silent.
+    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+  });
+
+  it('suppresses when agent.list reports the idle agent as notificationsMuted (older idle payloads)', async () => {
+    agentListResponse.agents = [
+      { id: 'agent-self', isStreaming: false, isResponding: false, notificationsMuted: true },
+    ];
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(mockNotificationInstances.length).toBe(0);
+    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+  });
+
+  it('does not let a streaming MUTED sibling suppress an unmuted agent idle', async () => {
+    agentListResponse.agents = [
+      { id: 'agent-self', isStreaming: false, isResponding: false },
+      { id: 'agent-other', isStreaming: true, isResponding: false, notificationsMuted: true },
+    ];
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    // The muted sibling's own idle is suppressed, so it must not hold the
+    // other-agents-active gate — otherwise the workspace never notifies.
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+
   it('suppresses via the isWaitingForOtherAgents fast path without consulting agent.list', async () => {
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ isWaitingForOtherAgents: true }));

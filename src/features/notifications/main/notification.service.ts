@@ -488,6 +488,17 @@ export class NotificationService {
         return;
       }
 
+      // Fast path: per-agent mute stamped on the payload (§5.5
+      // `notificationsMuted`, present only when true). Absent on older
+      // daemons, in which case the agent.list gate below still applies.
+      if (event.data.notificationsMuted === true) {
+        logger.debug('Skipping notification for muted agent', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        return;
+      }
+
       // Fast path: the event's workspace is archived — archived workspaces
       // never notify. Absent on older daemons (treated as not archived).
       if (event.data.workspaceArchived === true) {
@@ -544,6 +555,7 @@ export class NotificationService {
               provider?: string;
               isStreaming?: boolean;
               isResponding?: boolean;
+              notificationsMuted?: boolean;
               metadata?: { isBackground?: boolean; specialist?: string };
             }>;
           }
@@ -560,10 +572,24 @@ export class NotificationService {
         return;
       }
 
+      // Skip muted agents (AgentLite top-level `notificationsMuted`) —
+      // parity with the payload fast path for idle events that predate the
+      // stamp.
+      if (idleAgent?.notificationsMuted === true) {
+        logger.debug('Skipping notification for muted agent (agent.list)', {
+          workspaceId,
+          agentName: event.data.agentName,
+        });
+        return;
+      }
+
+      // Muted siblings never hold the gate: a running muted agent's own idle
+      // is suppressed, so counting it here would leave the workspace silent.
       const otherActiveAgents = agents.filter(
         (agent) =>
           (agent.isStreaming === true || agent.isResponding === true) &&
-          agent.id !== event.data.agentId,
+          agent.id !== event.data.agentId &&
+          agent.notificationsMuted !== true,
       );
 
       if (otherActiveAgents.length > 0) {

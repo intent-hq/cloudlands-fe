@@ -4999,6 +4999,28 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     );
   });
 
+  it('forwards the §5.5 notificationsMuted stamp verbatim (present only when true)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Sandbox is broken',
+        notificationsMuted: true,
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationsMuted: true }),
+    );
+  });
+
   it('falls back to the envelope workspaceId/timestamp when the payload omits them', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

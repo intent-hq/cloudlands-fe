@@ -451,6 +451,62 @@ describe('web-notification-service', () => {
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
     });
 
+    it('skips muted agents (event fast path): no banner, no sound, no agent.list read', async () => {
+      await handleWebAgentIdle(makeIdleEvent({ notificationsMuted: true }));
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockPlayNotificationSound).not.toHaveBeenCalled();
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+      );
+    });
+
+    it('skips muted agents (agent.list notificationsMuted): no banner, no sound', async () => {
+      stubBackendWire({
+        agentListResult: {
+          agents: [
+            {
+              id: 'agent-1',
+              name: 'My Agent',
+              status: 'idle',
+              isStreaming: false,
+              isResponding: false,
+              notificationsMuted: true,
+              metadata: { isBackground: false },
+            },
+          ],
+        },
+      });
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockPlayNotificationSound).not.toHaveBeenCalled();
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
+    });
+
+    it('does not let a running MUTED sibling hold the other-agents-active gate', async () => {
+      stubBackendWire({
+        agentListResult: {
+          agents: [
+            ...SOLO_AGENT_LIST.agents,
+            {
+              id: 'agent-2',
+              name: 'Muted Busy Agent',
+              status: 'active',
+              isStreaming: true,
+              isResponding: false,
+              notificationsMuted: true,
+              metadata: { isBackground: false },
+            },
+          ],
+        },
+      });
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
     it('enriches specialist from agent.list metadata when the payload lacks it', async () => {
       stubBackendWire({
         agentListResult: {

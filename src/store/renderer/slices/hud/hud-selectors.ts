@@ -392,9 +392,10 @@ export const selectHudAttentionItems = store.createSelector((state): HudAttentio
       const { bucket, attentionKind, hasQuestion } = agent;
       if (bucket !== 'needs-attention' && bucket !== 'failed') continue;
       // Same per-agent gating as `selectHudAttnCount`: only a top-level
-      // non-background agent raises a row — sub-agent/background signals are
-      // the coordinator's business, never the user's call to action.
-      if (!agent.topLevel || agent.isBackground) continue;
+      // non-background, non-muted agent raises a row — sub-agent/background
+      // signals are the coordinator's business, never the user's call to
+      // action, and a muted agent (§5.5 `notificationsMuted`) never alerts.
+      if (!agent.topLevel || agent.isBackground || isMutedAgent(state, agent.id)) continue;
       // Raising signal + detail text: the agent's outstanding §7.1 question
       // block (most actionable — the user can answer it verbatim), else the
       // §5.5 attention-request kind/reason from the tracked session; attention
@@ -658,7 +659,9 @@ function cardAttentionSnippet(
     };
   }
   if (stateKey !== 'wait' && stateKey !== 'blocked') return null;
-  const gated = agents.filter((agent) => agent.topLevel && !agent.isBackground);
+  const gated = agents.filter(
+    (agent) => agent.topLevel && !agent.isBackground && !isMutedAgent(state, agent.id),
+  );
   for (const agent of gated) {
     if (!agent.hasQuestion) continue;
     const question = state.hud.questionsByAgentId[agent.id];
@@ -927,6 +930,17 @@ function isBackgroundAgent(
 }
 
 /**
+ * Per-agent notification mute (§5.5 AgentLite `notificationsMuted`, read
+ * from the tracked session — the §5.1 summary row does not carry it). A
+ * muted agent never raises an ATTENTION row, counter, or card snippet; the
+ * workspace-level buckets follow the daemon rollup, which already excludes
+ * muted sessions.
+ */
+function isMutedAgent(state: StoreState, agentId: string): boolean {
+  return state.agentSessions?.byAgentId[agentId]?.notificationsMuted === true;
+}
+
+/**
  * Render the canonical structured preview to the HUD's plain-string line:
  * text kinds carry their text, tool kinds render the classified tool label
  * (verb + subject + path, mirroring AgentPreviewToolLabel; hidden labels
@@ -1121,7 +1135,7 @@ function isCurrentUserRelevantTabAgent(
     return false;
   const metadata = (session.metadata ?? {}) as Record<string, unknown>;
   if (!isTopLevelAgent(info, metadata)) return false;
-  return !isBackgroundAgent(info, session, metadata);
+  return !isBackgroundAgent(info, session, metadata) && !isMutedAgent(state, info.id);
 }
 
 /** Actionable tab axes derived from the same live inputs as the HUD. */
@@ -1233,6 +1247,7 @@ export const selectHudAttnCount = store.createSelector((state): number => {
       if (
         agent.topLevel &&
         !agent.isBackground &&
+        !isMutedAgent(state, agent.id) &&
         (agent.bucket === 'failed' || agent.attentionKind !== null || agent.hasQuestion)
       ) {
         count += 1;

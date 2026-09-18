@@ -303,9 +303,22 @@ function handleEvent(event: WorkspaceEvent): void {
   // Notable events also fan out to the takeover overlay's queue (the bus is
   // a no-op until the overlay registers its listener). The name resolver
   // backfills agent display names off the live session slice so a banner
-  // never renders a raw agent UUID.
-  const trigger = mapEventToTakeoverTrigger(event, resolveAgentDisplayName);
+  // never renders a raw agent UUID; the mute resolver keeps muted agents
+  // (§5.5 `notificationsMuted`) from opening a takeover.
+  const trigger = mapEventToTakeoverTrigger(event, resolveAgentDisplayName, isAgentMuted);
   if (trigger && !isDuplicateStatusUpdate(trigger)) emitTakeoverTrigger(trigger);
+}
+
+/**
+ * One-time mute read off `appStore.state` (no selector imports): the hydrated
+ * session's `notificationsMuted` (§5.5 AgentLite, hydrated per HUD-visible
+ * workspace by `hydrateVisibleWorkspaceAgents`); unknown agents are unmuted.
+ */
+function isAgentMuted(agentId: string): boolean {
+  const state = appStore.state as {
+    agentSessions?: { byAgentId?: Record<string, { notificationsMuted?: unknown }> };
+  };
+  return state.agentSessions?.byAgentId?.[agentId]?.notificationsMuted === true;
 }
 
 /**
