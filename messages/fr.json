@@ -2138,6 +2138,8 @@
   "chat_chatMessage_attachmentOpenFailed_error": "Impossible d'ouvrir {name}",
   "chat_chatMessage_author_ariaLabel": "Envoyé par {name}",
   "chat_chatMessage_authorUnknown_label": "Membre inconnu",
+  "chat_chatMessage_collaboratorAuthor_ariaLabel": "Envoyé par {name}, invité de cet espace de travail",
+  "chat_chatMessage_collaboratorRole_label": "Invité",
   "chat_chatMessage_openAttachment_title": "Ouvrir {name}",
   "chat_chatMessage_edit_placeholder": "Modifiez votre message...",
   "chat_chatMessage_externalLink_fallback": "Lien externe",

@@ -2138,6 +2138,8 @@
   "chat_chatMessage_attachmentOpenFailed_error": "无法打开 {name}",
   "chat_chatMessage_author_ariaLabel": "由 {name} 发送",
   "chat_chatMessage_authorUnknown_label": "未知成员",
+  "chat_chatMessage_collaboratorAuthor_ariaLabel": "由此工作区的访客 {name} 发送",
+  "chat_chatMessage_collaboratorRole_label": "访客",
   "chat_chatMessage_openAttachment_title": "打开 {name}",
   "chat_chatMessage_edit_placeholder": "编辑你的消息…",
   "chat_chatMessage_externalLink_fallback": "外部链接",
