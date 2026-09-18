@@ -2846,8 +2846,16 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     // Session provider differs from the default provider — the historical
     // failure: the daemon validated the bare id against claude-code and
     // rejected it. The FE must attribute the bare pick to the effective
-    // default provider explicitly.
+    // default provider explicitly. The disabled claude-code group owns a
+    // different id, so the picked 'model-1' row is unambiguously the default
+    // provider's.
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'claude-code' });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models:
+        providerId === 'claude-code'
+          ? [{ value: 'claude-opus-4-8', label: 'Claude Opus 4.8', description: 'Opus' }]
+          : [{ value: 'model-1', label: 'Model 1', description: 'A model' }],
+    }));
 
     render(ModelPicker, {
       props: {
@@ -2858,7 +2866,10 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       },
     });
 
-    await pickModelOne();
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('tab', { name: /Auggie/ }));
+    await fireEvent.click(await screen.findByRole('option', { name: /Model 1/ }));
+    await new Promise((r) => setTimeout(r, 0));
 
     await waitFor(() => {
       expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
@@ -2866,6 +2877,64 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
         'model-1',
         'ws-1',
         'auggie',
+      );
+    });
+  });
+
+  it('guest window: bare pick from the per-agent provider group sends the agent provider, not the default provider', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const onModelChange = vi.fn();
+    // Guest-window shape: the host's `settings.list` is administrator-only,
+    // so `providers.enabled` never hydrates and the enabled set is only the
+    // first-catalog-row default provider (auggie). The host agent runs on
+    // claude-code, reached only via the per-agent fetch. A pick from that
+    // group must carry `providerId: 'claude-code'` — attributing it to auggie
+    // makes the daemon reject with "model … does not belong to provider auggie".
+    mockAgentSession$.set({
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'claude-code',
+      model: 'claude-opus-4-8',
+    });
+    enabledProviderIds$.set(['auggie']);
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
+      models:
+        providerId === 'claude-code'
+          ? [
+              { value: 'claude-opus-4-8', label: 'Claude Opus 4.8', description: 'Opus' },
+              { value: 'claude-sonnet-4-8', label: 'Claude Sonnet 4.8', description: 'Sonnet' },
+            ]
+          : [{ value: 'model-1', label: 'Model 1', description: 'A model' }],
+    }));
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'claude-opus-4-8',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        updateGlobalStore: true,
+        portal: false,
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Claude Sonnet 4\.8/ }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onModelChange).toHaveBeenCalledWith('claude-sonnet-4-8', {
+      providerId: 'claude-code',
+      modelId: 'claude-sonnet-4-8',
+    });
+    await waitFor(() => {
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+        'agent-1',
+        'claude-sonnet-4-8',
+        'ws-1',
+        'claude-code',
       );
     });
   });
