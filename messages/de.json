@@ -2137,6 +2137,8 @@
   "chat_chatMessage_attachmentOpenFailed_error": "{name} konnte nicht geöffnet werden",
   "chat_chatMessage_author_ariaLabel": "Gesendet von {name}",
   "chat_chatMessage_authorUnknown_label": "Unbekanntes Mitglied",
+  "chat_chatMessage_collaboratorAuthor_ariaLabel": "Gesendet von {name}, Gast dieses Workspaces",
+  "chat_chatMessage_collaboratorRole_label": "Gast",
   "chat_chatMessage_openAttachment_title": "{name} öffnen",
   "chat_chatMessage_edit_placeholder": "Bearbeiten Sie Ihre Nachricht...",
   "chat_chatMessage_externalLink_fallback": "Externer Link",

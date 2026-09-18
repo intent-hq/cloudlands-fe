@@ -2137,6 +2137,8 @@
   "chat_chatMessage_attachmentOpenFailed_error": "無法開啟 {name}",
   "chat_chatMessage_author_ariaLabel": "由 {name} 傳送",
   "chat_chatMessage_authorUnknown_label": "未知成員",
+  "chat_chatMessage_collaboratorAuthor_ariaLabel": "由此工作區的訪客 {name} 傳送",
+  "chat_chatMessage_collaboratorRole_label": "訪客",
   "chat_chatMessage_openAttachment_title": "開啟 {name}",
   "chat_chatMessage_edit_placeholder": "編輯你的訊息…",
   "chat_chatMessage_externalLink_fallback": "外部連結",

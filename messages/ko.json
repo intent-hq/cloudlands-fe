@@ -2137,6 +2137,8 @@
   "chat_chatMessage_attachmentOpenFailed_error": "{name}을(를) 열지 못했습니다",
   "chat_chatMessage_author_ariaLabel": "{name}이(가) 보냄",
   "chat_chatMessage_authorUnknown_label": "알 수 없는 멤버",
+  "chat_chatMessage_collaboratorAuthor_ariaLabel": "이 워크스페이스의 게스트 {name}이(가) 보냄",
+  "chat_chatMessage_collaboratorRole_label": "게스트",
   "chat_chatMessage_openAttachment_title": "{name} 열기",
   "chat_chatMessage_edit_placeholder": "메시지 편집...",
   "chat_chatMessage_externalLink_fallback": "외부 링크",

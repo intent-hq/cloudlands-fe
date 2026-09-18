@@ -1,6 +1,10 @@
 import type { AgentMessage, ContentBlock } from '$shared/types';
 import { extractAllContent } from '$shared/types';
 import { getAgentMessageAttribution, stripAgentMessageHeader } from './agent-message-attribution';
+import {
+  getCollaboratorSenderAttribution,
+  stripCollaboratorSenderPreamble,
+} from './collaborator-sender-attribution';
 import { getQueueInfo } from './queue-info';
 
 const ISO_TIMESTAMP = String.raw`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})`;
@@ -81,12 +85,18 @@ export function degradeLegacyFileBlocks(
 /** Return immutable user-authored text for rendering and other UI surfaces. */
 export function getPresentedUserMessageText(message: AgentMessage): string {
   // Rows sent by another agent carry the daemon-stamped sender header in
-  // content; the attribution chip conveys the sender, so presentation copies
-  // (render, preview, copy) drop the leading header line.
+  // content, and rows sent by a workspace collaborator carry the daemon's
+  // sender preamble; the attribution chip conveys the sender, so presentation
+  // copies (render, preview, copy, edit) drop the leading header line. The
+  // two never coexist on one row (agent vs human caller); each strip is an
+  // exact match against the text the daemon built.
   const attribution = getAgentMessageAttribution(message.metadata);
+  const collaboratorSender = attribution ? null : getCollaboratorSenderAttribution(message);
   const presentLeadingHeader = attribution
     ? (text: string) => stripAgentMessageHeader(text, attribution)
-    : (text: string) => text;
+    : collaboratorSender
+      ? (text: string) => stripCollaboratorSenderPreamble(text, collaboratorSender)
+      : (text: string) => text;
 
   const textParts = degradeLegacyFileBlocks(message.contentBlocks)
     .filter((block) => block.type === 'text')
