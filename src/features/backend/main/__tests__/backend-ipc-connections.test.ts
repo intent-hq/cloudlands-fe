@@ -4664,7 +4664,7 @@ describe('guest-sessions:* IPC handlers', () => {
         await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalledTimes(1));
         send.mockClear();
         guestStore.setWorkspaces.mockClear();
-        return { guest, send };
+        return { guest, send, mod };
       }
 
       it('the guest hello subscribes the pooled client to the host workspace events', async () => {
@@ -4675,10 +4675,20 @@ describe('guest-sessions:* IPC handlers', () => {
         });
       });
 
-      it('a host rename on the guest subscription re-hydrates the cache and re-broadcasts', async () => {
+      it('a host rename on the guest subscription re-hydrates the cache and broadcasts the new title', async () => {
         let title = 'Guest project';
         installHost(() => title);
         const { guest, send } = await connectGuest();
+        // A store mock that commits: `list` answers with whatever the last
+        // `setWorkspaces` wrote, so the broadcast payload is observable.
+        let record = GUEST;
+        guestStore.list.mockImplementation(async () => [record]);
+        guestStore.setWorkspaces.mockImplementation(
+          async (_id: string, workspaces: Array<{ id: string; title: string }>) => {
+            record = { ...record, workspaces };
+            return true;
+          },
+        );
 
         title = 'Renamed on host';
         guest.emit(
@@ -4695,9 +4705,186 @@ describe('guest-sessions:* IPC handlers', () => {
             expect.any(Function),
           ),
         );
-        await vi.waitFor(() =>
-          expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
-        );
+        await vi.waitFor(() => {
+          const changed = send.mock.calls.filter(([c]) => c === 'guest-sessions:changed');
+          expect(changed.length).toBeGreaterThan(0);
+          expect(changed.at(-1)?.[1]).toMatchObject({
+            sessions: [
+              { id: GUEST.id, workspaces: [{ id: 'ws-guest', title: 'Renamed on host' }] },
+            ],
+          });
+        });
+      });
+
+      describe('one subscription per transport generation', () => {
+        const subscribes = () => rpc.calls.filter((m) => m === 'events.subscribe').length;
+
+        it('repeated hellos on the same socket reuse the subscription', async () => {
+          installHost(() => 'Guest project');
+          const { guest } = await connectGuest();
+          expect(subscribes()).toBe(1);
+
+          // Same-socket capability re-hellos (e.g. the daemon learning the
+          // host identity) must not acquire another lease.
+          for (let i = 0; i < 5; i += 1) guest.hello(hello);
+          await vi.waitFor(() =>
+            expect(rpc.calls.filter((m) => m === 'workspace.list').length).toBeGreaterThan(1),
+          );
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(subscribes()).toBe(1);
+
+          // The single lease still routes events.
+          guest.emit(
+            'notification',
+            workspaceEvent(SUB_ID, 'workspace:updated', {
+              workspaceId: 'ws-guest',
+              changes: { title: 'Renamed on host' },
+            }),
+          );
+          await vi.waitFor(() => expect(guestStore.setWorkspaces).toHaveBeenCalled());
+        });
+
+        it('a hello while the first subscribe is in flight does not start a second one', async () => {
+          const releases: Array<(value: unknown) => void> = [];
+          rpc.handler = async (method) => {
+            if (method === 'events.subscribe')
+              return new Promise((resolve) => releases.push(resolve));
+            if (method === 'workspace.list') return { workspaces: [] };
+            return {};
+          };
+          installGuest();
+          guestStore.setWorkspaces.mockResolvedValue(true);
+          const { mod } = await loadModule();
+          mod.registerBackendHandlers();
+          const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as EventClient;
+          guest.hello(hello);
+          await vi.waitFor(() => expect(releases).toHaveLength(1));
+          guest.hello(hello);
+          guest.hello(hello);
+          await vi.waitFor(() =>
+            expect(rpc.calls.filter((m) => m === 'workspace.list').length).toBe(3),
+          );
+          expect(releases).toHaveLength(1);
+
+          releases[0]({ subscriptionId: SUB_ID });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          guest.hello(hello);
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(releases).toHaveLength(1);
+        });
+
+        it('a reconnect forgets the old lease and the reconnect hello acquires exactly one new one', async () => {
+          let nextSub = 1;
+          rpc.handler = async (method) => {
+            if (method === 'events.subscribe')
+              return { subscriptionId: `guest-ws-sub-${nextSub++}` };
+            if (method === 'workspace.list') return { workspaces: [] };
+            return {};
+          };
+          installGuest();
+          guestStore.setWorkspaces.mockResolvedValue(true);
+          const { mod } = await loadModule();
+          mod.registerBackendHandlers();
+          const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as EventClient;
+          guest.hello(hello);
+          await vi.waitFor(() => expect(subscribes()).toBe(1));
+          guest.emit('status', 'connected');
+          const reads = () => rpc.calls.filter((m) => m === 'workspace.list').length;
+
+          // Socket drops: the daemon dropped the lease with it, so events
+          // carrying the old id are no longer ours.
+          guest.emit('status', 'disconnected');
+          guest.emit('status', 'connecting');
+          const before = reads();
+          guest.emit(
+            'notification',
+            workspaceEvent('guest-ws-sub-1', 'workspace:updated', {
+              workspaceId: 'ws-guest',
+              changes: { title: 'Stale' },
+            }),
+          );
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(reads()).toBe(before);
+
+          // The reconnect hello subscribes once more; a follow-up same-socket
+          // hello reuses that lease.
+          guest.hello(hello);
+          guest.hello(hello);
+          await vi.waitFor(() => expect(reads()).toBe(before + 2));
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(subscribes()).toBe(2);
+          guest.emit('status', 'connected');
+
+          guest.emit(
+            'notification',
+            workspaceEvent('guest-ws-sub-2', 'workspace:updated', {
+              workspaceId: 'ws-guest',
+              changes: { title: 'Fresh' },
+            }),
+          );
+          await vi.waitFor(() => expect(reads()).toBe(before + 3));
+        });
+
+        it('a subscribe answered after the socket dropped is discarded', async () => {
+          const releases: Array<(value: unknown) => void> = [];
+          rpc.handler = async (method) => {
+            if (method === 'events.subscribe')
+              return new Promise((resolve) => releases.push(resolve));
+            if (method === 'workspace.list') return { workspaces: [] };
+            return {};
+          };
+          installGuest();
+          guestStore.setWorkspaces.mockResolvedValue(true);
+          const { mod } = await loadModule();
+          mod.registerBackendHandlers();
+          const guest = (await mod.connectBackendClient(GUEST.id)) as unknown as EventClient;
+          guest.hello(hello);
+          await vi.waitFor(() => expect(releases).toHaveLength(1));
+
+          guest.emit('status', 'disconnected');
+          releases[0]({ subscriptionId: SUB_ID });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const before = rpc.calls.filter((m) => m === 'workspace.list').length;
+          guest.emit(
+            'notification',
+            workspaceEvent(SUB_ID, 'workspace:updated', {
+              workspaceId: 'ws-guest',
+              changes: { title: 'Stale' },
+            }),
+          );
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(rpc.calls.filter((m) => m === 'workspace.list').length).toBe(before);
+
+          // The next generation's hello is not blocked by the stale in-flight guard.
+          guest.emit('status', 'connecting');
+          guest.hello(hello);
+          await vi.waitFor(() => expect(releases).toHaveLength(2));
+        });
+
+        it('a torn-down client stops routing host events and a rebuilt one subscribes afresh', async () => {
+          installHost(() => 'Guest project');
+          const { guest, mod } = await connectGuest();
+          const reads = () => rpc.calls.filter((m) => m === 'workspace.list').length;
+
+          mod.disconnectBackendClient(GUEST.id);
+          // The real client's `dispose()` flips status to `disconnected` before
+          // dropping its listeners; the fake only records the call.
+          guest.emit('status', 'disconnected');
+          const before = reads();
+          guest.emit(
+            'notification',
+            workspaceEvent(SUB_ID, 'workspace:updated', {
+              workspaceId: 'ws-guest',
+              changes: { title: 'After dispose' },
+            }),
+          );
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          expect(reads()).toBe(before);
+
+          const rebuilt = (await mod.connectBackendClient(GUEST.id)) as unknown as EventClient;
+          rebuilt.hello(hello);
+          await vi.waitFor(() => expect(subscribes()).toBe(2));
+        });
       });
 
       it('a membership removal and a deletion re-hydrate too', async () => {
