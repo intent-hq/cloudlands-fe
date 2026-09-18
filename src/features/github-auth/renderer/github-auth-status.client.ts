@@ -5,7 +5,12 @@ import {
 } from '$lib/client/live/backend-transport';
 import type { GitHubAuthStatus } from '../types';
 
-let cached: GitHubAuthStatus | undefined;
+// Bounded cache lifetime so a missed `github:auth-changed` event (or reconnect)
+// self-heals on the next read instead of pinning the first snapshot forever
+// (intent#5362). Event/reconnect invalidation still refreshes immediately.
+export const GITHUB_AUTH_STATUS_TTL_MS = 20_000;
+
+let cached: { status: GitHubAuthStatus; at: number } | undefined;
 let pending: { generation: number; promise: Promise<GitHubAuthStatus> } | undefined;
 let trailing: Promise<GitHubAuthStatus> | undefined;
 let generation = 0;
@@ -32,9 +37,21 @@ if (typeof onBackendReconnected === 'function') {
   onBackendReconnected(() => invalidateGitHubAuthStatus());
 }
 
+function freshCached(): GitHubAuthStatus | undefined {
+  if (!cached) return undefined;
+  if (Date.now() - cached.at >= GITHUB_AUTH_STATUS_TTL_MS) {
+    cached = undefined;
+    return undefined;
+  }
+  return cached.status;
+}
+
 export function readGitHubAuthStatus(force = false): Promise<GitHubAuthStatus> {
   if (force) invalidateGitHubAuthStatus();
-  else if (cached) return Promise.resolve(cached);
+  else {
+    const fresh = freshCached();
+    if (fresh) return Promise.resolve(fresh);
+  }
   if (!force && pending?.generation === generation) return pending.promise;
   if (pending) {
     if (trailing) return trailing;
@@ -54,7 +71,7 @@ export function readGitHubAuthStatus(force = false): Promise<GitHubAuthStatus> {
   const requestGeneration = generation;
   const run = backendRequest<GitHubAuthStatus>('github.authStatus')
     .then((status) => {
-      if (requestGeneration === generation) cached = status;
+      if (requestGeneration === generation) cached = { status, at: Date.now() };
       return status;
     })
     .finally(() => {
