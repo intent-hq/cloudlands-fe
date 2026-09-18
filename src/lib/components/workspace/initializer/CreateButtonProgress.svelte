@@ -61,19 +61,23 @@
 {/snippet}
 
 <!-- inline-flex keeps the wrapped Button's line-box geometry identical to an
-     unwrapped one, so the button's footprint does not change while creating. -->
-<div class="relative inline-flex overflow-hidden rounded-(--radius-medium)">
+     unwrapped one, so the button's footprint does not change while creating.
+     The outer box never clips, so the Button's elevation shadow stays visible;
+     the inner overlay layer clips the bar to the button radius. -->
+<div class="relative inline-flex">
   {@render children(label)}
   {#if live && $entry$}
-    <div
-      class="pointer-events-none absolute bottom-0 left-0 h-[2px] bg-primary-foreground/80 transition-[width] duration-300 ease-out"
-      style="width: {maxPercent}%"
-      role="progressbar"
-      aria-label={createProgressLabel($entry$)}
-      aria-valuemin="0"
-      aria-valuemax="100"
-      aria-valuenow={maxPercent}
-      data-testid="create-progress-bar"
-    ></div>
+    <div class="pointer-events-none absolute inset-0 overflow-hidden rounded-(--radius-medium)">
+      <div
+        class="absolute bottom-0 left-0 h-[2px] bg-primary-foreground/80 transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+        style="width: {maxPercent}%"
+        role="progressbar"
+        aria-label={createProgressLabel($entry$)}
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={maxPercent}
+        data-testid="create-progress-bar"
+      ></div>
+    </div>
   {/if}
 </div>

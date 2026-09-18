@@ -76,8 +76,11 @@ describe('CreateButtonProgress', () => {
     expect(labelSlot!.contains(label)).toBe(true);
     expect(button.contains(bar)).toBe(false);
     expect(labelSlot!.contains(bar)).toBe(false);
-    // Same overlay wrapper hosts both: the bar's parent is an ancestor of the button.
-    expect(bar.parentElement!.contains(button)).toBe(true);
+    // Same wrapper hosts both: the bar's overlay layer sits beside the button, and
+    // the box enclosing that layer also encloses the button.
+    const overlay = bar.parentElement!;
+    expect(overlay.contains(button)).toBe(false);
+    expect(overlay.parentElement!.contains(button)).toBe(true);
   });
 
   it('shows phase label + percent and a width-matched bar once frames arrive', async () => {
