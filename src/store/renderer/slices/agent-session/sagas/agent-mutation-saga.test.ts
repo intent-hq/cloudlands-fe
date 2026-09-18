@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getConversation: vi.fn(),
   updateSpecialist: vi.fn(),
   rename: vi.fn(),
+  setNotificationsMuted: vi.fn(),
   deleteAgent: vi.fn(),
   cancelDelete: vi.fn(),
   dismissQuestions: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('$lib/client', () => ({
       getConversation: mocks.getConversation,
       updateSpecialist: mocks.updateSpecialist,
       rename: mocks.rename,
+      setNotificationsMuted: mocks.setNotificationsMuted,
       delete: mocks.deleteAgent,
       cancelDelete: mocks.cancelDelete,
       dismissQuestions: mocks.dismissQuestions,
@@ -56,6 +58,7 @@ import {
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
   saveAgentSessionRequested,
+  setAgentNotificationsMutedRequested,
   undoAgentDeletionRequested,
   initialState as workspaceAgentsInitialState,
   workspaceAgentsReducer,
@@ -303,6 +306,72 @@ describe('agentMutationSaga', () => {
 
     await expect(action.promise).rejects.toThrow('rename rejected');
     expect(mocks.rename).toHaveBeenCalledWith(A1, 'New Name', WS);
+    await stop(task);
+  });
+
+  it('mutes optimistically, clears hasUnread, and forwards exact agent.update params', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: true });
+    const unread = session(A1, {
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-9',
+      hasUnread: true,
+      metadata: { lastSeenMessageId: 'm-5' },
+    });
+    const { channel, dispatched, task } = start({ [A1]: unread });
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.setNotificationsMuted).toHaveBeenCalledWith({
+      agentId: A1,
+      workspaceId: WS,
+      notificationsMuted: true,
+    });
+    expect(dispatched).toContainEqual(
+      updateSession(A1, { notificationsMuted: true, hasUnread: false }),
+    );
+    await stop(task);
+  });
+
+  it('unmuting restores hasUnread when the newest assistant message is still unseen', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: true });
+    const muted = session(A1, {
+      notificationsMuted: true,
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-9',
+      hasUnread: false,
+      metadata: { lastSeenMessageId: 'm-5' },
+    });
+    const { channel, dispatched, task } = start({ [A1]: muted });
+    const action = setAgentNotificationsMutedRequested(WS, A1, false);
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(dispatched).toContainEqual(
+      updateSession(A1, { notificationsMuted: false, hasUnread: true }),
+    );
+    await stop(task);
+  });
+
+  it('rolls back the optimistic mute and surfaces the daemon failure', async () => {
+    mocks.setNotificationsMuted.mockResolvedValue({ success: false, error: 'mute rejected' });
+    const unread = session(A1, {
+      lastMessageRole: 'assistant',
+      lastMessageId: 'm-9',
+      hasUnread: true,
+      metadata: { lastSeenMessageId: 'm-5' },
+    });
+    const { channel, dispatched, task } = start({ [A1]: unread }, { live: true });
+    const action = setAgentNotificationsMutedRequested(WS, A1, true);
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('mute rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates).toEqual([
+      updateSession(A1, { notificationsMuted: true, hasUnread: false }),
+      updateSession(A1, { notificationsMuted: undefined, hasUnread: true }),
+    ]);
+    expect(mocks.error).toHaveBeenCalledWith('mute rejected');
     await stop(task);
   });
 

@@ -355,6 +355,19 @@ export const stopAgentSessionRequested = createAsyncAction<[wsId: string, agentI
   'workspaceAgents/stopAgentSession',
   'workspaceAgents/stopAgentSessionRequested',
 );
+/**
+ * Set or clear the daemon-owned per-agent notification mute
+ * (`agent.update { changes: { notificationsMuted } }`, §5.5). The saga
+ * applies the flag optimistically (re-deriving `hasUnread`), reverts on a
+ * daemon failure, and lets the `agent:updated` push converge the session.
+ */
+export const setAgentNotificationsMutedRequested = createAsyncAction<
+  [wsId: string, agentId: string, notificationsMuted: boolean],
+  void
+>(
+  'workspaceAgents/setAgentNotificationsMuted',
+  'workspaceAgents/setAgentNotificationsMutedRequested',
+);
 export const deleteAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/deleteAgentSession',
   'workspaceAgents/deleteAgentSessionRequested',

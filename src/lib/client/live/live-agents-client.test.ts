@@ -1003,6 +1003,55 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('setNotificationsMuted forwards agent.update with the boolean notificationsMuted change (§5.5)', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const muted = await client.setNotificationsMuted({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      notificationsMuted: true,
+    });
+    expect(muted).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.update',
+      params: {
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        changes: { notificationsMuted: true },
+      },
+    });
+
+    const unmuted = await client.setNotificationsMuted({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      notificationsMuted: false,
+    });
+    expect(unmuted).toEqual({ success: true });
+    expect(backend.requests[1]?.params).toEqual({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      changes: { notificationsMuted: false },
+    });
+  });
+
+  it('setNotificationsMuted folds a daemon rejection into {success:false,error} (no throw)', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session', { rpcCode: -32004 }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.setNotificationsMuted({
+      agentId: 'agent-missing',
+      workspaceId: 'ws-1',
+      notificationsMuted: true,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
   it('setReasoningEffort folds a daemon rejection into {success:false,error} (no throw)', async () => {
     backend.onRequest('agent.update', () => {
       throw new BackendError(
@@ -1529,6 +1578,28 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     const agent = await client.get('agent-child');
     expect(agent?.hasUnread).toBe(false);
+  });
+
+  it('carries notificationsMuted verbatim and derives hasUnread: false for a muted agent', async () => {
+    // §5.5 AgentLite serves `notificationsMuted` always (like `isBackground`);
+    // the mute suppresses the per-agent unread dot even with an unseen
+    // assistant message.
+    backend.onRequest('agent.get', () => ({
+      agent: {
+        id: 'agent-muted',
+        workspaceId: 'ws-1',
+        name: 'Muted',
+        status: 'idle',
+        notificationsMuted: true,
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-5' },
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-muted');
+    expect(agent).toMatchObject({ notificationsMuted: true, hasUnread: false });
   });
 
   it('derives hasUnread: false when the daemon omits lastMessageId (older daemon)', async () => {

@@ -20,6 +20,7 @@ import ArrowsOutLineVerticalIcon from 'phosphor-svelte/lib/ArrowsOutLineVertical
 import AsteriskIcon from 'phosphor-svelte/lib/AsteriskIcon';
 import AtIcon from 'phosphor-svelte/lib/AtIcon';
 import BellIcon from 'phosphor-svelte/lib/BellIcon';
+import BellSlashIcon from 'phosphor-svelte/lib/BellSlashIcon';
 import BookIcon from 'phosphor-svelte/lib/BookIcon';
 import BookOpenIcon from 'phosphor-svelte/lib/BookOpenIcon';
 import BrainIcon from 'phosphor-svelte/lib/BrainIcon';
@@ -228,6 +229,7 @@ const iconComponents: Record<string, Component<any>> = {
   ban: ProhibitIcon,
   bars: ListIcon,
   bell: BellIcon,
+  'bell-slash': BellSlashIcon,
   bold: TextBIcon,
   bolt: LightningIcon,
   book: BookIcon,
@@ -436,6 +438,7 @@ export const faAt = icon('at');
 export const faBan = icon('ban');
 export const faBars = icon('bars');
 export const faBell = icon('bell');
+export const faBellSlash = icon('bell-slash');
 export const faBold = icon('bold');
 export const faBolt = icon('bolt');
 export const faBook = icon('book');
