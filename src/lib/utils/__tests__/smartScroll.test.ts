@@ -1151,23 +1151,30 @@ describe('followBottom policy', () => {
   });
 
   it('pins from the lease settle when the container opts out of native anchoring', () => {
-    const child = document.createElement('div');
-    container.append(child);
+    // The disclosure body sits inside a message, not directly under the
+    // scroller, so only its lease observes it for resizes.
+    const message = document.createElement('div');
+    const body = document.createElement('div');
+    message.append(body);
+    container.append(message);
     container.style.overflowAnchor = 'none';
     const action = followBottom(container, { follow: true });
     runSettleTail();
-    const mutation = beforeFollowBottomMutation(child);
+    const mutation = beforeFollowBottomMutation(body);
+    expect(resizeActive.has(body)).toBe(true);
     scrollHeight += 18;
     mutation.request();
     expect(scrollTop).toBe(618);
 
     // The terminal tick restores the natural box in the same step that
-    // releases the lease. Releasing also drops the element's resize
-    // observation, so without a native anchor nothing pins the viewport
-    // before the next frame — the settle itself snaps to the new maximum.
+    // releases the lease, and the release ends the body's resize
+    // observation. Without a native anchor the only pin left would be the
+    // next settle frame, so the settle itself must snap to the new maximum
+    // before a same-frame reader runs.
     scrollHeight += 24;
     mutation.settle();
     expect(scrollTop).toBe(642);
+    expect(resizeActive.has(body)).toBe(false);
     runSettleTail();
     expect(scrollTop).toBe(642);
     expect(animationFrames).toHaveLength(0);
@@ -1175,8 +1182,10 @@ describe('followBottom policy', () => {
   });
 
   it('keeps an opted-out container at the bottom through a disclosure intro end', () => {
+    const message = document.createElement('div');
     const child = document.createElement('div');
-    container.append(child);
+    message.append(child);
+    container.append(message);
     container.style.overflowAnchor = 'none';
     const action = followBottom(container, { follow: true });
     runSettleTail();
