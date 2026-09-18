@@ -415,10 +415,7 @@ describe('agentMutationSaga', () => {
       hasUnread: false,
       metadata: { lastSeenMessageId: 'm-1' },
     });
-    const { channel, dispatch, dispatched, task, getState } = start(
-      { [A1]: seen },
-      { live: true },
-    );
+    const { channel, dispatch, dispatched, task, getState } = start({ [A1]: seen }, { live: true });
     const action = setAgentNotificationsMutedRequested(WS, A1, true);
     channel.put(action);
     await settle();
