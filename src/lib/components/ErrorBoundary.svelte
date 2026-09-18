@@ -334,6 +334,7 @@
     {@render errorDisplay(
       err.message || m.lib_errorBoundary_unexpected_error(),
       err.stack || '',
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous Svelte boundary and component-local retry-budget reset; no domain data, timer, or IPC work.
       () => retryAfterRenderError(reset),
     )}
   {/snippet}
