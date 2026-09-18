@@ -2959,7 +2959,7 @@
   <!-- Bordered container: Linear issues + Text area -->
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
   <div
-    class="relative w-full rounded-lg border border-border bg-background transition-all duration-200"
+    class="relative w-full rounded-lg border border-border bg-background transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
     class:drag-over={isDraggingOver}
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}

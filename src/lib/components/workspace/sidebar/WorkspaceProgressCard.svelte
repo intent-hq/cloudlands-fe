@@ -830,7 +830,7 @@
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
-               transition-all duration-150"
+               transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none"
             placeholder={m.workspace_links_untitled_label()}
           />
         {:else}
@@ -838,7 +838,7 @@
             class="relative z-10 text-xl font-semibold text-foreground bg-transparent
                border-none py-0.5 pr-1 rounded cursor-text text-left
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-               transition-all duration-150 leading-normal
+               transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none leading-normal
                focus-visible:outline-1 focus-visible:outline-primary/50 focus-visible:-outline-offset-1
                disabled:cursor-default disabled:opacity-50 truncate min-w-0"
             class:opacity-50={!$workspace?.title}
@@ -870,7 +870,7 @@
               data-workspace-actions-kebab
               data-workspace-actions-trigger
               aria-label={m.workspace_progressCard_actions_ariaLabel()}
-              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
+              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none hover:bg-transparent hover:border-none"
               disabled={isDeleting}
             >
               {#if isDeleting}
@@ -1159,13 +1159,13 @@
               rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
               class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
-                     focus:ring-none! focus:outline-none! transition-all duration-150 disabled:opacity-50"
+                     focus:ring-none! focus:outline-none! transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
               placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
           {:else if $workspace && currentStatusMessage}
             <button
               class="type-body relative z-10 w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
-                     transition-all duration-150 leading-snug hover:text-foreground
+                     transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
               onclick={startEditingStatusMessage}

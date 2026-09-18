@@ -1174,7 +1174,9 @@
       <Fa
         icon={faPlus}
         size={11}
-        class="transform transition-transform duration-200 {isOpen ? '-rotate-45' : ''}"
+        class="transform transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isOpen
+          ? '-rotate-45'
+          : ''}"
       />
       <span>{m.workspace_issueSuggestions_addContext_label()}</span>
       <!-- Show all provider icons when collapsed -->

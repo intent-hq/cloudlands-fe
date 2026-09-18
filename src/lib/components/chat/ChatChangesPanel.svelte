@@ -2820,7 +2820,7 @@
   {@const locked = isFileLocked(change.filePath)}
   {@const stickyTop = inCommitGroup ? '64px' : '31.5px'}
   <div
-    class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-300 {isViewed
+    class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-spring-slow ease-spring-slow motion-reduce:transition-none {isViewed
       ? 'opacity-50'
       : ''}"
     style="overflow-anchor: none;"

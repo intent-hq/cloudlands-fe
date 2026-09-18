@@ -1420,7 +1420,7 @@
                     <Fa
                       icon={faChevronDown}
                       size={10}
-                      class="mr-1 opacity-50 transition-transform duration-200 {workspaceBranchesCollapsed
+                      class="mr-1 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {workspaceBranchesCollapsed
                         ? 'rotate-90'
                         : ''}"
                     />
@@ -1463,7 +1463,7 @@
                     <Fa
                       icon={faChevronDown}
                       size={10}
-                      class="mr-1 opacity-50 transition-transform duration-200 {showRemoteBranches
+                      class="mr-1 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showRemoteBranches
                         ? ''
                         : 'rotate-90'}"
                     />
