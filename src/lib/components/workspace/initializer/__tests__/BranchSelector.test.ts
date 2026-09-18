@@ -174,6 +174,41 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'master' });
   });
 
+  it('local repo: a branch listing that settles after typing keeps the filter so Enter commits it', async () => {
+    const listing = deferred<{
+      branches: string[];
+      remoteBranches: string[];
+      defaultBranch: string;
+      currentBranch: string;
+    }>();
+    mockGetBranches.mockReturnValue(listing.promise);
+    const onchange = vi.fn();
+    const { container } = render(BranchSelector, {
+      props: { repoPath: '/tmp/repo', repoType: 'local', value: '', onchange },
+    });
+
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
+    await openDropdown(container);
+    const searchInput = await screen.findByPlaceholderText('Search or enter branch name...');
+    await fireEvent.input(searchInput, { target: { value: 'feature/task-29' } });
+
+    // The pending fetch lands after the user typed: its auto-selection must not
+    // wipe the filter (#5329).
+    listing.resolve({
+      branches: ['main', 'feature/task-29'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+    await waitFor(() => expect(onchange).toHaveBeenCalledTimes(1));
+    expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'main' });
+    expect((searchInput as HTMLInputElement).value).toBe('feature/task-29');
+
+    await fireEvent.keyDown(searchInput, { key: 'Enter' });
+    await waitFor(() => expect(onchange).toHaveBeenCalledTimes(2));
+    expect(onchange.mock.calls[1][0].detail).toEqual({ branch: 'feature/task-29' });
+  });
+
   it.each([
     ['explicit', true],
     ['persisted', false],
