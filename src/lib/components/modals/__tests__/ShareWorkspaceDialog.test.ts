@@ -140,6 +140,45 @@ describe('ShareWorkspaceDialog — roster and invites', () => {
     expect(invite.textContent).toContain('@carol');
   });
 
+  it('labels a reusable invite with its join count and keeps the single-use rows as they were', () => {
+    const reusable: WorkspaceInvite = {
+      ...openInvite,
+      id: 'inv-reusable',
+      pinLogin: undefined,
+      pinGithubUserId: undefined,
+      reusable: true,
+      redemptionCount: 2,
+    };
+    const pinned: WorkspaceInvite = { ...openInvite, reusable: false, redemptionCount: 0 };
+    const legacyUnpinned: WorkspaceInvite = {
+      ...openInvite,
+      id: 'inv-legacy',
+      pinLogin: undefined,
+      pinGithubUserId: undefined,
+    };
+    renderDialog({ invites: [reusable, pinned, legacyUnpinned] });
+
+    const rows = screen.getAllByTestId('share-invite-row');
+    expect(rows.map((r) => r.getAttribute('data-invite-id'))).toEqual([
+      'inv-reusable',
+      'inv-1',
+      'inv-legacy',
+    ]);
+    const details = screen.getAllByTestId('share-invite-detail').map((d) => d.textContent ?? '');
+    expect(details[0]).toContain('Reusable');
+    expect(details[0]).toContain('2 joined');
+    expect(details[0]).toMatch(/Expires/);
+    expect(details[1]).not.toContain('Reusable');
+    expect(details[1]).toMatch(/Expires/);
+    // A daemon without the reusable fields: every link is single-use.
+    expect(details[2]).not.toContain('Reusable');
+    expect(details[2]).toMatch(/Expires/);
+    // Revoke stays available on the reusable row (and the legacy unpinned one).
+    expect(
+      screen.getAllByRole('button', { name: 'Revoke invite: Anyone with the link' }),
+    ).toHaveLength(2);
+  });
+
   it('shows the loading row while the first read is in flight and the load error afterwards', async () => {
     const { rerender } = renderDialog({ members: [], invites: [], loading: true });
     expect(screen.getByTestId('share-members-loading')).toBeTruthy();
