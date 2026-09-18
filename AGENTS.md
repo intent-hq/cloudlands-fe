@@ -16,7 +16,7 @@ Quick routing guide for AI agents. Start here, then open the smallest relevant d
 ## UI rules
 
 - Start with the [“I need to…” decision tree](docs/DESIGN_SYSTEM.md#i-need-to), not raw markup.
-- Use the generated [pattern cheatsheet](../../docs/fe/DESIGN_SYSTEM_CHEATSHEET.md) for imports and API summaries.
+- Use the generated [pattern cheatsheet](docs/DESIGN_SYSTEM_CHEATSHEET.md) for imports and API summaries.
 - Inspect live fixtures and copyable compositions at `/sandbox` and `/sandbox/recipes` via `pnpm run dev:ui`.
 - Use public `$lib/components/patterns/*` or `$lib/components/ui/*` subpaths; do not deep-import implementations.
 - Follow the [Never list](docs/DESIGN_SYSTEM.md#never), enforced by `eslint-rules/design-system/`.

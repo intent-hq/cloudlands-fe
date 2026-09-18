@@ -7,7 +7,7 @@ token vocabulary in a component, feature stylesheet, or theme adapter.
 ## I need to…
 
 Start with a pattern, not a primitive. The generated
-[cheatsheet](../../docs/fe/DESIGN_SYSTEM_CHEATSHEET.md) has the complete public API summary, and
+[cheatsheet](DESIGN_SYSTEM_CHEATSHEET.md) has the complete public API summary, and
 [`/sandbox/recipes`](../src/routes/sandbox/recipes/+page.svelte) renders copyable full compositions.
 
 ### …notify the user
