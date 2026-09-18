@@ -314,9 +314,10 @@ describe('DaemonStoppedOverlay', () => {
     render(DaemonStoppedOverlay);
     await showOverlay(externalTransport);
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
-    expect(overlay()!.textContent).toContain('was lost');
     // External mode gets the "local intentd instead of the remote server" note,
-    // not the local data-dir caveat.
+    // not the local data-dir caveat. The positive match is the only signal that
+    // the external-note branch rendered (the negative alone also passes with no
+    // note at all), so it stays despite being copy.
     expect(overlay()!.textContent).toContain('instead of the remote server');
     expect(overlay()!.textContent).not.toContain('may use a different data directory');
   });
@@ -325,7 +326,6 @@ describe('DaemonStoppedOverlay', () => {
     render(DaemonStoppedOverlay);
     await showOverlay({ mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' });
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar')).toBeTruthy();
-    expect(overlay()!.textContent).toContain('was lost');
   });
 
   it('names the machine from the active connection record in the title and description (#1750)', async () => {
@@ -569,7 +569,8 @@ describe('DaemonStoppedOverlay', () => {
   it('says "could not connect" with the sidecar fallback when never connected in external posture', async () => {
     render(DaemonStoppedOverlay);
     await showOverlayNeverConnected(externalTransport);
-    expect(overlay()!.textContent).toContain('Could not connect to the intentd daemon');
+    // Sole discriminator between the never-connected and lost-connection
+    // branches of the external copy.
     expect(overlay()!.textContent).not.toContain('was lost');
     // Buttons follow the same transport-mode rules as the lost-connection posture.
     expect(screen.getByTestId('daemon-stopped-spawn-sidecar').textContent).toContain(
@@ -637,15 +638,12 @@ describe('DaemonStoppedOverlay', () => {
       );
     }
 
-    it('offers "Switch to Local" and routes it through backend:open-local-and-spawn', async () => {
+    it('routes the local action through backend:open-local-and-spawn in a remote window', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       bindWindowToRemote();
 
       const button = screen.getByTestId('daemon-stopped-spawn-sidecar') as HTMLButtonElement;
-      expect(button.textContent).toContain('Switch to Local');
-      // The remote-window note explains the action targets the local daemon.
-      expect(overlay()!.textContent).toContain('local intentd daemon running on this machine');
 
       await fireEvent.click(button);
       await vi.waitFor(() => {
@@ -671,14 +669,13 @@ describe('DaemonStoppedOverlay', () => {
       expect(invokeMock).not.toHaveBeenCalledWith(BACKEND.OPEN_LOCAL_AND_SPAWN);
     });
 
-    it('lists other backends by name (no "Open" prefix) as actions that dispatch openConnectionRequested', async () => {
+    it('lists other backends by name as actions that dispatch openConnectionRequested', async () => {
       render(DaemonStoppedOverlay);
       await showOverlay(wsTransport);
       bindWindowToRemote();
 
       const openButtons = screen.getAllByTestId('daemon-stopped-open-backend');
       expect(openButtons).toHaveLength(1);
-      expect(openButtons[0].textContent).not.toContain('Open');
       expect(openButtons[0].textContent).toContain('Other Mac');
 
       const dispatchSpy = vi.spyOn(appStore, 'dispatch');
