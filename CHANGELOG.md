@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.165.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.0...v2.165.1) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.77 ([#2647](https://github.com/intent-hq/cloudlands-fe/issues/2647)) ([3b3ee7c](https://github.com/intent-hq/cloudlands-fe/commit/3b3ee7ca6986e893f05934400a7b5a3deb7c601f))
+* **ct-failures:** fall back to job logs when an artifact disappears mid-run ([#2632](https://github.com/intent-hq/cloudlands-fe/issues/2632)) ([10c077d](https://github.com/intent-hq/cloudlands-fe/commit/10c077d477eae7b9a658624a4fcb7e7e38b01b82))
+* **ct:** assert the CSS-defined 12px composer inset instead of a mount-time sample ([#2639](https://github.com/intent-hq/cloudlands-fe/issues/2639)) ([bdab4a5](https://github.com/intent-hq/cloudlands-fe/commit/bdab4a56e3b5f9e222abecd94cae26e6c54b81c9))
+* **fe:** keep collapsed accordion content at zero height ([#2634](https://github.com/intent-hq/cloudlands-fe/issues/2634)) ([2cb93cf](https://github.com/intent-hq/cloudlands-fe/commit/2cb93cf15d93d5f6cf3d1b5e2fbdce69c17ccbc4))
+* **fe:** let GitHub Reconnect start a fresh device flow when already connected ([#2633](https://github.com/intent-hq/cloudlands-fe/issues/2633)) ([c8c1413](https://github.com/intent-hq/cloudlands-fe/commit/c8c1413d05544abd093b1b30cd4c812aab9f0586))
+* **fe:** route provider model catalog through the platform detector ([#2631](https://github.com/intent-hq/cloudlands-fe/issues/2631)) ([b72081f](https://github.com/intent-hq/cloudlands-fe/commit/b72081f39cb4c0c7dd42bf2d356d9b04f8c55734))
+* keep Mac mini and Mac Studio icon strokes visible inside buttons ([#2635](https://github.com/intent-hq/cloudlands-fe/issues/2635)) ([a17814f](https://github.com/intent-hq/cloudlands-fe/commit/a17814f8b43bf16bc56f2c91546e5c096ad73203))
+* recover from benign render errors inside ErrorBoundary ([#2637](https://github.com/intent-hq/cloudlands-fe/issues/2637)) ([a5c44e8](https://github.com/intent-hq/cloudlands-fe/commit/a5c44e8dfabe8ead6f180984584329160a4fc274))
+
 ## [2.165.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.164.3...v2.165.0) (2026-09-18)
 
 
