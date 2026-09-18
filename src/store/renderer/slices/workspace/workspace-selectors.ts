@@ -154,6 +154,23 @@ export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string]
 );
 
 /**
+ * True when the workspace menus must not offer the owner-only workspace
+ * actions (Transfer/Download, Archive, Delete): the daemon reports the caller
+ * as a `collaborator` (`require_owner` refuses them with -32003), or the
+ * window is bound to a host joined as a guest (multiplayer w4) and the
+ * workspace's `myRole` has not arrived yet — a guest window is never the
+ * owner, so an unloaded row must not expose them either. Absent `myRole` in
+ * an owner window keeps owner semantics (older daemon).
+ */
+export const selectHidesOwnerWorkspaceActions = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => {
+    const myRole = selectWorkspaceById.select(state, wsId)?.myRole;
+    if (myRole === 'collaborator') return true;
+    return !myRole && selectIsGuestWindow.select(state);
+  },
+);
+
+/**
  * True when the connected principal is a collaborator everywhere: the list
  * has loaded and every workspace it can see reports `myRole: 'collaborator'`.
  * Gates app-wide administrator-only surfaces (workspace creation / repo

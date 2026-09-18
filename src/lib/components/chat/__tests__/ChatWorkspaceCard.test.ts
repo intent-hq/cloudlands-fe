@@ -129,6 +129,9 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     withStore: () => (workspaceId: string) => mocks.workspaceReadable(workspaceId),
   },
   selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
+  selectHidesOwnerWorkspaceActions: Object.assign(() => mocks.readable(() => false), {
+    select: () => false,
+  }),
 }));
 
 vi.mock('$store/renderer/slices/hardware-console/hardware-console-selectors', () => ({
