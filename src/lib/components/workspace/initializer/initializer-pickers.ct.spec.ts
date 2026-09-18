@@ -185,6 +185,13 @@ for (const scenario of ['clone', 'long', 'remote'] as const) {
       '"branch":"feature/task-29"',
     );
     await expect(menu).toHaveCount(0);
+    // Committing through the search input must hand keyboard focus back to the trigger.
+    await expect(branch).toBeFocused();
+    await branch.press('Enter');
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(branch).toBeFocused();
   });
 }
 
