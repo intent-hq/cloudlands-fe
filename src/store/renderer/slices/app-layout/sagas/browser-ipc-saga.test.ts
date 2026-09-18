@@ -40,9 +40,17 @@ import {
   panelLayoutReducer as rawPanelLayoutReducer,
 } from '../../panel-layout/panel-layout-slice';
 import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { browserIpcSaga } from './browser-ipc-saga';
 
 const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
+
+/** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
+const ownerWindowSlices = {
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+  guestSessions: guestSessionsInitialState,
+};
 
 const NOW = new Date('2026-07-31T00:00:00.000Z').getTime();
 const TAB = (url: string) => ({
@@ -1999,6 +2007,7 @@ describe('browserIpcSaga', () => {
     };
     const hostedState = (wsId: string) => {
       state = {
+        ...ownerWindowSlices,
         panelLayout: { byWorkspaceId: {} },
         tabState: { workspaceStacks: [[wsId]] },
         workspaceAgents: { byWorkspaceId: {} },
@@ -2112,6 +2121,7 @@ describe('browserIpcSaga', () => {
       // did not respond" (monorepo#2789 live regression in v2.64.0).
       const { task } = startWithReducer();
       state = {
+        ...ownerWindowSlices,
         panelLayout: { byWorkspaceId: {} },
         tabState: { workspaceStacks: [] },
         workspace: { workspaces: createCollection('id') },
@@ -2140,6 +2150,7 @@ describe('browserIpcSaga', () => {
     it('stays silent when the route is /workspace/new and the workspace is otherwise unhosted', async () => {
       const { actions, task } = startWithReducer();
       state = {
+        ...ownerWindowSlices,
         panelLayout: { byWorkspaceId: {} },
         tabState: { workspaceStacks: [] },
         workspace: { workspaces: createCollection('id') },
@@ -2160,6 +2171,7 @@ describe('browserIpcSaga', () => {
     it('stays silent for a non-routed workspace when the window is routed to a different one', async () => {
       const { actions, task } = startWithReducer();
       state = {
+        ...ownerWindowSlices,
         panelLayout: { byWorkspaceId: {} },
         tabState: { workspaceStacks: [] },
         workspace: { workspaces: createCollection('id') },
