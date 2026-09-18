@@ -5730,6 +5730,7 @@
   "deeplink_inviteError_denied": "GitHub 登入已取消。",
   "deeplink_inviteError_flowExpired": "GitHub 代碼在輸入前已過期。",
   "deeplink_inviteError_workspaceFull": "此工作區已滿。請要求擁有者釋出一個名額。",
+  "deeplink_inviteError_ownerSelfJoin": "你是此主機的擁有者，因此無法以訪客身分加入。請改從已配對的守護程式開啟它。",
   "deeplink_inviteError_certMismatch": "主機出示了非預期的憑證。請向擁有者索取新連結。",
   "deeplink_inviteError_generic": "無法連線主機，或主機拒絕了邀請。",
   "deeplink_inviteError_tailcatUnavailable": "此版本不包含通道客戶端，因此只能透過直接位址連線主機。請向擁有者索取包含直接主機的連結。",

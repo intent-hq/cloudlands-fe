@@ -5730,6 +5730,7 @@
   "deeplink_inviteError_denied": "GitHub のサインインがキャンセルされました。",
   "deeplink_inviteError_flowExpired": "GitHub のコードは入力前に期限切れになりました。",
   "deeplink_inviteError_workspaceFull": "このワークスペースは満員です。オーナーに空きを作るよう依頼してください。",
+  "deeplink_inviteError_ownerSelfJoin": "このホストはあなたが所有しているため、ゲストとして参加できません。ペアリング済みのデーモンから開いてください。",
   "deeplink_inviteError_certMismatch": "ホストが予期しない証明書を提示しました。所有者に新しいリンクを依頼してください。",
   "deeplink_inviteError_generic": "ホストに接続できないか、招待が拒否されました。",
   "deeplink_inviteError_tailcatUnavailable": "このビルドにはトンネルクライアントが含まれていないため、ホストには直接アドレスでのみ接続できます。所有者に直接ホストを含むリンクを依頼してください。",

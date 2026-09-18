@@ -1005,6 +1005,8 @@ function describeInviteFailure(error: unknown): string {
       return m.deeplink_inviteError_hostGithubUnreachable();
     case 'workspace-full':
       return m.deeplink_inviteError_workspaceFull();
+    case 'owner-self-join':
+      return m.deeplink_inviteError_ownerSelfJoin();
     default:
       return m.deeplink_inviteError_generic();
   }
