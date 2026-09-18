@@ -6409,6 +6409,7 @@
   "workspace_share_invite_anyone_label": "링크가 있는 모든 사람",
   "workspace_share_invite_pinned_label": "{login}만",
   "workspace_share_invite_expires_label": "{when} 만료",
+  "workspace_share_invite_reusable_label": "재사용 가능 · {count}명 참여",
   "workspace_share_revoke_label": "취소",
   "workspace_share_revoke_ariaLabel": "초대 취소: {audience}",
   "workspace_share_revokeFailed_error": "초대를 취소할 수 없습니다",
