@@ -320,6 +320,42 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
     it('does not hide them in an owner window for an unknown workspace id', () => {
       expect(selectHidesOwnerWorkspaceActions.select(loadedState([]), 'ws-missing')).toBe(false);
     });
+
+    it('hides them until the window identity settles, even when the row reports myRole owner', () => {
+      const ownerRow = loadedState([makeWorkspace({ myRole: 'owner' })]);
+      // Nothing hydrated yet: guest list and connections list both pending.
+      const boot = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsInitialState,
+      } as StoreState;
+      expect(selectHidesOwnerWorkspaceActions.select(boot, WS_ID)).toBe(true);
+      // Guest list in with a joined host, but the connections list has not
+      // bound `windowBackendId` yet (still the boot-time local default).
+      const preBind = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsReducer(
+          guestSessionsInitialState,
+          guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+        ),
+      } as StoreState;
+      expect(selectHidesOwnerWorkspaceActions.select(preBind, WS_ID)).toBe(true);
+      // Settled: the same row in an owner window (bound to local) keeps them.
+      expect(selectHidesOwnerWorkspaceActions.select(guestAware(ownerRow, 'local'), WS_ID)).toBe(
+        false,
+      );
+      // No list could be fetched: settled on what is known — owner semantics.
+      const unavailable = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsReducer(
+          guestSessionsInitialState,
+          guestSessionsListUnavailable(),
+        ),
+      } as StoreState;
+      expect(selectHidesOwnerWorkspaceActions.select(unavailable, WS_ID)).toBe(false);
+    });
   });
 
   describe('selectIsWorkspaceCollaborator', () => {
@@ -366,6 +402,28 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
           WS_ID,
         ),
       ).toBe(true);
+    });
+
+    it('is true until the window identity settles, even when the row reports myRole owner', () => {
+      const ownerRow = loadedState([makeWorkspace({ myRole: 'owner' })]);
+      const boot = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsInitialState,
+      } as StoreState;
+      expect(selectIsWorkspaceCollaborator.select(boot, WS_ID)).toBe(true);
+      const preBind = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsReducer(
+          guestSessionsInitialState,
+          guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+        ),
+      } as StoreState;
+      expect(selectIsWorkspaceCollaborator.select(preBind, WS_ID)).toBe(true);
+      expect(selectIsWorkspaceCollaborator.select(guestAware(ownerRow, 'local'), WS_ID)).toBe(
+        false,
+      );
     });
   });
 });
