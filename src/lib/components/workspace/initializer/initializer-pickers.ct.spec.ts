@@ -46,6 +46,11 @@ for (const scenario of ['local', 'clone'] as const) {
         )
         .toBe(true);
     }
+    if (scenario === 'local') {
+      // The uncommitted-changes dot mounts once the async branch status resolves and widens
+      // the branch trigger; wait for it so hover/focus is the only variable measured below.
+      await expect(triggers.last().getByRole('button')).toBeVisible();
+    }
     await page.evaluate(() => document.fonts.ready);
     const textBounds = await fixture.evaluate((element) => {
       const walker = document.createTreeWalker(element.firstElementChild!, NodeFilter.SHOW_TEXT);
