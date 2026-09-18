@@ -274,6 +274,7 @@ svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
     '<div class="border-[var(--border)] ring-[var(--ring)] fill-[var(--foreground)]" style="color: hsl(var(--foreground)); border-color: var(--border)" />',
     '<style>.tokenized { color: hsl(var(--foreground)); background: var(--card); }</style>',
     '<div style="background-image: url(#abc)" /><style>#abc { color: var(--foreground); }</style>',
+    '<div style="transition: all 0.2s ease-out" /><circle style="transition: r 0.3s ease-out" />',
     {
       code: '<div class="border-red-500" style="color: #abc" />',
       filename: projectFile('src/features/brand/Mark.svelte'),
@@ -312,6 +313,10 @@ svelteTester.run('no-arbitrary-motion-or-color', noArbitraryMotionOrColor, {
     {
       code: '<div class="hover:duration-150 motion-safe:group-hover:ease-in-out" />',
       errors: [{ messageId: 'arbitraryMotion' }, { messageId: 'arbitraryMotion' }],
+    },
+    {
+      code: '<div class="ease-out" style="transition: all 0.2s ease-out" />',
+      errors: [{ messageId: 'arbitraryMotion' }],
     },
     {
       code: '<div class="duration-initial ease-linear ease-in ease-initial" />',

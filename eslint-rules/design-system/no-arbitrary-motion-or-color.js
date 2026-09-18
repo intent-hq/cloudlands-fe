@@ -85,9 +85,9 @@ export default {
     const violations = [];
 
     function collect(node, value) {
-      const found = physicalUtilityViolations(value);
       const attribute = closestSvelteAttribute(node);
       const name = attributeName(attribute);
+      const found = name === 'style' ? [] : physicalUtilityViolations(value);
       if (name === 'style') found.push(...cssDeclarationViolations(value, true));
       if (name === 'fill' || name === 'stroke') {
         found.push(...physicalCssColorViolations(value, 'svgColor'));
