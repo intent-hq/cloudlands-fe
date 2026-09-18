@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import { stripAgentMessageHeader } from '../agent-message-attribution';
 import {
+  buildCollaboratorSenderPreamble,
+  getCollaboratorSenderAttribution,
+} from '../collaborator-sender-attribution';
+import {
   getPresentedUserMessageText,
   stripInternalDeliveryNotes,
   stripTruncatedTrailingDeliveryNote,
@@ -286,6 +290,150 @@ describe('A2A sender header presentation', () => {
     });
 
     expect(getPresentedUserMessageText(message)).toBe('Review the workspace.');
+  });
+});
+
+// PROTOCOL §5.5 collaborator sender preamble, exactly as intentd prepends it
+// (v1 golden `golden_collaborator_sender_preamble`, intentd#1987).
+const GUEST_AUTHOR = {
+  principalId: 'principal-guest',
+  login: 'octocat',
+  displayName: 'The Octocat',
+  avatarUrl: null,
+};
+const GUEST_PREAMBLE =
+  'Message from @octocat (The Octocat), a collaborator (guest) of this workspace — not the workspace owner.';
+
+function guestMessage(
+  text: string,
+  overrides: Partial<AgentMessage> & { author?: AgentMessage['author'] | null } = {},
+): AgentMessage {
+  const { author, ...rest } = overrides;
+  return {
+    id: 'guest-message',
+    role: 'user',
+    timestamp: '2026-08-17T05:00:00Z',
+    contentBlocks: [{ type: 'text', text }],
+    metadata: { fromPrincipalId: GUEST_AUTHOR.principalId },
+    ...(author === null ? {} : { author: author ?? GUEST_AUTHOR }),
+    ...rest,
+  } as AgentMessage;
+}
+
+describe('buildCollaboratorSenderPreamble', () => {
+  it('matches the daemon golden for every name shape', () => {
+    expect(buildCollaboratorSenderPreamble('octocat', 'The Octocat', 'p-1')).toBe(GUEST_PREAMBLE);
+    expect(buildCollaboratorSenderPreamble('octocat', null, 'p-1')).toBe(
+      'Message from @octocat, a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+    expect(buildCollaboratorSenderPreamble(null, 'The Octocat', 'p-1')).toBe(
+      'Message from The Octocat, a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+    expect(buildCollaboratorSenderPreamble(null, null, 'p-1')).toBe(
+      'Message from principal p-1, a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+  });
+
+  it('collapses control characters and whitespace runs like the daemon', () => {
+    expect(buildCollaboratorSenderPreamble('evil\nlogin', '  \n', 'p-1')).toBe(
+      'Message from @evil login, a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+    expect(buildCollaboratorSenderPreamble('a\t\u0000b', 'Two  Words\u00a0Here', 'p-1')).toBe(
+      'Message from @a b (Two Words Here), a collaborator (guest) of this workspace — not the workspace owner.',
+    );
+  });
+});
+
+describe('collaborator sender preamble presentation', () => {
+  it('drops the exact preamble from a guest row without mutating stored content', () => {
+    const message = guestMessage(`${GUEST_PREAMBLE}\n\nPlease review the diff.`);
+    const snapshot = structuredClone(message);
+
+    expect(getCollaboratorSenderAttribution(message)).toEqual({
+      author: GUEST_AUTHOR,
+      preamble: GUEST_PREAMBLE,
+    });
+    expect(getPresentedUserMessageText(message)).toBe('Please review the diff.');
+    expect(message).toEqual(snapshot);
+  });
+
+  it('consumes only the preamble and its one blank line, never body whitespace', () => {
+    expect(getPresentedUserMessageText(guestMessage(GUEST_PREAMBLE))).toBe('');
+    expect(getPresentedUserMessageText(guestMessage(`${GUEST_PREAMBLE}\n\n    indented`))).toBe(
+      '    indented',
+    );
+    expect(getPresentedUserMessageText(guestMessage(`${GUEST_PREAMBLE}\n\n\nextra blank`))).toBe(
+      '\nextra blank',
+    );
+  });
+
+  it('rebuilds the preamble from the login-only and principal-only projections', () => {
+    const loginOnly = { ...GUEST_AUTHOR, displayName: null };
+    const text = `${buildCollaboratorSenderPreamble('octocat', null, 'principal-guest')}\n\nHi`;
+    expect(getPresentedUserMessageText(guestMessage(text, { author: loginOnly }))).toBe('Hi');
+
+    const gone = {
+      principalId: 'principal-guest',
+      login: null,
+      displayName: null,
+      avatarUrl: null,
+    };
+    const bare = `${buildCollaboratorSenderPreamble(null, null, 'principal-guest')}\n\nHi`;
+    expect(getPresentedUserMessageText(guestMessage(bare, { author: gone }))).toBe('Hi');
+  });
+
+  it('keeps owner rows and user-typed lookalikes byte-identical', () => {
+    // An owner row: no preamble was ever prepended.
+    expect(getPresentedUserMessageText(guestMessage('Ship it'))).toBe('Ship it');
+    // A first line that names a different sender than the row's projection.
+    const other = `${buildCollaboratorSenderPreamble('someone', 'Else', 'p-9')}\n\nbody`;
+    expect(getCollaboratorSenderAttribution(guestMessage(other))).toBeNull();
+    expect(getPresentedUserMessageText(guestMessage(other))).toBe(other);
+    // Almost the daemon text, but not byte-exact.
+    const nearMiss = `${GUEST_PREAMBLE.slice(0, -1)}\n\nbody`;
+    expect(getPresentedUserMessageText(guestMessage(nearMiss))).toBe(nearMiss);
+    // The exact text, but not at the start of the content.
+    const quoted = `Quoting:\n${GUEST_PREAMBLE}\n\nbody`;
+    expect(getPresentedUserMessageText(guestMessage(quoted))).toBe(quoted);
+  });
+
+  it('never strips without the serve-time author projection (older daemon / optimistic row)', () => {
+    const text = `${GUEST_PREAMBLE}\n\nbody`;
+    expect(getCollaboratorSenderAttribution(guestMessage(text, { author: null }))).toBeNull();
+    expect(getPresentedUserMessageText(guestMessage(text, { author: null }))).toBe(text);
+  });
+
+  it('leaves agent-to-agent rows to the A2A header strip', () => {
+    // A2A metadata wins: the row is not human-authored, so the guest
+    // projection is ignored even when the content starts with the preamble.
+    const a2a = guestMessage(`${A2A_HEADER}\n\nbody`, {
+      metadata: {
+        type: 'agent_message',
+        fromAgentId: 'agent-1234',
+        fromAgentName: 'Research Agent',
+      },
+    });
+    expect(getCollaboratorSenderAttribution(a2a)).toBeNull();
+    expect(getPresentedUserMessageText(a2a)).toBe('body');
+
+    const lookalike = guestMessage(`${GUEST_PREAMBLE}\n\nbody`, {
+      metadata: {
+        type: 'agent_message',
+        fromAgentId: 'agent-1234',
+        fromAgentName: 'Research Agent',
+      },
+    });
+    expect(getPresentedUserMessageText(lookalike)).toBe(`${GUEST_PREAMBLE}\n\nbody`);
+  });
+
+  it('strips the preamble alongside a trailing dequeue-wait note', () => {
+    const message = guestMessage(`${GUEST_PREAMBLE}\n\nShip it\n\n${WAIT_NOTE}`, {
+      metadata: {
+        fromPrincipalId: GUEST_AUTHOR.principalId,
+        queueInfo: { queuedAt: '2026-08-17T05:00:00.123456Z', waitedMs: 67_000 },
+      },
+    });
+    expect(getPresentedUserMessageText(message)).toBe('Ship it');
   });
 });
 
