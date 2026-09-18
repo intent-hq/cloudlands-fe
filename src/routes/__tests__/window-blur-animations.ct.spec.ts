@@ -405,3 +405,55 @@ test('marks only the loop when a loop and a one-shot start while blurred', async
   await expect.poll(async () => (await describe('late-loop')).state).toBe('running');
   expect((await describe('late-one-shot')).state).toBe('running');
 });
+
+for (const activation of ['class-change', 'stylesheet'] as const) {
+  test(`unmarks a paused loop replaced by a finite animation via ${activation} while blurred`, async ({
+    mount,
+    page,
+  }) => {
+    const component = await mount(WindowBlurAnimationProbe);
+    const probe = page.getByTestId('ambient-animation-probe');
+    const describe = () =>
+      probe.evaluate((node) => {
+        const animations = node.getAnimations();
+        const animation = animations[0];
+        return {
+          marked: node.hasAttribute('data-window-animation-paused'),
+          count: animations.length,
+          iterations: animation?.effect?.getTiming().iterations,
+          state: animation?.playState,
+          time: Number(animation?.currentTime),
+        };
+      });
+
+    await page.evaluate(() => document.documentElement.setAttribute('data-window-blurred', ''));
+    await expect.poll(async () => (await describe()).state).toBe('paused');
+    expect((await describe()).marked).toBe(true);
+
+    if (activation === 'class-change') {
+      await component.update({ props: { loopReplacedByOneShot: true } });
+    } else {
+      await page.evaluate(() => {
+        const style = document.createElement('style');
+        style.textContent = `
+          @keyframes swapped-motion { to { transform: translateX(1rem); } }
+          [data-testid='ambient-animation-probe'] {
+            animation: swapped-motion 300ms linear both !important;
+          }
+        `;
+        document.head.append(style);
+      });
+    }
+    await expect.poll(async () => (await describe()).iterations).toBe(1);
+    await expect.poll(async () => (await describe()).marked).toBe(false);
+    await expect.poll(async () => (await describe()).state).toBe('finished');
+    const finishedWhileBlurred = await describe();
+    expect(finishedWhileBlurred.count).toBe(1);
+
+    await page.evaluate(() => document.documentElement.removeAttribute('data-window-blurred'));
+    await page.evaluate(async () => {
+      for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+    });
+    expect(await describe()).toEqual(finishedWhileBlurred);
+  });
+}

@@ -3,13 +3,19 @@
   import { pauseWindowAnimations } from '$lib/actions/pause-window-animations';
   import '../../app.css';
 
+  let { loopReplacedByOneShot = false }: { loopReplacedByOneShot?: boolean } = $props();
+
   onMount(() => {
     const animations = pauseWindowAnimations(document.documentElement);
     return () => animations.destroy();
   });
 </script>
 
-<div class="loop" data-testid="ambient-animation-probe"></div>
+<div
+  class="loop"
+  class:replaced-by-one-shot={loopReplacedByOneShot}
+  data-testid="ambient-animation-probe"
+></div>
 <div class="one-shot" data-testid="one-shot-animation-probe"></div>
 <div class="short-one-shot" data-testid="short-one-shot-animation-probe"></div>
 
@@ -21,6 +27,10 @@
 
   .loop {
     animation: ambient-probe 10s linear infinite;
+  }
+
+  .loop.replaced-by-one-shot {
+    animation: one-shot-probe 300ms linear both;
   }
 
   .one-shot {
