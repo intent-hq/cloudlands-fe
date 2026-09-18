@@ -1,3 +1,11 @@
+/** True when the menu rect is unchanged from the current read to the next animation-frame callback. */
+export function isPanelMenuSettled(root: Element) {
+  const before = JSON.stringify(root.getBoundingClientRect());
+  return new Promise<boolean>((resolve) => {
+    requestAnimationFrame(() => resolve(JSON.stringify(root.getBoundingClientRect()) === before));
+  });
+}
+
 /** Native painted-ink measurements; transparent SVG viewBox rectangles are excluded. */
 export function probePanelMenuIcons(root: Element) {
   const bounds = root.getBoundingClientRect();

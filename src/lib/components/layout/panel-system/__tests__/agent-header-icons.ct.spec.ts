@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import Preview from '../agent-header-icons.preview.svelte';
 import { probeHeaderIcons } from './agent-header-icon-probe';
-import { probePanelMenuIcons } from './panel-menu-icon-probe';
+import { isPanelMenuSettled, probePanelMenuIcons } from './panel-menu-icon-probe';
 
 for (const { width, theme } of [
   { width: 620, theme: 'light' },
@@ -78,9 +78,12 @@ for (const { width, theme } of [
     await expect(menu).toBeVisible();
     const openIn = menu.locator('[data-slot="menu-sub-trigger"]');
     await expect(openIn).toBeVisible();
-    // Floating content exists offscreen while Bits measures it. Wait for placement,
-    // then sample the menu and its children in the same browser turn.
+    // Bits keeps the floating wrapper at translate(0, -200%) until floating-ui has placed
+    // it, and autoUpdate may move it again while layout settles (intent-hq/intent#5279).
+    // Wait for placement and a still rect, then sample the menu and its children in the
+    // same browser turn.
     await expect(menu).toBeInViewport({ ratio: 1 });
+    await expect.poll(() => menu.evaluate(isPanelMenuSettled)).toBe(true);
     const geometry = await menu.evaluate(probePanelMenuIcons);
     const { icons: ink, bounds: menuBounds } = geometry;
     await testInfo.attach('panel-menu-ink-geometry', {
