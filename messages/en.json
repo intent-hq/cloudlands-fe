@@ -6437,6 +6437,7 @@
   "workspace_share_invite_anyone_label": "Anyone with the link",
   "workspace_share_invite_pinned_label": "Only {login}",
   "workspace_share_invite_expires_label": "Expires {when}",
+  "workspace_share_invite_reusable_label": "Reusable · {count} joined",
   "workspace_share_revoke_label": "Revoke",
   "workspace_share_revoke_ariaLabel": "Revoke invite: {audience}",
   "workspace_share_revokeFailed_error": "Could not revoke the invite",
