@@ -3,6 +3,7 @@
   import { slide } from '$lib/motion';
   import { Logger } from '../../shared/logger';
   import { m } from '$shared/paraglide/messages.js';
+  import { classifyBenignError } from '$lib/utils/benign-error-classification';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
   import {
@@ -104,83 +105,16 @@
     }
   }
 
-  // Helper to check if an error is a Svelte effect depth error
-  function isSvelteEffectDepthError(error: any): boolean {
-    if (!error) return false;
-
-    // Check various places where the error message might be
-    const messagesToCheck = [
-      error.message,
-      error.toString?.(),
-      String(error),
-      error.name,
-      error.code,
-    ].filter(Boolean);
-
-    return messagesToCheck.some(
-      (msg) =>
-        msg.includes('effect_update_depth_exceeded') ||
-        msg.includes('svelte.dev/e/effect_update_depth_exceeded') ||
-        // i18n-ignore (matches Svelte's internal English error message)
-        msg.includes('Maximum update depth exceeded'),
-    );
-  }
-
   // Catch unhandled errors in child components
   onMount(() => {
     const errorHandler = (event: ErrorEvent) => {
       try {
-        // Skip Svelte effect depth errors - these are handled globally and shouldn't trigger ErrorBoundary
-        const errorMessage = event.message || event.error?.message || '';
-        if (
-          errorMessage.includes('effect_update_depth_exceeded') ||
-          errorMessage.includes('svelte.dev/e/effect_update_depth_exceeded') ||
-          isSvelteEffectDepthError(event.error)
-        ) {
-          return;
-        }
+        // An earlier listener (the global ErrorHandler) already suppressed this one.
+        if (event.defaultPrevented) return;
 
-        // Skip ResizeObserver loop errors - these are benign browser warnings
-        // i18n-ignore (matches the browser's internal English error message)
-        if (errorMessage.includes('ResizeObserver loop')) {
-          return;
-        }
-
-        // Skip bits-ui cleanup errors during component unmount
-        // These occur when bits-ui internal event handlers fire after component destruction
-        // Known issue: https://github.com/huntabyte/bits-ui/discussions/1302
-        // In production, stack traces are minified (no 'bits-ui' string), and Svelte 5
-        // compiles {@render snippet()} to n.call(...), producing errors like:
-        //   "n.call is not a function" (minified variable names)
-        if (
-          errorMessage.includes('is not a function') &&
-          (event.error?.stack?.includes('bits-ui') ||
-            errorMessage.includes('.current is not a function') ||
-            /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMessage))
-        ) {
-          return;
-        }
-
-        // Skip Monaco "Canceled" errors - benign cancellations during editor disposal/navigation
-        if (errorMessage === 'Canceled' || event.error?.name === 'Canceled') {
-          return;
-        }
-
-        // Skip Monaco ViewZones "isInHiddenArea" race condition - benign error when
-        // hideUnchangedRegions triggers a re-render while view zones are stale
-        if (errorMessage.includes('isInHiddenArea')) {
-          return;
-        }
-
-        // Skip Svelte transition reset errors - benign race condition when {#each} blocks
-        // reconcile while crossfade transitions are in-flight (e.g., during workspace switching)
-        if (
-          // i18n-ignore (matches the browser's internal English error message)
-          errorMessage.includes("Cannot read properties of undefined (reading 'reset')") &&
-          event.error?.stack?.includes('transitions')
-        ) {
-          return;
-        }
+        // Benign noise is decided by the shared classifier so this list cannot drift from the
+        // global ErrorHandler's (intent-hq/intent#5241).
+        if (classifyBenignError(event) !== null) return;
 
         // Only handle errors from this component tree
         if (event.error && !hasError) {
@@ -199,44 +133,7 @@
         try {
           if (event.defaultPrevented) return;
 
-          // Skip Svelte effect depth errors
-          const reason = String(event.reason || '');
-          if (
-            reason.includes('effect_update_depth_exceeded') ||
-            reason.includes('svelte.dev/e/effect_update_depth_exceeded') ||
-            isSvelteEffectDepthError(event.reason)
-          ) {
-            return;
-          }
-
-          // Skip Monaco TypeScript worker errors for inmemory diff models
-          // These occur because the TS language service can't find in-memory models used by diff viewers
-          // i18n-ignore (matches Monaco's internal English error message)
-          if (reason.includes('Could not find source file') && reason.includes('inmemory://')) {
-            event.preventDefault();
-            return;
-          }
-
-          // Skip bits-ui cleanup errors during component unmount
-          // In production, stack traces are minified (no 'bits-ui' string), and Svelte 5
-          // compiles {@render snippet()} to n.call(...), producing errors like:
-          //   "n.call is not a function" (minified variable names)
-          if (
-            reason.includes('is not a function') &&
-            (event.reason?.stack?.includes('bits-ui') ||
-              reason.includes('.current is not a function') ||
-              /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(reason))
-          ) {
-            event.preventDefault();
-            return;
-          }
-
-          // Skip Monaco "Canceled" errors - benign cancellations during editor disposal/navigation
-          if (
-            reason === 'Canceled' ||
-            reason.includes('Canceled: Canceled') ||
-            event.reason?.name === 'Canceled'
-          ) {
+          if (classifyBenignError(event.reason) !== null) {
             event.preventDefault();
             return;
           }
@@ -398,15 +295,7 @@
 <svelte:boundary
   onerror={(error: unknown) => {
     const err = error instanceof Error ? error : new Error(String(error));
-    // Skip Monaco "Canceled" errors - benign cancellations during editor disposal/navigation
-    if (err.message === 'Canceled' || err.name === 'Canceled') return;
-    // Skip Svelte transition reset errors - benign race condition during {#each} reconciliation
-    // i18n-ignore (matches the browser's internal English error message)
-    if (
-      err.message?.includes("Cannot read properties of undefined (reading 'reset')") &&
-      err.stack?.includes('transitions')
-    )
-      return;
+    if (classifyBenignError(err) !== null) return;
     logger.error(`[ErrorBoundary] Render error in ${componentName}:`, err);
     if (onError) onError(err);
   }}

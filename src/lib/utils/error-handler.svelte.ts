@@ -1,13 +1,13 @@
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { shouldSuppressMonacoUnhandledRejection } from './monaco-error-suppression';
+import { classifyBenignError, type BenignErrorKind } from './benign-error-classification';
 import {
   isSvelteErrorUrl,
   resolveSvelteError,
   formatSvelteError,
   type SvelteErrorInfo,
 } from './svelte-error-resolver';
-import { isStaleWebviewGuestError, staleWebviewGuestId } from './webview-error-suppression';
+import { staleWebviewGuestId } from './webview-error-suppression';
 
 const logger = new Logger('ErrorHandler');
 
@@ -21,6 +21,45 @@ function warnStaleWebviewGuest(source: string, input: unknown): void {
     `[ErrorHandler] Suppressing Electron stale-guest detach error in ${source} (guestInstanceId ${staleWebviewGuestId(input)})`,
   );
 }
+
+// Which benign kinds are worth a log line, and at which level; the rest are silently dropped.
+function logSuppressedBenignError(
+  kind: BenignErrorKind,
+  source: string,
+  errorMessage: string,
+  input: unknown,
+): void {
+  switch (kind) {
+    case 'svelte-effect-depth':
+      logger.warn(
+        // i18n-ignore (developer log message)
+        `[ErrorHandler] Suppressing Svelte effect depth error in ${source}:`,
+        errorMessage,
+      );
+      break;
+    case 'webview-stale-guest':
+      warnStaleWebviewGuest(source, input);
+      break;
+    case 'bits-ui-cleanup':
+      logger.debug(
+        // i18n-ignore (developer log message)
+        '[ErrorHandler] Suppressing bits-ui cleanup error during component unmount:',
+        errorMessage,
+      );
+      break;
+    default:
+      break;
+  }
+}
+
+const SUPPRESSED_RESULT: Record<BenignErrorKind, string> = {
+  'svelte-effect-depth': 'suppressed-svelte-error',
+  'resize-observer': 'suppressed-resize-observer-error',
+  monaco: 'suppressed-monaco-error',
+  'webview-stale-guest': 'suppressed-webview-stale-guest-error',
+  'bits-ui-cleanup': 'suppressed-bits-ui-cleanup-error',
+  'svelte-transition-reset': 'suppressed-svelte-transition-error',
+};
 
 export interface AppError {
   id: string;
@@ -79,48 +118,15 @@ class ErrorHandler {
         const errorMessage =
           event.message || event.error?.message || m.lib_errorHandler_unknown_error();
 
-        // Suppress non-critical ResizeObserver errors
-        // i18n-ignore (matches the browser's internal English error message)
-        if (errorMessage.includes('ResizeObserver loop completed with undelivered notifications')) {
-          return;
-        }
-
-        // Suppress Svelte effect depth errors to prevent infinite loops
-        if (
-          errorMessage.includes('effect_update_depth_exceeded') ||
-          errorMessage.includes('svelte.dev/e/effect_update_depth_exceeded')
-        ) {
-          logger.warn(
-            // i18n-ignore (developer log message)
-            '[ErrorHandler] Suppressing Svelte effect depth error to prevent infinite loop:',
+        // Benign noise (Svelte effect depth, ResizeObserver, Monaco, stale webview guest, bits-ui
+        // cleanup…) is classified by the shared utility so every listener agrees on the list.
+        const benignKind = classifyBenignError(event);
+        if (benignKind !== null) {
+          logSuppressedBenignError(
+            benignKind,
+            'error event',
             errorMessage,
-          );
-          return;
-        }
-
-        // Suppress Electron's stale-guest <webview> detach error (see warnStaleWebviewGuest)
-        if (isStaleWebviewGuestError(event.error ?? event.message)) {
-          warnStaleWebviewGuest('error event', event.error ?? event.message);
-          event.preventDefault();
-          return;
-        }
-
-        // Suppress bits-ui cleanup errors during component unmount
-        // These occur when bits-ui internal event handlers fire after component destruction
-        // Known issue: https://github.com/huntabyte/bits-ui/discussions/1302
-        // In production, stack traces are minified (no 'bits-ui' string), and Svelte 5
-        // compiles {@render snippet()} to n.call(...), producing errors like:
-        //   "n.call is not a function" (minified variable names)
-        if (
-          errorMessage.includes('is not a function') &&
-          (event.error?.stack?.includes('bits-ui') ||
-            errorMessage.includes('.current is not a function') ||
-            /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMessage))
-        ) {
-          logger.debug(
-            // i18n-ignore (developer log message)
-            '[ErrorHandler] Suppressing bits-ui cleanup error during component unmount:',
-            errorMessage,
+            event.error ?? event.message,
           );
           event.preventDefault();
           return;
@@ -152,63 +158,10 @@ class ErrorHandler {
 
       // Handle unhandled promise rejections
       window.addEventListener('unhandledrejection', (event) => {
-        // Suppress non-critical ResizeObserver errors
-        if (
-          event.reason?.message?.includes(
-            // i18n-ignore (matches the browser's internal English error message)
-            'ResizeObserver loop completed with undelivered notifications',
-          )
-        ) {
-          return;
-        }
-
-        // Suppress Svelte effect depth errors in unhandled rejections
-        const errorMessage = event.reason?.message || String(event.reason);
-        if (
-          errorMessage?.includes('effect_update_depth_exceeded') ||
-          errorMessage?.includes('svelte.dev/e/effect_update_depth_exceeded')
-        ) {
-          logger.warn(
-            // i18n-ignore (developer log message)
-            '[ErrorHandler] Suppressing Svelte effect depth error in unhandledrejection:',
-            errorMessage,
-          );
-          event.preventDefault();
-          return;
-        }
-
-        // Suppress known Monaco Editor errors (Canceled, TextModel disposed, inmemory TS, etc.)
-        // Uses the robust utility that handles all known Monaco error patterns
-        // without relying on fragile hardcoded chunk hashes
-        if (shouldSuppressMonacoUnhandledRejection(event.reason)) {
-          event.preventDefault();
-          return;
-        }
-
-        // Suppress Electron's stale-guest <webview> detach error (see warnStaleWebviewGuest)
-        if (isStaleWebviewGuestError(event.reason)) {
-          warnStaleWebviewGuest('unhandledrejection', event.reason);
-          event.preventDefault();
-          return;
-        }
-
-        // Suppress bits-ui cleanup errors during component unmount
-        // These occur when bits-ui internal event handlers fire after component destruction
-        // Known issue: https://github.com/huntabyte/bits-ui/discussions/1302
-        // In production, stack traces are minified (no 'bits-ui' string), and Svelte 5
-        // compiles {@render snippet()} to n.call(...), producing errors like:
-        //   "n.call is not a function" (minified variable names)
-        if (
-          errorMessage?.includes('is not a function') &&
-          (event.reason?.stack?.includes('bits-ui') ||
-            errorMessage?.includes('.current is not a function') ||
-            /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMessage ?? ''))
-        ) {
-          logger.debug(
-            // i18n-ignore (developer log message)
-            '[ErrorHandler] Suppressing bits-ui cleanup error during component unmount:',
-            errorMessage,
-          );
+        const benignKind = classifyBenignError(event.reason);
+        if (benignKind !== null) {
+          const errorMessage = event.reason?.message || String(event.reason);
+          logSuppressedBenignError(benignKind, 'unhandledrejection', errorMessage, event.reason);
           event.preventDefault();
           return;
         }
@@ -226,57 +179,12 @@ class ErrorHandler {
   }
 
   handleError(error: Error | string, context?: Record<string, any>, recoverable = true): string {
-    // Check if this is a Svelte effect depth error and suppress it
     const errorMessage = typeof error === 'string' ? error : error.message;
-    if (
-      errorMessage?.includes('effect_update_depth_exceeded') ||
-      errorMessage?.includes('svelte.dev/e/effect_update_depth_exceeded')
-    ) {
-      logger.warn(
-        // i18n-ignore (developer log message)
-        '[ErrorHandler] Suppressing Svelte effect depth error in handleError:',
-        errorMessage,
-      );
-      return 'suppressed-svelte-error';
-    }
 
-    // Suppress ResizeObserver loop errors - these are benign browser warnings
-    // i18n-ignore (matches the browser's internal English error message)
-    if (errorMessage?.includes('ResizeObserver loop')) {
-      return 'suppressed-resize-observer-error';
-    }
-
-    // Suppress known Monaco Editor errors (Canceled, TextModel disposed, inmemory TS, etc.)
-    // Uses the robust utility that handles all known Monaco error patterns
-    if (shouldSuppressMonacoUnhandledRejection(error)) {
-      return 'suppressed-monaco-error';
-    }
-
-    // Suppress Electron's stale-guest <webview> detach error (see warnStaleWebviewGuest)
-    if (isStaleWebviewGuestError(error)) {
-      warnStaleWebviewGuest('handleError', error);
-      return 'suppressed-webview-stale-guest-error';
-    }
-
-    // Suppress bits-ui cleanup errors during component unmount
-    // These occur when bits-ui internal event handlers fire after component destruction
-    // Known issue: https://github.com/huntabyte/bits-ui/discussions/1302
-    // In production, stack traces are minified (no 'bits-ui' string), and Svelte 5
-    // compiles {@render snippet()} to n.call(...), producing errors like:
-    //   "n.call is not a function" (minified variable names)
-    const errorStack = typeof error === 'object' ? (error as Error)?.stack : '';
-    if (
-      errorMessage?.includes('is not a function') &&
-      (errorStack?.includes('bits-ui') ||
-        errorMessage?.includes('.current is not a function') ||
-        /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(errorMessage ?? ''))
-    ) {
-      logger.debug(
-        // i18n-ignore (developer log message)
-        '[ErrorHandler] Suppressing bits-ui cleanup error during component unmount:',
-        errorMessage,
-      );
-      return 'suppressed-bits-ui-cleanup-error';
+    const benignKind = classifyBenignError(error);
+    if (benignKind !== null) {
+      logSuppressedBenignError(benignKind, 'handleError', errorMessage, error);
+      return SUPPRESSED_RESULT[benignKind];
     }
 
     // Enhanced error context
