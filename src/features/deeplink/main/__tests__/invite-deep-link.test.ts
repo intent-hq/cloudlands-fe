@@ -503,6 +503,30 @@ describe('handleInviteDeepLink', () => {
     expect(genericDialog.message).not.toBe(fullDialog.message);
   });
 
+  // Same GitHub account on host and guest (intentd #1986): the host refuses
+  // the proof with `owner-self-join` instead of minting the primary principal
+  // a guest credential. A documented code — its own sentence, not the
+  // generic one; no retry offer; nothing stored, no window.
+  it('owner-self-join prove refusal: distinct failure dialog, code logged, gist deleted, nothing stored', async () => {
+    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'owner-self-join' }));
+    await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+    expect(challenge).toHaveBeenCalled();
+    expect(prove).toHaveBeenCalledTimes(1);
+    const selfDialog = showMessageBox.mock.calls.at(-1)?.[0] as { type: string; message: string };
+    expect(selfDialog).toMatchObject({ type: 'error' });
+    expect(localCalls('github.identityProof.delete')).toEqual([
+      ['github.identityProof.delete', { gistId: PROOF.gistId }],
+    ]);
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain('"inviteCode":"owner-self-join"');
+
+    prove.mockRejectedValue(new InviteRpcError(-32602, { code: 'some-unknown-code' }));
+    await expect(handleInviteDeepLink(LINK)).resolves.toBeUndefined();
+    const genericDialog = showMessageBox.mock.calls.at(-1)?.[0] as { message: string };
+    expect(genericDialog.message).not.toBe(selfDialog.message);
+  });
+
   // The host's own proof refusals (intentd #1967): each documented code gets
   // its own sentence, none of them the generic one, and the gist is deleted.
   it.each(['proof-invalid', 'proof-expired', 'github-unreachable'])(
@@ -1765,6 +1789,30 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(provePrompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
     expect(logLines.join('\n')).toContain('"reason":"credential-invalid"');
+  });
+
+  // The stored credential resolves to the host owner's own principal
+  // (intentd #1986): `owner-self-join` is a refusal, not a fallback — the
+  // proof would be refused just the same, so the confirm prompt is dismissed
+  // as failed, no proof runs, and the failure dialog names the cause.
+  it('owner-self-join on accept: the confirm prompt fails, no proof runs, distinct failure dialog', async () => {
+    const confirmPrompt = fakeConsent('open').prompt;
+    showInviteConsent.mockReturnValueOnce(confirmPrompt);
+    accept.mockRejectedValue(new InviteRpcError(-32602, { code: 'owner-self-join' }));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(confirmPrompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
+    expect(challenge).not.toHaveBeenCalled();
+    expect(prove).not.toHaveBeenCalled();
+    expectNoProof();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    const dialog = showMessageBox.mock.calls.at(-1)?.[0] as { type: string; message: string };
+    expect(dialog).toMatchObject({ type: 'error' });
+    expect(logLines.join('\n')).toContain('"inviteCode":"owner-self-join"');
   });
 
   it.each([

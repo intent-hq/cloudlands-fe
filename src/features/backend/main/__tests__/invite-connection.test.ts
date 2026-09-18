@@ -209,9 +209,10 @@ describe('openInviteConnection', () => {
     }
   });
 
-  // The host's own proof refusals (intentd #1967) route on `error.data.code`
-  // like every other invite refusal.
-  it.each(['proof-invalid', 'proof-expired', 'github-unreachable'])(
+  // The host's own proof refusals (intentd #1967) and the owner's self-join
+  // refusal (intentd #1986) route on `error.data.code` like every other
+  // invite refusal.
+  it.each(['proof-invalid', 'proof-expired', 'github-unreachable', 'owner-self-join'])(
     'surfaces an invite.prove refusal with %s as inviteCode',
     async (code) => {
       daemon.handler = (req) =>
