@@ -1035,9 +1035,11 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
           !guestWorkspaceEvents.subscribing
         ) {
           const generation = guestWorkspaceEvents.generation;
+          const isCurrent = () =>
+            guestWorkspaceEvents.generation === generation && backendClients.get(id) === instance;
           guestWorkspaceEvents.subscribing = true;
-          void subscribeGuestWorkspaceEvents(id, instance).then((subscriptionId) => {
-            if (guestWorkspaceEvents.generation !== generation) return;
+          void subscribeGuestWorkspaceEvents(id, instance, isCurrent).then((subscriptionId) => {
+            if (!isCurrent()) return;
             guestWorkspaceEvents.subscribing = false;
             guestWorkspaceEvents.subscriptionId = subscriptionId;
           });
@@ -1635,17 +1637,25 @@ const GUEST_WORKSPACE_EVENT_TYPES = ['workspace:updated', 'workspace:deleted'];
  * strictly on the returned id. Resolves `undefined` for a paired (owner)
  * backend, a replaced client, or a failure (fail-soft: the next hello on the
  * same socket retries, and the cache still refreshes on every hello).
+ *
+ * `isCurrent` is re-checked after the registry read, BEFORE the request goes
+ * out: the read is a real file read, and a socket that dropped and redialed
+ * while it was pending already cleared the caller's guard, so a request from
+ * here would land a second lease on the new socket (`request()` waits across
+ * a non-connected status instead of failing).
  */
 async function subscribeGuestWorkspaceEvents(
   id: string,
   client: JsonRpcClient,
+  isCurrent: () => boolean,
 ): Promise<string | undefined> {
   try {
     if ((await guestSessionsStore.findById(id)) === null) return undefined;
+    if (!isCurrent()) return undefined;
     const result = (await client.request('events.subscribe', {
       eventTypes: GUEST_WORKSPACE_EVENT_TYPES,
     })) as { subscriptionId?: unknown } | undefined;
-    if (backendClients.get(id) !== client) return undefined;
+    if (!isCurrent()) return undefined;
     if (typeof result?.subscriptionId !== 'string' || !result.subscriptionId) {
       logger.warn('events.subscribe for guest workspace events returned no subscriptionId', {
         id,
