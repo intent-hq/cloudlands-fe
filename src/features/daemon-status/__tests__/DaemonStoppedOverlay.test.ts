@@ -1187,6 +1187,111 @@ describe('DaemonStoppedOverlay', () => {
     });
   });
 
+  it('stays visible across repeated connecting/disconnected reconnect cycles in a guest window (host offline)', async () => {
+    const GUEST: GuestSessionRecord = {
+      id: 'guest-1',
+      label: 'tc.example.ts.net',
+      host: '10.0.0.9',
+      hosts: ['10.0.0.9'],
+      port: 8443,
+      fingerprint: 'AB:CD',
+      tcAddress: 'tc.example.ts.net',
+      hostname: 'Host',
+      principalId: 'principal-1',
+      login: 'octocat',
+      tokenEncrypted: true,
+      updatedAt: 1,
+    };
+    const wsTransport: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'wss://10.0.0.9:8443/ws',
+    };
+    const connections = [
+      {
+        id: LOCAL_CONNECTION_ID,
+        label: 'local',
+        host: null,
+        port: null,
+        fingerprint: null,
+        isLocal: true,
+      },
+      {
+        id: GUEST.id,
+        label: GUEST.label,
+        host: GUEST.host,
+        port: GUEST.port,
+        fingerprint: GUEST.fingerprint,
+        accent: 'indigo' as const,
+        isLocal: false,
+      },
+    ];
+    const listPayload = () => ({ connections, activeId: GUEST.id, windowBackendId: GUEST.id });
+    const guestPayload = (connected: boolean) => ({
+      sessions: [GUEST],
+      openIds: [GUEST.id],
+      connectedIds: connected ? [GUEST.id] : [],
+    });
+
+    // Drive the real push path: main's `backend:status` pushes enter the
+    // daemon-health saga's electron channel (takeWithBackoff) rather than the
+    // reducer directly, exactly as a guest window receives them.
+    const statusListeners = new Set<(payload: unknown) => void>();
+    const pushStatus = (payload: Record<string, unknown>) => {
+      for (const listener of statusListeners) listener(payload);
+      flushSync();
+    };
+    stopDaemonHealthSaga?.();
+    invokeMock.mockImplementation(async (channel: string, ...args: unknown[]) => {
+      if (channel === BACKEND.GET_STATUS) {
+        // Boot snapshot of a guest window whose pooled client is mid-dial.
+        return { status: 'connecting', transport: wsTransport, reconnectAttempts: 0 };
+      }
+      return mockInvoke(channel, ...args);
+    });
+    vi.stubGlobal('electronAPI', {
+      invoke: invokeMock,
+      on: vi.fn((channel: string, listener: (payload: unknown) => void) => {
+        if (channel === BACKEND.STATUS) statusListeners.add(listener);
+        return `listener-${channel}`;
+      }),
+      offById: vi.fn(),
+    });
+    appStore.init();
+    stopDaemonHealthSaga = appStore.runSaga(daemonHealthSaga);
+
+    render(DaemonStoppedOverlay);
+    dispatchAndFlush(connectionsListReceived(listPayload()));
+    dispatchAndFlush(guestSessionsListReceived(guestPayload(false)));
+    await vi.advanceTimersByTimeAsync(0);
+    pushStatus({ status: 'disconnected', transport: wsTransport, reconnectAttempts: 0 });
+    await vi.advanceTimersByTimeAsync(DAEMON_STOPPED_GRACE_MS + 50);
+    await vi.waitFor(() => {
+      expect(overlay()).toBeTruthy();
+    });
+
+    // Per cycle (log evidence, ~8 s): 'connecting' (attempt N) → the tunnel
+    // candidate times out at 3 s → 'disconnected' → client backoff. Every
+    // status push also fans out a connections:changed / guest-sessions:changed
+    // re-broadcast to the window.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      pushStatus({ status: 'connecting', transport: wsTransport, reconnectAttempts: attempt });
+      dispatchAndFlush(connectionsListReceived(listPayload()));
+      dispatchAndFlush(guestSessionsListReceived(guestPayload(false)));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(overlay(), `hidden after connecting #${attempt}`).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(overlay(), `hidden mid-connect #${attempt}`).toBeTruthy();
+      pushStatus({ status: 'disconnected', transport: wsTransport, reconnectAttempts: attempt });
+      dispatchAndFlush(connectionsListReceived(listPayload()));
+      dispatchAndFlush(connectionsListReceived(listPayload()));
+      dispatchAndFlush(guestSessionsListReceived(guestPayload(false)));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(overlay(), `hidden after disconnected #${attempt}`).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(overlay(), `hidden during backoff #${attempt}`).toBeTruthy();
+    }
+  });
+
   it('issues no daemon wire requests itself (reconnect resubscription is RESUB-1 main-side)', async () => {
     render(DaemonStoppedOverlay);
     await showOverlay(externalTransport);
