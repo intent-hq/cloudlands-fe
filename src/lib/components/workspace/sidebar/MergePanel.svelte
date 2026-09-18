@@ -57,6 +57,12 @@
     onOpenRebaseTerminal?: () => void;
   }
 
+  type MergeToTrunkOptions = {
+    squash?: boolean;
+    rebaseFirst?: boolean;
+    localOnly?: boolean;
+  };
+
   let {
     workspaceId,
     hasOpenPR,
@@ -108,9 +114,10 @@
 
   // Local state
   let mergeOptions = $state({ squash: false, viaPR: false, mergingPR: false, pushAfter: true });
-  let pendingMergeOptions: { squash?: boolean; rebaseFirst?: boolean; localOnly?: boolean } | null =
-    null;
-  let handledCommitVersion = 0;
+  let pendingCommitMerge: {
+    options: MergeToTrunkOptions;
+    commitVersion: number;
+  } | null = null;
   let handledMergeVersion = 0;
   let handledMergePrVersion = 0;
   let mergingPrNumber = 0;
@@ -179,11 +186,7 @@
     }
   }
 
-  function dispatchMergeToTrunk(options?: {
-    squash?: boolean;
-    rebaseFirst?: boolean;
-    localOnly?: boolean;
-  }) {
+  function dispatchMergeToTrunk(options?: MergeToTrunkOptions) {
     appStore.dispatch(
       executeAcceptChangesRequested(workspaceId, 'merge', {
         targetBranch,
@@ -194,18 +197,23 @@
     );
   }
 
-  function handleMergeToTrunk(options?: {
-    squash?: boolean;
-    rebaseFirst?: boolean;
-    localOnly?: boolean;
-  }) {
+  function handleMergeToTrunk(options?: MergeToTrunkOptions) {
     if (!workspaceId) return;
     if (hasStaged && !commitMessage.trim()) {
       toast.error(m.workspace_mergePanel_commitMessageRequired_error());
       return;
     }
-    pendingMergeOptions = options ?? {};
     if (hasStaged) {
+      const commitRequest = selectGitMutationRequest.select(
+        appStore.state,
+        workspaceId,
+        'accept-changes',
+        'commit',
+      );
+      pendingCommitMerge = {
+        options: options ?? {},
+        commitVersion: (commitRequest?.version ?? 0) + 1,
+      };
       appStore.dispatch(
         executeAcceptChangesRequested(workspaceId, 'commit', {
           commitMessage: commitMessage.trim(),
@@ -213,7 +221,6 @@
       );
     } else {
       dispatchMergeToTrunk(options);
-      pendingMergeOptions = null;
     }
   }
 
@@ -238,17 +245,16 @@
 
   $effect(() => {
     const request = $commitRequest$;
-    if (!request || request.loading || request.version <= handledCommitVersion) return;
-    handledCommitVersion = request.version;
+    const pending = pendingCommitMerge;
+    if (!pending || !request || request.loading || request.version < pending.commitVersion) return;
+    pendingCommitMerge = null;
+    if (request.version !== pending.commitVersion) return;
     const result = request.data as AcceptChangesResult | null;
     if (request.error || !result?.success) {
       toast.error(request.error || result?.error || m.workspace_mergePanel_commitFailed_error());
-      pendingMergeOptions = null;
       return;
     }
-    const options = pendingMergeOptions;
-    pendingMergeOptions = null;
-    dispatchMergeToTrunk(options ?? undefined);
+    dispatchMergeToTrunk(pending.options);
   });
 
   $effect(() => {

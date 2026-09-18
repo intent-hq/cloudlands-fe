@@ -183,9 +183,10 @@ export const updateNoteContent = createAction<
 >('workspaceNotes/updateNoteContent');
 
 /** Saga trigger: update note title */
-export const updateNoteTitle = createAction<[workspaceId: string, noteId: string, title: string]>(
-  'workspaceNotes/updateNoteTitle',
-);
+export const updateNoteTitle = createAsyncAction<
+  [workspaceId: string, noteId: string, title: string],
+  void
+>('workspaceNotes/updateNoteTitleMutation', 'workspaceNotes/updateNoteTitleRequested');
 
 /** Saga trigger: create a new note */
 export const createNote = createAction<
@@ -193,8 +194,9 @@ export const createNote = createAction<
 >('workspaceNotes/createNote');
 
 /** Saga trigger: delete a note */
-export const deleteNote = createAction<[workspaceId: string, noteId: string]>(
-  'workspaceNotes/deleteNote',
+export const deleteNote = createAsyncAction<[workspaceId: string, noteId: string], void>(
+  'workspaceNotes/deleteNoteMutation',
+  'workspaceNotes/deleteNoteRequested',
 );
 
 /** Saga trigger: update note (metadata like pin, archive, etc.) */

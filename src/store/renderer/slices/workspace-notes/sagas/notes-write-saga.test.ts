@@ -130,6 +130,31 @@ describe('notesWriteSaga', () => {
     await run.task.toPromise();
   });
 
+  it('serializes content before deletion and sends the advanced revision', async () => {
+    let resolveContent!: (result: { success: true }) => void;
+    const setContent = vi.spyOn(appClient.notes, 'setContent').mockReturnValue(
+      new Promise((resolve) => {
+        resolveContent = resolve;
+      }),
+    );
+    const remove = vi.spyOn(appClient.notes, 'delete').mockResolvedValue({ success: true });
+    const run = harness();
+
+    run.channel.put(updateNoteContent(WS, NOTE, 'new body', true));
+    run.channel.put(deleteNote(WS, NOTE));
+    await settle();
+
+    expect(setContent.mock.calls).toEqual([[NOTE, 'new body', 4, WS]]);
+    expect(remove.mock.calls).toEqual([]);
+
+    resolveContent({ success: true });
+    await settle();
+
+    expect(remove.mock.calls).toEqual([[NOTE, 5, WS]]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('debounces latest content per workspace and note while different keys proceed independently', async () => {
     vi.useFakeTimers();
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockResolvedValue({ success: true });

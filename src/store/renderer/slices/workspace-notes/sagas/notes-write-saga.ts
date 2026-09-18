@@ -455,11 +455,13 @@ function* saveMetadata(command: MetadataCommand) {
 
 function* removeNote(command: DeleteCommand) {
   const { workspaceId, noteId, snapshot } = command;
+  const current = snapshot ?? (yield* selectNoteById.effect(workspaceId, noteId));
+  if (!snapshot) yield* put(applyNoteDeleted(workspaceId, noteId));
   try {
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.delete],
       noteId,
-      snapshot?.rev,
+      current?.rev,
       workspaceId,
     );
     if (result.success) return;
@@ -468,10 +470,10 @@ function* removeNote(command: DeleteCommand) {
     notify.error(m.notes_writeService_deleteFailed_error(), {
       description: result.error ?? m.notes_writeService_unknown_error(),
     });
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (current) yield* put(applyNoteCreated(workspaceId, current));
   } catch (error) {
     logger.error('Failed to delete note', error);
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (current) yield* put(applyNoteCreated(workspaceId, current));
   }
 }
 
@@ -596,20 +598,25 @@ function* handleTitleAction(
   const [workspaceId, noteId, title] = action.payload;
   if (!workspaceId || !noteId || typeof title !== 'string') return;
   const before = yield* selectNoteById.effect(workspaceId, noteId);
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
-  yield* call(flushPendingNoteContent, workspaceId, noteId);
-  yield* enqueueMutation(
-    queue,
-    {
-      kind: 'metadata',
-      workspaceId,
-      noteId,
-      patch: { title },
-      rollback: { title: before?.title ?? '' },
-      titleOnly: true,
-    },
-    true,
-  );
+  try {
+    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
+    yield* call(flushPendingNoteContent, workspaceId, noteId);
+    yield* enqueueMutation(
+      queue,
+      {
+        kind: 'metadata',
+        workspaceId,
+        noteId,
+        patch: { title },
+        rollback: { title: before?.title ?? '' },
+        titleOnly: true,
+      },
+      true,
+    );
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
 }
 
 function* handleMetadataAction(
@@ -643,10 +650,13 @@ function* handleDeleteAction(
 ) {
   const [workspaceId, noteId] = action.payload;
   if (!workspaceId || !noteId) return;
-  yield* call(flushPendingNoteContent, workspaceId, noteId);
-  const snapshot = yield* selectNoteById.effect(workspaceId, noteId);
-  yield* put(applyNoteDeleted(workspaceId, noteId));
-  yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId, snapshot }, true);
+  try {
+    yield* call(flushPendingNoteContent, workspaceId, noteId);
+    yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId }, true);
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
 }
 
 function* createNewNote(

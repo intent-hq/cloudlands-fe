@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import type { TrackedChange, CommitInfo } from '$features/file-tracking/types';
 import { ChangeStage } from '$features/file-tracking/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -134,14 +135,19 @@ vi.mock('$store/renderer/slices/git/git-slice', () => ({
 
 vi.mock('$store/renderer/slices/git/git-selectors', async () => {
   const { get } = await import('svelte/store');
+  const getRequest = (operation: string, scope: string) =>
+    operation === 'merge-pr' ? mocks.gitRequests.mergePr : mocks.gitRequests[scope];
   return {
-    selectGitMutationRequest: (_workspaceId: unknown, operation: any, scope: any) => {
-      const operationValue = get(operation);
-      const scopeValue = get(scope);
-      const request =
-        operationValue === 'merge-pr' ? mocks.gitRequests.mergePr : mocks.gitRequests[scopeValue];
-      return mocks.selector(() => request.value)();
-    },
+    selectGitMutationRequest: Object.assign(
+      (_workspaceId: unknown, operation: any, scope: any) => {
+        const request = getRequest(get(operation), get(scope));
+        return mocks.selector(() => request.value)();
+      },
+      {
+        select: (_state: unknown, _workspaceId: string, operation: string, scope: string) =>
+          getRequest(operation, scope).value,
+      },
+    ),
   };
 });
 
@@ -214,6 +220,16 @@ function makeCommit(hash: string, message: string): CommitInfo {
     stage: 'local',
     isPushed: false,
   };
+}
+
+function acceptChangesDispatches(operation: 'commit' | 'merge') {
+  return mocks.dispatch.mock.calls.filter(([action]) => {
+    const dispatched = action as { type?: string; payload?: unknown[] };
+    return (
+      dispatched.type === 'git/executeAcceptChangesRequested' &&
+      dispatched.payload?.[1] === operation
+    );
+  });
 }
 
 async function renderMerge(overrides: Partial<Record<string, unknown>> = {}) {
@@ -291,6 +307,134 @@ describe('MergePanel', () => {
     mocks.emit();
 
     await waitFor(() => expect(onMergeComplete).toHaveBeenCalledOnce());
+  });
+
+  it('does not replay a historical successful commit result after remount', async () => {
+    const props = {
+      hasStaged: true,
+      stagedChanges: [makeChange('src/a.ts')],
+      commitMessage: 'chore: msg',
+    };
+    const firstMount = await renderMerge(props);
+    firstMount.unmount();
+    mocks.gitRequests.commit.value = {
+      loading: false,
+      error: null,
+      data: { success: true, result: { newHeadSha: 'h1' } },
+      version: 4,
+    };
+    mocks.dispatch.mockClear();
+
+    await renderMerge(props);
+    await tick();
+
+    expect(acceptChangesDispatches('merge')).toHaveLength(0);
+  });
+
+  it('ignores a successful commit result when no commit-to-merge intent is pending', async () => {
+    await renderMerge({
+      hasStaged: true,
+      stagedChanges: [makeChange('src/a.ts')],
+      commitMessage: 'chore: msg',
+    });
+    mocks.gitRequests.commit.value = {
+      loading: false,
+      error: null,
+      data: { success: true, result: { newHeadSha: 'h1' } },
+      version: 1,
+    };
+    mocks.emit();
+    await tick();
+
+    expect(acceptChangesDispatches('merge')).toHaveLength(0);
+  });
+
+  it('merges only after the correlated commit-to-merge request succeeds', async () => {
+    mocks.gitRequests.commit.value = {
+      loading: false,
+      error: null,
+      data: { success: true, result: { newHeadSha: 'historical' } },
+      version: 4,
+    };
+    const { component } = await renderMerge({
+      hasStaged: true,
+      stagedChanges: [makeChange('src/a.ts')],
+      commitMessage: 'chore: msg',
+      targetBranch: 'develop',
+    });
+
+    await (
+      component as unknown as {
+        triggerMerge: (opts: { squash: boolean; localOnly: boolean }) => void;
+      }
+    ).triggerMerge({ squash: true, localOnly: true });
+    expect(acceptChangesDispatches('commit')).toHaveLength(1);
+    expect(acceptChangesDispatches('merge')).toHaveLength(0);
+
+    mocks.gitRequests.commit.value = {
+      loading: false,
+      error: null,
+      data: { success: true, result: { newHeadSha: 'still-historical' } },
+      version: 4,
+    };
+    mocks.emit();
+    await tick();
+    expect(acceptChangesDispatches('merge')).toHaveLength(0);
+
+    mocks.gitRequests.commit.value = {
+      loading: false,
+      error: null,
+      data: { success: true, result: { newHeadSha: 'h1' } },
+      version: 5,
+    };
+    mocks.emit();
+
+    await waitFor(() => expect(acceptChangesDispatches('merge')).toHaveLength(1));
+    expect(acceptChangesDispatches('merge')[0]?.[0]).toEqual({
+      type: 'git/executeAcceptChangesRequested',
+      payload: [
+        'ws-1',
+        'merge',
+        expect.objectContaining({
+          targetBranch: 'develop',
+          mergeStrategy: 'squash',
+          localOnly: true,
+        }),
+      ],
+    });
+  });
+
+  it('does not replay a committed merge after a failed merge and remount', async () => {
+    const props = {
+      hasStaged: true,
+      stagedChanges: [makeChange('src/a.ts')],
+      commitMessage: 'chore: msg',
+    };
+    const firstMount = await renderMerge(props);
+    await (firstMount.component as unknown as { triggerMerge: () => void }).triggerMerge();
+    mocks.gitRequests.commit.value = {
+      loading: false,
+      error: null,
+      data: { success: true, result: { newHeadSha: 'h1' } },
+      version: 1,
+    };
+    mocks.emit();
+    await waitFor(() => expect(acceptChangesDispatches('merge')).toHaveLength(1));
+    mocks.gitRequests.merge.value = {
+      loading: false,
+      error: 'merge failed',
+      data: null,
+      version: 1,
+    };
+    mocks.emit();
+    await tick();
+    firstMount.unmount();
+    mocks.dispatch.mockClear();
+
+    await renderMerge(props);
+    await tick();
+
+    expect(acceptChangesDispatches('merge')).toHaveLength(0);
   });
 
   it('getMergeOptions reflects viaPR and pushAfter defaults based on props', async () => {
