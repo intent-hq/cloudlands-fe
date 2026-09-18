@@ -58,7 +58,10 @@
   import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
-  import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesOwnerWorkspaceActions,
+    selectWorkspaceActivePullRequest,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import {
@@ -174,6 +177,11 @@
   // status connected — not mere presence).
   const microConnected$ = microConnectedReadable();
   const workspaceKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
+
+  // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
+  // daemon for collaborators (`require_owner`), so a collaborator row hides
+  // them instead of offering a failing action.
+  const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
 
   // Load canonical tasks for progress display (no-op once initialized).
   $effect(() => {
@@ -501,6 +509,10 @@
     e.preventDefault();
     e.stopPropagation();
     overflowMenuOpen = false;
+    if (getContextMenuItems().length === 0) {
+      contextMenu = null;
+      return;
+    }
     contextMenu = { x: e.clientX, y: e.clientY };
   }
 
@@ -581,6 +593,8 @@
         submenu: assignSubmenu,
       });
     }
+
+    if ($hidesOwnerActions$) return items;
 
     items.push({
       id: 'transfer',
@@ -956,12 +970,15 @@
   {/if}
 
   {#if contextMenu}
-    <SidebarContextMenu
-      x={contextMenu.x}
-      y={contextMenu.y}
-      items={getContextMenuItems()}
-      onClickOutside={closeContextMenu}
-    />
+    {@const contextMenuItems = getContextMenuItems()}
+    {#if contextMenuItems.length > 0}
+      <SidebarContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={contextMenuItems}
+        onClickOutside={closeContextMenu}
+      />
+    {/if}
   {/if}
 {:else if phase && stats && variant === 'row'}
   <div
