@@ -1,10 +1,16 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
+import {
+  failOnConsoleErrors,
+  peekConsoleErrors,
+  takeConsoleErrors,
+} from '../../../../test/ct-console-errors';
 import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 
 test.setTimeout(120_000);
 isolateBrowserContextPerTest(test, 'intent-hq/intent#4783');
+failOnConsoleErrors(test);
 
 test.afterEach(async ({ page }) => {
   expect(await page.pageErrors()).toEqual([]);
@@ -48,6 +54,44 @@ async function measure(component: CtLocator) {
   });
 }
 
+// ChatPanel re-reads the authoritative queue via `agent.getQueue` on mount
+// (PROTOCOL §5.5/§6.6). Every case below seeds one queued message, so the
+// scripted daemon answers with that same row and the fold is a no-op instead
+// of a caught "Backend bridge unavailable" (intent-hq/intent#5276).
+const hooksConfig = {
+  mockBackend: {
+    'agent.getQueue': {
+      success: true,
+      queue: [
+        {
+          id: 'attention-queue-fixture',
+          content: 'Check the narrow layout too.',
+          queuedAt: '2026-08-23T12:00:00.000Z',
+          position: 0,
+        },
+      ],
+    },
+  },
+};
+
+// Negative harness check (intent-hq/intent#5276): without the mock daemon
+// bridge the fixture's queue hydration fails, is caught, and surfaces through
+// the console-error guard — proving the guard sees what the geometry
+// assertions cannot.
+test('fails the console-error guard when the daemon bridge is missing', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { width: 720, attention: 'discussion' },
+  });
+  await expect(component.getByTestId('attention-request-banner')).toBeVisible();
+  await expect
+    .poll(() => peekConsoleErrors(page).some((text) => text.includes('Backend bridge unavailable')))
+    .toBe(true);
+  const errors = takeConsoleErrors(page);
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toContain('Failed to hydrate agent queue for regular-composer-agent');
+});
+
 // Narrow wrapping and a wide column exceeding the old independent card cap
 // are the two geometry contracts; both severity labels must obey them.
 for (const width of [280, 720]) {
@@ -64,6 +108,7 @@ for (const width of [280, 720]) {
             queued: true,
             draft: 'My response is ready.',
           },
+          hooksConfig,
         });
         const viewport = component.getByTestId('chat-transcript-scroll-viewport');
         const banner = component.getByTestId('attention-request-banner');
@@ -152,6 +197,7 @@ test('keeps attention in the transcript alongside questions and a queued draft u
       queued: true,
       draft: 'My response is ready.',
     },
+    hooksConfig,
   });
   const banner = component.getByTestId('attention-request-banner');
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');

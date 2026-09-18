@@ -1,5 +1,53 @@
 import { expect, test, type MountResult } from '@playwright/experimental-ct-svelte';
+import {
+  failOnConsoleErrors,
+  peekConsoleErrors,
+  takeConsoleErrors,
+} from '../../../../../test/ct-console-errors';
 import SimpleAgentPanelHeaderHost from './mocks/SimpleAgentPanelHeaderHost.svelte';
+
+failOnConsoleErrors(test);
+
+// The full-actions header's panel menu mounts the real WorkspaceActionsMenu,
+// which resolves its editor/reveal paths through `workspace:get`. Answer in
+// the `{ success, data }` envelope the workspaces seeder serves so the lookup
+// does not fall back on a caught UnbridgedMockIpcChannelError
+// (intent-hq/intent#5276).
+const hooksConfig = {
+  mockIpc: {
+    'workspace:get': {
+      success: true,
+      data: {
+        id: 'simple-agent-header-workspace',
+        title: 'Simple agent header workspace',
+        status: 'active',
+        worktreePath: '/tmp/simple-agent-header-workspace',
+      },
+    },
+  },
+};
+
+// Negative harness check (intent-hq/intent#5276): without the `workspace:get`
+// mock, opening the panel actions menu mounts the real WorkspaceActionsMenu,
+// whose path lookup fails, is caught, and surfaces through the console-error
+// guard.
+test('fails the console-error guard when the workspace:get mock is missing', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(SimpleAgentPanelHeaderHost, {
+    props: { fullActions: true, stackCount: 2, width: 560 },
+  });
+  const header = component.locator('[data-panel-tabless-header]');
+  await header.getByTestId('panel-actions-trigger').click();
+  await expect(page.getByRole('menu')).toBeVisible();
+  await expect
+    .poll(() => peekConsoleErrors(page).some((text) => text.includes("channel 'workspace:get'")))
+    .toBe(true);
+  const errors = takeConsoleErrors(page);
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toContain('[WorkspaceActionsMenu] Failed to resolve path');
+});
 
 const names = {
   root: 'Root coordinator with a deliberately long current agent name',
@@ -75,6 +123,7 @@ test('contains the full stacked header and inline rename at regular width', asyn
 }, testInfo) => {
   const component = await mount(SimpleAgentPanelHeaderHost, {
     props: { fullActions: true, stackCount: 2, width: 560 },
+    hooksConfig,
   });
   const header = component.locator('[data-panel-tabless-header]');
   await page.evaluate(() => document.fonts.ready);
@@ -117,6 +166,7 @@ for (const width of [280, 320]) {
   }, testInfo) => {
     const component = await mount(SimpleAgentPanelHeaderHost, {
       props: { fullActions: true, stackCount: 2, width, theme: 'dark' },
+      hooksConfig,
     });
     const header = component.locator('[data-panel-tabless-header]');
     await page.evaluate(() => document.fonts.ready);
