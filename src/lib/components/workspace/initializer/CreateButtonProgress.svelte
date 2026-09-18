@@ -1,20 +1,32 @@
 <!--
-  Live provisioning progress inside the Create-workspace button: a localized
+  Live provisioning progress for the Create-workspace button: a localized
   stage label + percent driven by the daemon's git:clone:progress frames
   (workspaceCreateProgress slice, keyed by the FE-minted progressId), plus a
-  2px determinate bar pinned to the button's bottom edge. Until the first
-  frame arrives (sawFrame false) the caller-provided fallback label — the
-  legacy timed stage text — renders unchanged and no bar is drawn. Percent
-  (text and bar) is monotonic: a late or re-ordered frame never moves it
-  backwards. The nearest positioned ancestor (the Button, given `relative`)
-  anchors the bar.
+  2px determinate bar pinned to the button's bottom edge. The caller renders
+  its Button through `children` and places the `label` snippet it receives
+  inside the button; the bar is drawn here as a sibling overlay of that
+  Button, anchored by this component's `relative overflow-hidden` wrapper
+  (rounded to the button's radius) — never inside the Button's content slot,
+  whose inner spans are treated as opaque. Until the first frame arrives
+  (sawFrame false) the caller-provided fallback label — the legacy timed
+  stage text — renders unchanged and no bar is drawn. Percent (text and bar)
+  is monotonic: a late or re-ordered frame never moves it backwards.
 -->
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
   import { createProgressLabel, formatCreateProgressPercent } from './create-progress-label';
 
-  let { progressId, fallbackLabel }: { progressId: string; fallbackLabel: string } = $props();
+  let {
+    progressId,
+    fallbackLabel,
+    children,
+  }: {
+    progressId: string;
+    fallbackLabel: string;
+    children: Snippet<[label: Snippet]>;
+  } = $props();
 
   // Selector readables bind at component init only (STATE_MANAGEMENT.md);
   // the caller keys this component's lifetime to one create, so the initial
@@ -35,23 +47,33 @@
   const live = $derived($entry$?.sawFrame === true);
 </script>
 
-{#if live && $entry$}
-  <span data-testid="create-progress-label">
-    {m.workspace_compactInitializer_progressWithPercent_label({
-      label: createProgressLabel($entry$),
-      percent: formatCreateProgressPercent(maxPercent),
-    })}
-  </span>
-  <div
-    class="absolute bottom-0 left-0 h-[2px] bg-white/80 transition-[width] duration-300 ease-out"
-    style="width: {maxPercent}%"
-    role="progressbar"
-    aria-label={createProgressLabel($entry$)}
-    aria-valuemin="0"
-    aria-valuemax="100"
-    aria-valuenow={maxPercent}
-    data-testid="create-progress-bar"
-  ></div>
-{:else}
-  {fallbackLabel}
-{/if}
+{#snippet label()}
+  {#if live && $entry$}
+    <span data-testid="create-progress-label">
+      {m.workspace_compactInitializer_progressWithPercent_label({
+        label: createProgressLabel($entry$),
+        percent: formatCreateProgressPercent(maxPercent),
+      })}
+    </span>
+  {:else}
+    {fallbackLabel}
+  {/if}
+{/snippet}
+
+<!-- inline-flex keeps the wrapped Button's line-box geometry identical to an
+     unwrapped one, so the button's footprint does not change while creating. -->
+<div class="relative inline-flex overflow-hidden rounded-(--radius-medium)">
+  {@render children(label)}
+  {#if live && $entry$}
+    <div
+      class="pointer-events-none absolute bottom-0 left-0 h-[2px] bg-primary-foreground/80 transition-[width] duration-300 ease-out"
+      style="width: {maxPercent}%"
+      role="progressbar"
+      aria-label={createProgressLabel($entry$)}
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow={maxPercent}
+      data-testid="create-progress-bar"
+    ></div>
+  {/if}
+</div>

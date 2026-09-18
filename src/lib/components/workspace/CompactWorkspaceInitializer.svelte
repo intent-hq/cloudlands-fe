@@ -1,6 +1,6 @@
 <script lang="ts">
   /* eslint-disable max-lines */
-  import { untrack, onMount, onDestroy } from 'svelte';
+  import { untrack, onMount, onDestroy, type Snippet } from 'svelte';
   import {
     type InitialRepoInfo,
     getLastSelectedRepoHydrationAction,
@@ -3272,7 +3272,7 @@
         </div>
 
         <!-- Create button -->
-        <div class="shrink-0">
+        {#snippet createButton(progressLabel?: Snippet)}
           <Button
             variant="primary"
             onclick={handleSubmit}
@@ -3283,15 +3283,8 @@
               <span class="min-w-[160px] text-left">
                 {#if isPulling}
                   {m.workspace_compactInitializer_pullingLatest_label()}
-                {:else if activeCreateProgressId}
-                  <!-- Key on the progressId: the component binds its selector at
-                       init, so a new create must destroy/recreate it. -->
-                  {#key activeCreateProgressId}
-                    <CreateButtonProgress
-                      progressId={activeCreateProgressId}
-                      fallbackLabel={CREATION_STAGES[creationStage]}
-                    />
-                  {/key}
+                {:else if progressLabel}
+                  {@render progressLabel()}
                 {:else}
                   {CREATION_STAGES[creationStage]}
                 {/if}
@@ -3309,6 +3302,26 @@
               </span>
             {/if}
           </Button>
+        {/snippet}
+        <div class="shrink-0">
+          {#if isCreating && !isPulling && activeCreateProgressId}
+            <!-- Key on the progressId: the component binds its selector at
+                 init, so a new create must destroy/recreate it. It wraps the
+                 Button so the bottom-edge bar is a sibling overlay of the
+                 button rather than a child of its content slot. -->
+            {#key activeCreateProgressId}
+              <CreateButtonProgress
+                progressId={activeCreateProgressId}
+                fallbackLabel={CREATION_STAGES[creationStage]}
+              >
+                {#snippet children(label)}
+                  {@render createButton(label)}
+                {/snippet}
+              </CreateButtonProgress>
+            {/key}
+          {:else}
+            {@render createButton()}
+          {/if}
         </div>
       </div>
 
