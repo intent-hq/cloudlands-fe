@@ -1441,6 +1441,7 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
           lastMessageRole: updates.lastMessageRole ?? session.lastMessageRole,
           lastMessageId: updates.lastMessageId ?? session.lastMessageId,
           isBackground: session.isBackground,
+          notificationsMuted: session.notificationsMuted,
           metadata: session.metadata,
         }),
       }),

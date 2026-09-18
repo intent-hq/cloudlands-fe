@@ -9618,6 +9618,50 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(false);
   });
 
+  it('keeps hasUnread=false for a muted foreground agent (notificationsMuted, PROTOCOL §5.5) on an assistant echo', async () => {
+    seedSession({ notificationsMuted: true, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'muted work done',
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.hasUnread).toBe(false);
+    // The preview projections still apply — only the unread dot is suppressed.
+    expect(session.lastAgentResponse).toBe('muted work done');
+    expect(session.lastMessageId).toBe('msg-a6');
+  });
+
+  it('derives hasUnread=true for the same assistant echo when the agent is not muted (control)', async () => {
+    seedSession({ notificationsMuted: false, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'unmuted work done',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(true);
+  });
+
   it('keeps hasUnread=false for a delegated child agent on an assistant echo', async () => {
     seedSession({
       metadata: { createdByAgentId: 'agent-parent' },
