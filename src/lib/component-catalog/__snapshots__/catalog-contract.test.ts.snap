@@ -4546,9 +4546,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:accordion:
                           "Details"
                         <svg aria-hidden="true" class="duration-(--motion-fast) ease-(--ease-standard) group-data-[state=open]:[stroke-width:2] group-data-[state=open]:rotate-90 group-data-[state=open]:text-foreground group-hover:text-foreground motion-reduce:transition-none shrink-0 size-4 text-muted-foreground transition-[color,transform,stroke-width]">
                           <path>
-                    <div class="will-change-[height]" data-accordion-content="" data-orientation="vertical" data-state="open" id="bits-<id>">
-                      <div class="pb-3 pt-1 px-2 text-muted-foreground type-caption">
-                        "Accordion details"
+                    <div data-accordion-content="" data-orientation="vertical" data-state="open" id="bits-<id>">
+                      <div class="will-change-[height]" data-accordion-content-motion="">
+                        <div class="pb-3 pt-1 px-2 text-muted-foreground type-caption">
+                          "Accordion details"
                   <div class="relative" data-accordion-item="" data-orientation="vertical" data-state="closed" id="bits-<id>">
                     <div aria-level="3" class="flex" data-accordion-header="" data-heading-level="3" data-orientation="vertical" data-state="closed" id="bits-<id>" role="heading">
                       <button aria-disabled="false" aria-expanded="false" class="cursor-pointer data-[state=open]:font-semibold data-[state=open]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-(--motion-fast) ease-(--ease-standard) flex flex-1 focus-visible:-outline-offset-1 focus-visible:outline font-normal gap-2 group hover:bg-hover hover:text-foreground items-center justify-between min-h-9 motion-reduce:transition-none px-2 py-2 rounded-(--radius-small) text-left text-muted-foreground transition-[color,background-color,font-weight] type-caption" data-accordion-trigger="" data-orientation="vertical" data-state="closed" id="bits-<id>" tabindex="0" type="button">
@@ -4556,9 +4557,10 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:accordion:
                           "History"
                         <svg aria-hidden="true" class="duration-(--motion-fast) ease-(--ease-standard) group-data-[state=open]:[stroke-width:2] group-data-[state=open]:rotate-90 group-data-[state=open]:text-foreground group-hover:text-foreground motion-reduce:transition-none shrink-0 size-4 text-muted-foreground transition-[color,transform,stroke-width]">
                           <path>
-                    <div aria-hidden="true" class="hidden will-change-[height]" data-accordion-content="" data-orientation="vertical" data-state="closed" id="bits-<id>">
-                      <div class="pb-3 pt-1 px-2 text-muted-foreground type-caption">
-                        "Accordion history"
+                    <div aria-hidden="true" class="hidden" data-accordion-content="" data-orientation="vertical" data-state="closed" id="bits-<id>">
+                      <div class="will-change-[height]" data-accordion-content-motion="">
+                        <div class="pb-3 pt-1 px-2 text-muted-foreground type-caption">
+                          "Accordion history"
           <details class="fixture-inspector svelte-<scope> text-muted-foreground text-xs">
             <summary class="svelte-<scope>">
               "Fixture details"

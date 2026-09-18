@@ -13,7 +13,10 @@ interface PanelSample {
   height: number;
   /** Natural height of the padded body the panel wraps. */
   bodyHeight: number;
-  /** Whether the consumer content is hit-testable (not clipped away). */
+  /**
+   * Whether the consumer content is hit-testable. A closed panel is `inert`, so this is
+   * false regardless of clipping; the height assertion is what proves the panel collapsed.
+   */
   contentHit: boolean;
   measuredWidth: string;
 }
