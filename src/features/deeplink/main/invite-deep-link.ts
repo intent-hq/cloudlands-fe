@@ -511,7 +511,7 @@ async function signInToGitHub(
     void client.request('github.cancelAuth').catch(() => {});
   };
 
-  clipboard.writeText(start.userCode);
+  await clipboard.writeText(start.userCode);
   const consent = prompts.show({
     requestId: randomUUID(),
     mode: 'sign-in-required',
