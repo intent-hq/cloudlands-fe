@@ -968,9 +968,17 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     id !== LOCAL_CONNECTION_ID && config.host != null && config.port != null
       ? { id, host: config.host, port: config.port }
       : null;
-  // The guest-only `events.subscribe` id (per connection: a reconnect hello
-  // replaces it); events on any other subscription are the renderer's.
-  let guestWorkspaceEventsSubscriptionId: string | undefined;
+  // The guest-only `events.subscribe` lease, one per transport generation:
+  // the daemon drops it with the socket, so every non-`connected` status
+  // bumps the generation and forgets it (a late answer from the old socket is
+  // discarded by the generation check), and a hello on a socket that already
+  // holds or is acquiring one — a same-socket capability re-hello — reuses it.
+  // Events on any other subscription are the renderer's.
+  const guestWorkspaceEvents: {
+    generation: number;
+    subscriptionId: string | undefined;
+    subscribing: boolean;
+  } = { generation: 0, subscriptionId: undefined, subscribing: false };
   const instance = new JsonRpcClient({
     config,
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
@@ -1022,9 +1030,18 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
         // the same (re)connect window, and the host's workspace events keep it
         // fresh between hellos; both are no-ops for paired (owner) backends.
         void hydrateGuestWorkspaces(id);
-        void subscribeGuestWorkspaceEvents(id, instance, (subscriptionId) => {
-          guestWorkspaceEventsSubscriptionId = subscriptionId;
-        });
+        if (
+          guestWorkspaceEvents.subscriptionId === undefined &&
+          !guestWorkspaceEvents.subscribing
+        ) {
+          const generation = guestWorkspaceEvents.generation;
+          guestWorkspaceEvents.subscribing = true;
+          void subscribeGuestWorkspaceEvents(id, instance).then((subscriptionId) => {
+            if (guestWorkspaceEvents.generation !== generation) return;
+            guestWorkspaceEvents.subscribing = false;
+            guestWorkspaceEvents.subscriptionId = subscriptionId;
+          });
+        }
         // Capture whether the daemon supports self-update (system.status
         // `updateSupported`) so the renderer can gate the Update affordance.
         // Fire-and-forget/fail-soft like the captures above.
@@ -1074,12 +1091,17 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
   instance.on('notification', (notification: JsonRpcNotification) => {
     broadcast(BACKEND.NOTIFICATION, notification, id);
     backendNotificationForwarder.emit('notification', id, notification);
-    if (isGuestWorkspaceRefreshEvent(notification, guestWorkspaceEventsSubscriptionId)) {
+    if (isGuestWorkspaceRefreshEvent(notification, guestWorkspaceEvents.subscriptionId)) {
       requestGuestWorkspaceRefresh(id);
     }
   });
   instance.on('status', (status: ConnectionStatus) => {
-    if (status !== 'connected') connectedDaemonVersions.delete(id);
+    if (status !== 'connected') {
+      connectedDaemonVersions.delete(id);
+      guestWorkspaceEvents.generation += 1;
+      guestWorkspaceEvents.subscriptionId = undefined;
+      guestWorkspaceEvents.subscribing = false;
+    }
     notePendingDaemonUpdateStatus(id, status);
     broadcast(
       BACKEND.STATUS,
@@ -1608,35 +1630,35 @@ const GUEST_WORKSPACE_EVENT_TYPES = ['workspace:updated', 'workspace:deleted'];
 /**
  * Subscribe a guest session's pooled client to the host's workspace events
  * (PROTOCOL §6.2) so a rename or a membership removal refreshes the cached
- * joined-workspace list without waiting for the next reconnect hello. Runs
- * on every (re)connect hello — subscriptions are per connection — and hands
- * the id to `onSubscribed` so the client's notification listener can match
- * strictly on it. A no-op for paired (owner) backends; fail-soft (the cache
- * still refreshes on the next hello).
+ * joined-workspace list without waiting for the next reconnect hello. The
+ * caller runs it once per transport generation and matches notifications
+ * strictly on the returned id. Resolves `undefined` for a paired (owner)
+ * backend, a replaced client, or a failure (fail-soft: the next hello on the
+ * same socket retries, and the cache still refreshes on every hello).
  */
 async function subscribeGuestWorkspaceEvents(
   id: string,
   client: JsonRpcClient,
-  onSubscribed: (subscriptionId: string) => void,
-): Promise<void> {
+): Promise<string | undefined> {
   try {
-    if ((await guestSessionsStore.findById(id)) === null) return;
+    if ((await guestSessionsStore.findById(id)) === null) return undefined;
     const result = (await client.request('events.subscribe', {
       eventTypes: GUEST_WORKSPACE_EVENT_TYPES,
     })) as { subscriptionId?: unknown } | undefined;
-    if (backendClients.get(id) !== client) return;
+    if (backendClients.get(id) !== client) return undefined;
     if (typeof result?.subscriptionId !== 'string' || !result.subscriptionId) {
       logger.warn('events.subscribe for guest workspace events returned no subscriptionId', {
         id,
       });
-      return;
+      return undefined;
     }
-    onSubscribed(result.subscriptionId);
+    return result.subscriptionId;
   } catch (error) {
     logger.warn('events.subscribe for guest workspace events failed', {
       id,
       code: revokeFailureCode(error),
     });
+    return undefined;
   }
 }
 
