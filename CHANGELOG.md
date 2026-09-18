@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.164.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.163.1...v2.164.0) (2026-09-18)
+
+
+### 🚀 Features
+
+* **scripts:** add ct:failures to list failed and flaky CT cases of a run ([#2582](https://github.com/intent-hq/cloudlands-fe/issues/2582)) ([1d444e9](https://github.com/intent-hq/cloudlands-fe/commit/1d444e914d49a02172696cba438f4ff271718e76))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.72 ([#2601](https://github.com/intent-hq/cloudlands-fe/issues/2601)) ([c484f5f](https://github.com/intent-hq/cloudlands-fe/commit/c484f5fe275a144b6dc375a14ef04cda897389a0))
+* **ct:** isolate deferred-theme-real-surfaces browser contexts per test ([#2583](https://github.com/intent-hq/cloudlands-fe/issues/2583)) ([a9f50c6](https://github.com/intent-hq/cloudlands-fe/commit/a9f50c67c54f47868e4298fb3efbe7d62cd056a9))
+* **ct:** wait for fonts before onboarding suggestion geometry baseline ([#2577](https://github.com/intent-hq/cloudlands-fe/issues/2577)) ([f4821f1](https://github.com/intent-hq/cloudlands-fe/commit/f4821f112509aedcd1e78dd3a566c566b9858e89))
+* **i18n:** publish generated Paraglide output atomically under a single-writer lock ([#2578](https://github.com/intent-hq/cloudlands-fe/issues/2578)) ([63dda27](https://github.com/intent-hq/cloudlands-fe/commit/63dda2706017b8c3c4cecd872a366160f359c977))
+
 ## [2.163.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.163.0...v2.163.1) (2026-09-17)
 
 
