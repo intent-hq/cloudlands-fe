@@ -4,6 +4,17 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.165.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.1...v2.165.2) (2026-09-18)
+
+
+### 🐛 Bug Fixes
+
+* **browser:** render the host-offline banner in warning ink ([#2643](https://github.com/intent-hq/cloudlands-fe/issues/2643)) ([e8f67d3](https://github.com/intent-hq/cloudlands-fe/commit/e8f67d3d041568e5b4fdf115d139e27c4315d035))
+* bump intentd sidecar to v0.9.78 ([#2657](https://github.com/intent-hq/cloudlands-fe/issues/2657)) ([fea1102](https://github.com/intent-hq/cloudlands-fe/commit/fea1102dae34ef925267e3b142c2f116ad29bf87))
+* **fe:** bound the github.authStatus cache with a TTL so a missed auth event self-heals ([#2641](https://github.com/intent-hq/cloudlands-fe/issues/2641)) ([bab8a31](https://github.com/intent-hq/cloudlands-fe/commit/bab8a31e188227f8f45bd66f96b0b7614399cc76))
+* **fe:** do not stamp a messageId-less interrupt stream:end onto the accumulated turn ([#2651](https://github.com/intent-hq/cloudlands-fe/issues/2651)) ([a2f3334](https://github.com/intent-hq/cloudlands-fe/commit/a2f33340d0e896648046f1c94d520ab55e2349b2))
+* **fe:** portal the Menu playground submenu so nested More actions renders ([#2648](https://github.com/intent-hq/cloudlands-fe/issues/2648)) ([f918a1d](https://github.com/intent-hq/cloudlands-fe/commit/f918a1d7fe366b2d37452eac53954562765c8f7f))
+
 ## [2.165.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.0...v2.165.1) (2026-09-18)
 
 
