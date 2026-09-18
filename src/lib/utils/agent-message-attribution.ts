@@ -101,8 +101,13 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
  */
 const A2A_SENDER_HEADER = /^\[MESSAGE FROM AGENT (?:[^\n]+ )?\(agent-[0-9a-f-]+\)\](?:\n\n?|$)/;
 
-/** Consume the one blank separator line after `prefix`, never body whitespace. */
-function stripLiteralHeader(text: string, prefix: string): string | null {
+/**
+ * Consume an exact daemon-prepended `prefix` plus the one blank separator
+ * line after it, never body whitespace. Returns `null` when `text` does not
+ * start with the exact daemon shape (`prefix`, `prefix\n`, `prefix\n\n…`).
+ * Shared with the collaborator sender preamble strip.
+ */
+export function stripLiteralHeader(text: string, prefix: string): string | null {
   if (!text.startsWith(prefix)) return null;
   const rest = text.slice(prefix.length);
   if (rest === '') return '';
