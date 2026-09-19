@@ -136,6 +136,29 @@ describe('ensureWorkspaceDetail', () => {
     expect(result?.id).toBe(WS);
     expect(hydrated()).toBe(false);
   });
+
+  it('treats a later workspace.get as authoritative: an omitted setupScript clears the stale one', async () => {
+    // old detail → slim list refresh → pool-driven detail read that omits the
+    // script (workspace.get never slims, so absent means removed).
+    appStore.dispatch(replaceWorkspaceList([makeWorkspace()]));
+    getMock.mockResolvedValueOnce(makeWorkspace({ setupScript: 'pnpm install' }));
+    await ensureWorkspaceDetail(WS);
+    appStore.dispatch(
+      replaceWorkspaceList([
+        makeWorkspace({ pullRequests: [pr(1), pr(2), pr(3), pr(4), pr(5)], pullRequestsTotal: 6 }),
+      ]),
+    );
+    expect(stored()?.setupScript).toBe('pnpm install');
+    getMock.mockResolvedValueOnce(makeWorkspace({ pullRequests: [pr(1), pr(2)] }));
+
+    await ensureWorkspacePullRequestPool(WS);
+
+    expect(stored()?.setupScript).toBeUndefined();
+    expect(hydrated()).toBe(true);
+    const result = await ensureWorkspaceDetail(WS);
+    expect(result?.setupScript).toBeUndefined();
+    expect(getMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('ensureWorkspacePullRequestPool', () => {
@@ -161,6 +184,31 @@ describe('ensureWorkspacePullRequestPool', () => {
     // Complete now: no second read.
     await ensureWorkspacePullRequestPool(WS);
     expect(getMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a smaller or empty workspace.get pool as authoritative and stops refetching', async () => {
+    const capped = [pr(1), pr(2), pr(3), pr(4), pr(5)];
+    appStore.dispatch(
+      replaceWorkspaceList([makeWorkspace({ pullRequests: capped, pullRequestsTotal: 7 })]),
+    );
+    getMock.mockResolvedValueOnce(makeWorkspace({ pullRequests: [pr(1), pr(2)] }));
+
+    const shrunk = await ensureWorkspacePullRequestPool(WS);
+    expect(shrunk?.pullRequests?.map((p) => p.number)).toEqual([1, 2]);
+    expect(shrunk?.pullRequestsTotal).toBeUndefined();
+    await ensureWorkspacePullRequestPool(WS);
+    expect(getMock).toHaveBeenCalledTimes(1);
+
+    appStore.dispatch(
+      replaceWorkspaceList([makeWorkspace({ pullRequests: capped, pullRequestsTotal: 7 })]),
+    );
+    getMock.mockResolvedValueOnce(makeWorkspace({ pullRequests: undefined }));
+
+    const emptied = await ensureWorkspacePullRequestPool(WS);
+    expect(emptied?.pullRequests).toBeUndefined();
+    expect(emptied?.pullRequestsTotal).toBeUndefined();
+    await ensureWorkspacePullRequestPool(WS);
+    expect(getMock).toHaveBeenCalledTimes(2);
   });
 
   it('refetches after an authoritative list refresh re-caps the pool, even when detail-hydrated', async () => {

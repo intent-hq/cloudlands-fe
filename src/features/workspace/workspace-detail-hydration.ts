@@ -8,11 +8,13 @@
  * `pullRequestsTotal` announcing the full size when truncated). Readers that
  * need one of those fields call the helpers here instead of trusting the
  * stored row: the read is single-flighted per workspace (one in-flight
- * `workspace.get` shared by every caller, including the panel-layout saga),
- * its projection is merged into the store through `setWorkspaceEntity`, and
- * the row is marked detail-hydrated so later callers skip the fetch. The
- * store carries detail-only fields forward across list refreshes, so the
- * mark stays valid until the row leaves the store.
+ * `workspace.get` shared by every caller, including the panel-layout saga)
+ * and applied through `setWorkspaceEntity(..., { detailRead: true })`, which
+ * takes the detail fields and the full PR pool as served (`workspace.get` is
+ * authoritative — an omitted field means none) and marks the row
+ * detail-hydrated so later callers skip the fetch. The store carries
+ * detail-only fields forward across slim list refreshes, so the mark stays
+ * valid until the row leaves the store.
  *
  * Failures fail open: callers get the stored row as-is.
  */
@@ -23,10 +25,7 @@ import {
   selectWorkspaceById,
   selectWorkspaceDetailHydrated,
 } from '$store/renderer/slices/workspace/workspace-selectors';
-import {
-  markWorkspaceDetailHydrated,
-  setWorkspaceEntity,
-} from '$store/renderer/slices/workspace/workspace-slice';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { store as appStore } from '$store/renderer/store';
 
 const inFlightByWorkspace = new Map<string, Promise<Workspace | null>>();
@@ -59,8 +58,7 @@ function storedWorkspace(workspaceId: string): Workspace | undefined {
 async function hydrateIntoStore(workspaceId: string): Promise<Workspace | undefined> {
   const workspace = await fetchWorkspaceDetail(workspaceId);
   if (workspace) {
-    appStore.dispatch(setWorkspaceEntity(workspace));
-    appStore.dispatch(markWorkspaceDetailHydrated(workspaceId));
+    appStore.dispatch(setWorkspaceEntity(workspace, { detailRead: true }));
   }
   return storedWorkspace(workspaceId);
 }

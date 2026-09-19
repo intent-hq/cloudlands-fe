@@ -74,11 +74,7 @@ import {
 } from '../../browser-tab-registry/browser-tab-registry-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
-import {
-  markWorkspaceDetailHydrated,
-  setWorkspaceEntity,
-  setWorkspaceHasLoaded,
-} from '../../workspace/workspace-slice';
+import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -333,20 +329,15 @@ function startRestoreSaga(
   const dispatch = vi.fn((action) => {
     state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
     if (action.type === setWorkspaceEntity.type) {
+      const [workspace, options] = action.payload;
       state = {
         ...state,
         workspace: {
           ...state.workspace,
-          workspaces: createCollection('id', [action.payload[0]]),
-        },
-      };
-    }
-    if (action.type === markWorkspaceDetailHydrated.type) {
-      state = {
-        ...state,
-        workspace: {
-          ...state.workspace,
-          detailHydrated: { ...state.workspace.detailHydrated, [action.payload[0]]: true },
+          workspaces: createCollection('id', [workspace]),
+          detailHydrated: options?.detailRead
+            ? { ...state.workspace.detailHydrated, [workspace.id]: true }
+            : state.workspace.detailHydrated,
         },
       };
     }

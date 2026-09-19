@@ -50,11 +50,7 @@ import {
   selectWorkspaceDetailHydrated,
   selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
-import {
-  markWorkspaceDetailHydrated,
-  setWorkspaceEntity,
-  setWorkspaceHasLoaded,
-} from '../../workspace/workspace-slice';
+import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
 import { fetchWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
 import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
 import {
@@ -534,8 +530,7 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
       if (!detailHydrated) {
         const detail = yield* call(fetchWorkspaceDetail, wsId);
         if (detail) {
-          yield* put(markWorkspaceDetailHydrated(wsId));
-          yield* put(setWorkspaceEntity(detail));
+          yield* put(setWorkspaceEntity(detail, { detailRead: true }));
           return;
         }
       }

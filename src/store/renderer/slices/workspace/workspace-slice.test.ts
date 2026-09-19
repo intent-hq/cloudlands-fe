@@ -17,7 +17,6 @@ import {
   clearPendingCreation,
   clearWorkspacePendingDeletion,
   initialState,
-  markWorkspaceDetailHydrated,
   markWorkspacePendingDeletion,
   loadRecencyData,
   replaceWorkspaceList,
@@ -335,6 +334,30 @@ describe('workspaceReducer', () => {
         expect(stored?.contextLinks).toBeUndefined();
         expect(stored?.diffSummary?.files).toEqual([]);
       });
+
+      it('lets an authoritative workspace.get read clear detail fields the daemon no longer serves', () => {
+        // old detail → slim list refresh → new detail that omits the script
+        // and links (workspace.get never slims, so absent means removed).
+        let state = workspaceReducer(
+          initialState,
+          setWorkspaceEntity(detail, { detailRead: true }),
+        );
+        state = workspaceReducer(state, replaceWorkspaceList([slimRow]));
+        const newerSummary = { ...diffSummary, updatedAt: '2026-01-03T00:00:00Z', files: [] };
+        state = workspaceReducer(
+          state,
+          setWorkspaceEntity(makeWorkspace({ id: 'ws-1', diffSummary: newerSummary }), {
+            detailRead: true,
+          }),
+        );
+
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.setupScript).toBeUndefined();
+        expect(stored?.contextLinks).toBeUndefined();
+        expect(stored?.diskUsage).toBeUndefined();
+        expect(stored?.diffSummary).toEqual(newerSummary);
+        expect(state.detailHydrated).toEqual({ 'ws-1': true });
+      });
     });
 
     describe('capped pullRequests pool (pullRequestsTotal, PROTOCOL §5.1)', () => {
@@ -406,6 +429,34 @@ describe('workspaceReducer', () => {
         const stored = getItem(state.workspaces, 'ws-1');
         expect(stored?.pullRequests).toHaveLength(5);
         expect(stored?.pullRequestsTotal).toBe(7);
+      });
+
+      it('lets an authoritative workspace.get read shrink the pool and clear pullRequestsTotal', () => {
+        let state = workspaceReducer(initialState, replaceWorkspaceList([truncatedRow]));
+        state = workspaceReducer(
+          state,
+          setWorkspaceEntity(makeWorkspace({ id: 'ws-1', pullRequests: [pool[0], pool[1]] }), {
+            detailRead: true,
+          }),
+        );
+
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.pullRequests?.map((p) => p.number)).toEqual([1, 2]);
+        expect(stored?.pullRequestsTotal).toBeUndefined();
+      });
+
+      it('lets an authoritative workspace.get read empty the pool (omitted pullRequests)', () => {
+        let state = workspaceReducer(initialState, replaceWorkspaceList([truncatedRow]));
+        state = workspaceReducer(
+          state,
+          setWorkspaceEntity(makeWorkspace({ id: 'ws-1', pullRequests: undefined }), {
+            detailRead: true,
+          }),
+        );
+
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.pullRequests).toBeUndefined();
+        expect(stored?.pullRequestsTotal).toBeUndefined();
       });
     });
 
@@ -834,12 +885,15 @@ describe('workspaceReducer', () => {
     });
   });
 
-  describe('markWorkspaceDetailHydrated', () => {
-    it('marks a workspace and is idempotent', () => {
-      let state = workspaceReducer(initialState, markWorkspaceDetailHydrated('ws-1'));
+  describe('detail-hydrated mark (setWorkspaceEntity with detailRead)', () => {
+    it('marks a workspace on a detail read, not on a plain entity upsert', () => {
+      const ws = makeWorkspace({ id: 'ws-1' });
+      const plain = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      expect(plain.detailHydrated).toEqual({});
+      let state = workspaceReducer(plain, setWorkspaceEntity(ws, { detailRead: true }));
       expect(state.detailHydrated).toEqual({ 'ws-1': true });
-      const again = workspaceReducer(state, markWorkspaceDetailHydrated('ws-1'));
-      expect(again).toBe(state);
+      const again = workspaceReducer(state, setWorkspaceEntity(ws, { detailRead: true }));
+      expect(again.detailHydrated).toBe(state.detailHydrated);
       state = again;
       expect(selectWorkspaceDetailHydrated.select({ workspace: state } as never, 'ws-1')).toBe(
         true,
@@ -849,9 +903,24 @@ describe('workspaceReducer', () => {
       );
     });
 
+    it('does not mark a tombstoned or pending-delete workspace', () => {
+      const ws = makeWorkspace({ id: 'ws-1' });
+      const tombstoned = { ...initialState, pendingDeletions: { 'ws-1': true } };
+      expect(
+        workspaceReducer(tombstoned, setWorkspaceEntity(ws, { detailRead: true })).detailHydrated,
+      ).toEqual({});
+      const pendingDelete = makeWorkspace({ id: 'ws-1', pendingDeleteAt: '2026-01-01T00:00:00Z' });
+      expect(
+        workspaceReducer(initialState, setWorkspaceEntity(pendingDelete, { detailRead: true }))
+          .detailHydrated,
+      ).toEqual({});
+    });
+
     it('survives a list refresh that still carries the workspace', () => {
-      let state = workspaceReducer(initialState, setWorkspaceEntity(makeWorkspace({ id: 'ws-1' })));
-      state = workspaceReducer(state, markWorkspaceDetailHydrated('ws-1'));
+      let state = workspaceReducer(
+        initialState,
+        setWorkspaceEntity(makeWorkspace({ id: 'ws-1' }), { detailRead: true }),
+      );
       state = workspaceReducer(state, replaceWorkspaceList([makeWorkspace({ id: 'ws-1' })]));
       expect(state.detailHydrated).toEqual({ 'ws-1': true });
     });
@@ -859,10 +928,10 @@ describe('workspaceReducer', () => {
     it('is dropped when the workspace leaves the list, is removed, or is deleted', () => {
       const seeded = workspaceReducer(
         workspaceReducer(
-          workspaceReducer(initialState, setWorkspaceEntity(makeWorkspace({ id: 'ws-1' }))),
-          setWorkspaceEntity(makeWorkspace({ id: 'ws-2' })),
+          initialState,
+          setWorkspaceEntity(makeWorkspace({ id: 'ws-1' }), { detailRead: true }),
         ),
-        markWorkspaceDetailHydrated('ws-1'),
+        setWorkspaceEntity(makeWorkspace({ id: 'ws-2' })),
       );
       const afterList = workspaceReducer(
         seeded,
