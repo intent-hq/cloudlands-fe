@@ -15,7 +15,10 @@
   } from '$lib/utils/get-file-changes-from-messages';
   import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -42,6 +45,9 @@
 
   const workspaceId$ = toStore(() => workspaceId as string);
   const workspace$ = selectWorkspaceById(workspaceId$);
+  // "Run agent" creates a session (`agent.wakeOrCreate`), refused (-32003)
+  // for a collaborator connection: the play affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceId$);
 
   // Reactive list of workspace agents. selectAllWorkspaceAgents already
   // scopes to the current workspace, so no manual filtering is needed.
@@ -143,6 +149,7 @@
 
   // Handle running an agent for this note (creates agent and sends initial message)
   function handleRunAgent() {
+    if ($hidesAgentLifecycleActions$) return;
     appStore.dispatch(
       runAgentForNoteRequested(
         workspaceId,
@@ -225,14 +232,16 @@
         <div class="text-subtle pt-0.5">{m.workspace_noteMetadataBar_assignee_label()}</div>
         <div class="flex flex-col gap-0.5 min-h-6 min-w-0 overflow-hidden">
           {#if assignedAgents.length === 0}
-            <Button
-              variant="ghost"
-              onclick={handleRunAgent}
-              class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
-              title={m.workspace_noteMetadataBar_runAgent_tooltip()}
-            >
-              <Fa icon={faPlay} class="text-xs" />
-            </Button>
+            {#if !$hidesAgentLifecycleActions$}
+              <Button
+                variant="ghost"
+                onclick={handleRunAgent}
+                class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+                title={m.workspace_noteMetadataBar_runAgent_tooltip()}
+              >
+                <Fa icon={faPlay} class="text-xs" />
+              </Button>
+            {/if}
           {:else}
             <div class="flex flex-wrap items-center gap-0.5 min-w-0">
               {#each assignedAgents as agentId (agentId)}
@@ -247,14 +256,16 @@
                   >
                 </Button>
               {/each}
-              <Button
-                variant="ghost"
-                onclick={handleRunAgent}
-                class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
-                title={m.workspace_noteMetadataBar_runAgent_tooltip()}
-              >
-                <Fa icon={faPlay} class="text-xs" />
-              </Button>
+              {#if !$hidesAgentLifecycleActions$}
+                <Button
+                  variant="ghost"
+                  onclick={handleRunAgent}
+                  class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+                  title={m.workspace_noteMetadataBar_runAgent_tooltip()}
+                >
+                  <Fa icon={faPlay} class="text-xs" />
+                </Button>
+              {/if}
             </div>
             <!-- <Button
               onclick={handleViewAllChanges}

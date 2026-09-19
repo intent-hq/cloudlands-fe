@@ -37,6 +37,7 @@
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
+    selectHidesAgentLifecycleActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
@@ -130,6 +131,8 @@
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  // Agent create is likewise refused (-32003) for a collaborator connection.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   const WORKSPACE_OWNER_ONLY_COMMAND_IDS: ReadonlySet<string> = new Set([
     'new-terminal',
     'open-url',
@@ -138,6 +141,7 @@
     COMMAND_PALETTE_COMMANDS.filter(
       (command) =>
         !($isCollaborator$ && WORKSPACE_OWNER_ONLY_COMMAND_IDS.has(command.id)) &&
+        !($hidesAgentLifecycleActions$ && command.id === 'new-agent') &&
         !($isCollaboratorOnlyClient$ && command.id === 'new-workspace'),
     ),
   );
@@ -797,7 +801,7 @@
         navigateToSettings();
         return true;
       case 'new-agent':
-        if (workspaceId) {
+        if (workspaceId && !$hidesAgentLifecycleActions$) {
           appStore.dispatch(createAgentRequested(workspaceId));
         }
         return true;

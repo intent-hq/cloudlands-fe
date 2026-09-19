@@ -201,6 +201,26 @@ export const selectIsWorkspaceOwner = store.createSelector<[wsId: string], boole
 );
 
 /**
+ * True when the workspace UI must not offer the agent lifecycle actions —
+ * create (`agent.create`, `agent.delegate`, `agent.wakeOrCreate`) and delete
+ * (`agent.delete`, `agent.cancelDelete`): the daemon refuses them with -32003
+ * for a collaborator connection, so the affordances are hidden (never merely
+ * disabled) and the creation / deletion sagas refuse before sending anything.
+ * Same fail-closed shape as `selectIsWorkspaceCollaborator`: a guest window
+ * whatever `myRole` it reports, a `collaborator` row in an owner window, and
+ * any window whose guest/owner identity is still the boot-time default. A
+ * collaborator-only client (`selectIsCollaboratorOnlyClient`) hides them for
+ * every `wsId`, so a lookup that misses the row (missing, stale, or not yet
+ * listed id) cannot fall open. Rename and model switching are not lifecycle
+ * actions and stay available.
+ */
+export const selectHidesAgentLifecycleActions = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) =>
+    selectIsWorkspaceCollaborator.select(state, wsId) ||
+    selectIsCollaboratorOnlyClient.select(state),
+);
+
+/**
  * True when the connected principal is a collaborator everywhere: the list
  * has loaded and every workspace it can see reports `myRole: 'collaborator'`.
  * Gates app-wide administrator-only surfaces (workspace creation / repo
