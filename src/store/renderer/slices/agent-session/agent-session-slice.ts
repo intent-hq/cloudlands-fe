@@ -281,6 +281,25 @@ function removeHistorySegmentsFor(
   return next;
 }
 
+/** Drop the detail-hydrated marker for `agentId`; no-op when absent. */
+function removeDetailHydrated(state: AgentSessionState, agentId: string): AgentSessionState {
+  if (!state.detailHydrated || !(agentId in state.detailHydrated)) return state;
+  const { [agentId]: _, ...rest } = state.detailHydrated;
+  return { ...state, detailHydrated: rest };
+}
+
+/** Drop the detail-hydrated marker of every agent in `agentIds`; no-op when none is present. */
+function removeDetailHydratedFor(
+  state: AgentSessionState,
+  agentIds: Iterable<string>,
+): AgentSessionState {
+  let next = state;
+  for (const agentId of agentIds) {
+    next = removeDetailHydrated(next, agentId);
+  }
+  return next;
+}
+
 /**
  * Reuse prior message object identities when a full replacement contains rows
  * structurally equal to ones already in the store, so a background
@@ -1585,6 +1604,17 @@ export const restoreStoredSessions = createAction<[sessions: StoredAgentSession[
   'agentSessions/restoreStoredSessions',
 );
 
+/**
+ * Record that `agentId`'s detail projection (`agent.get` / `agent.getSession`)
+ * was read: the detail-only fields the `agent.list` row omits (PROTOCOL §5.5)
+ * are now authoritative on the stored row, so an absent `harnessFeatures`
+ * means "no snapshot", not "not loaded yet". Dispatched by the read seams
+ * after the detail upsert; cleared with the session.
+ */
+export const markAgentDetailHydrated = createAction<[agentId: string]>(
+  'agentSessions/markAgentDetailHydrated',
+);
+
 /** Remove all sessions for a workspace */
 export const removeWorkspaceSessions = createAction<[wsId: string]>(
   'agentSessions/removeWorkspaceSessions',
@@ -1647,7 +1677,12 @@ agentSessionReducer.with(removeSession, (state, { payload: [agentId] }) => {
   let next: AgentSessionState = { ...state, byAgentId: rest };
   next = removeFromWorkspaceIndex(next, agentId);
   next = removeHistorySegment(next, agentId);
+  next = removeDetailHydrated(next, agentId);
   return next;
+});
+agentSessionReducer.with(markAgentDetailHydrated, (state, { payload: [agentId] }) => {
+  if (!state.byAgentId[agentId] || state.detailHydrated?.[agentId]) return state;
+  return { ...state, detailHydrated: { ...state.detailHydrated, [agentId]: true } };
 });
 agentSessionReducer.with(addMessage, (state, { payload: [agentId, message] }) =>
   addMessageToSession(state, agentId, message),
@@ -1808,8 +1843,11 @@ agentSessionReducer.with(removeWorkspaceSessions, (state, { payload: [wsId] }) =
   }
 
   const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-  return removeHistorySegmentsFor(
-    { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
+  return removeDetailHydratedFor(
+    removeHistorySegmentsFor(
+      { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
+      agentIds,
+    ),
     agentIds,
   );
 });
@@ -1827,8 +1865,8 @@ agentSessionReducer.with(workspaceDeleted, (state, { payload: [wsId, agentIds] }
   }
   if (!byAgentIdChanged && !(wsId in state.agentIdsByWorkspace)) return state;
   const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
-  return removeHistorySegmentsFor(
-    { ...state, byAgentId, agentIdsByWorkspace: restWorkspaces },
+  return removeDetailHydratedFor(
+    removeHistorySegmentsFor({ ...state, byAgentId, agentIdsByWorkspace: restWorkspaces }, doomed),
     doomed,
   );
 });

@@ -32,6 +32,7 @@ import {
   clearProcessQueueHint,
   processEvicted,
   bulkUpsertSessions,
+  markAgentDetailHydrated,
   removeWorkspaceSessions,
   clearAllSessions,
   computeMessageContentHash,
@@ -67,6 +68,7 @@ import {
 import { eventReceived } from '../workspace-events/workspace-events-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  selectAgentDetailHydrated,
   selectAgentSession,
   selectAgentSessionsByIds,
   selectAgentMessages,
@@ -174,12 +176,14 @@ function storeWith(
   agentSessions: {
     byAgentId: Record<string, AgentSession>;
     agentIdsByWorkspace?: Record<string, string[]>;
+    detailHydrated?: Record<string, true>;
   },
   workspaceAgentIds: Record<string, string[]> = {},
 ): StoreState {
   const converted: AgentSessionState = {
     byAgentId: agentSessions.byAgentId,
     agentIdsByWorkspace: agentSessions.agentIdsByWorkspace ?? workspaceAgentIds,
+    ...(agentSessions.detailHydrated ? { detailHydrated: agentSessions.detailHydrated } : {}),
   };
   return {
     agentSessions: converted,
@@ -3357,6 +3361,68 @@ describe('agent-session-slice reducer', () => {
       expect(state).toEqual(initialState);
     });
   });
+
+  // §5.5 list projection: the marker records that the detail read landed, so
+  // an absent detail-only field is "none" rather than "not loaded yet".
+  describe('markAgentDetailHydrated', () => {
+    it('is unset on initial state and set only for a stored session', () => {
+      expect(initialState.detailHydrated).toBeUndefined();
+
+      const missing = agentSessionReducer(initialState, markAgentDetailHydrated('a1'));
+      expect(missing).toBe(initialState);
+
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')], { listProjection: true }),
+      );
+      state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      expect(state.detailHydrated).toEqual({ a1: true });
+
+      const again = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      expect(again).toBe(state);
+    });
+
+    it('survives later list-projection upserts of the same agent', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
+      state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([makeSession('a1', 'ws-1', { name: 'renamed' })], {
+          listProjection: true,
+        }),
+      );
+      expect(state.detailHydrated).toEqual({ a1: true });
+    });
+
+    it('is dropped with the session (removeSession / removeWorkspaceSessions / workspaceDeleted)', () => {
+      const seeded = () => {
+        let state = agentSessionReducer(
+          initialState,
+          bulkUpsertSessions([
+            makeSession('a1', 'ws-1'),
+            makeSession('a2', 'ws-1'),
+            makeSession('a3', 'ws-2'),
+          ]),
+        );
+        for (const id of ['a1', 'a2', 'a3']) {
+          state = agentSessionReducer(state, markAgentDetailHydrated(id));
+        }
+        return state;
+      };
+
+      const afterRemove = agentSessionReducer(seeded(), removeSession('a1'));
+      expect(afterRemove.detailHydrated).toEqual({ a2: true, a3: true });
+
+      const afterWorkspace = agentSessionReducer(seeded(), removeWorkspaceSessions('ws-1'));
+      expect(afterWorkspace.detailHydrated).toEqual({ a3: true });
+
+      const afterDeleted = agentSessionReducer(seeded(), workspaceDeleted('ws-1', ['a1', 'a2']));
+      expect(afterDeleted.detailHydrated).toEqual({ a3: true });
+
+      const afterClear = agentSessionReducer(seeded(), clearAllSessions());
+      expect(afterClear.detailHydrated).toBeUndefined();
+    });
+  });
 });
 
 // ============================================================================
@@ -3371,6 +3437,17 @@ describe('agent-session selectors', () => {
     expect(selectAgentSession.select(state, 'unknown')).toBeUndefined();
     expect(selectAgentSession.select(state, '')).toBeUndefined();
     expect(selectAgentSession.select(state)).toBeUndefined();
+  });
+
+  it('selectAgentDetailHydrated reports the detail-read marker', () => {
+    const session = makeSession('a1');
+    const bare = storeWith({ byAgentId: { a1: session } });
+    expect(selectAgentDetailHydrated.select(bare, 'a1')).toBe(false);
+    expect(selectAgentDetailHydrated.select(bare)).toBe(false);
+
+    const marked = storeWith({ byAgentId: { a1: session }, detailHydrated: { a1: true } });
+    expect(selectAgentDetailHydrated.select(marked, 'a1')).toBe(true);
+    expect(selectAgentDetailHydrated.select(marked, 'a2')).toBe(false);
   });
 
   it('selectAgentSessionsByIds returns only requested sessions', () => {
