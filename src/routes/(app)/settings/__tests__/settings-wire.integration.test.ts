@@ -229,6 +229,9 @@ describe('Settings deterministic mock-BE contracts', () => {
     ]);
 
     render(WebSocketApiSettings);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
     const input = (await screen.findByRole('spinbutton', {
       name: m.settings_wsApi_port_label(),
     })) as HTMLInputElement;
@@ -247,6 +250,72 @@ describe('Settings deterministic mock-BE contracts', () => {
       2,
       IPC_CHANNELS.BACKEND.REQUEST,
       update.request,
+    );
+  });
+
+  it('persists multiselect networks through settings.update and renders the refreshed daemon selection', async () => {
+    let bound = ['192.0.2.10', '127.0.0.1'];
+    const expectedChanges = [
+      { path: 'server.bindAddress', value: ['192.0.2.10', '127.0.0.1', '198.51.100.7'] },
+    ];
+    registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
+      const request = payload as { method: string; params?: unknown };
+      if (request.method === 'settings.list') {
+        expect(request).toEqual({ method: 'settings.list', params: undefined });
+        return {
+          ok: true,
+          result: {
+            settings: [
+              ...SHIPPED_WEBSOCKET_SETTING_FIXTURES.list.response.settings.map((row) => ({
+                ...row,
+                value: row.path === 'server.wsApi.enabled' ? true : row.value,
+              })),
+              {
+                path: 'server.bindAddress',
+                label: 'Bind addresses',
+                description: '',
+                category: 'server',
+                type: 'string[]',
+                defaultValue: ['127.0.0.1'],
+                value: bound,
+              },
+            ],
+          },
+        };
+      }
+      if (request.method === 'server.pairingInfo') {
+        expect(request).toEqual(UNDOCUMENTED_SERVER_FIXTURES.pairingInfo.request);
+        return { ok: true, result: UNDOCUMENTED_SERVER_FIXTURES.pairingInfo.response };
+      }
+      expect(request).toEqual({ method: 'settings.update', params: { changes: expectedChanges } });
+      bound = ['192.0.2.10', '127.0.0.1', '198.51.100.7'];
+      return { ok: true, result: { applied: expectedChanges } };
+    });
+    render(WebSocketApiSettings);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_devices_advanced_label() }),
+    );
+    const input = await screen.findByRole('combobox', { name: m.settings_listenTargets_label() });
+    await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
+    await fireEvent.focus(input);
+    await fireEvent.pointerUp(screen.getByRole('option', { name: '198.51.100.7' }), {
+      button: 0,
+      pointerType: 'mouse',
+    });
+    await waitFor(() =>
+      expect(window.electronAPI!.invoke).toHaveBeenCalledWith(IPC_CHANNELS.BACKEND.REQUEST, {
+        method: 'settings.update',
+        params: { changes: expectedChanges },
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('option', { name: '198.51.100.7' }).getAttribute('aria-selected'),
+      ).toBe('true'),
+    );
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    expect((input as HTMLInputElement).value).toBe(
+      '192.0.2.10, 127.0.0.1 (localhost), 198.51.100.7',
     );
   });
 

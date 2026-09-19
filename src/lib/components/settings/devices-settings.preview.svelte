@@ -77,14 +77,63 @@
 
   export const preview = definePreview({
     id: 'devices-settings',
-    title: 'Device row polish',
+    title: 'Device settings',
     defaultState: 'versions',
-    states: { versions: { props: {}, setup } },
+    states: {
+      versions: { props: {}, setup },
+      'local-expanded': { props: { expanded: true }, setup },
+      'access-disabled': { props: { accessEnabled: false }, setup },
+    },
   });
 </script>
 
 <script lang="ts">
+  import { onDestroy, untrack } from 'svelte';
+  import { appClient, type SettingDefinitionWithValue } from '$lib/client';
   import DevicesSettings from './DevicesSettings.svelte';
+
+  let { expanded = false, accessEnabled = true }: { expanded?: boolean; accessEnabled?: boolean } =
+    $props();
+  const previous = {
+    list: appClient.settings.list,
+    update: appClient.settings.update,
+    pairingInfo: appClient.server.pairingInfo,
+  };
+  const definitions = [
+    { path: 'server.wsApi.enabled', value: untrack(() => accessEnabled), type: 'boolean' },
+    { path: 'server.wsApi.port', value: 5181, type: 'number' },
+    { path: 'server.bindAddress', value: ['0.0.0.0'], type: 'string' },
+    { path: 'server.tunnel.enabled', value: false, type: 'boolean' },
+    { path: 'server.tunnel.only', value: false, type: 'boolean' },
+  ].map((entry) => ({
+    label: entry.path,
+    description: '',
+    category: 'server',
+    ...entry,
+  })) as SettingDefinitionWithValue[];
+  appClient.settings.list = async () => definitions;
+  appClient.settings.update = async (changes) => {
+    for (const change of changes) {
+      const entry = definitions.find((entry) => entry.path === change.path);
+      if (entry) entry.value = change.value;
+    }
+    return changes;
+  };
+  // Synthetic pairing data; this preview never reads a real machine's credentials.
+  appClient.server.pairingInfo = async () => ({
+    token: 'preview-not-a-real-token',
+    certFingerprint: 'AA:BB:CC:DD:EE:FF:00:11:22:33',
+    port: 5181,
+    path: '/ws',
+    localIps: ['192.0.2.10'],
+    availableIps: ['192.0.2.10'],
+    hostname: 'preview-device',
+  });
+  onDestroy(() => {
+    appClient.settings.list = previous.list;
+    appClient.settings.update = previous.update;
+    appClient.server.pairingInfo = previous.pairingInfo;
+  });
 </script>
 
-<div class="p-4"><DevicesSettings /></div>
+<div class="bg-background p-4"><DevicesSettings localSettingsRequested={expanded ? 1 : 0} /></div>

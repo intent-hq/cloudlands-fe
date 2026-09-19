@@ -7,7 +7,11 @@
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import DeviceRow, { type DevicePanelMode } from './DeviceRow.svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import { SELECTABLE_CONNECTION_ACCENTS, type ConnectionRecord } from '$shared/types/connections';
+  import {
+    LOCAL_CONNECTION_ID,
+    SELECTABLE_CONNECTION_ACCENTS,
+    type ConnectionRecord,
+  } from '$shared/types/connections';
   import {
     selectConnections,
     selectConnectionsLoaded,
@@ -15,6 +19,8 @@
   } from '$store/renderer/slices/connections/connections-selectors';
   import { forgetConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
+
+  let { localSettingsRequested = $bindable(0) }: { localSettingsRequested?: number } = $props();
 
   // Full ordered list (local first) drives the rows AND the empty state (the
   // always-present local row and the "no devices" box must not render
@@ -30,6 +36,13 @@
   let removeTarget = $state<ConnectionRecord | null>(null);
   let removeError = $state<string | null>(null);
   let removing = $state(false);
+
+  $effect(() => {
+    if (localSettingsRequested > 0) {
+      openPanel(LOCAL_CONNECTION_ID, 'edit');
+      localSettingsRequested = 0;
+    }
+  });
 
   const defaultAccent = $derived(
     SELECTABLE_CONNECTION_ACCENTS[$devices$.length % SELECTABLE_CONNECTION_ACCENTS.length],
@@ -86,7 +99,7 @@
     getText={(device) => device.label}
     status={$loaded$ ? 'ready' : 'loading'}
     ariaLabel={m.settings_devices_title()}
-    class="overflow-visible rounded-xl bg-card [&>div>div[aria-hidden=true]]:hidden"
+    class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
   >
     {#snippet row({ item: device })}
       <DeviceRow
@@ -113,7 +126,7 @@
     {/snippet}
   </ListView>
 
-  <div class="flex justify-start">
+  <div class="flex justify-end">
     <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
       <Fa icon={faPlus} class="mr-1.5" size="xs" />
       {m.settings_devices_add_label()}

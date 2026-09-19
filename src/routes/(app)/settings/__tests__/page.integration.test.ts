@@ -90,7 +90,7 @@ vi.mock('$lib/components/settings/VoiceSettings.svelte', async () => ({
   default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/DevicesSettings.svelte', async () => ({
-  default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 vi.mock('$lib/components/settings/GitWorkspaceSettings.svelte', async () => ({
   default: (await import('./mocks/GitWorkspaceSettingsFixture.svelte')).default,
@@ -115,10 +115,6 @@ vi.mock('$lib/components/settings/NotificationSettings.svelte', async () => ({
 }));
 vi.mock('$lib/components/settings/RtkSettings.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
-}));
-// Devices-tab fixture carrier (Remote Access section).
-vi.mock('$lib/components/settings/WebSocketApiSettings.svelte', async () => ({
-  default: (await import('./mocks/SettingsStateFixture.svelte')).default,
 }));
 // Advanced-tab fixture carrier.
 vi.mock('$lib/components/settings/AgentBackendSettings.svelte', async () => ({
