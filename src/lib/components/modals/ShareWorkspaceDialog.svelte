@@ -22,8 +22,9 @@
    * workspace-share slice through the Redux host, and user intent (create /
    * revoke / remove) goes back as callbacks the host dispatches. Only the pin
    * input draft, the pending Remove confirmation, and the clipboard copy live
-   * here. Every open invite row carries its `url` (absent while the daemon's
-   * Remote Access listener is down, which disables that row's Copy).
+   * here. Invite links never ride the store: the host resolves them from the
+   * invite-link vault into `inviteLinks` (by invite id), and a row with no
+   * link (the daemon's Remote Access listener is down) has its Copy disabled.
    */
 
   import { tick, untrack } from 'svelte';
@@ -60,6 +61,11 @@
     canManage?: boolean;
     members?: WorkspaceMember[];
     invites?: WorkspaceInvite[];
+    /**
+     * `intent://invite` link per invite id (open rows + `createdLink`), resolved
+     * by the host from the invite-link vault; a missing entry disables Copy.
+     */
+    inviteLinks?: Readonly<Record<string, string>>;
     loading?: boolean;
     loadError?: string | null;
     creating?: boolean;
@@ -91,6 +97,7 @@
     canManage = false,
     members = [],
     invites = [],
+    inviteLinks = {},
     loading = false,
     loadError = null,
     creating = false,
@@ -219,8 +226,13 @@
     }
   }
 
-  function copyInvite(invite: Pick<WorkspaceInvite, 'url'>) {
-    if (invite.url) void copyLink(invite.url);
+  function inviteLink(inviteId: string): string | null {
+    return inviteLinks[inviteId] ?? null;
+  }
+
+  function copyInvite(invite: Pick<WorkspaceInvite, 'id'>) {
+    const url = inviteLink(invite.id);
+    if (url) void copyLink(url);
   }
 
   function revokeInvite(inviteId: string) {
@@ -456,8 +468,8 @@
             {/if}
           </form>
 
-          {#if createdLink}
-            {@const createdUrl = createdLink.url}
+          {#if createdLink && inviteLink(createdLink.inviteId)}
+            {@const createdUrl = inviteLink(createdLink.inviteId) ?? ''}
             <div
               class="space-y-2 rounded border border-border bg-muted/50 p-3"
               data-testid="share-created-link"
@@ -519,8 +531,10 @@
                       <Button
                         variant="ghost-light"
                         size="sm"
-                        disabled={!invite.url}
-                        title={invite.url ? undefined : m.workspace_share_listenerDown_error()}
+                        disabled={!inviteLink(invite.id)}
+                        title={inviteLink(invite.id)
+                          ? undefined
+                          : m.workspace_share_listenerDown_error()}
                         onclick={() => copyInvite(invite)}
                         aria-label={m.workspace_share_copyInvite_ariaLabel({
                           audience: inviteAudience(invite),

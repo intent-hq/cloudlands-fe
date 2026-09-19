@@ -17,19 +17,15 @@ export interface WorkspaceMember {
 }
 
 /**
- * One `workspace_invite` row as `workspace.invite.list` / `.create` return it.
- * The raw secret is never on this shape; the ready-to-send `intent://invite`
- * link is (`url`), so an owner can copy any open invite again.
+ * One `workspace_invite` row as the store holds it: neither the raw secret
+ * nor the `intent://invite` link (a capability) is on this shape. The link
+ * the daemon returns beside each open row lives in `invite-link-vault`,
+ * keyed by `id`, so an owner can still copy any open invite again.
  */
 export interface WorkspaceInvite {
   id: string;
   workspaceId: string;
   createdByPrincipalId: string;
-  /**
-   * The `intent://invite` link for this open invite; absent when the daemon
-   * cannot build the dial envelope (Remote Access listener down).
-   */
-  url?: string;
   /** GitHub user id the invite is pinned to; absent when open to anyone. */
   pinGithubUserId?: number;
   /** Canonical GitHub login of the pinned account (as resolved by the daemon). */
@@ -42,13 +38,26 @@ export interface WorkspaceInvite {
 }
 
 /**
+ * One `workspace.invite.list` row as the daemon returns it: the store shape
+ * plus the ready-to-send `intent://invite` link. The saga vaults the `url`
+ * and dispatches only the `WorkspaceInvite` part.
+ */
+export interface WorkspaceInviteRow extends WorkspaceInvite {
+  /**
+   * The `intent://invite` link for this open invite; absent when the daemon
+   * cannot build the dial envelope (Remote Access listener down).
+   */
+  url?: string;
+}
+
+/**
  * `workspace.invite.create` result: the invite row plus the `secret` and the
  * ready-to-send `intent://invite` link that wraps it with the daemon's dial
  * envelope. The raw secret is returned only here; the link is also available
- * on later `workspace.invite.list` rows as `invite.url`.
+ * on later `workspace.invite.list` rows as `url`.
  */
 export interface WorkspaceInviteCreateResult {
-  invite: WorkspaceInvite;
+  invite: WorkspaceInviteRow;
   secret: string;
   url: string;
   hosts: string[];

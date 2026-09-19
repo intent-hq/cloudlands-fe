@@ -6,11 +6,15 @@
    * mutations) + the GitHub connection flag and forwards every user intent as
    * a dispatch; the dialog stays presentational and the saga owns the RPCs.
    *
+   * Invite links are resolved here from the invite-link vault (the store only
+   * ever holds invite ids) and handed to the dialog as a plain id → url map.
+   *
    * The pin typeahead reads the github-user-search slice and dispatches the
    * (saga-debounced) `searchGithubUsers` trigger on every keystroke.
    */
 
   import ShareWorkspaceDialog from './ShareWorkspaceDialog.svelte';
+  import { readInviteLink } from '$features/workspace-sharing/invite-link-vault';
   import { store as appStore } from '$store/renderer/store';
   import {
     closeShareDialog,
@@ -63,6 +67,16 @@
   const userSearchLoading$ = selectGithubUserSearchLoading();
   const userSearchError$ = selectGithubUserSearchError();
   const userSearchQuery$ = selectGithubUserSearchLastQuery();
+  const inviteLinks = $derived.by(() => {
+    const ids = $invites$.map((invite) => invite.id);
+    if ($createdLink$) ids.push($createdLink$.inviteId);
+    const links: Record<string, string> = {};
+    for (const id of ids) {
+      const url = readInviteLink(id);
+      if (url) links[id] = url;
+    }
+    return links;
+  });
 </script>
 
 <ShareWorkspaceDialog
@@ -73,6 +87,7 @@
   canManage={$canManage$}
   members={$members$}
   invites={$invites$}
+  {inviteLinks}
   loading={$loading$}
   loadError={$loadError$}
   creating={$creating$}

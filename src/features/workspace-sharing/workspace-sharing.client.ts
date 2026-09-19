@@ -11,8 +11,8 @@ import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-typ
 import {
   INVITE_ERROR_CODES,
   type InviteErrorCode,
-  type WorkspaceInvite,
   type WorkspaceInviteCreateResult,
+  type WorkspaceInviteRow,
   type WorkspaceMember,
 } from './types';
 
@@ -131,11 +131,15 @@ export const workspaceSharingClient = {
     }
   },
 
-  /** `workspace.invite.list` — open (unredeemed, unrevoked, unexpired) invites with their `url`. */
-  async listInvites(workspaceId: string): Promise<WorkspaceInvite[]> {
-    const result = await backendRequest<{ invites?: WorkspaceInvite[] }>('workspace.invite.list', {
-      workspaceId,
-    });
+  /**
+   * `workspace.invite.list` — open (unredeemed, unrevoked, unexpired) invites
+   * with their `url`. The caller vaults the links before any row enters the store.
+   */
+  async listInvites(workspaceId: string): Promise<WorkspaceInviteRow[]> {
+    const result = await backendRequest<{ invites?: WorkspaceInviteRow[] }>(
+      'workspace.invite.list',
+      { workspaceId },
+    );
     return Array.isArray(result?.invites) ? result.invites : [];
   },
 
