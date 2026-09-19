@@ -48,8 +48,12 @@ import {
   selectActiveBackendId,
 } from '../../../utils/backend-storage-namespace';
 import { getLocalStorageJSON, setLocalStorageJSON } from '../../../utils/safe-local-storage-saga';
+import { selectAgentSessionsById } from '../../agent-session/agent-session-selectors';
 import { connectionsListReceived } from '../../connections/connections-slice';
-import { hydrateAgentsRequested } from '../../workspace-agents/workspace-agents-slice';
+import {
+  agentsHydrationSettled,
+  hydrateAgentsRequested,
+} from '../../workspace-agents/workspace-agents-slice';
 import {
   hudActivated,
   hudAttentionChanged,
@@ -250,7 +254,10 @@ function* rateHistoryTicker(signals: Channel<RefreshSignal>) {
   }
 }
 
-function* hydrateVisibleWorkspaceAgents(hydrated: Set<string>): SagaGenerator<void> {
+function* hydrateVisibleWorkspaceAgents(
+  hydrated: Set<string>,
+  pending: Map<string, Channel<true>>,
+): SagaGenerator<void> {
   const collection = yield* selectHudWorkspaceCollection.effect();
   for (const workspace of getItems(collection)) {
     if (
@@ -267,16 +274,34 @@ function* hydrateVisibleWorkspaceAgents(hydrated: Set<string>): SagaGenerator<vo
     const workspaceId = String(workspace.id);
     if (hydrated.has(workspaceId)) continue;
     hydrated.add(workspaceId);
+    // Register before dispatch: the lifecycle read can settle synchronously.
+    if (!pending.has(workspaceId)) pending.set(workspaceId, channel<true>(buffers.expanding()));
     yield* put(hydrateAgentsRequested(workspaceId));
   }
 }
 
-function* workspaceHydrationWorker(hydrated: Set<string>): SagaGenerator<void> {
-  yield* hydrateVisibleWorkspaceAgents(hydrated);
+function* agentHydrationSettlementWorker(pending: Map<string, Channel<true>>): SagaGenerator<void> {
+  while (true) {
+    const {
+      payload: [workspaceId],
+    } = yield* take(agentsHydrationSettled);
+    const settled = pending.get(workspaceId);
+    if (!settled) continue;
+    pending.delete(workspaceId);
+    settled.put(true);
+    settled.close();
+  }
+}
+
+function* workspaceHydrationWorker(
+  hydrated: Set<string>,
+  pending: Map<string, Channel<true>>,
+): SagaGenerator<void> {
+  yield* hydrateVisibleWorkspaceAgents(hydrated, pending);
   yield* takeLatestFromSelector(
     selectHudWorkspaceCollection,
     function* (_: SelectorChannelPayload<ReturnType<typeof selectHudWorkspaceCollection.select>>) {
-      yield* hydrateVisibleWorkspaceAgents(hydrated);
+      yield* hydrateVisibleWorkspaceAgents(hydrated, pending);
     },
   );
 }
@@ -324,6 +349,7 @@ function* activeHudWorker(): SagaGenerator<void> {
   const rateSignals = channel<RefreshSignal>(buffers.sliding(1));
   const lease: SubscriptionLease = { cancelled: false };
   const hydrated = new Set<string>();
+  const pendingAgentHydrations = new Map<string, Channel<true>>();
   const delegated = new Set<string>();
   const lastStatus = new Map<string, string>();
   try {
@@ -331,7 +357,8 @@ function* activeHudWorker(): SagaGenerator<void> {
     yield* fork(refreshWorker, usageSignals, loadUsage);
     yield* fork(refreshWorker, rateSignals, loadRateHistory);
     yield* fork(rateHistoryTicker, rateSignals);
-    yield* fork(workspaceHydrationWorker, hydrated);
+    yield* fork(agentHydrationSettlementWorker, pendingAgentHydrations);
+    yield* fork(workspaceHydrationWorker, hydrated, pendingAgentHydrations);
     yield* fork(gridFilterPersistenceWorker);
     usageSignals.put(true);
     yield* call(subscribeHud, lease);
@@ -342,7 +369,7 @@ function* activeHudWorker(): SagaGenerator<void> {
         hydrated.clear();
         usageSignals.put(true);
         rateSignals.put(true);
-        yield* fork(hydrateVisibleWorkspaceAgents, hydrated);
+        yield* fork(hydrateVisibleWorkspaceAgents, hydrated, pendingAgentHydrations);
         yield* call(subscribeHud, lease);
         continue;
       }
@@ -351,12 +378,14 @@ function* activeHudWorker(): SagaGenerator<void> {
       const envelopeId = extractSubscriptionId(notification.params);
       if (envelopeId !== undefined && envelopeId !== lease.subscriptionId) continue;
       const event = extractEvent(notification.params);
-      if (event) yield* handleEvent(event, delegated, lastStatus);
+      if (event) yield* handleEvent(event, delegated, lastStatus, pendingAgentHydrations);
     }
   } finally {
     events.close();
     usageSignals.close();
     rateSignals.close();
+    for (const pending of pendingAgentHydrations.values()) pending.close();
+    pendingAgentHydrations.clear();
     yield* call(unsubscribeHud, lease);
   }
 }
@@ -365,6 +394,7 @@ function* handleEvent(
   event: WorkspaceEvent,
   delegated: Set<string>,
   lastStatus: Map<string, string>,
+  pendingAgentHydrations: Map<string, Channel<true>>,
 ): SagaGenerator<void> {
   const workspaceId = typeof event.workspaceId === 'string' ? event.workspaceId : '';
   const data =
@@ -402,11 +432,21 @@ function* handleEvent(
   }
   if (entry) yield* put(hudFeedEntryReceived(entry));
   const eventAgentId = typeof data.agentId === 'string' ? data.agentId : undefined;
+  const pendingHydration = pendingAgentHydrations.get(workspaceId);
+  if (pendingHydration && eventAgentId && HUD_TAKEOVER_EVENT_TYPES.includes(type)) {
+    // Hold the sequential event loop until the lifecycle owner has folded the
+    // HUD-requested list into the store (or failed). An older leading read's
+    // session is not sufficient. Later events cannot overtake this one.
+    yield* take(pendingHydration);
+  }
+  const sessions = yield* selectAgentSessionsById.effect();
   const eventAgentName = eventAgentId
     ? yield* selectHudAgentDisplayName.effect(eventAgentId)
     : undefined;
-  const trigger = mapEventToTakeoverTrigger(event, (agentId) =>
-    agentId === eventAgentId ? eventAgentName : undefined,
+  const trigger = mapEventToTakeoverTrigger(
+    event,
+    (agentId) => (agentId === eventAgentId ? eventAgentName : undefined),
+    (agentId) => sessions[agentId]?.notificationsMuted === true,
   );
   if (!trigger || isDuplicateStatusUpdate(trigger, lastStatus)) return;
   yield* call(emitTakeoverTrigger, trigger);

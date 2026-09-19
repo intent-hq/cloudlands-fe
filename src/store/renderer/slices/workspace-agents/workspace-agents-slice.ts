@@ -350,6 +350,10 @@ export const setIsLoadingAgents = createAction<[wsId: string, loading: boolean]>
 export const hydrateAgentsRequested = createAction<[wsId: string]>(
   'workspaceAgents/hydrateAgentsRequested',
 );
+/** Saga-only completion: accepted hydration reads have drained (or were cancelled). */
+export const agentsHydrationSettled = createAction<[wsId: string]>(
+  'workspaceAgents/agentsHydrationSettled',
+);
 /**
  * Saga-only trigger (no reducer entry): load the workspace's retired rows on
  * demand via the retired-only read (`retiredOnly: true`, §5.5) when the

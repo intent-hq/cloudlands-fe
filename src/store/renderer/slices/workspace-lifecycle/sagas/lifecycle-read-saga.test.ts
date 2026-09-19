@@ -76,6 +76,7 @@ import {
 import { selectTerminalsForWorkspace } from '../../terminals/terminals-selectors';
 import { fetchWorkspaceTokenUsage } from '../../token-usage/token-usage-slice';
 import {
+  agentsHydrationSettled,
   fetchBackgroundAgentsRequested,
   fetchDelegatedAgentsRequested,
   fetchOrphanedDelegatedAgentsRequested,
@@ -1923,6 +1924,7 @@ describe('lifecycleReadSaga', () => {
         payload: [[background, kept], { listProjection: true }],
       },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-keep'] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });
@@ -2127,6 +2129,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });
@@ -3593,6 +3596,9 @@ describe('lifecycleReadSaga', () => {
       [WS, TOP_LEVEL],
     ]);
     expect(run.actions.filter((action) => action.type === setAgentsLoaded.type)).toHaveLength(2);
+    expect(run.actions.filter((action) => action.type === agentsHydrationSettled.type)).toEqual([
+      agentsHydrationSettled(WS),
+    ]);
     await stop(run.task);
   });
 
@@ -3627,6 +3633,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });
@@ -3653,7 +3660,7 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
-    expect(run.actions).toEqual([]);
+    expect(run.actions).toEqual([agentsHydrationSettled(WS)]);
 
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
@@ -3662,11 +3669,13 @@ describe('lifecycleReadSaga', () => {
       [WS, TOP_LEVEL],
     ]);
     expect(run.actions).toEqual([
+      agentsHydrationSettled(WS),
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setDelegatedCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });
