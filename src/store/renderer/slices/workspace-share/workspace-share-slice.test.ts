@@ -67,11 +67,7 @@ const target = (state: WorkspaceShareState): WorkspaceShareTarget => ({
   session: state.session,
 });
 
-const link = {
-  inviteId: 'inv-2',
-  url: 'intent://invite?v=1&h=example.test&p=5181&f=fp&t=tok-inv-2',
-  pinLogin: 'erin',
-};
+const link = { inviteId: 'inv-2', pinLogin: 'erin' };
 
 describe('workspaceShareReducer', () => {
   it('starts closed with no target and no rows', () => {
@@ -262,7 +258,8 @@ describe('workspaceShareReducer', () => {
       shareInviteCreated({ target: target(failed), request: 2, link }),
     );
     expect(created).toMatchObject({ creating: false, createError: null, createdLink: link });
-    expect(created.createdLink?.url).toBe(link.url);
+    // The store holds the invite id only — never the url / secret.
+    expect(JSON.stringify(created)).not.toContain('intent://');
   });
 
   // Regression (fe#2440 review P2): a local revoke of the just-created invite
