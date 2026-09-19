@@ -46,6 +46,7 @@ import {
 } from '../../workspace-agents/workspace-agents-selectors';
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import {
+  selectIsWorkspaceCollaborator,
   selectWorkspaceById,
   selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
@@ -81,6 +82,7 @@ import {
   closeTabsToRight,
   consumePendingFocus,
   destroyHiddenTabsByOwnerAgent,
+  destroyTabsByType,
   destroyOwnedTabsForWorkspace,
   destroyTabsByOwnerAgent,
   emptyWorkspaceState,
@@ -147,6 +149,7 @@ import {
   type PanelLayoutRestoreStatus,
   type PanelState,
   type PanelTab,
+  type PanelTabType,
   type WorkspacePanelLayout,
   type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
@@ -320,6 +323,15 @@ function* routeTabToRightmostColumn(
   action: ReturnType<typeof openTabInRightmostColumnRequested>,
 ): SagaGenerator<void> {
   const { wsId, tab, force, allowDuplicate, newTabId, timestamp, agentDriven } = action.payload;
+  // Every "new browser" / "new terminal" entry point that does not go through
+  // its owning saga (application menu, global shortcut) lands here, so this is
+  // where a collaborator's owner-only open is dropped (multiplayer w3).
+  if (
+    OWNER_ONLY_TAB_TYPES.includes(tab.type) &&
+    (yield* selectIsWorkspaceCollaborator.effect(wsId))
+  ) {
+    return;
+  }
   yield* put(
     reconcilePanelColumnCount(wsId, yield* selectPanelColumnCount.effect(wsId), timestamp),
   );
@@ -624,6 +636,24 @@ function isSettledRestoreStatus(status: PanelLayoutRestoreStatus): boolean {
   return status === 'restored' || status === 'empty' || status === 'invalid';
 }
 
+/** Panel tab types a collaborator (multiplayer w3) is refused on by the daemon. */
+const OWNER_ONLY_TAB_TYPES: readonly PanelTabType[] = ['terminal', 'browser'];
+
+/**
+ * A persisted layout may still hold terminal / browser tabs (saved as an
+ * owner, or before the role changed). Collaborators cannot drive either, so
+ * the restore destroys them before the layout settles instead of mounting
+ * panes whose every daemon call is refused. A destroy, not a user close:
+ * nothing may linger in `hiddenTabs`, `recentlyClosed` or the undo history
+ * for `reopenClosedTab` / `restoreHiddenTab` to bring back.
+ */
+function* stripOwnerOnlyTabsForCollaborator(wsId: string): SagaGenerator<void> {
+  if (!(yield* selectIsWorkspaceCollaborator.effect(wsId))) return;
+  for (const tabType of OWNER_ONLY_TAB_TYPES) {
+    yield* put(destroyTabsByType(wsId, tabType));
+  }
+}
+
 function* handleWorkspaceMountedRestore(
   action: ReturnType<typeof workspaceMounted> | ReturnType<typeof panelLayoutScopeMounted>,
 ): SagaGenerator<void> {
@@ -690,6 +720,7 @@ function* handleWorkspaceMountedRestore(
         yield* put(preparePanelLayoutBackendRestore(wsId));
       }
       yield* put(initializeLayout(wsId, normalized));
+      yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Detached (spawn, not fork): re-resolving tunneled tabs goes over IPC
@@ -939,6 +970,9 @@ function* loadHistoryForWorkspace(
           timestamp: snapshot.timestamp,
         }));
         yield* put(loadLayoutHistory(wsId, history, data.historyIndex));
+        // The disk history lands after the restore's purge; Back/Forward
+        // must not bring an owner-only pane back from an imported snapshot.
+        yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       }
     }
   } catch {
@@ -1035,15 +1069,23 @@ function* reconcileAgentsFromSnapshot(action: ReturnType<typeof setAgents>): Sag
 // opening a linkless agent tab (see reconcileEmptyRestoredLayout). These two
 // actions are how the record can arrive afterwards; each re-runs the cheap,
 // fully-guarded reconcile so the deferred seed eventually resolves.
+//
+// The same race covers the role: a restore that wins against `workspace.list`
+// reads the not-yet-hydrated workspace as owner-equivalent and mounts its
+// persisted terminal / browser tabs, so the owner-only strip re-runs here once
+// the record lands. Both strips are no-ops on a layout with nothing to strip.
 function* reconcileWorkspaceEntityArrived(
   action: ReturnType<typeof setWorkspaceEntity>,
 ): SagaGenerator<void> {
   const [workspace] = action.payload;
-  yield* call(reconcileEmptyRestoredLayout, String(workspace.id));
+  const wsId = String(workspace.id);
+  if (restoredWorkspaceIds.has(wsId)) yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
+  yield* call(reconcileEmptyRestoredLayout, wsId);
 }
 
 function* reconcileWorkspaceListLoaded(): SagaGenerator<void> {
   for (const wsId of restoredWorkspaceIds) {
+    yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
     yield* call(reconcileEmptyRestoredLayout, wsId);
   }
 }
@@ -1099,6 +1141,7 @@ function* restoreAfterBackendSwitch(wsId: string | null): SagaGenerator<void> {
       const normalized = normalizeLayoutForWorkspace(wsId, stored);
       repairedLayout = !deepEqual(normalized, stored);
       yield* put(initializeLayout(wsId, normalized));
+      yield* call(stripOwnerOnlyTabsForCollaborator, wsId);
       repairedColumns = yield* call(reconcileRestoredPanelColumns, wsId);
       yield* put(setRestoreStatus(wsId, 'restored'));
       // Mirror the mount path: restored tunneled tabs re-resolve against the

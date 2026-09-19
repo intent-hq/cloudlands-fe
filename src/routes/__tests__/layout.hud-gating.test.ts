@@ -4,7 +4,7 @@
  * lifecycle, while `(app)` owns product sagas, chrome, and overlays.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
 
@@ -118,7 +118,7 @@ vi.mock('$features/daemon-status/DaemonUpdatingOverlay.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
 vi.mock('$lib/components/terminal/RootQuakeTerminalOverlay.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
+  default: (await import('./mocks/RootQuakeTerminalOverlayMarker.svelte')).default,
 }));
 vi.mock('$lib/components/modals/FeatureCodeDialog.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
@@ -137,6 +137,13 @@ vi.mock('$lib/components/ui/tooltip/LinkTooltip.svelte', async () => ({
 }));
 
 import { store as appStore } from '$store/renderer/store';
+import {
+  replaceWorkspaceList,
+  setWorkspaceHasLoaded,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { selectIsTerminalOverlayOpenForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
+import { ROOT_WORKSPACE_ID, type WorkspaceId } from '$shared/types/branded-ids';
+import { WorkspaceStatus, type Workspace } from '$shared/types';
 import AppLayout from '../(app)/+layout.svelte';
 import RootLayout from '../+layout.svelte';
 import HudLayout from '../hud/+layout.svelte';
@@ -230,5 +237,69 @@ describe('+layout.svelte isHudRoute chrome-less gating', () => {
     expect(mocks.dismissSplashElement).toHaveBeenCalledWith(splash);
     expect(dragRegion.isConnected).toBe(false);
     splash.remove();
+  });
+});
+
+function makeWorkspace(id: string, myRole: Workspace['myRole']): Workspace {
+  return {
+    id: id as WorkspaceId,
+    title: id,
+    branch: 'main',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatus.Active,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    myRole,
+  } as Workspace;
+}
+
+describe('+layout.svelte root terminal gating for collaborators (multiplayer w3)', () => {
+  beforeEach(() => {
+    appStore.init();
+    mocks.startAppStoreLifecycle.mockClear();
+    mockPage.pathname = '/';
+  });
+
+  afterEach(() => {
+    cleanup();
+    appStore.dispose();
+  });
+
+  function loadWorkspaces(role: Workspace['myRole']) {
+    appStore.dispatch(replaceWorkspaceList([makeWorkspace('ws-1', role)]));
+    appStore.dispatch(setWorkspaceHasLoaded(true));
+  }
+
+  function pressToggleTerminal() {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, bubbles: true, cancelable: true }),
+    );
+  }
+
+  it('renders the root overlay and toggles it from the shortcut for an owner', async () => {
+    loadWorkspaces('owner');
+    render(AppLayout, { props: { children: childrenSnippet } });
+
+    expect(screen.getAllByTestId('root-quake-terminal-overlay-marker').length).toBeGreaterThan(0);
+    pressToggleTerminal();
+    await waitFor(() => {
+      expect(
+        selectIsTerminalOverlayOpenForWorkspace.select(appStore.state, ROOT_WORKSPACE_ID),
+      ).toBe(true);
+    });
+  });
+
+  it('withholds the root overlay and ignores the shortcut for a collaborator-only client', async () => {
+    loadWorkspaces('collaborator');
+    render(AppLayout, { props: { children: childrenSnippet } });
+
+    expect(screen.queryByTestId('root-quake-terminal-overlay-marker')).toBeNull();
+    pressToggleTerminal();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(selectIsTerminalOverlayOpenForWorkspace.select(appStore.state, ROOT_WORKSPACE_ID)).toBe(
+      false,
+    );
   });
 });

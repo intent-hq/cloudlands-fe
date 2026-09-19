@@ -4538,6 +4538,7 @@
   "browser_embedded_pageClosed_error": "The page closed itself. Reload or enter a URL to continue.",
   "browser_embedded_resolveFailed_error": "Cannot reach this URL on the remote daemon host",
   "browser_linkOpen_loopbackAmbiguity_warning": "Loopback URL was rewritten to the daemon host",
+  "browser_linkOpen_ownerOnlyForward_error": "Only the workspace owner can open forwarded ports on the daemon host",
   "browser_embedded_protocolNotAllowed_error": "Protocol \"{protocol}\" is not allowed. Supported: {protocols}",
   "browser_embedded_selfLoad_error": "Cannot load the app inside itself",
   "browser_embedded_invalidUrlFormat_error": "Invalid URL format",

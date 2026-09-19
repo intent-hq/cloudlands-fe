@@ -6,6 +6,7 @@ import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-
 import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
 import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
+import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
@@ -56,7 +57,12 @@ import {
   hydrateTaskAgentAssociations,
   hydrateTaskAgentAssociationsRequested,
 } from '../../task-agent-associations/task-agent-associations-slice';
-import { hydrateTerminalsRequested, loadWorkspaceTerminals } from '../../terminals/terminals-slice';
+import { selectTerminalsForWorkspace } from '../../terminals/terminals-selectors';
+import {
+  hydrateTerminalsRequested,
+  loadWorkspaceTerminals,
+  removeTerminal,
+} from '../../terminals/terminals-slice';
 import {
   fetchWorkspaceTokenUsage,
   tokenUsageFetchFailed,
@@ -568,20 +574,40 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
   }
 }
 
+/**
+ * Scripts and terminals are owner-only surfaces (multiplayer w3): a
+ * collaborator connection is refused with `-32003` on every read. That is a
+ * stable answer, not a failure, so these reads settle to an empty list
+ * instead of logging an error on every refresh.
+ */
 function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
-  const scripts: Awaited<ReturnType<typeof appClient.scripts.list>> = yield* call(
-    [appClient.scripts, appClient.scripts.list],
-    workspaceId,
-  );
+  let scripts: Awaited<ReturnType<typeof appClient.scripts.list>>;
+  try {
+    scripts = yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
+  } catch (error) {
+    if (!isForbiddenErrorResponse(error)) throw error;
+    logger.debug(`Scripts are owner-only for ${workspaceId}; treating as empty`);
+    scripts = [];
+  }
   yield* put(setScriptsData(workspaceId, scripts));
   yield* put(setScriptsInitialized(workspaceId, true));
 }
 
 function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
-  const result: Awaited<ReturnType<typeof appClient.terminals.list>> = yield* call(
-    [appClient.terminals, appClient.terminals.list],
-    workspaceId,
-  );
+  let result: Awaited<ReturnType<typeof appClient.terminals.list>>;
+  try {
+    result = yield* call([appClient.terminals, appClient.terminals.list], workspaceId);
+  } catch (error) {
+    if (!isForbiddenErrorResponse(error)) throw error;
+    logger.debug(`Terminals are owner-only for ${workspaceId}; treating as empty`);
+    // A bare empty list preserves prior tabs (daemon-restart resilience), so
+    // any tabs still held for this workspace are dropped explicitly.
+    const stale = yield* selectTerminalsForWorkspace.effect(workspaceId);
+    for (const terminal of stale) {
+      yield* put(removeTerminal(workspaceId, terminal.id));
+    }
+    result = { terminals: [] };
+  }
   yield* put(
     Array.isArray(result)
       ? loadWorkspaceTerminals(workspaceId, result)
