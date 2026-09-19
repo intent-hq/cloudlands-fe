@@ -9,7 +9,8 @@
   interface Props {
     error: AppError;
     onCopy: () => void;
-    onDebug: () => void;
+    /** Omitted when the window may not create agents (collaborator connection). */
+    onDebug?: () => void;
     onRetry?: () => void;
   }
 
@@ -52,9 +53,11 @@
           >{m.ui_errorToast_retry_label()}</Button
         >
       {/if}
-      <Button variant="outline" size="compact" class="toast-action" onclick={onDebug}
-        >{m.ui_errorToast_debug_label()}</Button
-      >
+      {#if onDebug}
+        <Button variant="outline" size="compact" class="toast-action" onclick={onDebug}
+          >{m.ui_errorToast_debug_label()}</Button
+        >
+      {/if}
       <Button variant="ghost" size="compact" class="toast-action" onclick={onCopy}
         >{m.ui_errorToast_copy_label()}</Button
       >
