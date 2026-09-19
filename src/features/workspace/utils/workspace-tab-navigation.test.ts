@@ -528,13 +528,26 @@ describe('global workspace tab navigation', () => {
     it('does not close the workspace while tabs remain in an unfocused column', () => {
       const locked = makePanel('locked', ['locked-tab']);
       locked.tabs[0].closable = false;
-      const store = makeStore('ws-2', layoutWith([locked, makePanel('empty')], 'locked'));
+      const store = makeStore('ws-2', layoutWith([locked, makePanel('empty')], 'empty'));
       const navigate = vi.fn();
       const closeWindow = vi.fn();
+      const options = { navigate, closeWindow };
 
-      expect(closeActiveTabCascade(store, '/workspace/ws-2', { navigate, closeWindow })).toBeNull();
-      expect(store.actions).toEqual([]);
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBe('panel');
+      const workspace = store.state.panelLayout.byWorkspaceId['ws-2'];
+      expect(workspace.columnCount).toBe(1);
+      expect(workspace.panels.empty).toBeUndefined();
+      expect(workspace.panels.locked.tabs).toHaveLength(1);
+      expect(workspace.focusedPanelId).toBe('locked');
+      expect(store.actions.map((action) => action.type)).toEqual([
+        'panelLayout/closeFocusedPanelTab',
+      ]);
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBeNull();
+      expect(store.actions).toHaveLength(1);
       expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-2', 'ws-3']);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(closeWindow).not.toHaveBeenCalled();
     });
 
     it('does not close a workspace whose layout is missing or still restoring', () => {

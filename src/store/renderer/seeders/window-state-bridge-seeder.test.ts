@@ -220,6 +220,17 @@ describe('window close bridge (Cmd+W cascade window step)', () => {
     expect(invokeSpy).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW.CLOSE, {});
   });
 
+  it('forwards window:close exactly once when the payload is omitted', async () => {
+    const invokeSpy = vi.fn(async () => ({ success: true }));
+    (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+    registerWindowCloseBridge();
+
+    const result = await mockInvoke<{ success: boolean }>(IPC_CHANNELS.WINDOW.CLOSE);
+
+    expect(result).toEqual({ success: true });
+    expect(invokeSpy).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.WINDOW.CLOSE, undefined);
+  });
+
   it('resolves undefined when no preload bridge exists (browser dev build)', async () => {
     (window as any).electronAPI = undefined;
     registerWindowCloseBridge();
