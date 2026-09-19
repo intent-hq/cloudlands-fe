@@ -4,8 +4,23 @@ import { tick } from 'svelte';
 import BubbleMenu from '../BubbleMenu.svelte';
 import TooltipWrapper from '../comments/__tests__/TooltipWrapper.svelte';
 
-const { dispatchMock } = vi.hoisted(() => ({
+const { dispatchMock, mocks } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
+  mocks: {
+    hidesAgentLifecycleActions: false,
+    readable<T>(value: T) {
+      return {
+        subscribe(run: (value: T) => void) {
+          run(value);
+          return () => {};
+        },
+      };
+    },
+  },
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => mocks.readable(mocks.hidesAgentLifecycleActions),
 }));
 
 // Mock the createLogger function at module level
@@ -91,6 +106,7 @@ describe('BubbleMenu', () => {
     // Clear mock calls
     vi.clearAllMocks();
     dispatchMock.mockReset();
+    mocks.hidesAgentLifecycleActions = false;
 
     // Reset event handlers
     editorEventHandlers = {};
@@ -357,6 +373,17 @@ describe('BubbleMenu', () => {
       expect(onAgentLaunched).toHaveBeenCalledWith(createdAgent);
       expect(document.body.querySelector('.launch-dialog')).toBeFalsy();
     });
+  });
+
+  it('withholds the send-to-agent action when agent lifecycle actions are hidden', async () => {
+    mocks.hidesAgentLifecycleActions = true;
+
+    renderBubbleMenu();
+    await triggerSelectionUpdate();
+
+    expect(document.body.querySelector('[aria-label="Send to Agent"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label="Add comment"]')).toBeTruthy();
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it('should keep launch dialog open and avoid notifying when launch fails', async () => {
