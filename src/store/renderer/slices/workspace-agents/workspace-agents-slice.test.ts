@@ -11,6 +11,11 @@ import {
   selectActiveAgent,
   selectAllWorkspaceAgents,
   selectBackgroundWorkspaceAgents,
+  selectBackgroundAgentsLoaded,
+  selectDelegatedAgentsLoaded,
+  selectIsLoadingBackgroundAgents,
+  selectIsLoadingDelegatedAgents,
+  selectScopeCounts,
   selectAgentsLoaded,
   selectForegroundWorkspaceAgents,
   selectInitialAgentId,
@@ -31,6 +36,8 @@ import {
 import {
   addAgent,
   adjustRetiredCount,
+  adjustScopeCount,
+  agentListBinOf,
   agentsLoaded,
   createAgentRequested,
   createAgentWithSpecialistRequested,
@@ -47,9 +54,12 @@ import {
   setInitialAgentId,
   setInitialSpecWriteInProgress,
   setIsLoadingAgents,
+  setIsLoadingLazyBin,
   setIsLoadingRetiredAgents,
+  setLazyBinLoaded,
   setRetiredAgentsLoaded,
   setRetiredCount,
+  setScopeCounts,
   setWaitingForFirstMessage,
   workspaceAgentsReducer,
 } from './workspace-agents-slice';
@@ -231,6 +241,69 @@ describe('workspaceAgentsReducer', () => {
     expect(state.byWorkspaceId[WS_1].retiredCount).toBe(0);
   });
 
+  it('tracks scopeCounts and the lazy delegated/background bins per workspace (§5.5 row scope)', () => {
+    // Default: no counts held (old daemon / not yet hydrated) — no lazy bins.
+    expect(emptyWorkspaceAgentState.scopeCounts).toBeNull();
+    // Nudges are a no-op while no counts are held.
+    const untouched = workspaceAgentsReducer(initialState, adjustScopeCount(WS_1, 'delegated', 1));
+    expect(untouched).toBe(initialState);
+
+    let state = workspaceAgentsReducer(
+      initialState,
+      setScopeCounts(WS_1, { topLevel: 2, delegated: 5, background: -1 }),
+    );
+    // Daemon-served counts are clamped at zero.
+    expect(state.byWorkspaceId[WS_1].scopeCounts).toEqual({
+      topLevel: 2,
+      delegated: 5,
+      background: 0,
+    });
+    // Re-setting identical counts keeps the state reference.
+    expect(
+      workspaceAgentsReducer(
+        state,
+        setScopeCounts(WS_1, { topLevel: 2, delegated: 5, background: 0 }),
+      ),
+    ).toBe(state);
+
+    // Event nudges move one bin's count and never below zero.
+    state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'delegated', -1));
+    expect(state.byWorkspaceId[WS_1].scopeCounts?.delegated).toBe(4);
+    state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'background', -3));
+    expect(state.byWorkspaceId[WS_1].scopeCounts?.background).toBe(0);
+    state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'topLevel', 1));
+    expect(state.byWorkspaceId[WS_1].scopeCounts).toEqual({
+      topLevel: 3,
+      delegated: 4,
+      background: 0,
+    });
+
+    // Lazy-bin loading flags are tracked independently per bin.
+    state = workspaceAgentsReducer(state, setIsLoadingLazyBin(WS_1, 'delegated', true));
+    state = workspaceAgentsReducer(state, setLazyBinLoaded(WS_1, 'background', true));
+    expect(state.byWorkspaceId[WS_1]).toEqual({
+      ...emptyWorkspaceAgentState,
+      scopeCounts: { topLevel: 3, delegated: 4, background: 0 },
+      isLoadingDelegatedAgents: true,
+      delegatedAgentsLoaded: false,
+      isLoadingBackgroundAgents: false,
+      backgroundAgentsLoaded: true,
+    });
+    expect(selectScopeCounts.select(mockState(state), WS_1)).toEqual({
+      topLevel: 3,
+      delegated: 4,
+      background: 0,
+    });
+    expect(selectIsLoadingDelegatedAgents.select(mockState(state), WS_1)).toBe(true);
+    expect(selectDelegatedAgentsLoaded.select(mockState(state), WS_1)).toBe(false);
+    expect(selectBackgroundAgentsLoaded.select(mockState(state), WS_1)).toBe(true);
+    expect(selectIsLoadingBackgroundAgents.select(mockState(state), WS_1)).toBe(false);
+
+    // `null` records an old daemon (all-rows read): counts are dropped.
+    state = workspaceAgentsReducer(state, setScopeCounts(WS_1, null));
+    expect(state.byWorkspaceId[WS_1].scopeCounts).toBeNull();
+  });
+
   it('stores waiting-for-first-message per agent and clears it when false', () => {
     let state = workspaceAgentsReducer(
       initialState,
@@ -331,6 +404,44 @@ describe('workspace-agents actions', () => {
       type: agentsLoaded.type,
       payload: [WS_1],
     });
+  });
+});
+
+describe('agentListBinOf (§5.5 row-scope partition)', () => {
+  it('classifies an unparented foreground row as topLevel', () => {
+    expect(agentListBinOf(mockAgent('a'))).toBe('topLevel');
+  });
+
+  it('classifies an unparented background row as background (either flag location)', () => {
+    expect(agentListBinOf(mockBackgroundAgent('a'))).toBe('background');
+    expect(agentListBinOf(mockMetadataBackgroundAgent('a'))).toBe('background');
+  });
+
+  it('classifies any parented row as delegated — a background child is delegated, not background', () => {
+    expect(
+      agentListBinOf({
+        ...mockAgent('a'),
+        metadata: { createdByAgentId: 'agent-parent' } as AgentSession['metadata'],
+      }),
+    ).toBe('delegated');
+    expect(agentListBinOf({ ...mockAgent('a'), parentSessionId: 'agent-parent' })).toBe(
+      'delegated',
+    );
+    expect(
+      agentListBinOf({
+        ...mockBackgroundAgent('a'),
+        metadata: {
+          isBackground: true,
+          createdByAgentId: 'agent-parent',
+        } as AgentSession['metadata'],
+      }),
+    ).toBe('delegated');
+  });
+
+  it('ignores retiredAt — the bin is the one the row re-enters on restore', () => {
+    expect(
+      agentListBinOf({ ...mockBackgroundAgent('a'), retiredAt: '2026-01-01T00:00:00.000Z' }),
+    ).toBe('background');
   });
 });
 

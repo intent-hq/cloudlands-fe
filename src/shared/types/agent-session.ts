@@ -110,6 +110,29 @@ export interface SessionStats {
 }
 
 /**
+ * `agent.list` row scope (§5.5 row scope, intent-hq/intent#5383). The three
+ * bins partition the workspace's NON-retired sessions: `topLevel` = no parent
+ * and foreground (the rows the sidebar lists by default), `delegated` = any
+ * parented row (a background CHILD is delegated, not background),
+ * `background` = unparented background agents. `all` is the default read.
+ */
+export type AgentListScope = 'all' | 'topLevel' | 'delegated' | 'background';
+
+/** One of the three `agent.list` bins (the non-default scopes). */
+export type AgentListBin = Exclude<AgentListScope, 'all'>;
+
+/**
+ * Per-bin counts of the workspace's non-retired sessions, served as
+ * `scopeCounts` on every `agent.list` response by daemons that support
+ * `scope`. Absent on older daemons (which also ignore `scope`).
+ */
+export interface AgentScopeCounts {
+  topLevel: number;
+  delegated: number;
+  background: number;
+}
+
+/**
  * Canonical AgentSession interface
  *
  * Represents a runtime session for an agent within a workspace.

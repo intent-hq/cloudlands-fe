@@ -1017,6 +1017,8 @@
   "workspace_agentsList_coordinator_label": "Coordinateur",
   "workspace_agentsList_delegatedRunning_label": "{running} / {total} délégués actifs",
   "workspace_agentsList_delegated_label": "{count} délégués",
+  "workspace_agentsList_delegatedAgentsRunning_label": "{running} / {total} agents délégués actifs",
+  "workspace_agentsList_delegatedAgents_label": "{count} agents délégués",
   "workspace_branchDisplay_noBranch_label": "aucune branche",
   "workspace_branchDisplay_shiftClickCopy_label": "Maj+clic pour copier",
   "workspace_branchDisplay_trunkChange_tooltip": "Branche principale - cliquer pour changer",

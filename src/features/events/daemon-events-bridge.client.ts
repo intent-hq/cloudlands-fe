@@ -176,6 +176,8 @@ import type { StoredAgentSession } from '$store/renderer/slices/agent-session/ag
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   adjustRetiredCount,
+  adjustScopeCount,
+  agentListBinOf,
   hydrateAgentsRequested,
   removeAgent,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -1300,12 +1302,46 @@ function handleAgentFailedStream(event: WorkspaceEvent, workspaceId: string): vo
  * mechanism the AgentCard mount effect uses. Without this handler the
  * Delegated agent card only appears after a reload.
  */
-function handleAgentCreatedEvent(event: WorkspaceEvent): void {
+function handleAgentCreatedEvent(event: WorkspaceEvent, workspaceId: string): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
-  void ensureAgentSession(agentId);
+  // Bin-count nudge (`scopeCounts`, §5.5 row scope): the payload does not
+  // classify the row, so classify the fetched session once it lands — only
+  // for an id this client did not already hold (duplicate `agent:created`
+  // deliveries and a create this client issued itself stay count-neutral).
+  const alreadyKnown = appStore.state.agentSessions?.byAgentId[agentId] !== undefined;
+  void ensureAgentSession(agentId).then(() => {
+    if (alreadyKnown) return;
+    const session = appStore.state.agentSessions?.byAgentId[agentId];
+    if (!session || session.retiredAt) return;
+    appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(session), 1));
+  });
+}
+
+/**
+ * `agent:retired` / `agent:restored` (§6.5) move a row between its
+ * `scopeCounts` bin and the retired bin. A locally held row classifies
+ * directly (the bin does not depend on `retiredAt`); an id with no local
+ * session is a row of a collapsed bin this client never loaded, so
+ * re-baseline both counts from the daemon via a hydrate — the same recovery
+ * the `agent:deleted` handler uses for unknown ids. No-op while this
+ * workspace holds no `scopeCounts` (older daemon, or not hydrated yet): there
+ * is no bin count to keep current.
+ */
+function adjustScopeCountForRetireTransition(
+  workspaceId: string,
+  agentId: string,
+  delta: 1 | -1,
+): void {
+  if (!appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.scopeCounts) return;
+  const session = appStore.state.agentSessions?.byAgentId[agentId];
+  if (session) {
+    appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(session), delta));
+  } else {
+    appStore.dispatch(hydrateAgentsRequested(workspaceId));
+  }
 }
 
 /**
@@ -3541,10 +3577,14 @@ export function routeDaemonEventsNotification(
       // re-baseline from the daemon-served `retiredCount` via a hydrate —
       // the local removals below would otherwise change nothing and the
       // count-first toggle would go stale.
+      // The same lockstep holds for the `scopeCounts` bins (§5.5 row scope):
+      // a known non-retired row nudges its bin down.
       const deletedSession = appStore.state.agentSessions?.byAgentId[data.agentId];
       if (deletedSession?.retiredAt) {
         appStore.dispatch(adjustRetiredCount(workspaceId, -1));
-      } else if (!deletedSession) {
+      } else if (deletedSession) {
+        appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(deletedSession), -1));
+      } else {
         appStore.dispatch(hydrateAgentsRequested(workspaceId));
       }
       // Drop the local slice state for the deleted agent — mirroring
@@ -3805,7 +3845,7 @@ export function routeDaemonEventsNotification(
   // Each handler falls through so `eventReceived` still records the event in
   // the activity timeline.
   if (type === 'agent:created') {
-    handleAgentCreatedEvent(event);
+    handleAgentCreatedEvent(event, workspaceId);
   }
   if (type === 'agent:renamed') {
     handleAgentRenamedEvent(event);
@@ -3821,10 +3861,16 @@ export function routeDaemonEventsNotification(
   // whole-list refetch. The retired-row count (`retiredCount`, lazy Retired bin) is
   // nudged in lockstep so the collapsed toggle stays consistent even before
   // the lazy retired-only read runs; hydration re-baselines it from the
-  // daemon-served `retiredCount`.
+  // daemon-served `retiredCount`. The row's `scopeCounts` bin moves the
+  // opposite way (retire leaves the bin, restore re-enters it).
   if (type === 'agent:retired' || type === 'agent:restored') {
+    const retiring = type === 'agent:retired';
+    const data = (event as { data?: Record<string, unknown> }).data;
+    if (typeof data?.agentId === 'string' && data.agentId.length > 0) {
+      adjustScopeCountForRetireTransition(workspaceId, data.agentId, retiring ? -1 : 1);
+    }
     handleAgentUpdatedEvent(event);
-    appStore.dispatch(adjustRetiredCount(workspaceId, type === 'agent:retired' ? 1 : -1));
+    appStore.dispatch(adjustRetiredCount(workspaceId, retiring ? 1 : -1));
   }
   // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
   // daemon persists the attention-request fields on the session and also
@@ -4037,6 +4083,8 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
     workspaceIds.map(async (workspaceId) => {
       let survivorIds: Set<string>;
       try {
+        // Deliberately unscoped (§5.5 row scope): failure entries can name
+        // delegated and background agents, so survivorship needs every bin.
         const response = (await backendRequest('agent.list', { workspaceId })) as
           { agents?: Array<{ id?: unknown }> } | undefined;
         if (!Array.isArray(response?.agents)) {

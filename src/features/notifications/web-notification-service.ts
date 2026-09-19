@@ -332,6 +332,8 @@ export async function handleWebAgentIdle(
     // carries `isBackground`/`specialist` (absent from the daemon idle
     // payload), and `isStreaming`/`isResponding` feed the other-agents-active
     // suppression gate below (parity with main/notification.service.ts).
+    // Deliberately unscoped (§5.5 row scope): the idle agent may be delegated
+    // or background, and the gate counts activity across every bin.
     const agentList = (await backendRequest('agent.list', { workspaceId })) as
       AgentListResult | undefined;
     const agents = agentList?.agents ?? [];

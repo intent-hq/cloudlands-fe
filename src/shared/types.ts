@@ -37,6 +37,9 @@ import {
 
 // Import consolidated AgentSession type
 import type {
+  AgentListBin as NewAgentListBin,
+  AgentListScope as NewAgentListScope,
+  AgentScopeCounts as NewAgentScopeCounts,
   AgentSession as NewAgentSession,
   PendingAgentSession as NewPendingAgentSession,
   QueuedMessage as NewQueuedMessage,
@@ -1063,6 +1066,9 @@ export type PendingAgentSession = NewPendingAgentSession;
 export type QueuedMessage = NewQueuedMessage;
 export type QueuedMessageContextItem = NewQueuedMessageContextItem;
 export type SessionStats = NewSessionStats;
+export type AgentListScope = NewAgentListScope;
+export type AgentListBin = NewAgentListBin;
+export type AgentScopeCounts = NewAgentScopeCounts;
 
 // Re-export type guards
 export const isPendingAgentSession = isNewPendingAgentSession;

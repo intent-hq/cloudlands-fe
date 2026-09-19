@@ -1017,6 +1017,8 @@
   "workspace_agentsList_coordinator_label": "コーディネーター",
   "workspace_agentsList_delegatedRunning_label": "{running} / {total} 個の委任エージェントが実行中",
   "workspace_agentsList_delegated_label": "{count} 個の委任エージェント",
+  "workspace_agentsList_delegatedAgentsRunning_label": "{running} / {total} 個の委任エージェントが実行中",
+  "workspace_agentsList_delegatedAgents_label": "{count} 個の委任エージェント",
   "workspace_branchDisplay_noBranch_label": "ブランチなし",
   "workspace_branchDisplay_shiftClickCopy_label": "Shift+クリックでコピー",
   "workspace_branchDisplay_trunkChange_tooltip": "トランクブランチ - クリックで変更",

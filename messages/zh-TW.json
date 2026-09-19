@@ -1017,6 +1017,8 @@
   "workspace_agentsList_coordinator_label": "協調者",
   "workspace_agentsList_delegatedRunning_label": "{running} / {total} 個已委派智慧體正在執行",
   "workspace_agentsList_delegated_label": "{count} 個已委派",
+  "workspace_agentsList_delegatedAgentsRunning_label": "{running} / {total} 個已委派智慧體正在執行",
+  "workspace_agentsList_delegatedAgents_label": "{count} 個已委派智慧體",
   "workspace_branchDisplay_noBranch_label": "無分支",
   "workspace_branchDisplay_shiftClickCopy_label": "Shift+點選複製",
   "workspace_branchDisplay_trunkChange_tooltip": "主幹分支——點選更改",

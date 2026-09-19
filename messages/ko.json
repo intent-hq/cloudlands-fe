@@ -1017,6 +1017,8 @@
   "workspace_agentsList_coordinator_label": "코디네이터",
   "workspace_agentsList_delegatedRunning_label": "위임 에이전트 {running} / {total}개 실행 중",
   "workspace_agentsList_delegated_label": "위임 {count}개",
+  "workspace_agentsList_delegatedAgentsRunning_label": "위임 에이전트 {running} / {total}개 실행 중",
+  "workspace_agentsList_delegatedAgents_label": "위임 에이전트 {count}개",
   "workspace_branchDisplay_noBranch_label": "브랜치 없음",
   "workspace_branchDisplay_shiftClickCopy_label": "Shift+클릭으로 복사",
   "workspace_branchDisplay_trunkChange_tooltip": "트렁크 브랜치 - 클릭하여 변경",

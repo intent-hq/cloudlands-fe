@@ -33,15 +33,22 @@
     refreshUnreadNotes,
   } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import {
+    fetchBackgroundAgentsRequested,
+    fetchDelegatedAgentsRequested,
     fetchRetiredAgentsRequested,
     restoreRetiredAgentRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     selectAllWorkspaceAgents,
+    selectBackgroundAgentsLoaded,
+    selectDelegatedAgentsLoaded,
     selectIsLoadingAgents,
+    selectIsLoadingBackgroundAgents,
+    selectIsLoadingDelegatedAgents,
     selectIsLoadingRetiredAgents,
     selectRetiredAgentsLoaded,
     selectRetiredCount,
+    selectScopeCounts,
     selectWorkspaceHasUnreadForegroundAgents,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -225,6 +232,11 @@
   const retiredCount$ = selectRetiredCount(workspaceIdStore);
   const retiredAgentsLoaded$ = selectRetiredAgentsLoaded(workspaceIdStore);
   const loadingRetired$ = selectIsLoadingRetiredAgents(workspaceIdStore);
+  const scopeCounts$ = selectScopeCounts(workspaceIdStore);
+  const delegatedAgentsLoaded$ = selectDelegatedAgentsLoaded(workspaceIdStore);
+  const loadingDelegated$ = selectIsLoadingDelegatedAgents(workspaceIdStore);
+  const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
+  const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
   const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
   const hudQuestionsByAgentId$ = selectHudQuestionsByAgentId();
 
@@ -1112,6 +1124,17 @@
                             loadingRetired={$loadingRetired$}
                             onLoadRetired={() => {
                               appStore.dispatch(fetchRetiredAgentsRequested(workspaceId));
+                            }}
+                            scopeCounts={$scopeCounts$}
+                            delegatedAgentsLoaded={$delegatedAgentsLoaded$}
+                            loadingDelegated={$loadingDelegated$}
+                            onLoadDelegated={() => {
+                              appStore.dispatch(fetchDelegatedAgentsRequested(workspaceId));
+                            }}
+                            backgroundAgentsLoaded={$backgroundAgentsLoaded$}
+                            loadingBackground={$loadingBackground$}
+                            onLoadBackground={() => {
+                              appStore.dispatch(fetchBackgroundAgentsRequested(workspaceId));
                             }}
                             onSelect={({ agentId, event }) =>
                               handleOpenAgentInPanel(agentId, event)}

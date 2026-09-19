@@ -545,7 +545,9 @@ export class NotificationService {
       // `metadata` carries `isBackground`/`specialist` (absent from the
       // daemon idle payload), and `isStreaming`/`isResponding` feed the
       // other-agents-active suppression gate below. Routed to the EMITTING
-      // backend — the workspace only exists there.
+      // backend — the workspace only exists there. Deliberately unscoped
+      // (§5.5 row scope): the idle agent may be delegated or background, and
+      // the suppression gate counts activity across every bin.
       const agentList = (await client.request('agent.list', {
         workspaceId,
       })) as

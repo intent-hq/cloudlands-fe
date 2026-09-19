@@ -11,12 +11,14 @@ import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-erro
 import { AgentStatus, isContentBlock } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
-import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import type { AgentMessage, AgentScopeCounts, AgentSession, ContentBlock } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
   AgentCreateRequest,
   AgentDeleteResult,
+  AgentListOptions,
+  AgentListResult,
   AgentsClient,
   FileBlock,
   ImageBlock,
@@ -96,32 +98,56 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   return session;
 }
 
+/**
+ * `scopeCounts` (§5.5 row scope) is presence-detected: a daemon that supports
+ * `scope` serves the full `{ topLevel, delegated, background }` triple on every
+ * response; an older daemon omits it (and ignored the `scope` param). Only the
+ * documented shape is accepted — a partial or non-numeric object reads as
+ * absent rather than being healed into zeros.
+ */
+function readScopeCounts(value: unknown): AgentScopeCounts | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { topLevel, delegated, background } = value as Record<string, unknown>;
+  if (
+    typeof topLevel !== 'number' ||
+    typeof delegated !== 'number' ||
+    typeof background !== 'number'
+  ) {
+    return undefined;
+  }
+  return { topLevel, delegated, background };
+}
+
 export class LiveAgentsClient implements AgentsClient {
-  async list(workspaceId: string, options?: { retiredOnly?: boolean }): Promise<AgentSession[]> {
+  async list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]> {
     const { agents } = await this.listWithMeta(workspaceId, options);
     return agents;
   }
 
-  async listWithMeta(
-    workspaceId: string,
-    options?: { retiredOnly?: boolean },
-  ): Promise<{ agents: AgentSession[]; retiredCount: number }> {
+  async listWithMeta(workspaceId: string, options?: AgentListOptions): Promise<AgentListResult> {
     // `retiredOnly` (§5.5 soft retire) rides the wire only when true —
     // the daemon treats absent and `false` identically, so the default read
     // carries no flags (retired rows excluded daemon-side) even for an
-    // explicit `retiredOnly: false` caller. `retiredCount` is served on every
-    // read variant; the FE assumes a daemon that serves it and defaults to 0
-    // only if the field is somehow absent.
+    // explicit `retiredOnly: false` caller. `scope` (§5.5 row scope) rides
+    // only when it names a bin — `all` is the default read and stays off the
+    // wire. `retiredCount` is served on every read variant; the FE assumes a
+    // daemon that serves it and defaults to 0 only if the field is somehow
+    // absent. `scopeCounts` is deliberately NOT defaulted: its absence is the
+    // old-daemon signal the hydration saga branches on.
     const params: Record<string, unknown> = { workspaceId };
     if (options?.retiredOnly) params.retiredOnly = true;
-    const result = await backendRequest<{ agents?: unknown[]; retiredCount?: number }>(
-      'agent.list',
-      params,
-    );
+    if (options?.scope && options.scope !== 'all') params.scope = options.scope;
+    const result = await backendRequest<{
+      agents?: unknown[];
+      retiredCount?: number;
+      scopeCounts?: unknown;
+    }>('agent.list', params);
     const agents = Array.isArray(result?.agents) ? result.agents : [];
+    const scopeCounts = readScopeCounts(result?.scopeCounts);
     return {
       agents: agents.map((a) => normalizeAgent(a as Record<string, unknown>)),
       retiredCount: typeof result?.retiredCount === 'number' ? result.retiredCount : 0,
+      ...(scopeCounts ? { scopeCounts } : {}),
     };
   }
 

@@ -361,8 +361,17 @@ describe('getVisibleWorkspaceAgentRows', () => {
   it('defaults parent groups to collapsed until explicitly expanded', () => {
     const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
 
-    expect(list).toContain('let expandedAgentIds = $state(new Set<string>())');
-    expect(list).toContain('const isExpanded = hasActiveSearch || expandedAgentIds.has(agent.id)');
+    // Per-parent groups start collapsed (default expanded only while the
+    // workspace-level Delegated bin is open); an active search shows every group.
+    expect(list).toContain('let toggledDelegationIds = $state(new Set<string>())');
+    expect(list).toContain(
+      'const delegatedGroupsDefaultExpanded = $derived(hasLazyBins && showDelegatedAgents)',
+    );
+    expect(list).toContain('if (hasActiveSearch) return true;');
+    expect(list).toContain(
+      'return toggledDelegationIds.has(agentId) !== delegatedGroupsDefaultExpanded;',
+    );
+    expect(list).toContain('const isExpanded = isDelegationExpanded(agent.id)');
     expect(list).toContain('children.filter((child) => isAgentRunning(child.id))');
   });
 });

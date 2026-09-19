@@ -62,6 +62,8 @@ import { hydrateTaskAgentAssociationsRequested } from '../../task-agent-associat
 import { hydrateTerminalsRequested } from '../../terminals/terminals-slice';
 import { fetchWorkspaceTokenUsage } from '../../token-usage/token-usage-slice';
 import {
+  fetchBackgroundAgentsRequested,
+  fetchDelegatedAgentsRequested,
   fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setAgentsLoaded,
@@ -89,6 +91,8 @@ import { lifecycleReadSaga } from './lifecycle-read-saga';
 import { MAX_CONCURRENT_WORKSPACE_READS } from './workspace-read-scheduler';
 
 const WS = 'ws-lifecycle';
+/** Default hydration read: the parentless-foreground bin (§5.5 row scope). */
+const TOP_LEVEL = { scope: 'topLevel' } as const;
 const NOW = new Date('2026-07-31T00:00:00.000Z');
 
 const settle = async () => {
@@ -1558,6 +1562,7 @@ describe('lifecycleReadSaga', () => {
     expect(run.actions).toEqual([
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [background, kept]] },
       {
         type: 'agentSessions/bulkUpsertSessions',
@@ -1723,7 +1728,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    expect(mocks.agents.listWithMeta).toHaveBeenCalledWith(WS);
+    expect(mocks.agents.listWithMeta).toHaveBeenCalledWith(WS, { scope: 'topLevel' });
     expect(run.actions).toContainEqual({
       type: 'workspaceAgents/setRetiredCount',
       payload: [WS, 1],
@@ -1765,6 +1770,7 @@ describe('lifecycleReadSaga', () => {
     expect(run.actions).toEqual([
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);
@@ -1979,6 +1985,223 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  // §5.5 row scope: the default hydration read is `scope: "topLevel"`; the
+  // Delegated / Background bins render from `scopeCounts` and load lazily.
+  const COUNTS = { topLevel: 1, delegated: 2, background: 1 };
+
+  it('hydrates with scope topLevel and stores the daemon-served scopeCounts (§5.5 row scope)', async () => {
+    const top = agent('agent-top');
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [top],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+    });
+    const run = start();
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // Exactly one wire read on a fresh open, and it is the top-level bin.
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, COUNTS] },
+      { type: 'workspaceAgents/setAgents', payload: [WS, [top]] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[top], { listProjection: true }] },
+      { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-top'] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('falls back to the all-rows partition when an older daemon serves no scopeCounts', async () => {
+    // An older daemon ignores `scope` and answers the plain read: delegated and
+    // background rows ride the default frame, and NO scoped bin reads follow —
+    // `scopeCounts: null` records that there are no lazy bins to render.
+    const top = agent('agent-top');
+    const child = agent('agent-child', { metadata: { createdByAgentId: 'agent-top' } as never });
+    const bg = agent('agent-bg', { isBackground: true });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { delegatedAgentsLoaded: true, backgroundAgentsLoaded: true },
+    } as never;
+    mocks.agents.listWithMeta.mockResolvedValue({ agents: [top, child, bg], retiredCount: 0 });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setScopeCounts',
+      payload: [WS, null],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setAgents',
+      payload: [WS, [top, child, bg]],
+    });
+    await stop(run.task);
+  });
+
+  it('rehydrates loaded delegated and background bins alongside the top-level read', async () => {
+    const top = agent('agent-top');
+    const child = agent('agent-child', { metadata: { createdByAgentId: 'agent-top' } as never });
+    const bg = agent('agent-bg', { isBackground: true });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedAgentsLoaded: true, backgroundAgentsLoaded: true },
+    } as never;
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [top],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+    });
+    mocks.agents.list.mockImplementation(async (_ws: string, options: { scope?: string }) =>
+      options.scope === 'delegated' ? [child] : [bg],
+    );
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, { scope: 'delegated' }],
+      [WS, { scope: 'background' }],
+    ]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setAgents',
+      payload: [WS, [top, child, bg]],
+    });
+    await stop(run.task);
+  });
+
+  it('lazy-loads a scoped bin on demand and re-baselines its count', async () => {
+    const child = agent('agent-child', { metadata: { createdByAgentId: 'agent-top' } as never });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = { [WS]: { scopeCounts: COUNTS } } as never;
+    mocks.agents.list.mockResolvedValue([child]);
+    const run = start(current);
+
+    run.channel.put(fetchDelegatedAgentsRequested(WS));
+    await settle();
+
+    // One scoped fetch per expand; the count re-baselines from 2 to the 1 row served.
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, { scope: 'delegated' }]]);
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingLazyBin', payload: [WS, 'delegated', true] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[child], { listProjection: true }] },
+      { type: 'workspaceAgents/addAgent', payload: [WS, child] },
+      { type: 'workspaceAgents/adjustScopeCount', payload: [WS, 'delegated', -1] },
+      { type: 'workspaceAgents/setLazyBinLoaded', payload: [WS, 'delegated', true] },
+      { type: 'workspaceAgents/setIsLoadingLazyBin', payload: [WS, 'delegated', false] },
+    ]);
+
+    mocks.agents.list.mockResolvedValue([agent('agent-bg', { isBackground: true })]);
+    run.channel.put(fetchBackgroundAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list.mock.calls[1]).toEqual([WS, { scope: 'background' }]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setLazyBinLoaded',
+      payload: [WS, 'background', true],
+    });
+    await stop(run.task);
+  });
+
+  it('skips a scoped bin load when the rows are already hydrated or no counts are held', async () => {
+    const current = state();
+    // Old daemon (no counts): every row already rode the default read.
+    current.workspaceAgents.byWorkspaceId = { [WS]: { scopeCounts: null } } as never;
+    const run = start(current);
+
+    run.channel.put(fetchDelegatedAgentsRequested(WS));
+    run.channel.put(fetchBackgroundAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+
+    // Already loaded: no refetch on a re-expand.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedAgentsLoaded: true },
+    } as never;
+    run.channel.put(fetchDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+    await stop(run.task);
+  });
+
+  it('clears the scoped-bin loading flag and stays retryable after a failed load', async () => {
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = { [WS]: { scopeCounts: COUNTS } } as never;
+    mocks.agents.list.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([]);
+    const run = start(current);
+
+    run.channel.put(fetchBackgroundAgentsRequested(WS));
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingLazyBin', payload: [WS, 'background', true] },
+      { type: 'workspaceAgents/setIsLoadingLazyBin', payload: [WS, 'background', false] },
+    ]);
+
+    run.channel.put(fetchBackgroundAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, { scope: 'background' }],
+      [WS, { scope: 'background' }],
+    ]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setLazyBinLoaded',
+      payload: [WS, 'background', true],
+    });
+    await stop(run.task);
+  });
+
+  it('re-arms a scoped bin load that completes mid-hydration (snapshot eviction guard)', async () => {
+    let resolvePending!: (value: boolean) => void;
+    mocks.isAgentDeletionPending.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolvePending = resolve;
+      }) as never,
+    );
+    const current = state();
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [agent('agent-top')],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The delegated worker finished while hydration was parked.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedAgentsLoaded: true },
+    } as never;
+    resolvePending(false);
+    await settle();
+
+    const setAgentsIndex = run.actions.findIndex(
+      (action) => action.type === 'workspaceAgents/setAgents',
+    );
+    expect(setAgentsIndex).toBeGreaterThanOrEqual(0);
+    expect(run.actions.slice(setAgentsIndex)).toContainEqual({
+      type: 'workspaceAgents/setLazyBinLoaded',
+      payload: [WS, 'delegated', false],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/fetchDelegatedAgentsRequested',
+      payload: [WS],
+    });
+    expect(run.actions).not.toContainEqual({
+      type: 'workspaceAgents/fetchBackgroundAgentsRequested',
+      payload: [WS],
+    });
+    await stop(run.task);
+  });
+
   it('does not cancel concurrent agent hydrates across workspaces (#1934)', async () => {
     const otherWorkspaceId = 'ws-other';
     type ListWithMeta = { agents: AgentSession[]; retiredCount: number };
@@ -1996,7 +2219,10 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(otherWorkspaceId));
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([
+      [WS, TOP_LEVEL],
+      [otherWorkspaceId, TOP_LEVEL],
+    ]);
 
     resolvers[WS]!({ agents: [], retiredCount: 0 });
     resolvers[otherWorkspaceId]!({ agents: [], retiredCount: 0 });
@@ -2024,11 +2250,14 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
     resolveFirst({ agents: [], retiredCount: 0 });
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([
+      [WS, TOP_LEVEL],
+      [WS, TOP_LEVEL],
+    ]);
     expect(run.actions.filter((action) => action.type === setAgentsLoaded.type)).toHaveLength(2);
     await stop(run.task);
   });
@@ -2049,15 +2278,19 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
 
     rejectFirst(new Error('offline'));
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([
+      [WS, TOP_LEVEL],
+      [WS, TOP_LEVEL],
+    ]);
     expect(run.actions).toEqual([
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);
@@ -2084,15 +2317,19 @@ describe('lifecycleReadSaga', () => {
     resolveFirst({ agents: [agent('agent-late')], retiredCount: 0 });
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
     expect(run.actions).toEqual([]);
 
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([
+      [WS, TOP_LEVEL],
+      [WS, TOP_LEVEL],
+    ]);
     expect(run.actions).toEqual([
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);

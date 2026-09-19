@@ -680,6 +680,8 @@ async function fetchAgentDisplayNames(workspaceId: string): Promise<Map<string, 
   const names = new Map<string, string>();
   try {
     const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    // Deliberately unscoped (§5.5 row scope): tab owners can be delegated or
+    // background agents, so every bin's display name is needed.
     const result = (await getBackendClient().request('agent.list', { workspaceId })) as
       { agents?: Array<{ id?: string; name?: string }> } | undefined;
     for (const agent of result?.agents ?? []) {
