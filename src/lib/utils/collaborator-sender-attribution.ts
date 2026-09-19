@@ -18,9 +18,11 @@
  * byte-identical. The daemon only ever prepends the preamble for a
  * collaborator, so a row authored by the workspace owner
  * (`author.principalId === workspace.ownerPrincipalId`) never qualifies even
- * when its first line is the exact text — the owner typed it. Display-only —
- * the stored message is never mutated. Dependency-light on purpose: type-only
- * imports.
+ * when its first line is the exact text — the owner typed it. That exclusion
+ * needs the owner id, so a caller without the workspace at hand gets no
+ * attribution at all (nothing is stripped) rather than an unguarded guess.
+ * Display-only — the stored message is never mutated. Dependency-light on
+ * purpose: type-only imports.
  */
 
 import type { AgentMessage, MessageAuthor, MessageRole } from '$shared/types/agent-message';
@@ -96,9 +98,10 @@ function leadingText(message: { contentBlocks?: AgentMessage['contentBlocks'] })
  * for the owner, so an owner row starting with the exact line is the owner's
  * own prose), and its content starts with the exact preamble the daemon would
  * have built from that projection. Rows from older daemons (no `author`),
- * owner rows, and lookalike first lines yield null. Callers without the
- * workspace at hand pass no `ownerPrincipalId`; the owner exclusion is then
- * not applied.
+ * owner rows, and lookalike first lines yield null. The owner exclusion is
+ * not optional: without `ownerPrincipalId` (no workspace at hand, or a
+ * workspace the daemon served without an owner) nothing qualifies, so the
+ * owner's own prose is never stripped on an unguarded surface.
  */
 export function getCollaboratorSenderAttribution(
   message:
@@ -110,13 +113,14 @@ export function getCollaboratorSenderAttribution(
       }
     | null
     | undefined,
-  ownerPrincipalId?: string | null,
+  ownerPrincipalId: string | null | undefined,
 ): CollaboratorSenderAttribution | null {
+  if (!ownerPrincipalId) return null;
   if (!message || message.role !== 'user') return null;
   if (!isUserAuthoredMetadata(message.metadata)) return null;
   const author = asMessageAuthor(message.author);
   if (!author) return null;
-  if (ownerPrincipalId && author.principalId === ownerPrincipalId) return null;
+  if (author.principalId === ownerPrincipalId) return null;
   const preamble = buildCollaboratorSenderPreamble(
     author.login,
     author.displayName,

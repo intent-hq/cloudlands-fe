@@ -84,9 +84,10 @@ export function degradeLegacyFileBlocks(
 
 /**
  * Return immutable user-authored text for rendering and other UI surfaces.
- * `ownerPrincipalId` (`workspace.ownerPrincipalId`) keeps an owner-authored
- * row byte-identical even when its first line is the exact collaborator
- * preamble; callers without the workspace at hand omit it.
+ * `ownerPrincipalId` (`workspace.ownerPrincipalId`) gates the collaborator
+ * preamble strip: it keeps an owner-authored row byte-identical even when its
+ * first line is the exact preamble, and without it (no workspace at hand) no
+ * preamble is stripped at all — every surface with the workspace must pass it.
  */
 export function getPresentedUserMessageText(
   message: AgentMessage,

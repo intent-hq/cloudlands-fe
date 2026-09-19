@@ -1064,7 +1064,7 @@ describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
     render(ChatMessage, {
       props: {
         message: guestMessage(),
-        workspace: createMockWorkspace(),
+        workspace: createMockWorkspace({ ownerPrincipalId: 'principal-owner' }),
         ownPrincipalId: guest.principalId,
       },
     });
@@ -1074,6 +1074,22 @@ describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
     );
     expect(screen.getByText('hello from a guest')).toBeTruthy();
     expect(screen.queryByText(preamble, { exact: false })).toBeNull();
+  });
+
+  // Regression (fe#2654 verifier): the owner exclusion needs the owner id, so
+  // a workspace served without one (older daemon) must not guess — nothing is
+  // stripped and no guest chip is shown, for guest and owner rows alike.
+  it('strips nothing and shows no guest chip without the workspace owner id', () => {
+    const { unmount } = render(ChatMessage, {
+      props: { message: guestMessage(), workspace: createMockWorkspace() },
+    });
+    expect(screen.getByText(preamble, { exact: false })).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    unmount();
+
+    render(ChatMessage, { props: { message: guestMessage(), workspace: null } });
+    expect(screen.getByText(preamble, { exact: false })).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
   });
 
   it('falls back to the handle alone when the display name is gone', () => {
