@@ -239,6 +239,27 @@ describe('WorkspaceProgressCard presence row', () => {
     expect(container.querySelector('[data-sidebar-repository-branch-metadata]')).toBeTruthy();
   });
 
+  /**
+   * The ring is a box-shadow on the avatar element; a CSS `filter` greyscales
+   * everything that element paints, ring included. So the greyscale must sit
+   * on a descendant tile (image or initials) and never on the ringed element.
+   */
+  const greyscaleTile = (avatar: HTMLElement) =>
+    avatar.querySelector<HTMLElement>('[data-presence-avatar-tile]');
+  const expectGreyscaleBelowRing = (avatar: HTMLElement) => {
+    expect(avatar.classList.contains('grayscale')).toBe(false);
+    expect(avatar.classList.contains('opacity-50')).toBe(false);
+    const tile = greyscaleTile(avatar);
+    expect(tile).not.toBeNull();
+    expect(tile).not.toBe(avatar);
+    expect(avatar.contains(tile)).toBe(true);
+    expect(tile!.classList.contains('grayscale')).toBe(true);
+  };
+  const expectFullColour = (avatar: HTMLElement) => {
+    expect(avatar.classList.contains('grayscale')).toBe(false);
+    expect(greyscaleTile(avatar)!.classList.contains('grayscale')).toBe(false);
+  };
+
   it('still shows every other member, each greyscale with a grey ring, while nobody else is online', async () => {
     await renderProgressCard({
       presence: presenceState(membership, presenceOwnPrincipalReceived('me')),
@@ -253,8 +274,7 @@ describe('WorkspaceProgressCard presence row', () => {
     for (const avatar of avatars) {
       expect(avatar.hasAttribute('data-presence-offline')).toBe(true);
       expect(avatar.getAttribute('data-presence-ring')).toBe('offline');
-      expect(avatar.classList.contains('grayscale')).toBe(true);
-      expect(avatar.classList.contains('opacity-50')).toBe(false);
+      expectGreyscaleBelowRing(avatar);
     }
     expect(personButton('cy').getAttribute('aria-label')).toMatch(/offline/i);
   });
@@ -278,12 +298,13 @@ describe('WorkspaceProgressCard presence row', () => {
       presenceRow()!.querySelector<HTMLElement>(`[data-presence-avatar="${principalId}"]`)!;
     expect(avatar('me').getAttribute('data-presence-ring')).toBe('owner');
     expect(avatar('me').hasAttribute('data-presence-offline')).toBe(true);
-    expect(avatar('me').classList.contains('grayscale')).toBe(true);
+    expectGreyscaleBelowRing(avatar('me'));
     expect(avatar('cy').getAttribute('data-presence-ring')).toBe('offline');
     expect(avatar('cy').hasAttribute('data-presence-offline')).toBe(true);
+    expectGreyscaleBelowRing(avatar('cy'));
     expect(avatar('bob').getAttribute('data-presence-ring')).toBe('member');
     expect(avatar('bob').hasAttribute('data-presence-offline')).toBe(false);
-    expect(avatar('bob').classList.contains('grayscale')).toBe(false);
+    expectFullColour(avatar('bob'));
     expect(presenceRow()!.querySelector('[data-presence-avatar="ada"]')).toBeNull();
   });
 
