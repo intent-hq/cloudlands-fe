@@ -143,8 +143,10 @@ export const workspaceSharingClient = {
   },
 
   /**
-   * `workspace.invite.list` — open (unredeemed, unrevoked, unexpired) invites
-   * with their `url`. The caller vaults the links before any row enters the store.
+   * `workspace.invite.list` — open invites with their `url`: unrevoked,
+   * unexpired, and — for a single-use invite — unredeemed; a reusable link
+   * stays open across redemptions (`redemptionCount` counts them). The caller
+   * vaults the links before any row enters the store.
    */
   async listInvites(workspaceId: string): Promise<WorkspaceInviteRow[]> {
     const result = await backendRequest<{ invites?: WorkspaceInviteRow[] }>(

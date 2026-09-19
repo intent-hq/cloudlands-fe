@@ -281,7 +281,11 @@
       : m.workspace_share_invite_anyone_label();
   }
 
-  /** The row's secondary line: reuse + join count for a reusable link, then the expiry. */
+  /**
+   * The row's secondary line: reuse + join count for a reusable link combined
+   * with the expiry through the catalog (`_reusableDetail_label`), so each
+   * locale owns the separator and order; the expiry alone otherwise.
+   */
   function inviteDetail(
     invite: Pick<WorkspaceInvite, 'reusable' | 'redemptionCount' | 'expiresAt'>,
   ): string {
@@ -289,10 +293,12 @@
       when: formatRelativeTime(invite.expiresAt),
     });
     if (invite.reusable !== true) return expires;
-    const reusable = m.workspace_share_invite_reusable_label({
-      count: formatInteger(invite.redemptionCount ?? 0),
-    });
-    return `${reusable} · ${expires}`;
+    const count = invite.redemptionCount ?? 0;
+    const reusable =
+      count === 1
+        ? m.workspace_share_invite_reusable_one()
+        : m.workspace_share_invite_reusable_many({ count: formatInteger(count) });
+    return m.workspace_share_invite_reusableDetail_label({ reusable, expires });
   }
 
   function handleKeydown(e: KeyboardEvent) {

@@ -306,6 +306,7 @@
   "workspace_prSection_pullRequests_label": ["de"],
   "workspace_progressCard_base_label": ["es", "fr"],
   "workspace_setupScriptEditor_variables_label": ["fr", "es"],
+  "workspace_share_invite_reusableDetail_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
   "workspace_sidebarHeader_base_label": ["es", "fr"],
   "workspace_sidebarPrDropdown_trigger_ariaLabel": ["es", "fr"],
   "workspace_skills_title": ["de"],
