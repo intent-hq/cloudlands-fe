@@ -15,8 +15,12 @@
  * serve-time `author` projection (login / displayName / principalId are the
  * same fields the daemon built it from) and compared byte-for-byte. No regex
  * heuristic, so user-typed prose that merely resembles the preamble is left
- * byte-identical. Display-only — the stored message is never mutated.
- * Dependency-light on purpose: type-only imports.
+ * byte-identical. The daemon only ever prepends the preamble for a
+ * collaborator, so a row authored by the workspace owner
+ * (`author.principalId === workspace.ownerPrincipalId`) never qualifies even
+ * when its first line is the exact text — the owner typed it. Display-only —
+ * the stored message is never mutated. Dependency-light on purpose: type-only
+ * imports.
  */
 
 import type { AgentMessage, MessageAuthor, MessageRole } from '$shared/types/agent-message';
@@ -33,9 +37,10 @@ export interface CollaboratorSenderAttribution {
 /**
  * Mirror of the daemon's `single_line_name`: control characters collapse to
  * spaces, whitespace runs collapse to one space, and a name that sanitizes
- * to empty is dropped.
+ * to empty is dropped. Shared with the sender chip so its label carries the
+ * same identity the preamble named.
  */
-function singleLineName(name: string | null | undefined): string | null {
+export function singleLineName(name: string | null | undefined): string | null {
   if (typeof name !== 'string') return null;
   const collapsed = name
     .replace(/\p{Cc}/gu, ' ')
@@ -86,9 +91,14 @@ function leadingText(message: { contentBlocks?: AgentMessage['contentBlocks'] })
  * Collaborator sender attribution of a transcript row, or null. A row
  * qualifies only when it is a plain human `user` row (agent-to-agent sends
  * and automated wakes never carry the preamble), it carries the serve-time
- * `author` projection, and its content starts with the exact preamble the
- * daemon would have built from that projection. Rows from older daemons (no
- * `author`), owner rows, and lookalike first lines yield null.
+ * `author` projection, that author is not the workspace owner
+ * (`ownerPrincipalId`, PROTOCOL §5.1 — the daemon never prepends the preamble
+ * for the owner, so an owner row starting with the exact line is the owner's
+ * own prose), and its content starts with the exact preamble the daemon would
+ * have built from that projection. Rows from older daemons (no `author`),
+ * owner rows, and lookalike first lines yield null. Callers without the
+ * workspace at hand pass no `ownerPrincipalId`; the owner exclusion is then
+ * not applied.
  */
 export function getCollaboratorSenderAttribution(
   message:
@@ -100,11 +110,13 @@ export function getCollaboratorSenderAttribution(
       }
     | null
     | undefined,
+  ownerPrincipalId?: string | null,
 ): CollaboratorSenderAttribution | null {
   if (!message || message.role !== 'user') return null;
   if (!isUserAuthoredMetadata(message.metadata)) return null;
   const author = asMessageAuthor(message.author);
   if (!author) return null;
+  if (ownerPrincipalId && author.principalId === ownerPrincipalId) return null;
   const preamble = buildCollaboratorSenderPreamble(
     author.login,
     author.displayName,
