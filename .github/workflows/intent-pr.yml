@@ -489,7 +489,10 @@ jobs:
       # ignores the generated paths via .gitignore + eslint.config.js, knip via
       # gitignore + its `project` excludes; the i18n checks read only
       # messages/*.json and ENFORCED_DIRS), so a post-generation rerun would
-      # add wall time without coverage.
+      # add wall time without coverage. The Prettier check (`format:check`) is
+      # part of this gate too, and the generated paths are Prettier-ignored
+      # (.prettierignore plus Prettier's default .gitignore handling), so
+      # running it before generation loses no coverage.
       - name: Cold-checkout gates
         run: pnpm run lint
       - name: Generate build config
@@ -498,8 +501,6 @@ jobs:
         run: pnpm run generate:ipc-channels
       - name: Generate i18n messages
         run: pnpm run generate:i18n
-      - name: Prettier check
-        run: pnpm run format:check
       - name: Svelte check
         # svelte-check holds the whole renderer program in one process and
         # already needs 3.6–4 GB of heap at the shared-controls base (it OOMs

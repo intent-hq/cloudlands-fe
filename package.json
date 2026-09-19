@@ -61,7 +61,7 @@
     "deps:check": "node scripts/check-deps-fresh.mjs",
     "format": "prettier --write .",
     "format:check": "node scripts/check-deps-fresh.mjs && prettier --check .",
-    "lint": "node scripts/check-deps-fresh.mjs && eslint --cache --cache-strategy content . && node scripts/pnpm-run.mjs lint:i18n-strings && node scripts/pnpm-run.mjs lint:i18n-completeness && node scripts/pnpm-run.mjs lint:package-scripts && node scripts/pnpm-run.mjs lint:dead-code && node scripts/pnpm-run.mjs lint:ui-components && node scripts/pnpm-run.mjs lint:design-cheatsheet",
+    "lint": "node scripts/check-deps-fresh.mjs && eslint --cache --cache-strategy content . && node scripts/pnpm-run.mjs lint:i18n-strings && node scripts/pnpm-run.mjs lint:i18n-completeness && node scripts/pnpm-run.mjs lint:package-scripts && node scripts/pnpm-run.mjs lint:dead-code && node scripts/pnpm-run.mjs lint:ui-components && node scripts/pnpm-run.mjs lint:design-cheatsheet && node scripts/pnpm-run.mjs format:check",
     "lint:fix": "eslint --fix .",
     "lint:dead-code": "node scripts/paraglide-inputs-hash.mjs --if-stale && knip",
     "lint:i18n-strings": "node scripts/check-hardcoded-strings.mjs",
