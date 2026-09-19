@@ -1023,6 +1023,191 @@ describe('ChatMessage human author identity (multiplayer)', () => {
   });
 });
 
+describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
+  // PROTOCOL §5.5 collaborator sender preamble (intent-hq/intentd#1987): the
+  // daemon prepends it to a guest's message content and serves the row with
+  // the guest's `author` projection.
+  const guest = {
+    principalId: 'principal-guest',
+    login: 'octocat',
+    displayName: 'The Octocat',
+    avatarUrl: 'https://avatars.example/octocat.png',
+  };
+  const preamble =
+    'Message from @octocat (The Octocat), a collaborator (guest) of this workspace — not the workspace owner.';
+  const guestMessage = (overrides: Partial<AgentMessage> = {}): AgentMessage => ({
+    ...userMessage({ fromPrincipalId: guest.principalId }, `${preamble}\n\nhello from a guest`),
+    author: guest,
+    ...overrides,
+  });
+  const multiMember = () =>
+    createMockWorkspace({ memberCount: 2, myRole: 'owner', ownerPrincipalId: 'principal-owner' });
+
+  it('hides the preamble and shows the handle, name and guest role', () => {
+    render(ChatMessage, { props: { message: guestMessage(), workspace: multiMember() } });
+
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+    expect(screen.queryByText(preamble, { exact: false })).toBeNull();
+    const header = screen.getByTestId('user-message-author');
+    expect(header.getAttribute('data-principal-id')).toBe(guest.principalId);
+    expect(header.getAttribute('data-sender-role')).toBe('collaborator');
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      '@octocat (The Octocat)',
+    );
+    expect(screen.getByTestId('user-message-author-role').textContent?.trim()).not.toBe('');
+    expect((screen.getByTestId('user-message-author-avatar') as HTMLImageElement).src).toBe(
+      guest.avatarUrl,
+    );
+  });
+
+  it("shows the guest chip on the guest's own rows and without a membership summary", () => {
+    render(ChatMessage, {
+      props: {
+        message: guestMessage(),
+        workspace: createMockWorkspace({ ownerPrincipalId: 'principal-owner' }),
+        ownPrincipalId: guest.principalId,
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBe(
+      'collaborator',
+    );
+    expect(screen.getByText('hello from a guest')).toBeTruthy();
+    expect(screen.queryByText(preamble, { exact: false })).toBeNull();
+  });
+
+  // Regression (fe#2654 verifier): the owner exclusion needs the owner id, so
+  // a workspace served without one (older daemon) must not guess — nothing is
+  // stripped and no guest chip is shown, for guest and owner rows alike.
+  it('strips nothing and shows no guest chip without the workspace owner id', () => {
+    const { unmount } = render(ChatMessage, {
+      props: { message: guestMessage(), workspace: createMockWorkspace() },
+    });
+    expect(screen.getByText(preamble, { exact: false })).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+    unmount();
+
+    render(ChatMessage, { props: { message: guestMessage(), workspace: null } });
+    expect(screen.getByText(preamble, { exact: false })).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+
+  it('falls back to the handle alone when the display name is gone', () => {
+    const loginOnly = { ...guest, displayName: null, avatarUrl: null };
+    const text = `Message from @octocat, a collaborator (guest) of this workspace — not the workspace owner.\n\nhi`;
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          author: loginOnly,
+          contentBlocks: [{ type: 'text', text }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('@octocat');
+    expect(screen.getByTestId('user-message-author-role')).toBeTruthy();
+    expect(screen.getByText('hi')).toBeTruthy();
+  });
+
+  it('renders an owner row in the same workspace without the guest role', () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: null,
+    };
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: 'hello from the owner' }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    const header = screen.getByTestId('user-message-author');
+    expect(header.getAttribute('data-sender-role')).toBeNull();
+    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Owner Person');
+  });
+
+  it('keeps a lookalike first line, and no guest role, when it does not match the projection', () => {
+    const text = `Message from @someone (Else), a collaborator (guest) of this workspace — not the workspace owner.\n\nbody`;
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({ contentBlocks: [{ type: 'text', text }] }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+    expect(screen.getByText(/Message from @someone/)).toBeTruthy();
+  });
+
+  it('keeps an owner row byte-identical, without the guest role, when the owner typed the exact preamble', () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: null,
+    };
+    const ownerPreamble =
+      'Message from @owner (Owner Person), a collaborator (guest) of this workspace — not the workspace owner.';
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: `${ownerPreamble}\n\nquoting the daemon` }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBeNull();
+    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Owner Person');
+    expect(screen.getByText(/Message from @owner \(Owner Person\)/)).toBeTruthy();
+    expect(screen.getByText(/quoting the daemon/)).toBeTruthy();
+  });
+
+  it('labels the chip with the same sanitized identity the preamble named', () => {
+    const messy = { ...guest, login: 'a\t\u0000b', displayName: 'Two  Words\u00a0Here' };
+    const text = `Message from @a b (Two Words Here), a collaborator (guest) of this workspace — not the workspace owner.\n\nhi`;
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({ author: messy, contentBlocks: [{ type: 'text', text }] }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBe(
+      'collaborator',
+    );
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      '@a b (Two Words Here)',
+    );
+    expect(screen.getByText('hi')).toBeTruthy();
+  });
+
+  it('keeps the agent sender header on an agent-to-agent row that starts with the preamble', () => {
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          metadata: { type: 'agent_message', fromAgentId: 'agent-1', fromAgentName: 'Builder' },
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
+    expect(screen.queryByTestId('user-message-author')).toBeNull();
+  });
+});
+
 describe('ChatMessage hook wake attribution', () => {
   const hookWakeMetadata = {
     type: 'hook_wake',
