@@ -719,7 +719,9 @@
             {#if pr.url}
               <Button
                 variant="plain"
-                class="size-5 shrink-0 rounded-sm !p-0 {pr.foregroundClass}"
+                size="icon-compact"
+                iconOnly
+                class="size-5 shrink-0 rounded-sm {pr.foregroundClass}"
                 aria-label={getWorkspacePrLabel(pr)}
                 data-workspace-card-pr-item
                 data-pr-identity={pr.identity}

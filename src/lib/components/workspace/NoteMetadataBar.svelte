@@ -227,8 +227,10 @@
           {#if assignedAgents.length === 0}
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               onclick={handleRunAgent}
-              class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+              class="size-6 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
               title={m.workspace_noteMetadataBar_runAgent_tooltip()}
             >
               <Fa icon={faPlay} class="text-xs" />
@@ -249,8 +251,10 @@
               {/each}
               <Button
                 variant="ghost"
+                size="icon-compact"
+                iconOnly
                 onclick={handleRunAgent}
-                class="inline-flex items-center justify-center h-6 w-4 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+                class="size-6 rounded text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
                 title={m.workspace_noteMetadataBar_runAgent_tooltip()}
               >
                 <Fa icon={faPlay} class="text-xs" />

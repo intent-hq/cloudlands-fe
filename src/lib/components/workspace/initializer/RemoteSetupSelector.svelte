@@ -232,12 +232,14 @@
                 </div>
                 <Button
                   variant="ghost"
+                  size="icon-compact"
+                  iconOnly
                   onclick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
                     removeSetup(setup.id);
                   }}
-                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
+                  class="ml-1 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
                   title={m.workspace_remoteSetupSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />

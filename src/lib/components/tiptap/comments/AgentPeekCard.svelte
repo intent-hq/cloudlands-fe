@@ -205,8 +205,9 @@
         <!-- Navigate to agent button -->
         <Button
           variant="ghost"
-          size="sm"
-          class="h-7 w-7 p-0"
+          size="icon-sm"
+          iconOnly
+          aria-label={m.tiptap_agentPeek_openAgent_ariaLabel()}
           onclick={(e) => {
             e.stopPropagation();
             const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
