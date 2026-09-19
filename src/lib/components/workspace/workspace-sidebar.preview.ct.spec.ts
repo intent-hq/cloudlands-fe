@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Workspace } from '$shared/types';
-import { WorkspaceStatus } from '$shared/types';
+import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import WorkspaceSidebarPreview from './workspace-sidebar.preview.svelte';
 
@@ -64,6 +64,19 @@ const workspace: Workspace = {
   updatedAt: timestamp,
 };
 
+const keyboardWorkspace: Workspace = {
+  ...workspace,
+  activePullRequest: {
+    id: 'preview-pr-keyboard',
+    number: 2185,
+    url: 'https://github.com/intent-hq/cloudlands-fe/pull/2185',
+    title: 'Keyboard entry into the workspace hover card',
+    status: PullRequestStatus.Open,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  },
+};
+
 test('renders loading, empty, busy, long-content, and narrow workspace states', async ({
   mount,
 }) => {
@@ -89,6 +102,105 @@ test('renders loading, empty, busy, long-content, and narrow workspace states', 
   await component.update({ props: { loading: false, width: 248, workspaces: [workspace] } });
   await expect(component).toHaveAttribute('data-preview-width', '248');
   await expect(component.locator('[data-workspace-card-row]')).toHaveCount(1);
+});
+
+test('enters and dismisses the portaled hover card with real keyboard input', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceSidebarPreview, {
+    props: { loading: false, width: 360, workspaces: [keyboardWorkspace] },
+  });
+  const trigger = component.locator('[data-workspace-card-trigger]');
+  const hoverCard = page.locator('[data-workspace-hover-card]');
+
+  await page.keyboard.press('Tab');
+  await expect(trigger).toBeFocused();
+  await expect(hoverCard).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(hoverCard).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  await page.keyboard.press('ArrowDown');
+  const firstControl = hoverCard.locator('button').first();
+  await expect(firstControl).toBeFocused();
+
+  await firstControl.evaluate((element) => {
+    element.addEventListener(
+      'click',
+      (event) => {
+        element.setAttribute('data-keyboard-activated', 'true');
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      },
+      { capture: true, once: true },
+    );
+  });
+  await page.keyboard.press('Enter');
+  await expect(firstControl).toHaveAttribute('data-keyboard-activated', 'true');
+
+  await page.keyboard.press('Escape');
+  await expect(hoverCard).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-workspace-hover-card] button').first()).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(hoverCard).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-workspace-hover-card] button').first()).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(hoverCard).toHaveCount(0);
+  await expect(page.locator(':focus')).toHaveCount(1);
+  await expect(trigger).not.toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(hoverCard).toHaveCount(0);
+  await expect(component.locator('[data-workspace-card-pr-item]')).toBeFocused();
+});
+
+test('Escape dismisses a pointer-opened card without moving body focus', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceSidebarPreview, {
+    props: { loading: false, width: 360, workspaces: [keyboardWorkspace] },
+  });
+  const hoverCard = page.locator('[data-workspace-hover-card]');
+
+  await expect(page.locator('body')).toBeFocused();
+  await component.locator('[data-workspace-card-title]').hover();
+  await expect(hoverCard).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(hoverCard).toHaveCount(0);
+  await expect(page.locator('body')).toBeFocused();
+});
+
+test('Escape dismisses from the status sibling without moving focus or reopening', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(WorkspaceSidebarPreview, {
+    props: { loading: false, width: 360, workspaces: [keyboardWorkspace] },
+  });
+  const trigger = component.locator('[data-workspace-card-trigger]');
+  const hoverCard = page.locator('[data-workspace-hover-card]');
+  const statusControl = component
+    .locator('[tabindex="0"]')
+    .filter({ has: page.locator('[data-workspace-status]') });
+
+  await page.keyboard.press('Tab');
+  await expect(trigger).toBeFocused();
+  await expect(hoverCard).toHaveCount(1);
+  await page.keyboard.press('Tab');
+  await expect(statusControl).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(hoverCard).toHaveCount(0);
+  await expect(statusControl).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(trigger).toBeFocused();
+  await expect(hoverCard).toHaveCount(0);
 });
 
 test('keeps assigned and unassigned status and title columns aligned through hover and keyboard navigation', async ({
