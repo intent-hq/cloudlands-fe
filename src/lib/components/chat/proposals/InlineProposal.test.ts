@@ -30,6 +30,9 @@ const actionMocks = vi.hoisted(() => ({
   undoSpecialist: vi.fn(() => false),
   undoSettings: vi.fn(() => true),
   goto: vi.fn(),
+  loadDraft: vi.fn(() => null),
+  saveDraft: vi.fn(),
+  clearDraft: vi.fn(),
 }));
 
 function readable<T>(value: () => T) {
@@ -69,6 +72,11 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
   applyWorkspaceProposal: actionMocks.applyWorkspace,
+}));
+vi.mock('./proposal-draft-storage', () => ({
+  loadProposalDraft: actionMocks.loadDraft,
+  saveProposalDraft: actionMocks.saveDraft,
+  clearProposalDraft: actionMocks.clearDraft,
 }));
 vi.mock('./settings-proposal-actions', () => ({
   applySettingsProposal: actionMocks.applySettings,
@@ -231,6 +239,40 @@ describe('InlineProposal', () => {
 
     expect(screen.getByText('Dismissed.')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('renders a daemon-originated apply as applied and clears the stored draft', async () => {
+    const proposal = makeBulkProposal('tool-daemon-applied');
+    actionMocks.loadDraft.mockReturnValueOnce({
+      fieldValues: { reason: 'edited' },
+      selectedBulkItemIds: ['workspace-a'],
+    });
+    state.proposalResolutions = { 'tool-daemon-applied': 'applied' };
+    renderProposal(proposal);
+
+    expect(screen.getByText('Applied.')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    await vi.waitFor(() => {
+      expect(actionMocks.clearDraft).toHaveBeenCalledWith(AGENT_ID, 'tool-daemon-applied');
+    });
+    expect(actionMocks.saveDraft).not.toHaveBeenCalled();
+    expect(actionMocks.resolve).not.toHaveBeenCalled();
+  });
+
+  it('lets a daemon-originated apply supersede a stale local apply failure', () => {
+    const proposal = makeBulkProposal('tool-daemon-superseded');
+    state.lifecycle = {
+      'tool-daemon-superseded': { status: 'failed', error: 'Archive failed', completedAt: 30 },
+    };
+    state.cardStatus = 'failed';
+    state.cardError = 'Archive failed';
+    state.proposalResolutions = { 'tool-daemon-superseded': 'applied' };
+    renderProposal(proposal);
+
+    expect(screen.getByText('Applied.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('keeps title-keyed proposals agent-scoped and reconciles apply under the title', async () => {
