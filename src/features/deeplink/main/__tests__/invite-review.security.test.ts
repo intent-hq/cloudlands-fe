@@ -30,7 +30,14 @@ vi.mock('$shared/logger', () => ({
   },
 }));
 vi.mock('electron', () => ({
-  BrowserWindow: class {},
+  // No focused/main window: the consent modal has nowhere to render, so the
+  // flow takes its native-dialog fallback (the cold-start posture under review).
+  BrowserWindow: class {
+    static getFocusedWindow(): null {
+      return null;
+    }
+  },
+  ipcMain: { handle: vi.fn() },
   app: { isReady: () => true },
   clipboard: { writeText: vi.fn() },
   shell: { openExternal: vi.fn() },
@@ -113,6 +120,16 @@ describe('review: secret boundary', () => {
     expect(mocks.logs.some((line) => line.includes(token))).toBe(false);
   });
 
+  it('logs an unrecognised error under the bounded kind, never its arbitrary name', async () => {
+    const error = new Error('refused');
+    error.name = `Leaky ${token}`;
+    mocks.add.mockRejectedValueOnce(error);
+    await handleInviteDeepLink(link);
+    const allLogs = mocks.logs.join('\n');
+    expect(allLogs).toContain('"kind":"unknown"');
+    expect(allLogs).not.toContain(token);
+  });
+
   it('keeps a normal cold-start invite token-free at renderer IPC', async () => {
     const send = await replayColdStart(link);
     expect(mocks.open).toHaveBeenCalledOnce();
@@ -140,6 +157,8 @@ describe('review: secret boundary', () => {
   );
 
   it('aborts before storing or opening when the OS refuses to launch the verification URL', async () => {
+    // The grant cannot have resolved yet when the browser never opened.
+    mocks.wait.mockReturnValue(new Promise(() => {}));
     vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error(`launch refused for ${token}`));
     await handleInviteDeepLink(link);
     expect(mocks.add).not.toHaveBeenCalled();

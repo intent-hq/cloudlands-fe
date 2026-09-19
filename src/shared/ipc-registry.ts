@@ -331,6 +331,19 @@ export const IPC_CHANNELS = {
     DISMISS: 'quit-confirmation:dismiss',
   },
 
+  // Invite consent (renderer-rendered GitHub identity prompt of an invite join).
+  // Payload contracts live in src/shared/ipc/invite-consent.ts.
+  INVITE_CONSENT: {
+    /** Main → renderer: show the invite-consent modal for a request. */
+    SHOW: 'invite-consent:show',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'invite-consent:ack',
+    /** Renderer → main (invoke): the user's `open` / `cancel` decision. */
+    RESPONSE: 'invite-consent:response',
+    /** Main → renderer: close the modal with the request's outcome. */
+    DISMISS: 'invite-consent:dismiss',
+  },
+
   // Window Management
   WINDOW: {
     RELOAD: 'window:reload',

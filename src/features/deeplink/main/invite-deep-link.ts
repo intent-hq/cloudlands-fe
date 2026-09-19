@@ -11,9 +11,17 @@
  * 2. Show the user code + verification URL (code copied to the clipboard;
  *    "Open GitHub" opens the URL) while the second phase
  *    (`invite.redeem { flowId }`) waits for the grant. This dialog — which
- *    names the workspace and offers Cancel — is the single consent point.
- * 3. Store the minted credential as a GUEST session — never in the paired
- *    backend registry — and open the daemon's window.
+ *    names the workspace and offers Cancel — is the single consent point. It
+ *    renders in the renderer (`main/invite-consent.ts`, `invite-consent:*`
+ *    channels) and stays up while the grant is awaited, where Cancel still
+ *    aborts the join; with no window or no ack it falls back to the native
+ *    message box so a cold start from a link never hangs.
+ * 3. The grant is the point of no return: the host has minted the credential
+ *    and consumed a seat, so the modal is dismissed (`joined`) the moment the
+ *    grant resolves and a Cancel from then on is ignored. Store the minted
+ *    credential as a GUEST session — never in the paired backend registry —
+ *    and open the daemon's window; a store failure after the grant surfaces
+ *    as a failure, never as a cancellation.
  *
  * Security posture mirrors the pair flow: the invite secret and the minted
  * token are never logged — failures are logged as bounded error kinds and
@@ -27,10 +35,12 @@
  * warning and returns; the app never crashes on it.
  */
 import { app, clipboard, dialog, shell, type MessageBoxOptions } from 'electron';
+import { randomUUID } from 'node:crypto';
 
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { parseInviteUri } from '$shared/utils/invite-uri';
+import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invite-consent';
 import { getMainWindow } from '../../../main/state';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
@@ -80,6 +90,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
   }
   inviteLinkInFlight = true;
   let connection: InviteConnection | null = null;
+  let consent: InviteConsentPrompt | null = null;
   try {
     const parsed = parseInviteUri(url);
     if (!parsed) {
@@ -117,20 +128,65 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     grant.catch(() => {});
 
     await clipboard.writeText(start.userCode);
-    if (!(await showDeviceCode(start.userCode, start.verificationUri, start.workspaceTitle))) {
+    consent = showInviteConsent({
+      requestId: randomUUID(),
+      userCode: start.userCode,
+      verificationUri: start.verificationUri,
+      workspaceTitle: start.workspaceTitle,
+      hostLabel: connection.host,
+      expiresInMs: start.expiresIn * 1000,
+    });
+    const decision = await consent.decision;
+    if (decision === 'cancel') {
+      consent.dismiss('cancelled');
       logger.info('User cancelled the invite device flow');
       return;
     }
+    // No renderer to show the modal (cold start / no ack): native box.
+    if (
+      decision === null &&
+      !(await showDeviceCode(start.userCode, start.verificationUri, start.workspaceTitle))
+    ) {
+      logger.info('User cancelled the invite device flow');
+      return;
+    }
+    // From here the modal stays up in its waiting state and Cancel aborts the
+    // join only until the grant resolves. Cancel and grant are both raced from
+    // the browser launch onwards — whichever settles first decides — so a
+    // grant that lands while the launch is still pending is observed at once
+    // (the point of no return) and a cancel that lands first still aborts,
+    // even if the launch never settles.
+    const cancelSignal = consent.cancelledWhileWaiting.then(() => 'cancelled' as const);
+    const granted = grant.then((credential) => ({ credential }));
+    granted.catch(() => {});
     // The launch is awaited so a refused browser hand-off aborts the flow
     // before any credential is minted into the store; the OS error text is
     // dropped (bounded code only) since it may echo the URL or worse.
-    try {
-      await shell.openExternal(start.verificationUri);
-    } catch {
+    const launch = (async () => {
+      try {
+        await shell.openExternal(start.verificationUri);
+        return 'launched' as const;
+      } catch {
+        return 'launch-failed' as const;
+      }
+    })();
+    let outcome = await Promise.race([cancelSignal, granted, launch]);
+    if (outcome === 'launched') {
+      outcome = await Promise.race([cancelSignal, granted]);
+    }
+    if (outcome === 'cancelled') {
+      consent.dismiss('cancelled');
+      logger.info('User cancelled the invite while waiting for the GitHub grant');
+      return;
+    }
+    if (outcome === 'launch-failed') {
       throw new InviteFlowError('verification-launch-failed');
     }
-
-    const credential = await grant;
+    const { credential } = outcome;
+    // Point of no return: the host has minted the credential and consumed a
+    // seat. Close the modal now — before the asynchronous store write — so
+    // Cancel is neither offered nor honoured while the credential persists.
+    consent.dismiss('joined');
     const record = await guestSessionsStore.add({
       label: connection.host,
       host: connection.host,
@@ -157,6 +213,8 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     await openBackendWindow(record.id);
   } catch (error) {
     logger.warn('Invite deep link handling failed', describeErrorForLog(error));
+    // A no-op once the modal was dismissed `joined`; the failure box still shows.
+    consent?.dismiss('failed');
     await showFailure(error);
   } finally {
     connection?.close();
@@ -186,7 +244,8 @@ export async function routeInviteLinkFromOs(
  * library-authored free-form text that may carry the invite secret or the
  * minted token — and so is anything on the error beyond a known code
  * (`InviteRpcError.inviteCode` is already reduced to the documented set;
- * `transportCode` / `flowCode` / `code` below are local literals).
+ * `transportCode` / `flowCode` / `code` below are local literals). Anything
+ * else is logged as `unknown` — `Error.name` is arbitrary, writable text.
  */
 function describeErrorForLog(error: unknown): Record<string, unknown> {
   if (error instanceof PinMismatchError) return { kind: 'pin-mismatch' };
@@ -203,7 +262,7 @@ function describeErrorForLog(error: unknown): Record<string, unknown> {
   if (error instanceof guestSessionsStore.GuestEncryptionUnavailableError) {
     return { kind: 'store', code: error.code };
   }
-  return { kind: error instanceof Error ? error.name : typeof error };
+  return { kind: 'unknown' };
 }
 
 async function showDialog(options: MessageBoxOptions): Promise<number> {
