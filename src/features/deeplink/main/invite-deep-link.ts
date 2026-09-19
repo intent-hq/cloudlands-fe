@@ -177,15 +177,10 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     const grant = connection.redeemWait(start.flowId, start.expiresIn * 1000 + WAIT_MARGIN_MS);
     grant.catch(() => {});
 
-    // Prompt labels: the host's pretty name when the daemon sends one (older
-    // daemons omit it → the dialed address, or "Unknown host" when that is an
-    // opaque tc address), and "Untitled" for a blank title. The stored guest
-    // session keeps the raw title and address; its settings row applies the
-    // same fallbacks on render.
-    const hostLabel =
-      nonBlank(start.prettyHostname) ??
-      nonBlank(start.hostname) ??
-      (isTcAddress(connection.host) ? m.connection_unknownHost_label() : connection.host);
+    // Prompt labels: see promptHostLabel; "Untitled" for a blank title. The
+    // stored guest session keeps the raw title and address; its settings row
+    // applies the same fallbacks on render.
+    const hostLabel = promptHostLabel(start, connection.host);
     const workspaceTitle = nonBlank(start.workspaceTitle) ?? m.workspace_links_untitled_label();
 
     await clipboard.writeText(start.userCode);
@@ -314,8 +309,7 @@ async function joinAsReturningGuest(
     return { kind: 'handled' };
   }
 
-  const hostLabel =
-    nonBlank(inspection.prettyHostname) ?? nonBlank(inspection.hostname) ?? connection.host;
+  const hostLabel = promptHostLabel(inspection, connection.host);
   const workspaceTitle = nonBlank(inspection.workspaceTitle) ?? m.workspace_links_untitled_label();
   const consent = showInviteConsent({
     requestId: randomUUID(),
@@ -337,10 +331,29 @@ async function joinAsReturningGuest(
     return { kind: 'handled' };
   }
 
-  const credential = await connection.accept(inviteId, secret, token).catch((error: unknown) => {
-    if (error instanceof InviteRpcError && error.inviteCode === 'credential-invalid') return null;
-    throw error;
-  });
+  // As in the device flow, a Cancel from the waiting state aborts the join
+  // until the host has answered: whichever of cancel and accept settles first
+  // decides, and a cancel that lands first stores nothing.
+  const accepted = connection.accept(inviteId, secret, token).then(
+    (credential) => ({ credential }),
+    (error: unknown) => {
+      if (error instanceof InviteRpcError && error.inviteCode === 'credential-invalid') {
+        return { credential: null };
+      }
+      throw error;
+    },
+  );
+  accepted.catch(() => {});
+  const outcome = await Promise.race([
+    consent.cancelledWhileWaiting.then(() => 'cancelled' as const),
+    accepted,
+  ]);
+  if (outcome === 'cancelled') {
+    consent.dismiss('cancelled');
+    logger.info('User cancelled the returning-guest join while waiting for the host');
+    return { kind: 'handled' };
+  }
+  const { credential } = outcome;
   if (credential === null) {
     // The host no longer recognizes the stored credential (revoked, or the
     // guest was removed): the device flow re-establishes identity.
@@ -439,6 +452,23 @@ function describeErrorForLog(error: unknown): Record<string, unknown> {
 function nonBlank(value: unknown): string | undefined {
   const trimmed = typeof value === 'string' ? value.trim() : '';
   return trimmed ? trimmed : undefined;
+}
+
+/**
+ * Host name for a consent prompt: the host's pretty name when the daemon
+ * sends one, else its hostname; older daemons omit both, in which case the
+ * dialed address shows — or "Unknown host" when that address is an opaque tc
+ * address, which never reaches the renderer or a dialog title.
+ */
+function promptHostLabel(
+  names: { hostname?: string; prettyHostname?: string },
+  dialedHost: string,
+): string {
+  return (
+    nonBlank(names.prettyHostname) ??
+    nonBlank(names.hostname) ??
+    (isTcAddress(dialedHost) ? m.connection_unknownHost_label() : dialedHost)
+  );
 }
 
 async function showDialog(options: MessageBoxOptions): Promise<number> {

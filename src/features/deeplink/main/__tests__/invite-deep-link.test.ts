@@ -1160,6 +1160,45 @@ describe('handleInviteDeepLink — returning guest', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('cancel while the accept is pending: dismiss cancelled, nothing stored or opened', async () => {
+    const { prompt, cancelWaiting } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    let settleAccept!: (value: typeof ACCEPTED) => void;
+    accept.mockReturnValue(new Promise((resolve) => (settleAccept = resolve)));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(accept).toHaveBeenCalledTimes(1));
+    cancelWaiting();
+    await pending;
+    settleAccept(ACCEPTED);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(redeemStart).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('an older daemon on a tunnel: the confirm prompt reads "Unknown host", never the tc address', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    openInviteConnection.mockResolvedValue(fakeConnection({ host: TC_ADDRESS, via: 'tunnel' }));
+    inspect.mockResolvedValue({ workspaceId: 'ws-1', workspaceTitle: 'Shared workspace' });
+
+    await handleInviteDeepLink(
+      `intent://invite?v=1&host=&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=${TC_ADDRESS}`,
+    );
+
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({
+      mode: 'confirm',
+      hostLabel: 'Unknown host',
+    });
+    expect(JSON.stringify(showInviteConsent.mock.calls[0][0])).not.toContain(TC_ADDRESS);
+    expect(accept).toHaveBeenCalledWith('inv-1', SECRET, STORED_TOKEN);
+  });
+
   it('no renderer: the native confirm box (no device code) is the fallback and the join completes', async () => {
     showInviteConsent.mockReturnValue(fakeConsent(null).prompt);
 
