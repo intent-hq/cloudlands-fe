@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Proposal } from '$shared/types/proposal';
 
@@ -35,13 +36,22 @@ const actionMocks = vi.hoisted(() => ({
   clearDraft: vi.fn(),
 }));
 
+const subscriptions = vi.hoisted(() => new Set<() => void>());
+
 function readable<T>(value: () => T) {
   return {
     subscribe(run: (current: T) => void) {
-      run(value());
-      return () => {};
+      const push = () => run(value());
+      push();
+      subscriptions.add(push);
+      return () => subscriptions.delete(push);
     },
   };
+}
+
+// Re-deliver the mocked selector state, like a daemon `agent:updated` refresh.
+function notifySubscribers(): void {
+  for (const push of subscriptions) push();
 }
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
@@ -139,12 +149,12 @@ import { getProposalId } from './proposal-id';
 const AGENT_ID = 'agent-inline';
 const WORKSPACE_ID = 'workspace-inline';
 
-function makeBulkProposal(id: string): Proposal {
+function makeBulkProposal(id: string, preview: Partial<Proposal['preview']> = {}): Proposal {
   return {
     kind: 'bulk-op',
     applyToolCallId: id,
     payload: { operation: 'workspace.bulkArchive', ids: ['workspace-a'] },
-    preview: { title: `Archive from ${id}`, applyLabel: 'Archive' },
+    preview: { title: `Archive from ${id}`, applyLabel: 'Archive', ...preview },
   };
 }
 
@@ -169,12 +179,14 @@ beforeEach(() => {
   state.lifecycle = {};
   state.cardStatus = 'idle';
   state.cardError = null;
+  subscriptions.clear();
   vi.clearAllMocks();
 });
 
 afterEach(() => {
   cleanup();
   document.body.innerHTML = '';
+  vi.useRealTimers();
 });
 
 describe('InlineProposal', () => {
@@ -259,6 +271,34 @@ describe('InlineProposal', () => {
     expect(actionMocks.saveDraft).not.toHaveBeenCalled();
     expect(actionMocks.resolve).not.toHaveBeenCalled();
   });
+
+  it.each(['applied', 'dismissed'] as const)(
+    'cancels a pending debounced draft save when the daemon resolves the proposal as %s',
+    async (resolution) => {
+      vi.useFakeTimers();
+      const proposalId = `tool-daemon-late-${resolution}`;
+      const proposal = makeBulkProposal(proposalId, {
+        bulkItems: [{ id: 'workspace-a', title: 'Workspace A' }],
+      });
+      state.pendingProposals = [{ proposalId, messageId: 'message-inline' }];
+      renderProposal(proposal);
+
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Toggle Workspace A' }));
+      expect(actionMocks.saveDraft).not.toHaveBeenCalled();
+
+      state.proposalResolutions = { [proposalId]: resolution };
+      notifySubscribers();
+      await tick();
+
+      expect(screen.getByText(resolution === 'applied' ? 'Applied.' : 'Dismissed.')).toBeTruthy();
+      expect(screen.queryByRole('checkbox')).toBeNull();
+      expect(actionMocks.clearDraft).toHaveBeenCalledWith(AGENT_ID, proposalId);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(actionMocks.saveDraft).not.toHaveBeenCalled();
+      expect(actionMocks.resolve).not.toHaveBeenCalled();
+    },
+  );
 
   it('lets a daemon-originated apply supersede a stale local apply failure', () => {
     const proposal = makeBulkProposal('tool-daemon-superseded');
