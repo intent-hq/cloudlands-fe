@@ -5,10 +5,21 @@ const mocks = vi.hoisted(() => ({
   createAgent: vi.fn(),
   toastError: vi.fn(),
   backendRequest: vi.fn(),
+  // When true, `agentFactory.createAgent` is the REAL UnifiedAgentFactory
+  // (→ real LiveAgentsClient → mocked transport) instead of `mocks.createAgent`.
+  useRealFactory: false,
 }));
-vi.mock('$features/agent/services/agent-factory', () => ({
-  agentFactory: { createAgent: mocks.createAgent },
-}));
+vi.mock('$features/agent/services/agent-factory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$features/agent/services/agent-factory')>();
+  return {
+    agentFactory: {
+      createAgent: (...args: Parameters<typeof actual.agentFactory.createAgent>) =>
+        mocks.useRealFactory
+          ? actual.agentFactory.createAgent(...args)
+          : mocks.createAgent(...args),
+    },
+  };
+});
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 
@@ -158,7 +169,10 @@ function start(getState: () => unknown = state) {
 }
 
 describe('agentCreationSaga', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    mocks.useRealFactory = false;
+    vi.clearAllMocks();
+  });
 
   it('routes the fire-and-forget create trigger through agentFactory with server-minted identity', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
@@ -879,6 +893,33 @@ describe('agentCreationSaga', () => {
         await task.toPromise();
       },
     );
+
+    it('renders the not-permitted sentence end to end: real factory, real agents client, transport answers -32003', async () => {
+      // Only the wire is faked: the real UnifiedAgentFactory calls the real
+      // LiveAgentsClient, whose `agent.create` request the transport refuses
+      // exactly as the daemon does for a collaborator connection.
+      mocks.useRealFactory = true;
+      mocks.backendRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.create') {
+          throw Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+        }
+        return {};
+      });
+      const { channel, task } = start();
+      channel.put(createAgentRequested(WS));
+      await settle();
+      await settle();
+
+      expect(mocks.createAgent).not.toHaveBeenCalled();
+      expect(mocks.backendRequest).toHaveBeenCalledWith(
+        'agent.create',
+        expect.objectContaining({ workspaceId: WS }),
+      );
+      expect(mocks.toastError).toHaveBeenCalledOnce();
+      expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+      task.cancel();
+      await task.toPromise();
+    });
 
     it('rejects the promise-bearing create with the not-permitted sentence when agent.create answers -32003', async () => {
       mocks.createAgent.mockResolvedValue(forbiddenFactoryResult());
