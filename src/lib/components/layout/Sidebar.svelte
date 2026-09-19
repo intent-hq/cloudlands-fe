@@ -6,6 +6,7 @@
   import type { Workspace } from '$shared/types';
   import type { AgentSession } from '$shared/types';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     workspaces: Workspace[];
@@ -52,9 +53,10 @@
   <div class="flex-none mt-auto pl-2 py-3">
     <Button
       variant="ghost-light"
-      size="sm"
-      class="w-full justify-start text-left px-3"
+      size="icon-compact"
+      iconOnly
       onclick={() => navigateToSettings()}
+      aria-label={m.layout_sidebarNav_settings_label()}
     >
       <Fa icon={faCog} size="xs" class="text-ghost" />
     </Button>

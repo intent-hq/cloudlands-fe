@@ -523,8 +523,10 @@
 
               <Button
                 variant="ghost"
+                size="icon-compact"
+                iconOnly
                 type="button"
-                class="ml-0.5 p-1 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
+                class="ml-0.5 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
                 aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
               >
@@ -540,12 +542,14 @@
           >
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               type="button"
-              class="flex items-center justify-center w-7 h-7 ml-1 border-none rounded-md bg-transparent text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted/80 hover:text-foreground"
+              class="ml-1 text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted/80 hover:text-foreground"
               onclick={createNewTerminal}
               aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
             >
-              <Fa icon={faPlus} class="w-3.5 h-3.5" />
+              <Fa icon={faPlus} />
             </Button>
           </Tooltip>
         </div>
