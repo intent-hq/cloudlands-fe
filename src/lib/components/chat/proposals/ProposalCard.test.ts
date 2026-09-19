@@ -21,6 +21,12 @@ const navigationMocks = vi.hoisted(() => ({
   goto: vi.fn(),
 }));
 
+// The New Workspace modal's effective specialist (null = General), as the
+// workspace-initializer selector would resolve it.
+const newWorkspaceDefaultState = vi.hoisted(() => ({
+  specialist: null as string | null,
+}));
+
 const electronBridgeMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
@@ -123,6 +129,14 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: prBranchLookupState.selectPrBranchLookupEntries,
 }));
+vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectNewWorkspaceDefaultSpecialist: vi.fn(() => ({
+    subscribe: (run: (value: string | null) => void) => {
+      run(newWorkspaceDefaultState.specialist);
+      return () => {};
+    },
+  })),
+}));
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: prBranchLookupState.dispatch,
@@ -188,6 +202,7 @@ beforeEach(() => {
   lifecycleSelectorState.result = null;
   historySelectorState.settingsApplied = null;
   historySelectorState.specialistApplied = null;
+  newWorkspaceDefaultState.specialist = null;
   navigationMocks.goto.mockReset();
   electronBridgeMocks.invoke.mockReset();
   prBranchLookupState.reset();
@@ -973,6 +988,115 @@ describe('ProposalCard', () => {
       initialPrompt: 'Use the findings from this workspace.',
       branch: 'mock-branch',
       specialist: 'ui-designer',
+    });
+  });
+
+  describe('specialist default from the New Workspace modal', () => {
+    function renderWithoutSpecialist(preview: Record<string, unknown> = {}) {
+      const { container } = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+              ...preview,
+            },
+          }),
+        },
+      });
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
+      return { applyListener };
+    }
+
+    it('preselects the modal specialist when the proposal names none and applies it', async () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      const { applyListener } = renderWithoutSpecialist();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+
+      await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+      const event = applyListener.mock.calls[0]?.[0] as CustomEvent | undefined;
+      expect(event?.detail.editedFields.specialist).toBe('coordinator');
+    });
+
+    it('preselects a single-agent modal specialist when the proposal names none', () => {
+      newWorkspaceDefaultState.specialist = 'implementor';
+      renderWithoutSpecialist();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
+    });
+
+    it('falls back to General when the modal has no remembered specialist', () => {
+      newWorkspaceDefaultState.specialist = null;
+      renderWithoutSpecialist();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
+    });
+
+    it('applies the modal default to Chief-style params proposals without a specialist', () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal(
+            {},
+            {
+              repository: 'example-org/example-repo',
+              initialMessage: 'Review and summarize PR #647',
+            },
+          ),
+        },
+      });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+    });
+
+    it('leaves an explicitly named specialist unaffected by the modal default', () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      renderWithoutSpecialist({ specialist: 'planner' });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('planner');
+    });
+
+    it('keeps an explicit General (null) specialist instead of the modal default', () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      renderWithoutSpecialist({ specialist: null });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
+    });
+
+    it('restores a draft specialist over the modal default', () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+            },
+          }),
+          initialDraft: {
+            fieldValues: {},
+            selectedBulkItemIds: [],
+            workspace: {
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              branch: 'main',
+              specialist: 'ui-designer',
+            },
+          },
+        },
+      });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('ui-designer');
     });
   });
 

@@ -223,19 +223,54 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(fromEdit.initialAgent).toMatchObject({ name: 'Planner', specialist: 'planner' });
   });
 
-  it('keeps an explicit payload agent name without consulting the resolver', () => {
+  it('keeps an explicit payload agent name when the specialist is unchanged', () => {
     const resolve = vi.fn(resolveAgentName);
-    const request = buildCreateWorkspaceRequestFromProposal(
+    const fromPayload = buildCreateWorkspaceRequestFromProposal(
       makeProposal({ initialAgent: { name: 'Named by producer', specialist: 'coordinator' } }),
-      { specialist: 'planner' },
+      undefined,
+      { resolveAgentName: resolve },
+    );
+    const fromSameEdit = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Named by producer', specialist: 'coordinator' } }),
+      { specialist: 'coordinator' },
       { resolveAgentName: resolve },
     );
 
-    expect(request.initialAgent).toMatchObject({
+    expect(fromPayload.initialAgent).toMatchObject({
       name: 'Named by producer',
-      specialist: 'planner',
+      specialist: 'coordinator',
+    });
+    expect(fromSameEdit.initialAgent).toMatchObject({
+      name: 'Named by producer',
+      specialist: 'coordinator',
     });
     expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('renames the initial agent after an edited specialist even when the payload names it', () => {
+    // A sibling proposal hardcodes name "Coordinator" for its Coordinator
+    // default; once the card applies another specialist the created agent must
+    // not keep the stale name.
+    const fromEdit = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Coordinator', specialist: 'coordinator' } }),
+      { specialist: 'implementor' },
+    );
+    const toGeneral = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Coordinator', specialist: 'coordinator' } }),
+      { specialist: null },
+    );
+    const fromUnnamedPayload = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Coordinator', prompt: 'Go' } }),
+      { specialist: 'planner' },
+    );
+
+    expect(fromEdit.initialAgent).toMatchObject({ name: 'Implementor', specialist: 'implementor' });
+    expect(toGeneral.initialAgent?.name).toBe('Agent');
+    expect(toGeneral.initialAgent?.specialist).toBeUndefined();
+    expect(fromUnnamedPayload.initialAgent).toMatchObject({
+      name: 'Planner',
+      specialist: 'planner',
+    });
   });
 
   it('preserves existing specialist metadata when specialist edit is absent', () => {

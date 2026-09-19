@@ -33,8 +33,10 @@ function withoutSpecialist(metadata: Record<string, unknown>): Record<string, un
 export interface BuildCreateWorkspaceRequestOptions {
   /**
    * Resolves the initial agent's display name from the specialist the request
-   * carries (`undefined` = General). Consulted only when the proposal payload
-   * does not carry an explicit `initialAgent.name`.
+   * carries (`undefined` = General). Consulted unless the proposal payload
+   * carries an explicit `initialAgent.name` AND the specialist is unchanged
+   * from the payload — a payload name describes the payload's specialist, so
+   * an edited/defaulted specialist is renamed after what is actually applied.
    */
   resolveAgentName: (specialistId: string | undefined) => string;
 }
@@ -47,7 +49,10 @@ export function buildCreateWorkspaceRequestFromProposal(
   const params = (proposal.payload.params ?? {}) as Partial<CreateWorkspaceRequest>;
   const siblingScoped = proposal.preview.workspaceCreate?.mode === 'sibling';
   const initialAgent = recordValue(params.initialAgent) as Partial<InitialAgentRequest> | undefined;
-  const specialist = specialistOverride(editedFields?.specialist, initialAgent?.specialist);
+  const payloadSpecialist =
+    typeof initialAgent?.specialist === 'string' ? initialAgent.specialist : undefined;
+  const specialist = specialistOverride(editedFields?.specialist, payloadSpecialist);
+  const payloadName = specialist === payloadSpecialist ? initialAgent?.name : undefined;
   const metadata = recordValue(initialAgent?.metadata) ?? {};
   const hasSpecialistEdit =
     typeof editedFields?.specialist === 'string' || editedFields?.specialist === null;
@@ -96,7 +101,7 @@ export function buildCreateWorkspaceRequestFromProposal(
     scope: stringOverride(siblingScoped ? undefined : editedFields?.scope, params.scope),
     initialAgent: {
       ...initialAgentFields,
-      name: initialAgent?.name ?? options.resolveAgentName(specialist),
+      name: payloadName ?? options.resolveAgentName(specialist),
       prompt: stringOverride(editedFields?.initialPrompt, initialAgent?.prompt),
       specialist,
       agentType: initialAgent?.agentType ?? createAgentTypeId('workspace'),

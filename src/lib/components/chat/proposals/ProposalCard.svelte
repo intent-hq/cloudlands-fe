@@ -49,6 +49,7 @@
   } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
   import { selectPrBranchLookupEntries } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors';
   import type { PrBranchLookupRequest } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-types';
+  import { selectNewWorkspaceDefaultSpecialist } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { store as appStore } from '$store/renderer/store';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -139,6 +140,9 @@
   const prBranchLookupInFlightKeys = new Set<string>();
 
   const prBranchLookupEntries = selectPrBranchLookupEntries();
+  // The New Workspace modal's effective initial agent: the fallback when a
+  // workspace-create proposal does not name a specialist.
+  const newWorkspaceDefaultSpecialist = selectNewWorkspaceDefaultSpecialist();
 
   const fields = $derived(proposal.preview.fields ?? []);
   const bulkItems = $derived(proposal.preview.bulkItems ?? []);
@@ -312,7 +316,10 @@
     workspaceIsNewRepo = workspaceCreate.isNewRepo ?? false;
     workspaceIsValidPath = workspaceCreate.isValidPath ?? false;
     workspaceScope = workspaceCreate.scope ?? '';
-    workspaceSpecialist = workspaceCreate.specialist ?? null;
+    workspaceSpecialist =
+      workspaceCreate.specialist === undefined
+        ? untrack(() => $newWorkspaceDefaultSpecialist)
+        : workspaceCreate.specialist;
     prBranchUserEdited = false;
     prBranchLookupKey = '';
     prBranchLookupRequest = undefined;
@@ -577,7 +584,7 @@
           ? preview.specialist
           : typeof getInitialAgentValue('specialist') === 'string'
             ? (getInitialAgentValue('specialist') as string)
-            : (stringParam('specialist') ?? null),
+            : stringParam('specialist'),
     };
   }
 
