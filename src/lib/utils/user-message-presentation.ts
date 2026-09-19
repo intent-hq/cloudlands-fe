@@ -82,8 +82,16 @@ export function degradeLegacyFileBlocks(
   });
 }
 
-/** Return immutable user-authored text for rendering and other UI surfaces. */
-export function getPresentedUserMessageText(message: AgentMessage): string {
+/**
+ * Return immutable user-authored text for rendering and other UI surfaces.
+ * `ownerPrincipalId` (`workspace.ownerPrincipalId`) keeps an owner-authored
+ * row byte-identical even when its first line is the exact collaborator
+ * preamble; callers without the workspace at hand omit it.
+ */
+export function getPresentedUserMessageText(
+  message: AgentMessage,
+  ownerPrincipalId?: string | null,
+): string {
   // Rows sent by another agent carry the daemon-stamped sender header in
   // content, and rows sent by a workspace collaborator carry the daemon's
   // sender preamble; the attribution chip conveys the sender, so presentation
@@ -91,7 +99,9 @@ export function getPresentedUserMessageText(message: AgentMessage): string {
   // two never coexist on one row (agent vs human caller); each strip is an
   // exact match against the text the daemon built.
   const attribution = getAgentMessageAttribution(message.metadata);
-  const collaboratorSender = attribution ? null : getCollaboratorSenderAttribution(message);
+  const collaboratorSender = attribution
+    ? null
+    : getCollaboratorSenderAttribution(message, ownerPrincipalId);
   const presentLeadingHeader = attribution
     ? (text: string) => stripAgentMessageHeader(text, attribution)
     : collaboratorSender
