@@ -181,6 +181,7 @@
   "notes_cliBlock_exit_label": ["de"],
   "notes_fontStyleButton_specimen_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "notes_panel_title": ["fr"],
+  "notes_presenceStack_overflow_label": "*",
   "notification_assistant_title": ["fr"],
   "notification_assistant_titled": ["fr"],
   "notification_specialist_agent": ["de", "fr"],

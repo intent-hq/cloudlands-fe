@@ -6372,5 +6372,8 @@
   "workspace_share_removeMember_confirm_label": "{name}을(를) 이 워크스페이스에서 제거할까요?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "{name} 제거 확인",
   "workspace_share_cancel_label": "취소",
-  "workspace_share_listenerDown_error": "초대하기 전에 설정에서 원격 액세스 + Tailcat을 켜세요"
+  "workspace_share_listenerDown_error": "초대하기 전에 설정에서 원격 액세스 + Tailcat을 켜세요",
+  "notes_presenceStack_viewers_one": "다른 1명이 이 노트를 보고 있습니다",
+  "notes_presenceStack_viewers_many": "다른 {count}명이 이 노트를 보고 있습니다",
+  "notes_presenceStack_overflow_label": "+{count}"
 }
