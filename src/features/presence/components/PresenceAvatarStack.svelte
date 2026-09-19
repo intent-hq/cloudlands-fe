@@ -4,9 +4,11 @@
    * agent chat): up to `maxVisible` avatars plus a "+N" overflow chip. Each
    * avatar is ringed by the person's standing when known — the owner blue, an
    * online member green, an offline member grey — an offline person's avatar
-   * is drawn greyscale whatever their ring, and this window's own principal
-   * is marked. With `action` every visible avatar
-   * is a button. Renders nothing when nobody is there.
+   * tile (image or coloured initials) is drawn greyscale whatever their ring,
+   * and this window's own principal is marked. The ring is a box-shadow on the
+   * outer element and a CSS filter greys everything its element paints, so the
+   * filter lives on an inner tile and the ring keeps its colour. With `action`
+   * every visible avatar is a button. Renders nothing when nobody is there.
    */
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -69,29 +71,36 @@
   {@const ring = presencePersonRing(person)}
   {@const offline = person.online === false}
   <span
-    class="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-background font-medium leading-none text-primary-foreground {ring
+    class="inline-flex shrink-0 rounded-full border border-background {ring
       ? RING_CLASS[ring]
-      : ''} {offline ? 'grayscale' : ''}"
+      : ''}"
     style:width="{size}px"
     style:height="{size}px"
-    style:font-size={fontSize}
-    style:background-color={presencePersonColor(person.principalId)}
     data-presence-avatar={person.principalId}
     data-presence-ring={ring ?? undefined}
     data-presence-offline={offline || undefined}
     data-presence-self={person.self || undefined}
   >
-    {#if person.avatarUrl}
-      <img
-        src={person.avatarUrl}
-        alt=""
-        aria-hidden="true"
-        class="h-full w-full object-cover"
-        loading="lazy"
-      />
-    {:else}
-      {presencePersonInitial(person)}
-    {/if}
+    <span
+      class="inline-flex h-full w-full items-center justify-center overflow-hidden rounded-full font-medium leading-none text-primary-foreground {offline
+        ? 'grayscale'
+        : ''}"
+      style:font-size={fontSize}
+      style:background-color={presencePersonColor(person.principalId)}
+      data-presence-avatar-tile
+    >
+      {#if person.avatarUrl}
+        <img
+          src={person.avatarUrl}
+          alt=""
+          aria-hidden="true"
+          class="h-full w-full object-cover"
+          loading="lazy"
+        />
+      {:else}
+        {presencePersonInitial(person)}
+      {/if}
+    </span>
   </span>
 {/snippet}
 
