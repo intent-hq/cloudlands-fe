@@ -21,6 +21,17 @@ import { createAgentTypeId } from '$shared/types/agent.types';
 import { agentSessionLaunchAgentRequested } from '../../agent-session/agent-session-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
 import {
+  connectionsListReceived,
+  connectionsReducer,
+  initialState as connectionsInitialState,
+} from '../../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../../guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '../../guest-sessions/guest-sessions-types';
+import {
   initialState as specialistsInitialState,
   type FileSpecialist,
 } from '../../specialists/specialists-slice';
@@ -56,15 +67,61 @@ function session(): AgentSession {
   } as AgentSession;
 }
 
+const GUEST_SESSION: GuestSessionRecord = {
+  id: 'guest-1',
+  label: 'studio.local',
+  host: '10.0.0.5',
+  hosts: ['10.0.0.5'],
+  port: 8443,
+  fingerprint: 'AB:CD',
+  tcAddress: null,
+  hostname: 'studio.local',
+  principalId: 'prin-guest',
+  login: 'octocat',
+  tokenEncrypted: true,
+  updatedAt: 1,
+};
+
+// A settled owner window: the guest session list hydrated with no joined host.
+function ownerWindowIdentity() {
+  return {
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+    ),
+  };
+}
+
+// A settled guest window: the window's backend id is a joined host.
+function guestWindowIdentity() {
+  return {
+    connections: connectionsReducer(
+      connectionsInitialState,
+      connectionsListReceived({
+        connections: [],
+        activeId: GUEST_SESSION.id,
+        windowBackendId: GUEST_SESSION.id,
+      }),
+    ),
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+    ),
+  };
+}
+
 function state(
   defaultSpecialistId = '',
   fileSpecialists: FileSpecialist[] = [],
   activeProviderId = 'augment',
   providerModels: Record<string, string> = { augment: 'sonnet' },
+  identity: ReturnType<typeof ownerWindowIdentity> = ownerWindowIdentity(),
 ) {
   const workspace = { id: WS, title: 'Workspace', repositoryPath: '/tmp/repo' } as Workspace;
   const note = { id: NOTE, title: 'Task note', content: 'Do the thing' } as Note;
   return {
+    ...identity,
     workspace: { workspaces: { ids: [WS], map: { [WS]: workspace } } },
     workspaceAgents: { byWorkspaceId: { [WS]: { agentIds: [] } } },
     agentSessions: { byAgentId: {} },
@@ -717,5 +774,84 @@ describe('agentCreationSaga', () => {
     expect(mocks.backendRequest).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
+  });
+
+  describe('collaborator connection (guest window)', () => {
+    const guestState = () => state('', [], 'augment', { augment: 'sonnet' }, guestWindowIdentity());
+
+    it.each([
+      ['createAgentRequested', () => createAgentRequested(WS)],
+      ['createAgentWithSpecialistRequested', () => createAgentWithSpecialistRequested(WS, null)],
+      ['runAgentForNoteRequested', () => runAgentForNoteRequested(WS, NOTE, 'Task note')],
+      [
+        'delegateExistingTaskRequested',
+        () => delegateExistingTaskRequested(WS, NOTE, 'Task note', true),
+      ],
+    ])(
+      'refuses %s before sending anything and renders the not-permitted sentence',
+      async (_name, trigger) => {
+        mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+        mocks.backendRequest.mockResolvedValue({ ok: true, agentId: AGENT });
+        const { channel, dispatched, task } = start(guestState);
+        channel.put(trigger());
+        await settle();
+
+        expect(mocks.createAgent).not.toHaveBeenCalled();
+        expect(mocks.backendRequest).not.toHaveBeenCalled();
+        expect(mocks.toastError).toHaveBeenCalledOnce();
+        expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+        expect(dispatched).not.toContainEqual(
+          expect.objectContaining({ type: 'appLayout/openAgentTabRequested' }),
+        );
+        task.cancel();
+        await task.toPromise();
+      },
+    );
+
+    it('rejects the promise-bearing create with the not-permitted sentence', async () => {
+      const { channel, task } = start(guestState);
+      const action = createAgentFromConfigRequested(WS, {
+        name: 'Refused',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      });
+      channel.put(action);
+
+      await expect(action.promise).rejects.toThrow("You can't create agents in this workspace");
+      expect(mocks.createAgent).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('rejects the launch trigger through the same refusal', async () => {
+      const { channel, task } = start(guestState);
+      const action = agentSessionLaunchAgentRequested(WS, {
+        name: 'Refused',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      });
+      channel.put(action);
+
+      await expect(action.promise).rejects.toThrow("You can't create agents in this workspace");
+      expect(mocks.createAgent).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('renders the not-permitted sentence when the daemon itself answers -32003', async () => {
+      mocks.backendRequest.mockRejectedValue(
+        Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
+      );
+      const { channel, task } = start();
+      channel.put(delegateExistingTaskRequested(WS, NOTE, 'Task note', false));
+      await settle();
+
+      expect(mocks.toastError).toHaveBeenCalledOnce();
+      expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+      task.cancel();
+      await task.toPromise();
+    });
   });
 });
