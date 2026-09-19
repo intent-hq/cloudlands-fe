@@ -335,6 +335,10 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectWorkspaceNotesState: () => constantReadable({ initialized: true }),
 }));
 
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => constantReadable(false),
+}));
+
 vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({
   selectComments: Object.assign(() => constantReadable([]), {
     select: () => [],
