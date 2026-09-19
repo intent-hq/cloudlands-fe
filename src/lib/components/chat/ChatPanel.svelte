@@ -734,7 +734,7 @@
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
-      getUserMessageNavigationItems($agentMessages$),
+      getUserMessageNavigationItems($agentMessages$, workspace?.ownerPrincipalId),
     ),
   );
 
@@ -1333,7 +1333,12 @@
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
   const allSearchMatches = $derived.by(() => {
-    return findChatSearchMatches($agentMessages$, debouncedSearchQuery, messageIdToTurnKey);
+    return findChatSearchMatches(
+      $agentMessages$,
+      debouncedSearchQuery,
+      messageIdToTurnKey,
+      workspace?.ownerPrincipalId,
+    );
   });
 
   // Derive the match count from allSearchMatches
@@ -4706,7 +4711,9 @@
     const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
 
     onChatUpdate({
-      lastUserMessage: lastUserMessage ? getPresentedUserMessageText(lastUserMessage) : undefined,
+      lastUserMessage: lastUserMessage
+        ? getPresentedUserMessageText(lastUserMessage, workspace?.ownerPrincipalId)
+        : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
       isProcessing: $agentIsResponding$,
       messageCount: messages.length,
