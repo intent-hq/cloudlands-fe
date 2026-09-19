@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   },
   workspace: null as null | { id: string; title: string },
   guestSession: null as null | { id: string; label: string },
+  hidesAgentLifecycleActions: false,
   dispatch: vi.fn(),
   usePanelShortcuts: vi.fn(),
 }));
@@ -72,7 +73,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => {
     selectWorkspaceIsEmpty: { select: () => false },
     selectIsNewWorkspaceSession: () => readable(false),
     selectIsWorkspaceCollaborator: () => readable(false),
-    selectHidesAgentLifecycleActions: () => readable(false),
+    selectHidesAgentLifecycleActions: () => readable(mocks.hidesAgentLifecycleActions),
   };
 });
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
@@ -170,8 +171,45 @@ beforeEach(() => {
   mocks.loadState = { status: 'idle', error: null };
   mocks.workspace = null;
   mocks.guestSession = null;
+  mocks.hidesAgentLifecycleActions = false;
   mocks.dispatch.mockClear();
   mocks.usePanelShortcuts.mockClear();
+});
+
+describe('WorkspaceSurface agent lifecycle gate (multiplayer w4)', () => {
+  function createAffordances(container: HTMLElement) {
+    return [...container.querySelectorAll<HTMLElement>('[data-create-agent-affordance]')].map(
+      (el) => el.dataset.createAgentAffordance,
+    );
+  }
+
+  it('hands the sidebar and panel tree agent-creation handlers in an owner window', () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-1', title: 'Owned' };
+
+    const { container } = renderHost();
+
+    expect(createAffordances(container).sort()).toEqual([
+      'agent',
+      'agent',
+      'specialist',
+      'specialist',
+    ]);
+  });
+
+  it('withholds every agent-creation handler when lifecycle actions are hidden', () => {
+    mocks.loadState = { status: 'ready', error: null };
+    mocks.workspace = { id: 'workspace-1', title: 'Shared' };
+    mocks.hidesAgentLifecycleActions = true;
+
+    const { container } = renderHost();
+
+    expect(container.querySelector('[data-workspace-surface-part="valid-sidebar"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-workspace-surface-part="valid-panel-layout"]'),
+    ).not.toBeNull();
+    expect(createAffordances(container)).toEqual([]);
+  });
 });
 
 describe('WorkspaceSurface zero-workspace route (/workspace/new)', () => {
