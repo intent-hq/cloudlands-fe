@@ -17,6 +17,7 @@
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import type { InviteConsentAction, InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import { m } from '$shared/paraglide/messages.js';
+  import { FocusTrap } from '$lib/utils/accessibility';
 
   interface Props {
     open?: boolean;
@@ -36,11 +37,16 @@
   const waiting = $derived(payload !== null && openedRequestId === payload.requestId);
 
   // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
-  // reaches the keydown handler immediately.
+  // reaches the keydown handler immediately, and trap it there so Tab cycles
+  // within the dialog instead of escaping behind the overlay; focus returns
+  // to where it was once the dialog closes.
   $effect(() => {
-    if (open && payload && dialogEl) {
-      dialogEl.focus();
-    }
+    if (!open || !payload || !dialogEl) return;
+    const el = dialogEl;
+    const trap = new FocusTrap(el);
+    trap.activate();
+    if (!el.contains(document.activeElement)) el.focus();
+    return () => trap.deactivate();
   });
 
   function handleOpen() {
