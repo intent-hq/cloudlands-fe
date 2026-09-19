@@ -1,11 +1,13 @@
 <script lang="ts">
   /**
-   * Avatar stack of the people present somewhere (a workspace tab, an agent
-   * chat): up to `maxVisible` avatars plus a "+N" overflow chip. Each avatar
-   * is ringed by the person's standing when known — the owner blue, an online
-   * member green, an offline member grey with the avatar dimmed — and this
-   * window's own principal is marked. Renders nothing when nobody is there.
+   * Avatar stack of the people present somewhere (a workspace sidebar, an
+   * agent chat): up to `maxVisible` avatars plus a "+N" overflow chip. Each
+   * avatar is ringed by the person's standing when known — the owner blue, an
+   * online member green, an offline member grey with the avatar dimmed — and
+   * this window's own principal is marked. With `action` every visible avatar
+   * is a button. Renders nothing when nobody is there.
    */
+  import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -15,6 +17,7 @@
     presencePersonLabel,
     presencePersonRing,
     type PresenceCircle,
+    type PresenceCircleAction,
     type PresenceRing,
   } from './presence-person';
 
@@ -27,6 +30,8 @@
     side?: 'top' | 'bottom' | 'left' | 'right';
     /** Skip the per-avatar tooltips (the parent already names the people). */
     decorative?: boolean;
+    /** Make each visible avatar a button labelled and driven by this resolver. */
+    action?: (person: PresenceCircle) => PresenceCircleAction;
     class?: string;
   }
 
@@ -36,6 +41,7 @@
     size = 16,
     side = 'bottom',
     decorative = false,
+    action,
     class: className = '',
   }: Props = $props();
 
@@ -95,7 +101,22 @@
     data-presence-count={people.length}
   >
     {#each visible as person (person.principalId)}
-      {#if decorative}
+      {#if action}
+        {@const { label: personLabel, onSelect } = action(person)}
+        <Button
+          variant="plain"
+          wrapContent={false}
+          class="h-auto rounded-full p-0"
+          tooltip={personLabel}
+          tooltipSide={side}
+          aria-label={personLabel}
+          aria-disabled={onSelect ? undefined : true}
+          onclick={onSelect ?? undefined}
+          data-presence-person-button={person.principalId}
+        >
+          {@render avatar(person)}
+        </Button>
+      {:else if decorative}
         {@render avatar(person)}
       {:else}
         <Tooltip content={presencePersonLabel(person)} {side}>

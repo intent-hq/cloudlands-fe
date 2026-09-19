@@ -105,7 +105,7 @@ describe('presenceSaga lifecycle', () => {
     expect(principals('ws-1')).toEqual(['me', 'other']);
   });
 
-  it('reads the local owner principal on start without a backend change and marks self', async () => {
+  it('reads the local owner principal on start without a backend change and leaves self out', async () => {
     if (!dispose) dispose = store.init();
     store.dispatch(
       replaceWorkspaceList([
@@ -132,7 +132,6 @@ describe('presenceSaga lifecycle', () => {
       }),
     );
     expect(selectAgentPresencePeople.select(store.state, 'ws-1', 'agent-1')).toMatchObject([
-      { principalId: 'me', self: true },
       { principalId: 'other', self: false },
     ]);
   });
@@ -185,7 +184,6 @@ describe('presenceSaga lifecycle', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(calls('workspace.members.list')).toEqual([{ workspaceId: 'ws-1' }]);
       expect(selectWorkspacePresencePeople.select(store.state, 'ws-1')).toMatchObject([
-        { principalId: 'me', owner: true, online: true, self: true },
         { principalId: 'other', owner: false, online: true, self: false },
         { principalId: 'away', owner: false, online: false, self: false },
       ]);
