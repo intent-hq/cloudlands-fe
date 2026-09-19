@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Proposal } from '$shared/types/proposal';
 
@@ -23,9 +24,17 @@ const navigationMocks = vi.hoisted(() => ({
 
 // The New Workspace modal's effective specialist (null = General), as the
 // workspace-initializer selector would resolve it.
-const newWorkspaceDefaultState = vi.hoisted(() => ({
-  specialist: null as string | null,
-}));
+const newWorkspaceDefaultState = vi.hoisted(() => {
+  const listeners = new Set<(value: string | null) => void>();
+  return {
+    specialist: null as string | null,
+    listeners,
+    setSpecialist(value: string | null) {
+      this.specialist = value;
+      for (const listener of listeners) listener(value);
+    },
+  };
+});
 
 const electronBridgeMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -130,12 +139,16 @@ vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', ()
   selectPrBranchLookupEntries: prBranchLookupState.selectPrBranchLookupEntries,
 }));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectNewWorkspaceDefaultSpecialist: vi.fn(() => ({
-    subscribe: (run: (value: string | null) => void) => {
-      run(newWorkspaceDefaultState.specialist);
-      return () => {};
-    },
-  })),
+  selectNewWorkspaceDefaultSpecialist: Object.assign(
+    vi.fn(() => ({
+      subscribe: (run: (value: string | null) => void) => {
+        run(newWorkspaceDefaultState.specialist);
+        newWorkspaceDefaultState.listeners.add(run);
+        return () => newWorkspaceDefaultState.listeners.delete(run);
+      },
+    })),
+    { select: vi.fn(() => newWorkspaceDefaultState.specialist) },
+  ),
 }));
 vi.mock('$store/renderer/store', () => ({
   store: {
@@ -1097,6 +1110,42 @@ describe('ProposalCard', () => {
       });
 
       expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('ui-designer');
+    });
+
+    it('reads the modal default once: later modal changes leave the selection and draft alone', async () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      const onDraftChange = vi.fn();
+      const { container } = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+            },
+          }),
+          onDraftChange,
+        },
+      });
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
+      await tick();
+      const draftCallsAfterInit = onDraftChange.mock.calls.length;
+
+      newWorkspaceDefaultState.setSpecialist('implementor');
+      await tick();
+
+      expect(newWorkspaceDefaultState.listeners.size).toBe(0);
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+      expect(onDraftChange.mock.calls.length).toBe(draftCallsAfterInit);
+
+      await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+      const event = applyListener.mock.calls[0]?.[0] as CustomEvent | undefined;
+      expect(event?.detail.editedFields.specialist).toBe('coordinator');
     });
   });
 

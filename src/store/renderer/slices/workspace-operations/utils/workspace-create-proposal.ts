@@ -34,9 +34,10 @@ export interface BuildCreateWorkspaceRequestOptions {
   /**
    * Resolves the initial agent's display name from the specialist the request
    * carries (`undefined` = General). Consulted unless the proposal payload
-   * carries an explicit `initialAgent.name` AND the specialist is unchanged
-   * from the payload — a payload name describes the payload's specialist, so
-   * an edited/defaulted specialist is renamed after what is actually applied.
+   * carries an explicit `initialAgent.name` AND names a specialist that equals
+   * the effective one. A payload name describes the payload's specialist, so
+   * an edited/defaulted specialist — and any payload that named no specialist —
+   * is renamed after what is actually applied.
    */
   resolveAgentName: (specialistId: string | undefined) => string;
 }
@@ -52,10 +53,12 @@ export function buildCreateWorkspaceRequestFromProposal(
   const payloadSpecialist =
     typeof initialAgent?.specialist === 'string' ? initialAgent.specialist : undefined;
   const specialist = specialistOverride(editedFields?.specialist, payloadSpecialist);
-  const payloadName = specialist === payloadSpecialist ? initialAgent?.name : undefined;
-  const metadata = recordValue(initialAgent?.metadata) ?? {};
   const hasSpecialistEdit =
     typeof editedFields?.specialist === 'string' || editedFields?.specialist === null;
+  const keepsPayloadSpecialist =
+    payloadSpecialist !== undefined && specialist === payloadSpecialist;
+  const payloadName = keepsPayloadSpecialist ? initialAgent?.name : undefined;
+  const metadata = recordValue(initialAgent?.metadata) ?? {};
   const agentMetadata = hasSpecialistEdit ? withoutSpecialist(metadata) : metadata;
 
   // No client-supplied agentId: the daemon assigns the initial agent's id and

@@ -101,7 +101,10 @@ vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', ()
   selectPrBranchLookupEntries: vi.fn(() => readable(() => ({}))),
 }));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectNewWorkspaceDefaultSpecialist: vi.fn(() => readable(() => null)),
+  selectNewWorkspaceDefaultSpecialist: Object.assign(
+    vi.fn(() => readable(() => null)),
+    { select: vi.fn(() => null) },
+  ),
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectWorkspaceAgentIds: vi.fn(() => readable(() => [])),

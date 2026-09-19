@@ -90,6 +90,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         initialAgent: {
           agentId: 'agent-existing',
           name: 'Existing coordinator',
+          specialist: 'coordinator',
           prompt: 'Original prompt',
           agentType: 'task-breakdown',
           metadata: { isInitialAgent: false },
@@ -100,6 +101,7 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
 
     expect(request.initialAgent).toMatchObject({
       name: 'Existing coordinator',
+      specialist: 'coordinator',
       prompt: 'Original prompt',
       agentType: 'task-breakdown',
       metadata: { isInitialAgent: true },
@@ -271,6 +273,37 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
       name: 'Planner',
       specialist: 'planner',
     });
+  });
+
+  it('renames a General edit on a payload that named no specialist', () => {
+    // The daemon's sibling producer (workspace.rs) emits initialAgent
+    // { name: 'Coordinator', prompt } with no specialist; a card that applies
+    // General (null) must not create a General agent named "Coordinator".
+    const resolve = vi.fn(resolveAgentName);
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Coordinator', prompt: 'Go' } }),
+      { specialist: null },
+      { resolveAgentName: resolve },
+    );
+
+    expect(request.initialAgent?.name).toBe('Agent');
+    expect(request.initialAgent?.specialist).toBeUndefined();
+    expect(resolve).toHaveBeenCalledWith(undefined);
+  });
+
+  it('resolves the name for an unnamed-specialist payload even without a specialist edit', () => {
+    // No payload specialist means the effective specialist is General, so the
+    // payload name (written for another specialist) is never applicable.
+    const resolve = vi.fn(resolveAgentName);
+    const request = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Coordinator', prompt: 'Go' } }),
+      undefined,
+      { resolveAgentName: resolve },
+    );
+
+    expect(request.initialAgent?.name).toBe('Agent');
+    expect(request.initialAgent?.specialist).toBeUndefined();
+    expect(resolve).toHaveBeenCalledWith(undefined);
   });
 
   it('preserves existing specialist metadata when specialist edit is absent', () => {

@@ -140,9 +140,10 @@
   const prBranchLookupInFlightKeys = new Set<string>();
 
   const prBranchLookupEntries = selectPrBranchLookupEntries();
-  // The New Workspace modal's effective initial agent: the fallback when a
-  // workspace-create proposal does not name a specialist.
-  const newWorkspaceDefaultSpecialist = selectNewWorkspaceDefaultSpecialist();
+  // The New Workspace modal's effective initial agent at mount: the fallback
+  // when a workspace-create proposal does not name a specialist. Read once so
+  // later modal edits never rewrite a card's selection.
+  const newWorkspaceDefaultSpecialist = selectNewWorkspaceDefaultSpecialist.select(appStore.state);
 
   const fields = $derived(proposal.preview.fields ?? []);
   const bulkItems = $derived(proposal.preview.bulkItems ?? []);
@@ -318,7 +319,7 @@
     workspaceScope = workspaceCreate.scope ?? '';
     workspaceSpecialist =
       workspaceCreate.specialist === undefined
-        ? untrack(() => $newWorkspaceDefaultSpecialist)
+        ? newWorkspaceDefaultSpecialist
         : workspaceCreate.specialist;
     prBranchUserEdited = false;
     prBranchLookupKey = '';
