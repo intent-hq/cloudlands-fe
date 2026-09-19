@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.166.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.3...v2.166.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* **agent:** per-agent notification mute toggle with unread, toast, sound, and HUD suppression ([#2649](https://github.com/intent-hq/cloudlands-fe/issues/2649)) ([67f81bf](https://github.com/intent-hq/cloudlands-fe/commit/67f81bf9d34534c0ada569ed1e591ad949a0b58d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.79 ([#2661](https://github.com/intent-hq/cloudlands-fe/issues/2661)) ([c2cd10e](https://github.com/intent-hq/cloudlands-fe/commit/c2cd10e3383ef7a92834ce9068a65fd53f75cd7d))
+* **chat:** pin an opted-out followed bottom from the disclosure lease settle ([#2646](https://github.com/intent-hq/cloudlands-fe/issues/2646)) ([bc5eb10](https://github.com/intent-hq/cloudlands-fe/commit/bc5eb10b7a3c10094b297b24c4a84cb7cdef2f34))
+
 ## [2.165.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.2...v2.165.3) (2026-09-18)
 
 
