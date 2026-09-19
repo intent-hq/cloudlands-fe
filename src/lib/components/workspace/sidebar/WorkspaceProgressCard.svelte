@@ -426,9 +426,11 @@
     },
   });
 
-  // Owner-only (PROTOCOL §5.1 `myRole`): a missing role never offers Share.
+  // Owner-only (PROTOCOL §5.1 `myRole`): a missing role never offers Share, and
+  // neither does a guest window or a window whose identity has not settled
+  // (`selectHidesOwnerWorkspaceActions`), whatever `myRole` the row carries.
   const shareAction: MenuAction | null = $derived(
-    $workspace?.myRole === 'owner'
+    $workspace?.myRole === 'owner' && !$hidesOwnerActions$
       ? {
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,

@@ -300,6 +300,19 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: Object.assign((_workspaceId: any) => createReadable(null), {
     select: () => null,
   }),
+  // Settled owner window: the gate follows the seeded row's `myRole` alone.
+  selectIsWorkspaceCollaborator: Object.assign(
+    (workspaceId: string) =>
+      createSelectorReadable(
+        workspaceId,
+        (resolvedWorkspaceId) =>
+          mockWorkspaceStore.findById(resolvedWorkspaceId)?.myRole === 'collaborator',
+      ),
+    {
+      select: (_state: unknown, workspaceId: string) =>
+        mockWorkspaceStore.findById(workspaceId)?.myRole === 'collaborator',
+    },
+  ),
 }));
 
 const mockPostMergeState = {
