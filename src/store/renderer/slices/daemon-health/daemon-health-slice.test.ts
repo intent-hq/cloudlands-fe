@@ -43,6 +43,8 @@ describe('daemonHealthReducer', () => {
       polling: false,
       transport: null,
       reconnectAttempts: 0,
+      connectionLimited: false,
+      connectionLimitRetryAfterMs: null,
       hostLocality: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
@@ -229,6 +231,70 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, reconnectAttempts: 14 };
       const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
       expect(next.reconnectAttempts).toBe(0);
+    });
+
+    // Multiplayer guest caps: main reports a 503-refused connect as
+    // `connectionLimited`; the posture holds across retries until main
+    // reports otherwise, and a successful connect clears it.
+    it('tracks connectionLimited from the status extras and clears it on connect', () => {
+      const limited = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: true }),
+      );
+      expect(limited.connectionLimited).toBe(true);
+
+      const retrying = daemonHealthReducer(
+        limited,
+        connectionStatusChanged('connecting', undefined, { reconnectAttempts: 1 }),
+      );
+      expect(retrying.connectionLimited).toBe(true);
+
+      const otherFailure = daemonHealthReducer(
+        retrying,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: false }),
+      );
+      expect(otherFailure.connectionLimited).toBe(false);
+
+      const connected = daemonHealthReducer(limited, connectionStatusChanged('connected'));
+      expect(connected.connectionLimited).toBe(false);
+    });
+
+    it('tracks the connection-limit retry wait alongside the posture', () => {
+      const limited = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected', undefined, {
+          connectionLimited: true,
+          connectionLimitRetryAfterMs: 45_000,
+        }),
+      );
+      expect(limited.connectionLimitRetryAfterMs).toBe(45_000);
+
+      // A retry broadcast without the field keeps the last known wait.
+      const retrying = daemonHealthReducer(
+        limited,
+        connectionStatusChanged('connecting', undefined, { reconnectAttempts: 1 }),
+      );
+      expect(retrying.connectionLimitRetryAfterMs).toBe(45_000);
+
+      // A refreshed refusal replaces it.
+      const refreshed = daemonHealthReducer(
+        retrying,
+        connectionStatusChanged('disconnected', undefined, {
+          connectionLimited: true,
+          connectionLimitRetryAfterMs: 120_000,
+        }),
+      );
+      expect(refreshed.connectionLimitRetryAfterMs).toBe(120_000);
+
+      // A failure of another kind drops it with the posture.
+      const otherFailure = daemonHealthReducer(
+        refreshed,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: false }),
+      );
+      expect(otherFailure.connectionLimitRetryAfterMs).toBeNull();
+
+      const connected = daemonHealthReducer(refreshed, connectionStatusChanged('connected'));
+      expect(connected.connectionLimitRetryAfterMs).toBeNull();
     });
 
     it('latches sidecarGaveUp + reason on a give-up disconnect', () => {

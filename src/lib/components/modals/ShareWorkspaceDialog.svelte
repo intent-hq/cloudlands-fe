@@ -18,6 +18,11 @@
    * back as props from the github-user-search slice; picking a row pins the
    * invite to that login (rendered as a chip), free text still submits as-is.
    *
+   * The workspace's guest cap (`guestCount` / `guestLimit` from
+   * `workspace.members.list`, intent-hq/intentd#1917) is shown as
+   * "Guests n / N"; at the cap Create is disabled with the reason inline.
+   * The daemon still enforces the cap (`guest-limit`) for a raced create.
+   *
    * Fully presentational: every row and in-flight flag arrives from the
    * workspace-share slice through the Redux host, and user intent (create /
    * revoke / remove) goes back as callbacks the host dispatches. Only the pin
@@ -37,7 +42,7 @@
   import { menuItem } from '$lib/components/ui/menu';
   import { ListView } from '$lib/components/patterns/collection';
   import { notify } from '$lib/components/patterns/notify';
-  import { formatRelativeTime } from '$lib/i18n/format';
+  import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceRole } from '$shared/types';
   import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
@@ -66,6 +71,10 @@
      * by the host from the invite-link vault; a missing entry disables Copy.
      */
     inviteLinks?: Readonly<Record<string, string>>;
+    /** Guests spent (collaborators + open invites); `null` while unknown. */
+    guestCount?: number | null;
+    /** The workspace's guest cap; `null` while unknown (no gating). */
+    guestLimit?: number | null;
     loading?: boolean;
     loadError?: string | null;
     creating?: boolean;
@@ -98,6 +107,8 @@
     members = [],
     invites = [],
     inviteLinks = {},
+    guestCount = null,
+    guestLimit = null,
     loading = false,
     loadError = null,
     creating = false,
@@ -119,6 +130,10 @@
   }: Props = $props();
 
   const busy = $derived(revokingInviteId !== null || removingPrincipalId !== null);
+  /** The cap is known and spent: no further invite can be minted. */
+  const atGuestCap = $derived(
+    guestCount !== null && guestLimit !== null && guestCount >= guestLimit,
+  );
 
   let pinLogin = $state('');
   /** Suggestion the user picked; wins over the free-text draft on submit. */
@@ -213,7 +228,7 @@
   }
 
   function createInvite() {
-    if (!workspaceId || !canManage || creating) return;
+    if (!workspaceId || !canManage || creating || atGuestCap) return;
     onCreateInvite?.(selectedUser ? selectedUser.login : pinLogin.trim());
   }
 
@@ -454,13 +469,24 @@
                   {/if}
                 </div>
               {/if}
-              <Button type="submit" variant="secondary" size="sm" disabled={creating}>
+              <Button
+                type="submit"
+                variant="secondary"
+                size="sm"
+                disabled={creating || atGuestCap}
+                title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
+              >
                 <Fa icon={faLink} />
                 {creating
                   ? m.workspace_share_creating_label()
                   : m.workspace_share_createLink_label()}
               </Button>
             </div>
+            {#if atGuestCap}
+              <p class="text-xs text-subtle" role="status" data-testid="share-guest-cap-reached">
+                {m.workspace_share_guestLimitReached_notice()}
+              </p>
+            {/if}
             {#if createError}
               <p class="text-xs text-danger" role="alert" data-testid="share-create-error">
                 {createError}
@@ -563,9 +589,24 @@
           {/if}
 
           <section class="space-y-2" aria-label={m.workspace_share_members_label()}>
-            <h3 class="type-caption font-medium text-subtle">
-              {m.workspace_share_members_label()}
-            </h3>
+            <div class="flex items-baseline justify-between gap-2">
+              <h3 class="type-caption font-medium text-subtle">
+                {m.workspace_share_members_label()}
+              </h3>
+              {#if guestCount !== null && guestLimit !== null}
+                <span
+                  class="text-xs text-subtle"
+                  data-testid="share-guest-count"
+                  data-guest-count={guestCount}
+                  data-guest-limit={guestLimit}
+                >
+                  {m.workspace_share_guests_label({
+                    count: formatInteger(guestCount),
+                    limit: formatInteger(guestLimit),
+                  })}
+                </span>
+              {/if}
+            </div>
             {#if loading && members.length === 0}
               <p class="text-xs text-subtle" data-testid="share-members-loading">
                 {m.workspace_share_loading_label()}

@@ -144,6 +144,8 @@ async function showOverlay(
     sidecarStartupFailed?: boolean;
     reason?: string;
     reconnectAttempts?: number;
+    connectionLimited?: boolean;
+    connectionLimitRetryAfterMs?: number | null;
   },
 ) {
   bootTransport = transport;
@@ -400,6 +402,54 @@ describe('DaemonStoppedOverlay', () => {
     const retrying = screen.getByTestId('daemon-stopped-retrying').textContent!;
     expect(retrying).toContain('Retrying connection');
     expect(retrying).not.toContain('attempt');
+  });
+
+  // Multiplayer guest caps (intent-hq/intentd#1917): a 503-refused connect
+  // is transient, so the retry indicator stays, but the copy names the
+  // host's connection cap instead of the generic lost-connection wording.
+  it('names the host connection cap while main retries a 503-refused connect, and reverts', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport, { reconnectAttempts: 1, connectionLimited: true });
+
+    expect(screen.getByTestId('daemon-stopped-connection-limit')).toBeTruthy();
+    expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
+    const limitedText = overlay()!.textContent!;
+
+    // A later failure of another kind drops the cap posture.
+    dispatchAndFlush(
+      connectionStatusChanged('disconnected', undefined, {
+        reconnectAttempts: 2,
+        connectionLimited: false,
+      }),
+    );
+    expect(screen.queryByTestId('daemon-stopped-connection-limit')).toBeNull();
+    expect(overlay()!.textContent).not.toBe(limitedText);
+  });
+
+  // The 503 refusal carries the host's Retry-After; the cap copy shows that
+  // actual wait (in seconds) rather than a vague "automatically".
+  it('shows the wait main scheduled from the host Retry-After in the cap copy', async () => {
+    render(DaemonStoppedOverlay);
+    await showOverlay(externalTransport, {
+      reconnectAttempts: 1,
+      connectionLimited: true,
+      connectionLimitRetryAfterMs: 45_000,
+    });
+
+    const capCopy = screen.getByTestId('daemon-stopped-connection-limit');
+    expect(capCopy.textContent).toContain('45');
+
+    // A refreshed refusal with a different wait updates the copy in place.
+    dispatchAndFlush(
+      connectionStatusChanged('disconnected', undefined, {
+        reconnectAttempts: 2,
+        connectionLimited: true,
+        connectionLimitRetryAfterMs: 120_000,
+      }),
+    );
+    const refreshed = screen.getByTestId('daemon-stopped-connection-limit').textContent!;
+    expect(refreshed).toContain('120');
+    expect(refreshed).not.toContain('45');
   });
 
   describe('passive per-host cert warnings (#1746 follow-up)', () => {

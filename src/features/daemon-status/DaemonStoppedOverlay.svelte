@@ -30,6 +30,8 @@
     selectDaemonHealth,
     selectDaemonTransport,
     selectReconnectAttempts,
+    selectConnectionLimited,
+    selectConnectionLimitRetryAfterMs,
     selectSidecarGaveUp,
     selectSidecarGaveUpReason,
     selectSidecarStartupFailed,
@@ -63,11 +65,14 @@
   import Portal from '$lib/components/ui/Portal.svelte';
   import { DAEMON_UPDATING_COUNTDOWN_MS } from './DaemonUpdatingOverlay.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
 
   const health$ = selectDaemonHealth();
   const updateDisconnectedAt$ = selectDaemonUpdateDisconnectedAt();
   const transport$ = selectDaemonTransport();
   const reconnectAttempts$ = selectReconnectAttempts();
+  const connectionLimited$ = selectConnectionLimited();
+  const connectionLimitRetryAfterMs$ = selectConnectionLimitRetryAfterMs();
   const sidecarGaveUp$ = selectSidecarGaveUp();
   const sidecarGaveUpReason$ = selectSidecarGaveUpReason();
   const sidecarStartupFailed$ = selectSidecarStartupFailed();
@@ -182,6 +187,21 @@
   // (connectOperationStarted).
   const isAuthRejected = $derived($authRejected$ !== null);
   let repairModalOpen = $state(false);
+
+  // Connection-cap posture (multiplayer guest caps): the host refused the
+  // WebSocket upgrade with HTTP 503 because its guest connection limit is
+  // spent. Transient — main keeps retrying on a slow bounded cadence and the
+  // retry indicator stays — but the copy names the cap so the guest knows
+  // nothing on their side is broken. Terminal postures (auth rejected,
+  // sidecar failure) take precedence: they never coexist with a 503 retry.
+  const isConnectionLimited = $derived($connectionLimited$ && !isAuthRejected && !isSidecarFailure);
+  // The wait main scheduled (the host's Retry-After), in whole seconds, so
+  // the copy can name the actual cadence instead of a vague "automatically".
+  const connectionLimitRetrySeconds = $derived(
+    $connectionLimitRetryAfterMs$ === null
+      ? null
+      : Math.max(1, Math.round($connectionLimitRetryAfterMs$ / 1000)),
+  );
 
   // Revoked-guest posture (multiplayer w4): this window is bound to a host
   // joined as a guest and that host rejected the credential — the owner
@@ -324,6 +344,8 @@
             {$sidecarStartupFailed$
               ? m.daemonStatus_overlay_startupFailedTitle_label()
               : m.daemonStatus_overlay_stoppedUnexpectedlyTitle_label()}
+          {:else if isConnectionLimited}
+            {m.daemonStatus_overlay_connectionLimitTitle_label()}
           {:else if isExternalMode && machineName}
             {$hasEverConnected$
               ? m.daemonStatus_overlay_machineLostTitle_label({ machine: machineName })
@@ -362,6 +384,14 @@
                   })
                 : m.daemonStatus_overlay_gaveUp_description()}
             {/if}
+          {:else if isConnectionLimited}
+            <span data-testid="daemon-stopped-connection-limit">
+              {connectionLimitRetrySeconds === null
+                ? m.daemonStatus_overlay_connectionLimit_description()
+                : m.daemonStatus_overlay_connectionLimitRetryAfter_description({
+                    seconds: formatInteger(connectionLimitRetrySeconds),
+                  })}
+            </span>
           {:else if isExternalMode && machineName}
             {$hasEverConnected$
               ? m.daemonStatus_overlay_externalLostMachine_description({ machine: machineName })

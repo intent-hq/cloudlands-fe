@@ -52,6 +52,16 @@ export const selectShareInvites = store.createSelector((state) =>
   getItems(state.workspaceShare.invites),
 );
 
+/** Guests spent (collaborators + open invites); `null` until read or when unreported. */
+export const selectShareGuestCount = store.createSelector(
+  (state) => state.workspaceShare.guestCount,
+);
+
+/** The workspace's guest cap (`sharing.maxGuestsPerWorkspace`); `null` when unreported. */
+export const selectShareGuestLimit = store.createSelector(
+  (state) => state.workspaceShare.guestLimit,
+);
+
 export const selectShareLoading = store.createSelector(
   (state) => state.workspaceShare.loadStatus === 'loading',
 );
