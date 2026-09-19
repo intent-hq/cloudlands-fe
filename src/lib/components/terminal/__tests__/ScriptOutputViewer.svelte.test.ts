@@ -26,15 +26,30 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const SYSTEM_DEFAULT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
 
-const { xtermMock, fontReadableRef, scriptState, scriptSelectorArgs, mockScriptStart } = vi.hoisted(
-  () => ({
-    xtermMock: { instances: [] as any[], constructorOptions: [] as any[] },
-    fontReadableRef: { value: null as any },
-    scriptState: { byWorkspaceId: {} as Record<string, Record<string, any>> },
-    scriptSelectorArgs: [] as unknown[][],
-    mockScriptStart: vi.fn(),
+const {
+  xtermMock,
+  fontReadableRef,
+  scriptState,
+  scriptSelectorArgs,
+  mockScriptStart,
+  lifecycleGate,
+} = vi.hoisted(() => ({
+  xtermMock: { instances: [] as any[], constructorOptions: [] as any[] },
+  fontReadableRef: { value: null as any },
+  scriptState: { byWorkspaceId: {} as Record<string, Record<string, any>> },
+  scriptSelectorArgs: [] as unknown[][],
+  mockScriptStart: vi.fn(),
+  lifecycleGate: { hidesAgentLifecycleActions: false },
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => ({
+    subscribe: (fn: (v: boolean) => void) => {
+      fn(lifecycleGate.hidesAgentLifecycleActions);
+      return () => {};
+    },
   }),
-);
+}));
 
 function createControllableReadable<T>(initial: T) {
   let current = initial;
@@ -199,7 +214,24 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
     xtermMock.instances.length = 0;
     xtermMock.constructorOptions.length = 0;
     scriptSelectorArgs.length = 0;
+    lifecycleGate.hidesAgentLifecycleActions = false;
     scriptState.byWorkspaceId = {
+      'ws-failed': {
+        's-1': {
+          id: 's-1',
+          workspaceId: 'ws-failed',
+          name: 'build',
+          command: 'pnpm build',
+          mode: 'command',
+          source: 'user',
+          createdAt: '2026-01-02T00:00:00.000Z',
+          runtime: { status: 'exited', pid: null, exitCode: 1, restartCount: 0 },
+          output: {
+            chunks: [{ text: 'boom\n', timestamp: '2026-01-02T00:00:00.000Z' }],
+            dropped: 0,
+          },
+        },
+      },
       'ws-1': {
         's-1': {
           id: 's-1',
@@ -293,5 +325,21 @@ describe('ScriptOutputViewer.svelte code-font wiring', () => {
 
     await fireEvent.click(screen.getByText('Run'));
     expect(mockScriptStart).toHaveBeenCalledWith('ws-2', 's-1');
+  });
+
+  it('offers "Ask AI to Fix" on a failed script when agent creation is allowed', async () => {
+    render(ScriptOutputViewer, { props: { scriptId: 's-1', workspaceId: 'ws-failed' } });
+    await waitForXTermInit();
+
+    await waitFor(() => expect(screen.getByText('Ask AI to Fix')).toBeTruthy());
+  });
+
+  it('withholds "Ask AI to Fix" when agent lifecycle actions are hidden', async () => {
+    lifecycleGate.hidesAgentLifecycleActions = true;
+    render(ScriptOutputViewer, { props: { scriptId: 's-1', workspaceId: 'ws-failed' } });
+    await waitForXTermInit();
+
+    await waitFor(() => expect(screen.getByText(/exit code 1/)).toBeTruthy());
+    expect(screen.queryByText('Ask AI to Fix')).toBeNull();
   });
 });

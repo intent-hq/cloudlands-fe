@@ -66,6 +66,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => []),
   selectHidesOwnerWorkspaceActions: mocks.selector(() => false),
+  selectHidesAgentLifecycleActions: mocks.selector(() => false),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
