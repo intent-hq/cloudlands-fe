@@ -137,6 +137,11 @@
      * no local-files expansion) — the secondary-root browsing view
      * (monorepo#2053). */
     listOnly?: boolean;
+    /** Every mutating affordance (push / create PR / merge / rebase / connect
+     * remote via `accept-changes.*`, GitHub auth via `github.*`, `git.pull`,
+     * force `git.push`) renders only when true; a collaborator gets the
+     * read-only PR list and sync labels. */
+    isOwner?: boolean;
   }
 
   let {
@@ -179,6 +184,7 @@
     onOpenChange: _onOpenChange,
     mergePanelContent,
     listOnly = false,
+    isOwner = true,
   }: Props = $props();
 
   // Redux selectors
@@ -716,17 +722,24 @@
      the primary workspace has a remote, and never in listOnly mode) -->
 {#if hasRemote && !listOnly}
   <TimelineDivider>
-    {#if hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
-      <!-- Show Push Commits button when open PR exists -->
-      <DividerButton onclick={handlePushAllUnpushed} disabled={isPushing} loading={isPushing}>
+    {#if isOwner && hasOpenPR && hasUnpushedCommits && unpushedCount > 0 && !isDiverged && !isBehind}
+      <!-- Show Push Commits button when open PR exists (accept-changes.execute, owner-only) -->
+      <DividerButton
+        onclick={handlePushAllUnpushed}
+        disabled={isPushing}
+        loading={isPushing}
+        data-testid="pr-push-commits-button"
+      >
         {unpushedCount === 1
           ? m.workspace_prSection_pushCommit_one()
           : m.workspace_prSection_pushCommit_many({ count: formatInteger(unpushedCount) })}
       </DividerButton>
-    {:else if (!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge)}
-      <!-- Show Create PR + Merge buttons when no open PR and not post-merge -->
+    {:else if isOwner && ((!hasOpenPR && !(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk)) || (!hasOpenPR && hasNewWorkAfterMerge))}
+      <!-- Show Create PR + Merge buttons when no open PR and not post-merge
+           (accept-changes.execute / accept-changes.mergePR / github.*, owner-only) -->
       <div class="w-full flex gap-1">
         <DividerButton
+          data-testid="pr-create-button"
           tooltipContents={!hasStaged && !hasCommits
             ? m.workspace_prSection_noChangesForPr_tooltip()
             : ''}
@@ -740,6 +753,7 @@
           {m.workspace_prSection_createPr_label()}
         </DividerButton>
         <DividerButton
+          data-testid="pr-merge-button"
           tooltipContents={!hasStaged && !hasCommits
             ? m.workspace_prSection_noChangesToMerge_tooltip()
             : ''}
@@ -920,8 +934,9 @@
           {@render mergePanelContent()}
         {/if}
       </DividerPanel>
-    {:else if isBehind}
+    {:else if isOwner && isBehind}
       <DividerButton
+        data-testid="pr-pull-button"
         onclick={handlePull}
         disabled={isPulling}
         loading={isPulling}
@@ -932,7 +947,7 @@
           : m.workspace_prSection_pullCommit_many({ count: formatInteger(behindCount) })}
         <Fa icon={faArrowDown} size="xs" class="text-ghost rotate-180" />
       </DividerButton>
-    {:else if !isDiverged && !isBehind}
+    {:else if !isDiverged && !isBehind && (isOwner || !(hasUnpushedCommits && unpushedCount > 0))}
       <span
         class="relative z-20 text-xs text-subtle flex items-center gap-1 py-1.5 px-3 rounded-md bg-background"
       >
@@ -941,9 +956,10 @@
       </span>
     {/if}
 
-    <!-- Rebase onto trunk -->
-    {#if behindTrunk > 0 && !hasConflicts && aheadOfTrunk !== null}
+    <!-- Rebase onto trunk (accept-changes.execute, owner-only) -->
+    {#if isOwner && behindTrunk > 0 && !hasConflicts && aheadOfTrunk !== null}
       <DividerButton
+        data-testid="pr-rebase-button"
         onclick={handleRebaseOntoTrunk}
         disabled={isRebasing}
         loading={isRebasing}
@@ -954,9 +970,10 @@
       </DividerButton>
     {/if}
 
-    <!-- Force Push Section -->
-    {#if isDiverged}
+    <!-- Force Push Section (owner-only) -->
+    {#if isOwner && isDiverged}
       <DividerButton
+        data-testid="pr-force-push-button"
         onclick={() => {
           forcePushDrawerOpen = !forcePushDrawerOpen;
         }}
@@ -1029,11 +1046,14 @@
       {#snippet action()}
         <!-- Refresh fetches/refreshes the PRIMARY workspace's git + PR
                state, so it is suppressed in the read-only listOnly
-               (secondary-root browsing) mode (monorepo#2053). -->
-        {#if !listOnly && (hasAnyPRs || $githubAuthIsAuthenticated$)}
+               (secondary-root browsing) mode (monorepo#2053). Its
+               unauthenticated path starts `github.connect`, which only the
+               owner may call. -->
+        {#if !listOnly && isOwner && (hasAnyPRs || $githubAuthIsAuthenticated$)}
           <Button
             variant="ghost"
             type="button"
+            data-testid="pr-refresh-button"
             class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
             onclick={() => {
               if (!$githubAuthIsAuthenticated$) {
@@ -1053,7 +1073,7 @@
         {/if}
       {/snippet}
       {#snippet children()}
-        {#if !$githubAuthIsAuthenticated$}
+        {#if isOwner && !$githubAuthIsAuthenticated$}
           {#key authBannerKey}
             <GitHubAuthBanner
               message={m.workspace_prSection_connectToGithub_label()}
@@ -1222,7 +1242,8 @@
 {/if}
 
 <!-- Divider with Merge button - hide when PR is already merged, when merge is in upper section, or post-merge -->
-{#if !listOnly && !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
+<!-- Merge / connect-remote dividers (accept-changes.*, owner-only) -->
+{#if !listOnly && isOwner && !isPRMerged && (!hasRemote || hasOpenPR) && (!(isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) || hasNewWorkAfterMerge)}
   <TimelineDivider>
     {#if !hasRemote}
       <div class="w-full flex gap-1">
