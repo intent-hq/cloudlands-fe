@@ -29,7 +29,7 @@
         variant="ghost"
         onclick={onNavigateBack}
         disabled={!canGoBack}
-        class="rounded-none h-full w-auto pl-4! pr-1.5!"
+        class="rounded-none"
         aria-label={m.ui_navButtons_goBack_tooltip()}
       >
         <Fa icon={faChevronLeft} size="sm" />
@@ -47,7 +47,7 @@
         variant="ghost"
         onclick={onNavigateForward}
         disabled={!canGoForward}
-        class="rounded-none h-full w-auto pr-4! pl-1.5!"
+        class="rounded-none"
         aria-label={m.ui_navButtons_goForward_tooltip()}
       >
         <Fa icon={faChevronRight} size="sm" />
