@@ -147,10 +147,10 @@ describe('selected note markdown copy', () => {
   it('keeps a markdown table for a cell selection spanning two cells in one row', () => {
     const editor = createEditor(TABLE_HTML);
     selectCells(editor, 0, 1);
-    const markdown = serializeSelectionToMarkdown(editor.view);
 
-    expect(markdown).toContain('| Header one | Header two |');
-    expect(markdown).toMatch(/\|\s*-+\s*\|\s*-+\s*\|/);
+    expect(serializeSelectionToMarkdown(editor.view)).toBe(
+      '| Header one | Header two |\n| --- | --- |',
+    );
 
     editor.destroy();
   });
@@ -159,10 +159,14 @@ describe('selected note markdown copy', () => {
     const editor = createEditor(TABLE_HTML);
     selectCells(editor, 0, 2);
     const markdown = serializeSelectionToMarkdown(editor.view);
+    const rows = markdown.split('\n');
 
-    expect(markdown).toContain('| Header one |');
-    expect(markdown).toMatch(/\|\s*-+\s*\|/);
-    expect(markdown).toContain('過去，工作是寫程式碼。');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toBe('| Header one |');
+    expect(rows[1]).toBe('| --- |');
+    expect(rows[2]).toMatch(/^\| 過去，工作是寫程式碼。.* \|$/);
+    expect(markdown).not.toContain('Header two');
+    expect(markdown).not.toContain('Other cell');
 
     editor.destroy();
   });
