@@ -457,6 +457,15 @@ describe('WorkspaceProgressCard status message', () => {
     expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
   });
 
+  it('does not offer Share while the owner-only actions are hidden, even when the row reports myRole owner (guest window / unsettled identity)', async () => {
+    mocks.role.hidesOwnerActions = true;
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+  });
+
   it('offers Transfer, Archive and Delete to the workspace owner', async () => {
     const { container } = await renderProgressCard({ myRole: 'owner' });
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
