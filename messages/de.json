@@ -6438,6 +6438,8 @@
   "presence_person_unknown_label": "Jemand",
   "presence_avatarStack_people_one": "1 weitere Person hier",
   "presence_avatarStack_people_many": "{count} weitere Personen hier",
+  "presence_avatarStack_offline_one": "1 weiteres Mitglied, gerade nicht hier",
+  "presence_avatarStack_offline_many": "{count} weitere Mitglieder, gerade niemand hier",
   "presence_avatarStack_more_label": "+{count}",
   "presence_typing_one": "{name} schreibt…",
   "presence_typing_two_label": "{first} und {second} schreiben…",

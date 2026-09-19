@@ -6438,6 +6438,8 @@
   "presence_person_unknown_label": "某人",
   "presence_avatarStack_people_one": "另有 1 人在此",
   "presence_avatarStack_people_many": "另有 {count} 人在此",
+  "presence_avatarStack_offline_one": "另有 1 位成員，目前不在此",
+  "presence_avatarStack_offline_many": "另有 {count} 位成員，目前均不在此",
   "presence_avatarStack_more_label": "+{count}",
   "presence_typing_one": "{name} 正在輸入…",
   "presence_typing_two_label": "{first} 和 {second} 正在輸入…",

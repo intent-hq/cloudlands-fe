@@ -6438,6 +6438,8 @@
   "presence_person_unknown_label": "誰か",
   "presence_avatarStack_people_one": "他に1人がここにいます",
   "presence_avatarStack_people_many": "他に{count}人がここにいます",
+  "presence_avatarStack_offline_one": "他に1人のメンバー、現在は不在です",
+  "presence_avatarStack_offline_many": "他に{count}人のメンバー、現在は誰もいません",
   "presence_avatarStack_more_label": "+{count}",
   "presence_typing_one": "{name}が入力中…",
   "presence_typing_two_label": "{first}と{second}が入力中…",
