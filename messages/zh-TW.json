@@ -83,6 +83,7 @@
   "debug_panel_reset_title": "重設偵錯旗標？",
   "debug_panel_reset_description": "將所有偵錯旗標重設為預設值？",
   "debug_panel_reset_confirmLabel": "重設",
+  "debug_panel_close_ariaLabel": "關閉偵錯面板",
   "menu_show_release_notes": "顯示版本資訊",
   "menu_sample_intentd_process": "取樣 intentd 處理程序...",
   "dialog_about_version": "版本：{version}",

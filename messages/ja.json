@@ -83,6 +83,7 @@
   "debug_panel_reset_title": "デバッグフラグをリセットしますか？",
   "debug_panel_reset_description": "すべてのデバッグフラグをデフォルトにリセットしますか？",
   "debug_panel_reset_confirmLabel": "リセット",
+  "debug_panel_close_ariaLabel": "デバッグパネルを閉じる",
   "menu_show_release_notes": "リリースノートを表示",
   "menu_sample_intentd_process": "intentd プロセスのサンプルを収集...",
   "dialog_about_version": "バージョン: {version}",

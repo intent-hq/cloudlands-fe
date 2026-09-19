@@ -83,6 +83,7 @@
   "debug_panel_reset_title": "¿Restablecer indicadores de depuración?",
   "debug_panel_reset_description": "¿Restablecer todos los indicadores de depuración a sus valores predeterminados?",
   "debug_panel_reset_confirmLabel": "Restablecer",
+  "debug_panel_close_ariaLabel": "Cerrar panel de depuración",
   "menu_show_release_notes": "Mostrar notas de la versión",
   "menu_sample_intentd_process": "Analizar proceso de intentd...",
   "dialog_about_version": "Versión: {version}",

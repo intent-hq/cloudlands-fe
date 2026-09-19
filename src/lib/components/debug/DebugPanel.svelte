@@ -606,25 +606,26 @@
       </div>
       <div class="flex items-center gap-1">
         <Button
-          size="sm"
+          size="icon-compact"
+          iconOnly
           variant="ghost"
           onclick={(e) => {
             e.stopPropagation();
             handleReset();
           }}
           title={m.settings_reset_button()}
-          class="h-7 w-7 p-0"
         >
           <Fa icon={faRotate} size="xs" />
         </Button>
         <Button
-          size="sm"
+          size="icon-compact"
+          iconOnly
           variant="ghost"
           onclick={(e) => {
             e.stopPropagation();
             handleClose();
           }}
-          class="h-7 w-7 p-0"
+          aria-label={m.debug_panel_close_ariaLabel()}
         >
           <Fa icon={faTimes} size="xs" />
         </Button>

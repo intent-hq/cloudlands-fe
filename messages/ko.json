@@ -83,6 +83,7 @@
   "debug_panel_reset_title": "디버그 플래그를 재설정할까요?",
   "debug_panel_reset_description": "모든 디버그 플래그를 기본값으로 재설정할까요?",
   "debug_panel_reset_confirmLabel": "재설정",
+  "debug_panel_close_ariaLabel": "디버그 패널 닫기",
   "menu_show_release_notes": "릴리스 노트 표시",
   "menu_sample_intentd_process": "intentd 프로세스 샘플링...",
   "dialog_about_version": "버전: {version}",
