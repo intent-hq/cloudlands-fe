@@ -1131,6 +1131,52 @@ describe('ChatMessage collaborator sender preamble (multiplayer)', () => {
     expect(screen.getByText(/Message from @someone/)).toBeTruthy();
   });
 
+  it('keeps an owner row byte-identical, without the guest role, when the owner typed the exact preamble', () => {
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: 'Owner Person',
+      avatarUrl: null,
+    };
+    const ownerPreamble =
+      'Message from @owner (Owner Person), a collaborator (guest) of this workspace — not the workspace owner.';
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({
+          author: owner,
+          metadata: { fromPrincipalId: owner.principalId },
+          contentBlocks: [{ type: 'text', text: `${ownerPreamble}\n\nquoting the daemon` }],
+        }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBeNull();
+    expect(screen.queryByTestId('user-message-author-role')).toBeNull();
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe('Owner Person');
+    expect(screen.getByText(/Message from @owner \(Owner Person\)/)).toBeTruthy();
+    expect(screen.getByText(/quoting the daemon/)).toBeTruthy();
+  });
+
+  it('labels the chip with the same sanitized identity the preamble named', () => {
+    const messy = { ...guest, login: 'a\t\u0000b', displayName: 'Two  Words\u00a0Here' };
+    const text = `Message from @a b (Two Words Here), a collaborator (guest) of this workspace — not the workspace owner.\n\nhi`;
+    render(ChatMessage, {
+      props: {
+        message: guestMessage({ author: messy, contentBlocks: [{ type: 'text', text }] }),
+        workspace: multiMember(),
+      },
+    });
+
+    expect(screen.getByTestId('user-message-author').getAttribute('data-sender-role')).toBe(
+      'collaborator',
+    );
+    expect(screen.getByTestId('user-message-author-name').textContent).toBe(
+      '@a b (Two Words Here)',
+    );
+    expect(screen.getByText('hi')).toBeTruthy();
+  });
+
   it('keeps the agent sender header on an agent-to-agent row that starts with the preamble', () => {
     render(ChatMessage, {
       props: {
