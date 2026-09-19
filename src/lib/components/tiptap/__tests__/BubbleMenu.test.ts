@@ -190,6 +190,37 @@ describe('BubbleMenu', () => {
     expect(bubbleMenu).toBeTruthy();
   });
 
+  it('renders every toolbar icon inside a zero-padding icon-sized button', async () => {
+    renderBubbleMenu();
+
+    await triggerSelectionUpdate();
+
+    // Open the link input so its confirm/cancel buttons are included too
+    await fireEvent.click(document.body.querySelector('[aria-label="Add link"]')!);
+    await tick();
+
+    const buttons = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.bubble-menu-floating button'),
+    );
+    expect(buttons.length).toBe(10);
+
+    for (const button of buttons) {
+      const label = button.getAttribute('aria-label');
+      expect(label, 'toolbar button must be named').toBeTruthy();
+      expect(button.querySelector('svg'), `${label} must render an icon`).toBeTruthy();
+
+      // Regression: the default Button size applies horizontal padding wider than
+      // the toolbar square, which collapsed the truncating label wrapper to zero
+      // width and clipped the icon. Icon sizes set p-0 and no px-* utility.
+      const classes = Array.from(button.classList);
+      expect(classes, `${label} must use an icon size (p-0)`).toContain('p-0');
+      expect(
+        classes.filter((c) => /^px-/.test(c)),
+        `${label} must not carry a horizontal padding utility`,
+      ).toEqual([]);
+    }
+  });
+
   it('should toggle bold formatting', async () => {
     renderBubbleMenu();
 
