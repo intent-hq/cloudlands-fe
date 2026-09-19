@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { RuleTester } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import svelteParser from 'svelte-eslint-parser';
 import { describe, expect, it } from 'vitest';
 import { designSystemRules } from './index.js';
+import iconOnlyButtonSize from './icon-only-button-size.js';
 import noAdhocTransitions from './no-adhoc-transitions.js';
 import noArbitraryMotionOrColor from './no-arbitrary-motion-or-color.js';
 import noButtonCompatibilityAliases from './no-button-compatibility-aliases.js';
@@ -130,6 +132,109 @@ svelteTester.run('no-button-compatibility-aliases', noButtonCompatibilityAliases
       errors: [{ message: 'Use `variant="secondary"` instead — /sandbox/button' }],
     },
   ],
+});
+
+const buttonImport = 'import { Button } from "$lib/components/ui/button";';
+const faImport = 'import Fa from "svelte-fa";';
+const withScript = (...imports) => `<script>${imports.join('')}</script>`;
+const iconButton = withScript(buttonImport, faImport);
+const iconSizeError = {
+  message:
+    'Use `size="icon"` or another icon size such as `size="icon-compact"` instead — /sandbox/button',
+};
+const buttonSizeKeys = (() => {
+  const source = readFileSync(
+    projectFile('src/lib/components/ui/button/button.variants.ts'),
+    'utf8',
+  );
+  const block = source.match(/\n {4}size: \{\n([\s\S]*?)\n {4}\},\n/)[1];
+  return [...block.matchAll(/^\s*'?([a-z-]+)'?:/gm)].map(([, key]) => key);
+})();
+
+svelteTester.run('icon-only-button-size', iconOnlyButtonSize, {
+  valid: [
+    `${iconButton}<Button size="icon-compact" aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+    `${iconButton}<Button size={size} aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+    `${iconButton}<Button size="sm"><Fa icon={faPlus} /> Add</Button>`,
+    `${iconButton}<Button size="sm">{label}<Fa icon={faPlus} /></Button>`,
+    `${iconButton}<Button size="sm"><Fa icon={faPlus} />{@render children()}</Button>`,
+    `${iconButton}<Button size="sm">{#snippet leadingIcon()}<Fa icon={faPlus} />{/snippet}</Button>`,
+    `${withScript(buttonImport)}<Button size="sm" aria-label="Save" />`,
+    `${iconButton}<Button size="sm">{#if busy}<Fa icon={faSpinner} />{:else}Save{/if}</Button>`,
+    `${withScript(buttonImport, 'import Badge from "$lib/components/ui/badge/badge.svelte";')}<Button size="sm"><Badge /></Button>`,
+    `${withScript(faImport)}<Button aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+    `${withScript('import { Toggle } from "$lib/components/ui/toggle";', faImport)}<Toggle aria-label="More"><Fa icon={faEllipsis} /></Toggle>`,
+    ...buttonSizeKeys
+      .filter((key) => key.startsWith('icon'))
+      .map((key) => `${iconButton}<Button size="${key}"><Fa icon={faX} /></Button>`),
+    {
+      code: `${iconButton}<Button aria-label="More"><Fa icon={faEllipsis} /></Button><Button aria-label="Close"><Fa icon={faX} /></Button>`,
+      filename: projectFile('src/features/legacy/Toolbar.svelte'),
+      options: [{ baseline: { 'src/features/legacy/Toolbar.svelte': 2 } }],
+    },
+  ],
+  invalid: [
+    {
+      code: `${iconButton}<Button aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript(buttonImport)}<Button aria-label="More"><svg viewBox="0 0 16 16" /></Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript(buttonImport)}<Button iconOnly size="sm" aria-label="Save">Save</Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript(buttonImport)}<Button iconOnly aria-label="Save" />`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${iconButton}<Button size="sm">{#if busy}<Fa icon={faSpinner} />{:else if done}<svg />{:else}<Fa icon={faPlus} />{/if}</Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${iconButton}<Button size="sm">{#if busy}<Fa icon={faSpinner} />{/if}</Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${iconButton}<!-- more --><Button aria-label="More">\n  <!-- icon -->\n  <Fa icon={faEllipsis} />\n</Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript('import { Button as ActionButton } from "$lib/components/ui/button";', faImport)}<ActionButton aria-label="More"><Fa icon={faEllipsis} /></ActionButton>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript('import IconButton from "$lib/components/ui/button/button.svelte";', 'import KebabIcon from "$lib/components/icons/KebabIcon.svelte";')}<IconButton size="compact" aria-label="More"><KebabIcon /></IconButton>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript('import { Button } from "$lib/components/ui/button/index.js";', 'import KebabIcon from "../icons/KebabIcon.svelte";')}<Button aria-label="More"><KebabIcon /></Button>`,
+      filename: projectFile('src/lib/components/toolbar/Toolbar.svelte'),
+      errors: [iconSizeError],
+    },
+    {
+      code: `${iconButton}<Button aria-label="More"><Fa icon={faEllipsis} /></Button><Button aria-label="Close"><Fa icon={faX} /></Button>`,
+      filename: projectFile('src/features/legacy/Toolbar.svelte'),
+      options: [{ baseline: { 'src/features/legacy/Toolbar.svelte': 1 } }],
+      errors: [iconSizeError],
+    },
+    ...buttonSizeKeys
+      .filter((key) => !key.startsWith('icon'))
+      .map((key) => ({
+        code: `${iconButton}<Button size="${key}"><Fa icon={faX} /></Button>`,
+        errors: [iconSizeError],
+      })),
+  ],
+});
+
+describe('icon-only-button-size drift guard', () => {
+  it('reads the size ladder from button.variants.ts', () => {
+    expect(buttonSizeKeys).toContain('icon');
+    expect(buttonSizeKeys).toContain('default');
+  });
 });
 
 svelteTester.run('no-legacy-spinner', noLegacySpinner, {
