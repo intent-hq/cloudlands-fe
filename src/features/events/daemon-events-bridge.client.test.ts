@@ -5868,15 +5868,45 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
     expect(scopeCountsOf()).toEqual({ topLevel: 2, delegated: 5, background: 2 });
   });
 
-  it('agent:created for an id this client already holds is count-neutral (duplicate delivery / own create)', async () => {
-    seedSession();
+  it('agent:created counts an id this client already holds exactly once (own create upserts the row before the event; duplicates are neutral)', async () => {
+    // The `agent.create` response upserted the row before the event landed:
+    // the row is uncounted in the daemon-served baseline, so the first event
+    // still nudges its bin; the re-delivery does not.
+    seedSession({ isBackground: true });
     const handler = capturedHandlers[0]!;
 
     handler(notification('agent:created', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 2 });
+
     handler(notification('agent:created', { agentId: AGENT }));
     await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 2 });
+  });
 
-    expect(scopeCountsOf()).toEqual(COUNTS);
+  it('two agent:created deliveries in flight at once for the same id nudge the bin once', async () => {
+    const handler = capturedHandlers[0]!;
+    // Both deliveries share the read-service's single-flight fetch, which
+    // settles only after both handlers have run.
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementation(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(2);
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
   });
 
   it('agent:created whose fetch yields no row (deleted meanwhile) leaves the counts alone', async () => {
@@ -5927,6 +5957,34 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
     await flush();
     expect(scopeCountsOf()).toEqual(COUNTS);
     expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('a re-delivered agent:retired / agent:restored is count-neutral for both bins; the next real transition still applies', async () => {
+    seedSession({ isBackground: true });
+    appStore.dispatch(setRetiredCount(WS, 0));
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+    // The metadata refresh still runs for every delivery.
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(2);
+
+    // A restore this client issued clears `retiredAt` locally before the
+    // event lands (agent-mutation saga); the counts still owe the transition.
+    seedSession({ isBackground: true });
+    handler(notification('agent:restored', { agentId: AGENT }));
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual(COUNTS);
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(0);
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
   });
 
   it('agent:retired / agent:restored for an id with no local session re-baselines via a hydrate (collapsed-bin row)', async () => {

@@ -24,6 +24,7 @@
     WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
+  import { agentListBinOf } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   interface Props {
     agents?: AgentSession[];
@@ -124,13 +125,39 @@
   const topLevelAgents = $derived(
     filteredAgentRows.filter((row) => row.depth === 0).map((row) => row.agent),
   );
+  // Lazy-bin mode: the daemon served `scopeCounts`, so `agents` holds only the
+  // top-level rows until the Delegated / Background bins are expanded.
+  const hasLazyBins = $derived(scopeCounts !== null);
+  // Bin membership follows the wire parent (`agentListBinOf`, the daemon's
+  // §5.5 row-scope rule), never the rendered tree depth: a delegated row
+  // whose parent is not loaded (a collapsed Background parent, or a retired
+  // one) flattens to depth 0 in the tree but still belongs to the Delegated
+  // bin. Without lazy bins there is no Delegated bin, so such an orphan keeps
+  // rendering as a top-level row as before.
+  const isDelegatedAgent = (agent: AgentSession) => agentListBinOf(agent) === 'delegated';
+  const isOrphanDelegatedAgent = (agent: AgentSession) => hasLazyBins && isDelegatedAgent(agent);
   const topLevelForegroundAgents = $derived(
-    topLevelAgents.filter((agent) => !isBackgroundAgent(agent)),
+    topLevelAgents.filter((agent) => !isBackgroundAgent(agent) && !isOrphanDelegatedAgent(agent)),
   );
   const standaloneBackgroundAgents = $derived(
-    topLevelAgents.filter((agent) => isBackgroundAgent(agent)),
+    topLevelAgents.filter((agent) => isBackgroundAgent(agent) && !isOrphanDelegatedAgent(agent)),
   );
+  const orphanDelegatedAgents = $derived(topLevelAgents.filter(isOrphanDelegatedAgent));
   const hasCoordinator = $derived(topLevelForegroundAgents.some(isCoordinator));
+  // A standalone background row renders only while its bin is expanded, a
+  // search is active, or it is running (see the Background section below).
+  const isBackgroundRowRendered = (agent: AgentSession) =>
+    hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id);
+  // Rows the open Delegated bin lists directly: delegated rows with no parent
+  // in the tree, plus the children of a LOADED background parent whose own row
+  // is not rendered (collapsed Background bin) — otherwise those children
+  // would render nowhere while the bin still counts them.
+  const delegatedSectionAgents = $derived([
+    ...orphanDelegatedAgents,
+    ...standaloneBackgroundAgents
+      .filter((agent) => !isBackgroundRowRendered(agent))
+      .flatMap((agent) => directChildrenByAgentId.get(agent.id) ?? []),
+  ]);
   // Fall back to the regular list when delegations exist (tree heights are variable)
   // or a coordinator is present (its section headers need the regular rendering).
   const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
@@ -148,15 +175,10 @@
   let showDelegatedAgents = $state(false);
   let showBackgroundAgents = $state(false);
   let showRetiredAgents = $state(false);
-  // Lazy-bin mode: the daemon served `scopeCounts`, so `agents` holds only the
-  // top-level rows until the Delegated / Background bins are expanded.
-  const hasLazyBins = $derived(scopeCounts !== null);
   const delegatedGroupsDefaultExpanded = $derived(hasLazyBins && showDelegatedAgents);
-  // Delegated rows are the nested (depth > 0) rows of the tree — the daemon's
-  // `delegated` bin (`parentAgentId` set, background children included).
-  const loadedDelegatedAgents = $derived(
-    flatAgentRows.filter((row) => row.depth > 0).map((row) => row.agent),
-  );
+  // The daemon's `delegated` bin: every parented row (background children
+  // included), whether or not its parent is loaded.
+  const loadedDelegatedAgents = $derived(activeAgents.filter(isDelegatedAgent));
   const runningDelegatedCount = $derived(
     loadedDelegatedAgents.filter((agent) => isAgentRunning(agent.id)).length,
   );
@@ -467,6 +489,13 @@
         </div>
       {/each}
     </div>
+  {:else if delegatedRowsVisible && delegatedSectionAgents.length > 0}
+    <!-- Delegated rows whose parent is not rendered (Background parent not
+         loaded or its bin collapsed, or a retired parent) list here so the bin
+         still holds them; while the parent row renders they nest under it. -->
+    <div class="flex flex-col gap-0.5 pt-1" data-agent-delegated-section>
+      {@render agentTree(delegatedSectionAgents)}
+    </div>
   {/if}
 {/if}
 
@@ -516,18 +545,10 @@
   <div class="flex flex-col gap-0.5 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
       {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
+        <!-- Rendered through the tree snippet so a background parent's
+             delegated children nest under it (revealed by the Delegated bin). -->
         <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
-          <LazyAgentCard
-            cacheKey={agent.id}
-            agentId={agent.id}
-            agentName={agent.name}
-            isBackground
-            selected={agent.id === selectedAgentId}
-            updatedAt={agent.updatedAt}
-            hidePreview
-            panelRow
-            onclick={(event) => handleAgentClick(agent.id, event)}
-          />
+          {@render agentTree([agent])}
         </div>
       {/if}
     {/each}

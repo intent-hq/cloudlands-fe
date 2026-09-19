@@ -368,6 +368,14 @@ const previewTurnEndedMessageIdByAgent = new Map<string, string>();
 let daemonEmitsLastMessage = false;
 
 /**
+ * `scopeCounts` nudge idempotency (§5.5 row scope): created ids already
+ * counted by `handleAgentCreatedEvent`, and each agent's last applied
+ * retire/restore transition (see `claimRetireTransition`).
+ */
+const scopeCountedCreatedAgentIds = new Set<string>();
+const lastAppliedRetireTransitionByAgent = new Map<string, 'retired' | 'restored'>();
+
+/**
  * Single-flight + trailing-coalesce wrapper over `ensureAgentSession` for the
  * `agent:message` back-compat refresh (per the event-driven refetch rule):
  * triggers during an in-flight fetch collapse into at most ONE follow-up
@@ -1308,12 +1316,16 @@ function handleAgentCreatedEvent(event: WorkspaceEvent, workspaceId: string): vo
   const agentId = data.agentId;
   if (typeof agentId !== 'string' || agentId.length === 0) return;
   // Bin-count nudge (`scopeCounts`, §5.5 row scope): the payload does not
-  // classify the row, so classify the fetched session once it lands — only
-  // for an id this client did not already hold (duplicate `agent:created`
-  // deliveries and a create this client issued itself stay count-neutral).
-  const alreadyKnown = appStore.state.agentSessions?.byAgentId[agentId] !== undefined;
+  // classify the row, so classify the fetched session once it lands. Each
+  // created id is counted once per bridge lifetime — keyed on the id, not on
+  // whether the session is already held locally: a create this client
+  // issued itself upserts the row from the `agent.create` response before
+  // the event lands yet is still uncounted, while a duplicate delivery (or
+  // two in flight at once) must not count twice.
+  const countThisCreate = !scopeCountedCreatedAgentIds.has(agentId);
+  scopeCountedCreatedAgentIds.add(agentId);
   void ensureAgentSession(agentId).then(() => {
-    if (alreadyKnown) return;
+    if (!countThisCreate) return;
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session || session.retiredAt) return;
     appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(session), 1));
@@ -1342,6 +1354,21 @@ function adjustScopeCountForRetireTransition(
   } else {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
+}
+
+/**
+ * Count-nudge idempotency for the retire/restore pair: a re-delivered
+ * `agent:retired` (or `agent:restored`) must not move the counts again, so
+ * each agent's last APPLIED transition is remembered and an event repeating
+ * it is count-neutral (the metadata refresh still runs). Tracked by
+ * transition rather than by the local row's `retiredAt`: a restore this
+ * client issued clears `retiredAt` locally before the event lands, and the
+ * counts still owe that transition. Reset on `agent:deleted`.
+ */
+function claimRetireTransition(agentId: string, transition: 'retired' | 'restored'): boolean {
+  if (lastAppliedRetireTransitionByAgent.get(agentId) === transition) return false;
+  lastAppliedRetireTransitionByAgent.set(agentId, transition);
+  return true;
 }
 
 /**
@@ -3587,6 +3614,7 @@ export function routeDaemonEventsNotification(
       } else {
         appStore.dispatch(hydrateAgentsRequested(workspaceId));
       }
+      lastAppliedRetireTransitionByAgent.delete(data.agentId);
       // Drop the local slice state for the deleted agent — mirroring
       // `handleAgentDeleteScheduledEvent` — so an immediate delete (no
       // `agent:delete-scheduled` grace window) converges without waiting for
@@ -3863,14 +3891,20 @@ export function routeDaemonEventsNotification(
   // the lazy retired-only read runs; hydration re-baselines it from the
   // daemon-served `retiredCount`. The row's `scopeCounts` bin moves the
   // opposite way (retire leaves the bin, restore re-enters it).
+  // Both nudges are applied once per transition (`claimRetireTransition`): a
+  // re-delivered event refreshes the row's metadata but leaves the counts alone.
   if (type === 'agent:retired' || type === 'agent:restored') {
     const retiring = type === 'agent:retired';
     const data = (event as { data?: Record<string, unknown> }).data;
-    if (typeof data?.agentId === 'string' && data.agentId.length > 0) {
-      adjustScopeCountForRetireTransition(workspaceId, data.agentId, retiring ? -1 : 1);
+    const agentId =
+      typeof data?.agentId === 'string' && data.agentId.length > 0 ? data.agentId : null;
+    const countsOwed =
+      agentId === null || claimRetireTransition(agentId, retiring ? 'retired' : 'restored');
+    if (countsOwed && agentId !== null) {
+      adjustScopeCountForRetireTransition(workspaceId, agentId, retiring ? -1 : 1);
     }
     handleAgentUpdatedEvent(event);
-    appStore.dispatch(adjustRetiredCount(workspaceId, retiring ? 1 : -1));
+    if (countsOwed) appStore.dispatch(adjustRetiredCount(workspaceId, retiring ? 1 : -1));
   }
   // `agent:attention-requested` (requestDiscussion / reportBlocker) — the
   // daemon persists the attention-request fields on the session and also
@@ -4131,6 +4165,8 @@ export function disposeDaemonEventsRoutingState(): void {
   daemonEmitsLastMessage = false;
   agentSessionRefreshInFlight.clear();
   agentSessionRefreshFollowUpWanted.clear();
+  scopeCountedCreatedAgentIds.clear();
+  lastAppliedRetireTransitionByAgent.clear();
   for (const timer of changesRefreshTimersByWorkspace.values()) {
     clearTimeout(timer);
   }
