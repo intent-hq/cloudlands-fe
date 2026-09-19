@@ -3,6 +3,19 @@
  * intentd #1872) — the guest side of a workspace invite. Modelled on
  * `pair-deep-link.ts`, with a device-flow join in the middle:
  *
+ * 0. Returning guest (spec "Returning guest: per-host reuse"): when the
+ *    guest-sessions store already holds a credential for this daemon
+ *    (fingerprint canonical, host:port fallback) AND that record's pinned
+ *    fingerprint equals the invite's, the invite is previewed with
+ *    `invite.inspect` — no device flow started. A workspace the session
+ *    already lists just opens; otherwise a confirm-only consent prompt
+ *    ("Signed in on this host as @login" → Join) leads to
+ *    `invite.accept { inviteId, secret, credential }`, and the fresh
+ *    credential is stored over the old one (same record, workspace
+ *    appended). No session, a fingerprint mismatch (a different daemon at
+ *    a known address — the stored token is never decrypted, let alone sent
+ *    to it), an undecryptable token, or a `credential-invalid` refusal fall
+ *    through to the device flow below without an extra prompt.
  * 1. Parse the link and dial the daemon's unauthenticated `/invite`
  *    endpoint with the pin enforced at the TLS handshake, then start the
  *    identity-only GitHub device flow (`invite.redeem { inviteId, secret }`).
@@ -45,7 +58,7 @@ import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invit
 import { getMainWindow } from '../../../main/state';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
-import { PinMismatchError } from '../../backend/main/backend-connection';
+import { PinMismatchError, normalizeFingerprint } from '../../backend/main/backend-connection';
 import {
   InviteRpcError,
   InviteTransportError,
@@ -58,6 +71,29 @@ const logger = new Logger('InviteDeepLink');
 
 /** Local bound on the phase-2 wait beyond the daemon's own `expiresIn`. */
 const WAIT_MARGIN_MS = 60_000;
+
+/** The parsed link fields the returning-guest path needs. */
+interface InviteEnvelope {
+  hosts: string[];
+  port: number;
+  fingerprint: string;
+  tcAddress: string | null;
+  inviteId: string;
+  secret: string;
+}
+
+/**
+ * Why the returning-guest path did not complete the join, as a bounded code
+ * for the log: every one of these falls through to the device flow.
+ */
+type ReturningFallbackReason =
+  'no-session' | 'fingerprint-mismatch' | 'no-token' | 'token-unavailable' | 'credential-invalid';
+
+/**
+ * Outcome of the returning-guest attempt: `handled` ends the flow (window
+ * opened or user cancelled); `fallback` continues into the device flow.
+ */
+type ReturningOutcome = { kind: 'handled' } | { kind: 'fallback'; reason: ReturningFallbackReason };
 
 /**
  * A flow failure decided locally, identified by a bounded code so logs and
@@ -117,6 +153,19 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     }
 
     connection = await openInviteConnection({ hosts, port, fingerprint, tcAddress });
+    const returning = await joinAsReturningGuest(
+      connection,
+      { hosts, port, fingerprint, tcAddress, inviteId, secret },
+      (prompt) => {
+        consent = prompt;
+      },
+    );
+    if (returning.kind === 'handled') return;
+    logger.info('No usable stored credential for this host; starting the device flow', {
+      reason: returning.reason,
+    });
+    consent = null;
+
     const start = await connection.redeemStart(inviteId, secret);
     // Refuse before the URL is shown or opened: the dialog would otherwise
     // display (and "Open GitHub" launch) whatever the server sent.
@@ -128,20 +177,16 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     const grant = connection.redeemWait(start.flowId, start.expiresIn * 1000 + WAIT_MARGIN_MS);
     grant.catch(() => {});
 
-    // Prompt labels: the host's pretty name when the daemon sends one (older
-    // daemons omit it → the dialed address, or "Unknown host" when that is an
-    // opaque tc address), and "Untitled" for a blank title. The stored guest
-    // session keeps the raw title and address; its settings row applies the
-    // same fallbacks on render.
-    const hostLabel =
-      nonBlank(start.prettyHostname) ??
-      nonBlank(start.hostname) ??
-      (isTcAddress(connection.host) ? m.connection_unknownHost_label() : connection.host);
+    // Prompt labels: see promptHostLabel; "Untitled" for a blank title. The
+    // stored guest session keeps the raw title and address; its settings row
+    // applies the same fallbacks on render.
+    const hostLabel = promptHostLabel(start, connection.host);
     const workspaceTitle = nonBlank(start.workspaceTitle) ?? m.workspace_links_untitled_label();
 
     await clipboard.writeText(start.userCode);
     consent = showInviteConsent({
       requestId: randomUUID(),
+      mode: 'device-code',
       userCode: start.userCode,
       verificationUri: start.verificationUri,
       workspaceTitle,
@@ -199,30 +244,12 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     // seat. Close the modal now — before the asynchronous store write — so
     // Cancel is neither offered nor honoured while the credential persists.
     consent.dismiss('joined');
-    const record = await guestSessionsStore.add({
-      label: connection.host,
-      host: connection.host,
-      hosts,
-      port,
-      fingerprint,
-      tcAddress,
-      principalId: credential.principalId,
-      login: credential.login,
-      token: credential.token,
-      workspace: { id: credential.workspaceId, title: start.workspaceTitle },
-    });
-    logger.info('Joined workspace as a guest; opening the window', {
-      id: record.id,
-      workspaceId: credential.workspaceId,
-      via: connection.via,
-      tokenEncrypted: record.tokenEncrypted,
-    });
-    if (!record.tokenEncrypted) {
-      // Flagged plaintext fallback (spec ruling): the join stands, but the
-      // user learns the credential is not protected by OS encryption.
-      await showPlaintextWarning();
-    }
-    await openBackendWindow(record.id);
+    await storeCredentialAndOpen(
+      connection,
+      { hosts, port, fingerprint, tcAddress },
+      credential,
+      start.workspaceTitle,
+    );
   } catch (error) {
     logger.warn('Invite deep link handling failed', describeErrorForLog(error));
     // A no-op once the modal was dismissed `joined`; the failure box still shows.
@@ -232,6 +259,150 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     connection?.close();
     inviteLinkInFlight = false;
   }
+}
+
+/**
+ * Returning-guest attempt, run before the device flow. The consent prompt it
+ * shows is handed to `onConsent` so the caller's failure path can dismiss it
+ * when a step after it throws. Refusals other than `credential-invalid`
+ * (expired / revoked / redeemed invite, transport) propagate — they would
+ * refuse the device flow just the same.
+ */
+async function joinAsReturningGuest(
+  connection: InviteConnection,
+  envelope: InviteEnvelope,
+  onConsent: (prompt: InviteConsentPrompt) => void,
+): Promise<ReturningOutcome> {
+  const { hosts, port, fingerprint, inviteId, secret } = envelope;
+  // The winning candidate (a direct host, or the tc address standing in as
+  // the host) is what the store keyed a tunnel-only session on.
+  const session = await guestSessionsStore.findMatching({
+    hosts: [...new Set([connection.host, ...hosts])],
+    port,
+    fingerprint,
+  });
+  if (!session) return { kind: 'fallback', reason: 'no-session' };
+  // Fail closed: the store's host:port fallback can match a record pinned to
+  // a different cert at the same address. Only a session pinned to the exact
+  // daemon this link is pinned to may have its credential reused.
+  if (normalizeFingerprint(session.fingerprint) !== normalizeFingerprint(fingerprint)) {
+    return { kind: 'fallback', reason: 'fingerprint-mismatch' };
+  }
+  let token: string | null;
+  try {
+    token = await guestSessionsStore.getDecryptedToken(session.id);
+  } catch {
+    // Keyring changed: the ciphertext is unreadable. A fresh device flow
+    // re-mints the credential; the store's upsert then replaces it.
+    return { kind: 'fallback', reason: 'token-unavailable' };
+  }
+  if (token === null) return { kind: 'fallback', reason: 'no-token' };
+
+  const inspection = await connection.inspect(inviteId, secret);
+  if (session.workspaces.some((w) => w.id === inspection.workspaceId)) {
+    logger.info('Already a member of the invited workspace on this host; opening the window', {
+      id: session.id,
+      workspaceId: inspection.workspaceId,
+      via: connection.via,
+    });
+    await openBackendWindow(session.id);
+    return { kind: 'handled' };
+  }
+
+  const hostLabel = promptHostLabel(inspection, connection.host);
+  const workspaceTitle = nonBlank(inspection.workspaceTitle) ?? m.workspace_links_untitled_label();
+  const consent = showInviteConsent({
+    requestId: randomUUID(),
+    mode: 'confirm',
+    login: session.login,
+    workspaceTitle,
+    hostLabel,
+  });
+  onConsent(consent);
+  const decision = await consent.decision;
+  if (decision === 'cancel') {
+    consent.dismiss('cancelled');
+    logger.info('User cancelled the returning-guest join');
+    return { kind: 'handled' };
+  }
+  // No renderer to show the modal (cold start / no ack): native box.
+  if (decision === null && !(await showConfirmJoin(session.login, workspaceTitle))) {
+    logger.info('User cancelled the returning-guest join');
+    return { kind: 'handled' };
+  }
+
+  // As in the device flow, a Cancel from the waiting state aborts the join
+  // until the host has answered: whichever of cancel and accept settles first
+  // decides, and a cancel that lands first stores nothing.
+  const accepted = connection.accept(inviteId, secret, token).then(
+    (credential) => ({ credential }),
+    (error: unknown) => {
+      if (error instanceof InviteRpcError && error.inviteCode === 'credential-invalid') {
+        return { credential: null };
+      }
+      throw error;
+    },
+  );
+  accepted.catch(() => {});
+  const outcome = await Promise.race([
+    consent.cancelledWhileWaiting.then(() => 'cancelled' as const),
+    accepted,
+  ]);
+  if (outcome === 'cancelled') {
+    consent.dismiss('cancelled');
+    logger.info('User cancelled the returning-guest join while waiting for the host');
+    return { kind: 'handled' };
+  }
+  const { credential } = outcome;
+  if (credential === null) {
+    // The host no longer recognizes the stored credential (revoked, or the
+    // guest was removed): the device flow re-establishes identity.
+    consent.dismiss('failed');
+    return { kind: 'fallback', reason: 'credential-invalid' };
+  }
+  // Point of no return, as for the device flow: the host has committed the
+  // join. Close the modal before the store write.
+  consent.dismiss('joined');
+  await storeCredentialAndOpen(connection, envelope, credential, inspection.workspaceTitle);
+  return { kind: 'handled' };
+}
+
+/**
+ * Persist the minted credential as a GUEST session (the store upserts by
+ * daemon identity: a returning guest's record keeps its id, takes the fresh
+ * token, and gains the workspace) and open the daemon's window. A store
+ * failure here surfaces as a failure, never as a cancellation.
+ */
+async function storeCredentialAndOpen(
+  connection: InviteConnection,
+  envelope: Pick<InviteEnvelope, 'hosts' | 'port' | 'fingerprint' | 'tcAddress'>,
+  credential: { token: string; principalId: string; login: string; workspaceId: string },
+  workspaceTitle: string,
+): Promise<void> {
+  const record = await guestSessionsStore.add({
+    label: connection.host,
+    host: connection.host,
+    hosts: envelope.hosts,
+    port: envelope.port,
+    fingerprint: envelope.fingerprint,
+    tcAddress: envelope.tcAddress,
+    principalId: credential.principalId,
+    login: credential.login,
+    token: credential.token,
+    workspace: { id: credential.workspaceId, title: workspaceTitle },
+  });
+  logger.info('Joined workspace as a guest; opening the window', {
+    id: record.id,
+    workspaceId: credential.workspaceId,
+    via: connection.via,
+    tokenEncrypted: record.tokenEncrypted,
+  });
+  if (!record.tokenEncrypted) {
+    // Flagged plaintext fallback (spec ruling): the join stands, but the
+    // user learns the credential is not protected by OS encryption.
+    await showPlaintextWarning();
+  }
+  await openBackendWindow(record.id);
 }
 
 /**
@@ -283,6 +454,23 @@ function nonBlank(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+/**
+ * Host name for a consent prompt: the host's pretty name when the daemon
+ * sends one, else its hostname; older daemons omit both, in which case the
+ * dialed address shows — or "Unknown host" when that address is an opaque tc
+ * address, which never reaches the renderer or a dialog title.
+ */
+function promptHostLabel(
+  names: { hostname?: string; prettyHostname?: string },
+  dialedHost: string,
+): string {
+  return (
+    nonBlank(names.prettyHostname) ??
+    nonBlank(names.hostname) ??
+    (isTcAddress(dialedHost) ? m.connection_unknownHost_label() : dialedHost)
+  );
+}
+
 async function showDialog(options: MessageBoxOptions): Promise<number> {
   const parent = getMainWindow();
   const result = parent
@@ -307,6 +495,20 @@ async function showDeviceCode(
     }),
     detail: m.deeplink_inviteCode_detail(),
     buttons: [m.deeplink_inviteCode_open_button(), m.deeplink_pairDialog_cancel_button()],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  return response === 0;
+}
+
+/** Confirm-only prompt for a returning guest (no device code). True when the user chose "Join". */
+async function showConfirmJoin(login: string, workspaceTitle: string): Promise<boolean> {
+  const response = await showDialog({
+    type: 'question',
+    title: m.deeplink_inviteConfirm_title(),
+    message: m.deeplink_inviteConfirm_message({ login: `@${login}`, workspace: workspaceTitle }),
+    detail: m.deeplink_inviteConfirm_detail(),
+    buttons: [m.deeplink_inviteConfirm_join_button(), m.deeplink_pairDialog_cancel_button()],
     defaultId: 0,
     cancelId: 1,
   });

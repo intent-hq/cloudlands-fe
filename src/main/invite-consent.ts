@@ -2,10 +2,12 @@
  * Renderer-rendered invite consent prompt for the main process.
  *
  * The `intent://invite` join (`features/deeplink/main/invite-deep-link.ts`)
- * asks the user to confirm their GitHub identity with a device code. This
+ * asks the user to confirm their GitHub identity — with a device code on a
+ * first join (`mode: "device-code"`), or by confirming the identity the host
+ * already knows when a credential for it is stored (`mode: "confirm"`). This
  * module drives that prompt as a renderer modal over the `invite-consent:*`
  * channels (contract in `src/shared/ipc/invite-consent.ts`), modelled on
- * `quit-confirmation.ts`:
+ * `quit-confirmation.ts`; the round-trip below is the same in both modes:
  *
  *   show → ack within {@link RENDERER_ACK_TIMEOUT_MS} → response → dismiss.
  *
@@ -20,7 +22,8 @@
  * that lands after it is ignored and logged (`cancel-after-grant`), never
  * treated as a cancellation. Nothing secret crosses this boundary: the
  * payload carries the user code, the (already allowlisted) verification URL
- * and display labels only.
+ * (or, in confirm mode, the stored login) and display labels only — never the
+ * stored credential.
  */
 
 import { BrowserWindow, ipcMain } from 'electron';
