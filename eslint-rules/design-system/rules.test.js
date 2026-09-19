@@ -191,6 +191,14 @@ svelteTester.run('icon-only-button-size', iconOnlyButtonSize, {
       errors: [iconSizeError],
     },
     {
+      code: `${iconButton}<Button size="" aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${iconButton}<Button size aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+      errors: [iconSizeError],
+    },
+    {
       code: `${iconButton}<Button size="sm">{#if busy}<Fa icon={faSpinner} />{:else if done}<svg />{:else}<Fa icon={faPlus} />{/if}</Button>`,
       errors: [iconSizeError],
     },

@@ -30,10 +30,12 @@ function isIconSource(source, filename) {
   return iconDirectories.some((directory) => isWithin(path.posix.dirname(resolved), directory));
 }
 
+// Returns the literal string for a static attribute (`size="sm"`, `size=""`,
+// bare `size`), or undefined when any part of the value is a mustache tag.
 function staticAttributeValue(attribute) {
   if (attribute.type !== 'SvelteAttribute' || !Array.isArray(attribute.value)) return undefined;
-  if (attribute.value.length !== 1 || attribute.value[0].type !== 'SvelteLiteral') return undefined;
-  return attribute.value[0].value;
+  if (attribute.value.some((part) => part.type !== 'SvelteLiteral')) return undefined;
+  return attribute.value.map((part) => part.value).join('');
 }
 
 function findAttribute(node, name) {
