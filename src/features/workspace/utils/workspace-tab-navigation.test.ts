@@ -482,6 +482,22 @@ describe('global workspace tab navigation', () => {
       expect(navigate).toHaveBeenCalledWith('/workspace/ws-3');
     });
 
+    it('selects the surviving tab instead of closing the window when no tab is current', () => {
+      const store = makeStore(null, layoutWith([makePanel('p1')], 'p1', [], 'ws-1'));
+      store.state.tabState.openTabs = { 'ws-1': true, 'ws-2': true };
+      store.state.tabState.workspaceStacks = [['ws-1'], ['ws-2']];
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-1', { navigate, closeWindow })).toBe(
+        'workspace',
+      );
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-2']);
+      expect(store.state.tabState.currentTabId).toBe('ws-2');
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-2');
+      expect(closeWindow).not.toHaveBeenCalled();
+    });
+
     it('degrades to the empty-window destination when no window close is available', () => {
       const store = makeStore('ws-2', layoutWith([makePanel('p1')], 'p1'), [
         { id: 'ws-other', status: 'Active' },

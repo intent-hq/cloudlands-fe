@@ -199,6 +199,22 @@ function isWorkspaceLayoutEmpty(store: WorkspaceTabNavigationStore, workspaceId:
   return selectAllTabs.select(store.state, workspaceId).length === 0;
 }
 
+/**
+ * Workspace level: route to the current tab. The reducer allows a null
+ * current id while tabs remain (restored tabs never become current), so
+ * select the first surviving tab first rather than treating that as empty.
+ */
+function navigateToRemainingWorkspace(
+  store: WorkspaceTabNavigationStore,
+  currentPath: string,
+  navigate: (path: string) => unknown,
+): void {
+  if (!selectCurrentWorkspaceTabId.select(store.state)) {
+    store.dispatch(switchToWorkspaceTabByIndex(0));
+  }
+  navigateToSelectedWorkspace(store, currentPath, navigate);
+}
+
 /** Window level: close the window, or on the web build show the empty-window destination. */
 function closeEmptyWindow(
   store: WorkspaceTabNavigationStore,
@@ -235,8 +251,8 @@ export function closeActiveTabCascade(
   if (!isWorkspaceLayoutEmpty(store, workspaceId)) return null;
 
   store.dispatch(closeWorkspaceTab(workspaceId));
-  if (selectCurrentWorkspaceTabId.select(store.state)) {
-    navigateToSelectedWorkspace(store, currentPath, options.navigate);
+  if (selectWorkspaceTabOrder.select(store.state).length > 0) {
+    navigateToRemainingWorkspace(store, currentPath, options.navigate);
     return 'workspace';
   }
   return closeEmptyWindow(store, currentPath, options) ?? 'workspace';
