@@ -3768,8 +3768,6 @@
   "inviteConsent_modal_why_description": "L'Intent de l'hôte vérifie qui rejoint via GitHub : connectez-vous pour prouver votre identité. Intent attend la confirmation de GitHub ou l'expiration du code.",
   "inviteConsent_modal_hostLearns_title": "Ce que l'hôte apprend",
   "inviteConsent_modal_hostLearns_description": "Votre nom d'utilisateur GitHub, l'identifiant de votre compte, votre nom d'affichage et votre avatar. Rien d'autre : aucune permission n'est accordée, l'hôte ne peut pas accéder à vos dépôts ni à vos données privées, et le jeton de connexion est utilisé une seule fois par l'hôte pour retrouver votre compte, puis jamais conservé.",
-  "inviteConsent_modal_stored_title": "Ce qui est stocké sur cette machine",
-  "inviteConsent_modal_stored_description": "Un identifiant pour l'espace de travail de cet hôte. Vous pourrez le supprimer de la session invité plus tard.",
   "inviteConsent_modal_waiting_label": "En attente de GitHub…",
   "inviteConsent_modal_cancelButton_label": "Annuler",
   "inviteConsent_modal_dismiss_ariaLabel": "Fermer la boîte de dialogue d'invitation",

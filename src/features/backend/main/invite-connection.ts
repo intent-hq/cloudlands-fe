@@ -7,7 +7,9 @@
  *
  * 1. `{ inviteId, secret }` starts an identity-only GitHub device flow and
  *    answers `{ flowId, userCode, verificationUri, expiresIn, interval,
- *    workspaceId, workspaceTitle }` — the UI shows the code + URL.
+ *    workspaceId, workspaceTitle, hostname?, prettyHostname? }` — the UI
+ *    shows the code + URL and names the host machine (older daemons omit
+ *    both hostname fields; the dialed address is shown instead).
  * 2. `{ flowId }` blocks until the grant settles and answers the collaborator
  *    credential exactly once: `{ status: "authorized", token, principalId,
  *    login, workspaceId }`.
@@ -60,7 +62,11 @@ const INVITE_START_TIMEOUT_MS = 30_000;
 // i18n-ignore (wire method name)
 const INVITE_REDEEM_METHOD = 'invite.redeem';
 
-/** Phase-1 result: the device-flow prompt. */
+/**
+ * Phase-1 result: the device-flow prompt. `hostname` / `prettyHostname` name
+ * the host machine for the consent prompt; older daemons omit both, in which
+ * case the dialed address is shown instead.
+ */
 interface InviteRedeemStart {
   flowId: string;
   userCode: string;
@@ -69,6 +75,8 @@ interface InviteRedeemStart {
   interval: number;
   workspaceId: string;
   workspaceTitle: string;
+  hostname?: string;
+  prettyHostname?: string;
 }
 
 /** Phase-2 result: the collaborator credential (returned exactly once). */
