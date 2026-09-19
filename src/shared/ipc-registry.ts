@@ -344,6 +344,19 @@ export const IPC_CHANNELS = {
     DISMISS: 'invite-consent:dismiss',
   },
 
+  // Invite notice (renderer-rendered failure / plaintext-credential notice of
+  // an invite join). Payload contracts live in src/shared/ipc/invite-notice.ts.
+  INVITE_NOTICE: {
+    /** Main → renderer: show the invite-notice modal for a request. */
+    SHOW: 'invite-notice:show',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'invite-notice:ack',
+    /** Renderer → main (invoke): the user acknowledged the notice (OK / Escape / backdrop). */
+    RESPONSE: 'invite-notice:response',
+    /** Main → renderer: close the modal for a superseded request. */
+    DISMISS: 'invite-notice:dismiss',
+  },
+
   // Window Management
   WINDOW: {
     RELOAD: 'window:reload',
