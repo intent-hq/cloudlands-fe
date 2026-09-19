@@ -276,6 +276,8 @@ describe('workspaceShareSaga', () => {
           generation: 0,
           members: [owner],
           invites: [invite],
+          guestCount: null,
+          guestLimit: null,
         }),
       );
       const hh = harness(loaded);
