@@ -206,7 +206,13 @@
           side="top"
           delayDuration={200}
         >
-          <Button variant="ghost" size="sm" onclick={handleStop}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            iconOnly
+            onclick={handleStop}
+            aria-label={m.chat_agentInputArea_stopGeneration_label()}
+          >
             <Fa icon={faStop} />
           </Button>
         </TooltipShortcut>
@@ -217,7 +223,13 @@
           side="top"
           delayDuration={200}
         >
-          <Button variant="ghost" size="sm" onclick={handleSend}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            iconOnly
+            onclick={handleSend}
+            aria-label={m.chat_agentInputArea_sendMessage_label()}
+          >
             <Fa icon={faPaperPlane} />
           </Button>
         </TooltipShortcut>
@@ -229,7 +241,13 @@
           side="top"
           delayDuration={200}
         >
-          <Button variant="ghost" size="sm" onclick={handleNewChat}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            iconOnly
+            onclick={handleNewChat}
+            aria-label={m.chat_agentInputArea_startNewChat_label()}
+          >
             <Fa icon={faPlus} />
           </Button>
         </TooltipShortcut>

@@ -469,7 +469,10 @@
                 {...props}
                 type="button"
                 variant="ghost"
-                class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
+                size="icon-compact"
+                iconOnly
+                class="flex-none rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
+                aria-label={m.notes_diagramBlock_copyDiagram_tooltip()}
                 onclick={(e) => {
                   e.stopPropagation();
                   (props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);

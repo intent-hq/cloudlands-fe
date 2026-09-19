@@ -83,6 +83,7 @@
   "debug_panel_reset_title": "重置调试标志？",
   "debug_panel_reset_description": "将所有调试标志重置为默认值？",
   "debug_panel_reset_confirmLabel": "重置",
+  "debug_panel_close_ariaLabel": "关闭调试面板",
   "menu_show_release_notes": "显示发行说明",
   "menu_sample_intentd_process": "采样 intentd 进程...",
   "dialog_about_version": "版本：{version}",

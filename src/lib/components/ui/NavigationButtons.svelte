@@ -24,11 +24,13 @@
       delayDuration={300}
     >
       <Button
-        size="xs"
+        size="icon-compact"
+        iconOnly
         variant="ghost"
         onclick={onNavigateBack}
         disabled={!canGoBack}
-        class="rounded-none h-full pl-4! pr-1.5!"
+        class="rounded-none h-full w-auto pl-4! pr-1.5!"
+        aria-label={m.ui_navButtons_goBack_tooltip()}
       >
         <Fa icon={faChevronLeft} size="sm" />
       </Button>
@@ -40,11 +42,13 @@
       delayDuration={300}
     >
       <Button
-        size="xs"
+        size="icon-compact"
+        iconOnly
         variant="ghost"
         onclick={onNavigateForward}
         disabled={!canGoForward}
-        class="rounded-none h-full pr-4! pl-1.5!"
+        class="rounded-none h-full w-auto pr-4! pl-1.5!"
+        aria-label={m.ui_navButtons_goForward_tooltip()}
       >
         <Fa icon={faChevronRight} size="sm" />
       </Button>

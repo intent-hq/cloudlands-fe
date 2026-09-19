@@ -1,23 +1,4 @@
 {
-  "icon-only-button-size": [
-    {
-      "owner": "design-system",
-      "reason": "Existing icon-only Buttons without an icon size are counted per file after cloudlands-fe#2668 (BubbleMenu regression); counts only shrink as callers add an icon size",
-      "counts": {
-        "src/features/layout/components/panel-tabs/Tab.svelte": 1,
-        "src/features/onboarding/messages/LocalRepoTab.svelte": 1,
-        "src/features/onboarding/messages/ProviderCard.svelte": 2,
-        "src/features/onboarding/steps/WorkspaceCreationError.svelte": 1,
-        "src/features/stats/StatsOverlay.svelte": 1,
-        "src/lib/components/chat/AgentInputArea.svelte": 3,
-        "src/lib/components/debug/DebugPanel.svelte": 2,
-        "src/lib/components/diagrams/DiagramControls.svelte": 2,
-        "src/lib/components/notes/primitives/DiagramBlock.svelte": 1,
-        "src/lib/components/ui/NavigationButtons.svelte": 2,
-        "src/routes/(app)/agent/[id]/+page.svelte": 1
-      }
-    }
-  ],
   "no-arbitrary-motion-or-color": [
     {
       "owner": "design-system",

@@ -83,6 +83,7 @@
   "debug_panel_reset_title": "Reset debug flags?",
   "debug_panel_reset_description": "Reset all debug flags to defaults?",
   "debug_panel_reset_confirmLabel": "Reset",
+  "debug_panel_close_ariaLabel": "Close debug panel",
   "menu_show_release_notes": "Show Release Notes",
   "menu_sample_intentd_process": "Sample intentd Process...",
   "dialog_about_version": "Version: {version}",
