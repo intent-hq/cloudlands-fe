@@ -97,11 +97,43 @@ describe('InviteConsentModal', () => {
     render(InviteConsentModal, { props: { open: true, payload: PAYLOAD, onRespond } });
 
     const dialogEl = await screen.findByRole('alertdialog', { name: DIALOG_NAME });
-    expect(document.activeElement).toBe(dialogEl);
+    expect(dialogEl.contains(document.activeElement)).toBe(true);
 
     await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
 
     expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
+    outside.remove();
+  });
+
+  it('traps Tab within the dialog while open and restores focus on close', async () => {
+    const InviteConsentModal = await loadModal();
+
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+
+    const { rerender } = render(InviteConsentModal, {
+      props: { open: true, payload: PAYLOAD, onRespond: vi.fn() },
+    });
+
+    const dialogEl = await screen.findByRole('alertdialog', { name: DIALOG_NAME });
+    const focusable = Array.from(
+      dialogEl.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'),
+    );
+    expect(focusable.length).toBeGreaterThan(1);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    last.focus();
+    await fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+
+    await fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+
+    await rerender({ open: false, payload: PAYLOAD, onRespond: vi.fn() });
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 
   it('responds cancel on backdrop click', async () => {
