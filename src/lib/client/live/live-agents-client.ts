@@ -31,6 +31,7 @@ import type {
   UserMessageIndexResult,
 } from '../app-client';
 import { backendRequest } from './backend-transport';
+import { isForbiddenErrorResponse } from './backend-transport-types';
 import { createDeltaSubscription } from './delta-subscription';
 import {
   mutationErrorMessage,
@@ -715,7 +716,9 @@ export class LiveAgentsClient implements AgentsClient {
         ? { success: true, scheduled: true, deleteAt }
         : { success: true };
     } catch (error) {
-      return { success: false, error: mutationErrorMessage(error) };
+      return isForbiddenErrorResponse(error)
+        ? { success: false, forbidden: true, error: mutationErrorMessage(error) }
+        : { success: false, error: mutationErrorMessage(error) };
     }
   }
   async cancelDelete(agentId: string): Promise<AgentCancelDeleteResult> {
