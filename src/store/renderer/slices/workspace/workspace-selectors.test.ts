@@ -457,6 +457,16 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
       ).toBe(true);
     });
 
+    it('hides them for an unknown workspace id when the client is collaborator-only', () => {
+      // Settled non-guest window whose whole list is collaborator rows: the
+      // principal is a collaborator everywhere, so a lookup that misses the
+      // row (stale / missing / not-yet-listed id) must not fall open.
+      const collaboratorOnly = loadedState([makeWorkspace({ myRole: 'collaborator' })]);
+      expect(selectIsCollaboratorOnlyClient.select(collaboratorOnly)).toBe(true);
+      expect(selectHidesAgentLifecycleActions.select(collaboratorOnly, 'ws-missing')).toBe(true);
+      expect(selectHidesAgentLifecycleActions.select(collaboratorOnly, '')).toBe(true);
+    });
+
     it('hides them in a guest window whatever myRole the row carries, or before the row arrives', () => {
       expect(
         selectHidesAgentLifecycleActions.select(
