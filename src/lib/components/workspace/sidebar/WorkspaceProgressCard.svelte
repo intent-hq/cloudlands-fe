@@ -439,10 +439,11 @@
       : null,
   );
 
-  // Multiplayer presence row: everybody else on this shared workspace. An
-  // avatar takes the viewer to where that person looks right now (their agent
-  // chat, else their note); with no such focus it opens the owner's Share
-  // screen and stays inert for a non-owner.
+  // Multiplayer presence row: everybody else on this shared workspace, the
+  // offline members greyscale, so the row shows even while only this window
+  // is online. An avatar takes the viewer to where that person looks right
+  // now (their agent chat, else their note); with no such focus it opens the
+  // owner's Share screen and stays inert for a non-owner.
   const presencePeople$ = selectWorkspacePresencePeople(workspaceIdStore);
   const presenceFocusTargets$ = selectWorkspacePresenceFocusTargets(workspaceIdStore);
   const presencePersonAction = $derived.by(() => {

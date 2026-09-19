@@ -5,14 +5,15 @@
  * circles: the accepted membership (`workspace.members.list`, owners first)
  * says who belongs and which of them owns the workspace; the roster
  * (`presence:changed`) says who is online and where they look. Both people
- * selectors show nothing for an unshared workspace, while this window's own
- * principal is still unknown (nobody can then be told apart from self, so
- * the indicators fail closed), and while nobody but that principal is online
- * in their scope (`hasOtherPresence`), so an owner alone sees no presence
- * indicator at all; the viewer's own principal is never among the people
- * returned — every surface shows everybody else. The typing selector hands
- * back the roster's own member objects, so its result stays shallow-equal
- * between rosters.
+ * selectors show nothing for an unshared workspace and while this window's
+ * own principal is still unknown (nobody can then be told apart from self, so
+ * the indicators fail closed); the chat circles additionally need someone
+ * else online in their scope (`hasOtherPresence`), while the sidebar row
+ * lists every other member of a shared workspace even when they are all
+ * offline. The viewer's own principal is never among the people returned —
+ * every surface shows everybody else. The typing selector hands back the
+ * roster's own member objects, so its result stays shallow-equal between
+ * rosters.
  */
 
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -56,9 +57,9 @@ const toPerson = (
 
 /**
  * Whether someone other than this window's own principal is online among
- * `people` — the rule every presence indicator renders by: an indicator is
- * shown only when at least one other person is currently there. Offline
- * members never count.
+ * `people` — the rule the chat circles render by: a circle is shown only
+ * when at least one other person is currently there. Offline members never
+ * count.
  */
 export const hasOtherPresence = (people: readonly PresencePerson[]): boolean =>
   people.some((person) => person.online && !person.self);
@@ -68,8 +69,10 @@ export const hasOtherPresence = (people: readonly PresencePerson[]): boolean =>
  * member of a SHARED workspace (`memberCount > 1`; the owner included, this
  * window's own principal left out) in `workspace.members.list` order, online
  * when the roster lists them, viewing when that roster row has a focus item.
- * An unshared workspace, one whose membership was not read yet, an unknown
- * own principal, or nobody else online right now shows nothing.
+ * Offline members stay listed (the stack draws them greyscale), so the row
+ * shows the whole membership even while this window is the only one online.
+ * An unshared workspace, one whose membership was not read yet, or an
+ * unknown own principal shows nothing.
  */
 export const selectWorkspacePresencePeople = store.createSelector<
   [workspaceId: string],
@@ -91,7 +94,7 @@ export const selectWorkspacePresencePeople = store.createSelector<
         self: false,
       });
     });
-  return hasOtherPresence(people) ? people : NO_PEOPLE;
+  return people.length > 0 ? people : NO_PEOPLE;
 });
 
 /**
