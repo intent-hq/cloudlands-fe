@@ -12,7 +12,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
@@ -27,6 +27,13 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+  import type { PresencePerson } from '$store/renderer/slices/presence/presence-types';
+  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import {
+    presencePersonLabel,
+    presencePersonName,
+  } from '$features/presence/components/presence-person';
   import WorkspaceStatusIcon from './WorkspaceStatusIcon.svelte';
   import { constructPrUrl } from './sidebar/sidebar-changes-utils';
   import {
@@ -34,14 +41,9 @@
     type WorkspacePRPresentationRow,
   } from './sidebar/workspace-pr-presentation';
   import { formatWorkspaceHoverCardTimestamp } from './workspace-hover-card-time';
-  import type { WorkspaceMember } from '$features/workspace-sharing/types';
-  import {
-    shareRosterMemberRemoveRequested,
-    shareRosterRequested,
-  } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import { shareRosterMemberRemoveRequested } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
     selectWorkspaceRosterCanManage,
-    selectWorkspaceRosterMembers,
     selectWorkspaceRosterRemoveError,
     selectWorkspaceRosterRemovingPrincipalId,
     selectWorkspaceRosterWithheld,
@@ -74,8 +76,12 @@
   function createPrMonitorsStore() {
     return staticData ? writable([]) : selectPrMonitors(workspaceIdStore);
   }
+  function createPresencePeopleStore() {
+    return staticData ? writable([]) : selectWorkspacePresencePeople(workspaceIdStore);
+  }
   const workspaceAgents$ = createWorkspaceAgentsStore();
   const prMonitors$ = createPrMonitorsStore();
+  const presencePeople$ = createPresencePeopleStore();
   $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
   $effect(() => {
     if (workspace && loadWorkspaceData) {
@@ -323,19 +329,14 @@
   });
   let visiblePrRows = $derived(workspacePrRows.slice(0, 3));
   let hiddenPrCount = $derived(Math.max(0, workspacePrRows.length - 3));
-  // Member roster (multiplayer w4): rows shown only for a shared workspace
-  // (`memberCount > 1`, PROTOCOL §5.1). The roster is saga-owned state keyed
-  // by workspace id (workspace-share slice): the card asks for a read per
-  // hovered workspace — `memberCount` changes (member added / removed by any
-  // client — the `workspace:updated` membership delta carries it) re-key the
-  // request so the roster converges on live events — and reads the rows,
-  // in-flight removal, and error back through selectors. Remove is owner-only
-  // (`myRole === 'owner'`) and withheld once the daemon refuses an owner-only
-  // method; only the Remove confirmation step is local. Share… itself lives in
-  // the workspace ⋯ menu (WorkspaceProgressCard), not on the card.
-  const rosterMembers$ = staticData
-    ? writable<WorkspaceMember[]>([])
-    : selectWorkspaceRosterMembers(workspaceIdStore);
+  // People roster (multiplayer w5): the rows are the membership-backed presence
+  // people of the hovered workspace. Owner controls ride the workspace-share
+  // slice keyed by workspace id: Remove is owner-only (`myRole === 'owner'`)
+  // and withheld once the daemon refuses an owner-only method; the confirmed
+  // removal is dispatched to the share saga, which hands the in-flight
+  // principal and any error back through selectors. Only the Remove
+  // confirmation step is local. Share… itself lives in the workspace ⋯ menu
+  // (WorkspaceProgressCard), not on the card.
   const rosterCanManage$ = staticData
     ? writable(false)
     : selectWorkspaceRosterCanManage(workspaceIdStore);
@@ -348,15 +349,9 @@
   const rosterRemoveError$ = staticData
     ? writable<string | null>(null)
     : selectWorkspaceRosterRemoveError(workspaceIdStore);
-  const membersKey = $derived(
-    workspace && loadWorkspaceData && (workspace.memberCount ?? 0) > 1
-      ? `${workspace.id}:${workspace.memberCount}`
-      : null,
-  );
-  let members = $derived<WorkspaceMember[]>(membersKey ? $rosterMembers$ : []);
   let canManageSharing = $derived($rosterCanManage$);
   let confirmRemovePrincipalId = $state<string | null>(null);
-  let membersEl: HTMLElement | null = $state(null);
+  let peopleEl: HTMLElement | null = $state(null);
   let removingPrincipalId = $derived($removingPrincipalId$);
   let removeError = $derived(
     $rosterWithheld$ ? m.workspace_share_ownerOnly_notice() : $rosterRemoveError$,
@@ -364,25 +359,25 @@
   // Swapping Remove for confirm/cancel (and back) unmounts the focused
   // control; move focus onto its replacement so a keyboard user keeps their
   // place and the hover surface does not read the transient blur as leaving.
-  async function focusMemberControl(principalId: string, selector: string | null) {
+  async function focusPersonControl(principalId: string, selector: string | null) {
     await tick();
-    const row = membersEl?.querySelector<HTMLElement>(
-      `[data-workspace-hover-card-member-row][data-principal-id="${principalId}"]`,
+    const row = peopleEl?.querySelector<HTMLElement>(
+      `[data-workspace-hover-card-person-row][data-principal-id="${principalId}"]`,
     );
     const control = selector ? row?.querySelector<HTMLElement>(selector) : null;
     if (control) control.focus();
-    else membersEl?.focus();
+    else peopleEl?.focus();
   }
   function askRemoveMember(principalId: string) {
     confirmRemovePrincipalId = principalId;
-    void focusMemberControl(
+    void focusPersonControl(
       principalId,
-      '[data-workspace-hover-card-member-remove-confirm] button',
+      '[data-workspace-hover-card-person-remove-confirm] button',
     );
   }
   function cancelRemoveMember(principalId: string) {
     confirmRemovePrincipalId = null;
-    void focusMemberControl(principalId, '[data-workspace-hover-card-member-remove]');
+    void focusPersonControl(principalId, '[data-workspace-hover-card-person-remove]');
   }
   function confirmRemoveMember(principalId: string) {
     if (!workspace || !canManageSharing || removingPrincipalId) return;
@@ -392,29 +387,64 @@
       shareRosterMemberRemoveRequested({ workspaceId: String(workspace.id), principalId }),
     );
     // Remove is disabled while the removal is in flight; park focus on the list.
-    void focusMemberControl(principalId, null);
+    void focusPersonControl(principalId, null);
   }
   $effect(() => {
-    const key = membersKey;
+    void workspace?.id;
     confirmRemovePrincipalId = null;
-    if (!key) return;
-    const workspaceId = untrack(() => String(workspace?.id ?? ''));
-    if (workspaceId) appStore.dispatch(shareRosterRequested({ workspaceId }));
   });
-  let visibleMembers = $derived(members.slice(0, 4));
-  let hiddenMemberCount = $derived(Math.max(0, members.length - 4));
-  function memberName(member: WorkspaceMember): string {
-    return member.displayName || member.login || member.principalId;
+  type PresenceRowState = 'viewing' | 'online' | 'offline';
+  const PRESENCE_STATE_RANK: Record<PresenceRowState, number> = {
+    viewing: 0,
+    online: 1,
+    offline: 2,
+  };
+  function presenceRowState(person: PresencePerson): PresenceRowState {
+    return person.viewing ? 'viewing' : person.online ? 'online' : 'offline';
   }
-  function memberRoleLabel(member: WorkspaceMember): string {
-    return member.role === 'owner'
-      ? m.workspace_share_role_owner_label()
-      : m.workspace_share_role_collaborator_label();
+  function presenceStateLabel(state: PresenceRowState): string {
+    if (state === 'viewing') return m.workspace_hoverCard_personViewing_label();
+    if (state === 'online') return m.workspace_hoverCard_personOnline_label();
+    return m.workspace_hoverCard_personOffline_label();
   }
+  function presenceRoleLabel(person: PresencePerson): string {
+    return person.owner
+      ? m.settings_guestSessions_role_owner_label()
+      : m.settings_guestSessions_role_collaborator_label();
+  }
+  /** The login when it is not already the shown name; otherwise nothing. */
+  function presenceLogin(person: PresencePerson): string | null {
+    const login = person.login?.trim();
+    return login && login !== presencePersonName(person) ? login : null;
+  }
+  function presenceRowLabel(row: PresenceRow): string {
+    return [
+      presencePersonLabel(row.person),
+      presenceLogin(row.person),
+      presenceRoleLabel(row.person),
+      presenceStateLabel(row.state),
+    ]
+      .filter(Boolean)
+      .join('. ');
+  }
+  interface PresenceRow {
+    person: PresencePerson;
+    state: PresenceRowState;
+    removable: boolean;
+  }
+  let presenceRows = $derived(
+    $presencePeople$
+      .map((person): PresenceRow => ({
+        person,
+        state: presenceRowState(person),
+        removable: canManageSharing && !person.owner && !person.self,
+      }))
+      .sort((a, b) => PRESENCE_STATE_RANK[a.state] - PRESENCE_STATE_RANK[b.state]),
+  );
   let hasAgentRows = $derived(allRows.length > 0);
   let hasPrRows = $derived(workspacePrRows.length > 0);
-  let hasMemberRows = $derived(members.length > 0);
-  let hasBodyContent = $derived(hasAgentRows || hasPrRows || hasMemberRows);
+  let hasPresenceRows = $derived(presenceRows.length > 0);
+  let hasBodyContent = $derived(hasAgentRows || hasPrRows || hasPresenceRows);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity = pr.repo
       ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
@@ -607,92 +637,104 @@
                 <Fa icon={faChevronRight} size={10} />
               </div>{/if}
           </section>{/if}
-        {#if hasMemberRows}<section
-            bind:this={membersEl}
-            class="members min-w-0 outline-none"
-            aria-label={m.workspace_share_members_label()}
+        {#if hasPresenceRows}<section
+            bind:this={peopleEl}
+            class="people min-w-0 outline-none"
+            aria-label={m.workspace_hoverCard_people_label()}
             tabindex="-1"
-            data-workspace-hover-card-members
+            data-workspace-hover-card-people
           >
-            <div class="grid min-w-0 gap-3" role="list" data-workspace-hover-card-member-list>
-              {#each visibleMembers as member (member.principalId)}
+            <div
+              class="grid max-h-64 min-w-0 gap-3 overflow-y-auto"
+              role="list"
+              data-workspace-hover-card-people-list
+            >
+              {#each presenceRows as row (row.person.principalId)}
+                {@const login = presenceLogin(row.person)}
                 <div
-                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5"
-                  aria-label={m.workspace_hoverCard_member_ariaLabel({
-                    name: memberName(member),
-                    role: memberRoleLabel(member),
-                  })}
+                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-2.5"
                   role="listitem"
-                  data-workspace-hover-card-member-row
-                  data-member-role={member.role}
-                  data-principal-id={member.principalId}
+                  aria-label={presenceRowLabel(row)}
+                  data-workspace-hover-card-person-row
+                  data-principal-id={row.person.principalId}
+                  data-presence-state={row.state}
+                  data-presence-viewing={row.state === 'viewing' || undefined}
+                  data-presence-role={row.person.owner ? 'owner' : 'collaborator'}
+                  data-presence-self={row.person.self || undefined}
                 >
-                  {#if member.avatarUrl}
-                    <img
-                      src={member.avatarUrl}
-                      alt=""
-                      class="h-6 w-6 shrink-0 justify-self-center rounded-full"
-                      loading="lazy"
-                    />
-                  {:else}
-                    <span
-                      class="grid h-6 w-6 shrink-0 place-items-center justify-self-center rounded-full bg-muted text-xs"
-                      aria-hidden="true">{memberName(member).slice(0, 1).toUpperCase()}</span
-                    >
-                  {/if}
-                  <span
+                  <span class="row-span-2 grid place-items-center" aria-hidden="true"
+                    ><PresenceAvatarStack people={[row.person]} size={20} decorative /></span
+                  ><span
                     class="type-body min-w-0 truncate text-foreground"
-                    data-workspace-hover-card-member-name>{memberName(member)}</span
+                    data-workspace-hover-card-person-name>{presencePersonLabel(row.person)}</span
+                  ><span
+                    class="type-caption flex shrink-0 items-center gap-1.5 text-muted-foreground"
+                    data-workspace-hover-card-person-state
+                    ><span
+                      class={row.state === 'viewing'
+                        ? 'size-1.5 rounded-full bg-success'
+                        : row.state === 'online'
+                          ? 'size-1.5 rounded-full bg-success/50'
+                          : 'size-1.5 rounded-full bg-muted-foreground/40'}
+                      aria-hidden="true"
+                    ></span>{presenceStateLabel(row.state)}</span
                   >
                   <span
-                    class="type-caption shrink-0 text-muted-foreground"
-                    data-workspace-hover-card-member-role>{memberRoleLabel(member)}</span
+                    class="type-caption flex min-w-0 items-center gap-1.5 text-muted-foreground"
+                    data-workspace-hover-card-person-detail
+                    >{#if login}<span
+                        class="min-w-0 truncate"
+                        data-workspace-hover-card-person-login>{login}</span
+                      ><span aria-hidden="true">·</span>{/if}<span
+                      class="shrink-0"
+                      data-workspace-hover-card-person-role>{presenceRoleLabel(row.person)}</span
+                    ></span
                   >
-                  {#if canManageSharing && member.role !== 'owner'}
-                    {#if confirmRemovePrincipalId === member.principalId}
+                  {#if row.removable}
+                    {#if confirmRemovePrincipalId === row.person.principalId}
                       <span
-                        class="flex shrink-0 items-center gap-1"
+                        class="flex shrink-0 items-center gap-1 justify-self-end"
                         role="group"
                         aria-label={m.workspace_share_removeMember_confirm_label({
-                          name: memberName(member),
+                          name: presencePersonName(row.person),
                         })}
-                        data-workspace-hover-card-member-remove-confirm
+                        data-workspace-hover-card-person-remove-confirm
                       >
                         <Button
                           variant="destructive"
                           size="sm"
+                          class="h-6 px-2"
                           disabled={removingPrincipalId !== null}
-                          onclick={() => confirmRemoveMember(member.principalId)}
+                          onclick={() => confirmRemoveMember(row.person.principalId)}
                           aria-label={m.workspace_share_removeMember_confirmAction_ariaLabel({
-                            name: memberName(member),
+                            name: presencePersonName(row.person),
                           })}
                         >
-                          {m.workspace_share_removeMember_label()}
+                          {m.settings_guestSessions_remove_label()}
                         </Button>
                         <Button
                           variant="ghost-light"
                           size="sm"
-                          onclick={() => cancelRemoveMember(member.principalId)}
+                          class="h-6 px-2"
+                          onclick={() => cancelRemoveMember(row.person.principalId)}
                         >
                           {m.workspace_share_cancel_label()}
                         </Button>
                       </span>
                     {:else}
                       <Button
-                        variant="ghost-light"
+                        variant="ghost"
                         size="sm"
+                        class="h-6 justify-self-end px-2"
                         disabled={removingPrincipalId !== null}
-                        onclick={() => askRemoveMember(member.principalId)}
-                        aria-label={m.workspace_share_removeMember_ariaLabel({
-                          name: memberName(member),
+                        aria-label={m.workspace_hoverCard_personRemove_ariaLabel({
+                          name: presencePersonName(row.person),
                         })}
-                        data-workspace-hover-card-member-remove
+                        onclick={() => askRemoveMember(row.person.principalId)}
+                        data-workspace-hover-card-person-remove={row.person.principalId}
+                        >{m.settings_guestSessions_remove_label()}</Button
                       >
-                        {m.workspace_share_removeMember_label()}
-                      </Button>
                     {/if}
-                  {:else}
-                    <span aria-hidden="true"></span>
                   {/if}
                 </div>
               {/each}
@@ -700,21 +742,10 @@
             {#if removeError}<p
                 class="type-caption mt-2 text-danger"
                 role="alert"
-                data-workspace-hover-card-member-error
+                data-workspace-hover-card-people-error
               >
                 {removeError}
               </p>{/if}
-            {#if hiddenMemberCount}<div
-                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
-                data-workspace-hover-card-member-overflow
-              >
-                <span
-                  >{m.workspace_hoverCard_moreItems_label({
-                    count: formatInteger(hiddenMemberCount),
-                  })}</span
-                >
-                <Fa icon={faChevronRight} size={10} />
-              </div>{/if}
           </section>{/if}
       </div>{/if}
   {/if}

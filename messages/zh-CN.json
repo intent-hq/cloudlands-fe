@@ -6367,7 +6367,6 @@
   "workspace_share_loadFailed_error": "无法加载共享详情",
   "workspace_share_createFailed_error": "无法创建邀请链接",
   "workspace_share_pinUnknown_error": "不存在名为 {login} 的 GitHub 用户",
-  "workspace_hoverCard_member_ariaLabel": "{name}（{role}）",
   "workspace_share_ownerOnly_notice": "只有工作区所有者可以管理共享。",
   "workspace_share_removeMember_confirm_label": "要将 {name} 从此工作区移除吗？",
   "workspace_share_removeMember_confirmAction_ariaLabel": "确认移除 {name}",
@@ -6375,5 +6374,19 @@
   "workspace_share_listenerDown_error": "邀请前请先在设置中开启远程访问 + Tailcat",
   "notes_presenceStack_viewers_one": "另有 1 人正在查看此笔记",
   "notes_presenceStack_viewers_many": "另有 {count} 人正在查看此笔记",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "某人",
+  "presence_avatarStack_people_one": "另有 1 人在此",
+  "presence_avatarStack_people_many": "另有 {count} 人在此",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name} 正在输入…",
+  "presence_typing_two_label": "{first} 和 {second} 正在输入…",
+  "presence_typing_many": "{first} 和另外 {count} 人正在输入…",
+  "workspace_hoverCard_people_label": "成员",
+  "workspace_hoverCard_personViewing_label": "正在查看",
+  "workspace_hoverCard_personOnline_label": "在线",
+  "workspace_hoverCard_personOffline_label": "离线",
+  "workspace_hoverCard_personRemove_ariaLabel": "移除 {name}",
+  "presence_avatarStack_onlyYou_label": "这里只有你",
+  "presence_person_you_label": "{name}（你）"
 }

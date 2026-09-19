@@ -6367,7 +6367,6 @@
   "workspace_share_loadFailed_error": "Freigabedetails konnten nicht geladen werden",
   "workspace_share_createFailed_error": "Einladungslink konnte nicht erstellt werden",
   "workspace_share_pinUnknown_error": "Kein GitHub-Benutzer mit dem Namen {login}",
-  "workspace_hoverCard_member_ariaLabel": "{name} – {role}",
   "workspace_share_ownerOnly_notice": "Nur der Eigentümer des Workspace kann die Freigabe verwalten.",
   "workspace_share_removeMember_confirm_label": "{name} aus diesem Workspace entfernen?",
   "workspace_share_removeMember_confirmAction_ariaLabel": "Entfernen von {name} bestätigen",
@@ -6375,5 +6374,19 @@
   "workspace_share_listenerDown_error": "Aktiviere Fernzugriff + Tailcat in den Einstellungen, bevor du einlädst",
   "notes_presenceStack_viewers_one": "1 weitere Person sieht sich diese Notiz an",
   "notes_presenceStack_viewers_many": "{count} weitere Personen sehen sich diese Notiz an",
-  "notes_presenceStack_overflow_label": "+{count}"
+  "notes_presenceStack_overflow_label": "+{count}",
+  "presence_person_unknown_label": "Jemand",
+  "presence_avatarStack_people_one": "1 weitere Person hier",
+  "presence_avatarStack_people_many": "{count} weitere Personen hier",
+  "presence_avatarStack_more_label": "+{count}",
+  "presence_typing_one": "{name} schreibt…",
+  "presence_typing_two_label": "{first} und {second} schreiben…",
+  "presence_typing_many": "{first} und {count} weitere schreiben…",
+  "workspace_hoverCard_people_label": "Personen",
+  "workspace_hoverCard_personViewing_label": "Sieht zu",
+  "workspace_hoverCard_personOnline_label": "Online",
+  "workspace_hoverCard_personOffline_label": "Offline",
+  "workspace_hoverCard_personRemove_ariaLabel": "{name} entfernen",
+  "presence_avatarStack_onlyYou_label": "Nur Sie sind hier",
+  "presence_person_you_label": "{name} (Sie)"
 }
