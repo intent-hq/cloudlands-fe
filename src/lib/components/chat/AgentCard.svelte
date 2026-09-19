@@ -312,6 +312,15 @@
     e.preventDefault();
     e.stopPropagation();
     contextMenu = { x: e.clientX, y: e.clientY };
+    // The `agent.list` row this card renders from omits the detail-only
+    // fields (§5.5 list projection) the menu gates on — `harnessFeatures`
+    // drives both "Replace agent" and the harness modal. Pull the detail
+    // read on open (single-flight per agent in the read seam); the menu
+    // items recompute reactively once it lands.
+    const wsId = $agent$?.workspaceId ?? workspace?.id;
+    if (wsId) {
+      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
+    }
   }
 
   function closeContextMenu() {
@@ -495,7 +504,10 @@
     // the item opens the harness-features modal (monorepo#2459) — legacy
     // sessions without a harnessFeatures snapshot open it too (every catalog
     // feature renders OFF); sessions from daemons that predate the field omit
-    // the item entirely.
+    // the item entirely. The snapshot is detail-only (stripped from list
+    // rows); `handleContextMenu` dispatches the `agent.get` that fills it in
+    // and the modal reads the store reactively, so a never-activated session
+    // (no snapshot even on the detail read) still opens the all-OFF modal.
     const specialistId = specialist;
     const harnessVersion = $agent$?.harnessVersion;
     if (specialistId || harnessVersion) {

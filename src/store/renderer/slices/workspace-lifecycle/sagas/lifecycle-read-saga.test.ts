@@ -1559,7 +1559,10 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [background, kept]] },
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[background, kept]] },
+      {
+        type: 'agentSessions/bulkUpsertSessions',
+        payload: [[background, kept], { listProjection: true }],
+      },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-keep'] },
     ]);
     await stop(run.task);
@@ -1592,7 +1595,10 @@ describe('lifecycleReadSaga', () => {
     expect(bulkUpserts).toEqual([
       {
         type: 'agentSessions/bulkUpsertSessions',
-        payload: [[staleRow, normalRow], { staleRuntimeFlagClearAgentIds: ['agent-stale'] }],
+        payload: [
+          [staleRow, normalRow],
+          { staleRuntimeFlagClearAgentIds: ['agent-stale'], listProjection: true },
+        ],
       },
     ]);
     await stop(run.task);
@@ -1674,7 +1680,7 @@ describe('lifecycleReadSaga', () => {
       (action) => action.type === 'agentSessions/bulkUpsertSessions',
     );
     expect(bulkUpserts).toEqual([
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[raceRow]] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[raceRow], { listProjection: true }] },
     ]);
     await stop(run.task);
   });
@@ -1698,7 +1704,7 @@ describe('lifecycleReadSaga', () => {
       (action) => action.type === 'agentSessions/bulkUpsertSessions',
     );
     expect(bulkUpserts).toEqual([
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[liveRow]] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[liveRow], { listProjection: true }] },
     ]);
     await stop(run.task);
   });
@@ -1797,7 +1803,7 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.agents.list.mock.calls).toEqual([[WS, { retiredOnly: true }]]);
     expect(run.actions).toEqual([
       { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, true] },
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[retired]] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[retired], { listProjection: true }] },
       { type: 'workspaceAgents/addAgent', payload: [WS, retired] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 1] },
       { type: 'workspaceAgents/setRetiredAgentsLoaded', payload: [WS, true] },
@@ -1937,7 +1943,7 @@ describe('lifecycleReadSaga', () => {
     });
     expect(run.actions).toContainEqual({
       type: 'agentSessions/bulkUpsertSessions',
-      payload: [[preserved]],
+      payload: [[preserved], { listProjection: true }],
     });
     await stop(run.task);
   });

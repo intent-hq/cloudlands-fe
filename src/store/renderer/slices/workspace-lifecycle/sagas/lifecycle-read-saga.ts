@@ -388,10 +388,14 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     yield* put(fetchRetiredAgentsRequested(workspaceId));
   }
   if (agents.length > 0) {
+    // `agent.list` rows are the slim §5.5 list projection: detail-only fields
+    // an earlier `agent.get` stored must survive this refresh.
     if (staleRuntimeFlagClearAgentIds.length > 0) {
-      yield* put(bulkUpsertSessions(agents, { staleRuntimeFlagClearAgentIds }));
+      yield* put(
+        bulkUpsertSessions(agents, { staleRuntimeFlagClearAgentIds, listProjection: true }),
+      );
     } else {
-      yield* put(bulkUpsertSessions(agents));
+      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
     }
   }
 
@@ -436,7 +440,7 @@ function* fetchRetiredAgents(workspaceId: string): SagaGenerator<void> {
             : agent,
         );
       }
-      yield* put(bulkUpsertSessions(agents));
+      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
       for (const agent of agents) {
         yield* put(addAgent(workspaceId, agent));
       }

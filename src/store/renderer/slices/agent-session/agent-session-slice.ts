@@ -610,6 +610,70 @@ function feOwnedFieldsComparisonKey(session: Readonly<FeOwnedSessionState>): str
   );
 }
 
+// ============================================================================
+// Detail-only field carry-forward (list-projection upserts)
+// ============================================================================
+
+/**
+ * Session fields served only by the detail reads (`agent.get` /
+ * `agent.getSession`) and stripped from `agent.list` rows (§5.5 list
+ * projection, intent-hq/intent#5383). A list row omits them whether or not
+ * the session has a value, so a list-projection upsert keeps whatever an
+ * earlier detail read stored instead of clearing it. A detail read stays
+ * authoritative: it omits e.g. `metadata.pendingProposals` exactly when the
+ * set is empty, so its omissions must clear. Older daemons still serve these
+ * fields on list rows — a value present on the incoming row always wins.
+ * `contextReferences` / `fileBlocks` ride the wire row untyped.
+ */
+const DETAIL_ONLY_SESSION_FIELDS: readonly string[] = [
+  'harnessFeatures',
+  'effortLevels',
+  'stats',
+  'contextReferences',
+  'fileBlocks',
+];
+const DETAIL_ONLY_METADATA_FIELDS = ['pendingProposals', 'proposalResolutions'] as const;
+
+function carryForwardDetailFields(
+  target: StoredAgentSession,
+  existing: Readonly<StoredAgentSession>,
+  incoming: AgentSession,
+): void {
+  const targetRecord = target as unknown as Record<string, unknown>;
+  const existingRecord = existing as unknown as Record<string, unknown>;
+  const incomingRecord = incoming as unknown as Record<string, unknown>;
+  for (const key of DETAIL_ONLY_SESSION_FIELDS) {
+    if (incomingRecord[key] !== undefined || existingRecord[key] === undefined) continue;
+    targetRecord[key] = existingRecord[key];
+  }
+  const existingMetadata = existing.metadata;
+  if (!existingMetadata) return;
+  let metadata = target.metadata;
+  for (const key of DETAIL_ONLY_METADATA_FIELDS) {
+    if (incoming.metadata?.[key] !== undefined) continue;
+    const value = existingMetadata[key];
+    if (value === undefined) continue;
+    metadata = { ...metadata, [key]: value };
+  }
+  if (metadata !== target.metadata) target.metadata = metadata;
+}
+
+/**
+ * Comparison key for the detail-only fields so a detail read that only fills
+ * them in over a slim list row is never swallowed as a no-op (the two rows
+ * share `updatedAt`). `harnessFeatures` has its own key below.
+ */
+function detailFieldsComparisonKey(session: Readonly<StoredAgentSession>): string {
+  const record = session as unknown as Record<string, unknown>;
+  const metadata = session.metadata;
+  return JSON.stringify([
+    ...DETAIL_ONLY_SESSION_FIELDS.filter((key) => key !== 'harnessFeatures').map(
+      (key) => record[key],
+    ),
+    ...DETAIL_ONLY_METADATA_FIELDS.map((key) => metadata?.[key]),
+  ]);
+}
+
 type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
   isWaitingForOtherAgents?: unknown;
@@ -961,6 +1025,7 @@ type SessionComparisonSnapshot = Pick<
   feOwnedFieldsKey: string;
   harnessVersion: string | undefined;
   harnessFeaturesKey: string | undefined;
+  detailFieldsKey: string;
 };
 
 function toSessionComparisonSnapshot(session: StoredAgentSession): SessionComparisonSnapshot {
@@ -1034,6 +1099,7 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
           .map(([k, v]) => `${k}=${v}`)
           .join(',')
       : undefined,
+    detailFieldsKey: detailFieldsComparisonKey(session),
     messageCount: messages.length,
     wireMessageCount: typeof session.messageCount === 'number' ? session.messageCount : undefined,
     lastMessageId: messages.length === 0 ? undefined : messages[messages.length - 1]?.id,
@@ -1059,6 +1125,8 @@ function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): bool
 type SessionUpsertStorageOptions = {
   preserveExplicitRuntimeFlags: boolean;
   allowActiveTurnRuntimeFlagClear: boolean;
+  /** The incoming snapshot is an `agent.list` row (see `DETAIL_ONLY_SESSION_FIELDS`). */
+  listProjection: boolean;
 };
 
 function applySessionUpsert(
@@ -1075,6 +1143,10 @@ function applySessionUpsert(
   // comes from its FE_OWNED_FIELD_POLICY entry, never from `session`.
   for (const key of FE_OWNED_FIELD_KEYS) {
     applyFeOwnedFieldPolicy(finalSession, key, existing, session);
+  }
+
+  if (existing && options.listProjection) {
+    carryForwardDetailFields(finalSession, existing, session);
   }
 
   if (existing) {
@@ -1480,6 +1552,14 @@ export type BulkUpsertSessionsOptions = {
    * splitting one hydration into multiple reducer commits.
    */
   staleRuntimeFlagClearAgentIds?: string[];
+  /**
+   * The sessions are `agent.list` rows (§5.5 list projection): the fields in
+   * `DETAIL_ONLY_SESSION_FIELDS` / `DETAIL_ONLY_METADATA_FIELDS` are absent
+   * regardless of the session's state, so an omitted one keeps the value a
+   * previous detail read stored. Never set this for `agent.get` /
+   * `agent.getSession` / create-response rows — their omissions are authoritative.
+   */
+  listProjection?: boolean;
 };
 
 /**
@@ -1693,16 +1773,19 @@ agentSessionReducer.with(renameSession, (state, { payload: [agentId, name] }) =>
 });
 agentSessionReducer.with(bulkUpsertSessions, (state, { payload: [sessions, options] }) => {
   let next = state;
+  const listProjection = options?.listProjection === true;
   const defaultStorageOptions: SessionUpsertStorageOptions = {
     preserveExplicitRuntimeFlags: options?.preserveExplicitRuntimeFlags ?? true,
     allowActiveTurnRuntimeFlagClear: options?.allowActiveTurnRuntimeFlagClear ?? false,
+    listProjection,
   };
   const staleClearIds = new Set(options?.staleRuntimeFlagClearAgentIds ?? []);
   for (const session of sessions) {
-    const storageOptions = staleClearIds.has(String(session.id))
+    const storageOptions: SessionUpsertStorageOptions = staleClearIds.has(String(session.id))
       ? {
           preserveExplicitRuntimeFlags: false,
           allowActiveTurnRuntimeFlagClear: true,
+          listProjection,
         }
       : defaultStorageOptions;
     next = applySessionUpsert(next, session, storageOptions);

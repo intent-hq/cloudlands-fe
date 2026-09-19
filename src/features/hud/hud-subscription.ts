@@ -236,7 +236,7 @@ async function hydrateHudWorkspaceAgents(workspaceId: string): Promise<void> {
     appStore.dispatch(setAgentsLoaded(workspaceId, true));
     if (agents.length === 0) return;
     appStore.dispatch(setAgents(workspaceId, agents));
-    appStore.dispatch(bulkUpsertSessions(agents));
+    appStore.dispatch(bulkUpsertSessions(agents, { listProjection: true }));
     for (const agent of agents) appStore.dispatch(upsertSession(agent));
   } catch (error) {
     logger.warn('agent.list hydration failed for HUD workspace', { workspaceId, error });

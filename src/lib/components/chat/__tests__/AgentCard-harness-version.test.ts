@@ -21,7 +21,10 @@ import {
   removeSession,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { setAgentNotificationsMutedRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import {
+  ensureAgentSessionLoaded,
+  setAgentNotificationsMutedRequested,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -117,6 +120,27 @@ describe('AgentCard harness version context-menu item', () => {
     ) as HTMLElement[];
     expect(states.length).toBeGreaterThan(0);
     expect(states.every((el) => el.dataset.enabled === 'false')).toBe(true);
+  });
+
+  // §5.5 list projection (intent-hq/intent#5383): the card renders from an
+  // `agent.list` row that omits `harnessFeatures`, so opening the menu must
+  // pull the detail read the harness modal / "Replace agent" gate depend on.
+  it('dispatches the detail read for the agent when the context menu opens', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ harnessVersion: '1.0' })], { listProjection: true }),
+    );
+    const dispatchSpy = vi.spyOn(appStore, 'dispatch');
+
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: ensureAgentSessionLoaded.type,
+        payload: ['ws-1', agentId],
+      }),
+    );
+    dispatchSpy.mockRestore();
   });
 
   it('dismisses the modal with Escape', async () => {

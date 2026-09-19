@@ -476,6 +476,133 @@ describe('agent-session-slice reducer', () => {
       expect(next).toBe(state);
     });
 
+    // §5.5 list projection (intent-hq/intent#5383): `agent.list` rows omit the
+    // detail-only fields regardless of the session's state, so a
+    // `listProjection` upsert keeps what an earlier `agent.get` stored; a
+    // detail-read upsert stays authoritative and its omissions clear.
+    describe('listProjection detail-field carry-forward', () => {
+      const detailed = () =>
+        makeSession('a1', 'ws-1', {
+          harnessVersion: '1.0',
+          messageCount: 4,
+          harnessFeatures: { peerAgents: true },
+          effortLevels: ['low', 'high'],
+          stats: { messageCount: 4, toolCallCount: 1 } as any,
+          contextReferences: [{ id: 'ctx-1' }] as any,
+          fileBlocks: [{ path: 'a.ts' }] as any,
+          metadata: {
+            pendingProposals: [{ proposalId: 'p1', messageId: 'm1' }],
+            proposalResolutions: { p0: 'applied' },
+            lastSeenMessageId: 'm0',
+          },
+        });
+      const slimRow = () =>
+        makeSession('a1', 'ws-1', {
+          harnessVersion: '1.0',
+          messageCount: 4,
+          metadata: { lastSeenMessageId: 'm0' },
+        });
+
+      it('keeps every detail-only field when a list-projection upsert omits it', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(
+          state,
+          bulkUpsertSessions([slimRow()], { listProjection: true }),
+        );
+
+        const stored = next.byAgentId['a1'];
+        expect(stored.harnessFeatures).toEqual({ peerAgents: true });
+        expect(stored.effortLevels).toEqual(['low', 'high']);
+        expect(stored.stats).toEqual({ messageCount: 4, toolCallCount: 1 });
+        expect((stored as any).contextReferences).toEqual([{ id: 'ctx-1' }]);
+        expect((stored as any).fileBlocks).toEqual([{ path: 'a.ts' }]);
+        expect(stored.metadata?.pendingProposals).toEqual([{ proposalId: 'p1', messageId: 'm1' }]);
+        expect(stored.metadata?.proposalResolutions).toEqual({ p0: 'applied' });
+        expect(stored.metadata?.lastSeenMessageId).toBe('m0');
+        expect(stored.messageCount).toBe(4);
+      });
+
+      it('returns the same state reference when a list-projection row changes nothing else', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(
+          state,
+          bulkUpsertSessions([slimRow()], { listProjection: true }),
+        );
+
+        expect(next).toBe(state);
+      });
+
+      it('lets a value present on a list-projection row win over the stored one', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(
+          state,
+          bulkUpsertSessions(
+            [
+              makeSession('a1', 'ws-1', {
+                harnessVersion: '1.0',
+                harnessFeatures: { peerAgents: false },
+                metadata: { proposalResolutions: { p0: 'dismissed' } },
+              }),
+            ],
+            { listProjection: true },
+          ),
+        );
+
+        expect(next.byAgentId['a1'].harnessFeatures).toEqual({ peerAgents: false });
+        expect(next.byAgentId['a1'].metadata?.proposalResolutions).toEqual({ p0: 'dismissed' });
+        expect(next.byAgentId['a1'].metadata?.pendingProposals).toEqual([
+          { proposalId: 'p1', messageId: 'm1' },
+        ]);
+      });
+
+      it('clears omitted detail fields on a non-projection (detail read) upsert', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(state, upsertSession(slimRow()));
+
+        const stored = next.byAgentId['a1'];
+        expect(stored.harnessFeatures).toBeUndefined();
+        expect(stored.effortLevels).toBeUndefined();
+        expect(stored.stats).toBeUndefined();
+        expect(stored.metadata?.pendingProposals).toBeUndefined();
+        expect(stored.metadata?.proposalResolutions).toBeUndefined();
+        expect(stored.metadata?.lastSeenMessageId).toBe('m0');
+      });
+
+      it('applies a detail read that only fills detail fields over a slim row (same updatedAt)', () => {
+        const state = agentSessionReducer(
+          initialState,
+          bulkUpsertSessions([slimRow()], { listProjection: true }),
+        );
+
+        const next = agentSessionReducer(state, upsertSession(detailed()));
+
+        expect(next).not.toBe(state);
+        expect(next.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
+        expect(next.byAgentId['a1'].metadata?.pendingProposals).toEqual([
+          { proposalId: 'p1', messageId: 'm1' },
+        ]);
+      });
+
+      it('carries detail fields forward for stale-runtime-flag-clear rows too', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(
+          state,
+          bulkUpsertSessions([slimRow()], {
+            listProjection: true,
+            staleRuntimeFlagClearAgentIds: ['a1'],
+          }),
+        );
+
+        expect(next.byAgentId['a1'].harnessFeatures).toEqual({ peerAgents: true });
+        expect(next.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
+      });
+    });
+
     it('applies an upsert when only lastAgentResponse changes on an otherwise-equivalent session', () => {
       const state = agentSessionReducer(
         initialState,
