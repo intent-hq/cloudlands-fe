@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CaptureStabilityTimeoutError, waitForCaptureStability } from './capture-stability';
+import {
+  CaptureStabilityTimeoutError,
+  waitForCaptureStability,
+  watchCaptureStability,
+} from './capture-stability';
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -27,6 +31,35 @@ function useTimerFrames() {
     configurable: true,
     value: vi.fn((id: number) => window.clearTimeout(id)),
   });
+}
+
+function useManualFrames() {
+  const frames: FrameRequestCallback[] = [];
+  let notifyFrame: (() => void) | undefined;
+  Object.defineProperty(window, 'requestAnimationFrame', {
+    configurable: true,
+    value: vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      notifyFrame?.();
+      notifyFrame = undefined;
+      return frames.length;
+    }),
+  });
+  Object.defineProperty(window, 'cancelAnimationFrame', {
+    configurable: true,
+    value: vi.fn(),
+  });
+  const next = async () => {
+    if (frames.length === 0) {
+      await new Promise<void>((resolve) => {
+        notifyFrame = resolve;
+      });
+    }
+    const frame = frames.shift();
+    frame!(performance.now());
+    await Promise.resolve();
+  };
+  return { next };
 }
 
 function createImage({
@@ -56,7 +89,8 @@ function createImage({
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
-  document.documentElement.classList.remove('catalog-reduced-motion');
+  document.documentElement.classList.remove('catalog-reduced-motion', 'catalog-full-motion');
+  document.documentElement.removeAttribute('data-reduce-motion');
   document.body.replaceChildren();
   if (originalFonts) Object.defineProperty(document, 'fonts', originalFonts);
   else delete (document as Document & { fonts?: FontFaceSet }).fonts;
@@ -73,6 +107,240 @@ afterEach(() => {
 });
 
 describe('waitForCaptureStability', () => {
+  it('reports the final battery policy after pending frames and honors preview overrides', async () => {
+    setFonts(Promise.resolve());
+    const frames = useManualFrames();
+    const root = document.createElement('div');
+    const pending = waitForCaptureStability(root);
+    await frames.next();
+    document.documentElement.setAttribute('data-reduce-motion', '');
+    await frames.next();
+    await expect(pending).resolves.toMatchObject({ reducedMotion: true });
+
+    document.documentElement.classList.add('catalog-full-motion');
+    const full = waitForCaptureStability(root);
+    await frames.next();
+    await frames.next();
+    await expect(full).resolves.toMatchObject({ reducedMotion: false });
+  });
+
+  it('uses the capture root owning document rather than the host motion policy', async () => {
+    document.documentElement.setAttribute('data-reduce-motion', '');
+    const owner = document.implementation.createHTMLDocument();
+    const root = owner.createElement('div');
+    owner.body.append(root);
+    await expect(waitForCaptureStability(root)).resolves.toMatchObject({ reducedMotion: false });
+    owner.documentElement.classList.add('catalog-reduced-motion');
+    await expect(waitForCaptureStability(root)).resolves.toMatchObject({ reducedMotion: true });
+  });
+
+  it('starts the stability budget after declared preview content is ready', async () => {
+    setFonts(Promise.resolve());
+    useTimerFrames();
+    const root = document.createElement('div');
+    const content = document.createElement('div');
+    content.dataset.captureReady = 'false';
+    root.append(content);
+
+    const stability = waitForCaptureStability(root, {
+      readiness: { selector: '[data-capture-ready="true"]' },
+      timeoutMs: 1_000,
+    });
+    await Promise.resolve();
+    expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+
+    content.dataset.captureReady = 'true';
+    await expect(stability).resolves.toEqual({
+      imageCount: 0,
+      deferredImageCount: 0,
+      reducedMotion: false,
+    });
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(2);
+  });
+
+  it('defaults missing readiness to the stability timeout and cleans up', async () => {
+    vi.useFakeTimers();
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    const root = document.createElement('div');
+    const stability = waitForCaptureStability(root, {
+      readiness: { selector: '[data-ready="true"]' },
+      timeoutMs: 25,
+    });
+    const rejection = expect(stability).rejects.toBeInstanceOf(CaptureStabilityTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    await rejection;
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('preserves the full stability budget after delayed readiness', async () => {
+    vi.useFakeTimers();
+    const fonts = deferred<void>();
+    setFonts(fonts.promise);
+    const frames = useManualFrames();
+    const root = document.createElement('div');
+    const marker = document.createElement('div');
+    marker.dataset.ready = 'true';
+    const stability = waitForCaptureStability(root, {
+      readiness: { selector: '[data-ready="true"]' },
+      readinessTimeoutMs: 20,
+      timeoutMs: 100,
+    });
+    const resolution = expect(stability).resolves.toEqual({
+      imageCount: 0,
+      deferredImageCount: 0,
+      reducedMotion: false,
+    });
+
+    await vi.advanceTimersByTimeAsync(15);
+    root.append(marker);
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(90);
+    fonts.resolve();
+    await frames.next();
+    await frames.next();
+
+    await resolution;
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('waits for the exact declared marker count and a generation on every marker', async () => {
+    setFonts(Promise.resolve());
+    useTimerFrames();
+    const root = document.createElement('div');
+    const first = document.createElement('div');
+    const second = document.createElement('div');
+    first.dataset.ready = 'true';
+    first.dataset.generation = '1';
+    second.dataset.ready = 'true';
+    root.append(first);
+
+    const stability = waitForCaptureStability(root, {
+      readiness: {
+        selector: '[data-ready="true"]',
+        count: 2,
+        generationAttribute: 'data-generation',
+      },
+      timeoutMs: 1_000,
+    });
+    await Promise.resolve();
+    root.append(second);
+    await Promise.resolve();
+    expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+
+    second.dataset.generation = '1';
+    await expect(stability).resolves.toEqual({
+      imageCount: 0,
+      deferredImageCount: 0,
+      reducedMotion: false,
+    });
+  });
+
+  it('restarts stability when a marker is replaced by a new generation', async () => {
+    setFonts(Promise.resolve());
+    const frames = useManualFrames();
+    const root = document.createElement('div');
+    const first = document.createElement('div');
+    first.dataset.ready = 'true';
+    first.dataset.generation = '1';
+    root.append(first);
+
+    const stability = waitForCaptureStability(root, {
+      readiness: {
+        selector: '[data-ready="true"]',
+        count: 1,
+        generationAttribute: 'data-generation',
+      },
+      timeoutMs: 1_000,
+    });
+    await frames.next();
+    const replacement = document.createElement('div');
+    replacement.dataset.ready = 'true';
+    replacement.dataset.generation = '2';
+    first.replaceWith(replacement);
+    await frames.next();
+    await frames.next();
+    await frames.next();
+
+    await expect(stability).resolves.toEqual({
+      imageCount: 0,
+      deferredImageCount: 0,
+      reducedMotion: false,
+    });
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(4);
+  });
+
+  it('orders waiting and stable generations, rejects stale settlement, and cleans up', async () => {
+    setFonts(Promise.resolve());
+    const frames = useManualFrames();
+    const root = document.createElement('div');
+    const marker = document.createElement('div');
+    marker.dataset.ready = 'true';
+    marker.dataset.generation = '1';
+    root.append(marker);
+    const controller = new AbortController();
+    const events: string[] = [];
+    const watching = watchCaptureStability(
+      root,
+      {
+        readiness: {
+          selector: '[data-ready="true"]',
+          count: 1,
+          generationAttribute: 'data-generation',
+        },
+        signal: controller.signal,
+        timeoutMs: 1_000,
+      },
+      {
+        onWaiting: (generation) => events.push(`waiting:${generation}`),
+        onStable: (_result, generation) => events.push(`stable:${generation}`),
+      },
+    );
+    await frames.next();
+    await frames.next();
+    expect(events).toEqual(['waiting:1', 'stable:1']);
+
+    marker.dataset.ready = 'false';
+    await vi.waitFor(() => expect(events).toEqual(['waiting:1', 'stable:1', 'waiting:2']));
+    marker.dataset.generation = '2';
+    marker.dataset.ready = 'true';
+    await frames.next();
+    marker.dataset.generation = '3';
+    await frames.next();
+    expect(events).toEqual(['waiting:1', 'stable:1', 'waiting:2']);
+    await frames.next();
+    await frames.next();
+    expect(events).toEqual(['waiting:1', 'stable:1', 'waiting:2', 'stable:2']);
+
+    controller.abort();
+    await expect(watching).rejects.toMatchObject({ name: 'AbortError' });
+    marker.dataset.ready = 'false';
+    await Promise.resolve();
+    expect(events).toEqual(['waiting:1', 'stable:1', 'waiting:2', 'stable:2']);
+  });
+
+  it('disconnects the readiness observer when a delayed marker wait is cancelled', async () => {
+    vi.useFakeTimers();
+    setFonts(Promise.resolve());
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    const root = document.createElement('div');
+    const controller = new AbortController();
+    const stability = waitForCaptureStability(root, {
+      readiness: { selector: '[data-ready="true"]' },
+      readinessTimeoutMs: 25,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+    await expect(stability).rejects.toMatchObject({ name: 'AbortError' });
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('waits for fonts, images, reduced-motion styles, and two settled frames', async () => {
     const fonts = deferred<void>();
     setFonts(fonts.promise);

@@ -1,5 +1,4 @@
 <script lang="ts" module>
-  import { Button } from '$lib/components/ui/button';
   import mermaid from 'mermaid';
   import elkLayouts from '@mermaid-js/layout-elk';
 
@@ -11,25 +10,108 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  /* eslint-disable max-lines -- Mermaid post-processing and presentation stay coordinated */
+  import { onMount, tick } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { faExpand } from '@fortawesome/free-solid-svg-icons';
+  import { faCode, faExpand } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
-  import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
+  import { faUser, getPhosphorIconComponent } from '$lib/icons/phosphor-icons';
+  import {
+    createMermaidConfig,
+    MERMAID_PRIMARY_FONT,
+    runSerializedMermaidRender,
+  } from './mermaid-theme';
+  import { splitSemanticLabel } from '$lib/components/diagrams/diagram-label-wrap';
+  import type { SvgBounds } from './mermaid-state-layout';
+  import {
+    snapshotFlowchartClusterMembership,
+    type FlowchartClusterMembership,
+    type FlowchartSubgraphDatabase,
+  } from './mermaid-cluster-membership';
+  import { addMermaidLabelKnockouts, insertLabelKnockout } from './mermaid-label-knockouts';
+  import { loadMermaidTextFont } from './mermaid-font-loading';
+  import { ensureMermaidLabelContrast } from './mermaid-label-contrast';
+  import {
+    alignMermaidOpenArrowheads,
+    applyMermaidTerminalGaps,
+    attachStateTerminalArrowheads,
+    measureFlowchartContentBounds,
+    measuredClusterHeaderHeight,
+    placeStateLabelsOnFinalRoutes,
+    positionCompactGroupedEdgeLabels,
+    reflowCompactFlowchart,
+    repairEntityDividers,
+    refineMermaidCylinderNodes,
+    repairFlowchartNodeOutlines,
+    repairFlowchartRouteClearance,
+    repairFlowchartLabelClearance,
+    reserveFlowchartClusterHeaderBands,
+    spaceNestedFlowchartClusters,
+    routeFlowchartClientRequestLane,
+    rewriteStateRoutes,
+    roundOrthogonalBends,
+    routeFlowchartAroundClusterHeaders,
+    routeFlowchartCenteredFanouts,
+    routeFlowchartDecisionBranches,
+    routeFlowchartFeedbackLane,
+    routeGroupedReturnEdges,
+    repairUpwardStateFailureRoutes,
+    repairStateEntryRoutes,
+    snapFlowchartDiamondPorts,
+    snapFlowchartFanoutPorts,
+    snapFlowchartPorts,
+    snapFlowchartFeedbackPorts,
+  } from './mermaid-path-geometry';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('MermaidRenderer');
+  const SEQUENCE_MESSAGE_INSET = 12;
+  const SEQUENCE_MESSAGE_LINE_HEIGHT = 16;
+  const MERMAID_THEME_TOKENS = [
+    '--background',
+    '--foreground',
+    '--card',
+    '--card-foreground',
+    '--muted',
+    '--muted-foreground',
+    '--border',
+    '--accent',
+    '--accent-foreground',
+    '--diagram-canvas',
+    '--diagram-node-surface',
+    '--diagram-connector',
+    '--font-ui',
+    '--text-caption-size',
+    '--radius-small',
+  ] as const;
+  const STATE_LABEL_TEXT = {
+    streamFails: 'Stream fails', // i18n-ignore (agent-authored Mermaid content)
+    agentAsksUser: 'Agent asks user', // i18n-ignore (agent-authored Mermaid content)
+    toolCompletes: 'Tool completes', // i18n-ignore (agent-authored Mermaid content)
+    agentResponds: 'Agent responds', // i18n-ignore (agent-authored Mermaid content)
+    toolStarts: 'Tool starts', // i18n-ignore (agent-authored Mermaid content)
+  } as const;
 
   interface Props {
     code: string;
     className?: string;
     showExpandButton?: boolean;
+    showSourceButton?: boolean;
+    showSource?: boolean;
     onRenderStateChange?: (state: MermaidRenderState) => void;
   }
 
-  let { code, className = '', showExpandButton = true, onRenderStateChange }: Props = $props();
+  let {
+    code,
+    className = '',
+    showExpandButton = true,
+    showSourceButton = true,
+    showSource = $bindable(false),
+    onRenderStateChange,
+  }: Props = $props();
 
   let renderedSvg = $state('');
   let error = $state<string | null>(null);
@@ -38,7 +120,27 @@
   let fullscreenSvg = $state('');
   let fullscreenOpenerElement: HTMLElement | null = $state(null);
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
-  const isDarkTheme = selectIsDarkTheme();
+  let rendererElement: HTMLDivElement | undefined = $state();
+  let actorIconTemplateElement: HTMLSpanElement | undefined = $state();
+  let fullscreenDiagramElement: HTMLDivElement | undefined = $state();
+  let terminalGapFrame: number | undefined;
+  let themeRevision = $state(0);
+  let compactLayout = $state(false);
+  let narrowLayout = $state(false);
+  let renderGeneration = 0;
+  let activeGeneration = $state(0);
+  let fitGeneration = 0;
+  let settledGeneration = $state(0);
+  let decodedSource = $derived(decodeHtmlEntities(decodeBase64(code)));
+  const MermaidActorIcon = getPhosphorIconComponent(faUser);
+
+  function readMermaidThemeSignature(): string {
+    const styles = getComputedStyle(document.documentElement);
+    return [
+      styles.fontSize,
+      ...MERMAID_THEME_TOKENS.map((token) => styles.getPropertyValue(token).trim()),
+    ].join('\u0000');
+  }
 
   // Decode base64 encoded mermaid code
   function decodeBase64(str: string): string {
@@ -55,6 +157,31 @@
     }
   }
 
+  function applyLayoutDefaults(source: string): string {
+    if (
+      !/^\s*stateDiagram(?:-v2)?\b/m.test(source) ||
+      /^\s*direction\s+(?:LR|RL|TB|BT)\b/m.test(source)
+    ) {
+      return source;
+    }
+    return source.replace(/^(\s*stateDiagram(?:-v2)?\b[^\n]*)/m, '$1\n  direction TB');
+  }
+
+  function applyResponsiveLayout(source: string): string {
+    if (!compactLayout || !narrowLayout || !/^\s*sequenceDiagram\b/m.test(source)) return source;
+    return `---
+config:
+  sequence:
+    actorMargin: 0
+    diagramMarginX: 0
+    messageMargin: 24
+    noteMargin: 4
+    width: 96
+    wrap: true
+---
+${source}`;
+  }
+
   // Decode HTML entities that may have been escaped (legacy support)
   function decodeHtmlEntities(str: string): string {
     return str
@@ -67,95 +194,1366 @@
       .replace(/&#x2F;/g, '/');
   }
 
-  function initMermaid(isDark: boolean) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'base',
-      layout: 'elk',
-      securityLevel: 'loose',
-      fontFamily: 'inherit',
-      flowchart: {
-        useMaxWidth: false,
-        htmlLabels: true,
-        curve: 'basis',
-        padding: 12,
-      },
-      sequence: {
-        useMaxWidth: false,
-        wrap: true,
-        mirrorActors: false,
-      },
-      // "Auggie" palette derived from the app design tokens (src/app.css):
-      // green primary/accent hsl(158 100% 30%), blue secondary
-      // hsl(212 100% 48%/60%), warning hsl(38 92% 50%). Backgrounds stay
-      // neutral; nodes/borders/notes carry the accent hues.
-      themeVariables: isDark
-        ? {
-            // Dark theme - auggie accents on neutral backgrounds
-            primaryColor: 'hsl(158 35% 14%)',
-            primaryTextColor: 'hsl(158 20% 82%)',
-            primaryBorderColor: 'hsl(158 80% 32%)',
-            lineColor: 'hsl(158 20% 48%)',
-            secondaryColor: 'hsl(212 45% 16%)',
-            tertiaryColor: 'hsl(240 4% 10%)',
-            background: 'transparent',
-            mainBkg: 'hsl(158 35% 14%)',
-            nodeBorder: 'hsl(158 80% 32%)',
-            clusterBkg: 'hsl(158 25% 10%)',
-            clusterBorder: 'hsl(158 45% 24%)',
-            titleColor: 'hsl(0 0% 80%)',
-            edgeLabelBackground: 'hsl(240 12% 12%)',
-            textColor: 'hsl(0 0% 78%)',
-            nodeTextColor: 'hsl(158 20% 82%)',
-            actorTextColor: 'hsl(212 70% 85%)',
-            actorBkg: 'hsl(212 45% 16%)',
-            actorBorder: 'hsl(212 90% 55%)',
-            actorLineColor: 'hsl(212 35% 42%)',
-            signalColor: 'hsl(0 0% 74%)',
-            signalTextColor: 'hsl(0 0% 78%)',
-            labelBoxBkgColor: 'hsl(212 45% 16%)',
-            labelBoxBorderColor: 'hsl(212 90% 55%)',
-            labelTextColor: 'hsl(212 70% 85%)',
-            loopTextColor: 'hsl(212 70% 85%)',
-            noteBkgColor: 'hsl(38 55% 15%)',
-            noteBorderColor: 'hsl(38 85% 45%)',
-            noteTextColor: 'hsl(38 70% 78%)',
-          }
-        : {
-            // Light theme - auggie accents on neutral backgrounds
-            primaryColor: 'hsl(158 45% 94%)',
-            primaryTextColor: 'hsl(158 35% 16%)',
-            primaryBorderColor: 'hsl(158 100% 30%)',
-            lineColor: 'hsl(158 25% 40%)',
-            secondaryColor: 'hsl(212 85% 94%)',
-            tertiaryColor: 'hsl(0 0% 97%)',
-            background: 'transparent',
-            mainBkg: 'hsl(158 45% 94%)',
-            nodeBorder: 'hsl(158 100% 30%)',
-            clusterBkg: 'hsl(158 30% 97%)',
-            clusterBorder: 'hsl(158 45% 78%)',
-            titleColor: 'hsl(240 5.9% 25%)',
-            edgeLabelBackground: 'hsl(0 0% 100%)',
-            textColor: 'hsl(240 5.9% 25%)',
-            nodeTextColor: 'hsl(158 35% 16%)',
-            actorTextColor: 'hsl(212 60% 20%)',
-            actorBkg: 'hsl(212 85% 94%)',
-            actorBorder: 'hsl(212 100% 48%)',
-            actorLineColor: 'hsl(212 45% 65%)',
-            signalColor: 'hsl(240 5.9% 30%)',
-            signalTextColor: 'hsl(240 5.9% 30%)',
-            labelBoxBkgColor: 'hsl(212 85% 94%)',
-            labelBoxBorderColor: 'hsl(212 100% 48%)',
-            labelTextColor: 'hsl(212 60% 20%)',
-            loopTextColor: 'hsl(212 60% 20%)',
-            noteBkgColor: 'hsl(38 92% 92%)',
-            noteBorderColor: 'hsl(38 92% 50%)',
-            noteTextColor: 'hsl(38 70% 22%)',
-          },
+  type ClassNodeGeometry = {
+    element: SVGGElement;
+    name: string;
+    x: number;
+    y: number;
+    box: DOMRect;
+    originalBox: DOMRect;
+    deltaX: number;
+    deltaY: number;
+  };
+
+  type ClassTextGroupLayout = {
+    element: SVGGElement;
+    bounds: DOMRect;
+  };
+
+  const CLASS_HORIZONTAL_PADDING = 12;
+  const CLASS_VERTICAL_PADDING = 10;
+  const CLASS_ROW_GAP = 6;
+
+  function readTranslate(element: SVGGraphicsElement): { x: number; y: number } | null {
+    const transform = element.transform.baseVal.consolidate()?.matrix;
+    return transform ? { x: transform.e, y: transform.f } : null;
+  }
+
+  function visibleTextBounds(element: Element): DOMRect | null {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const rects: DOMRect[] = [];
+    while (walker.nextNode()) {
+      if (!walker.currentNode.textContent?.trim()) continue;
+      const range = document.createRange();
+      range.selectNodeContents(walker.currentNode);
+      rects.push(...Array.from(range.getClientRects()));
+    }
+    if (!rects.length) return null;
+    const left = Math.min(...rects.map((rect) => rect.left));
+    const top = Math.min(...rects.map((rect) => rect.top));
+    const right = Math.max(...rects.map((rect) => rect.right));
+    const bottom = Math.max(...rects.map((rect) => rect.bottom));
+    return new DOMRect(left, top, right - left, bottom - top);
+  }
+
+  function addSemanticLabelBreaks(svg: SVGSVGElement) {
+    if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
+    for (const label of svg.querySelectorAll<HTMLElement>(
+      'g.node .nodeLabel > p, g.cluster .nodeLabel > p',
+    )) {
+      if (label.dataset.semanticBreaks === 'true') continue;
+      const source = label.cloneNode(true) as HTMLElement;
+      source.querySelectorAll('br').forEach((breakElement) => breakElement.replaceWith('\n'));
+      const text = source.textContent?.replace(/[^\S\n]+/g, ' ').trim();
+      if (!text) continue;
+      label.replaceChildren();
+      for (const part of splitSemanticLabel(text)) {
+        label.append(document.createTextNode(part.text));
+        if (part.hardBreak) label.append(document.createElement('br'));
+        else if (part.breakAfter) label.append(document.createElement('wbr'));
+      }
+      label.dataset.semanticBreaks = 'true';
+    }
+  }
+
+  function hideEmptyEdgeLabels(svg: SVGSVGElement) {
+    for (const label of svg.querySelectorAll<SVGGElement>('g.edgeLabel')) {
+      if (!label.textContent?.trim()) label.style.display = 'none';
+    }
+  }
+
+  function centerFlowchartLabels(svg: SVGSVGElement) {
+    if (svg.getAttribute('aria-roledescription') !== 'flowchart-v2') return;
+    for (const node of svg.querySelectorAll<SVGGElement>('g.node')) {
+      const label = node.querySelector<SVGGElement>(':scope > .label');
+      const foreignObject = label?.querySelector<SVGForeignObjectElement>('foreignObject');
+      const content = foreignObject?.firstElementChild;
+      const shape = node.querySelector<SVGGraphicsElement>(
+        ':scope > .label-container, :scope > .outer-path, :scope > .basic.label-container',
+      );
+      if (!label || !foreignObject || !(content instanceof HTMLElement) || !shape) continue;
+
+      const height = Number.parseFloat(foreignObject.getAttribute('height') ?? '0');
+      const initialTextBounds = visibleTextBounds(label);
+      const initialMatrix = label.getScreenCTM();
+      const initialScaleY = initialMatrix ? Math.hypot(initialMatrix.c, initialMatrix.d) || 1 : 1;
+      const contentHeight = Math.max(
+        content.scrollHeight,
+        initialTextBounds ? initialTextBounds.height / initialScaleY : 0,
+      );
+      if (contentHeight > height + 0.5) {
+        const repairedHeight = Math.ceil(contentHeight + 1);
+        foreignObject.setAttribute('height', String(repairedHeight));
+        const transform = readTranslate(label);
+        if (transform)
+          label.setAttribute('transform', `translate(${transform.x}, ${-repairedHeight / 2})`);
+        if (shape instanceof SVGRectElement) {
+          const verticalPadding = Math.max(0, (Number(shape.getAttribute('height')) - height) / 2);
+          shape.setAttribute('y', String(-repairedHeight / 2 - verticalPadding));
+          shape.setAttribute('height', String(repairedHeight + verticalPadding * 2));
+        }
+      }
+
+      const shapeBounds = shape.getBoundingClientRect();
+      const textBounds = visibleTextBounds(label);
+      const transform = readTranslate(label);
+      const matrix = label.getScreenCTM();
+      if (!textBounds || !transform || !matrix) continue;
+      const scaleX = Math.hypot(matrix.a, matrix.b) || 1;
+      const scaleY = Math.hypot(matrix.c, matrix.d) || 1;
+      const offsetX = textBounds.x + textBounds.width / 2 - (shapeBounds.x + shapeBounds.width / 2);
+      const offsetY =
+        textBounds.y + textBounds.height / 2 - (shapeBounds.y + shapeBounds.height / 2);
+      label.setAttribute(
+        'transform',
+        `translate(${transform.x - offsetX / scaleX}, ${transform.y - offsetY / scaleY})`,
+      );
+    }
+  }
+
+  function centerStateNodeLabels(svg: SVGSVGElement) {
+    if (!svg.classList.contains('statediagram')) return;
+    for (const node of svg.querySelectorAll<SVGGElement>('g.statediagram-state')) {
+      const shape = node.querySelector<SVGRectElement>(':scope > rect.basic.label-container');
+      const label = node.querySelector<SVGGElement>(':scope > g.label');
+      if (!shape || !label || !node.textContent?.trim()) continue;
+
+      const shapeBounds = shape.getBoundingClientRect();
+      const textBounds = visibleTextBounds(label);
+      const transform = readTranslate(label);
+      const matrix = label.getScreenCTM();
+      if (!textBounds || !transform || !matrix) continue;
+      const scaleX = Math.hypot(matrix.a, matrix.b) || 1;
+      const offsetX = textBounds.x + textBounds.width / 2 - (shapeBounds.x + shapeBounds.width / 2);
+      label.setAttribute(
+        'transform',
+        `translate(${transform.x - offsetX / scaleX}, ${transform.y})`,
+      );
+    }
+  }
+
+  function padMermaidEdgeLabels(svg: SVGSVGElement) {
+    for (const foreignObject of svg.querySelectorAll<SVGForeignObjectElement>(
+      'foreignObject:has(span.edgeLabel)',
+    )) {
+      if (foreignObject.dataset.labelPadded === 'true') continue;
+      const x = foreignObject.x.baseVal.value;
+      const y = foreignObject.y.baseVal.value;
+      const width = foreignObject.width.baseVal.value;
+      const height = foreignObject.height.baseVal.value;
+      const label = foreignObject.querySelector<HTMLElement>('span.edgeLabel');
+      if (!label?.textContent?.trim()) continue;
+      const wrapsStateFailure = label?.textContent?.trim() === STATE_LABEL_TEXT.streamFails;
+      if (wrapsStateFailure && label) {
+        label.style.display = 'inline-block';
+        label.style.width = '40px';
+        label.style.whiteSpace = 'normal';
+      }
+      const paddedWidth = wrapsStateFailure ? 52 : width + 12;
+      foreignObject.setAttribute('x', String(x + width / 2 - paddedWidth / 2));
+      foreignObject.setAttribute('y', String(y - 4));
+      foreignObject.setAttribute('width', String(paddedWidth));
+      foreignObject.setAttribute(
+        'height',
+        String(wrapsStateFailure ? Math.max(44, height + 8) : height + 8),
+      );
+      foreignObject.classList.add('edge-label-surface');
+      foreignObject.dataset.labelPaddingX = '6';
+      foreignObject.dataset.labelPaddingY = '4';
+      foreignObject.dataset.labelPadded = 'true';
+    }
+    for (const background of svg.querySelectorAll<SVGRectElement>(
+      '.edgeLabel rect.background:not([data-label-padded])',
+    )) {
+      const x = Number(background.getAttribute('x'));
+      const y = Number(background.getAttribute('y'));
+      const width = Number(background.getAttribute('width'));
+      const height = Number(background.getAttribute('height'));
+      if (![x, y, width, height].every(Number.isFinite)) continue;
+      background.setAttribute('x', String(x - 6));
+      background.setAttribute('y', String(y - 5));
+      background.setAttribute('width', String(width + 12));
+      background.setAttribute('height', String(height + 10));
+      background.setAttribute('rx', '2');
+      background.dataset.labelPaddingX = '6';
+      background.dataset.labelPaddingY = '5';
+      background.dataset.labelPadded = 'true';
+    }
+  }
+
+  function addMermaidLabelFeathers(svg: SVGSVGElement) {
+    const surfaces = [
+      ...svg.querySelectorAll<SVGRectElement>(
+        '.edgeLabel rect.background[data-label-padded], .edge-label-knockout',
+      ),
+    ];
+    if (surfaces.length === 0) return;
+    const signature = surfaces
+      .map((surface) =>
+        [
+          surface.getAttribute('x'),
+          surface.getAttribute('y'),
+          surface.getAttribute('width'),
+          surface.getAttribute('height'),
+          surface.dataset.labelPaddingX ?? '6',
+          surface.dataset.labelPaddingY ?? '4',
+        ].join(','),
+      )
+      .join(';');
+    const previous = svg.querySelector<SVGDefsElement>(':scope > defs.edge-label-feather-defs');
+    if (
+      previous?.dataset.signature === signature &&
+      surfaces.every((surface) => surface.hasAttribute('mask'))
+    ) {
+      return;
+    }
+    previous?.remove();
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    defs.classList.add('edge-label-feather-defs');
+    defs.dataset.signature = signature;
+    svg.prepend(defs);
+
+    surfaces.forEach((surface, index) => {
+      const width = Number(surface.getAttribute('width'));
+      const height = Number(surface.getAttribute('height'));
+      const paddingX = Number(surface.dataset.labelPaddingX ?? 6);
+      const paddingY = Number(surface.dataset.labelPaddingY ?? 4);
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+
+      const prefix = `${svg.id || 'mermaid'}-edge-label-feather-${index}`;
+      const filterId = `${prefix}-blur`;
+      const maskId = `${prefix}-mask`;
+      const x = Number(surface.getAttribute('x') ?? 0);
+      const y = Number(surface.getAttribute('y') ?? 0);
+      const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+      filter.id = filterId;
+      filter.setAttribute('filterUnits', 'userSpaceOnUse');
+      filter.setAttribute('x', String(x));
+      filter.setAttribute('y', String(y));
+      filter.setAttribute('width', String(width));
+      filter.setAttribute('height', String(height));
+      const blur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+      blur.setAttribute('stdDeviation', `${paddingX / 6} ${paddingY / 6}`);
+      filter.append(blur);
+      defs.append(filter);
+
+      const mask = document.createElementNS('http://www.w3.org/2000/svg', 'mask');
+      mask.id = maskId;
+      mask.setAttribute('maskContentUnits', 'userSpaceOnUse');
+      mask.setAttribute('maskUnits', 'userSpaceOnUse');
+      mask.setAttribute('mask-type', 'alpha');
+      mask.setAttribute('x', String(x));
+      mask.setAttribute('y', String(y));
+      mask.setAttribute('width', String(width));
+      mask.setAttribute('height', String(height));
+      const maskRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      maskRect.setAttribute('x', String(x + paddingX / 2));
+      maskRect.setAttribute('y', String(y + paddingY / 2));
+      maskRect.setAttribute('width', String(Math.max(0, width - paddingX)));
+      maskRect.setAttribute('height', String(Math.max(0, height - paddingY)));
+      maskRect.setAttribute('fill', 'hsl(var(--foreground))');
+      maskRect.setAttribute('filter', `url(#${filterId})`);
+      mask.append(maskRect);
+      defs.append(mask);
+      surface.setAttribute('mask', `url(#${maskId})`);
+      surface.dataset.labelFeathered = 'true';
     });
   }
 
-  async function renderDiagram(rawCode: string, isDark: boolean) {
+  function balanceMermaidEdgeLabelGlyphs(svg: SVGSVGElement) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    for (const label of svg.querySelectorAll<HTMLElement>('span.edgeLabel')) {
+      const textBlock = label.querySelector<HTMLElement>('p');
+      if (!textBlock) continue;
+      const style = getComputedStyle(textBlock);
+      context.font = style.font;
+      const lines = textBlock.innerText.split('\n').filter((line) => line.length > 0);
+      if (lines.length === 0) continue;
+      const first = context.measureText(lines[0]);
+      const last = context.measureText(lines.at(-1)!);
+      const fontTop = first.fontBoundingBoxAscent || first.actualBoundingBoxAscent;
+      const fontBottom = last.fontBoundingBoxDescent || last.actualBoundingBoxDescent;
+      const topInset = fontTop - first.actualBoundingBoxAscent;
+      const bottomInset = fontBottom - last.actualBoundingBoxDescent;
+      const offset = (bottomInset - topInset) / 2;
+      textBlock.style.transform = `translateY(${offset}px)`;
+      label.dataset.opticalTopGap = String(3 + topInset + offset);
+      label.dataset.opticalBottomGap = String(3 + bottomInset - offset);
+    }
+  }
+
+  function recenterStateLabels(svg: SVGSVGElement) {
+    for (const label of svg.querySelectorAll<SVGGElement>('g.edgeLabel[data-route-path-id]')) {
+      const center = label.dataset.finalPathCenter?.split(',').map(Number);
+      const path = label.dataset.routePathId
+        ? svg.querySelector<SVGPathElement>(`#${CSS.escape(label.dataset.routePathId)}`)
+        : null;
+      const pathMatrix = path?.getCTM();
+      const parentMatrix = (label.parentElement as SVGGraphicsElement | null)?.getCTM();
+      if (!center || center.length !== 2 || !pathMatrix || !parentMatrix) continue;
+      const parentPoint = new DOMPoint(center[0], center[1])
+        .matrixTransform(pathMatrix)
+        .matrixTransform(parentMatrix.inverse());
+      const bounds = label.getBBox();
+      label.setAttribute(
+        'transform',
+        `translate(${parentPoint.x - (bounds.x + bounds.width / 2)}, ${parentPoint.y - (bounds.y + bounds.height / 2)})`,
+      );
+    }
+  }
+
+  function alignCompactClusterTitles(svg: SVGSVGElement) {
+    for (const cluster of svg.querySelectorAll<SVGGElement>('g.cluster')) {
+      const rect = cluster.querySelector<SVGRectElement>(':scope > rect');
+      const label = cluster.querySelector<SVGGElement>(':scope > g.cluster-label');
+      const viewport = label?.querySelector<SVGForeignObjectElement>('foreignObject');
+      if (!rect || !label || !viewport) continue;
+      const x = Number(rect.getAttribute('x'));
+      const y = Number(rect.getAttribute('y'));
+      const width = Number(rect.getAttribute('width'));
+      const height = Number(rect.getAttribute('height'));
+      if (![x, y, width, height].every(Number.isFinite)) continue;
+      viewport.setAttribute('x', '0');
+      viewport.setAttribute('y', '0');
+      viewport.setAttribute('width', String(Math.max(24, width - 40)));
+      const content = viewport.querySelector<HTMLElement>('div');
+      const titleHeight = Math.ceil(
+        Math.max(content?.getBoundingClientRect().height ?? 0, content?.scrollHeight ?? 0, 18),
+      );
+      const measuredHeader = measuredClusterHeaderHeight(titleHeight);
+      const currentHeader = Number(cluster.dataset.headerHeight) || measuredHeader;
+      const headerGrowth = Math.max(0, measuredHeader - currentHeader);
+      const finalY = y - headerGrowth;
+      viewport.setAttribute('height', String(titleHeight));
+      rect.setAttribute('y', String(finalY));
+      rect.setAttribute('height', String(height + headerGrowth));
+      cluster.dataset.headerHeight = String(Math.max(currentHeader, measuredHeader));
+      label.setAttribute('transform', `translate(${x + 20}, ${finalY + 20})`);
+    }
+  }
+
+  function replaceSequenceActorFigures(svg: SVGSVGElement) {
+    if (svg.getAttribute('aria-roledescription') !== 'sequence') return;
+    const template = actorIconTemplateElement?.querySelector('svg');
+    if (!template) return;
+    for (const actor of svg.querySelectorAll<SVGGElement>('g.actor-man')) {
+      const head = actor.querySelector<SVGCircleElement>(':scope > circle');
+      const label = actor.querySelector<SVGTextElement>(':scope > text.actor-man');
+      if (!head || !label) continue;
+      const centerX = Number(head.getAttribute('cx'));
+      const labelHeight = label.getBBox().height;
+      actor
+        .querySelectorAll(':scope > line, :scope > circle')
+        .forEach((element) => element.remove());
+      const icon = template.cloneNode(true) as SVGSVGElement;
+      icon.classList.add('mermaid-actor-user-icon');
+      icon.setAttribute('x', String(centerX - 15));
+      icon.setAttribute('y', '1');
+      icon.setAttribute('width', '30');
+      icon.setAttribute('height', '30');
+      icon.setAttribute('aria-hidden', 'true');
+      icon.setAttribute('focusable', 'false');
+      icon.removeAttribute('role');
+      label.setAttribute('y', String(37 + labelHeight / 2));
+      actor.insertBefore(icon, label);
+    }
+  }
+
+  function sequenceBranchRole(text: string): 'success' | 'failure' | 'neutral' {
+    const normalized = text.toLowerCase();
+    if (/invalid|fail|error|denied|reject|unavailable/.test(normalized)) return 'failure';
+    if (/valid|success|accepted|ready|available|complete/.test(normalized)) return 'success';
+    return 'neutral';
+  }
+
+  function wrapSequenceCondition(text: string, maxWidth: number, element: SVGTextElement) {
+    const words = text
+      .replace(/^\[|\]$/g, '')
+      .trim()
+      .split(/\s+/);
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context || words.length === 0) return [text];
+    const style = getComputedStyle(element);
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const lines: string[] = [];
+    for (const word of words) {
+      const candidate = lines.length ? `${lines.at(-1)} ${word}` : word;
+      if (lines.length && context.measureText(candidate).width > maxWidth) lines.push(word);
+      else if (lines.length) lines[lines.length - 1] = candidate;
+      else lines.push(word);
+    }
+    return lines;
+  }
+
+  function wrapSequenceMessage(text: string, maxWidth: number, element: SVGTextElement) {
+    const words = text.trim().split(/\s+/);
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context || words.length === 0) return [text];
+    const style = getComputedStyle(element);
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const lines: string[] = [];
+    for (const word of words) {
+      const candidate = lines.length ? `${lines.at(-1)} ${word}` : word;
+      if (lines.length && context.measureText(candidate).width > maxWidth) lines.push(word);
+      else if (lines.length) lines[lines.length - 1] = candidate;
+      else lines.push(word);
+    }
+    return lines;
+  }
+
+  function shiftSequenceGeometryAfter(svg: SVGSVGElement, threshold: number, amount: number) {
+    for (const line of svg.querySelectorAll<SVGLineElement>('line')) {
+      for (const attribute of ['y1', 'y2'] as const) {
+        const value = Number(line.getAttribute(attribute));
+        if (Number.isFinite(value) && value >= threshold) {
+          line.setAttribute(attribute, String(value + amount));
+        }
+      }
+    }
+    for (const text of svg.querySelectorAll<SVGTextElement>('text')) {
+      const y = Number(text.getAttribute('y'));
+      if (Number.isFinite(y) && y >= threshold) text.setAttribute('y', String(y + amount));
+    }
+    for (const rect of svg.querySelectorAll<SVGRectElement>('rect')) {
+      const y = Number(rect.getAttribute('y'));
+      const height = Number(rect.getAttribute('height'));
+      if (![y, height].every(Number.isFinite)) continue;
+      if (y >= threshold) rect.setAttribute('y', String(y + amount));
+      else if (y + height >= threshold) rect.setAttribute('height', String(height + amount));
+    }
+    // Self-message curves and construct tabs are not line/rect geometry. Move
+    // their existing paint too, but never touch marker definitions or actor icons.
+    for (const element of svg.querySelectorAll<SVGGraphicsElement>('path, polygon, polyline')) {
+      if (element.ownerSVGElement !== svg || element.closest('defs, marker')) continue;
+      const matrix = element.transform.baseVal.consolidate()?.matrix;
+      const y = element.getBBox().y + (matrix?.f ?? 0);
+      if (y < threshold) continue;
+      const translate = svg.createSVGTransform();
+      translate.setTranslate(0, amount);
+      element.transform.baseVal.insertItemBefore(translate, 0);
+    }
+  }
+
+  function reserveSequenceNoteClearance(svg: SVGSVGElement, notes: SVGRectElement[]) {
+    const messages = [
+      ...svg.querySelectorAll<SVGLineElement>(
+        ':scope > line.messageLine0, :scope > line.messageLine1',
+      ),
+    ].filter((line) => line.y1.baseVal.value === line.y2.baseVal.value);
+    if (messages.length === 0) return;
+    for (const note of notes) {
+      const top = note.y.baseVal.value;
+      const preceding = messages
+        .filter((line) => line.y1.baseVal.value < top)
+        .sort((a, b) => b.y1.baseVal.value - a.y1.baseVal.value)[0];
+      if (!preceding) continue;
+      const strokeWidth = Number.parseFloat(getComputedStyle(preceding).strokeWidth) || 0;
+      let extent = strokeWidth / 2;
+      for (const attribute of ['marker-start', 'marker-end']) {
+        const id = preceding.getAttribute(attribute)?.match(/#([^)'"\s]+)/)?.[1];
+        const marker = id
+          ? svg.querySelector<SVGMarkerElement>(`marker[id="${CSS.escape(id)}"]`)
+          : null;
+        if (!marker) continue;
+        const height = marker.viewBox.baseVal.height || marker.markerHeight.baseVal.value;
+        const scale = marker.markerHeight.baseVal.value / height;
+        const units =
+          marker.markerUnits.baseVal === SVGMarkerElement.SVG_MARKERUNITS_STROKEWIDTH
+            ? strokeWidth
+            : 1;
+        // The marker viewport contains its painted stroke. Taking both sides
+        // handles leftward and rightward horizontal replies without ID heuristics.
+        const referenceY = marker.refY.baseVal.value - marker.viewBox.baseVal.y;
+        extent = Math.max(extent, Math.max(referenceY, height - referenceY) * scale * units);
+      }
+      const shortfall = preceding.y1.baseVal.value + extent + SEQUENCE_MESSAGE_INSET - top;
+      if (shortfall > 0) shiftSequenceGeometryAfter(svg, top, shortfall);
+    }
+  }
+
+  function insetSequenceMessageLabels(svg: SVGSVGElement, actorCenters: number[]) {
+    const groups: Array<{ labels: SVGTextElement[]; line: SVGLineElement }> = [];
+    let labels: SVGTextElement[] = [];
+    for (const child of svg.children) {
+      if (child.matches('text.messageText')) labels.push(child as SVGTextElement);
+      if (!child.matches('line.messageLine0, line.messageLine1')) continue;
+      groups.push({ labels, line: child as SVGLineElement });
+      labels = [];
+    }
+
+    for (const group of groups) {
+      if (group.labels.length === 0) continue;
+      const x1 = Number(group.line.getAttribute('x1'));
+      const x2 = Number(group.line.getAttribute('x2'));
+      const source = actorCenters.reduce((nearest, center) =>
+        Math.abs(center - x1) < Math.abs(nearest - x1) ? center : nearest,
+      );
+      const target = actorCenters.reduce((nearest, center) =>
+        Math.abs(center - x2) < Math.abs(nearest - x2) ? center : nearest,
+      );
+      const midpoint = (source + target) / 2;
+      const maxWidth = Math.abs(target - source) - SEQUENCE_MESSAGE_INSET * 2;
+      const text = group.labels.map((label) => label.textContent?.trim()).join(' ');
+      const wrapped = wrapSequenceMessage(text, maxWidth, group.labels[0]);
+      const addedHeight = (wrapped.length - group.labels.length) * SEQUENCE_MESSAGE_LINE_HEIGHT;
+      const arrowY = Number(group.line.getAttribute('y1'));
+      if (addedHeight > 0 && Number.isFinite(arrowY)) {
+        shiftSequenceGeometryAfter(svg, arrowY, addedHeight);
+      }
+
+      const template = group.labels[0];
+      const firstY = Number(template.getAttribute('y'));
+      for (const label of group.labels.slice(1)) label.remove();
+      wrapped.forEach((line, index) => {
+        const label = index === 0 ? template : (template.cloneNode(false) as SVGTextElement);
+        label.textContent = line;
+        label.setAttribute('x', String(midpoint));
+        label.setAttribute('y', String(firstY + index * SEQUENCE_MESSAGE_LINE_HEIGHT));
+        label.setAttribute('text-anchor', 'middle');
+        if (index > 0) group.line.before(label);
+      });
+    }
+  }
+
+  async function polishSequenceDiagram(svg: SVGSVGElement, source: string) {
+    if (svg.getAttribute('aria-roledescription') !== 'sequence') return;
+
+    const originalViewBox = {
+      x: svg.viewBox.baseVal.x,
+      y: svg.viewBox.baseVal.y,
+      width: svg.viewBox.baseVal.width,
+      height: svg.viewBox.baseVal.height,
+    };
+    const originalBounds = svg.getBBox();
+    const bottomPadding =
+      originalViewBox.y + originalViewBox.height - (originalBounds.y + originalBounds.height);
+    const actorCenters = [...svg.querySelectorAll<SVGLineElement>('.actor-line')].map((line) =>
+      Number(line.getAttribute('x1')),
+    );
+    insetSequenceMessageLabels(svg, actorCenters);
+    for (const message of svg.querySelectorAll<SVGLineElement>(
+      ':scope > line.messageLine0, :scope > line.messageLine1',
+    )) {
+      const x1 = Number(message.getAttribute('x1'));
+      const x2 = Number(message.getAttribute('x2'));
+      const y1 = Number(message.getAttribute('y1'));
+      const y2 = Number(message.getAttribute('y2'));
+      const direction = Math.sign(x2 - x1);
+      if (![x1, x2, y1, y2].every(Number.isFinite) || y1 !== y2 || direction === 0) continue;
+      const target = actorCenters.reduce((nearest, center) =>
+        Math.abs(center - x2) < Math.abs(nearest - x2) ? center : nearest,
+      );
+      if (Math.abs(target - x2) > 12) continue;
+      message.setAttribute('x2', String(target - direction * 5));
+    }
+
+    for (const group of svg.querySelectorAll<SVGGElement>(':scope > g')) {
+      const frameLines = [...group.querySelectorAll<SVGLineElement>(':scope > line.loopLine')];
+      const constructLabel = group.querySelector<SVGTextElement>(':scope > text.labelText');
+      if (frameLines.length < 4 || !constructLabel) continue;
+
+      const kind =
+        constructLabel.textContent
+          ?.trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-') || 'group';
+      group.classList.add('sequence-construct', `sequence-construct-${kind}`);
+      constructLabel.classList.add('sequence-construct-label-text');
+      group
+        .querySelector<SVGGraphicsElement>(':scope > .labelBox')
+        ?.classList.add('sequence-construct-label');
+
+      const xValues = frameLines.flatMap((line) => [
+        Number(line.getAttribute('x1')),
+        Number(line.getAttribute('x2')),
+      ]);
+      const yValues = frameLines.flatMap((line) => [
+        Number(line.getAttribute('y1')),
+        Number(line.getAttribute('y2')),
+      ]);
+      const left = Math.min(...xValues);
+      const right = Math.max(...xValues);
+      const top = Math.min(...yValues);
+      const bottom = Math.max(...yValues);
+      if (![left, right, top, bottom].every(Number.isFinite)) continue;
+
+      const dividers: number[] = [];
+      for (const line of frameLines) {
+        const x1 = Number(line.getAttribute('x1'));
+        const x2 = Number(line.getAttribute('x2'));
+        const y1 = Number(line.getAttribute('y1'));
+        const y2 = Number(line.getAttribute('y2'));
+        const isOuter =
+          (x1 === x2 && (x1 === left || x1 === right)) ||
+          (y1 === y2 && (y1 === top || y1 === bottom));
+        line.classList.add(isOuter ? 'sequence-frame-line' : 'sequence-branch-divider');
+        if (!isOuter && y1 === y2) dividers.push(y1);
+      }
+
+      const conditions = [
+        ...group.querySelectorAll<SVGTextElement>(
+          ':scope > text.loopText, :scope > text.sectionTitle',
+        ),
+      ];
+      const labelBounds = group
+        .querySelector<SVGGraphicsElement>(':scope > .sequence-construct-label')
+        ?.getBBox();
+      const conditionX = Math.max(
+        left + 12,
+        (labelBounds?.x ?? left) + (labelBounds?.width ?? 42) + 12,
+      );
+      const sectionEdges = [top, ...dividers.sort((a, b) => a - b), bottom];
+      const sections = sectionEdges.slice(0, -1).map(() => [] as SVGTextElement[]);
+
+      conditions.forEach((condition) => {
+        condition.classList.add('sequence-branch-condition');
+        condition.setAttribute('x', String(conditionX));
+        condition.setAttribute('text-anchor', 'start');
+        const y = Number(condition.getAttribute('y'));
+        const sectionIndex = Math.max(
+          0,
+          Math.min(
+            sections.length - 1,
+            sectionEdges.findIndex((edge, index) => index > 0 && y < edge) - 1,
+          ),
+        );
+        sections[sectionIndex].push(condition);
+      });
+
+      sections.forEach((sectionConditions, index) => {
+        if (sectionConditions.length === 0) return;
+        const conditionText = sectionConditions
+          .map((condition) => condition.textContent ?? '')
+          .join(' ')
+          .replace(/-\s+/g, '')
+          .replace(/\[\s+/g, '[')
+          .replace(/\s+\]/g, ']')
+          .replace(/\]\s+\[/g, ' ');
+        const role = sequenceBranchRole(conditionText);
+        const condition = sectionConditions[0];
+        for (const line of sectionConditions) {
+          if (line.previousElementSibling?.classList.contains('edge-label-knockout')) {
+            line.previousElementSibling.remove();
+          }
+          if (line !== condition) line.remove();
+        }
+        condition.replaceChildren();
+        const conditionLines = wrapSequenceCondition(
+          conditionText,
+          Math.max(48, right - conditionX - 12),
+          condition,
+        );
+        condition.setAttribute('aria-label', conditionText.replace(/^\[|\]$/g, '').trim());
+        condition.dataset.sequenceBranch = role;
+        for (const [lineIndex, lineText] of conditionLines.entries()) {
+          const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+          tspan.setAttribute('x', String(conditionX));
+          tspan.setAttribute('dy', lineIndex === 0 ? '0' : '1.15em');
+          tspan.textContent = lineText;
+          condition.append(tspan);
+        }
+        insertLabelKnockout(group, condition, condition.getBBox());
+        const sectionTop = sectionEdges[index];
+        const sectionBottom = sectionEdges[index + 1];
+        const surface = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        surface.classList.add('sequence-branch-surface');
+        surface.setAttribute('x', String(left + 4));
+        surface.setAttribute('y', String(sectionTop + 4));
+        surface.setAttribute('width', String(Math.max(0, right - left - 8)));
+        surface.setAttribute('height', String(Math.max(0, sectionBottom - sectionTop - 8)));
+        surface.setAttribute('rx', '6');
+        surface.dataset.sequenceBranch = 'neutral';
+
+        const cue = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        cue.classList.add('sequence-branch-cue', `sequence-branch-${role}`);
+        cue.setAttribute('x1', String(left + 8));
+        cue.setAttribute('x2', String(left + 8));
+        cue.setAttribute('y1', String(sectionTop + 12));
+        cue.setAttribute('y2', String(sectionBottom - 10));
+        cue.dataset.sequenceBranch = role;
+        group.insertBefore(cue, group.firstElementChild);
+        group.insertBefore(surface, group.firstElementChild);
+      });
+    }
+
+    const normalizeNoteText = (text: string) =>
+      text
+        .replace(/<[^>]*>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const groupRenderedNoteLines = (rendered: string[], authored: string[]) => {
+      const grouped: string[] = [];
+      let renderedIndex = 0;
+      for (const authoredLine of authored) {
+        const target = normalizeNoteText(authoredLine);
+        let content = '';
+        while (renderedIndex < rendered.length && normalizeNoteText(content) !== target) {
+          const candidate = [content, rendered[renderedIndex]].filter(Boolean).join(' ');
+          if (!target.startsWith(normalizeNoteText(candidate))) return rendered;
+          content = candidate;
+          renderedIndex += 1;
+        }
+        if (normalizeNoteText(content) !== target) return rendered;
+        grouped.push(content);
+      }
+      return renderedIndex === rendered.length ? grouped : rendered;
+    };
+    const authoredNoteLines = source
+      .split('\n')
+      .map((line) => /^\s*note\s+(?:left of|right of|over)\s+[^:]+:\s*(.*)$/i.exec(line)?.[1])
+      .filter((content): content is string => content !== undefined)
+      .map((content) => content.split(/<br\s*\/?>/i));
+    const noteGroups = [...svg.querySelectorAll<SVGGElement>(':scope > g')].flatMap((group) => {
+      const note = group.querySelector<SVGRectElement>(':scope > rect.note');
+      const lines = [...group.querySelectorAll<SVGTextElement>(':scope > text.noteText')];
+      return note && lines.length ? [{ group, note, lines }] : [];
+    });
+    const notes = noteGroups.map(({ group, note, lines }, index) => {
+      const renderedLines = lines
+        .map((line) => line.textContent?.trim())
+        .filter(Boolean) as string[];
+      const authoredLines = authoredNoteLines[index] ?? [];
+      const desiredLines =
+        authoredLines.length > 1
+          ? groupRenderedNoteLines(renderedLines, authoredLines)
+          : [renderedLines.join(' ')];
+      desiredLines.forEach((content, lineIndex) => {
+        const text = lines[lineIndex];
+        const x = text.querySelector('tspan')?.getAttribute('x') ?? text.getAttribute('x');
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+        if (x) line.setAttribute('x', x);
+        line.textContent = content;
+        text.replaceChildren(line);
+      });
+      lines.slice(desiredLines.length).forEach((line) => line.remove());
+      const texts = lines.slice(0, desiredLines.length);
+      return { group, note, texts };
+    });
+    for (const { group, texts } of notes) {
+      group.classList.add('sequence-note');
+      for (const text of texts) {
+        text.style.setProperty('transition-property', 'none', 'important');
+        text.classList.add('sequence-note-text');
+      }
+    }
+    if (notes.length) {
+      await Promise.all(notes.flatMap(({ texts }) => texts.map(loadMermaidTextFont)));
+    }
+    for (const { note, texts } of notes) {
+      const textBounds = texts.map((text) => text.getBBox());
+      const left = Math.min(...textBounds.map((bounds) => bounds.x));
+      const top = Math.min(...textBounds.map((bounds) => bounds.y));
+      const right = Math.max(...textBounds.map((bounds) => bounds.x + bounds.width));
+      const bottom = Math.max(...textBounds.map((bounds) => bounds.y + bounds.height));
+      const context = document.createElement('canvas').getContext('2d');
+      const textWidth = Math.max(
+        ...texts.map((text, index) => {
+          const style = getComputedStyle(text);
+          if (context) context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+          return context?.measureText(text.textContent ?? '').width ?? textBounds[index].width;
+        }),
+      );
+      const width = textWidth + 20;
+      const height = Math.max(28, bottom - top + 12);
+      const textX = Number(texts[0].getAttribute('x'));
+      const center = Number.isFinite(textX) ? textX : (left + right) / 2;
+      note.style.setProperty('transition-property', 'none', 'important');
+      note.setAttribute('x', String(center - width / 2));
+      note.setAttribute('y', String(top - 6));
+      note.setAttribute('width', String(width));
+      note.setAttribute('height', String(height));
+      note.setAttribute('rx', '6');
+    }
+
+    reserveSequenceNoteClearance(
+      svg,
+      notes.map(({ note }) => note),
+    );
+    const finalBounds = svg.getBBox();
+    const finalX = Math.min(originalViewBox.x, Math.floor(finalBounds.x));
+    const finalRight = Math.max(
+      originalViewBox.x + originalViewBox.width,
+      Math.ceil(finalBounds.x + finalBounds.width),
+    );
+    const finalWidth = finalRight - finalX;
+    const finalHeight = Math.ceil(
+      finalBounds.y + finalBounds.height + bottomPadding - originalViewBox.y,
+    );
+    if (finalWidth > originalViewBox.width || finalHeight > originalViewBox.height) {
+      svg.setAttribute(
+        'viewBox',
+        `${finalX} ${originalViewBox.y} ${finalWidth} ${Math.max(originalViewBox.height, finalHeight)}`,
+      );
+      svg.setAttribute('width', String(finalWidth));
+      svg.setAttribute('height', String(Math.max(originalViewBox.height, finalHeight)));
+    }
+  }
+
+  function arrangeClassTextGroup(element: SVGGElement | null): ClassTextGroupLayout | null {
+    if (!element) return null;
+    const labels = Array.from(element.children).filter(
+      (child): child is SVGGElement =>
+        child instanceof SVGGElement &&
+        child.classList.contains('label') &&
+        Boolean(child.textContent?.trim()),
+    );
+    if (!labels.length) {
+      element.style.display = 'none';
+      return null;
+    }
+
+    element.style.removeProperty('display');
+    let cursor = 0;
+    let left = Number.POSITIVE_INFINITY;
+    let right = Number.NEGATIVE_INFINITY;
+    for (const [index, label] of labels.entries()) {
+      const bounds = label.getBBox();
+      label.setAttribute('transform', `translate(0, ${cursor - bounds.y})`);
+      left = Math.min(left, bounds.x);
+      right = Math.max(right, bounds.x + bounds.width);
+      cursor += bounds.height;
+      if (index < labels.length - 1) cursor += CLASS_ROW_GAP;
+    }
+    return { element, bounds: new DOMRect(left, 0, right - left, cursor) };
+  }
+
+  function repairClassDiagramGeometry(svg: SVGSVGElement): DOMRect | null {
+    if (!svg.classList.contains('classDiagram')) return null;
+
+    const nodes = Array.from(svg.querySelectorAll<SVGGElement>('g.node')).flatMap(
+      (element): ClassNodeGeometry[] => {
+        const outer = element.querySelector<SVGGElement>('.outer-path');
+        const position = readTranslate(element);
+        if (!outer || !position) return [];
+
+        const outline = outer.getBBox();
+        element.querySelectorAll(':scope > .divider').forEach((divider) => divider.remove());
+        element.querySelector(':scope > .class-box-outline')?.remove();
+
+        const annotation = arrangeClassTextGroup(
+          element.querySelector<SVGGElement>(':scope > .annotation-group'),
+        );
+        const title = arrangeClassTextGroup(
+          element.querySelector<SVGGElement>(':scope > .label-group'),
+        );
+        const members = arrangeClassTextGroup(
+          element.querySelector<SVGGElement>(':scope > .members-group'),
+        );
+        const methods = arrangeClassTextGroup(
+          element.querySelector<SVGGElement>(':scope > .methods-group'),
+        );
+        const headerGroups = [annotation, title].filter(
+          (group): group is ClassTextGroupLayout => group !== null,
+        );
+        const sections = [
+          { groups: headerGroups, centered: true },
+          ...(members ? [{ groups: [members], centered: false }] : []),
+          ...(methods ? [{ groups: [methods], centered: false }] : []),
+        ];
+        if (!headerGroups.length) return [];
+
+        const sectionHeights = sections.map(({ groups }) =>
+          groups.reduce(
+            (height, group, index) => height + group.bounds.height + (index ? CLASS_ROW_GAP : 0),
+            0,
+          ),
+        );
+        const contentWidth = Math.max(
+          ...sections.flatMap(({ groups }) => groups.map((group) => group.bounds.width)),
+        );
+        const width = Math.max(outline.width, contentWidth + CLASS_HORIZONTAL_PADDING * 2);
+        const left = -width / 2;
+        const top = -(sectionHeights[0] + CLASS_VERTICAL_PADDING * 2) / 2;
+        let cursor = top + CLASS_VERTICAL_PADDING;
+
+        const dividers: SVGLineElement[] = [];
+        for (const [sectionIndex, section] of sections.entries()) {
+          for (const [groupIndex, group] of section.groups.entries()) {
+            if (groupIndex) cursor += CLASS_ROW_GAP;
+            const x = section.centered
+              ? -group.bounds.width / 2 - group.bounds.x
+              : left + CLASS_HORIZONTAL_PADDING - group.bounds.x;
+            group.element.setAttribute('transform', `translate(${x}, ${cursor - group.bounds.y})`);
+            cursor += group.bounds.height;
+          }
+          cursor += CLASS_VERTICAL_PADDING;
+          if (sectionIndex < sections.length - 1) {
+            const divider = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            divider.classList.add('class-box-divider');
+            divider.setAttribute('x1', String(left));
+            divider.setAttribute('x2', String(left + width));
+            divider.setAttribute('y1', String(cursor));
+            divider.setAttribute('y2', String(cursor));
+            dividers.push(divider);
+            cursor += CLASS_VERTICAL_PADDING;
+          }
+        }
+
+        const repaired = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        repaired.classList.add('class-box-outline');
+        repaired.setAttribute('x', String(left));
+        repaired.setAttribute('y', String(top));
+        repaired.setAttribute('width', String(width));
+        repaired.setAttribute('height', String(cursor - top));
+        element.insertBefore(repaired, outer);
+        outer.style.display = 'none';
+        const firstTextGroup = element.querySelector<SVGGElement>(
+          ':scope > .annotation-group, :scope > .label-group, :scope > .members-group, :scope > .methods-group',
+        );
+        for (const divider of dividers) element.insertBefore(divider, firstTextGroup);
+
+        return [
+          {
+            element,
+            name: title!.element.textContent?.trim() ?? '',
+            ...position,
+            box: repaired.getBBox(),
+            originalBox: outline,
+            deltaX: 0,
+            deltaY: 0,
+          },
+        ];
+      },
+    );
+    const getBounds = () => {
+      const left = Math.min(...nodes.map((node) => node.x + node.deltaX + node.box.x));
+      const top = Math.min(...nodes.map((node) => node.y + node.deltaY + node.box.y));
+      const right = Math.max(
+        ...nodes.map((node) => node.x + node.deltaX + node.box.x + node.box.width),
+      );
+      const bottom = Math.max(
+        ...nodes.map((node) => node.y + node.deltaY + node.box.y + node.box.height),
+      );
+      return new DOMRect(left, top, right - left, bottom - top);
+    };
+    if (nodes.length < 2) return nodes.length ? getBounds() : null;
+
+    const xRange =
+      Math.max(...nodes.map((node) => node.x)) - Math.min(...nodes.map((node) => node.x));
+    const yRange =
+      Math.max(...nodes.map((node) => node.y)) - Math.min(...nodes.map((node) => node.y));
+    const vertical = yRange >= xRange;
+    const mainPosition = (node: ClassNodeGeometry) => (vertical ? node.y : node.x);
+    const ranks: ClassNodeGeometry[][] = [];
+    for (const node of nodes.toSorted((a, b) => mainPosition(a) - mainPosition(b))) {
+      const rank = ranks.at(-1);
+      if (rank && Math.abs(mainPosition(rank[0]) - mainPosition(node)) < 1) rank.push(node);
+      else ranks.push([node]);
+    }
+
+    let previousEnd = Number.NEGATIVE_INFINITY;
+    for (const rank of ranks) {
+      const start = Math.min(
+        ...rank.map((node) => mainPosition(node) + (vertical ? node.box.y : node.box.x)),
+      );
+      const end = Math.max(
+        ...rank.map(
+          (node) =>
+            mainPosition(node) +
+            (vertical ? node.box.y + node.box.height : node.box.x + node.box.width),
+        ),
+      );
+      const shift = Number.isFinite(previousEnd) ? Math.max(0, previousEnd + 24 - start) : 0;
+      for (const node of rank) {
+        if (vertical) node.deltaY = shift;
+        else node.deltaX = shift;
+        node.element.setAttribute(
+          'transform',
+          `translate(${node.x + node.deltaX}, ${node.y + node.deltaY})`,
+        );
+      }
+      previousEnd = end + shift;
+    }
+
+    for (const path of svg.querySelectorAll<SVGPathElement>('.edgePaths path[data-edge="true"]')) {
+      const length = path.getTotalLength();
+      if (!length) continue;
+      const startPoint = path.getPointAtLength(0);
+      const endPoint = path.getPointAtLength(length);
+      const nearest = (point: DOMPoint) =>
+        nodes.toSorted((a, b) => {
+          const distance = (node: ClassNodeGeometry) => {
+            const { originalBox } = node;
+            const dx = Math.max(
+              node.x + originalBox.x - point.x,
+              0,
+              point.x - node.x - originalBox.x - originalBox.width,
+            );
+            const dy = Math.max(
+              node.y + originalBox.y - point.y,
+              0,
+              point.y - node.y - originalBox.y - originalBox.height,
+            );
+            return Math.hypot(dx, dy);
+          };
+          return distance(a) - distance(b);
+        })[0];
+      const pathIdentity = path.dataset.id ?? '';
+      const namedPair = nodes
+        .flatMap((source) =>
+          nodes.filter((target) => target !== source).map((target) => ({ source, target })),
+        )
+        .find(({ source, target }) => pathIdentity.startsWith(`id_${source.name}_${target.name}_`));
+      const source = namedPair?.source ?? nearest(startPoint);
+      const target = namedPair?.target ?? nearest(endPoint);
+      if (!source || !target || source === target) continue;
+
+      const sourceCenter = {
+        x: source.x + source.deltaX + source.box.x + source.box.width / 2,
+        y: source.y + source.deltaY + source.box.y + source.box.height / 2,
+      };
+      const targetCenter = {
+        x: target.x + target.deltaX + target.box.x + target.box.width / 2,
+        y: target.y + target.deltaY + target.box.y + target.box.height / 2,
+      };
+      const horizontal =
+        Math.abs(targetCenter.x - sourceCenter.x) > Math.abs(targetCenter.y - sourceCenter.y);
+      if (horizontal) {
+        const direction = Math.sign(targetCenter.x - sourceCenter.x) || 1;
+        const startX =
+          source.x +
+          source.deltaX +
+          (direction > 0 ? source.box.x + source.box.width : source.box.x);
+        const endX =
+          target.x +
+          target.deltaX +
+          (direction > 0 ? target.box.x : target.box.x + target.box.width);
+        const middle = (startX + endX) / 2;
+        const points = [
+          { x: startX, y: sourceCenter.y },
+          { x: middle, y: sourceCenter.y },
+          { x: middle, y: targetCenter.y },
+          { x: endX, y: targetCenter.y },
+        ];
+        path.setAttribute(
+          'd',
+          points.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.y}`).join(''),
+        );
+        path.dataset.manhattanPoints = points.map((point) => `${point.x},${point.y}`).join(' ');
+      } else {
+        const direction = Math.sign(targetCenter.y - sourceCenter.y) || 1;
+        const startY =
+          source.y +
+          source.deltaY +
+          (direction > 0 ? source.box.y + source.box.height : source.box.y);
+        const endY =
+          target.y +
+          target.deltaY +
+          (direction > 0 ? target.box.y : target.box.y + target.box.height);
+        const middle = (startY + endY) / 2;
+        const points = [
+          { x: sourceCenter.x, y: startY },
+          { x: sourceCenter.x, y: middle },
+          { x: targetCenter.x, y: middle },
+          { x: targetCenter.x, y: endY },
+        ];
+        path.setAttribute(
+          'd',
+          points.map((point, index) => `${index ? 'L' : 'M'}${point.x},${point.y}`).join(''),
+        );
+        path.dataset.manhattanPoints = points.map((point) => `${point.x},${point.y}`).join(' ');
+      }
+    }
+    return getBounds();
+  }
+
+  function setReadableMermaidWidth(svg: SVGSVGElement, width: number) {
+    const captionSize = Number.parseFloat(getComputedStyle(svg).fontSize);
+    const readableWidth = width * (12 / (Number.isFinite(captionSize) ? captionSize : 13));
+    svg.style.setProperty('--mermaid-readable-width', `${readableWidth.toFixed(3)}px`);
+  }
+
+  function measureFinalFlowchartBounds(svg: SVGSVGElement): SvgBounds {
+    const measured = svg.getBBox();
+    const coordinateReference = svg.querySelector<SVGGraphicsElement>('.edgePaths path, g.node');
+    const inverse = coordinateReference?.getScreenCTM()?.inverse();
+    if (!inverse) return measured;
+    const labelBounds = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')].flatMap(
+      (label) => {
+        if (!label.textContent?.trim()) return [];
+        const box = label.getBoundingClientRect();
+        const corners = [
+          new DOMPoint(box.left, box.top),
+          new DOMPoint(box.right, box.top),
+          new DOMPoint(box.right, box.bottom),
+          new DOMPoint(box.left, box.bottom),
+        ].map((point) => point.matrixTransform(inverse));
+        const left = Math.min(...corners.map((point) => point.x));
+        const top = Math.min(...corners.map((point) => point.y));
+        const right = Math.max(...corners.map((point) => point.x));
+        const bottom = Math.max(...corners.map((point) => point.y));
+        return [{ x: left, y: top, width: right - left, height: bottom - top }];
+      },
+    );
+    const allBounds = [measured, ...labelBounds];
+    const left = Math.min(...allBounds.map((bounds) => bounds.x));
+    const top = Math.min(...allBounds.map((bounds) => bounds.y));
+    const right = Math.max(...allBounds.map((bounds) => bounds.x + bounds.width));
+    const bottom = Math.max(...allBounds.map((bounds) => bounds.y + bounds.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }
+
+  async function fitRenderedSvg(
+    generation: number,
+    source: string,
+    clusterMembership?: FlowchartClusterMembership,
+  ): Promise<boolean> {
+    const fit = ++fitGeneration;
+    await tick();
+    await document.fonts?.ready;
+    if (generation !== renderGeneration) return false;
+    const svg = rendererElement?.querySelector<SVGSVGElement>('.mermaid-svg svg');
+    if (!svg) return false;
+    ensureMermaidLabelContrast(svg, clusterMembership);
+    if (typeof svg.getBBox !== 'function') return false;
+    delete svg.dataset.layoutSettled;
+    replaceSequenceActorFigures(svg);
+    alignMermaidOpenArrowheads(svg);
+    if (svg.getAttribute('aria-roledescription') === 'sequence') {
+      await polishSequenceDiagram(svg, source);
+      if (generation !== renderGeneration || fit !== fitGeneration) return false;
+      addMermaidLabelKnockouts(svg);
+      addMermaidLabelFeathers(svg);
+      setReadableMermaidWidth(svg, svg.viewBox.baseVal.width);
+      svg.dataset.layoutGeneration = String(generation);
+      svg.dataset.layoutSettled = 'true';
+      return true;
+    }
+    addSemanticLabelBreaks(svg);
+    hideEmptyEdgeLabels(svg);
+    centerFlowchartLabels(svg);
+    centerStateNodeLabels(svg);
+    balanceMermaidEdgeLabelGlyphs(svg);
+    padMermaidEdgeLabels(svg);
+    addMermaidLabelKnockouts(svg);
+    addMermaidLabelFeathers(svg);
+    reserveFlowchartClusterHeaderBands(svg, clusterMembership);
+    repairEntityDividers(svg);
+    refineMermaidCylinderNodes(svg);
+    repairFlowchartNodeOutlines(svg);
+    const flowchart = svg.getAttribute('aria-roledescription') === 'flowchart-v2';
+    if (flowchart)
+      svg.dataset.flowchartDirection =
+        source.match(/^\s*(?:flowchart|graph)\s+(\w+)\b/m)?.[1] ?? '';
+    const rendererWidth = rendererElement?.clientWidth ?? 0;
+    const compactRendererLayout = rendererWidth > 0 ? rendererWidth <= 620 : compactLayout;
+    if (flowchart && !compactRendererLayout && svg.querySelectorAll('g.cluster').length >= 2) {
+      routeFlowchartDecisionBranches(svg);
+    }
+    const initialBounds =
+      svg.dataset.nestedDecisionLayout === 'wide'
+        ? (measureFlowchartContentBounds(svg) ?? svg.getBBox())
+        : svg.getBBox();
+    const captionSize = Number.parseFloat(getComputedStyle(svg).fontSize);
+    const readableScale = 12 / (Number.isFinite(captionSize) ? captionSize : 13);
+    // Compact reflow stacks nodes downward, so it cannot preserve horizontal or
+    // bottom-up intent. Keep those layouts readable through natural scrolling.
+    const preservesCompactDirection = !/^\s*(?:flowchart|graph)\s+(?:LR|RL|BT)\b/m.test(source);
+    const compactFlowchartLayout =
+      preservesCompactDirection &&
+      (compactRendererLayout || (flowchart && initialBounds.width * readableScale > rendererWidth));
+    if (compactFlowchartLayout) {
+      reflowCompactFlowchart(svg, false, clusterMembership);
+      reflowCompactFlowchart(svg, true, clusterMembership);
+    }
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    if (generation !== renderGeneration) return false;
+    svg.getBoundingClientRect();
+    if (compactFlowchartLayout) alignCompactClusterTitles(svg);
+    if (flowchart) spaceNestedFlowchartClusters(svg);
+    routeFlowchartFeedbackLane(svg);
+    routeFlowchartCenteredFanouts(svg);
+    routeFlowchartDecisionBranches(svg);
+    let compactFlowchartBounds: SvgBounds | null = null;
+    if (compactFlowchartLayout) {
+      reflowCompactFlowchart(svg, true, clusterMembership);
+      routeFlowchartFeedbackLane(svg, true);
+      routeFlowchartCenteredFanouts(svg);
+      routeFlowchartDecisionBranches(svg);
+      alignCompactClusterTitles(svg);
+      routeFlowchartAroundClusterHeaders(svg);
+      positionCompactGroupedEdgeLabels(svg);
+      compactFlowchartBounds = svg.getBBox();
+    } else {
+      routeFlowchartAroundClusterHeaders(svg);
+      if (svg.querySelector('g.cluster')) positionCompactGroupedEdgeLabels(svg);
+    }
+    const normalizedState = svg.classList.contains('statediagram');
+    const stateRouteLayout = narrowLayout ? 'compact' : 'wide';
+    const shouldRewriteStateRoutes =
+      !normalizedState || svg.dataset.stateRouteLayout !== stateRouteLayout;
+    if (shouldRewriteStateRoutes) rewriteStateRoutes(svg, narrowLayout);
+    repairUpwardStateFailureRoutes(svg);
+    repairStateEntryRoutes(svg);
+    if (normalizedState && shouldRewriteStateRoutes) {
+      svg.dataset.stateRouteLayout = stateRouteLayout;
+    }
+    const classBounds = repairClassDiagramGeometry(svg);
+    roundOrthogonalBends(svg);
+    alignMermaidOpenArrowheads(svg);
+    attachStateTerminalArrowheads(svg);
+    placeStateLabelsOnFinalRoutes(svg, narrowLayout);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    if (generation !== renderGeneration) return false;
+    recenterStateLabels(svg);
+    routeFlowchartDecisionBranches(svg);
+    roundOrthogonalBends(svg);
+    alignMermaidOpenArrowheads(svg);
+    if (svg.querySelector('g.cluster')) positionCompactGroupedEdgeLabels(svg);
+    const measuredBounds = svg.getBBox();
+    const extraBounds = [classBounds, compactFlowchartBounds].filter(
+      (bounds): bounds is SvgBounds => Boolean(bounds),
+    );
+    const baseBounds = measuredBounds;
+    const bounds = extraBounds.length
+      ? DOMRect.fromRect({
+          x: Math.min(baseBounds.x, ...extraBounds.map((bounds) => bounds.x)),
+          y: Math.min(baseBounds.y, ...extraBounds.map((bounds) => bounds.y)),
+          width:
+            Math.max(
+              baseBounds.x + baseBounds.width,
+              ...extraBounds.map((bounds) => bounds.x + bounds.width),
+            ) - Math.min(baseBounds.x, ...extraBounds.map((bounds) => bounds.x)),
+          height:
+            Math.max(
+              baseBounds.y + baseBounds.height,
+              ...extraBounds.map((bounds) => bounds.y + bounds.height),
+            ) - Math.min(baseBounds.y, ...extraBounds.map((bounds) => bounds.y)),
+        })
+      : baseBounds;
+    if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return false;
+    const groupedFlowchart = Boolean(svg.querySelector('g.cluster'));
+    let padding = flowchart
+      ? compactFlowchartLayout
+        ? svg.querySelector('g.cluster')
+          ? 14
+          : 20
+        : 28
+      : groupedFlowchart
+        ? 24
+        : compactLayout
+          ? normalizedState
+            ? 10
+            : 8
+          : 10;
+    let width = Math.ceil(bounds.width + padding * 2);
+    let height = Math.ceil(bounds.height + padding * 2);
+    svg.setAttribute('viewBox', `${bounds.x - padding} ${bounds.y - padding} ${width} ${height}`);
+    svg.style.removeProperty('width');
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
+    if (normalizedState) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (generation !== renderGeneration) return false;
+      const settledBounds = svg.getBBox();
+      width = Math.ceil(settledBounds.width + padding * 2);
+      height = Math.ceil(settledBounds.height + padding * 2);
+      svg.setAttribute(
+        'viewBox',
+        `${settledBounds.x - padding} ${settledBounds.y - padding} ${width} ${height}`,
+      );
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+    }
+    setReadableMermaidWidth(svg, width);
+    await new Promise<void>((resolve) => setTimeout(resolve, 64));
+    if (generation !== renderGeneration) return false;
+    if (!compactFlowchartLayout && svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
+      routeFlowchartFeedbackLane(svg, true);
+      alignMermaidOpenArrowheads(svg);
+      const finalBounds = measureFinalFlowchartBounds(svg);
+      width = Math.ceil(finalBounds.width + padding * 2);
+      height = Math.ceil(finalBounds.height + padding * 2);
+      svg.setAttribute(
+        'viewBox',
+        `${finalBounds.x - padding} ${finalBounds.y - padding} ${width} ${height}`,
+      );
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      setReadableMermaidWidth(svg, width);
+    }
+    if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (generation !== renderGeneration) return false;
+      snapFlowchartPorts(svg);
+      snapFlowchartFanoutPorts(svg);
+      snapFlowchartFeedbackPorts(svg);
+      routeGroupedReturnEdges(svg);
+      alignMermaidOpenArrowheads(svg);
+      if (compactFlowchartLayout && svg.querySelector('g.cluster'))
+        positionCompactGroupedEdgeLabels(svg);
+    }
+    if (compactFlowchartLayout) {
+      alignCompactClusterTitles(svg);
+      routeFlowchartAroundClusterHeaders(svg);
+      positionCompactGroupedEdgeLabels(svg);
+    }
+    if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
+      snapFlowchartPorts(svg);
+      snapFlowchartFanoutPorts(svg);
+      snapFlowchartFeedbackPorts(svg);
+      routeFlowchartClientRequestLane(svg);
+      snapFlowchartDiamondPorts(svg);
+      const plannedLabels = repairFlowchartRouteClearance(svg);
+      roundOrthogonalBends(svg);
+      if (groupedFlowchart) positionCompactGroupedEdgeLabels(svg);
+      repairFlowchartLabelClearance(svg, plannedLabels);
+      alignMermaidOpenArrowheads(svg);
+      if (compactFlowchartLayout && svg.querySelector('path[data-grouped-return-lane="right"]')) {
+        padding = Math.max(padding, 23);
+      }
+      const finalBounds = measureFinalFlowchartBounds(svg);
+      width = Math.ceil(finalBounds.width + padding * 2);
+      height = Math.ceil(finalBounds.height + padding * 2);
+      svg.setAttribute(
+        'viewBox',
+        `${finalBounds.x - padding} ${finalBounds.y - padding} ${width} ${height}`,
+      );
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      setReadableMermaidWidth(svg, width);
+    }
+    if (
+      normalizedState ||
+      (compactFlowchartLayout && flowchart && !groupedFlowchart && !svg.dataset.decisionCycleLayout)
+    ) {
+      svg.style.setProperty('--mermaid-readable-width', '0px');
+      svg.style.setProperty('max-width', '100%');
+    }
+    if (normalizedState) attachStateTerminalArrowheads(svg);
+    applyMermaidTerminalGaps(svg);
+    await new Promise<void>((resolve) => setTimeout(resolve, 120));
+    if (generation !== renderGeneration || fit !== fitGeneration) return false;
+    if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
+      const settledBounds = measureFinalFlowchartBounds(svg);
+      width = Math.ceil(settledBounds.width + padding * 2);
+      height = Math.ceil(settledBounds.height + padding * 2);
+      svg.setAttribute(
+        'viewBox',
+        `${settledBounds.x - padding} ${settledBounds.y - padding} ${width} ${height}`,
+      );
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      setReadableMermaidWidth(svg, width);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (generation !== renderGeneration || fit !== fitGeneration) return false;
+    }
+    applyMermaidTerminalGaps(svg);
+    svg.dataset.layoutGeneration = String(generation);
+    svg.dataset.layoutSettled = 'true';
+    return true;
+  }
+
+  async function renderDiagram(rawCode: string) {
+    const generation = ++renderGeneration;
+    activeGeneration = generation;
+    settledGeneration = 0;
     // First decode base64, then decode any HTML entities (for legacy support)
     const base64Decoded = decodeBase64(rawCode);
     const decodedCode = decodeHtmlEntities(base64Decoded);
@@ -163,21 +1561,70 @@
     if (!decodedCode?.trim()) {
       renderedSvg = '';
       error = null;
+      settledGeneration = generation;
       return;
     }
 
     try {
-      initMermaid(isDark);
-
-      const id = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-      const { svg } = await mermaid.render(id, decodedCode);
-      renderedSvg = svg;
-      error = null;
+      const renderCode = applyResponsiveLayout(applyLayoutDefaults(decodedCode));
+      const usesHtmlLabels = /(?:^|\n)\s*(?:flowchart|graph)\s/i.test(renderCode);
+      const config = createMermaidConfig(
+        getComputedStyle(document.documentElement),
+        usesHtmlLabels,
+      );
+      const usesStateDiagram = /^\s*stateDiagram(?:-v2)?\b/m.test(renderCode);
+      config.layout = usesStateDiagram ? 'elk' : 'dagre';
+      if (compactLayout) {
+        config.flowchart = {
+          ...config.flowchart,
+          nodeSpacing: 4,
+          padding: 9,
+          rankSpacing: 24,
+          wrappingWidth: narrowLayout && /\bsubgraph\b/.test(renderCode) ? 80 : 120,
+        };
+        if (narrowLayout) {
+          config.sequence = {
+            ...config.sequence,
+            actorMargin: 0,
+            diagramMarginX: 0,
+            messageMargin: 24,
+            noteMargin: 4,
+            width: 96,
+            wrap: true,
+          };
+        }
+      }
+      await document.fonts?.load(`400 ${config.fontSize}px "${MERMAID_PRIMARY_FONT}"`);
+      await runSerializedMermaidRender(
+        async () => {
+          mermaid.initialize(config);
+          const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+          const { svg } = await mermaid.render(id, renderCode);
+          if (generation !== renderGeneration) return;
+          let clusterMembership: FlowchartClusterMembership | undefined;
+          if (usesHtmlLabels && /class="[^"]*\bcluster\b/.test(svg)) {
+            const diagram = await mermaid.mermaidAPI.getDiagramFromText(renderCode);
+            if (generation !== renderGeneration) return;
+            if (diagram.type === 'flowchart-v2') {
+              clusterMembership = snapshotFlowchartClusterMembership(
+                (diagram.db as typeof diagram.db & FlowchartSubgraphDatabase).getSubGraphs(),
+              );
+            }
+          }
+          renderedSvg = svg;
+          error = null;
+          // Finish geometry before another diagram dirties the document for measurement.
+          const fitCompleted = await fitRenderedSvg(generation, renderCode, clusterMembership);
+          if (fitCompleted && generation === renderGeneration) settledGeneration = generation;
+        },
+        () => generation === renderGeneration,
+      );
     } catch (err) {
+      if (generation !== renderGeneration) return;
       logger.error('Failed to render mermaid diagram:', err);
       error = err instanceof Error ? err.message : m.markdown_mermaid_renderFailed_error();
       renderedSvg = '';
+      settledGeneration = generation;
     }
   }
 
@@ -191,8 +1638,15 @@
       document.activeElement.blur();
     }
 
-    fullscreenSvg = renderedSvg;
+    fullscreenSvg =
+      rendererElement?.querySelector<SVGSVGElement>('.mermaid-svg svg')?.outerHTML ?? renderedSvg;
     isFullscreen = true;
+  }
+
+  function toggleSource(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    showSource = !showSource;
   }
 
   function closeFullscreen() {
@@ -206,15 +1660,56 @@
     if (!e.defaultPrevented) zoomPanViewport?.handleKeydown(e);
   }
 
+  function refreshFullscreenTerminalGaps() {
+    if (terminalGapFrame !== undefined) cancelAnimationFrame(terminalGapFrame);
+    terminalGapFrame = requestAnimationFrame(() => {
+      terminalGapFrame = undefined;
+      const svg = fullscreenDiagramElement?.querySelector<SVGSVGElement>('svg');
+      if (svg) applyMermaidTerminalGaps(svg);
+    });
+  }
+
   onMount(() => {
     mounted = true;
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? undefined
+        : new ResizeObserver(([entry]) => {
+            compactLayout = entry.contentRect.width <= 620;
+            narrowLayout = narrowLayout
+              ? entry.contentRect.width < 440
+              : entry.contentRect.width <= 420;
+            const svg = rendererElement?.querySelector<SVGSVGElement>('.mermaid-svg svg');
+            if (svg?.dataset.layoutSettled === 'true') applyMermaidTerminalGaps(svg);
+          });
+    if (rendererElement && resizeObserver) {
+      compactLayout = rendererElement.clientWidth <= 620;
+      narrowLayout = rendererElement.clientWidth <= 420;
+      resizeObserver.observe(rendererElement);
+    }
+    let themeSignature = readMermaidThemeSignature();
+    const observer = new MutationObserver(() => {
+      const nextThemeSignature = readMermaidThemeSignature();
+      if (nextThemeSignature === themeSignature) return;
+      themeSignature = nextThemeSignature;
+      themeRevision += 1;
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'style'],
+    });
+    return () => {
+      observer.disconnect();
+      resizeObserver?.disconnect();
+      if (terminalGapFrame !== undefined) cancelAnimationFrame(terminalGapFrame);
+      renderGeneration += 1;
+    };
   });
 
   // Re-render when code changes (after mount)
   $effect(() => {
-    if (mounted && code) {
-      renderDiagram(code, $isDarkTheme);
-    }
+    themeRevision;
+    if (mounted && rendererElement) renderDiagram(code);
   });
 
   // Mirrors the template branches below so hosts can lay out the block
@@ -228,37 +1723,89 @@
   });
 </script>
 
-<div class="mermaid-renderer {className}">
+<div
+  class="mermaid-renderer {className}"
+  class:has-diagram={Boolean(renderedSvg)}
+  data-render-generation={activeGeneration}
+  data-render-settled-generation={settledGeneration}
+  data-render-settled={activeGeneration > 0 && settledGeneration === activeGeneration}
+  style="--mermaid-font-family: var(--font-ui)"
+  bind:this={rendererElement}
+>
+  <span class="mermaid-actor-icon-template" bind:this={actorIconTemplateElement} aria-hidden="true">
+    <MermaidActorIcon size={30} weight="light" />
+  </span>
   {#if error}
     <div class="mermaid-error">
-      <pre class="error-message">{error}</pre>
-      <details class="error-source">
-        <summary>{m.markdown_mermaid_viewSource_label()}</summary>
-        <pre>{decodeHtmlEntities(decodeBase64(code))}</pre>
+      <div class="error-feedback" role="alert">
+        <strong>{m.markdown_mermaid_renderFailed_error()}</strong>
+        <p>{m.markdown_mermaid_invalid_description()}</p>
+      </div>
+      <details class="error-details">
+        <summary>{m.markdown_mermaid_errorDetails_label()}</summary>
+        <pre class="error-message">{error}</pre>
+        <strong>{m.markdown_mermaid_viewSource_label()}</strong>
+        <pre class="error-source-code">{decodedSource}</pre>
       </details>
     </div>
   {:else if renderedSvg}
     <div class="mermaid-svg-container">
-      <div class="mermaid-svg">
-        {@html renderedSvg}
+      <div
+        class="mermaid-svg-viewport"
+        class:without-actions={!showSourceButton && !showExpandButton}
+      >
+        <div class="mermaid-svg mermaid-presentation">
+          {@html renderedSvg}
+        </div>
       </div>
-      {#if showExpandButton}
-        <Button
-          class="expand-button"
-          onclick={openFullscreen}
-          title={m.markdown_mermaid_expand_tooltip()}
-          aria-label={m.markdown_mermaid_expand_ariaLabel()}
+      {#if showSourceButton || showExpandButton}
+        <div
+          class="mermaid-actions"
+          role="toolbar"
+          aria-label={m.markdown_mermaid_actions_ariaLabel()}
         >
-          <Fa icon={faExpand} size="sm" />
-        </Button>
+          {#if showSourceButton}
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              iconOnly
+              class="mermaid-action-button"
+              onclick={toggleSource}
+              aria-pressed={showSource}
+              aria-label={m.markdown_mermaid_viewSource_label()}
+              tooltip={m.markdown_mermaid_viewSource_label()}
+            >
+              <Fa icon={faCode} size="sm" />
+            </Button>
+          {/if}
+          {#if showExpandButton}
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              iconOnly
+              class="mermaid-action-button expand-button"
+              onclick={openFullscreen}
+              aria-label={m.markdown_mermaid_expand_ariaLabel()}
+              tooltip={m.markdown_mermaid_expand_tooltip()}
+            >
+              <Fa icon={faExpand} size="sm" />
+            </Button>
+          {/if}
+        </div>
       {/if}
     </div>
+    {#if showSource}
+      <div class="mermaid-source" role="region" aria-label={m.markdown_mermaid_viewSource_label()}>
+        <pre>{decodedSource}</pre>
+      </div>
+    {/if}
   {:else if !code?.trim()}
-    <div class="mermaid-empty">{m.markdown_mermaid_noCode_label()}</div>
-  {:else}
-    <div class="mermaid-loading">
-      <div class="loading-spinner"></div>
+    <div class="mermaid-empty" role="status">
+      <strong>{m.markdown_mermaid_noCode_label()}</strong>
+      <span>{m.markdown_mermaid_noCode_description()}</span>
     </div>
+  {:else}
+    <div class="mermaid-loading" role="status">{m.ui_spinner_loading_ariaLabel()}</div>
   {/if}
 </div>
 
@@ -271,11 +1818,17 @@
   onKeydown={handleFullscreenKeydown}
 >
   <div
-    class="h-[90vh] w-[90vw] overflow-hidden rounded-lg bg-background shadow-2xl"
+    class="fullscreen-surface h-[90vh] w-[90vw] overflow-hidden rounded-lg shadow-2xl"
     data-media-lightbox-content
   >
-    <ZoomPanViewport bind:this={zoomPanViewport}>
-      <div class="fullscreen-diagram">{@html fullscreenSvg}</div>
+    <ZoomPanViewport bind:this={zoomPanViewport} onScaleChange={refreshFullscreenTerminalGaps}>
+      <div
+        bind:this={fullscreenDiagramElement}
+        class="fullscreen-diagram mermaid-presentation"
+        style="--mermaid-font-family: var(--font-ui)"
+      >
+        {@html fullscreenSvg}
+      </div>
     </ZoomPanViewport>
   </div>
 </MediaLightbox>
@@ -283,182 +1836,694 @@
 <style>
   .mermaid-renderer {
     width: 100%;
-    overflow-x: auto;
+    min-width: 0;
+    color: hsl(var(--foreground));
+    font-family: var(--font-ui);
+  }
+
+  .mermaid-renderer.has-diagram {
+    width: 100%;
+    max-width: 100%;
+    margin-inline: auto;
   }
 
   .mermaid-svg-container {
-    position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    overflow: hidden;
-    border: 1px solid hsl(var(--border));
-    border-radius: 0.5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+    gap: var(--space-1);
+    padding: var(--space-2);
   }
 
-  .mermaid-svg-container:hover :global(.expand-button) {
+  .mermaid-svg-viewport {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .mermaid-svg-viewport.without-actions {
+    grid-row: 1;
+  }
+
+  .mermaid-svg-container:hover .mermaid-actions,
+  .mermaid-svg-container:focus-within .mermaid-actions {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .mermaid-svg {
     display: flex;
-    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    margin-inline: auto;
+    justify-content: safe center;
     align-items: center;
   }
 
   .mermaid-svg :global(svg) {
+    display: block;
+    flex: none;
+    width: auto;
     max-width: 100%;
+    min-width: var(--mermaid-readable-width, 0);
     height: auto;
   }
 
-  .expand-button {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 1.75rem;
-    height: 1.75rem;
-    padding: 0;
-    background: rgb(0 0 0 / 0.6);
-    border: 0;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.2s ease-in-out;
+  .mermaid-actions {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    z-index: 10;
+    gap: 2px;
+    padding: 2px;
+    background: hsl(var(--background));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-small);
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: var(--elevation-raised);
+    transition: opacity var(--motion-standard) var(--ease-standard);
   }
 
-  .expand-button:hover {
-    background: rgb(0 0 0 / 0.75);
+  :global(.mermaid-action-button) {
+    color: hsl(var(--muted-foreground));
   }
 
-  .expand-button:active {
-    transform: scale(0.95);
+  :global(.mermaid-action-button:hover),
+  :global(.mermaid-action-button:focus-visible) {
+    color: hsl(var(--foreground));
   }
 
   .fullscreen-diagram {
-    padding: 40px;
+    padding: var(--space-7);
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    height: 100%;
+    overflow: hidden;
+  }
+
+  .fullscreen-surface {
+    background: var(--diagram-host-surface);
   }
 
   .fullscreen-diagram :global(svg) {
     max-width: 100%;
     max-height: 100%;
     width: auto;
+    min-width: 0;
     height: auto;
   }
 
-  /* Thin strokes for all lines */
-  .mermaid-svg :global(.edge-pattern-solid),
-  .mermaid-svg :global(.flowchart-link),
-  .mermaid-svg :global(.relation),
-  .mermaid-svg :global(.transition),
-  .mermaid-svg :global(line),
-  .mermaid-svg :global(path.path),
-  .mermaid-svg :global(.messageLine0),
-  .mermaid-svg :global(.messageLine1) {
+  .mermaid-presentation :global(svg) {
+    font-family: var(--mermaid-font-family) !important;
+    font-size: var(--text-caption-size) !important;
+    background: var(--diagram-canvas) !important;
+    overflow: visible;
+  }
+
+  /* Layout reads must see the new transforms synchronously. The global reduced-motion
+     duration otherwise creates transitions on these groups' default `all` property. */
+  .mermaid-presentation
+    :global(svg[aria-roledescription='flowchart-v2'] :is(g.node, .edgeLabels > .edgeLabel)) {
+    transition-property: fill, stroke, opacity;
+  }
+
+  .mermaid-presentation :global(.edge-pattern-solid),
+  .mermaid-presentation :global(.flowchart-link),
+  .mermaid-presentation :global(.relation),
+  .mermaid-presentation :global(.transition),
+  .mermaid-presentation :global(line),
+  .mermaid-presentation :global(path.path),
+  .mermaid-presentation :global(.messageLine0),
+  .mermaid-presentation :global(.messageLine1),
+  .mermaid-presentation :global(.loopLine),
+  .mermaid-presentation :global(.edge-thickness-normal),
+  .mermaid-presentation :global(.edge-thickness-thick),
+  .mermaid-presentation :global(.edgePath path),
+  .mermaid-presentation :global(.edgePaths path[data-edge='true']) {
+    stroke: var(--diagram-connector) !important;
+    stroke-width: var(--diagram-connector-width) !important;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .mermaid-presentation :global(.node rect),
+  .mermaid-presentation :global(.node circle),
+  .mermaid-presentation :global(.node ellipse),
+  .mermaid-presentation :global(.node polygon),
+  .mermaid-presentation :global(.node path),
+  .mermaid-presentation :global(rect.actor),
+  .mermaid-presentation :global(rect.labelBox),
+  .mermaid-presentation :global(rect.entityBox) {
+    fill: var(--diagram-node-surface) !important;
+    stroke: none !important;
+  }
+
+  .mermaid-presentation :global(.node rect),
+  .mermaid-presentation :global(.node circle),
+  .mermaid-presentation :global(.node ellipse),
+  .mermaid-presentation :global(.node polygon),
+  .mermaid-presentation :global(.node path),
+  .mermaid-presentation :global(.actor),
+  .mermaid-presentation :global(.labelBox),
+  .mermaid-presentation :global(.note),
+  .mermaid-presentation :global(.entityBox) {
     stroke-width: 1px !important;
   }
 
-  /* Subtle node borders */
-  .mermaid-svg :global(.node rect),
-  .mermaid-svg :global(.node circle),
-  .mermaid-svg :global(.node ellipse),
-  .mermaid-svg :global(.node polygon),
-  .mermaid-svg :global(.node path),
-  .mermaid-svg :global(.actor) {
+  .mermaid-presentation :global(.node > .flowchart-node-outline) {
+    fill: none !important;
+    stroke: none !important;
+    stroke-width: 0 !important;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation :global(.node > .diagram-cylinder-rim) {
+    fill: none !important;
+    stroke: var(--diagram-canvas) !important;
+    stroke-width: 1px !important;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation :global(.classDiagram .class-box-outline) {
+    fill: var(--diagram-node-surface) !important;
+    stroke: none !important;
+    stroke-width: 0 !important;
+    rx: var(--diagram-node-radius);
+    ry: var(--diagram-node-radius);
+  }
+
+  .mermaid-presentation :global(.classDiagram .class-box-divider) {
+    stroke: hsl(var(--border)) !important;
+    stroke-width: 1px !important;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation :global(.erDiagram .er-negative-space-divider) {
+    stroke: var(--diagram-canvas) !important;
+    stroke-width: 2px !important;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation :global(.node rect),
+  .mermaid-presentation :global(.actor),
+  .mermaid-presentation :global(.labelBox),
+  .mermaid-presentation :global(.note),
+  .mermaid-presentation :global(.entityBox) {
+    rx: var(--diagram-node-radius) !important;
+    ry: var(--diagram-node-radius) !important;
+  }
+
+  .mermaid-presentation :global(marker[data-diagram-chevron='true'] path) {
+    fill: none !important;
+    stroke: var(--diagram-connector) !important;
+    stroke-width: 1px !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+  }
+
+  .mermaid-presentation :global(.state-start),
+  .mermaid-presentation :global(.state-end) {
     stroke-width: 1px !important;
   }
 
-  /* Arrowheads */
-  .mermaid-svg :global(marker path) {
-    stroke-width: 1px !important;
+  .mermaid-presentation :global(svg[aria-roledescription='sequence']) {
+    --sequence-message-stroke: color-mix(
+      in srgb,
+      hsl(var(--muted-foreground)) 76%,
+      var(--diagram-canvas)
+    );
+    --sequence-structure-stroke: color-mix(
+      in srgb,
+      hsl(var(--muted-foreground)) 64%,
+      var(--diagram-canvas)
+    );
   }
 
-  /* State diagram specific */
-  .mermaid-svg :global(.state-start),
-  .mermaid-svg :global(.state-end) {
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .actor-line) {
+    stroke: var(--sequence-structure-stroke) !important;
     stroke-width: 1px !important;
+    stroke-dasharray: 3 4;
+    opacity: 0.62;
   }
 
-  /* Sequence diagram lifelines */
-  .mermaid-svg :global(.actor-line) {
-    stroke-width: 1px !important;
-    stroke-dasharray: 3, 3;
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] :is(.messageLine0, .messageLine1)) {
+    stroke: var(--sequence-message-stroke) !important;
+    stroke-width: 1.25px !important;
+    opacity: 1;
   }
 
-  /* Softer text */
-  .mermaid-svg :global(text),
-  .mermaid-svg :global(.nodeLabel),
-  .mermaid-svg :global(.edgeLabel),
-  .mermaid-svg :global(.messageText),
-  .mermaid-svg :global(.actor-text) {
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] marker[data-diagram-chevron='true'] path) {
+    stroke: var(--sequence-message-stroke) !important;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] :is(.actor.actor-box, .actor.actor-man)) {
+    fill: var(--diagram-node-title) !important;
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] :is(.messageText, .sequence-branch-condition)) {
+    fill: var(--diagram-metadata) !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .messageText) {
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-frame-line) {
+    stroke: var(--sequence-structure-stroke) !important;
+    stroke-width: 1px !important;
+    stroke-dasharray: none !important;
+    opacity: 0.7;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-divider) {
+    stroke: var(--sequence-structure-stroke) !important;
+    stroke-width: 1px !important;
+    stroke-dasharray: none !important;
+    opacity: 0.82;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-construct-label) {
+    fill: color-mix(in srgb, hsl(var(--muted-foreground)) 14%, var(--diagram-canvas)) !important;
+    stroke: none !important;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] .sequence-construct-label-text) {
+    fill: hsl(var(--foreground)) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-condition) {
     font-size: 12px !important;
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-surface) {
+    fill: color-mix(in srgb, hsl(var(--muted-foreground)) 8%, var(--diagram-canvas)) !important;
+    stroke: none !important;
+    opacity: 1;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-branch-cue) {
+    stroke: var(--sequence-structure-stroke) !important;
+    stroke-width: 2px !important;
+    stroke-linecap: round;
+    stroke-dasharray: none;
+    opacity: 0.68;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='sequence'] .sequence-branch-cue.sequence-branch-failure) {
+    stroke-dasharray: 2 3;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-note .note) {
+    fill: color-mix(in srgb, hsl(var(--muted-foreground)) 10%, var(--diagram-canvas)) !important;
+    stroke: none !important;
+    stroke-width: 0 !important;
+  }
+
+  .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-note-text) {
+    fill: var(--diagram-metadata) !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation :global(text),
+  .mermaid-presentation :global(.label),
+  .mermaid-presentation :global(.nodeLabel),
+  .mermaid-presentation :global(.edgeLabel),
+  .mermaid-presentation :global(.messageText),
+  .mermaid-presentation :global(.actor) {
+    font-family: var(--mermaid-font-family) !important;
+    font-size: var(--text-caption-size) !important;
+    line-height: 1.5 !important;
+    letter-spacing: normal !important;
+  }
+
+  .mermaid-presentation :global(.node .nodeLabel),
+  .mermaid-presentation :global(.node .label),
+  .mermaid-presentation :global(.statediagram-state .nodeLabel),
+  .mermaid-presentation :global(.statediagram-state text) {
+    font-family: var(--mermaid-font-family) !important;
+    font-size: var(--text-caption-size) !important;
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation :global(.edgeLabel),
+  .mermaid-presentation :global(.cluster-label),
+  .mermaid-presentation :global(.group-label) {
+    font-family: var(--font-ui) !important;
+    font-weight: 500 !important;
+  }
+
+  .mermaid-presentation :global(.edgeLabel),
+  .mermaid-presentation :global(.group-label) {
+    color: var(--diagram-metadata) !important;
+    fill: var(--diagram-metadata) !important;
+  }
+
+  .mermaid-presentation :global(.node.active rect),
+  .mermaid-presentation :global(.node.current rect),
+  .mermaid-presentation :global(.node.selected rect) {
+    fill: var(--diagram-accent) !important;
+    stroke: none !important;
+  }
+
+  .mermaid-presentation :global(.node.active .nodeLabel),
+  .mermaid-presentation :global(.node.current .nodeLabel),
+  .mermaid-presentation :global(.node.selected .nodeLabel) {
+    color: var(--diagram-accent-foreground) !important;
+    fill: var(--diagram-accent-foreground) !important;
+  }
+
+  .mermaid-presentation :global(.nodeLabel),
+  .mermaid-presentation :global(.actor),
+  .mermaid-presentation :global(.cluster-label),
+  .mermaid-presentation :global(.entityLabel) {
     font-weight: 400 !important;
   }
 
+  .mermaid-presentation
+    :global(svg[aria-roledescription='flowchart-v2'] g.node > .label foreignObject > div),
+  .mermaid-presentation :global(g.cluster > .cluster-label foreignObject > div) {
+    display: flex !important;
+    width: 100% !important;
+    height: 100% !important;
+    align-items: center;
+    justify-content: center;
+    white-space: normal !important;
+    text-align: center !important;
+  }
+
+  .mermaid-presentation
+    :global(svg[aria-roledescription='flowchart-v2'] g.node > .label .nodeLabel),
+  .mermaid-presentation :global(g.cluster > .cluster-label .nodeLabel),
+  .mermaid-presentation
+    :global(svg[aria-roledescription='flowchart-v2'] g.node > .label .nodeLabel > p),
+  .mermaid-presentation :global(g.cluster > .cluster-label .nodeLabel > p) {
+    display: block;
+    width: 100%;
+    margin: 0;
+    white-space: normal !important;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
+    text-align: center;
+  }
+
+  .mermaid-presentation :global(.mermaid-actor-user-icon) {
+    color: hsl(var(--foreground));
+  }
+
+  .mermaid-actor-icon-template {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .mermaid-presentation :global(.labelBkg) {
+    background: var(--diagram-canvas) !important;
+  }
+
+  .mermaid-presentation :global(.edgeLabel rect.background) {
+    fill: var(--diagram-label-surface) !important;
+    fill-opacity: 1 !important;
+    opacity: 1 !important;
+    stroke: none !important;
+    filter: none !important;
+    transition: fill var(--motion-standard) var(--ease-standard);
+  }
+
+  .mermaid-presentation :global(.edge-label-knockout) {
+    fill: var(--diagram-label-surface) !important;
+    fill-opacity: 1 !important;
+    opacity: 1 !important;
+    stroke: none !important;
+    filter: none !important;
+    pointer-events: none;
+    transition: fill var(--motion-standard) var(--ease-standard);
+  }
+
+  .mermaid-presentation :global(.node > .label),
+  .mermaid-presentation :global(.node > .label foreignObject),
+  .mermaid-presentation :global(.node > .label .nodeLabel),
+  .mermaid-presentation :global(.node > .label .nodeLabel > p) {
+    background: transparent !important;
+  }
+
+  .mermaid-presentation :global(foreignObject.edge-label-surface),
+  .mermaid-presentation :global(foreignObject.edge-label-surface > .labelBkg),
+  .mermaid-presentation :global(span.edgeLabel) {
+    display: inline-block;
+    border: 0;
+    border-radius: 2px;
+    background: transparent !important;
+    color: hsl(var(--muted-foreground)) !important;
+    box-sizing: border-box;
+    box-shadow: none !important;
+  }
+
+  .mermaid-presentation :global(foreignObject.edge-label-surface > .labelBkg) {
+    position: relative;
+    isolation: isolate;
+    display: flex !important;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mermaid-presentation :global(foreignObject.edge-label-surface > .labelBkg::before) {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    content: '';
+    background-color: var(--diagram-label-surface);
+    -webkit-mask-image:
+      linear-gradient(
+        to right,
+        transparent,
+        hsl(var(--foreground)) 6px,
+        hsl(var(--foreground)) calc(100% - 6px),
+        transparent
+      ),
+      linear-gradient(
+        to bottom,
+        transparent,
+        hsl(var(--foreground)) 4px,
+        hsl(var(--foreground)) calc(100% - 4px),
+        transparent
+      );
+    -webkit-mask-composite: source-in;
+    -webkit-mask-repeat: no-repeat;
+    mask-image:
+      linear-gradient(
+        to right,
+        transparent,
+        hsl(var(--foreground)) 6px,
+        hsl(var(--foreground)) calc(100% - 6px),
+        transparent
+      ),
+      linear-gradient(
+        to bottom,
+        transparent,
+        hsl(var(--foreground)) 4px,
+        hsl(var(--foreground)) calc(100% - 4px),
+        transparent
+      );
+    mask-composite: intersect;
+    mask-repeat: no-repeat;
+    pointer-events: none;
+    transition: background-color var(--motion-standard) var(--ease-standard);
+  }
+
+  .mermaid-presentation :global(span.edgeLabel) {
+    position: relative;
+    z-index: 1;
+    padding: 0;
+  }
+
+  :global(.catalog-reduced-motion .mermaid-presentation .edgeLabel rect.background),
+  :global(.catalog-reduced-motion .mermaid-presentation .edge-label-knockout),
+  :global(
+    .catalog-reduced-motion
+      .mermaid-presentation
+      foreignObject.edge-label-surface
+      > .labelBkg::before
+  ) {
+    transition: none;
+  }
+
+  @container style(--motion-reduced: 1) {
+    :global(html:not(.catalog-full-motion) .mermaid-presentation .edgeLabel rect.background),
+    :global(html:not(.catalog-full-motion) .mermaid-presentation .edge-label-knockout),
+    :global(
+      html:not(.catalog-full-motion)
+        .mermaid-presentation
+        foreignObject.edge-label-surface
+        > .labelBkg::before
+    ) {
+      transition: none;
+    }
+  }
+
+  .mermaid-presentation :global(span.edgeLabel > p) {
+    margin: 0;
+    background: transparent !important;
+    color: inherit !important;
+  }
+
+  .mermaid-presentation :global(.cluster rect) {
+    fill: var(--diagram-canvas) !important;
+    stroke: var(--diagram-group-outline) !important;
+    stroke-width: 1px !important;
+    stroke-dasharray: none;
+    rx: var(--diagram-group-radius) !important;
+    ry: var(--diagram-group-radius) !important;
+  }
+
   .mermaid-error {
-    padding: 0.5rem;
-    font-size: 0.75rem;
+    min-height: 4.5rem;
+    border-left: 2px solid hsl(var(--danger));
+    border-radius: var(--radius-small);
+    background: hsl(var(--muted) / 0.25);
+    padding: var(--space-3);
     color: hsl(var(--danger));
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+  }
+
+  .error-feedback {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .error-feedback strong {
+    color: hsl(var(--foreground));
+    font-weight: var(--text-caption-weight);
+  }
+
+  .error-feedback p {
+    margin: 0;
+    color: hsl(var(--muted-foreground));
   }
 
   .error-message {
-    font-family: monospace;
+    font-family: var(--font-code);
     white-space: pre-wrap;
     word-break: break-word;
-    margin: 0;
+    margin: var(--space-2) 0;
   }
 
-  .error-source {
-    margin-top: 0.5rem;
+  .error-details {
+    margin-top: var(--space-2);
   }
 
-  .error-source summary {
+  .error-details summary {
     cursor: pointer;
     opacity: 0.7;
   }
 
-  .error-source pre {
-    margin-top: 0.25rem;
-    padding: 0.5rem;
-    background: hsl(var(--muted) / 0.3);
+  .error-details summary:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  .error-details pre {
+    margin-top: var(--space-1);
+    border-radius: var(--radius-small);
+    padding: var(--space-2);
+    background: hsl(var(--background));
     overflow-x: auto;
-    font-size: 0.7rem;
+    font-family: var(--font-code);
+    font-size: var(--text-code-size);
+  }
+
+  .mermaid-source {
+    min-width: 0;
+    max-width: 100%;
+    margin-top: var(--space-2);
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-small);
+    background: hsl(var(--muted) / 0.25);
+    overflow: hidden;
+  }
+
+  .mermaid-source pre {
+    margin: 0;
+    padding: var(--space-3);
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+    color: hsl(var(--foreground));
+    font-family: var(--font-code);
+    font-size: var(--text-code-size);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .mermaid-loading {
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 60px;
-  }
-
-  .loading-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid hsl(var(--muted));
-    border-top-color: hsl(var(--primary-ink));
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
+    min-height: 5rem;
+    color: hsl(var(--muted-foreground));
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
   }
 
   .mermaid-empty {
-    padding: 1rem;
+    display: grid;
+    min-height: 5rem;
+    place-content: center;
+    gap: var(--space-1);
+    padding: var(--space-4);
     text-align: center;
     color: hsl(var(--muted-foreground));
-    font-size: 0.875rem;
+    font-size: var(--text-body-size);
+    line-height: var(--text-body-line-height);
+  }
+
+  .mermaid-empty strong {
+    color: hsl(var(--foreground));
+    font-weight: var(--text-caption-weight);
+  }
+
+  .mermaid-empty span {
+    font-size: var(--text-caption-size);
+  }
+
+  :global(.catalog-reduced-motion) .mermaid-actions {
+    transition: none;
+    animation: none;
+  }
+
+  @container style(--motion-reduced: 1) {
+    .mermaid-actions {
+      transition: none;
+      animation: none;
+    }
   }
 </style>

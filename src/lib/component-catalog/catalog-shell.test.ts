@@ -14,9 +14,14 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import CatalogShell from './CatalogShell.svelte';
+import {
+  parseCatalogUrlSettings,
+  readCatalogPreferences,
+  writeCatalogPreferences,
+} from './catalog-preferences';
 
 const root = process.cwd();
 const routesRoot = path.join(root, 'src/routes');
@@ -282,4 +287,129 @@ describe('CatalogShell root inline style ownership', () => {
     expect(rootStyle().getPropertyValue('--background')).toBe('red');
     expect(rootStyle().getPropertyPriority('--background')).toBe('important');
   });
+});
+
+describe('CatalogShell motion URL compatibility', () => {
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+      storage.set(key, String(value));
+    });
+    writeCatalogPreferences(localStorage, {
+      theme: 'dark',
+      colorTheme: 'default',
+      motion: 'system',
+    });
+    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('class');
+    document.documentElement.removeAttribute('data-reduce-motion');
+  });
+
+  afterEach(() => {
+    cleanup();
+    window.history.replaceState(null, '', '/sandbox/button');
+    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('class');
+    document.documentElement.removeAttribute('data-reduce-motion');
+  });
+
+  function motionOption(name: 'System' | 'Full' | 'Reduced') {
+    return within(screen.getByTestId('catalog-motion-control')).getByRole('radio', { name });
+  }
+
+  it.each([
+    ['true', 'Reduced'],
+    ['false', 'Full'],
+  ] as const)(
+    'keeps system mode after reloading a legacy reducedMotion=%s link',
+    async (legacy, initialLabel) => {
+      const historyState = { catalog: { entry: 'button', scroll: 42 } };
+      window.history.replaceState(
+        historyState,
+        '',
+        `/sandbox/button?state=loading&width=420&tag=one&tag=two&reducedMotion=${legacy}#preview`,
+      );
+      const first = render(CatalogShell, { props: { activeSlug: 'button' } });
+      await waitFor(() =>
+        expect(motionOption(initialLabel).getAttribute('aria-checked')).toBe('true'),
+      );
+
+      await fireEvent.click(motionOption('System'));
+      await waitFor(() => {
+        expect(motionOption('System').getAttribute('aria-checked')).toBe('true');
+        expect(readCatalogPreferences(localStorage).motion).toBe('system');
+        const params = new URLSearchParams(window.location.search);
+        expect(params.has('motion')).toBe(false);
+        expect(params.has('reducedMotion')).toBe(false);
+      });
+
+      const serialized = new URL(window.location.href);
+      expect(parseCatalogUrlSettings(serialized.searchParams).motion).toBeUndefined();
+      expect(serialized.pathname).toBe('/sandbox/button');
+      expect(serialized.hash).toBe('#preview');
+      expect(serialized.searchParams.get('state')).toBe('loading');
+      expect(serialized.searchParams.get('width')).toBe('420');
+      expect(serialized.searchParams.getAll('tag')).toEqual(['one', 'two']);
+      expect(serialized.searchParams.get('theme')).toBe('dark');
+      expect(window.history.state).toEqual(historyState);
+      expect(readCatalogPreferences(localStorage)).toEqual({
+        theme: 'dark',
+        colorTheme: 'default',
+        motion: 'system',
+      });
+
+      // Reload the shell from its serialized URL and saved preferences, not component state.
+      const writesBeforeReload = vi.mocked(localStorage.setItem).mock.calls.length;
+      first.unmount();
+      render(CatalogShell, { props: { activeSlug: 'button' } });
+      await waitFor(() => {
+        expect(vi.mocked(localStorage.setItem).mock.calls.length).toBeGreaterThan(
+          writesBeforeReload,
+        );
+        expect(motionOption('System').getAttribute('aria-checked')).toBe('true');
+      });
+      document.documentElement.setAttribute('data-reduce-motion', '');
+      await waitFor(() =>
+        expect(screen.getByTestId('catalog-shell').getAttribute('data-catalog-motion')).toBe(
+          'reduced',
+        ),
+      );
+      document.documentElement.removeAttribute('data-reduce-motion');
+      await waitFor(() =>
+        expect(screen.getByTestId('catalog-shell').getAttribute('data-catalog-motion')).toBe(
+          'full',
+        ),
+      );
+    },
+  );
+
+  it.each([
+    ['true', 'Reduced', 'Full', 'full'],
+    ['false', 'Full', 'Reduced', 'reduced'],
+  ] as const)(
+    'replaces legacy reducedMotion=%s when changing %s to %s',
+    async (legacy, initialLabel, nextLabel, nextMotion) => {
+      window.history.replaceState(null, '', `/sandbox/button?reducedMotion=${legacy}`);
+      const first = render(CatalogShell, { props: { activeSlug: 'button' } });
+      await waitFor(() =>
+        expect(motionOption(initialLabel).getAttribute('aria-checked')).toBe('true'),
+      );
+
+      await fireEvent.click(motionOption(nextLabel));
+      await waitFor(() => {
+        const params = new URLSearchParams(window.location.search);
+        expect(params.has('reducedMotion')).toBe(false);
+        expect(params.get('motion')).toBe(nextMotion);
+        expect(parseCatalogUrlSettings(params).motion).toBe(nextMotion);
+        expect(readCatalogPreferences(localStorage).motion).toBe(nextMotion);
+      });
+
+      first.unmount();
+      render(CatalogShell, { props: { activeSlug: 'button' } });
+      await waitFor(() =>
+        expect(motionOption(nextLabel).getAttribute('aria-checked')).toBe('true'),
+      );
+    },
+  );
 });

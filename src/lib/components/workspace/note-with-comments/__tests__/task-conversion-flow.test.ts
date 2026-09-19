@@ -566,6 +566,14 @@ describe('NoteWithComments task conversion regression', () => {
       return 1;
     });
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
 
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
       configurable: true,

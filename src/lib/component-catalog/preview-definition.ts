@@ -7,11 +7,18 @@ export interface PreviewState<Props> {
   setup?: PreviewSetup;
 }
 
+export interface PreviewCaptureReadiness {
+  selector: string;
+  count?: number;
+  generationAttribute?: string;
+}
+
 export interface PreviewDefinition<Props> {
   id: string;
   title: string;
   defaultState: string;
   states: Record<string, PreviewState<Props>>;
+  captureReadiness?: PreviewCaptureReadiness;
 }
 
 export interface LoadedPreview {
