@@ -23,7 +23,11 @@ export interface GuestWorkspaceRef {
 export interface GuestSessionRecord {
   /** Stable id; doubles as the window/backend id for the session's windows. */
   id: string;
-  /** Display label (the daemon's hostname once captured, else `host:port`). */
+  /**
+   * Join-time address text (the dialled tc address / `host:port`), never
+   * rewritten. Render through `formatGuestSessionLabel`, which prefers the
+   * captured `hostname` and falls back to this.
+   */
   label: string;
   /** Primary remote host/IP (identity, with `port`). */
   host: string;
