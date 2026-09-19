@@ -7,7 +7,9 @@
  *
  * 1. `{ inviteId, secret }` starts an identity-only GitHub device flow and
  *    answers `{ flowId, userCode, verificationUri, expiresIn, interval,
- *    workspaceId, workspaceTitle }` — the UI shows the code + URL.
+ *    workspaceId, workspaceTitle, hostname?, prettyHostname? }` — the UI
+ *    shows the code + URL and names the host machine (older daemons omit
+ *    both hostname fields; the dialed address is shown instead).
  * 2. `{ flowId }` blocks until the grant settles and answers the collaborator
  *    credential exactly once: `{ status: "authorized", token, principalId,
  *    login, workspaceId }`.
