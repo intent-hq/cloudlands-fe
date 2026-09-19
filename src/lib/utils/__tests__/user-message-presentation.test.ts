@@ -357,6 +357,23 @@ describe('collaborator sender preamble presentation', () => {
     expect(message).toEqual(snapshot);
   });
 
+  it('never qualifies a row authored by the workspace owner, even when its first line is the exact preamble', () => {
+    const text = `${GUEST_PREAMBLE}\n\nI typed this myself.`;
+    const ownerRow = guestMessage(text, {
+      author: { ...GUEST_AUTHOR, principalId: 'principal-owner' },
+      metadata: { fromPrincipalId: 'principal-owner' },
+    });
+
+    expect(getCollaboratorSenderAttribution(ownerRow, 'principal-owner')).toBeNull();
+    expect(getPresentedUserMessageText(ownerRow, 'principal-owner')).toBe(text);
+    // The same row from a guest principal still qualifies against that owner id.
+    const guestRow = guestMessage(text);
+    expect(getCollaboratorSenderAttribution(guestRow, 'principal-owner')).not.toBeNull();
+    expect(getPresentedUserMessageText(guestRow, 'principal-owner')).toBe('I typed this myself.');
+    // Without the workspace at hand the owner exclusion is not applied.
+    expect(getCollaboratorSenderAttribution(ownerRow)).not.toBeNull();
+  });
+
   it('consumes only the preamble and its one blank line, never body whitespace', () => {
     expect(getPresentedUserMessageText(guestMessage(GUEST_PREAMBLE))).toBe('');
     expect(getPresentedUserMessageText(guestMessage(`${GUEST_PREAMBLE}\n\n    indented`))).toBe(
