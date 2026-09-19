@@ -157,7 +157,16 @@ export type InviteTransportCode =
 
 /** A transport-level failure of the `/invite` connection, identified by a bounded code. */
 export class InviteTransportError extends Error {
-  constructor(readonly transportCode: InviteTransportCode) {
+  /**
+   * @param fromPeer the failure was answered by the pin-verified daemon
+   *   itself (a non-101 answer to the upgrade), as opposed to a socket-level
+   *   failure on the way there — through the tunnel that distinction decides
+   *   whether the code stands or the forwarder is what failed.
+   */
+  constructor(
+    readonly transportCode: InviteTransportCode,
+    readonly fromPeer = false,
+  ) {
     // i18n-ignore (internal error, fixed text + local code literal)
     super(`invite transport failed: ${transportCode}`);
     this.name = 'InviteTransportError';
@@ -297,7 +306,7 @@ function dialInvite(host: string, port: number, expected: string): InviteDial {
         fail(new PinMismatchError(expected, actual));
         return;
       }
-      fail(new InviteTransportError('host-refused'));
+      fail(new InviteTransportError('host-refused', true));
     });
     ws.on('error', (error: Error) => {
       // pinnedTlsConnect rejects a foreign cert by erroring the socket.
@@ -385,7 +394,10 @@ function raceDirectHosts(
  * (the loopback forwarder itself always accepts, so a reset or early close
  * means the tailcat child died — e.g. a bad tc address), is `tunnel-failed`;
  * a connect that hits the bound stays `host-unreachable` (the daemon behind
- * the tunnel never answered); a {@link PinMismatchError} passes through.
+ * the tunnel never answered); a `host-refused` answered by the pin-verified
+ * daemon itself (a non-101 answer to the `/invite` upgrade) stands, since the
+ * tunnel evidently carried the request; a {@link PinMismatchError} passes
+ * through.
  */
 async function dialThroughTunnel(
   tcAddress: string,
@@ -410,7 +422,10 @@ async function dialThroughTunnel(
   } catch (error) {
     tunnel.close();
     if (error instanceof PinMismatchError) throw error;
-    if (error instanceof InviteTransportError && error.transportCode === 'host-unreachable') {
+    if (
+      error instanceof InviteTransportError &&
+      (error.transportCode === 'host-unreachable' || error.fromPeer)
+    ) {
       throw error;
     }
     throw new InviteTransportError('tunnel-failed');
