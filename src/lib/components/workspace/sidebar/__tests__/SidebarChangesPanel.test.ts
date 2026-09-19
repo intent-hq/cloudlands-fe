@@ -1079,6 +1079,53 @@ describe('SidebarChangesPanel', () => {
       expect(mockWorkspaceStore.update).not.toHaveBeenCalled();
     });
 
+    it('runs a pending auto-commit for the owner', async () => {
+      const { backgroundGitActionsService } =
+        await import('$features/accept-changes/background-git-actions.service');
+      (backgroundGitActionsService.commit as Mock).mockClear();
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ myRole: 'owner' }));
+      mockAcceptChangesState.commitMessage = 'feat: auto';
+      mockSidebarChangesState.pendingAutoAction = { action: 'commit', workspaceId: 'ws-1' };
+
+      await renderPanel();
+
+      await waitFor(() => {
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'changes/setPendingAutoAction',
+            payload: ['ws-1', null],
+          }),
+        );
+        expect(backgroundGitActionsService.commit).toHaveBeenCalledWith({
+          workspaceId: 'ws-1',
+          commitMessage: 'feat: auto',
+        });
+      });
+      mockAcceptChangesState.commitMessage = '';
+    });
+
+    it('consumes a pending auto-commit for a collaborator without firing the owner-only RPC', async () => {
+      const { backgroundGitActionsService } =
+        await import('$features/accept-changes/background-git-actions.service');
+      (backgroundGitActionsService.commit as Mock).mockClear();
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace({ myRole: 'collaborator' }));
+      mockAcceptChangesState.commitMessage = 'feat: auto';
+      mockSidebarChangesState.pendingAutoAction = { action: 'commit', workspaceId: 'ws-1' };
+
+      await renderPanel();
+
+      await waitFor(() => {
+        expect(mockDispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'changes/setPendingAutoAction',
+            payload: ['ws-1', null],
+          }),
+        );
+      });
+      expect(backgroundGitActionsService.commit).not.toHaveBeenCalled();
+      mockAcceptChangesState.commitMessage = '';
+    });
+
     it('renders truncation warning banner when changes are truncated', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
       mockFileTrackingStore.changesTruncated = true;
