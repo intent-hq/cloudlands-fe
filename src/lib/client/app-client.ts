@@ -940,18 +940,18 @@ export interface ChatTranscript {
   totalMessages: number;
   isStreaming: boolean;
   /**
-   * Resume disposition (PROTOCOL §7.1 `sinceMessageId`), stamped ONLY on the
-   * emit produced by the seq-0 snapshot of a registration that requested a
-   * resume: `true` — the snapshot was a delta from the requested anchor,
-   * merged onto the retained baseline; `false` — the daemon did not honor
-   * the resume (unknown/pruned id) and replied with the standard newest-page
-   * snapshot, so the subscriber must fully rehydrate older history. Absent
-   * on every other emit (delta emits, non-resume snapshots).
+   * Resume/reset disposition (PROTOCOL §7.1), forwarded on snapshot emits:
+   * `true` means a post-anchor delta merged onto the retained baseline;
+   * `false` means a newest-page reset after a missing resume anchor,
+   * transcript edit/replacement, or lag recovery. Subscribers must discard
+   * cached history on `false`, including mid-stream snapshots on registrations
+   * that never requested resume. Absent on delta emits and snapshots whose
+   * wire payload carries no disposition.
    */
   resumed?: boolean;
   /**
-   * Stamped `true` ONLY on the emit produced by applying a seq-0 snapshot
-   * push (fresh registration, gap resnapshot, reconnect re-registration) —
+   * Stamped `true` on the emit produced by applying any snapshot push
+   * (initial hydration, re-registration, or mid-stream recovery/reset) —
    * absent on delta emits. Consumers use it to tell "the daemon just served
    * the authoritative newest page (with the in-flight assistant merged)"
    * apart from incremental delta reconciliation, e.g. the chat-subscribe
@@ -986,6 +986,8 @@ export interface ChatClient {
    * snapshot then carries only messages after that id with `resumed: true`,
    * or falls back to the standard newest-page snapshot with `resumed: false`
    * when the daemon no longer knows the id (see `ChatTranscript.resumed`).
+   * Later reset snapshots can also carry `resumed: false`, regardless of
+   * whether resume was requested; consumers must discard cached history.
    */
   subscribe(
     agentId: string,
