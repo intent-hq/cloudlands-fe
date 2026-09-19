@@ -199,6 +199,20 @@ function isWorkspaceLayoutEmpty(store: WorkspaceTabNavigationStore, workspaceId:
   return selectAllTabs.select(store.state, workspaceId).length === 0;
 }
 
+/** Window level: close the window, or on the web build show the empty-window destination. */
+function closeEmptyWindow(
+  store: WorkspaceTabNavigationStore,
+  currentPath: string,
+  { navigate, closeWindow }: CloseTabCascadeOptions,
+): CloseTabCascadeLevel | null {
+  if (!closeWindow) {
+    navigateToSelectedWorkspace(store, currentPath, navigate);
+    return null;
+  }
+  closeWindow();
+  return 'window';
+}
+
 /**
  * Cmd+W: close focused panel content; once the workspace's last column is
  * empty close the workspace tab; once no workspace tab remains close the
@@ -207,23 +221,25 @@ function isWorkspaceLayoutEmpty(store: WorkspaceTabNavigationStore, workspaceId:
 export function closeActiveTabCascade(
   store: WorkspaceTabNavigationStore,
   currentPath: string,
-  { navigate, closeWindow, availableCanvasWidth }: CloseTabCascadeOptions,
+  options: CloseTabCascadeOptions,
 ): CloseTabCascadeLevel | null {
   const workspaceId = resolveWorkspaceTabToClose(store, currentPath);
-  if (!workspaceId) return null;
+  if (!workspaceId) {
+    if (selectWorkspaceTabOrder.select(store.state).length > 0) return null;
+    return closeEmptyWindow(store, currentPath, options);
+  }
 
-  if (closeActivePanelTab(store, currentPath, availableCanvasWidth) !== null) return 'panel';
+  if (closeActivePanelTab(store, currentPath, options.availableCanvasWidth) !== null) {
+    return 'panel';
+  }
   if (!isWorkspaceLayoutEmpty(store, workspaceId)) return null;
 
   store.dispatch(closeWorkspaceTab(workspaceId));
-  const nextWorkspaceId = selectCurrentWorkspaceTabId.select(store.state);
-  if (nextWorkspaceId || !closeWindow) {
-    navigateToSelectedWorkspace(store, currentPath, navigate);
+  if (selectCurrentWorkspaceTabId.select(store.state)) {
+    navigateToSelectedWorkspace(store, currentPath, options.navigate);
     return 'workspace';
   }
-
-  closeWindow();
-  return 'window';
+  return closeEmptyWindow(store, currentPath, options) ?? 'workspace';
 }
 
 export function reopenWorkspaceTab(

@@ -539,7 +539,7 @@ describe('global workspace tab navigation', () => {
     });
 
     it.each(['/settings', '/workspace/new', '/'])(
-      'does nothing on the non-workspace route %s',
+      'does nothing on %s while a workspace tab is still open',
       (path) => {
         const store = makeStore('ws-2', layoutWith([makePanel('p1')], 'p1'));
         soleTabStrip(store, 'ws-2');
@@ -548,7 +548,27 @@ describe('global workspace tab navigation', () => {
 
         expect(closeActiveTabCascade(store, path, { navigate, closeWindow })).toBeNull();
         expect(store.actions).toEqual([]);
+        expect(navigate).not.toHaveBeenCalled();
         expect(closeWindow).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['/workspace/new', '/'])(
+      'closes the window from %s when the tab strip is empty',
+      (path) => {
+        const store = makeStore(null);
+        store.state.tabState.openTabs = {};
+        store.state.tabState.workspaceStacks = [];
+        const navigate = vi.fn();
+        const closeWindow = vi.fn();
+
+        expect(closeActiveTabCascade(store, path, { navigate, closeWindow })).toBe('window');
+        expect(store.actions).toEqual([]);
+        expect(closeWindow).toHaveBeenCalledOnce();
+        expect(navigate).not.toHaveBeenCalled();
+
+        expect(closeActiveTabCascade(store, path, { navigate })).toBeNull();
+        expect(closeWindow).toHaveBeenCalledOnce();
       },
     );
   });
