@@ -9,6 +9,17 @@
  * the principal identity only.
  */
 
+/**
+ * One workspace joined on a guest host, as recorded locally at join time
+ * (the invite's `workspaceId` / `workspaceTitle`). A per-workspace *Leave*
+ * drops the entry; the session itself outlives its last workspace so a
+ * re-invite from the same host reuses the credential.
+ */
+export interface GuestWorkspaceRef {
+  id: string;
+  title: string;
+}
+
 export interface GuestSessionRecord {
   /** Stable id; doubles as the window/backend id for the session's windows. */
   id: string;
@@ -35,6 +46,8 @@ export interface GuestSessionRecord {
    * at join time — surfaced so the user can decide to forget and re-join.
    */
   tokenEncrypted: boolean;
+  /** Workspaces joined on this host (local record, join order). */
+  workspaces: GuestWorkspaceRef[];
   /** Last-writer-wins clock (ms since epoch) shared with keychain sync. */
   updatedAt: number;
 }
@@ -70,4 +83,23 @@ export interface LeaveGuestSessionParams {
 export interface LeaveGuestSessionResult {
   id: string;
   revoked: boolean;
+}
+
+/** Params of the `guest-sessions:leave-workspace` IPC. */
+export interface LeaveGuestWorkspaceParams {
+  id: string;
+  workspaceId: string;
+}
+
+/**
+ * Result of the `guest-sessions:leave-workspace` IPC. `left` echoes the
+ * host's `workspace.members.leave` answer (`false` when the membership was
+ * already gone). The workspace is dropped from the local record either way;
+ * a host that could not be reached or refused rejects the invoke and leaves
+ * the record untouched so the user can retry.
+ */
+export interface LeaveGuestWorkspaceResult {
+  id: string;
+  workspaceId: string;
+  left: boolean;
 }

@@ -48,7 +48,7 @@ import { randomUUID } from 'crypto';
 import { app, safeStorage } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { isLoopbackHost } from '../../../shared/loopback-host';
-import type { GuestSessionRecord } from '../../../shared/types/guest-sessions';
+import type { GuestSessionRecord, GuestWorkspaceRef } from '../../../shared/types/guest-sessions';
 import { normalizeFingerprint } from './backend-connection';
 import { TOMBSTONE_TTL_MS, accountKeyFor, type KeychainSyncRecord } from './keychain-sync';
 
@@ -76,6 +76,11 @@ interface StoredGuestSession {
   principalId: string;
   login: string;
   encToken: EncryptedToken;
+  /**
+   * Workspaces joined on this daemon (join order). Local only — the keychain
+   * sync record does not carry it. Absent on rows written before it existed.
+   */
+  workspaces?: GuestWorkspaceRef[];
   updatedAt: number;
 }
 
@@ -105,6 +110,8 @@ export interface NewGuestSession {
   principalId: string;
   login: string;
   token: string;
+  /** The workspace the invite admitted to; merged into the record's list by id. */
+  workspace?: GuestWorkspaceRef;
 }
 
 interface PersistedState {
@@ -173,12 +180,39 @@ function toRecord(stored: StoredGuestSession): GuestSessionRecord {
     principalId: stored.principalId,
     login: stored.login,
     tokenEncrypted: stored.encToken.encrypted,
+    workspaces: (stored.workspaces ?? []).map((w) => ({ id: w.id, title: w.title })),
     updatedAt: stored.updatedAt,
   };
 }
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((h) => typeof h === 'string');
+}
+
+function isWorkspaceRefArray(value: unknown): value is GuestWorkspaceRef[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (w) =>
+        !!w &&
+        typeof w === 'object' &&
+        typeof (w as Record<string, unknown>).id === 'string' &&
+        typeof (w as Record<string, unknown>).title === 'string',
+    )
+  );
+}
+
+/** Append or retitle one workspace entry (by id), returning the new list. */
+function mergeWorkspace(
+  current: GuestWorkspaceRef[] | undefined,
+  workspace: GuestWorkspaceRef | undefined,
+): GuestWorkspaceRef[] {
+  const list = [...(current ?? [])];
+  if (!workspace) return list;
+  const existing = list.find((w) => w.id === workspace.id);
+  if (existing) existing.title = workspace.title;
+  else list.push({ id: workspace.id, title: workspace.title });
+  return list;
 }
 
 function isOptionalNullableString(value: unknown): boolean {
@@ -200,6 +234,7 @@ function isStoredGuestSession(value: unknown): value is StoredGuestSession {
     isOptionalNullableString(c.hostname) &&
     typeof c.principalId === 'string' &&
     typeof c.login === 'string' &&
+    (c.workspaces === undefined || isWorkspaceRefArray(c.workspaces)) &&
     typeof c.updatedAt === 'number' &&
     !!tok &&
     typeof tok === 'object' &&
@@ -366,8 +401,8 @@ function decryptToken(encToken: EncryptedToken): string {
 }
 
 /**
- * Listeners notified after every LOCAL syncable mutation that persisted a
- * change (add / forget / setHostname). Remote applications via
+ * Listeners notified after every LOCAL mutation that persisted a change
+ * (add / forget / setHostname / leaveWorkspace). Remote applications via
  * {@link applyRemoteSyncRecord} do NOT notify — a pull must not loop back
  * into a push.
  */
@@ -550,6 +585,10 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
       survivor.login = input.login;
       survivor.encToken = encToken;
       survivor.hostname ??= duplicates.find((s) => s.hostname != null)?.hostname ?? null;
+      survivor.workspaces = mergeWorkspace(
+        duplicates.flatMap((s) => s.workspaces ?? []),
+        input.workspace,
+      );
       survivor.updatedAt = stamp;
       state.sessions = state.sessions.filter((s) => s === survivor || !duplicates.includes(s));
       await writeState(state);
@@ -567,6 +606,7 @@ export async function add(input: NewGuestSession): Promise<GuestSessionRecord> {
       principalId: input.principalId,
       login: input.login,
       encToken,
+      workspaces: mergeWorkspace([], input.workspace),
       updatedAt: stamp,
     };
     state.sessions.push(record);
@@ -640,6 +680,80 @@ export async function setHosts(id: string, hosts: string[]): Promise<boolean> {
   });
   if (changed) notifyMutated();
   return changed;
+}
+
+/**
+ * Drop one workspace from a session's local record (per-workspace *Leave*,
+ * after the host accepted `workspace.members.leave`). The session stays,
+ * even with zero workspaces, until *Leave host*. Returns whether anything
+ * changed; no-op for an unknown session or workspace. Like
+ * {@link setWorkspaces}, this edits only the local-only workspace cache
+ * (omitted from {@link listSyncRecords}), so the record's `updatedAt` — the
+ * keychain LWW clock — is left alone: advancing it would republish this
+ * device's possibly stale credential as the newer copy and roll back a
+ * re-join another device just made. Listeners still fire so the renderer
+ * sees the new list.
+ */
+export async function leaveWorkspace(id: string, workspaceId: string): Promise<boolean> {
+  const changed = await mutate(async (state) => {
+    const session = state.sessions.find((s) => s.id === id);
+    if (!session?.workspaces?.some((w) => w.id === workspaceId)) return false;
+    session.workspaces = session.workspaces.filter((w) => w.id !== workspaceId);
+    await writeState(state);
+    return true;
+  });
+  if (changed) notifyMutated();
+  return changed;
+}
+
+/**
+ * Reconcile a session's local workspace list against the host's authoritative
+ * membership-filtered `workspace.list` (read through the guest connection
+ * once it is reachable). The local list is only a last-known cache: rows
+ * written before the field existed and rows imported by keychain sync (which
+ * never carries it) start with no workspaces at all, and a membership removed
+ * on the host must not linger as a phantom row. Reconciled by id — entries
+ * the host no longer lists are dropped, kept entries keep their local (join)
+ * order and take the host's title, new memberships append in host order.
+ * Not a syncable mutation: the record's `updatedAt` is the keychain LWW
+ * clock and is left alone (a cache refresh on every reconnect must never
+ * outrank another device's genuine edit), and {@link onGuestSessionsMutated}
+ * does not fire — the caller broadcasts. Returns whether anything changed;
+ * no-op for an unknown session. `stillValid` is consulted at the commit
+ * boundary — inside the serialized mutation, after the current state has
+ * been loaded — so a snapshot whose premise was invalidated by a mutation
+ * queued ahead of it (a record replacement, a *Leave*) is dropped rather
+ * than written over that mutation's result.
+ */
+export async function setWorkspaces(
+  id: string,
+  workspaces: readonly GuestWorkspaceRef[],
+  stillValid: () => boolean = () => true,
+): Promise<boolean> {
+  return mutate(async (state) => {
+    if (!stillValid()) return false;
+    const session = state.sessions.find((s) => s.id === id);
+    if (!session) return false;
+    const byId = new Map(workspaces.map((w) => [w.id, w.title] as const));
+    const kept = (session.workspaces ?? [])
+      .filter((w) => byId.has(w.id))
+      .map((w) => ({ id: w.id, title: byId.get(w.id)! }));
+    const seen = new Set(kept.map((w) => w.id));
+    const next = [...kept];
+    for (const w of workspaces) {
+      if (seen.has(w.id)) continue;
+      seen.add(w.id);
+      next.push({ id: w.id, title: w.title });
+    }
+    const current = session.workspaces ?? [];
+    const unchanged =
+      current.length === next.length &&
+      current.every((w, i) => w.id === next[i].id && w.title === next[i].title);
+    if (unchanged && session.workspaces !== undefined) return false;
+    session.workspaces = next;
+    await writeState(state);
+    return true;
+  });
 }
 
 /** Forget a guest session, leaving a tombstone so keychain sync propagates the delete. */
