@@ -312,5 +312,6 @@
   "workspace_transfer_tableName_label": ["fr"],
   "settings_section_git": "*",
   "settings_sidebar_appBehavior_label": ["es"],
-  "settings_sidebar_agents_label": ["fr"]
+  "settings_sidebar_agents_label": ["fr"],
+  "workspace_hoverCard_member_ariaLabel": ["fr", "ko"]
 }
