@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.168.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.167.0...v2.168.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* cascade Cmd+W from panel to workspace tab to window close ([#2670](https://github.com/intent-hq/cloudlands-fe/issues/2670)) ([34dd2e9](https://github.com/intent-hq/cloudlands-fe/commit/34dd2e99b873e996e2b69820c0694c1ca0bc0bdd))
+* update remote daemons to the bundled version ([#2524](https://github.com/intent-hq/cloudlands-fe/issues/2524)) ([832b1df](https://github.com/intent-hq/cloudlands-fe/commit/832b1df2bb9fb93818a565204bf0d14611a413d7))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.81 ([#2674](https://github.com/intent-hq/cloudlands-fe/issues/2674)) ([6b593ab](https://github.com/intent-hq/cloudlands-fe/commit/6b593abe51d944cfc0b9f867171b9063dde32404))
+* **notes:** copy only the selected text from inside table cells, list items and blockquotes ([#2669](https://github.com/intent-hq/cloudlands-fe/issues/2669)) ([be01da0](https://github.com/intent-hq/cloudlands-fe/commit/be01da077016cd963d72874c808a15f3c2e37658))
+
 ## [2.167.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.166.0...v2.167.0) (2026-09-19)
 
 
