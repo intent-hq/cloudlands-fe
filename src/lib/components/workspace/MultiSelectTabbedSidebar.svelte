@@ -87,6 +87,7 @@
   import SidebarBrowserList from './SidebarBrowserList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import {
+    selectIsWorkspaceCollaborator,
     selectWorkspaceActivePullRequest,
     selectWorkspaceById,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -320,8 +321,11 @@
   }
   // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
   // the shell dock, browser launcher, their strip tabs, and any persisted
-  // selection of those tabs are withheld up front.
-  const isCollaborator = $derived($workspace?.myRole === 'collaborator');
+  // selection of those tabs are withheld up front. The selector fails closed: a
+  // guest window (multiplayer w4) reads as collaborator whatever `myRole` the
+  // row carries, and so does every window until its identity has settled.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isCollaborator = $derived($isCollaborator$);
   const selectedTabIds = selectMultiSelectSidebarSelectedTabIds(workspaceIdStore);
   const selectedTabs = $derived(normalizeSelectedTabs($selectedTabIds, isCollaborator));
   let agentSearchQuery = $state('');
