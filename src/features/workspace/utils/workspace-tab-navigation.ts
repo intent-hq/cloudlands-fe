@@ -19,6 +19,7 @@ import {
   reopenClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
+  selectAllTabs,
   selectPanelColumnCount,
   selectFocusedPanel,
   selectFocusedPanelId,
@@ -87,6 +88,8 @@ interface RegisterWorkspaceTabShortcutsOptions {
   onCreateTerminal?: (workspaceId: string) => void;
   onCreateBrowser?: (workspaceId: string) => void;
   onWorkspaceTabMoved?: (detail: WorkspaceTabMovedEventDetail) => void;
+  /** Closes the app window once the last workspace tab is gone; omitted on the web build. */
+  closeWindow?: () => unknown;
   resolveBinding?: (id: ShortcutId) => string;
 }
 
@@ -181,6 +184,48 @@ export function closeActivePanelTab(
   return activeTab?.id ?? panel.id;
 }
 
+export type CloseTabCascadeLevel = 'panel' | 'workspace' | 'window';
+
+interface CloseTabCascadeOptions {
+  navigate: (path: string) => unknown;
+  closeWindow?: () => unknown;
+  availableCanvasWidth?: number;
+}
+
+/** True once every column of a restored layout is empty, so nothing is left to close. */
+function isWorkspaceLayoutEmpty(store: WorkspaceTabNavigationStore, workspaceId: string): boolean {
+  const layout = store.state.panelLayout.byWorkspaceId[workspaceId];
+  if (!layout || layout.restoreStatus === 'pending') return false;
+  return selectAllTabs.select(store.state, workspaceId).length === 0;
+}
+
+/**
+ * Cmd+W: close focused panel content; once the workspace's last column is
+ * empty close the workspace tab; once no workspace tab remains close the
+ * window. Non-closable tabs stop the cascade at the panel level.
+ */
+export function closeActiveTabCascade(
+  store: WorkspaceTabNavigationStore,
+  currentPath: string,
+  { navigate, closeWindow, availableCanvasWidth }: CloseTabCascadeOptions,
+): CloseTabCascadeLevel | null {
+  const workspaceId = resolveWorkspaceTabToClose(store, currentPath);
+  if (!workspaceId) return null;
+
+  if (closeActivePanelTab(store, currentPath, availableCanvasWidth) !== null) return 'panel';
+  if (!isWorkspaceLayoutEmpty(store, workspaceId)) return null;
+
+  store.dispatch(closeWorkspaceTab(workspaceId));
+  const nextWorkspaceId = selectCurrentWorkspaceTabId.select(store.state);
+  if (nextWorkspaceId || !closeWindow) {
+    navigateToSelectedWorkspace(store, currentPath, navigate);
+    return 'workspace';
+  }
+
+  closeWindow();
+  return 'window';
+}
+
 export function reopenWorkspaceTab(
   store: WorkspaceTabNavigationStore,
   currentPath: string,
@@ -266,6 +311,7 @@ export function registerWorkspaceTabShortcuts({
   onCreateTerminal,
   onCreateBrowser,
   onWorkspaceTabMoved,
+  closeWindow,
   resolveBinding,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
@@ -346,7 +392,7 @@ export function registerWorkspaceTabShortcuts({
     key: 'w',
     global: true,
     description: m.workspace_shortcuts_closePanelTab_description(),
-    action: withRoute((path) => closeActivePanelTab(store, path)),
+    action: withRoute((path) => closeActiveTabCascade(store, path, { navigate, closeWindow })),
   });
   register({
     ...effective('navigation.close-space-tab'),

@@ -517,6 +517,9 @@
           }
         : {}),
       onWorkspaceTabMoved: (detail) => dispatchWindowEvent(WORKSPACE_TAB_MOVED_EVENT, detail),
+      ...(hasCapability('windowChrome')
+        ? { closeWindow: () => invoke(IPC_CHANNELS.WINDOW.CLOSE) }
+        : {}),
       resolveBinding: getEffectiveShortcut,
     });
 
