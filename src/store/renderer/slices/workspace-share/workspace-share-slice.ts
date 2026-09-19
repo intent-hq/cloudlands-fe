@@ -37,13 +37,13 @@ export interface WorkspaceShareTarget {
 }
 
 /**
- * The link the last `workspace.invite.create` of this session returned, shown
- * in the dialog's created-link panel. `inviteId` ties it to its
+ * The link the last `workspace.invite.create` of this session returned, by
+ * reference only: the url (a capability carrying the invite secret) is parked
+ * in `invite-link-vault` under `inviteId`, which also ties the panel to its
  * `workspace.invite.list` row so a revoke — local or daemon-side — retires it.
  */
 export interface WorkspaceShareCreatedLink {
   inviteId: string;
-  url: string;
   pinLogin?: string;
 }
 
