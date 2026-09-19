@@ -3,15 +3,16 @@
  * intentd #1872) — the guest side of a workspace invite. Modelled on
  * `pair-deep-link.ts`, with a device-flow join in the middle:
  *
- * 1. Parse the link and confirm with the user ("Join <host:port> as a
- *    guest?", cert fingerprint shown).
- * 2. Dial the daemon's unauthenticated `/invite` endpoint with the pin
- *    enforced at the TLS handshake and start the identity-only GitHub
- *    device flow (`invite.redeem { inviteId, secret }`).
- * 3. Show the user code + verification URL (code copied to the clipboard;
+ * 1. Parse the link and dial the daemon's unauthenticated `/invite`
+ *    endpoint with the pin enforced at the TLS handshake, then start the
+ *    identity-only GitHub device flow (`invite.redeem { inviteId, secret }`).
+ *    No fingerprint confirmation is asked of the user — the pin is checked
+ *    mechanically at the handshake, not by eye.
+ * 2. Show the user code + verification URL (code copied to the clipboard;
  *    "Open GitHub" opens the URL) while the second phase
- *    (`invite.redeem { flowId }`) waits for the grant.
- * 4. Store the minted credential as a GUEST session — never in the paired
+ *    (`invite.redeem { flowId }`) waits for the grant. This dialog — which
+ *    names the workspace and offers Cancel — is the single consent point.
+ * 3. Store the minted credential as a GUEST session — never in the paired
  *    backend registry — and open the daemon's window.
  *
  * Security posture mirrors the pair flow: the invite secret and the minted
@@ -99,11 +100,6 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
         hasInviteId: !!inviteId,
         hasSecret: !!secret,
       });
-      return;
-    }
-
-    if (!(await confirmJoin(displayHost, port, fingerprint))) {
-      logger.info('User declined invite link');
       return;
     }
 
@@ -212,20 +208,6 @@ async function showDialog(options: MessageBoxOptions): Promise<number> {
     ? await dialog.showMessageBox(parent, options)
     : await dialog.showMessageBox(options);
   return result.response;
-}
-
-/** "Join <host:port> as a guest?" with the pinned fingerprint for cross-checking. */
-async function confirmJoin(host: string, port: number, fingerprint: string): Promise<boolean> {
-  const response = await showDialog({
-    type: 'question',
-    title: m.deeplink_inviteDialog_title(),
-    message: m.deeplink_inviteDialog_message({ target: `${host}:${port}` }),
-    detail: m.deeplink_pairDialog_detail({ fingerprint }),
-    buttons: [m.deeplink_inviteDialog_join_button(), m.deeplink_pairDialog_cancel_button()],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  return response === 0;
 }
 
 /** Device-flow prompt: user code + verification URL. True when the user chose "Open GitHub". */
