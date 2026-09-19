@@ -11,8 +11,14 @@ const iconDirectories = [
   'src/lib/components/icons',
   'src/lib/icons',
 ];
-// vite.config.mjs aliases `svelte-fa` to `$lib/components/shared/icons/fa-proxy.ts`.
-const iconPackages = new Set(['svelte-fa']);
+// Icon packages match by package prefix so deep imports such as
+// `phosphor-svelte/lib/XIcon` count too. vite.config.mjs aliases `svelte-fa`
+// to `$lib/components/shared/icons/fa-proxy.ts`.
+const iconPackages = ['svelte-fa', 'phosphor-svelte'];
+
+function isIconPackage(source) {
+  return iconPackages.some((name) => source === name || source.startsWith(`${name}/`));
+}
 
 // `patterns/settings/custom-controls.ts` re-exports `Button` from
 // `$lib/components/ui/button` for controls registered through `SettingsForm.custom`.
@@ -27,7 +33,7 @@ function isButtonSource(source) {
 }
 
 function isIconSource(source, filename) {
-  if (iconPackages.has(source)) return true;
+  if (isIconPackage(source)) return true;
   if (iconAliasPrefixes.some((prefix) => source.startsWith(prefix))) return true;
   if (!source.startsWith('.') || !filename || filename.startsWith('<')) return false;
   const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(filename), source));

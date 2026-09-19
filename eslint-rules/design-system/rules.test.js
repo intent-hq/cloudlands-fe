@@ -142,6 +142,8 @@ const settingsIconButton = withScript(
   'import { Button, Input } from "$lib/components/patterns/settings/custom-controls";',
   faImport,
 );
+const phosphorImport = 'import { ChatTextIcon } from "phosphor-svelte";';
+const phosphorDeepImport = 'import XIcon from "phosphor-svelte/lib/XIcon";';
 const iconSizeError = {
   message:
     'Use `size="icon"` or another icon size such as `size="icon-compact"` instead — /sandbox/button',
@@ -160,6 +162,8 @@ svelteTester.run('icon-only-button-size', iconOnlyButtonSize, {
     `${iconButton}<Button size="icon-compact" aria-label="More"><Fa icon={faEllipsis} /></Button>`,
     `${settingsIconButton}<Button size="icon-compact" aria-label="More"><Fa icon={faEllipsis} /></Button>`,
     `${iconButton}<Button size={size} aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+    `${withScript(buttonImport, phosphorImport)}<Button size="icon-compact" aria-label="Chat"><ChatTextIcon /></Button>`,
+    `${withScript(buttonImport, phosphorDeepImport)}<Button size="icon-compact" aria-label="Close"><XIcon /></Button>`,
     `${iconButton}<Button size="sm"><Fa icon={faPlus} /> Add</Button>`,
     `${iconButton}<Button size="sm">{label}<Fa icon={faPlus} /></Button>`,
     `${iconButton}<Button size="sm"><Fa icon={faPlus} />{@render children()}</Button>`,
@@ -187,6 +191,14 @@ svelteTester.run('icon-only-button-size', iconOnlyButtonSize, {
     },
     {
       code: `${withScript(buttonImport)}<Button aria-label="More"><svg viewBox="0 0 16 16" /></Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript(buttonImport, phosphorImport)}<Button aria-label="Chat"><ChatTextIcon /></Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript(buttonImport, phosphorDeepImport)}<Button aria-label="Close"><XIcon /></Button>`,
       errors: [iconSizeError],
     },
     {
