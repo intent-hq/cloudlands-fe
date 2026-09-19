@@ -474,7 +474,7 @@
         const note = allNotes.find((n) => String(n.id) === target.noteId)?.title ?? '';
         return {
           label: m.workspace_progressCard_presenceOnNote_tooltip({ name, note }),
-          onSelect: () => void navigateToNote(target.noteId),
+          onSelect: wsId ? () => void navigateToNote(target.noteId, { workspaceId: wsId }) : null,
         };
       }
       return {
