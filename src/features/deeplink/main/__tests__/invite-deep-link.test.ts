@@ -701,6 +701,54 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('a proof made under another account than consented to: gist deleted, consent asked again for that account, then proven', async () => {
+    const first = fakeConsent('open');
+    const second = fakeConsent('open');
+    showInviteConsent.mockReturnValueOnce(first.prompt).mockReturnValueOnce(second.prompt);
+    const otherProof = { gistId: 'gist-other', login: 'hubot' };
+    onLocal('github.identityProof.create', () => otherProof);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showInviteConsent).toHaveBeenCalledTimes(2);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'prove', login: 'octocat' });
+    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ mode: 'prove', login: 'hubot' });
+    expect(first.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
+    // Nothing is proven to the host before the second consent.
+    expect(prove).toHaveBeenCalledTimes(1);
+    expect(prove).toHaveBeenCalledWith('inv-1', SECRET, {
+      nonce: CHALLENGE.nonce,
+      gistId: 'gist-other',
+      login: 'hubot',
+    });
+    expect(localCalls('github.identityProof.create')).toHaveLength(2);
+    expect(localCalls('github.identityProof.delete')).toEqual([
+      ['github.identityProof.delete', { gistId: 'gist-other' }],
+      ['github.identityProof.delete', { gistId: 'gist-other' }],
+    ]);
+    expect(second.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+    expect(guestAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('a proof made under another account, declined at the second prompt: nothing proven or stored', async () => {
+    const first = fakeConsent('open');
+    const second = fakeConsent('cancel');
+    showInviteConsent.mockReturnValueOnce(first.prompt).mockReturnValueOnce(second.prompt);
+    onLocal('github.identityProof.create', () => ({ gistId: 'gist-other', login: 'hubot' }));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ mode: 'prove', login: 'hubot' });
+    expect(prove).not.toHaveBeenCalled();
+    expect(localCalls('github.identityProof.delete')).toEqual([
+      ['github.identityProof.delete', { gistId: 'gist-other' }],
+    ]);
+    expect(second.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('dismisses joined before the store write, the plaintext warning and the window open', async () => {
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
