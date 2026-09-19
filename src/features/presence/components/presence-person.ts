@@ -24,12 +24,16 @@ export interface PresenceCircleAction {
   onSelect: ((event: MouseEvent) => void) | null;
 }
 
-/** The ring around an avatar: the owner blue, an online member green, an offline member grey. */
+/**
+ * The ring around an avatar: the owner blue whether online or not, an online
+ * member green, an offline member grey. Offline is drawn on the avatar itself
+ * (greyscale), so the owner ring never has to give way to it.
+ */
 export type PresenceRing = 'owner' | 'member' | 'offline';
 
 export function presencePersonRing(person: PresenceCircle): PresenceRing | null {
-  if (person.online === false) return 'offline';
   if (person.owner) return 'owner';
+  if (person.online === false) return 'offline';
   return person.online === true ? 'member' : null;
 }
 

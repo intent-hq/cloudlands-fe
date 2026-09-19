@@ -3,8 +3,9 @@
    * Avatar stack of the people present somewhere (a workspace sidebar, an
    * agent chat): up to `maxVisible` avatars plus a "+N" overflow chip. Each
    * avatar is ringed by the person's standing when known — the owner blue, an
-   * online member green, an offline member grey with the avatar dimmed — and
-   * this window's own principal is marked. With `action` every visible avatar
+   * online member green, an offline member grey — an offline person's avatar
+   * is drawn greyscale whatever their ring, and this window's own principal
+   * is marked. With `action` every visible avatar
    * is a button. Renders nothing when nobody is there.
    */
   import { Button } from '$lib/components/ui/button';
@@ -60,22 +61,24 @@
   const RING_CLASS: Record<PresenceRing, string> = {
     owner: 'ring-2 ring-info',
     member: 'ring-2 ring-success',
-    offline: 'ring-2 ring-muted-foreground/40 opacity-50',
+    offline: 'ring-2 ring-muted-foreground/40',
   };
 </script>
 
 {#snippet avatar(person: PresenceCircle)}
   {@const ring = presencePersonRing(person)}
+  {@const offline = person.online === false}
   <span
     class="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-background font-medium leading-none text-primary-foreground {ring
       ? RING_CLASS[ring]
-      : ''}"
+      : ''} {offline ? 'grayscale' : ''}"
     style:width="{size}px"
     style:height="{size}px"
     style:font-size={fontSize}
     style:background-color={presencePersonColor(person.principalId)}
     data-presence-avatar={person.principalId}
     data-presence-ring={ring ?? undefined}
+    data-presence-offline={offline || undefined}
     data-presence-self={person.self || undefined}
   >
     {#if person.avatarUrl}
