@@ -153,6 +153,7 @@ describe('ShareWorkspaceDialog — roster and invites', () => {
       reusable: true,
       redemptionCount: 2,
     };
+    const reusableOnce: WorkspaceInvite = { ...reusable, id: 'inv-reusable-1', redemptionCount: 1 };
     const pinned: WorkspaceInvite = { ...openInvite, reusable: false, redemptionCount: 0 };
     const legacyUnpinned: WorkspaceInvite = {
       ...openInvite,
@@ -160,11 +161,12 @@ describe('ShareWorkspaceDialog — roster and invites', () => {
       pinLogin: undefined,
       pinGithubUserId: undefined,
     };
-    renderDialog({ invites: [reusable, pinned, legacyUnpinned] });
+    renderDialog({ invites: [reusable, reusableOnce, pinned, legacyUnpinned] });
 
     const rows = screen.getAllByTestId('share-invite-row');
     expect(rows.map((r) => r.getAttribute('data-invite-id'))).toEqual([
       'inv-reusable',
+      'inv-reusable-1',
       'inv-1',
       'inv-legacy',
     ]);
@@ -172,15 +174,18 @@ describe('ShareWorkspaceDialog — roster and invites', () => {
     expect(details[0]).toContain('Reusable');
     expect(details[0]).toContain('2 joined');
     expect(details[0]).toMatch(/Expires/);
-    expect(details[1]).not.toContain('Reusable');
+    // A single redemption takes the singular form.
+    expect(details[1]).toContain('1 joined');
     expect(details[1]).toMatch(/Expires/);
-    // A daemon without the reusable fields: every link is single-use.
     expect(details[2]).not.toContain('Reusable');
     expect(details[2]).toMatch(/Expires/);
-    // Revoke stays available on the reusable row (and the legacy unpinned one).
+    // A daemon without the reusable fields: every link is single-use.
+    expect(details[3]).not.toContain('Reusable');
+    expect(details[3]).toMatch(/Expires/);
+    // Revoke stays available on the reusable rows (and the legacy unpinned one).
     expect(
       screen.getAllByRole('button', { name: 'Revoke invite: Anyone with the link' }),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 
   it('shows the loading row while the first read is in flight and the load error afterwards', async () => {
