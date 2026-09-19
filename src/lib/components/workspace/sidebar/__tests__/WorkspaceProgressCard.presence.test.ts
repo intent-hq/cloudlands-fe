@@ -227,12 +227,64 @@ describe('WorkspaceProgressCard presence row', () => {
     mocks.agents.length = 0;
   });
 
-  it('renders nothing while nobody else is present, keeping the rest of the metadata block', async () => {
+  it('renders nothing for an unshared workspace, keeping the rest of the metadata block', async () => {
     const { container } = await renderProgressCard({
-      presence: presenceState(membership, presenceOwnPrincipalReceived('me')),
+      presence: presenceState(
+        presenceMembersReceived('ws-1', [accepted('me', 'owner')]),
+        presenceOwnPrincipalReceived('me'),
+      ),
+      memberCount: 1,
     });
     expect(presenceRow()).toBeNull();
     expect(container.querySelector('[data-sidebar-repository-branch-metadata]')).toBeTruthy();
+  });
+
+  it('still shows every other member, each greyscale with a grey ring, while nobody else is online', async () => {
+    await renderProgressCard({
+      presence: presenceState(membership, presenceOwnPrincipalReceived('me')),
+    });
+    const row = presenceRow()!;
+    const avatars = Array.from(row.querySelectorAll<HTMLElement>('[data-presence-avatar]'));
+    expect(avatars.map((a) => a.getAttribute('data-presence-avatar'))).toEqual([
+      'ada',
+      'bob',
+      'cy',
+    ]);
+    for (const avatar of avatars) {
+      expect(avatar.hasAttribute('data-presence-offline')).toBe(true);
+      expect(avatar.getAttribute('data-presence-ring')).toBe('offline');
+      expect(avatar.classList.contains('grayscale')).toBe(true);
+      expect(avatar.classList.contains('opacity-50')).toBe(false);
+    }
+    expect(personButton('cy').getAttribute('aria-label')).toMatch(/offline/i);
+  });
+
+  it('keeps the owner ring on an offline owner and greys only online-less members, never an online one', async () => {
+    await renderProgressCard({
+      presence: presenceState(
+        membership,
+        presenceRosterReceived({
+          workspaceId: 'ws-1',
+          members: [
+            rosterMember('ada', [{ workspaceId: 'ws-1' }]),
+            rosterMember('bob', [{ workspaceId: 'ws-1' }]),
+          ],
+        }),
+        presenceOwnPrincipalReceived('ada'),
+      ),
+      myRole: 'collaborator',
+    });
+    const avatar = (principalId: string) =>
+      presenceRow()!.querySelector<HTMLElement>(`[data-presence-avatar="${principalId}"]`)!;
+    expect(avatar('me').getAttribute('data-presence-ring')).toBe('owner');
+    expect(avatar('me').hasAttribute('data-presence-offline')).toBe(true);
+    expect(avatar('me').classList.contains('grayscale')).toBe(true);
+    expect(avatar('cy').getAttribute('data-presence-ring')).toBe('offline');
+    expect(avatar('cy').hasAttribute('data-presence-offline')).toBe(true);
+    expect(avatar('bob').getAttribute('data-presence-ring')).toBe('member');
+    expect(avatar('bob').hasAttribute('data-presence-offline')).toBe(false);
+    expect(avatar('bob').classList.contains('grayscale')).toBe(false);
+    expect(presenceRow()!.querySelector('[data-presence-avatar="ada"]')).toBeNull();
   });
 
   it('shows one button per other member after the repo/branch row, never the viewer', async () => {
