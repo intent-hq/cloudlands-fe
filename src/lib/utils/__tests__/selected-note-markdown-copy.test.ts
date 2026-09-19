@@ -212,6 +212,65 @@ describe('selected note markdown copy', () => {
     editor.destroy();
   });
 
+  it('quotes every paragraph when a whole multi-paragraph blockquote is copied', () => {
+    const editor = createEditor(
+      '<blockquote><p>First quote</p><p>Second quote</p><p>Third quote</p></blockquote>',
+    );
+    editor.commands.selectAll();
+
+    expect(serializeSelectionToMarkdown(editor.view)).toBe(
+      '> First quote\n>\n> Second quote\n>\n> Third quote',
+    );
+
+    editor.destroy();
+  });
+
+  it('keeps inline formatting inside quoted paragraphs', () => {
+    const editor = createEditor(
+      '<blockquote><p><strong>Bold</strong> quote</p><p>With <code>code</code></p></blockquote>',
+    );
+    editor.commands.selectAll();
+
+    expect(serializeSelectionToMarkdown(editor.view)).toBe('> **Bold** quote\n>\n> With `code`');
+
+    editor.destroy();
+  });
+
+  it('quotes every line when a quoted paragraph contains hard breaks', () => {
+    const editor = createEditor(
+      '<blockquote><p>First<br>second</p><p>Third<br><br>Fourth</p></blockquote>',
+    );
+    editor.commands.selectAll();
+
+    expect(serializeSelectionToMarkdown(editor.view)).toBe(
+      '> First\n> second\n>\n> Third\n>\n> Fourth',
+    );
+
+    editor.destroy();
+  });
+
+  it('keeps the existing output for nested blockquotes', () => {
+    const editor = createEditor(
+      '<blockquote><p>Outer</p><blockquote><p>Inner</p></blockquote></blockquote>',
+    );
+    editor.commands.selectAll();
+
+    expect(serializeSelectionToMarkdown(editor.view)).toBe('> OuterInner');
+
+    editor.destroy();
+  });
+
+  it('keeps the existing output for blockquotes containing lists', () => {
+    const editor = createEditor(
+      '<blockquote><p>Intro</p><ul><li><p>Item one</p></li><li><p>Item two</p></li></ul></blockquote>',
+    );
+    editor.commands.selectAll();
+
+    expect(serializeSelectionToMarkdown(editor.view)).toBe('> IntroItem oneItem two');
+
+    editor.destroy();
+  });
+
   it('keeps block syntax when a whole single-item list or table is selected', () => {
     const editor = createEditor('<ul><li><p>Only item</p></li></ul>');
     editor.commands.selectAll();
