@@ -2,6 +2,7 @@
   import QueuedMessageList from '../QueuedMessageList.svelte';
   import { CHAT_TRANSCRIPT_OVERFLOW_CLASS } from '../chat-queue-edge-layout';
   import type { QueuedMessage } from '$shared/types';
+  import type { ChatQueuedMessageEditOperation } from '$store/renderer/slices/chat-state/chat-state-types';
 
   interface Props {
     width?: number;
@@ -23,6 +24,7 @@
     imageBlocks,
   }: Props = $props();
   let lastAction = $state('none');
+  let editOperations = $state<Record<string, ChatQueuedMessageEditOperation>>({});
   const messages = $derived(
     Array.from({ length: messageCount }, (_, i) => ({
       id: `queued-geometry-${i}`,
@@ -35,20 +37,33 @@
       imageBlocks,
     })),
   );
+
+  function editMessage(id: string, content: string, editing?: boolean) {
+    lastAction = `${editing ? 'edit' : 'save'}:${id}`;
+    editOperations = {
+      ...editOperations,
+      [id]: {
+        status: 'success',
+        content,
+        editing: editing ?? false,
+        result: { success: true },
+        error: null,
+      },
+    };
+    return { success: true };
+  }
 </script>
 
 {#snippet contentColumn()}
   <div class="mx-auto" style:width="{contentWidth}px" data-testid="queued-message-content-column">
     <QueuedMessageList
       {messages}
+      {editOperations}
       onsendnow={(id) => {
         lastAction = `send:${id}`;
       }}
       onremove={(id) => (lastAction = `remove:${id}`)}
-      onedit={async (id, _content, editing) => {
-        lastAction = `${editing ? 'edit' : 'save'}:${id}`;
-        return { success: true };
-      }}
+      onedit={editMessage}
     />
   </div>
 {/snippet}
@@ -62,14 +77,12 @@
       <div class="relative z-20 mt-6 w-full" data-testid="queued-message-utility-area">
         <QueuedMessageList
           {messages}
+          {editOperations}
           onsendnow={(id) => {
             lastAction = `send:${id}`;
           }}
           onremove={(id) => (lastAction = `remove:${id}`)}
-          onedit={async (id, _content, editing) => {
-            lastAction = `${editing ? 'edit' : 'save'}:${id}`;
-            return { success: true };
-          }}
+          onedit={editMessage}
         />
       </div>
     </div>

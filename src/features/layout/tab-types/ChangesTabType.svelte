@@ -6,7 +6,7 @@
    * Includes header actions for expand/collapse and view controls.
    */
 
-  import { untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
   import {
@@ -31,7 +31,8 @@
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openWorkspaceNote } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { appClient } from '$lib/client';
+  import { selectCommitDetails } from '$store/renderer/slices/git/git-selectors';
+  import { loadCommitDetails } from '$store/renderer/slices/git/git-slice';
   import { isAbsolutePath } from '$lib/utils/path-utils';
   import { store as appStore } from '$store/renderer/store';
 
@@ -52,6 +53,12 @@
   // Secondary git root scoping the changeset (multi git root tracking).
   // Absent → primary-root behavior, byte-identical to before.
   const gitRootId = $derived((tab.data?.gitRootId as string) || '');
+  const commitHashStore = writable('');
+  const gitRootIdStore = writable('');
+  $effect(() => commitHashStore.set(commitHash));
+  $effect(() => gitRootIdStore.set(gitRootId));
+  // svelte-ignore state_referenced_locally
+  const commitDetails$ = selectCommitDetails(workspaceId, commitHashStore, gitRootIdStore);
   // Root path used to absolutize the daemon's root-relative file paths: the
   // registered secondary root's path when `gitRootId` is set, else the
   // workspace worktree.
@@ -75,62 +82,21 @@
   );
   const storeCommitFiles = $derived(targetCommit?.files || []);
 
-  // Fetched commit details for commits not in the store (or with empty files like older commits)
-  let fetchedFileDetails = $state<Array<{ path: string; additions: number; deletions: number }>>(
-    [],
-  );
-  let fetchedCommitInfo = $state<{ author?: string; authorEmail?: string; date?: string } | null>(
-    null,
-  );
-  let isFetchingDetails = $state(false);
-  let fetchedForHash = $state('');
-
-  // Fetch commit details when store doesn't have file info
+  // Trigger the saga-owned read when file metadata is absent.
   $effect(() => {
     const hash = commitHash;
     const storeFiles = storeCommitFiles;
     const wsId = workspaceId;
     const rootId = gitRootId;
-
-    if (!hash || !wsId) return;
-    // If store already has files for this commit, no need to fetch
-    if (storeFiles.length > 0) return;
-    // Don't re-fetch for the same hash
-    if (untrack(() => fetchedForHash) === hash) return;
-
-    untrack(() => {
-      isFetchingDetails = true;
-      fetchedForHash = hash;
-    });
-
-    // Daemon-backed read (PROTOCOL §5.6): `appClient.git.commitDetails`
-    // folds transport/gate errors to `null` and the daemon degrades non-repo /
-    // remote / unknown-hash workspaces to an empty envelope, so this $effect
-    // never throws into the renderer. `gitRootId` scopes the read to a
-    // registered secondary root (`gitRootId` param family).
-    appClient.git
-      .commitDetails(wsId, hash, rootId ? { gitRootId: rootId } : undefined)
-      .then((result) => {
-        if (result) {
-          fetchedFileDetails =
-            result.fileDetails.length > 0
-              ? result.fileDetails
-              : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
-          fetchedCommitInfo = {
-            author: result.author || undefined,
-            authorEmail: result.authorEmail || undefined,
-            date: result.date || undefined,
-          };
-        }
-        isFetchingDetails = false;
-      })
-      .catch(() => {
-        isFetchingDetails = false;
-      });
+    if (!hash || !wsId || storeFiles.length > 0 || $commitDetails$) return;
+    appStore.dispatch(loadCommitDetails(wsId, hash, rootId || undefined));
   });
 
-  // Use store files if available, otherwise use fetched details
-  const commitFiles = $derived(storeCommitFiles.length > 0 ? storeCommitFiles : fetchedFileDetails);
+  const fetchedCommitInfo = $derived($commitDetails$?.data ?? null);
+  const isFetchingDetails = $derived($commitDetails$?.loading ?? false);
+  const commitFiles = $derived(
+    storeCommitFiles.length > 0 ? storeCommitFiles : (fetchedCommitInfo?.files ?? []),
+  );
 
   // State for expand/collapse and panel ref
   let changesAllExpanded = $state(true);

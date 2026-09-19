@@ -81,6 +81,11 @@ export const requestUnarchiveWorkspace = createAction<[workspaceId: string]>(
   'workspaceOperations/requestUnarchiveWorkspace',
 );
 
+/** Archive after merge, persist repo prefill when applicable, then open create-space UI. */
+export const startPostMergeWorkspaceRequested = createAction<
+  [workspaceId: string, repositoryPath?: string, worktreePath?: string]
+>('workspaceOperations/startPostMergeWorkspaceRequested');
+
 export const applyWorkspaceProposal = createAction<[payload: WorkspaceProposalApplyPayload]>(
   'workspaceOperations/applyWorkspaceProposal',
 );

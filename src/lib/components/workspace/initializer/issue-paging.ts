@@ -14,7 +14,7 @@ export interface PageResult<T> {
   nextToken: string | null;
 }
 
-export interface PagedSourceState<T> {
+interface PagedSourceState<T> {
   items: T[];
   nextToken: string | null;
   /** A first-page (`refresh`) fetch is in flight. */

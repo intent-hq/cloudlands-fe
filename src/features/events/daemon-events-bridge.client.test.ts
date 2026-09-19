@@ -4442,6 +4442,45 @@ describe('daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     expect(seen).toEqual([{ workspaceId: WS }, { workspaceId: WS }, { workspaceId: WS }]);
   });
 
+  it.each(['git:commit', 'git:pull', 'changes:git-status', 'changes:tracked'])(
+    'dispatches a progress refresh for %s',
+    async (eventType) => {
+      await primeBridge();
+      const { workspaceProgressStatusRefreshRequested } =
+        await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        capturedHandlers[0]!(notification(eventType, {}));
+        expect(dispatchSpy).toHaveBeenCalledWith(workspaceProgressStatusRefreshRequested(WS));
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+    },
+  );
+
+  it('dispatches the ready-task snapshot without re-reading it from the component', async () => {
+    await primeBridge();
+    const { workspaceProgressReadyTasksChanged } =
+      await import('$store/renderer/slices/workspace-notes/workspace-notes-slice');
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+    try {
+      capturedHandlers[0]!(
+        notification('task:ready-tasks-changed', {
+          readyTaskIds: ['task-1', 2, 'task-3'],
+        }),
+      );
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        workspaceProgressReadyTasksChanged(WS, ['task-1', 'task-3']),
+      );
+    } finally {
+      dispatchGetterSpy.mockRestore();
+    }
+  });
+
   it('re-emits changes:tracked as file-tracking:changes-updated { workspaceId }', async () => {
     await primeBridge();
     const seen = listenOn('file-tracking:changes-updated');

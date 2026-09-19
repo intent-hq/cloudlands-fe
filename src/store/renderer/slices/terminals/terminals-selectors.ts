@@ -2,6 +2,7 @@ import { store } from '../../store';
 import { type StoreState } from '$store/renderer/types';
 import {
   DEFAULT_TERMINAL_PLACEMENT,
+  emptyOverlayTerminalCreateOperation,
   emptyWorkspaceState,
   type TerminalPlacement,
   type TerminalTab,
@@ -80,6 +81,11 @@ export const selectUserTerminals = store.createSelector((state, wsId: string | n
 export const selectWorkspaceTerminalState = store.createSelector((state, wsId: string) => {
   return state.terminals.workspaces[wsId] || emptyWorkspaceState;
 });
+
+export const selectOverlayTerminalCreateOperation = store.createSelector(
+  (state, wsId: string) =>
+    state.terminals.overlayCreateOperations[wsId] ?? emptyOverlayTerminalCreateOperation,
+);
 
 /**
  * Surface a terminal (`id` = terminal id) or script output (`id` = script id)

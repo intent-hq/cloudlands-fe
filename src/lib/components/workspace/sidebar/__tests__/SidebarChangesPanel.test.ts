@@ -203,6 +203,11 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
     { select: () => mockPostMergeState },
   ),
   selectGitOperationFlags: createMockFtSelector(() => mockGitOperationFlags),
+  selectCommitDetailsEntries: () => createReadable([]),
+  selectGitFileRead: () => createReadable(undefined),
+  selectGitMutationRequest: Object.assign(() => createReadable(undefined), {
+    select: () => undefined,
+  }),
   selectSecondaryRootGitRoots: createMockFtSelector(() => mockSecondaryRoots),
 }));
 
@@ -300,6 +305,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: Object.assign((_workspaceId: any) => createReadable(null), {
     select: () => null,
   }),
+  selectWorkspaceMutation: Object.assign(
+    () => createReadable({ loading: false, error: null, version: 0 }),
+    { select: () => ({ loading: false, error: null, version: 0 }) },
+  ),
 }));
 
 const mockPostMergeState = {
@@ -631,6 +640,7 @@ function makeWorkspace(overrides: Record<string, any> = {}) {
 
 async function resetMocks() {
   vi.clearAllMocks();
+  mockDispatch.mockImplementation((action) => action);
   mockStoreState.value = {};
   mockRootGetStatus.mockResolvedValue({ ok: true, data: {} });
   mockRootGetHistory.mockResolvedValue({ ok: true, data: { items: [] } });

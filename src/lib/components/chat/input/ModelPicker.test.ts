@@ -95,36 +95,153 @@ vi.mock('$store/renderer/store', async () => {
 
 const providerWarnings$ = writable<Record<string, string>>({});
 const providerStaleFlags$ = writable<Record<string, boolean>>({});
+const providerLoadingStates$ = writable<
+  Record<string, { status: 'loading' | 'success' | 'error'; retryAttempt: number; error?: string }>
+>({});
 const reasoningEffort$ = writable<string | null | undefined>(undefined);
 const agentModelEffortLevels$ = writable<string[] | undefined>(undefined);
+const agentModelUpdate$ = writable({
+  status: 'idle' as const,
+  requestId: 0,
+  model: null,
+  error: null,
+});
 const applyReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
+const getModelsForProviderMock = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve([{ value: 'model-1', label: 'Model 1', description: 'A model' }])),
+);
+const getModelsForProviderForLoadingStateMock = vi.hoisted(() =>
+  vi.fn(() =>
+    Promise.resolve({
+      models: [{ value: 'model-1', label: 'Model 1', description: 'A model' }],
+    }),
+  ),
+);
+const mockProviderRequestGenerations = vi.hoisted(() => new Map<string, number>());
 const mockSvelteDispatch = vi.hoisted(() =>
-  vi.fn((action: { type?: string; payload?: unknown }) => {
-    if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
-      const [payload] = action.payload as [
-        { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
+  vi.fn(
+    (action: {
+      type?: string;
+      payload?: unknown;
+      success?: (value: unknown) => unknown;
+      failure?: (error: Error) => unknown;
+      promise?: Promise<unknown>;
+    }) => {
+      action.promise?.catch(() => {});
+      if (action.type === 'providerModels/providerModelsLoaded' && Array.isArray(action.payload)) {
+        const [providerId, result, epoch] = action.payload as [
           string,
-          unknown
-        >,
-      ];
-      providerWarnings$.update((warnings) => {
-        const { [payload.providerId]: _cleared, ...remaining } = warnings;
-        if (payload.status === 'success' && payload.warning) {
-          return { ...remaining, [payload.providerId]: payload.warning };
+          (typeof mockProviderModelsState.byProviderId)[string],
+          number,
+        ];
+        if (epoch === mockProviderModelsState.clearEpoch) {
+          mockProviderModelsState.byProviderId = {
+            ...mockProviderModelsState.byProviderId,
+            [providerId]: result,
+          };
+          (mockAppStore as unknown as { emitState: () => void }).emitState();
         }
-        return remaining;
-      });
-      providerStaleFlags$.update((flags) => {
-        const { [payload.providerId]: _cleared, ...remaining } = flags;
-        if (payload.status === 'success' && payload.stale) {
-          return { ...remaining, [payload.providerId]: true };
-        }
-        return remaining;
-      });
-    }
-    return action;
-  }),
+      }
+      if (
+        action.type === 'providerModels/loadProviderModelsRequested' &&
+        Array.isArray(action.payload)
+      ) {
+        const [providerId, forceRefresh = false] = action.payload as [string, boolean?];
+        providerLoadingStates$.update((states) => ({
+          ...states,
+          [providerId]: { status: 'loading', retryAttempt: 0 },
+        }));
+        const requestEpoch = mockProviderModelsState.clearEpoch;
+        const requestGeneration = (mockProviderRequestGenerations.get(providerId) ?? 0) + 1;
+        mockProviderRequestGenerations.set(providerId, requestGeneration);
+        const options = forceRefresh ? { forceRefresh: true } : undefined;
+        void (
+          options
+            ? getModelsForProviderForLoadingStateMock(providerId, options)
+            : getModelsForProviderForLoadingStateMock(providerId)
+        ).then(
+          (result) => {
+            if (
+              mockProviderModelsState.clearEpoch === requestEpoch &&
+              mockProviderRequestGenerations.get(providerId) === requestGeneration
+            ) {
+              mockSvelteDispatch({
+                type: 'providerModels/providerModelsLoaded',
+                payload: [
+                  providerId,
+                  { ...result, fetchedAt: '2026-01-01T00:00:00.000Z' },
+                  requestEpoch,
+                ],
+              });
+            }
+            mockSvelteDispatch({
+              type: 'model/setLoadingStateForProvider',
+              payload: [
+                {
+                  providerId,
+                  status: 'success',
+                  warning: result.warning,
+                  stale: result.stale,
+                },
+              ],
+            });
+            if (action.success) mockSvelteDispatch(action.success(result) as { type?: string });
+          },
+          (error) => {
+            mockSvelteDispatch({
+              type: 'model/setLoadingStateForProvider',
+              payload: [
+                {
+                  providerId,
+                  status: 'error',
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              ],
+            });
+            if (action.failure) {
+              mockSvelteDispatch(
+                action.failure(error instanceof Error ? error : new Error(String(error))) as {
+                  type?: string;
+                },
+              );
+            }
+          },
+        );
+      }
+      if (action.type === 'model/setLoadingStateForProvider' && Array.isArray(action.payload)) {
+        const [payload] = action.payload as [
+          { providerId: string; status: string; warning?: string; stale?: boolean } & Record<
+            string,
+            unknown
+          >,
+        ];
+        providerLoadingStates$.update((states) => ({
+          ...states,
+          [payload.providerId]: {
+            status: payload.status as 'loading' | 'success' | 'error',
+            retryAttempt: 0,
+            ...(typeof payload.error === 'string' ? { error: payload.error } : {}),
+          },
+        }));
+        providerWarnings$.update((warnings) => {
+          const { [payload.providerId]: _cleared, ...remaining } = warnings;
+          if (payload.status === 'success' && payload.warning) {
+            return { ...remaining, [payload.providerId]: payload.warning };
+          }
+          return remaining;
+        });
+        providerStaleFlags$.update((flags) => {
+          const { [payload.providerId]: _cleared, ...remaining } = flags;
+          if (payload.status === 'success' && payload.stale) {
+            return { ...remaining, [payload.providerId]: true };
+          }
+          return remaining;
+        });
+      }
+      return action;
+    },
+  ),
 );
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', async () => {
@@ -155,10 +272,8 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/model/model-utils', () => ({
-  getModelsForProvider: vi.fn(() =>
-    Promise.resolve([{ value: 'model-1', label: 'Model 1', description: 'A model' }]),
-  ),
-  getModelsForProviderForLoadingState: vi.fn(),
+  getModelsForProvider: getModelsForProviderMock,
+  getModelsForProviderForLoadingState: getModelsForProviderForLoadingStateMock,
 }));
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
@@ -171,7 +286,9 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => readable(mockModelState.loadError),
   selectAllProviderWarnings: () => providerWarnings$,
   selectAllProviderStaleFlags: () => providerStaleFlags$,
+  selectAllProviderLoadingStates: () => providerLoadingStates$,
   selectAgentModelEffortLevels: () => agentModelEffortLevels$,
+  selectAgentModelUpdate: () => agentModelUpdate$,
 }));
 
 const hasCheckedOnce$ = writable(true);
@@ -235,7 +352,7 @@ import {
   getModelsForProvider,
   getModelsForProviderForLoadingState,
 } from '$store/renderer/slices/model/model-utils';
-import { selectModel } from '$store/renderer/slices/model/model-slice';
+import { selectModel, setAgentModelRequested } from '$store/renderer/slices/model/model-slice';
 import { store as mockAppStore } from '$store/renderer/store';
 import ModelPicker from './ModelPicker.svelte';
 import { warmImport } from '../../../../test/warm-import';
@@ -250,8 +367,10 @@ afterEach(() => {
   mockModelState.availableModelsProviderId = 'auggie';
   daemonHealth$.set('healthy');
   providerStaleFlags$.set({});
+  providerLoadingStates$.set({});
   mockProviderModelsState.byProviderId = {};
   mockProviderModelsState.clearEpoch = 0;
+  mockProviderRequestGenerations.clear();
   reasoningEffort$.set(undefined);
   agentModelEffortLevels$.set(undefined);
 });
@@ -2304,7 +2423,7 @@ describe('ModelPicker availability gating', () => {
     mockModelState.availableModelsProviderId = 'grok';
 
     render(ModelPicker, {
-      props: { portal: false },
+      props: { selectedModel: 'grok:grok-4', portal: false },
     });
 
     await fireEvent.click(screen.getByRole('button'));
@@ -2750,16 +2869,20 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
 
   const pickModelOne = async () => {
     await fireEvent.click(screen.getByRole('button'));
-    await fireEvent.click(await screen.findByRole('option', { name: /Model 1/ }));
+    const modelOptions = await screen.findAllByRole('option', { name: /Model 1/ });
+    await fireEvent.click(modelOptions[0]);
     // handleModelSelect awaits a tick before dispatching — let it settle.
     await new Promise((r) => setTimeout(r, 0));
   };
 
   const dispatchedTypes = () =>
     mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type);
+  const agentModelActions = () =>
+    mockSvelteDispatch.mock.calls
+      .map(([action]) => action as { type?: string; payload?: unknown[] })
+      .filter((action) => action.type === setAgentModelRequested.type);
 
   it('spawn context (no flags): a pick dispatches neither selectModel nor any agent-session update', async () => {
-    const { agentClient } = await import('$features/agent/agent.client');
     const onModelChange = vi.fn();
 
     render(ModelPicker, {
@@ -2774,11 +2897,10 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     });
     expect(dispatchedTypes()).not.toContain(selectModel.type);
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
-    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(agentModelActions()).toHaveLength(0);
   });
 
   it('chat-input context (updateGlobalStore): a pick updates the agent but never the global default', async () => {
-    const { agentClient } = await import('$features/agent/agent.client');
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
 
     render(ModelPicker, {
@@ -2798,12 +2920,13 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     // Bare model id → the effective default provider ('auggie', the
     // settings-designated providers.active) rides along as the explicit
     // providerId on the wire call.
-    expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
+    expect(agentModelActions()[0]?.payload?.slice(1)).toEqual([
       'agent-1',
-      'model-1',
       'ws-1',
+      'model-1',
       'auggie',
-    );
+      undefined,
+    ]);
     // The global default (selectModel → model.providerDefaults /
     // providers.active persistence) must never fire from the chat input.
     expect(dispatchedTypes()).not.toContain(selectModel.type);
@@ -2833,16 +2956,17 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
 
     await pickModelOne();
 
-    await waitFor(() => {
-      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
-        'low',
-        'high',
-      ]);
-    });
+    await waitFor(() => expect(agentModelActions()).toHaveLength(1));
+    expect(agentModelActions()[0]?.payload?.slice(1)).toEqual([
+      'agent-1',
+      'ws-1',
+      'model-1',
+      'auggie',
+      ['low', 'high'],
+    ]);
   });
 
   it('cross-provider pick (intent-hq/monorepo#1657): session on claude-code, bare default-provider model → explicit providerId on the wire', async () => {
-    const { agentClient } = await import('$features/agent/agent.client');
     // Session provider differs from the default provider — the historical
     // failure: the daemon validated the bare id against claude-code and
     // rejected it. The FE must attribute the bare pick to the effective
@@ -2860,18 +2984,16 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
 
     await pickModelOne();
 
-    await waitFor(() => {
-      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
-        'agent-1',
-        'model-1',
-        'ws-1',
-        'auggie',
-      );
-    });
+    await waitFor(() => expect(agentModelActions()).toHaveLength(1));
+    expect(agentModelActions()[0]?.payload?.slice(1, 5)).toEqual([
+      'agent-1',
+      'ws-1',
+      'model-1',
+      'auggie',
+    ]);
   });
 
   it('bare pick from a non-default provider group resolves the owning provider (catalog ownership)', async () => {
-    const { agentClient } = await import('$features/agent/agent.client');
     const onModelChange = vi.fn();
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
     // Catalog rows are bare for every provider — the codex group owns the
@@ -2907,21 +3029,19 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
       providerId: 'codex',
       modelId: 'gpt-5-codex',
     });
-    await waitFor(() => {
-      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
-        'agent-1',
-        'gpt-5-codex',
-        'ws-1',
-        'codex',
-      );
-    });
+    await waitFor(() => expect(agentModelActions()).toHaveLength(1));
+    expect(agentModelActions()[0]?.payload?.slice(1, 5)).toEqual([
+      'agent-1',
+      'ws-1',
+      'gpt-5-codex',
+      'codex',
+    ]);
   });
 
   // Legacy boundary: compound `provider:model` ids no longer exist as catalog
   // rows, but persisted selections can still carry them — the prefix must win
   // provider attribution outright.
   it('compound model pick sends the compound prefix as the explicit providerId', async () => {
-    const { agentClient } = await import('$features/agent/agent.client');
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
     mockModelState.availableModels = [
       { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' },
@@ -2943,18 +3063,16 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await fireEvent.click(await screen.findByRole('option', { name: /GPT-5 Codex/ }));
     await new Promise((r) => setTimeout(r, 0));
 
-    await waitFor(() => {
-      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledWith(
-        'agent-1',
-        'codex:gpt-5-codex',
-        'ws-1',
-        'codex',
-      );
-    });
+    await waitFor(() => expect(agentModelActions()).toHaveLength(1));
+    expect(agentModelActions()[0]?.payload?.slice(1, 5)).toEqual([
+      'agent-1',
+      'ws-1',
+      'codex:gpt-5-codex',
+      'codex',
+    ]);
   });
 
   it('picking "Default model" drops a deferred update queued during streaming', async () => {
-    const { agentClient } = await import('$features/agent/agent.client');
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
 
     const { rerender } = render(ModelPicker, {
@@ -2970,7 +3088,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
 
     // Pick an explicit model while streaming — the backend update is deferred.
     await pickModelOne();
-    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(agentModelActions()).toHaveLength(0);
 
     // Then pick "Default model" — this must clear the queued deferred update.
     await fireEvent.click(screen.getAllByRole('button')[0]);
@@ -2988,7 +3106,7 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     });
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(agentModelActions()).toHaveLength(0);
   });
 
   it('settings context (updateGlobalDefault): a pick dispatches the global selectModel', async () => {
@@ -3673,9 +3791,14 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
   it('writes the silent-fallback retry fetch through to the cache slice', async () => {
     // The selected model's provider (auggie) has no models while another
     // enabled provider does, so the silent-fallback retry
-    // (getModelsForProvider) is the path that recovers auggie's models — it
-    // must write through like the other fetch paths.
+    // (loadProviderModelsRequested) is the path that recovers auggie's models
+    // — it must write through like the other fetch paths.
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => {
+      if (providerId === 'auggie') {
+        return {
+          models: [{ value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' }],
+        };
+      }
       if (providerId === 'codex') {
         return {
           models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
@@ -3683,9 +3806,6 @@ describe('ModelPicker cache hydration (stale-while-revalidate)', () => {
       }
       return { models: [] };
     });
-    vi.mocked(getModelsForProvider).mockResolvedValue([
-      { value: 'auggie:model-1', label: 'Auggie Model 1', description: 'A model' },
-    ]);
     mockModelState.selectedModel = 'auggie:missing-model';
     enabledProviderIds$.set(['auggie', 'codex']);
 

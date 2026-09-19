@@ -485,6 +485,7 @@
     const capturedWorkspaceId = $workspace?.id;
     if (!capturedWorkspaceId) return;
     const errorKey = `workspace:${capturedWorkspaceId}:creation-error`;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Staged legacy storage; target: workspace lifecycle saga.
     const errorData = sessionStorage.getItem(errorKey);
     if (!errorData) return;
     try {
@@ -499,6 +500,7 @@
     } catch (e) {
       logger.error('[WorkspacePage] Failed to parse error data', e);
     } finally {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- Staged legacy storage; target: workspace lifecycle saga.
       sessionStorage.removeItem(errorKey);
     }
   });

@@ -27,15 +27,20 @@
   import { Button } from '$lib/components/ui/button';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
 
-  import { dismissSetupScriptBannerGlobally } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
-  import { selectIsSetupScriptBannerDismissed } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
+  import {
+    dismissSetupScriptBannerGlobally,
+    loadSetupScriptPresenceRequested,
+  } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
+  import {
+    selectIsSetupScriptBannerDismissed,
+    selectSetupScriptPresence,
+  } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import { recordLastUsedSetupScript } from '$features/setup-scripts';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { notify } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
   import { store as appStore } from '$store/renderer/store';
-  import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('SetupScriptBanner');
@@ -56,6 +61,7 @@
   });
   const workspaceById = selectWorkspaceById(workspaceIdStore);
   const isDismissedStore = selectIsSetupScriptBannerDismissed(workspaceIdStore);
+  const setupScriptPresence$ = selectSetupScriptPresence(workspaceIdStore);
 
   // State
   let isOpen = $state(true); // persisted dismissal is owned by setup-scripts Redux state
@@ -65,7 +71,6 @@
   let bannerEl = $state<HTMLDivElement | null>(null);
   let panelWidth = $state(640); // default ~40em
   let isResizing = $state(false);
-  let repoHasSetupScript = $state<boolean | null>(null); // null = pending check
 
   // Detect Windows platform for script generation and editor language
   const isWindows =
@@ -105,27 +110,12 @@
 
   // Should show the banner?
   // Hide while the setup-script check is pending (avoid flash) and when a non-empty script exists
-  const shouldShow = $derived(isOpen && !isDismissed && repoHasSetupScript === false);
+  const shouldShow = $derived(isOpen && !isDismissed && $setupScriptPresence$.hasScript === false);
 
   // Check for existing setup script on mount and when workspaceId changes
   $effect(() => {
     const currentWorkspaceId = workspaceId;
-    repoHasSetupScript = null; // reset to pending on workspaceId change
-
-    void (async () => {
-      try {
-        const record = await appClient.setupScripts.get(currentWorkspaceId);
-        // Only update if workspaceId hasn't changed while we were waiting
-        if (currentWorkspaceId === workspaceId) {
-          repoHasSetupScript = !!(record?.script && record.script.trim());
-        }
-      } catch {
-        // On RPC failure, fall back to showing the banner (current behavior)
-        if (currentWorkspaceId === workspaceId) {
-          repoHasSetupScript = false;
-        }
-      }
-    })();
+    appStore.dispatch(loadSetupScriptPresenceRequested(currentWorkspaceId));
   });
 
   // Get recent commands from all terminals in this workspace

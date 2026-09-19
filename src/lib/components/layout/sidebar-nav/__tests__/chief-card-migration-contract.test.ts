@@ -46,8 +46,10 @@ describe('Chief card migration contract', () => {
     expect(chatPanelSource).toContain('ChiefStarterPrompts');
   });
 
-  it('shares one in-flight Chief launch across mounted card hosts', () => {
-    expect(source).toContain('ensureChiefThreadCreation');
+  it('shares one selector-backed correlated Chief launch across mounted card hosts', () => {
+    expect(source).toContain('selectAgentCreationRequest');
+    expect(source).toContain('requestId: CHIEF_CREATION_REQUEST_ID');
+    expect(source).not.toContain('action.promise');
   });
 
   it('gates thread auto-start on a resolvable provider', () => {

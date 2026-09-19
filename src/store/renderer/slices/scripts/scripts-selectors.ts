@@ -5,7 +5,11 @@
 import { store } from '../../store';
 import { createDefaultRuntimeState } from '$features/scripts/types';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
-import type { ScriptOperationState, ScriptWithState } from './scripts-types';
+import type {
+  ScriptCommandOperationState,
+  ScriptOperationState,
+  ScriptWithState,
+} from './scripts-types';
 import { emptyOutputBuffer, emptyWorkspaceState } from './scripts-slice';
 import type { StoreState } from '$store/renderer/types';
 
@@ -77,6 +81,21 @@ export const selectWorkspaceScriptEntries = store.createSelector(
 
 export const selectWorkspaceScriptOperations = store.createSelector(
   (state, wsId: string): Record<string, ScriptOperationState> => getWs(state, wsId).operations,
+);
+
+export const selectWorkspaceScriptCommandOperations = store.createSelector(
+  (state, wsId: string): Record<string, ScriptCommandOperationState> =>
+    getWs(state, wsId).commandOperations,
+);
+
+export const selectScriptCommandOperation = store.createSelector(
+  (state, wsId: string, key: string): ScriptCommandOperationState =>
+    getWs(state, wsId).commandOperations[key] ?? {
+      version: 0,
+      status: 'idle',
+      result: null,
+      error: null,
+    },
 );
 
 /** Get runtime for a script in a specific workspace (parameterized). */

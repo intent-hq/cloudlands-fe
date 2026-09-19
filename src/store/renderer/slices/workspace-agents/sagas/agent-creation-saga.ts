@@ -39,6 +39,8 @@ import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors'
 import { createChiefVirtualWorkspace } from '../chief-virtual-workspace';
 import { selectAllWorkspaceAgents } from '../workspace-agents-selectors';
 import {
+  agentCreationRequestFailed,
+  agentCreationRequestSucceeded,
   createAgentFromConfigRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
@@ -368,15 +370,30 @@ function* createFromConfig(
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
     yield* put(setActiveAgentId(wsId, result.agent.id));
     yield* call(openCreatedAgent, wsId, result.agent, options);
+    if (options?.requestId) {
+      yield* put(agentCreationRequestSucceeded(wsId, options.requestId, String(result.agent.id)));
+    }
     yield* put(action.success(result.agent));
     settled = true;
   } catch (error) {
     const failure = creationError(error);
     yield* call(showCreationError, failure);
+    if (options?.requestId) {
+      yield* put(agentCreationRequestFailed(wsId, options.requestId, failure.message));
+    }
     yield* put(action.failure(failure));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
+      if (options?.requestId) {
+        yield* put(
+          agentCreationRequestFailed(
+            wsId,
+            options.requestId,
+            m.agent_creation_createFailed_error(),
+          ),
+        );
+      }
       yield* put(action.failure(new Error(m.agent_creation_createFailed_error())));
     }
   }
@@ -385,6 +402,7 @@ function* createFromConfig(
 function* launchAgent(
   action: ReturnType<typeof agentSessionLaunchAgentRequested>,
 ): SagaGenerator<void> {
+  void action.promise.catch(() => {});
   const [wsId, config, options] = action.payload;
   let settled = false;
   try {

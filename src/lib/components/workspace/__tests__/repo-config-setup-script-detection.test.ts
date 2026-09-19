@@ -37,24 +37,33 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
   return createAppStoreMockModule({
     state: () => ({
       hardwareConsole: { pttRecording: false, voiceTranscribing: false },
       workspaceCreateProgress: { byProgressId: {} },
     }),
     dispatch: mocks.dispatch,
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
   });
 });
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.savedFormState),
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(() => false),
+    selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.savedFormState),
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+    selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  }),
+);
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable(() => []),
@@ -236,6 +245,34 @@ function selectGitHubRepo(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function installInitializerDispatchMock() {
+  mocks.dispatch.mockImplementation(
+    (action: {
+      type?: string;
+      payload?: unknown[];
+      success?: (value: unknown) => unknown;
+      failure?: (error: Error) => unknown;
+    }) => {
+      if (action.type === 'workspaceInitializer/readPrefillRequested') {
+        return {
+          promise: Promise.resolve().then(() => {
+            const raw = sessionStorage.getItem('workspace-prefill');
+            sessionStorage.removeItem('workspace-prefill');
+            return raw ? JSON.parse(raw) : null;
+          }),
+        };
+      } else if (action.type === 'workspaceInitializer/readGitAvailabilityRequested') {
+        return { promise: Promise.resolve({ available: true, version: '2.44.0' }) };
+      } else if (action.type === 'workspaceInitializer/restoreNewWorkspaceDraftRequested') {
+        return { promise: Promise.resolve({ status: 'empty' }) };
+      } else if (action.type === 'workspaceInitializer/createWorkspaceRequested') {
+        return { promise: Promise.resolve(mocks.create(action.payload?.[0])) };
+      }
+      return action;
+    },
+  );
+}
+
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('./mocks/MockRichTextarea.svelte'));
@@ -245,6 +282,7 @@ warmImport(() => import('./mocks/MockRepoAndBranchPicker.svelte'));
 describe('CompactWorkspaceInitializer repo-config setup script detection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    installInitializerDispatchMock();
     sessionStorage.clear();
     mocks.savedFormState = null;
     mocks.lastUsedSelect.mockReturnValue(undefined);
@@ -400,6 +438,7 @@ describe('CompactWorkspaceInitializer modal height stability', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    installInitializerDispatchMock();
     sessionStorage.clear();
     mocks.savedFormState = null;
     mocks.lastUsedSelect.mockReturnValue(undefined);
@@ -486,6 +525,7 @@ describe('CompactWorkspaceInitializer setupScript on workspace.create (monorepo#
 
   beforeEach(() => {
     vi.clearAllMocks();
+    installInitializerDispatchMock();
     sessionStorage.clear();
     mocks.savedFormState = null;
     mocks.lastUsedSelect.mockReturnValue(undefined);

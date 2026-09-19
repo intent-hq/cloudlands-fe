@@ -27,6 +27,7 @@ import {
   actionChannel,
   all,
   call,
+  cancelled,
   delay,
   flush,
   put,
@@ -35,6 +36,7 @@ import {
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
+import { takeLatestInContext } from '../../../utils/context-saga-effects';
 
 import { appClient } from '$lib/client';
 import { INITIAL_RETRY_DELAY_MS, SNAPSHOT_TIMEOUT_MS } from '$lib/client/live/live-chat-client';
@@ -61,6 +63,10 @@ import {
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  loadChatDraftRequested,
+  listUserMessagesRequested,
+  userMessageIndexFailed,
+  userMessageIndexLoaded,
   messageBlockHydrated,
   messageBlockHydrationFailed,
   messageBlockHydrationRequested,
@@ -372,15 +378,58 @@ function* hydrateMessageBlockWorker(
   }
 }
 
+function* listUserMessagesWorker(
+  action: ReturnType<typeof listUserMessagesRequested>,
+): SagaGenerator<void> {
+  const [agentId] = action.payload;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.listUserMessages], agentId);
+    yield* put(userMessageIndexLoaded(agentId, result));
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    yield* put(userMessageIndexFailed(agentId, failure.message));
+  }
+}
+
+function* loadChatDraftWorker(
+  action: ReturnType<typeof loadChatDraftRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, agentId] = action.payload;
+  action.promise.catch(() => {});
+  let settled = false;
+  try {
+    const draft = yield* call([appClient.drafts, appClient.drafts.get], workspaceId, agentId);
+    yield* put(action.success(draft));
+    settled = true;
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error('Draft load cancelled')));
+    }
+  }
+}
+
 export function* chatReadSaga() {
   const hydrationTails: HydrationTails = new Map();
   const inFlightBlocks = new Set<string>();
   try {
+    yield* takeLatestInContext(
+      loadChatDraftRequested,
+      (action) => `${action.payload[0]}\u0000${action.payload[1]}`,
+      loadChatDraftWorker,
+    );
     yield* all([
       takeEvery(initializeChatRequested, initializeChatWorker, hydrationTails),
       takeEvery(refreshChatTranscriptRequested, refreshChatWorker, hydrationTails),
       takeEvery(chatTranscriptSnapshotApplied, snapshotRecoveryWorker),
       takeEvery(messageBlockHydrationRequested, hydrateMessageBlockWorker, inFlightBlocks),
+      takeLatestInContext(
+        listUserMessagesRequested,
+        (action) => action.payload[0],
+        listUserMessagesWorker,
+      ),
     ]);
   } finally {
     hydrationTails.clear();

@@ -2,11 +2,22 @@ import { sentryAuthClient } from '$features/sentry-auth/renderer/sentry-auth.cli
 import type { SentryProject } from '$features/sentry-auth/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { call, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  cancelled,
+  put,
+  race,
+  take,
+  takeEvery,
+  takeLatest,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 
 import {
   connectSentry,
   initializeSentryAuth,
+  loadSentryIssuesRequested,
   logoutSentry,
   setSentryAuthState,
   setSentryConnected,
@@ -15,6 +26,9 @@ import {
   setSentryLoadingProjects,
   setSentryLoggedOut,
   setSentryProjects,
+  sentryIssuesLoaded,
+  sentryIssuesLoadSettled,
+  sentryIssuesLoadStarted,
 } from '../sentry-auth-slice';
 
 const logger = createLogger('SentryAuthSaga');
@@ -74,6 +88,8 @@ function* connect(organization: string, apiToken: string): SagaGenerator<void> {
       ),
     );
     yield* put(setSentryConnecting(false));
+  } finally {
+    if (yield* cancelled()) yield* put(setSentryConnecting(false));
   }
 }
 
@@ -86,6 +102,21 @@ function* logout(): SagaGenerator<void> {
   }
 }
 
+function* loadIssues(): SagaGenerator<void> {
+  yield* put(sentryIssuesLoadStarted());
+  try {
+    const issues: Awaited<ReturnType<typeof sentryAuthClient.fetchIssues>> = yield* call([
+      sentryAuthClient,
+      sentryAuthClient.fetchIssues,
+    ]);
+    yield* put(sentryIssuesLoaded(issues));
+  } catch (error) {
+    logger.error('Failed to fetch Sentry issues', error);
+  } finally {
+    yield* put(sentryIssuesLoadSettled());
+  }
+}
+
 function* initializeSentryWorker(
   _action: ReturnType<typeof initializeSentryAuth>,
 ): SagaGenerator<void> {
@@ -93,15 +124,19 @@ function* initializeSentryWorker(
 }
 
 function* connectSentryWorker(action: ReturnType<typeof connectSentry>): SagaGenerator<void> {
-  yield* call(connect, action.payload[0], action.payload[1]);
+  yield* race({
+    completed: call(connect, action.payload[0], action.payload[1]),
+    superseded: take(logoutSentry),
+  });
 }
 
 function* logoutSentryWorker(_action: ReturnType<typeof logoutSentry>): SagaGenerator<void> {
-  yield* call(logout);
+  yield* race({ completed: call(logout), superseded: take(connectSentry) });
 }
 
 export function* sentryAuthSaga(): SagaGenerator<void> {
   yield* takeEvery(initializeSentryAuth, initializeSentryWorker);
-  yield* takeEvery(connectSentry, connectSentryWorker);
-  yield* takeEvery(logoutSentry, logoutSentryWorker);
+  yield* takeLatest(connectSentry, connectSentryWorker);
+  yield* takeLatest(logoutSentry, logoutSentryWorker);
+  yield* takeLeading(loadSentryIssuesRequested, loadIssues);
 }

@@ -27,10 +27,8 @@
     faPlus,
     faGlobe,
   } from '@fortawesome/free-solid-svg-icons';
-  import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
   import { createTranscriptQuery } from '$lib/utils/palette-transcript-search';
-  import { createLogger } from '$lib/utils/client-logger';
   import { m } from '$shared/paraglide/messages.js';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
 
@@ -95,8 +93,8 @@
     getWorkspaceActivityDisplayTime,
   } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
-
-  const logger = createLogger('CommandPalette');
+  import { selectFileNameSearch } from '$store/renderer/slices/files/files-selectors';
+  import { searchFileNamesRequested } from '$store/renderer/slices/files/files-slice';
 
   interface Props {
     isOpen: boolean;
@@ -116,6 +114,7 @@
   }: Props = $props();
 
   const workspaceIdStore = writable('');
+  const fileSearch$ = selectFileNameSearch(workspaceIdStore, 'command-palette');
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
   });
@@ -133,7 +132,7 @@
   const paletteFileMru$ = selectPaletteFileMru();
   let inputRef: HTMLInputElement | undefined = $state(undefined);
   let resultsRef: HTMLDivElement | undefined = $state(undefined);
-  let isLoadingFiles = $state(false);
+  const isLoadingFiles = $derived($fileSearch$?.loading ?? false);
   let activeFilter: PaletteFilter | null = $state(null); // Filter by type
 
   // Derived: parse search query for filter prefix (uses extracted pure function)
@@ -152,10 +151,6 @@
     activeFilter = parsedQuery.filter;
   });
 
-  // Debounce timer for file queries
-  let fileQueryTimeout: ReturnType<typeof setTimeout> | null = null;
-  // Request ID to cancel stale responses
-  let currentFileRequestId = 0;
   // RAF handle for deferred result computation
   let resultComputeRaf: number | null = null;
 
@@ -323,119 +318,36 @@
 
   // fuzzyScore is now imported from command-palette-utils
 
-  // Grouped results state (only files need async loading)
-  let groupFiles: any[] = $state([]);
+  const groupFiles = $derived.by(() => {
+    const mapped = ($fileSearch$?.files ?? []).map((path: string) => ({
+      id: path,
+      label: path.split('/').pop() ?? path,
+      path,
+      icon: faFile,
+      description: path,
+    }));
+    const q = (searchQuery || '').trim();
+    if (!q) return rankByMRU(mapped).slice(0, 8);
+    const mru = getMRUMap();
+    return mapped
+      .map((item: any) => ({
+        ...item,
+        _score: fuzzyScore(`${item.label} ${item.description}`, q),
+        _mru: mru.get(item.path) || 0,
+      }))
+      .filter((item: any) => item._score !== -Infinity)
+      .sort((a: any, b: any) => b._score - a._score || b._mru - a._mru)
+      .map(({ _score, _mru, ...item }: any) => item)
+      .slice(0, 8);
+  });
 
-  // Daemon helper to query files (search.fileNames, PROTOCOL §5.15) and map to palette items (with fuzzy/MRU)
-  async function queryFiles(pattern: string): Promise<any[]> {
-    if (!workspaceId) return [];
-    try {
-      const resp = await backendRequest<{ files?: string[] }>('search.fileNames', {
-        workspaceId,
-        pattern: (pattern || '').trim(),
-        limit: 50,
-      });
-      const files = Array.isArray(resp?.files) ? resp.files : [];
-      const mapped = files.map((path: string) => ({
-        id: path,
-        label: path.split('/').pop() ?? path,
-        path,
-        icon: faFile,
-        description: path,
-      }));
-      const q = (pattern || '').trim();
-      if (q) {
-        const mru = getMRUMap();
-        return (mapped as any[])
-          .map((m: any) => ({
-            ...m,
-            _score: fuzzyScore(`${m.label} ${m.description || m.path}`, q),
-            _mru: m.path ? mru.get(m.path) || 0 : 0,
-          }))
-          .filter((m: any) => m._score !== -Infinity)
-          .sort(
-            (a: any, b: any) =>
-              (b._score as number) - (a._score as number) ||
-              (b._mru as number) - (a._mru as number),
-          )
-
-          .map(({ _score, _mru, ...rest }: any) => rest)
-          .slice(0, 8);
-      } else {
-        return rankByMRU(mapped).slice(0, 8);
-      }
-    } catch (error) {
-      logger.error('Failed to list workspace files:', error);
-      return [];
-    }
-  }
-
-  // Debounce constant
-  const FILE_QUERY_DEBOUNCE_MS = 150;
-
-  // Keep file group in sync with current query/workspace (debounced)
   $effect(() => {
     const q = (searchQuery || '').trim();
     const wsId = workspaceId;
-
-    // Clear any pending debounce timer and invalidate in-flight requests first,
-    // including when switching into Go to Line mode.
-    if (fileQueryTimeout) {
-      clearTimeout(fileQueryTimeout);
-      fileQueryTimeout = null;
-    }
-    const requestId = ++currentFileRequestId;
-
-    // Skip file queries in Go to Line mode
-    if (q.startsWith(':')) {
-      untrack(() => {
-        groupFiles = [];
-        isLoadingFiles = false;
-      });
-      return;
-    }
-
-    // If no workspace, clear files immediately (untracked write)
-    if (!wsId) {
-      untrack(() => {
-        groupFiles = [];
-        isLoadingFiles = false;
-      });
-      return;
-    }
-
-    // Set loading state immediately when query changes (untracked write)
-    untrack(() => {
-      isLoadingFiles = true;
-    });
-
-    // Debounce the actual IPC call
-    fileQueryTimeout = setTimeout(async () => {
-      try {
-        const files = await queryFiles(q);
-        // Only update if this is still the current request (untracked to avoid effect loop)
-        if (requestId === currentFileRequestId) {
-          untrack(() => {
-            groupFiles = files;
-            isLoadingFiles = false;
-          });
-        }
-      } catch {
-        if (requestId === currentFileRequestId) {
-          untrack(() => {
-            isLoadingFiles = false;
-          });
-        }
-      }
-    }, FILE_QUERY_DEBOUNCE_MS);
-
-    return () => {
-      // Cleanup: cancel pending timeout
-      if (fileQueryTimeout) {
-        clearTimeout(fileQueryTimeout);
-        fileQueryTimeout = null;
-      }
-    };
+    if (!wsId) return;
+    appStore.dispatch(
+      searchFileNamesRequested(wsId, 'command-palette', q.startsWith(':') ? '' : q, 50, 150),
+    );
   });
 
   // Transcript search state (search.messages, PROTOCOL §5.15); the debounced
@@ -847,8 +759,6 @@
       inputRef.focus();
       untrack(() => {
         searchQuery = initialQuery || '';
-        groupFiles = [];
-        isLoadingFiles = false;
       });
     }
   });

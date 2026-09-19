@@ -1,21 +1,155 @@
 import { buffers, channel, type Channel } from 'redux-saga';
-import { all, call, delay, put, take, takeEvery } from 'typed-redux-saga';
+import { actionChannel, all, call, delay, put, take, takeEvery } from 'typed-redux-saga';
 
 import { appClient, type AppSettingChange } from '$lib/client';
+import { notify } from '$lib/components/patterns/notify';
+import { invoke } from '$lib/electron-bridge';
 import { isDaemonErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
+import { checkPiMcpAdapterInstalled, installPiMcpAdapter } from '$features/pi/pi-models.client';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { m } from '$shared/paraglide/messages.js';
 import { resolveProviderEnabled } from '$shared/provider-catalog';
+import { checkSingleProviderSuccess } from '../../agent-availability/agent-availability-slice';
 import { selectProviderCatalogEntry } from '../../provider-catalog/provider-catalog-selectors';
 import { selectEnabledProviders } from '../provider-settings-selectors';
 import {
   activeProviderPersistRejected,
+  checkPiMcpAdapterRequested,
   enablementPersistRejected,
+  installPiMcpAdapterRequested,
+  loadProviderPathsRequested,
+  piMcpAdapterInstallComplete,
+  piMcpAdapterInstallFailed,
+  piMcpAdapterStatusFailed,
+  piMcpAdapterStatusLoaded,
+  providerPathsFailed,
+  providerPathsLoaded,
+  providerPathSaved,
+  providerPathSaveFailed,
+  saveProviderPathRequested,
   setActiveProvider,
   setProviderEnabled,
   toggleProvider,
 } from '../provider-settings-slice';
 
 const logger = createLogger('ProviderSettingsSaga');
+
+interface ProviderPathsResult {
+  success: boolean;
+  data?: {
+    paths: Record<string, string | null>;
+    secondaryPaths: Record<string, string | null>;
+  };
+  error?: string;
+}
+
+function stringPaths(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  );
+}
+
+function* loadProviderPathsWorker() {
+  try {
+    const entry = yield* call([appClient.settings, appClient.settings.get], 'providers.paths');
+    const result: ProviderPathsResult = yield* call(
+      invoke<ProviderPathsResult>,
+      PROVIDERS_CHANNELS.GET_PATHS,
+    );
+    if (!result.success || !result.data) {
+      throw new Error(result.error ?? m.settings_providers_unknownError());
+    }
+    yield* put(
+      providerPathsLoaded(
+        stringPaths(entry?.value),
+        stringPaths(result.data.paths),
+        stringPaths(result.data.secondaryPaths),
+      ),
+    );
+  } catch (error) {
+    logger.error('Failed to load provider paths', { error });
+    yield* put(
+      providerPathsFailed(
+        error instanceof Error ? error.message : m.settings_providers_unknownError(),
+      ),
+    );
+  }
+}
+
+function* saveProviderPathWorker(action: ReturnType<typeof saveProviderPathRequested>) {
+  const [providerId, path, requestId] = action.payload;
+  try {
+    const entry = yield* call([appClient.settings, appClient.settings.get], 'providers.paths');
+    const existing = stringPaths(entry?.value);
+    yield* call(
+      [appClient.settings, appClient.settings.update],
+      [{ path: 'providers.paths', value: { ...existing, [providerId]: path } }],
+    );
+    yield* put(providerPathSaved(providerId, path, requestId));
+  } catch (error) {
+    yield* put(
+      providerPathSaveFailed(
+        providerId,
+        requestId,
+        error instanceof Error ? error.message : m.settings_providers_unknownError(),
+      ),
+    );
+  }
+}
+
+function* persistProviderPathQueue() {
+  const saves = yield* actionChannel(saveProviderPathRequested, buffers.expanding());
+  try {
+    while (true) {
+      const action = yield* take(saves);
+      yield* call(saveProviderPathWorker, action);
+    }
+  } finally {
+    saves.close();
+  }
+}
+
+function* checkPiMcpAdapterWorker() {
+  try {
+    const installed = yield* call(checkPiMcpAdapterInstalled);
+    yield* put(piMcpAdapterStatusLoaded(installed));
+  } catch (error) {
+    logger.warn('Failed to check Pi MCP adapter status', { error });
+    yield* put(
+      piMcpAdapterStatusFailed(
+        error instanceof Error ? error.message : m.settings_providers_unknownError(),
+      ),
+    );
+  }
+}
+
+function* installPiMcpAdapterWorker() {
+  try {
+    const result = yield* call(installPiMcpAdapter);
+    if (!result.success) {
+      throw new Error(result.error ?? m.settings_providers_unknownError());
+    }
+    yield* call(checkPiMcpAdapterWorker);
+    yield* put(piMcpAdapterInstallComplete());
+    yield* call([notify, notify.success], m.settings_providers_piAdapterInstalled());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : m.settings_providers_unknownError();
+    logger.error('Failed to install pi-mcp-adapter', { error });
+    yield* put(piMcpAdapterInstallFailed(message));
+    yield* call([notify, notify.error], m.settings_providers_piAdapterInstallFailed(), {
+      description: message,
+    });
+  }
+}
+
+function* checkPiAfterProviderProbe(action: ReturnType<typeof checkSingleProviderSuccess>) {
+  const [providerId, status] = action.payload;
+  if (providerId === 'pi' && status.available) yield* put(checkPiMcpAdapterRequested());
+}
 
 type ProviderSettingsUpdate = {
   activeProviderId?: string;
@@ -162,6 +296,11 @@ export function* providerSettingsSaga() {
       takeEvery(setActiveProvider, queueActiveProviderWorker, updates),
       takeEvery(toggleProvider, queueToggleProviderWorker, updates),
       takeEvery(setProviderEnabled, queueSetProviderEnabledWorker, updates),
+      takeEvery(loadProviderPathsRequested, loadProviderPathsWorker),
+      call(persistProviderPathQueue),
+      takeEvery(checkPiMcpAdapterRequested, checkPiMcpAdapterWorker),
+      takeEvery(installPiMcpAdapterRequested, installPiMcpAdapterWorker),
+      takeEvery(checkSingleProviderSuccess, checkPiAfterProviderProbe),
     ]);
   } finally {
     updates.close();

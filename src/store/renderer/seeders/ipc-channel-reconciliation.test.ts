@@ -704,9 +704,11 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
     // Accept-changes refreshes now ride the daemon event bridge instead of a
     // duplicate renderer `git:status-changed` listener.
     expect(listened.has('git:status-changed')).toBe(false);
-    // Remaining literal listener sites continue to exercise both direct and
-    // multiline generic `listenSync` calls.
-    expect(listened.has('line-attribution:updated')).toBe(true);
+    // Line attribution updates now enter through the daemon event bridge and
+    // dispatch directly to Redux instead of a duplicate renderer listener.
+    expect(listened.has('line-attribution:updated')).toBe(false);
+    // Remaining literal listener sites continue to exercise multiline generic
+    // `listenSync` calls.
     expect(listened.has('terminal:created')).toBe(true);
     // Bare `on()` import call site (active-streams-tracker.ts).
     expect(listened.has('agent:status-changed')).toBe(true);

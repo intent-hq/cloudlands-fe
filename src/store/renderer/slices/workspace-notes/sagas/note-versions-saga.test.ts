@@ -1,11 +1,8 @@
 import { runSaga, stdChannel } from 'redux-saga';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { all, fork } from 'typed-redux-saga';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// REAL write service against the REAL configured store: the in-flight save it
-// tracks is what the saga must settle before issuing the restore RPC.
-import { hasPendingNoteContent, updateNoteContent } from '$features/notes/notes-write-service';
 import { appClient } from '$lib/client';
-import { store as appStore } from '$store/renderer/store';
 import {
   AuthorType,
   ContentType,
@@ -22,9 +19,11 @@ import {
   fetchNoteVersions,
   loadWorkspaceNotesSucceeded,
   restoreNoteVersion,
+  updateNoteContent,
   workspaceNotesReducer,
 } from '../workspace-notes-slice';
 import { noteVersionsSaga } from './note-versions-saga';
+import { notesWriteSaga } from './notes-write-saga';
 
 const WS = 'ws-note-versions';
 const NOTE = 'note-1';
@@ -63,7 +62,11 @@ function note(overrides: Partial<Note> = {}): Note {
   };
 }
 
-function harness(seed: Note | Note[] = note()) {
+function* noteVersionsWithWritesSaga() {
+  yield* all([fork(noteVersionsSaga), fork(notesWriteSaga)]);
+}
+
+function harness(seed: Note | Note[] = note(), withWrites = false) {
   const channel = stdChannel();
   const actions: unknown[] = [];
   let workspaceNotes = workspaceNotesReducer(
@@ -73,19 +76,17 @@ function harness(seed: Note | Note[] = note()) {
   const dispatch = (action: Parameters<typeof workspaceNotesReducer>[1]) => {
     workspaceNotes = workspaceNotesReducer(workspaceNotes, action);
     actions.push(action);
+    channel.put(action);
     return action;
   };
   const task = runSaga(
     { channel, dispatch, getState: () => ({ workspaceNotes }) },
-    noteVersionsSaga,
+    withWrites ? noteVersionsWithWritesSaga : noteVersionsSaga,
   );
   return { actions, channel, getState: () => workspaceNotes, task };
 }
 
 describe('noteVersionsSaga', () => {
-  beforeAll(() => {
-    appStore.init();
-  });
   afterEach(() => vi.restoreAllMocks());
 
   it('uses the exact fetch request, preserves ordering, and drops response-only fields', async () => {
@@ -200,42 +201,33 @@ describe('noteVersionsSaga', () => {
   // a still-debounced draft — before issuing note.restoreVersion, whichever
   // caller dispatched the action.
   it('does not issue the restore RPC while a content save is still in flight', async () => {
-    const WS_SVC = 'ws-note-versions-svc';
-    appStore.dispatch(
-      loadWorkspaceNotesSucceeded([WS_SVC], {
-        [WS_SVC]: [note({ workspaceId: WorkspaceId(WS_SVC), rev: 1 })],
-      }),
-    );
     let resolveSave!: (v: unknown) => void;
     const setContent = vi.spyOn(appClient.notes, 'setContent').mockReturnValueOnce(
       new Promise((resolve) => {
         resolveSave = resolve;
       }) as never,
     );
-    const restored = note({ workspaceId: WorkspaceId(WS_SVC), content: 'restored body', rev: 3 });
+    const restored = note({ content: 'restored body', rev: 3 });
     const restore = vi
       .spyOn(appClient.notes, 'restoreVersion')
       .mockResolvedValue({ success: true, note: restored });
     vi.spyOn(appClient.notes, 'listVersions').mockResolvedValue([]);
-    const run = harness(note({ workspaceId: WorkspaceId(WS_SVC) }));
+    const run = harness(note({ rev: 1 }), true);
 
-    updateNoteContent(WS_SVC, NOTE, 'edited', { immediate: true });
+    run.channel.put(updateNoteContent(WS, NOTE, 'edited', { immediate: true }));
     await settle();
     expect(setContent).toHaveBeenCalledTimes(1);
-    expect(hasPendingNoteContent(WS_SVC, NOTE)).toBe(true);
 
-    run.channel.put(restoreNoteVersion(WS_SVC, NOTE, 'version-1'));
+    run.channel.put(restoreNoteVersion(WS, NOTE, 'version-1'));
     await settle();
-    expect(hasPendingNoteContent(WS_SVC, NOTE)).toBe(true);
     expect(restore).not.toHaveBeenCalled();
 
     resolveSave({ success: true, newContent: 'edited', noteRev: 2 });
     await settle();
     await settle();
 
-    expect(hasPendingNoteContent(WS_SVC, NOTE)).toBe(false);
-    expect(restore.mock.calls).toEqual([[WS_SVC, NOTE, 'version-1']]);
-    expect(run.actions).toContainEqual(applyNoteUpdated(WS_SVC, NOTE, restored));
+    expect(restore.mock.calls).toEqual([[WS, NOTE, 'version-1']]);
+    expect(run.actions).toContainEqual(applyNoteUpdated(WS, NOTE, restored));
     run.task.cancel();
     await run.task.toPromise();
   });

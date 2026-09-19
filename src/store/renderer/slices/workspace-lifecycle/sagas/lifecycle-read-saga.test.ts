@@ -62,6 +62,7 @@ import { hydrateTaskAgentAssociationsRequested } from '../../task-agent-associat
 import { hydrateTerminalsRequested } from '../../terminals/terminals-slice';
 import { fetchWorkspaceTokenUsage } from '../../token-usage/token-usage-slice';
 import {
+  agentsHydrationSettled,
   fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setAgentsLoaded,
@@ -1561,6 +1562,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setAgents', payload: [WS, [background, kept]] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[background, kept]] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-keep'] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });
@@ -1760,6 +1762,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });
@@ -2024,6 +2027,9 @@ describe('lifecycleReadSaga', () => {
 
     expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions.filter((action) => action.type === setAgentsLoaded.type)).toHaveLength(2);
+    expect(run.actions.filter((action) => action.type === agentsHydrationSettled.type)).toEqual([
+      agentsHydrationSettled(WS),
+    ]);
     await stop(run.task);
   });
 
@@ -2053,6 +2059,7 @@ describe('lifecycleReadSaga', () => {
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });
@@ -2079,15 +2086,17 @@ describe('lifecycleReadSaga', () => {
     await settle();
 
     expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS]]);
-    expect(run.actions).toEqual([]);
+    expect(run.actions).toEqual([agentsHydrationSettled(WS)]);
 
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
     expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [WS]]);
     expect(run.actions).toEqual([
+      agentsHydrationSettled(WS),
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });

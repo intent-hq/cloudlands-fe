@@ -99,6 +99,11 @@ const mocks = vi.hoisted(() => {
     transcriptSnapshotMeta: mutableReadable<
       { seq: number; truncated: boolean; totalMessages: number; resumed?: boolean } | undefined
     >(undefined),
+    userMessageIndex: mutableReadable<unknown>(undefined),
+    chatDraftOperations: mutableReadable({
+      load: { status: 'idle', requestId: null, data: null, error: null },
+      write: { status: 'idle', requestId: null, data: null, error: null },
+    }),
     fetchingOlderHistory: mutableReadable(false),
     fetchingHistorySeek: mutableReadable(false),
     pendingBrowserCaptures: mutableReadable<unknown[]>([]),
@@ -199,6 +204,13 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatQuotaExceeded: Object.assign(() => mocks.chatQuotaExceeded, { select: () => null }),
   selectChatReceivedFirstChunk: mocks.selector(false),
   selectChatStatusEvents: mocks.selector([]),
+  selectChatDraftOperations: Object.assign(() => mocks.chatDraftOperations, {
+    select: () => ({
+      load: { status: 'idle', requestId: null, data: null, error: null },
+      write: { status: 'idle', requestId: null, data: null, error: null },
+    }),
+  }),
+  selectQueuedMessageEditOperations: mocks.selector({}),
   selectChatStreamingStartTime: mocks.selector(null),
   selectFetchingGapFill: mocks.selector(false),
   selectFetchingHistorySeek: Object.assign(() => mocks.fetchingHistorySeek, {
@@ -218,6 +230,9 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
     select: () => true,
   }),
   selectTranscriptSnapshotMeta: Object.assign(() => mocks.transcriptSnapshotMeta, {
+    select: () => undefined,
+  }),
+  selectUserMessageIndex: Object.assign(() => mocks.userMessageIndex, {
     select: () => undefined,
   }),
 }));
@@ -696,6 +711,10 @@ beforeEach(() => {
   clearChatScrollCacheForTests();
   clearAllChatInterestLeases();
   mocks.draftSet.mockResolvedValue({ ok: true, updatedAt: '2026-01-01T00:00:00.000Z' });
+  mocks.chatDraftOperations.set({
+    load: { status: 'idle', requestId: null, data: null, error: null },
+    write: { status: 'idle', requestId: null, data: null, error: null },
+  });
   mocks.listUserMessages.mockResolvedValue({ ok: true, items: [], total: 0 });
   for (const key of Object.keys(mocks.chatDrafts)) delete mocks.chatDrafts[key];
   for (const key of Object.keys(mocks.agentSubscriptionUIEntries)) {
@@ -713,6 +732,67 @@ beforeEach(() => {
         (appStore as unknown as { emitState(): void }).emitState();
       }
     }
+    if (action?.type === 'chatState/loadChatDraftRequested') {
+      const [workspaceId, agentId, requestId] = action.payload as [string, string, number];
+      mocks.chatDraftOperations.set({
+        load: { status: 'loading', requestId, data: null, error: null },
+        write: { status: 'idle', requestId: null, data: null, error: null },
+      });
+      void Promise.resolve(mocks.draftGet(workspaceId, agentId)).then(
+        (data) =>
+          mocks.chatDraftOperations.set({
+            load: { status: 'success', requestId, data, error: null },
+            write: { status: 'idle', requestId: null, data: null, error: null },
+          }),
+        (error) =>
+          mocks.chatDraftOperations.set({
+            load: { status: 'error', requestId, data: null, error: String(error) },
+            write: { status: 'idle', requestId: null, data: null, error: null },
+          }),
+      );
+      return action;
+    }
+    if (
+      action?.type === 'chatState/saveChatDraftRequested' ||
+      action?.type === 'chatState/flushChatDraftRequested'
+    ) {
+      const [workspaceId, agentId, draft, attachments, requestId] = action.payload as [
+        string,
+        string,
+        string,
+        unknown,
+        number,
+      ];
+      const load = {
+        status: 'idle' as const,
+        requestId: null,
+        data: null,
+        error: null,
+      };
+      mocks.chatDraftOperations.set({
+        load,
+        write: { status: 'loading', requestId, data: null, error: null },
+      });
+      void Promise.resolve(mocks.draftSet(workspaceId, agentId, draft, attachments)).then(
+        (data) =>
+          mocks.chatDraftOperations.set({
+            load,
+            write: { status: 'success', requestId, data, error: null },
+          }),
+        (error) =>
+          mocks.chatDraftOperations.set({
+            load,
+            write: { status: 'error', requestId, data: null, error: String(error) },
+          }),
+      );
+      return action;
+    }
+    if (action?.type === 'chatState/clearChatDraftRequested') {
+      const [workspaceId, agentId] = action.payload as [string, string];
+      void Promise.resolve(mocks.draftClear(workspaceId, agentId)).catch(() => {});
+      return action;
+    }
+    if (action?.type === 'chatState/listUserMessagesRequested') return action;
     if (action?.type !== 'transientUi/setChatDraft') return action;
     const [workspaceId, agentId, draft] = action.payload as [string, string, string];
     const key = `${workspaceId}::${agentId}`;
@@ -732,6 +812,7 @@ beforeEach(() => {
   mocks.awaitingSwitchBackSnapshot.set(false);
   mocks.transcriptHydration.set('settled');
   mocks.transcriptHydratedOnce.set(true);
+  mocks.userMessageIndex.set(undefined);
   mocks.transcriptSnapshotMeta.set(undefined);
   mocks.fetchingOlderHistory.set(false);
   mocks.fetchingHistorySeek.set(false);
@@ -3449,8 +3530,6 @@ describe('ChatPanel mounted lifecycle', () => {
         contentBlocks: [{ type: 'text', text: 'User prompt' }],
       },
     ]);
-    const pending = deferred<{ ok: true; items: unknown[]; total: number }>();
-    mocks.listUserMessages.mockReturnValue(pending.promise);
     const onNavigationStateChange = vi.fn();
     const view = render(ChatPanel, {
       props: {
@@ -3463,20 +3542,28 @@ describe('ChatPanel mounted lifecycle', () => {
 
     view.component.refreshUserMessageIndex();
     await tick();
-    expect(mocks.listUserMessages).toHaveBeenCalledWith('agent-a');
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'chatState/listUserMessagesRequested',
+      payload: ['agent-a'],
+    });
+    mocks.userMessageIndex.set({ data: null, loading: true, error: null });
+    await tick();
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ isLoadingUserMessageIndex: true }),
     );
 
-    pending.resolve({
-      ok: true,
-      items: [
-        { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
-        { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
-      ],
-      total: 2,
+    mocks.userMessageIndex.set({
+      data: {
+        ok: true,
+        items: [
+          { id: 'older-1', preview: 'Older prompt', createdAt: '2025-12-31T00:00:00.000Z' },
+          { id: 'message-1', preview: 'User prompt', createdAt: '2026-01-01T00:00:00.000Z' },
+        ],
+        total: 2,
+      },
+      loading: false,
+      error: null,
     });
-    await vi.advanceTimersByTimeAsync(0);
     await tick();
     expect(onNavigationStateChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -3490,8 +3577,11 @@ describe('ChatPanel mounted lifecycle', () => {
 
     // Reopen with a cached index: single-flight refresh must not re-report loading.
     onNavigationStateChange.mockClear();
-    mocks.listUserMessages.mockClear();
-    mocks.listUserMessages.mockReturnValue(new Promise(() => {}));
+    mocks.userMessageIndex.set({
+      data: { ok: true, items: [], total: 0 },
+      loading: true,
+      error: null,
+    });
     view.component.refreshUserMessageIndex();
     await tick();
     expect(
@@ -4202,9 +4292,7 @@ describe('ChatPanel mounted lifecycle', () => {
     mocks.agentMessages.set([
       { id: 'm1', role: 'assistant', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' },
     ]);
-    // The lightweight store mock reads selector-store arguments once, before
-    // EventSubscriptionsCard's effects populate the workspace and agent IDs.
-    mocks.agentSubscriptionUIEntries[':'] = {
+    mocks.agentSubscriptionUIEntries['workspace-a:agent-a'] = {
       subscriptions: [],
       delegationGroups: [],
       agentStatuses: {},

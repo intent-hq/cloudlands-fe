@@ -6,15 +6,17 @@ import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-
 import { m } from '$shared/paraglide/messages.js';
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
-import type { FileNode } from '$shared/types';
 
 const {
   actionMocks,
   createMockSelector,
   dispatchMock,
   applyExternalFileContentToMockState,
+  flushMockSelectors,
   mockReduxState,
   resetMockReduxState,
+  deleteWithUndoMock,
+  reversibleOutcomes,
 } = vi.hoisted(() => {
   type FileEntry = {
     localContent: string | null;
@@ -29,6 +31,20 @@ const {
 
   type ActiveSelector = { update: () => void };
   const activeSelectors: ActiveSelector[] = [];
+  const reversibleOutcomes: string[] = [];
+  const deleteWithUndoMock = vi.fn(
+    async (_itemName: string, action: () => Promise<void> | void) => {
+      try {
+        await action();
+        reversibleOutcomes.push('success');
+        return true;
+      } catch (error) {
+        reversibleOutcomes.push(`error:${error instanceof Error ? error.message : String(error)}`);
+        return false;
+      }
+    },
+  );
+  let deleteRequestSequence = 0;
 
   const mockReduxState = {
     workspace: {
@@ -37,7 +53,22 @@ const {
       repositoryPath: '/repo',
     },
     files: {} as Record<string, FileEntry>,
+    mediaResolutions: {} as Record<
+      string,
+      { requestedPath: string; resolvedPath: string | null; loading: boolean; error: string | null }
+    >,
+    mediaResolutionTargets: {} as Record<string, string>,
+    fileDeleteOperations: {} as Record<
+      string,
+      {
+        requestId: string;
+        path: string;
+        status: 'loading' | 'success' | 'error';
+        error: string | null;
+      }
+    >,
     fileTrackingChanges: [] as unknown[],
+    gitDiffReads: {} as Record<string, { data: unknown[]; loading: boolean; error: string | null }>,
     lineWrapping: true,
     diffIndicators: false,
   };
@@ -60,9 +91,15 @@ const {
         lastUpdated: 0,
       },
     };
+    mockReduxState.mediaResolutions = {};
+    mockReduxState.mediaResolutionTargets = {};
+    mockReduxState.fileDeleteOperations = {};
     mockReduxState.fileTrackingChanges = [];
+    mockReduxState.gitDiffReads = {};
     mockReduxState.lineWrapping = true;
     mockReduxState.diffIndicators = false;
+    reversibleOutcomes.splice(0, reversibleOutcomes.length);
+    deleteRequestSequence = 0;
   }
 
   function applyExternalFileContentToMockState(path: string, content: string) {
@@ -135,6 +172,20 @@ const {
     saveFileContentRequested: makeAction('files/saveFileContentRequested'),
     updateFileContent: makeAction('files/updateFileContent'),
     removeFileContentEntry: makeAction('files/removeFileContentEntry'),
+    resolveWorkspaceMediaRequested: makeAction('files/resolveWorkspaceMediaRequested'),
+    deleteLegacyFileRequested: vi.fn(
+      (workspaceId: string, path: string, tabId?: string, requestId?: string) => ({
+        type: 'files/deleteLegacyFileRequested',
+        payload: [
+          workspaceId,
+          path,
+          tabId,
+          requestId ?? `delete-request-${++deleteRequestSequence}`,
+        ],
+      }),
+    ),
+    clearLegacyFileDeleteOperation: makeAction('files/clearLegacyFileDeleteOperation'),
+    loadGitDiffs: makeAction('git/loadDiffs'),
     updateFileTabPath: makeAction('panelLayout/updateFileTabPath'),
   };
 
@@ -155,6 +206,36 @@ const {
       };
       flushMockSelectors();
     }
+    if (action.type === 'files/resolveWorkspaceMediaRequested') {
+      const [workspaceId, resolutionId, requestedPath, sourcePath, tabId] = action.payload as [
+        string,
+        string,
+        string,
+        string,
+        string,
+      ];
+      const resolvedPath = mockReduxState.mediaResolutionTargets[requestedPath] ?? requestedPath;
+      if (resolvedPath !== requestedPath) {
+        actionMocks.updateFileTabPath(workspaceId, sourcePath, resolvedPath, tabId);
+      } else {
+        mockReduxState.mediaResolutions[resolutionId] = {
+          requestedPath,
+          resolvedPath,
+          loading: false,
+          error: null,
+        };
+        flushMockSelectors();
+      }
+    }
+    if (action.type === 'git/loadDiffs') {
+      const [, options] = action.payload as [string, { path: string; staged: boolean }];
+      mockReduxState.gitDiffReads[JSON.stringify(options)] = {
+        data: [],
+        loading: true,
+        error: null,
+      };
+      flushMockSelectors();
+    }
     return action;
   });
 
@@ -165,8 +246,11 @@ const {
     applyExternalFileContentToMockState,
     createMockSelector,
     dispatchMock,
+    flushMockSelectors,
     mockReduxState,
     resetMockReduxState,
+    deleteWithUndoMock,
+    reversibleOutcomes,
   };
 });
 
@@ -184,6 +268,8 @@ vi.mock('$lib/client/live/backend-transport', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/client/live/backend-transport')>();
   return { ...actual, backendRequest: vi.fn() };
 });
+
+vi.mock('$lib/utils/reversible-actions', () => ({ deleteWithUndo: deleteWithUndoMock }));
 
 vi.mock('$store/renderer/slices/files/files-selectors', () => ({
   selectFileContent: createMockSelector((_wsId: string, path: string | null | undefined) =>
@@ -212,9 +298,24 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
     (_wsId: string, path: string | null | undefined) =>
       path ? (mockReduxState.files[path]?.notFoundCandidates ?? null) : null,
   ),
+  selectWorkspaceMediaResolution: createMockSelector(
+    (_wsId: string, resolutionId: string) => mockReduxState.mediaResolutions[resolutionId],
+  ),
+  selectLegacyFileDeleteOperation: createMockSelector(
+    (_wsId: string, tabId: string) => mockReduxState.fileDeleteOperations[tabId],
+  ),
 }));
 
 vi.mock('$store/renderer/slices/files/files-slice', () => actionMocks);
+
+vi.mock('$store/renderer/slices/git/git-slice', () => ({ loadGitDiffs: actionMocks.loadGitDiffs }));
+
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  selectGitDiffRead: createMockSelector(
+    (_wsId: string, options: { path: string; staged: boolean } | undefined) =>
+      options ? mockReduxState.gitDiffReads[JSON.stringify(options)] : undefined,
+  ),
+}));
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: createMockSelector((wsId: string) =>
@@ -315,27 +416,6 @@ describe('FileTabType Redux integration', () => {
     });
   }
 
-  const fileNode = (name: string): FileNode => ({ name, path: name, type: 'file' });
-  const directoryNode = (name: string): FileNode => ({ name, path: name, type: 'directory' });
-
-  function mockIgnoredArtifacts() {
-    return vi
-      .spyOn(appClient.files, 'listDirectory')
-      .mockImplementation(async (_workspaceId, path) => {
-        if (path === '.demo-artifacts') {
-          return [directoryNode('20260824T234627Z-frontend-preview')];
-        }
-        if (path === '.demo-artifacts/20260824T234627Z-frontend-preview') {
-          return [
-            fileNode('frontend-preview.png'),
-            fileNode('frontend-preview.gif'),
-            fileNode('frontend-preview.webm'),
-          ];
-        }
-        return [];
-      });
-  }
-
   it('groups editor presentation toggles into one view settings menu', async () => {
     renderFileTab();
 
@@ -361,6 +441,72 @@ describe('FileTabType Redux integration', () => {
       type: 'uiLayout/toggleDiffIndicators',
       payload: [],
     });
+  });
+
+  async function requestFileDeletion() {
+    renderFileTab();
+    await screen.findByTestId('code-editor');
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() }),
+    );
+    await waitFor(() => expect(actionMocks.deleteLegacyFileRequested).toHaveBeenCalledTimes(1));
+    return actionMocks.deleteLegacyFileRequested.mock.results[0].value.payload[3] as string;
+  }
+
+  it('closes and records reversible success only after matching deletion success', async () => {
+    const requestId = await requestFileDeletion();
+
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'panelLayout/closeTab' }),
+    );
+    expect(reversibleOutcomes).toEqual([]);
+
+    mockReduxState.fileDeleteOperations[fileTab.id] = {
+      requestId: 'stale-request',
+      path: fileTab.filePath!,
+      status: 'success',
+      error: null,
+    };
+    flushMockSelectors();
+    await Promise.resolve();
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'panelLayout/closeTab' }),
+    );
+    expect(reversibleOutcomes).toEqual([]);
+
+    mockReduxState.fileDeleteOperations[fileTab.id] = {
+      requestId,
+      path: fileTab.filePath!,
+      status: 'success',
+      error: null,
+    };
+    flushMockSelectors();
+
+    await waitFor(() => expect(reversibleOutcomes).toEqual(['success']));
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: 'panelLayout/closeTab',
+      payload: ['ws-1', fileTab.id],
+    });
+  });
+
+  it('preserves the tab and file state when matching deletion fails', async () => {
+    const originalFile = mockReduxState.files[fileTab.filePath!];
+    const requestId = await requestFileDeletion();
+
+    mockReduxState.fileDeleteOperations[fileTab.id] = {
+      requestId,
+      path: fileTab.filePath!,
+      status: 'error',
+      error: 'permission denied',
+    };
+    flushMockSelectors();
+
+    await waitFor(() => expect(reversibleOutcomes).toEqual(['error:permission denied']));
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'panelLayout/closeTab' }),
+    );
+    expect(mockReduxState.files[fileTab.filePath!]).toBe(originalFile);
   });
 
   it.each([
@@ -419,6 +565,53 @@ describe('FileTabType Redux integration', () => {
       type: 'files/loadFileContentRequested',
       payload: ['ws-1', 'src/main.ts', 'src/main.ts'],
     });
+  });
+
+  it('renders line indicators from the keyed Redux git-diff result', async () => {
+    mockReduxState.fileTrackingChanges = [
+      {
+        id: 'change-1',
+        file: 'src/main.ts',
+        relativePath: 'src/main.ts',
+        stage: 'unstaged',
+      },
+    ];
+    mockReduxState.diffIndicators = true;
+    renderFileTab();
+
+    await waitFor(() =>
+      expect(actionMocks.loadGitDiffs).toHaveBeenCalledWith('ws-1', {
+        path: 'src/main.ts',
+        staged: false,
+      }),
+    );
+
+    mockReduxState.gitDiffReads[JSON.stringify({ path: 'src/main.ts', staged: false })] = {
+      data: [
+        {
+          file: 'src/main.ts',
+          chunks: [
+            {
+              oldStart: 1,
+              oldLines: 1,
+              newStart: 1,
+              newLines: 2,
+              lines: [
+                { type: 'Context', content: 'before' },
+                { type: 'Addition', content: 'after' },
+              ],
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+    };
+    flushMockSelectors();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('code-editor').getAttribute('data-line-change-count')).toBe('1'),
+    );
   });
 
   it('renders markdown files in a read-only preview by default', async () => {
@@ -629,14 +822,7 @@ describe('FileTabType Redux integration', () => {
   ])(
     'retargets noncanonical media %s before rendering its final binary URL',
     async (requestedPath, resolvedPath) => {
-      const list = mockIgnoredArtifacts();
-      vi.mocked(backendRequest).mockImplementation(async (method, params) => {
-        if (method === 'file.stat') {
-          if ((params as { path: string }).path === resolvedPath) return { isFile: true };
-          throw new Error('not found');
-        }
-        return { files: [] };
-      });
+      mockReduxState.mediaResolutionTargets[requestedPath] = resolvedPath;
       const tab = {
         ...fileTab,
         id: `tab-${requestedPath}`,
@@ -666,23 +852,23 @@ describe('FileTabType Redux integration', () => {
       expect(viewer.getAttribute('data-file-path')).toBe(resolvedPath);
       expect(viewer.getAttribute('data-source-url')).toBe(`workspace-file://ws-1/${resolvedPath}`);
       expect(actionMocks.updateFileTabPath).toHaveBeenCalledTimes(1);
-      expect(list.mock.calls.every(([workspaceId]) => workspaceId === 'ws-1')).toBe(true);
       expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
     },
   );
 
   it('preserves an exact root-level media file without suffix retargeting', async () => {
-    const list = vi.spyOn(appClient.files, 'listDirectory');
     renderFileTab({ ...fileTab, id: 'tab-root-png', title: 'logo.png', filePath: 'logo.png' });
 
     expect((await screen.findByTestId('file-viewer')).getAttribute('data-source-url')).toBe(
       'workspace-file://ws-1/logo.png',
     );
-    expect(backendRequest).toHaveBeenCalledWith('file.stat', {
-      workspaceId: 'ws-1',
-      path: 'logo.png',
-    });
-    expect(list).not.toHaveBeenCalled();
+    expect(actionMocks.resolveWorkspaceMediaRequested).toHaveBeenCalledWith(
+      'ws-1',
+      'tab-root-png',
+      'logo.png',
+      'logo.png',
+      'tab-root-png',
+    );
     expect(actionMocks.updateFileTabPath).not.toHaveBeenCalled();
     expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
   });
@@ -705,19 +891,6 @@ describe('FileTabType Redux integration', () => {
   it.each(['missing', 'ambiguous', 'truncated'])(
     'does not retarget a %s media resolution result',
     async (outcome) => {
-      vi.mocked(backendRequest).mockRejectedValue(new Error('not found'));
-      vi.spyOn(appClient.files, 'listDirectory').mockImplementation(async (_workspaceId, path) => {
-        if (outcome === 'missing') return [];
-        if (outcome === 'truncated' && path === '.demo-artifacts') {
-          return Array.from({ length: 257 }, (_, index) => fileNode(`capture-${index}.png`));
-        }
-        if (path === '.demo-artifacts') return [directoryNode('one'), directoryNode('two')];
-        if (path === '.demo-artifacts/one' || path === '.demo-artifacts/two') {
-          return [fileNode('preview.png')];
-        }
-        return [];
-      });
-
       renderFileTab({
         ...fileTab,
         id: `tab-${outcome}`,
@@ -733,36 +906,23 @@ describe('FileTabType Redux integration', () => {
     },
   );
 
-  it('ignores a late exact-path result after the media tab changes', async () => {
-    let finishOldStat!: () => void;
-    vi.mocked(backendRequest).mockImplementation(async (method, params) => {
-      const path = (params as { path: string }).path;
-      if (method === 'file.stat' && path === 'old.png') {
-        await new Promise<void>((resolve) => {
-          finishOldStat = resolve;
-        });
-        throw new Error('not found');
-      }
-      return { isFile: true };
-    });
-    const view = renderFileTab({
+  it('requests media resolution with the current workspace and tab identity', async () => {
+    renderFileTab({
       ...fileTab,
       id: 'tab-race',
-      title: 'old.png',
-      filePath: 'old.png',
+      title: 'current.webm',
+      filePath: 'current.webm',
     });
-    await waitFor(() => expect(finishOldStat).toBeTypeOf('function'));
-
-    await view.rerender({
-      tab: { ...fileTab, id: 'tab-race', title: 'current.webm', filePath: 'current.webm' },
-      workspaceId: 'ws-2',
-      isActive: true,
-      isPanelFocused: true,
-    });
-    finishOldStat();
 
     const viewer = await screen.findByTestId('file-viewer');
-    expect(viewer.getAttribute('data-source-url')).toBe('workspace-file://ws-2/current.webm');
+    expect(viewer.getAttribute('data-source-url')).toBe('workspace-file://ws-1/current.webm');
+    expect(actionMocks.resolveWorkspaceMediaRequested).toHaveBeenCalledWith(
+      'ws-1',
+      'tab-race',
+      'current.webm',
+      'current.webm',
+      'tab-race',
+    );
     expect(actionMocks.updateFileTabPath).not.toHaveBeenCalled();
     expect(actionMocks.loadFileContentRequested).not.toHaveBeenCalled();
   });

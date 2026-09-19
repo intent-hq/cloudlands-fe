@@ -8,6 +8,7 @@ import { WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
+  const subscribers = new Set<() => void>();
   const storeState = {
     workspace: {
       pendingTitleMutations: {} as Record<string, { token: number }>,
@@ -27,7 +28,6 @@ const mocks = vi.hoisted(() => {
     }
     return action;
   });
-  const update = vi.fn();
   const clipboardWrite = vi.fn();
   const toastSuccess = vi.fn();
   const toastError = vi.fn();
@@ -41,7 +41,33 @@ const mocks = vi.hoisted(() => {
       }),
       { select: () => value },
     );
-  return { dispatch, update, clipboardWrite, toastSuccess, toastError, selector, storeState };
+  const selectorFrom = <T>(getter: () => T) =>
+    Object.assign(
+      () => ({
+        subscribe(run: (v: T) => void) {
+          const notify = () => run(getter());
+          notify();
+          subscribers.add(notify);
+          return () => subscribers.delete(notify);
+        },
+      }),
+      { select: () => getter() },
+    );
+  return {
+    dispatch,
+    clipboardWrite,
+    toastSuccess,
+    toastError,
+    selector,
+    selectorFrom,
+    storeState,
+    mutations: {
+      title: { loading: false, error: null as string | null, version: 0 },
+      status: { loading: false, error: null as string | null, version: 0 },
+      branch: { loading: false, error: null as string | null, version: 0 },
+    },
+    emit: () => subscribers.forEach((subscriber) => subscriber()),
+  };
 });
 
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -78,29 +104,34 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-slice', () => ({
   })),
 }));
 
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceMutation: (_workspaceId: unknown, scope: { subscribe: Function }) => {
+    let value: unknown;
+    const unsubscribe = scope.subscribe((next: unknown) => (value = next));
+    unsubscribe?.();
+    const mutation =
+      value === 'title'
+        ? mocks.mutations.title
+        : value === 'status-message'
+          ? mocks.mutations.status
+          : mocks.mutations.branch;
+    return mocks.selectorFrom(() => mutation)();
+  },
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  beginWorkspaceTitleMutation: vi.fn(
-    (id: string, token: number, optimisticTitle: string, previousTitle: string) => ({
-      type: 'workspace/beginWorkspaceTitleMutation',
-      payload: [id, token, optimisticTitle, previousTitle],
-    }),
-  ),
-  completeWorkspaceTitleMutation: vi.fn((id: string, token: number, workspace: Workspace) => ({
-    type: 'workspace/completeWorkspaceTitleMutation',
-    payload: [id, token, workspace],
-  })),
-  failWorkspaceTitleMutation: vi.fn((id: string, token: number) => ({
-    type: 'workspace/failWorkspaceTitleMutation',
-    payload: [id, token],
-  })),
   setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
   })),
-}));
-
-vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
-  workspaceClient: { update: mocks.update },
+  updateWorkspaceRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/updateRequested',
+    payload: args,
+  })),
+  renameWorkspaceBranchRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/renameBranchRequested',
+    payload: args,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
@@ -174,12 +205,13 @@ warmImport(() => import('../WorkspaceSidebarHeader.svelte'));
 describe('WorkspaceSidebarHeader status message', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
-    mocks.update.mockReset();
-    mocks.update.mockResolvedValue({ ok: true, data: baseWorkspace });
     mocks.clipboardWrite.mockReset();
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
     mocks.storeState.workspace.pendingTitleMutations = {};
+    Object.assign(mocks.mutations.title, { loading: false, error: null, version: 0 });
+    Object.assign(mocks.mutations.status, { loading: false, error: null, version: 0 });
+    Object.assign(mocks.mutations.branch, { loading: false, error: null, version: 0 });
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -274,53 +306,30 @@ describe('WorkspaceSidebarHeader status message', () => {
     expect(screen.queryByPlaceholderText('branch name')).toBeNull();
   });
 
-  it('updates the sidebar workspace title before the rename response resolves', async () => {
-    let resolveUpdate!: (result: { ok: true; data: Workspace }) => void;
-    mocks.update.mockReturnValue(
-      new Promise((resolve) => {
-        resolveUpdate = resolve;
-      }),
-    );
-
+  it('dispatches a title update and closes the editor immediately', async () => {
     await renderHeader();
     await fireEvent.click(screen.getByRole('button', { name: 'Status Workspace' }));
     const titleInput = screen.getByRole('textbox');
     await fireEvent.input(titleInput, { target: { value: 'Renamed immediately' } });
     await fireEvent.keyDown(titleInput, { key: 'Enter' });
 
-    await waitFor(() =>
-      expect(mocks.update).toHaveBeenCalledWith({
-        id: 'ws-1',
-        title: 'Renamed immediately',
-      }),
-    );
     expect(mocks.dispatch).toHaveBeenCalledWith({
-      type: 'workspace/beginWorkspaceTitleMutation',
-      payload: ['ws-1', expect.any(Number), 'Renamed immediately', 'Status Workspace'],
+      type: 'workspace/updateRequested',
+      payload: ['ws-1', { title: 'Renamed immediately' }, 'title'],
     });
     expect(screen.queryByRole('textbox')).toBeNull();
-
-    resolveUpdate({
-      ok: true,
-      data: { ...baseWorkspace, title: 'Renamed immediately' },
-    });
-    await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'workspace/completeWorkspaceTitleMutation' }),
-      ),
-    );
   });
 
-  it('surfaces a rejected workspace title rename without leaving the editor pending', async () => {
-    mocks.update.mockResolvedValue({ ok: false, error: 'Rename rejected' });
+  it('handles a rejected title mutation without leaving the editor pending', async () => {
     await renderHeader();
     await fireEvent.click(screen.getByRole('button', { name: 'Status Workspace' }));
     const titleInput = screen.getByRole('textbox');
     await fireEvent.input(titleInput, { target: { value: 'Rejected title' } });
     await fireEvent.keyDown(titleInput, { key: 'Enter' });
+    Object.assign(mocks.mutations.title, { loading: false, error: 'Rename rejected', version: 1 });
+    mocks.emit();
 
-    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Rename rejected'));
-    expect(screen.queryByRole('textbox')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull());
   });
 
   it('focuses and selects the current title when editing starts', async () => {
@@ -341,7 +350,9 @@ describe('WorkspaceSidebarHeader status message', () => {
     await fireEvent.input(input, { target: { value: 'Do not save this draft' } });
     await fireEvent.keyDown(input, { key: 'Escape' });
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateRequested' }),
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Status Workspace' }));
     expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe(baseWorkspace.title);
   });
@@ -355,9 +366,6 @@ describe('WorkspaceSidebarHeader status message', () => {
   });
 
   it('saves status edits on Enter and dispatches the updated workspace', async () => {
-    const updatedWorkspace = { ...baseWorkspace, statusMessage: 'Ready for verification.' };
-    mocks.update.mockResolvedValue({ ok: true, data: updatedWorkspace });
-
     await renderHeader({ statusMessage: '' });
     await fireEvent.click(screen.getByRole('button', { name: 'Add workspace status' }));
     const input = await screen.findByLabelText('Workspace status');
@@ -367,21 +375,16 @@ describe('WorkspaceSidebarHeader status message', () => {
 
     // Enter saves without inserting a newline.
     expect((input as HTMLTextAreaElement).value).toBe('Ready for verification.');
-    await waitFor(() =>
-      expect(mocks.update).toHaveBeenCalledWith({
-        id: 'ws-1',
-        statusMessage: 'Ready for verification.',
-      }),
-    );
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspace/setWorkspaceEntity' }),
-    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspace/updateRequested',
+      payload: ['ws-1', { statusMessage: 'Ready for verification.' }, 'status-message'],
+    });
+    Object.assign(mocks.mutations.status, { loading: false, error: null, version: 1 });
+    mocks.emit();
+    await waitFor(() => expect(screen.queryByLabelText('Workspace status')).toBeNull());
   });
 
   it('saves status edits on blur', async () => {
-    const updatedWorkspace = { ...baseWorkspace, statusMessage: 'Reviewing final checks.' };
-    mocks.update.mockResolvedValue({ ok: true, data: updatedWorkspace });
-
     await renderHeader({ statusMessage: 'Old status.' });
     await fireEvent.click(screen.getByRole('button', { name: 'Edit workspace status' }));
     const input = await screen.findByLabelText('Workspace status');
@@ -389,12 +392,10 @@ describe('WorkspaceSidebarHeader status message', () => {
     await fireEvent.input(input, { target: { value: 'Reviewing final checks.' } });
     await fireEvent.blur(input);
 
-    await waitFor(() =>
-      expect(mocks.update).toHaveBeenCalledWith({
-        id: 'ws-1',
-        statusMessage: 'Reviewing final checks.',
-      }),
-    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspace/updateRequested',
+      payload: ['ws-1', { statusMessage: 'Reviewing final checks.' }, 'status-message'],
+    });
   });
 
   it('renders the status editor as a wrapping textarea', async () => {
@@ -417,7 +418,9 @@ describe('WorkspaceSidebarHeader status message', () => {
     expect(notPrevented).toBe(true);
     await fireEvent.input(input, { target: { value: 'First line.\nSecond line.' } });
 
-    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateRequested' }),
+    );
     expect(screen.getByLabelText('Workspace status')).toBeTruthy();
     expect(input.value).toBe('First line.\nSecond line.');
   });
@@ -431,7 +434,9 @@ describe('WorkspaceSidebarHeader status message', () => {
     await fireEvent.keyDown(input, { key: 'Escape' });
 
     await waitFor(() => expect(screen.queryByLabelText('Workspace status')).toBeNull());
-    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/updateRequested' }),
+    );
   });
 
   it.each(['Enter', ' '])(

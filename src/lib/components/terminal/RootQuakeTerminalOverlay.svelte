@@ -1,5 +1,4 @@
 <script lang="ts" module>
-  import { Input } from '$lib/components/ui/input';
   export { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 </script>
 
@@ -26,19 +25,19 @@
     selectTerminalOverlayHeight,
     selectActiveTerminalIdForWorkspace,
     selectTerminalsForWorkspace,
+    selectOverlayTerminalCreateOperation,
   } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
     openTerminalOverlay,
     closeTerminalOverlay,
     selectTerminal as selectTerminalAction,
-    addTerminal,
     removeTerminal,
     setTerminalOverlayHeight,
     renameTerminal,
+    createTerminalFromOverlayRequested,
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
-  import { appClient } from '$lib/client';
-  import { notify } from '$lib/components/patterns/notify';
+  import { toast } from '$lib/components/ui/toast';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
 
   import Terminal from './Terminal.svelte';
@@ -51,6 +50,7 @@
     faBan,
   } from '@fortawesome/free-solid-svg-icons';
   import { cn } from '$lib/utils';
+  import { Input } from '$lib/components/ui/input';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
@@ -70,6 +70,20 @@
   const height = selectTerminalOverlayHeight(ROOT_WORKSPACE_ID);
   const activeTerminalId = selectActiveTerminalIdForWorkspace(ROOT_WORKSPACE_ID);
   const terminals = selectTerminalsForWorkspace(ROOT_WORKSPACE_ID);
+  const overlayCreateOperation$ = selectOverlayTerminalCreateOperation(ROOT_WORKSPACE_ID);
+  let handledCreateVersion = selectOverlayTerminalCreateOperation.select(
+    appStore.state,
+    ROOT_WORKSPACE_ID,
+  ).version;
+
+  $effect(() => {
+    const operation = $overlayCreateOperation$;
+    if (operation.version <= handledCreateVersion || operation.status === 'loading') return;
+    handledCreateVersion = operation.version;
+    if (operation.status === 'error') {
+      toast.error(m.terminal_adapter_openFailed_error());
+    }
+  });
 
   // NOTE: We intentionally do NOT have an $effect here to sync workspace ID.
   // The workspace ID is set by the keyboard shortcut handler in +layout.svelte
@@ -187,47 +201,14 @@
 
   let overlayContainer = $state<HTMLDivElement>();
 
-  // In-flight guard: a double-click on the new-terminal button must not
-  // issue two `terminal.create` calls (two daemon PTYs).
-  let isCreatingTerminal = false;
-
-  async function createNewTerminal() {
-    if (isCreatingTerminal) return;
-    isCreatingTerminal = true;
-    try {
-      // Daemon-first create (`terminal.create`, PROTOCOL §5.13): the daemon
-      // assigns the PTY id and the Redux tab is keyed by it, so hydration
-      // (`terminal.list`) always matches the tab id.
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- AppClient mutation (terminal.create), not a domain data fetch; the daemon-assigned id must be awaited before the tab enters Redux (monorepo#1411).
-      const result = await appClient.terminals.create({
-        workspaceId: ROOT_WORKSPACE_ID,
-        cols: 80,
-        rows: 24,
-      });
-      if (!result.success || !result.id) {
-        notify.error(m.terminal_adapter_openFailed_error());
-        return;
-      }
-      appStore.dispatch(
-        addTerminal(
-          ROOT_WORKSPACE_ID,
-          result.id,
-          m.terminal_quakeOverlay_terminalNumber_label({ number: $terminals.length + 1 }),
-        ),
-      );
-      if (!$isOpen) {
-        appStore.dispatch(openTerminalOverlay(ROOT_WORKSPACE_ID, result.id));
-      }
-      // Focus the overlay container immediately so keyboard shortcuts
-      // route to the terminal before xterm is ready
-      requestAnimationFrame(() => {
-        overlayContainer?.focus();
-      });
-    } catch {
-      notify.error(m.terminal_adapter_openFailed_error());
-    } finally {
-      isCreatingTerminal = false;
-    }
+  function createNewTerminal() {
+    const operation = selectOverlayTerminalCreateOperation.select(
+      appStore.state,
+      ROOT_WORKSPACE_ID,
+    );
+    if (operation.status === 'loading') return;
+    appStore.dispatch(createTerminalFromOverlayRequested(ROOT_WORKSPACE_ID));
+    requestAnimationFrame(() => overlayContainer?.focus());
   }
 
   function closeTerminal(termId: string, e?: MouseEvent) {
@@ -540,6 +521,7 @@
           >
             <Button
               variant="ghost"
+              size="icon-sm"
               type="button"
               class="flex items-center justify-center w-7 h-7 ml-1 border-none rounded-md bg-transparent text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted/80 hover:text-foreground"
               onclick={createNewTerminal}

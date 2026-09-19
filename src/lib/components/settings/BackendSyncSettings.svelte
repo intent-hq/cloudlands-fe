@@ -17,21 +17,25 @@
   import { m } from '$shared/paraglide/messages.js';
   import { SettingsForm, defineSettings } from '$lib/components/patterns/settings';
   import { store as appStore } from '$store/renderer/store';
-  import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    selectKeychainSyncOperationState,
+    selectKeychainSyncState,
+  } from '$store/renderer/slices/connections/connections-selectors';
   import {
     loadKeychainSyncStateRequested,
     setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
 
   const syncState$ = selectKeychainSyncState();
+  const operationState$ = selectKeychainSyncOperationState();
 
   // Bound to the Switch rather than derived: the Switch owns its own checked
   // state once clicked, so a rejected write must be pushed back into it
   // explicitly or the toggle would sit in a state main never accepted.
   let toggleOn = $state(false);
-  let writing = $state(false);
-  let loadFailed = $state(false);
-  let saveFailed = $state(false);
+  const writing = $derived($operationState$.writeStatus === 'loading');
+  const loadFailed = $derived($operationState$.loadStatus === 'error');
+  const saveFailed = $derived($operationState$.writeStatus === 'error');
 
   const supported = $derived($syncState$?.supported ?? false);
   const enabled = $derived($syncState$?.enabled ?? false);
@@ -44,26 +48,12 @@
     if (!writing) toggleOn = enabled;
   });
 
-  onMount(async () => {
-    try {
-      await appStore.dispatch(loadKeychainSyncStateRequested()).promise;
-      loadFailed = false;
-    } catch {
-      loadFailed = true;
-    }
+  onMount(() => {
+    appStore.dispatch(loadKeychainSyncStateRequested());
   });
 
-  async function handleToggle(checked: boolean) {
-    writing = true;
-    saveFailed = false;
-    try {
-      await appStore.dispatch(setKeychainSyncEnabledRequested(checked)).promise;
-    } catch {
-      saveFailed = true;
-    } finally {
-      writing = false;
-      toggleOn = selectKeychainSyncState.select(appStore.state)?.enabled ?? false;
-    }
+  function handleToggle(checked: boolean) {
+    appStore.dispatch(setKeychainSyncEnabledRequested(checked));
   }
 
   const schema = $derived.by(() =>

@@ -18,15 +18,17 @@
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
-  import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import {
+    selectWorkspaceInitializerHydrated,
+    selectWorkspaceInitializerProviderAvailability,
+    selectWorkspaceInitializerSpecialistPreviews,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount, untrack } from 'svelte';
-  import {
-    getProviderAvailability,
-    type ProviderAvailabilityResult,
-  } from '$features/providers/provider-availability.client';
+  import { writable } from 'svelte/store';
+  import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
@@ -38,7 +40,10 @@
     selectProviderModelsCacheMap,
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { appClient } from '$lib/client';
+  import {
+    listInitializerSpecialistPreviewsRequested,
+    readWorkspaceInitializerProviderAvailabilityRequested,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -65,6 +70,12 @@
   const availableModels$ = selectAvailableModels();
   const availableModelsProviderId$ = selectAvailableModelsProviderId();
   const providerModelsCacheMap$ = selectProviderModelsCacheMap();
+  const providerAvailabilityOperation$ =
+    selectWorkspaceInitializerProviderAvailability('initial-agent-picker');
+  const specialistPreviewProviderStore = writable('');
+  const specialistPreviewsOperation$ = selectWorkspaceInitializerSpecialistPreviews(
+    specialistPreviewProviderStore,
+  );
 
   // First-launch single-agent default (mirrors the parent's init): Developer
   // when the resolved set carries it, else General.
@@ -233,15 +244,33 @@
     }
   });
 
-  onMount(async () => {
+  let pendingProviderAvailabilityVersion = 0;
+  onMount(() => {
     // Fetch provider availability — the $effect above handles auto-selection
     // once providerAvailability is set. This avoids duplicating fallback logic
     // and ensures the user's explicit provider choice is respected consistently.
-    try {
-      providerAvailability = await getProviderAvailability();
+    pendingProviderAvailabilityVersion =
+      selectWorkspaceInitializerProviderAvailability.select(appStore.state, 'initial-agent-picker')
+        .version + 1;
+    appStore.dispatch(
+      readWorkspaceInitializerProviderAvailabilityRequested('initial-agent-picker'),
+    );
+  });
+
+  $effect(() => {
+    const operation = $providerAvailabilityOperation$;
+    if (
+      !pendingProviderAvailabilityVersion ||
+      operation.version !== pendingProviderAvailabilityVersion ||
+      operation.status === 'loading'
+    )
+      return;
+    pendingProviderAvailabilityVersion = 0;
+    if (operation.status === 'success') {
+      providerAvailability = operation.data;
       logger.debug('Provider availability loaded:', providerAvailability);
-    } catch (error) {
-      logger.error('Failed to check provider availability:', error);
+    } else {
+      logger.error('Failed to check provider availability:', operation.error);
     }
   });
 
@@ -361,6 +390,8 @@
   // Bumped on every store specialist-view refresh; in-flight fetches from an
   // older generation are dropped so they can't overwrite fresher previews.
   let previewsGeneration = 0;
+  let pendingPreviewsVersion = 0;
+  let pendingPreviewsGeneration = 0;
 
   // Invalidate cached previews whenever the store's specialist view refreshes
   // (daemon `specialists:changed` → list subscription refetch), so the
@@ -375,18 +406,30 @@
   $effect(() => {
     const provider = selectedProvider;
     if (!provider || provider in resolvedModelsByProvider) return;
-    const generation = previewsGeneration;
-    void (async () => {
-      try {
-        const defs = await appClient.specialists.list(provider);
-        if (generation !== previewsGeneration || defs.length === 0) return;
-        const byId: Record<string, string | undefined> = {};
-        for (const def of defs) byId[def.id] = def.resolvedModel;
-        resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: byId };
-      } catch (error) {
-        logger.debug('Failed to fetch resolved-model previews:', { provider, error });
-      }
-    })();
+    specialistPreviewProviderStore.set(provider);
+    pendingPreviewsGeneration = previewsGeneration;
+    pendingPreviewsVersion =
+      selectWorkspaceInitializerSpecialistPreviews.select(appStore.state, provider).version + 1;
+    appStore.dispatch(listInitializerSpecialistPreviewsRequested(provider));
+  });
+
+  $effect(() => {
+    const operation = $specialistPreviewsOperation$;
+    if (!pendingPreviewsVersion || operation.version !== pendingPreviewsVersion) return;
+    if (operation.status === 'loading') return;
+    pendingPreviewsVersion = 0;
+    const provider = selectedProvider;
+    if (pendingPreviewsGeneration !== previewsGeneration) return;
+    if (operation.status === 'error') {
+      logger.debug('Failed to fetch resolved-model previews:', {
+        provider,
+        error: operation.error,
+      });
+      return;
+    }
+    if (operation.data && Object.keys(operation.data).length > 0) {
+      resolvedModelsByProvider = { ...resolvedModelsByProvider, [provider]: operation.data };
+    }
   });
 
   // Helper to resolve the displayed default model for a given specialist:

@@ -4,7 +4,6 @@
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import { backendRequest } from '$lib/client/live/backend-transport';
   import { Button } from '$lib/components/ui/button';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -41,6 +40,8 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import type { FlattenedFileNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
+  import { selectFileNameSearch } from '$store/renderer/slices/files/files-selectors';
+  import { searchFileNamesRequested } from '$store/renderer/slices/files/files-slice';
 
   // Search result type mapped from daemon search.fileNames (PROTOCOL §5.15)
   interface SearchResult {
@@ -92,6 +93,7 @@
   const gitStatusRecord$ = selectFileExplorerGitStatus(wsIdStore);
   const fileExplorerInitializationInputs$ = selectFileExplorerInitializationInputs(wsIdStore);
   const flattenedNodes$ = selectFlattenedNodes(wsIdStore);
+  const fileSearch$ = selectFileNameSearch(wsIdStore, 'file-tree');
 
   // Ref to VirtualizedFileTree for delegating method calls
   let virtualizedTreeRef: VirtualizedFileTree | null = $state(null);
@@ -120,9 +122,20 @@
   }
 
   // Search state - for querying all files when filtering
-  let searchResults = $state<SearchResult[]>([]);
-  let isSearching = $state(false);
-  let searchAbortController: AbortController | null = null;
+  const searchResults = $derived.by(() => {
+    let files: SearchResult[] = ($fileSearch$?.files ?? []).map((path) => ({
+      name: path.split('/').pop() || path,
+      path,
+      relativePath: path,
+      type: 'file' as const,
+    }));
+    const gitStatus = $gitStatusRecord$;
+    if (showOnlyChanged && gitStatus) {
+      files = files.filter((file) => file.relativePath in gitStatus);
+    }
+    return files;
+  });
+  const isSearching = $derived($fileSearch$?.loading ?? false);
 
   // Search keyboard navigation state
   let searchSelectedIndex = $state(-1);
@@ -198,85 +211,11 @@
     }
   }
 
-  // Debounced search effect - queries all files when there's a search query
+  // Search debounce, cancellation, request, and errors are owned by filesReadSaga.
   $effect(() => {
     const query = searchQuery?.trim() || '';
-    // Track showOnlyChanged to re-run when it changes (used in filter below)
-    const filterOnlyChanged = showOnlyChanged;
-
-    // Cancel any pending search
-    if (searchAbortController) {
-      searchAbortController.abort();
-      searchAbortController = null;
-    }
-
-    if (!query) {
-      // Clear search results when query is empty
-      searchResults = [];
-      isSearching = false;
-      return;
-    }
-
-    if (!workspaceId) {
-      searchResults = [];
-      isSearching = false;
-      return;
-    }
-
-    // Don't show loader immediately - only after 500ms if still searching
-    let showLoaderTimeoutId: ReturnType<typeof setTimeout> | null = null;
-    searchAbortController = new AbortController();
-
-    // Small debounce for snappy feel without too many requests
-    const timeoutId = setTimeout(async () => {
-      // Start loader timer - only show if search takes > 500ms
-      showLoaderTimeoutId = setTimeout(() => {
-        isSearching = true;
-      }, 500);
-
-      try {
-        const resp = await backendRequest<{ files?: string[] }>('search.fileNames', {
-          workspaceId,
-          pattern: query,
-          limit: 100,
-        });
-
-        // Map daemon workspace-relative paths into search results
-        let files: SearchResult[] = (Array.isArray(resp?.files) ? resp.files : []).map((path) => ({
-          name: path.split('/').pop() || path,
-          path,
-          relativePath: path,
-          type: 'file' as const,
-        }));
-
-        // Filter to only changed files if showOnlyChanged is enabled
-        const gitStatusRec = $gitStatusRecord$;
-        if (filterOnlyChanged && gitStatusRec) {
-          files = files.filter((file) => {
-            // Check if the file has git status (is changed)
-            return file.relativePath in gitStatusRec;
-          });
-        }
-
-        searchResults = files;
-      } catch (err) {
-        logger.error('Search failed:', err);
-        searchResults = [];
-      } finally {
-        // Clear loader timer and hide loader
-        if (showLoaderTimeoutId) {
-          clearTimeout(showLoaderTimeoutId);
-        }
-        isSearching = false;
-      }
-    }, 50); // 50ms debounce for snappiness
-
-    return () => {
-      clearTimeout(timeoutId);
-      if (showLoaderTimeoutId) {
-        clearTimeout(showLoaderTimeoutId);
-      }
-    };
+    if (!workspaceId) return;
+    appStore.dispatch(searchFileNamesRequested(workspaceId, 'file-tree', query, 100, 50));
   });
 
   // Get Git status color based on status code

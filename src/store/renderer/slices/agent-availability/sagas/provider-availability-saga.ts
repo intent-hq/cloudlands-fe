@@ -27,11 +27,14 @@ import {
   checkSingleProviderRequested,
   checkSingleProviderSuccess,
   ensureProvidersChecked,
+  providerAvailabilitySummaryFailed,
+  providerAvailabilitySummaryLoaded,
   setAllProvidersLoading,
   setNpxStatus,
 } from '../agent-availability-slice';
 import type { ProviderStatus } from '../agent-availability-types';
 import { hydrateProviderCatalog } from '../../provider-catalog/sagas/provider-catalog-saga';
+import { reloadModelsForProvider } from '../../model/model-slice';
 
 const logger = createLogger('ProviderAvailabilitySaga');
 
@@ -79,11 +82,21 @@ export function* checkAllProvidersWorker() {
         invoke<IpcResult<ProviderAvailabilityResult>>,
         IPC_CHANNELS.PROVIDERS.GET_AVAILABILITY,
       );
-      if (result?.success && result.data?.npx) {
-        yield* put(setNpxStatus(result.data.npx));
+      if (result?.success && result.data) {
+        yield* put(providerAvailabilitySummaryLoaded(result.data.hiddenProviders ?? null));
+        if (result.data.npx) yield* put(setNpxStatus(result.data.npx));
+      } else {
+        yield* put(
+          providerAvailabilitySummaryFailed(result?.error ?? m.settings_providers_checkError()),
+        );
       }
     } catch (error) {
       logger.warn('GET_AVAILABILITY call failed; npx status unavailable', { error });
+      yield* put(
+        providerAvailabilitySummaryFailed(
+          error instanceof Error ? error.message : m.settings_providers_unknownError(),
+        ),
+      );
     }
 
     yield* all(providerIds.map((providerId) => call(checkSingleProviderWorker, providerId)));
@@ -95,6 +108,7 @@ export function* checkAllProvidersWorker() {
 
 function* handleCheckAllProvidersRequest(_action: ReturnType<typeof checkAllProvidersRequested>) {
   yield* call(checkAllProvidersWorker);
+  if (_action.payload[0]) yield* put(reloadModelsForProvider());
 }
 
 function* handleEnsureProvidersChecked(_action: ReturnType<typeof ensureProvidersChecked>) {

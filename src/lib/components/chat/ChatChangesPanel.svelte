@@ -225,7 +225,6 @@
   import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import {
     selectFoldUnchanged,
@@ -234,18 +233,18 @@
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
-  import { gitClient } from '$features/git/git.client';
-  import { gitCache } from '$features/git/git-cache';
-  import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
-  import { selectCurrentCommits } from '$store/renderer/slices/changes/changes-selectors';
   import {
-    batchedGitBranchBaseDiff,
-    batchedGitDiff,
-    dedupedGitNumstat,
-    dedupedShowFile,
-  } from '$features/file-tracking/components/diff/diff-ipc-batcher';
-  import { notify } from '$lib/components/patterns/notify';
-  import { type WorkspaceId } from '$shared/types/branded-ids';
+    loadGitEnrichment,
+    stageGitHunkRequested,
+    unstageGitHunkRequested,
+  } from '$store/renderer/slices/git/git-slice';
+  import { selectGitEnrichment } from '$store/renderer/slices/git/git-selectors';
+  import type {
+    GitEnrichmentRequest,
+    GitEnrichmentResult,
+  } from '$store/renderer/slices/git/git-types';
+  import { selectCurrentCommits } from '$store/renderer/slices/changes/changes-selectors';
+  import { toast } from '$lib/components/ui/toast';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
   import { getLockedTooltip } from '$lib/utils/agent-lock-utils';
@@ -343,8 +342,8 @@
     /** Resolved branch boundary SHA for collapsing multi-commit committed file groups */
     branchBaseCommitSha?: string | null;
     /**
-     * Secondary git root scoping the committed-content fetches (multi git
-     * root tracking, §5.6). Absent → primary-root behavior, byte-identical.
+     * Secondary git root scoping the committed-content fetches through the
+     * `gitRootId` capability. Absent → primary-root behavior, byte-identical.
      */
     gitRootId?: string;
     /**
@@ -403,6 +402,12 @@
 
   // Instance ID for debugging
   const instanceId = Math.random().toString(36).substring(2, 8);
+  const contentEnrichmentKey = `${instanceId}:content`;
+  const aggregateEnrichmentKey = `${instanceId}:aggregate`;
+  const refreshEnrichmentKey = `${instanceId}:refresh`;
+  const contentEnrichment$ = selectGitEnrichment(routeWorkspaceId, contentEnrichmentKey);
+  const aggregateEnrichment$ = selectGitEnrichment(routeWorkspaceId, aggregateEnrichmentKey);
+  const refreshEnrichment$ = selectGitEnrichment(routeWorkspaceId, refreshEnrichmentKey);
 
   function getStoredViewedFilesRecord() {
     if (!routeWorkspaceId) return {};
@@ -601,6 +606,40 @@
   // This content is shared between the visualization and the DiffViewer components
   let enrichedChanges = $state<LocalFileChange[]>([]);
 
+  type EnrichmentPlanItem =
+    | { kind: 'skip-refreshed' }
+    | { kind: 'push-raw'; change: LocalFileChange }
+    | { kind: 'fetch-committed'; change: LocalFileChange; commitHash: string; index: number }
+    | {
+        kind: 'fetch-branch-committed';
+        change: LocalFileChange;
+        baseRef?: string;
+        baseCommitSha?: string;
+        fallbackChanges: LocalFileChange[];
+        index: number;
+      }
+    | {
+        kind: 'fetch-local';
+        change: LocalFileChange;
+        staged: boolean;
+        index: number;
+      };
+
+  let contentEnrichmentPlan:
+    | {
+        requestId: string;
+        plan: EnrichmentPlanItem[];
+        localEntriesForRefreshedFiles: LocalFileChange[];
+        changeCount: number;
+        startedAt: number;
+      }
+    | undefined;
+  let aggregateEnrichmentPlan:
+    { requestId: string; changes: LocalFileChange[]; startedAt: number } | undefined;
+  let aggregateFetchVersion = 0;
+  let refreshEnrichmentPlan: { requestId: string; filePath: string } | undefined;
+  let refreshFetchVersion = 0;
+
   // Track the current fetch version to avoid race conditions
   // Using a regular variable (not $state) to avoid triggering effect re-runs
   let fetchVersion = 0;
@@ -682,6 +721,8 @@
     const workspaceId = routeWorkspaceId;
 
     if (!workspaceId || currentChanges.length === 0) {
+      fetchVersion++;
+      contentEnrichmentPlan = undefined;
       // Only update if enrichedChanges is not already empty (avoid unnecessary reactivity)
       const currentEnrichedLength = untrack(() => enrichedChanges.length);
       if (currentEnrichedLength > 0) {
@@ -773,26 +814,10 @@
       );
     }
 
-    // Fetch content for each file (limited to MAX_UPFRONT_FETCH_COUNT to prevent OOM).
-    // Files beyond this limit will have their content fetched by TrackedChangeDiffViewer
-    // when rendered. Wave 4: classify first, then fire all IPCs in parallel via the
-    // batcher so same-tick requests coalesce into one `git:diff` per (workspace, staged)
-    // group instead of N serial round-trips.
-    const fetchContent = async () => {
-      type PlanItem =
-        | { kind: 'skip-refreshed' }
-        | { kind: 'push-raw'; change: LocalFileChange }
-        | { kind: 'fetch-committed'; change: LocalFileChange; commitHash: string }
-        | {
-            kind: 'fetch-branch-committed';
-            change: LocalFileChange;
-            baseRef?: string;
-            baseCommitSha?: string;
-            fallbackChanges: LocalFileChange[];
-          }
-        | { kind: 'fetch-local'; change: LocalFileChange; staged: boolean };
-
-      const plan: PlanItem[] = [];
+    // Plan the selector-backed enrichment request. The Git saga owns all domain reads,
+    // while this component retains only presentation mapping and stale-result guards.
+    const fetchContent = () => {
+      const plan: EnrichmentPlanItem[] = [];
       let slotsUsed = 0;
       const fetchStart = performance.now();
 
@@ -854,6 +879,7 @@
             baseRef: currentBranchBaseRef,
             baseCommitSha: currentBranchBaseCommitSha,
             fallbackChanges: branchBaseCommittedFallbacks.get(change.filePath) ?? [change],
+            index: plan.length,
           });
           continue;
         }
@@ -877,6 +903,7 @@
             kind: 'fetch-committed',
             change,
             commitHash: String(commitHash),
+            index: plan.length,
           });
           if (!mustEnrich) slotsUsed++;
           continue;
@@ -893,200 +920,147 @@
           kind: 'fetch-local',
           change,
           staged: change.staged === true,
+          index: plan.length,
         });
         if (!mustEnrich) slotsUsed++;
       }
 
-      // Fire every IPC in parallel. `batchedGitDiff` coalesces same-tick requests
-      // that share (workspaceId, staged) into a single `git:diff` call, so up to
-      // `MAX_UPFRONT_FETCH_COUNT` local files collapse into at most 2 IPC calls
-      // (one staged, one unstaged). `dedupedShowFile` dedupes concurrent calls
-      // for the same (workspace, ref, path).
-      const localNumstatPromise = currentShowStagingControls
-        ? dedupedGitNumstat(workspaceId).catch((error) => {
-            logger.warn('[fetchContent] Failed to fetch local numstat', { error });
-            return [];
-          })
-        : Promise.resolve([]);
-      const committedNumstatPromise =
+      const request: GitEnrichmentRequest = {
+        diffs: [],
+        branchDiffs: [],
+        numstats: [],
+        showFiles: [],
+      };
+      for (const item of plan) {
+        if (item.kind === 'fetch-local') {
+          request.diffs.push({
+            key: String(item.index),
+            path: item.change.filePath,
+            staged: item.staged,
+            gitlink: item.change.gitlink,
+            gitRootId: currentGitRootId,
+            gitRootPath: currentGitRootPath,
+          });
+        } else if (item.kind === 'fetch-branch-committed') {
+          request.branchDiffs.push({
+            key: String(item.index),
+            path: item.change.filePath,
+            baseRef: item.baseRef,
+            baseCommitSha: item.baseCommitSha,
+          });
+        } else if (item.kind === 'fetch-committed') {
+          const path = toGitRootRelativePath(item.change.filePath, currentGitRootPath);
+          request.showFiles.push(
+            {
+              key: `${item.index}:new`,
+              path,
+              ref: item.commitHash,
+              gitRootId: currentGitRootId,
+            },
+            {
+              key: `${item.index}:old`,
+              path,
+              ref: `${item.commitHash}^`,
+              gitRootId: currentGitRootId,
+            },
+          );
+        }
+      }
+      if (currentShowStagingControls) request.numstats.push({ key: 'local' });
+      if (
         currentShowStagingControls &&
         !currentGroupByCommit &&
         (currentBranchBaseRef || currentBranchBaseCommitSha)
-          ? dedupedGitNumstat(workspaceId, {
-              baseRef: currentBranchBaseRef,
-              baseCommitSha: currentBranchBaseCommitSha,
-              targetRef: 'HEAD',
-            }).catch((error) => {
-              logger.warn('[fetchContent] Failed to fetch branch-base numstat', { error });
-              return [];
-            })
-          : Promise.resolve([]);
-      const resolved = await Promise.all(
-        plan.map((item) => {
-          if (item.kind === 'fetch-committed') {
-            // `currentGitRootId` scopes the reads to a registered secondary
-            // root (§5.6 git roots); normalize absolute UI paths against that root
-            // before sending the root-relative Git path.
-            const showOpts = currentGitRootId ? { gitRootId: currentGitRootId } : undefined;
-            const rootRelativePath = toGitRootRelativePath(
-              item.change.filePath,
-              currentGitRootPath,
-            );
-            return Promise.all([
-              dedupedShowFile(workspaceId, item.commitHash, rootRelativePath, showOpts),
-              dedupedShowFile(workspaceId, `${item.commitHash}^`, rootRelativePath, showOpts),
-            ])
-              .then(([newRes, oldRes]) => ({ item, newRes, oldRes }))
-              .catch((error) => {
-                logger.warn('[fetchContent] Failed to fetch committed content', {
-                  filePath: item.change.filePath,
-                  error,
-                });
-                return { item, newRes: undefined, oldRes: undefined };
-              });
-          }
-          if (item.kind === 'fetch-branch-committed') {
-            return batchedGitBranchBaseDiff(
-              workspaceId,
-              { baseRef: item.baseRef, baseCommitSha: item.baseCommitSha },
-              item.change.filePath,
-            )
-              .then((chunk) => ({ item, chunk }))
-              .catch((error) => {
-                logger.warn('[fetchContent] Failed to fetch branch-base committed diff', {
-                  filePath: item.change.filePath,
-                  error,
-                });
-                return { item, chunk: undefined };
-              });
-          }
-          if (item.kind === 'fetch-local') {
-            // Pass gitlink metadata so the batcher composes a status-marked
-            // submodule's sides from its pin SHAs instead of issuing
-            // git.showFile/file.read calls that can only fail (#1739).
-            return batchedGitDiff(workspaceId, item.staged, item.change.filePath, {
-              gitlink: item.change.gitlink,
-              gitRootId: currentGitRootId,
-              gitRootPath: currentGitRootPath,
-            })
-              .then((chunk) => ({ item, chunk }))
-              .catch((error) => {
-                logger.warn('[fetchContent] Failed to fetch local diff', {
-                  filePath: item.change.filePath,
-                  error,
-                });
-                return { item, chunk: undefined };
-              });
-          }
-          return Promise.resolve({ item });
-        }),
-      );
-
-      // Check cancellation after all fetches settle.
-      if (thisVersion !== fetchVersion) return;
-
-      const enriched: LocalFileChange[] = [];
-      for (const result of resolved) {
-        const { item } = result;
-        if (item.kind === 'skip-refreshed') continue;
-
-        if (item.kind === 'push-raw') {
-          enriched.push(item.change);
-          continue;
-        }
-
-        if (item.kind === 'fetch-committed') {
-          const { newRes, oldRes } = result as {
-            item: typeof item;
-            newRes?: { success: boolean; data?: string };
-            oldRes?: { success: boolean; data?: string };
-          };
-          const newContent = newRes?.success ? newRes.data || '' : '';
-          const oldContent = oldRes?.success ? oldRes.data || '' : '';
-          enriched.push({
-            ...item.change,
-            oldContent,
-            newContent,
-            // Mark as full file content so diff viewer knows it can use git:show-file to refresh
-            isFullFileContent: true,
-          });
-          continue;
-        }
-
-        if (item.kind === 'fetch-branch-committed') {
-          const { chunk } = result as {
-            item: Extract<PlanItem, { kind: 'fetch-branch-committed' }>;
-            chunk?: { oldContent?: string; newContent?: string; chunks?: unknown[] };
-          };
-          if (chunk) {
-            const chunks = chunk.chunks as DiffHunk[] | undefined;
-            const stats = calculateDiffHunkStats(chunks);
-            enriched.push({
-              ...item.change,
-              additions: stats.additions,
-              deletions: stats.deletions,
-              oldContent: chunk.oldContent || '',
-              newContent: chunk.newContent || '',
-              chunks,
-              // Mark as full file content so diff viewer can render the collapsed branch diff directly.
-              isFullFileContent: true,
-            });
-          } else {
-            enriched.push(...item.fallbackChanges);
-          }
-          continue;
-        }
-
-        if (item.kind === 'fetch-local') {
-          const { chunk } = result as {
-            item: typeof item;
-            chunk?: {
-              oldContent?: string;
-              newContent?: string;
-              chunks?: unknown[];
-            };
-          };
-          if (chunk) {
-            enriched.push({
-              ...item.change,
-              oldContent: chunk.oldContent || '',
-              newContent: chunk.newContent || '',
-              chunks: chunk.chunks as DiffHunk[] | undefined,
-              // Mark as full file content so diff viewer knows it can use git:diff to refresh
-              isFullFileContent: true,
-            });
-          } else {
-            enriched.push(item.change);
-          }
-        }
-      }
-
-      // Add back the locally refreshed entries that we captured at the start of the effect.
-      // This ensures we use our local data for recently refreshed files instead of stale parent data.
-      enriched.push(...localEntriesForRefreshedFiles);
-
-      // Only update if this is still the current fetch.
-      if (thisVersion === fetchVersion) {
-        const [localStats, committedStats] = await Promise.all([
-          localNumstatPromise,
-          committedNumstatPromise,
-        ]);
-        if (thisVersion !== fetchVersion) return;
-
-        enrichedChanges = applyNumstatStats(enriched, localStats, committedStats);
-        isEnrichingChanges = false;
-        logger.debug('[ChatChangesPanel:fetchContent] batched fetch complete', {
-          files: currentChanges.length,
-          fetchedLocal: plan.filter((p) => p.kind === 'fetch-local').length,
-          fetchedCommitted: plan.filter((p) => p.kind === 'fetch-committed').length,
-          fetchedBranchCommitted: plan.filter((p) => p.kind === 'fetch-branch-committed').length,
-          skippedRefreshed: plan.filter((p) => p.kind === 'skip-refreshed').length,
-          elapsedMs: Math.round(performance.now() - fetchStart),
+      ) {
+        request.numstats.push({
+          key: 'committed',
+          baseRef: currentBranchBaseRef,
+          baseCommitSha: currentBranchBaseCommitSha,
+          targetRef: 'HEAD',
         });
       }
+      const requestId = String(thisVersion);
+      contentEnrichmentPlan = {
+        requestId,
+        plan,
+        localEntriesForRefreshedFiles,
+        changeCount: currentChanges.length,
+        startedAt: fetchStart,
+      };
+      appStore.dispatch(loadGitEnrichment(workspaceId, contentEnrichmentKey, requestId, request));
     };
 
     fetchContent();
+  });
+
+  $effect(() => {
+    const entry = $contentEnrichment$;
+    const pending = contentEnrichmentPlan;
+    if (!pending || !entry || entry.loading || entry.requestId !== pending.requestId) return;
+    const result: GitEnrichmentResult = entry.data ?? {
+      diffs: {},
+      branchDiffs: {},
+      numstats: {},
+      showFiles: {},
+    };
+    const enriched: LocalFileChange[] = [];
+    for (const item of pending.plan) {
+      if (item.kind === 'skip-refreshed') continue;
+      if (item.kind === 'push-raw') {
+        enriched.push(item.change);
+      } else if (item.kind === 'fetch-committed') {
+        const newResult = result.showFiles[`${item.index}:new`];
+        const oldResult = result.showFiles[`${item.index}:old`];
+        enriched.push({
+          ...item.change,
+          oldContent: oldResult?.success ? oldResult.data || '' : '',
+          newContent: newResult?.success ? newResult.data || '' : '',
+          isFullFileContent: true,
+        });
+      } else if (item.kind === 'fetch-branch-committed') {
+        const chunk = result.branchDiffs[String(item.index)];
+        if (!chunk) {
+          enriched.push(...item.fallbackChanges);
+          continue;
+        }
+        const chunks = chunk.chunks as DiffHunk[] | undefined;
+        const stats = calculateDiffHunkStats(chunks);
+        enriched.push({
+          ...item.change,
+          additions: stats.additions,
+          deletions: stats.deletions,
+          oldContent: chunk.oldContent || '',
+          newContent: chunk.newContent || '',
+          chunks,
+          isFullFileContent: true,
+        });
+      } else {
+        const chunk = result.diffs[String(item.index)];
+        enriched.push(
+          chunk
+            ? {
+                ...item.change,
+                oldContent: chunk.oldContent || '',
+                newContent: chunk.newContent || '',
+                chunks: chunk.chunks as DiffHunk[] | undefined,
+                isFullFileContent: true,
+              }
+            : item.change,
+        );
+      }
+    }
+    enriched.push(...pending.localEntriesForRefreshedFiles);
+    enrichedChanges = applyNumstatStats(
+      enriched,
+      result.numstats.local ?? [],
+      result.numstats.committed ?? [],
+    );
+    isEnrichingChanges = false;
+    contentEnrichmentPlan = undefined;
+    logger.debug('[ChatChangesPanel:fetchContent] selector-backed fetch complete', {
+      files: pending.changeCount,
+      elapsedMs: Math.round(performance.now() - pending.startedAt),
+    });
   });
 
   // Filter by enabled categories first
@@ -1294,6 +1268,8 @@
 
   $effect(() => {
     if (!isAggregate) {
+      aggregateFetchVersion++;
+      aggregateEnrichmentPlan = undefined;
       // Only update if not already empty
       const currentLength = untrack(() => gitDiffChanges.length);
       if (currentLength > 0) {
@@ -1305,6 +1281,8 @@
 
     const workspaceId = routeWorkspaceId;
     if (!workspaceId || reactiveChanges.length === 0) {
+      aggregateFetchVersion++;
+      aggregateEnrichmentPlan = undefined;
       // Only update if not already matching
       const currentLength = untrack(() => gitDiffChanges.length);
       if (currentLength !== reactiveChanges.length) {
@@ -1324,47 +1302,48 @@
     }
     lastAggregateChangesKey = newAggregateKey;
 
-    // Fetch git diff for each file. Wave 4: use `batchedGitDiff` so same-tick
-    // requests for (workspaceId, staged=false) collapse into one IPC instead of N.
-    const fetchGitDiffs = async () => {
-      const fetchStart = performance.now();
-      const chunks = await Promise.all(
-        reactiveChanges.map((change) =>
-          batchedGitDiff(workspaceId, false, change.filePath, {
-            gitRootId,
-            gitRootPath,
-          }).catch((error) => {
-            logger.warn('Failed to fetch git diff', { filePath: change.filePath, error });
-            return undefined;
-          }),
-        ),
-      );
-
-      const results: LocalFileChange[] = reactiveChanges.map((change, i) => {
-        const diffChunk = chunks[i];
-        if (diffChunk && diffChunk.oldContent !== undefined && diffChunk.newContent !== undefined) {
-          // Use git diff content with proper full file content
-          return {
-            ...change,
-            oldContent: diffChunk.oldContent,
-            newContent: diffChunk.newContent,
-            // Pass chunks for proper line-by-line diff visualization
-            chunks: diffChunk.chunks as DiffHunk[] | undefined,
-            // Mark as full file content so diff viewer knows it can use git:diff to refresh
-            isFullFileContent: true,
-          } as LocalFileChange;
-        }
-        return change;
-      });
-
-      gitDiffChanges = results;
-      logger.debug('[ChatChangesPanel:fetchGitDiffs] batched aggregate fetch complete', {
-        files: reactiveChanges.length,
-        elapsedMs: Math.round(performance.now() - fetchStart),
-      });
+    const requestId = String(++aggregateFetchVersion);
+    const request: GitEnrichmentRequest = {
+      diffs: reactiveChanges.map((change, index) => ({
+        key: String(index),
+        path: change.filePath,
+        staged: false,
+        gitRootId,
+        gitRootPath,
+      })),
+      branchDiffs: [],
+      numstats: [],
+      showFiles: [],
     };
+    aggregateEnrichmentPlan = {
+      requestId,
+      changes: [...reactiveChanges],
+      startedAt: performance.now(),
+    };
+    appStore.dispatch(loadGitEnrichment(workspaceId, aggregateEnrichmentKey, requestId, request));
+  });
 
-    fetchGitDiffs();
+  $effect(() => {
+    const entry = $aggregateEnrichment$;
+    const pending = aggregateEnrichmentPlan;
+    if (!pending || !entry || entry.loading || entry.requestId !== pending.requestId) return;
+    gitDiffChanges = pending.changes.map((change, index) => {
+      const chunk = entry.data?.diffs[String(index)];
+      return chunk && chunk.oldContent !== undefined && chunk.newContent !== undefined
+        ? {
+            ...change,
+            oldContent: chunk.oldContent,
+            newContent: chunk.newContent,
+            chunks: chunk.chunks as DiffHunk[] | undefined,
+            isFullFileContent: true,
+          }
+        : change;
+    });
+    aggregateEnrichmentPlan = undefined;
+    logger.debug('[ChatChangesPanel:fetchGitDiffs] selector-backed aggregate fetch complete', {
+      files: pending.changes.length,
+      elapsedMs: Math.round(performance.now() - pending.startedAt),
+    });
   });
 
   // Use git diff changes for visualization when aggregate, otherwise use merged changes
@@ -1673,116 +1652,68 @@
 
   // Refresh diff for a single file after staging/unstaging
   // This is more performant than refreshing all file tracking data
-  async function refreshFileDiff(filePath: string) {
+  function refreshFileDiff(filePath: string) {
     const workspaceId = routeWorkspaceId;
     if (!workspaceId) return;
-
-    // Track that this file is being refreshed (for loading indicator)
     refreshingFiles = new Set([...refreshingFiles, filePath]);
-
-    try {
-      // Mark this file as recently refreshed IMMEDIATELY (before async operations)
-      // This prevents the $effect from using stale parent data while we're fetching new data
-      // The file tracking refresh may complete before our fetch does, and we need the
-      // effect to skip this file and wait for our fresh data
-      recentlyRefreshedFiles.set(filePath, Date.now());
-
-      // Fetch both staged and unstaged diffs for this file. Wave 4: route through
-      // `batchedGitDiff` so concurrent refreshes for different files on the same
-      // tick coalesce into one IPC per staging group.
-      const [stagedChunk, unstagedChunk] = await Promise.all([
-        batchedGitDiff(workspaceId, true, filePath, { gitRootId, gitRootPath }).catch(
-          () => undefined,
-        ),
-        batchedGitDiff(workspaceId, false, filePath, { gitRootId, gitRootPath }).catch(
-          () => undefined,
-        ),
-      ]);
-
-      const hasStagedChanges =
-        !!stagedChunk && ((stagedChunk.chunks as DiffHunk[] | undefined)?.length ?? 0) > 0;
-      const hasUnstagedChanges =
-        !!unstagedChunk && ((unstagedChunk.chunks as DiffHunk[] | undefined)?.length ?? 0) > 0;
-
-      // Helper to calculate additions/deletions from chunks
-      function calculateStats(chunks: DiffHunk[] | undefined): {
-        additions: number;
-        deletions: number;
-      } {
-        let additions = 0;
-        let deletions = 0;
-        for (const chunk of chunks || []) {
-          for (const line of chunk.lines || []) {
-            if (line.type === 'Addition') additions++;
-            else if (line.type === 'Deletion') deletions++;
-          }
-        }
-        return { additions, deletions };
-      }
-
-      // Build new entries for this file, preserving existing entry data where possible
-      const existingEntries = enrichedChanges.filter((c) => c.filePath === filePath);
-      const newEntries: LocalFileChange[] = [];
-
-      if (hasUnstagedChanges && unstagedChunk) {
-        const unstagedChunks = unstagedChunk.chunks as DiffHunk[] | undefined;
-        const stats = calculateStats(unstagedChunks);
-        // Find existing unstaged entry to preserve toolName, toolCallId, action
-        const existingUnstaged = existingEntries.find((e) => !e.staged);
-        newEntries.push({
-          filePath,
-          additions: stats.additions,
-          deletions: stats.deletions,
-          staged: false,
-          category: 'unstaged' as ChangeCategory,
-          oldContent: unstagedChunk.oldContent || '',
-          newContent: unstagedChunk.newContent || '',
-          chunks: unstagedChunks,
-          // Mark as full file content so diff viewer knows it can use git:diff to refresh
-          isFullFileContent: true,
-          // Preserve required fields from existing entry or use defaults
-          action: existingUnstaged?.action || 'modify',
-          toolName: existingUnstaged?.toolName || 'git',
-          toolCallId: existingUnstaged?.toolCallId || `local-${filePath}-unstaged`,
-        });
-      }
-
-      if (hasStagedChanges && stagedChunk) {
-        const stagedChunks = stagedChunk.chunks as DiffHunk[] | undefined;
-        const stats = calculateStats(stagedChunks);
-        // Find existing staged entry to preserve toolName, toolCallId, action
-        const existingStaged = existingEntries.find((e) => e.staged);
-        newEntries.push({
-          filePath,
-          additions: stats.additions,
-          deletions: stats.deletions,
-          staged: true,
-          category: 'staged' as ChangeCategory,
-          oldContent: stagedChunk.oldContent || '',
-          newContent: stagedChunk.newContent || '',
-          chunks: stagedChunks,
-          // Mark as full file content so diff viewer knows it can use git:diff to refresh
-          isFullFileContent: true,
-          // Preserve required fields from existing entry or use defaults
-          action: existingStaged?.action || 'modify',
-          toolName: existingStaged?.toolName || 'git',
-          toolCallId: existingStaged?.toolCallId || `local-${filePath}-staged`,
-        });
-      }
-
-      // Update the timestamp again now that we have fresh data
-      // This resets the cooldown timer so the effect continues to use our data
-      recentlyRefreshedFiles.set(filePath, Date.now());
-
-      // Update enrichedChanges: remove old entries for this file, add new ones
-      enrichedChanges = [...enrichedChanges.filter((c) => c.filePath !== filePath), ...newEntries];
-    } finally {
-      // Remove file from refreshing set (done loading)
-      const newSet = new Set(refreshingFiles);
-      newSet.delete(filePath);
-      refreshingFiles = newSet;
-    }
+    recentlyRefreshedFiles.set(filePath, Date.now());
+    const requestId = String(++refreshFetchVersion);
+    refreshEnrichmentPlan = { requestId, filePath };
+    appStore.dispatch(
+      loadGitEnrichment(workspaceId, refreshEnrichmentKey, requestId, {
+        diffs: [
+          { key: 'staged', path: filePath, staged: true, gitRootId, gitRootPath },
+          { key: 'unstaged', path: filePath, staged: false, gitRootId, gitRootPath },
+        ],
+        branchDiffs: [],
+        numstats: [],
+        showFiles: [],
+      }),
+    );
   }
+
+  $effect(() => {
+    const entry = $refreshEnrichment$;
+    const pending = refreshEnrichmentPlan;
+    if (!pending || !entry || entry.loading || entry.requestId !== pending.requestId) return;
+    const stagedChunk = entry.data?.diffs.staged;
+    const unstagedChunk = entry.data?.diffs.unstaged;
+    const existingEntries = enrichedChanges.filter(
+      (change) => change.filePath === pending.filePath,
+    );
+    const newEntries: LocalFileChange[] = [];
+    for (const [staged, chunk] of [
+      [false, unstagedChunk],
+      [true, stagedChunk],
+    ] as const) {
+      const chunks = chunk?.chunks as DiffHunk[] | undefined;
+      if (!chunk || !chunks?.length) continue;
+      const stats = calculateDiffHunkStats(chunks);
+      const existing = existingEntries.find((change) => Boolean(change.staged) === staged);
+      newEntries.push({
+        filePath: pending.filePath,
+        additions: stats.additions,
+        deletions: stats.deletions,
+        staged,
+        category: staged ? 'staged' : 'unstaged',
+        oldContent: chunk.oldContent || '',
+        newContent: chunk.newContent || '',
+        chunks,
+        isFullFileContent: true,
+        action: existing?.action || 'modify',
+        toolName: existing?.toolName || 'git',
+        toolCallId:
+          existing?.toolCallId || `local-${pending.filePath}-${staged ? 'staged' : 'unstaged'}`,
+      });
+    }
+    recentlyRefreshedFiles.set(pending.filePath, Date.now());
+    enrichedChanges = [
+      ...enrichedChanges.filter((change) => change.filePath !== pending.filePath),
+      ...newEntries,
+    ];
+    refreshingFiles = new Set([...refreshingFiles].filter((path) => path !== pending.filePath));
+    refreshEnrichmentPlan = undefined;
+  });
 
   /**
    * Validate that a patch has the required structure for git apply.
@@ -1805,10 +1736,10 @@
   }
 
   // Hunk staging handlers for inline diffs
-  async function handleStageHunk(filePath: string, hunkPatch: string) {
+  function handleStageHunk(filePath: string, hunkPatch: string) {
     const workspaceId = routeWorkspaceId;
     if (!workspaceId) {
-      notify.error(m.chat_changesPanel_noSpaceAvailable_error());
+      toast.error(m.chat_changesPanel_noSpaceAvailable_error());
       return;
     }
 
@@ -1816,35 +1747,23 @@
     const validationError = validatePatch(hunkPatch);
     if (validationError) {
       logger.warn('Invalid patch for staging', { filePath, error: validationError });
-      notify.error(m.chat_changesPanel_stageInvalidPatch_error());
+      toast.error(m.chat_changesPanel_stageInvalidPatch_error());
       return;
     }
 
     // Preserve scroll position before staging
     const scrollTop = scrollContainerRef?.scrollTop ?? 0;
 
-    const result = await gitClient.stageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
-    if (result.ok) {
-      notify.success(m.chat_changesPanel_hunkStaged_toast());
-      gitCache.invalidateWorkspace(workspaceId);
-      appStore.dispatch(loadGitStatus(workspaceId, true));
-      // Performant update: only refresh the affected file's diff
-      await refreshFileDiff(filePath);
-      // Restore scroll position
-      requestAnimationFrame(() => {
-        if (scrollContainerRef) {
-          scrollContainerRef.scrollTop = scrollTop;
-        }
-      });
-    } else {
-      notify.error(result.error || m.chat_changesPanel_stageHunkFailed_error());
-    }
+    appStore.dispatch(stageGitHunkRequested(workspaceId, filePath, hunkPatch));
+    requestAnimationFrame(() => {
+      if (scrollContainerRef) scrollContainerRef.scrollTop = scrollTop;
+    });
   }
 
-  async function handleUnstageHunk(filePath: string, hunkPatch: string) {
+  function handleUnstageHunk(filePath: string, hunkPatch: string) {
     const workspaceId = routeWorkspaceId;
     if (!workspaceId) {
-      notify.error(m.chat_changesPanel_noSpaceAvailable_error());
+      toast.error(m.chat_changesPanel_noSpaceAvailable_error());
       return;
     }
 
@@ -1852,29 +1771,17 @@
     const validationError = validatePatch(hunkPatch);
     if (validationError) {
       logger.warn('Invalid patch for unstaging', { filePath, error: validationError });
-      notify.error(m.chat_changesPanel_unstageInvalidPatch_error());
+      toast.error(m.chat_changesPanel_unstageInvalidPatch_error());
       return;
     }
 
     // Preserve scroll position before unstaging
     const scrollTop = scrollContainerRef?.scrollTop ?? 0;
 
-    const result = await gitClient.unstageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
-    if (result.ok) {
-      notify.success(m.chat_changesPanel_hunkUnstaged_toast());
-      gitCache.invalidateWorkspace(workspaceId);
-      appStore.dispatch(loadGitStatus(workspaceId, true));
-      // Performant update: only refresh the affected file's diff
-      await refreshFileDiff(filePath);
-      // Restore scroll position
-      requestAnimationFrame(() => {
-        if (scrollContainerRef) {
-          scrollContainerRef.scrollTop = scrollTop;
-        }
-      });
-    } else {
-      notify.error(result.error || m.chat_changesPanel_unstageHunkFailed_error());
-    }
+    appStore.dispatch(unstageGitHunkRequested(workspaceId, filePath, hunkPatch));
+    requestAnimationFrame(() => {
+      if (scrollContainerRef) scrollContainerRef.scrollTop = scrollTop;
+    });
   }
 
   // Handle opening a commit changeset view
@@ -2523,6 +2430,13 @@
     return null;
   }
 
+  // Get GitHub avatar URL — try username from email, fall back to null
+  function getGitHubAvatarUrl(email?: string, size: number = 28): string | null {
+    const username = getGitHubUsername(email);
+    if (username) return `https://github.com/${username}.png?size=${size * 2}`;
+    return null;
+  }
+
   // Get author initials for avatar fallback
   function getAuthorInitials(name?: string): string {
     if (!name) return '?';
@@ -2593,7 +2507,7 @@
           {/each}
         </div>
       {:else if mergedChanges.length === 0}
-        <div class="flex h-full items-center justify-start py-6 text-left text-subtle">
+        <div class="flex items-center justify-center h-full text-subtle py-6">
           {m.chat_changesPanel_noChanges_label()}
         </div>
       {:else}
@@ -2601,7 +2515,7 @@
         <div class="sticky top-0 z-20 -mx-5 px-5">
           <div class="flex items-center justify-between py-2 bg-background border-b border-border">
             <div
-              class="flex items-center justify-start gap-1.5 whitespace-nowrap text-left text-xs font-medium text-subtle"
+              class="flex items-center gap-1.5 text-xs font-medium text-subtle whitespace-nowrap"
             >
               <span
                 >{totalFileCount === 1
@@ -2669,7 +2583,6 @@
             <!-- Group-by-commit mode: render changes grouped under commit headers -->
             {#each commitGroups as group, i (group.hash || 'working-' + i)}
               {#if group.hash}
-                {@const groupAuthorLogin = getGitHubUsername(group.authorEmail)}
                 <!-- Commit group with sticky collapsible header -->
                 <div class="mb-2">
                   <div class="sticky top-[31.5px] z-[11] bg-background rounded-md">
@@ -2689,17 +2602,20 @@
                           class="shrink-0 w-5 h-5 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
                           title={group.author || ''}
                         >
-                          {#if groupAuthorLogin}
-                            <GitHubAvatar
-                              identity={groupAuthorLogin}
+                          {#if getGitHubAvatarUrl(group.authorEmail, 20)}
+                            <img
+                              src={getGitHubAvatarUrl(group.authorEmail, 20) ?? ''}
                               alt={group.author || ''}
-                              size={20}
                               class="w-full h-full object-cover"
-                            >
-                              {#snippet fallback()}
-                                {getAuthorInitials(group.author)}
-                              {/snippet}
-                            </GitHubAvatar>
+                              loading="lazy"
+                              onerror={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                const sibling = (e.currentTarget as HTMLImageElement)
+                                  .nextElementSibling;
+                                if (sibling) (sibling as HTMLElement).classList.remove('hidden');
+                              }}
+                            />
+                            <span class="hidden">{getAuthorInitials(group.author)}</span>
                           {:else}
                             {getAuthorInitials(group.author)}
                           {/if}
@@ -2768,16 +2684,38 @@
 </div>
 
 {#snippet commitDetailsSection()}
-  {@const commitAuthorLogin = getGitHubUsername(commitInfo?.authorEmail)}
-  <div class="mb-3">
-    <div class="flex items-center gap-2.5 py-2">
+  <div class="mb-3 px-1">
+    <div class="flex items-start gap-2.5 py-2">
+      <!-- Author avatar (GitHub image with initials fallback) -->
+      <div
+        class="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
+        title={commitInfo?.author || ''}
+      >
+        {#if getGitHubAvatarUrl(commitInfo?.authorEmail)}
+          <img
+            src={getGitHubAvatarUrl(commitInfo?.authorEmail) ?? ''}
+            alt={commitInfo?.author || ''}
+            class="w-full h-full object-cover"
+            loading="lazy"
+            onerror={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+              const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
+              if (sibling) (sibling as HTMLElement).classList.remove('hidden');
+            }}
+          />
+          <span class="hidden">{getAuthorInitials(commitInfo?.author)}</span>
+        {:else}
+          {getAuthorInitials(commitInfo?.author)}
+        {/if}
+      </div>
+
       <div class="flex-1 min-w-0 space-y-1">
         <!-- Commit title — clickable if GitHub URL available -->
         {#if hasCommitUrl()}
           <Button
             type="button"
             variant="link"
-            class="h-auto justify-start px-0 text-sm font-medium text-foreground hover:text-accent-foreground hover:underline underline-offset-2 text-left cursor-pointer transition-colors leading-snug"
+            class="text-sm font-medium text-foreground hover:text-accent-foreground hover:underline underline-offset-2 text-left cursor-pointer transition-colors leading-snug"
             onclick={openCommitInBrowser}
             title={m.chat_changesPanel_openOnGitHub_title()}
           >
@@ -2871,26 +2809,6 @@
           </div>
         {/if}
       </div>
-      <!-- Author avatar (GitHub image with initials fallback) -->
-      <div
-        class="shrink-0 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
-        title={commitInfo?.author || ''}
-      >
-        {#if commitAuthorLogin}
-          <GitHubAvatar
-            identity={commitAuthorLogin}
-            alt={commitInfo?.author || ''}
-            size={28}
-            class="w-full h-full object-cover"
-          >
-            {#snippet fallback()}
-              {getAuthorInitials(commitInfo?.author)}
-            {/snippet}
-          </GitHubAvatar>
-        {:else}
-          {getAuthorInitials(commitInfo?.author)}
-        {/if}
-      </div>
     </div>
   </div>
 {/snippet}
@@ -2910,10 +2828,10 @@
   >
     <!-- File Header (sticky within scroll container) -->
     <div
-      class="flex items-center gap-2 px-0 py-1.5 group relative sticky z-10 bg-sidebar {allChangesSearchHeaderMatchKeys.has(
+      class="flex items-center gap-2 px-4 py-1.5 group relative sticky z-10 bg-sidebar {allChangesSearchHeaderMatchKeys.has(
         expandKey,
       )
-        ? 'ring-1 ring-warning/30 bg-warning/10'
+        ? 'ring-1 ring-yellow-400/60 bg-yellow-400/10'
         : ''} {allChangesSearchCurrentHeaderKey === expandKey
         ? 'ring-2 ring-blue-400/70 bg-blue-500/10'
         : ''}"
@@ -2927,27 +2845,29 @@
       <Button
         variant="plain"
         onclick={() => toggleFile(expandKey)}
-        class="flex min-w-0 flex-1 shrink cursor-pointer items-center justify-start gap-2 text-left"
+        class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer shrink"
       >
-        <span class="text-sm truncate shrink-0 max-w-full" title={displayPath}>
-          {#each getAllChangesHighlightedTextSegments(getFileName(displayPath)) as segment, i (i)}
-            {#if segment.isMatch}
-              <mark class="rounded-sm bg-warning/10 px-0.5 text-foreground">{segment.text}</mark>
-            {:else}
-              {segment.text}
-            {/if}
-          {/each}
-        </span>
         <Fa
           icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronLeft}
           class="text-subtle w-2.5! h-2.5! shrink-0"
         />
 
+        <span class="text-sm truncate shrink-0 max-w-full" title={displayPath}>
+          {#each getAllChangesHighlightedTextSegments(getFileName(displayPath)) as segment, i (i)}
+            {#if segment.isMatch}
+              <mark class="rounded-sm bg-yellow-400/40 px-0.5 text-foreground">{segment.text}</mark>
+            {:else}
+              {segment.text}
+            {/if}
+          {/each}
+        </span>
         {#if getDirectoryPath(displayPath)}
           <span class="text-xs text-subtle truncate hidden sm:inline shrink-6">
             {#each getAllChangesHighlightedTextSegments(getDirectoryPath(displayPath)) as segment, i (i)}
               {#if segment.isMatch}
-                <mark class="rounded-sm bg-warning/10 px-0.5 text-foreground">{segment.text}</mark>
+                <mark class="rounded-sm bg-yellow-400/40 px-0.5 text-foreground"
+                  >{segment.text}</mark
+                >
               {:else}
                 {segment.text}
               {/if}
@@ -3140,7 +3060,7 @@
           {/if}
         {:else}
           <!-- Placeholder while waiting for visibility -->
-          <div class="flex h-[300px] items-center justify-start text-left text-subtle">
+          <div class="flex items-center justify-center h-[300px] text-subtle">
             <IntentMarkLoader size={16} class="mr-2" />
             {m.chat_changesPanel_loadingDiff_label()}
           </div>

@@ -2,7 +2,7 @@
  * Comments V2 Redux slice — actions & reducer.
  */
 
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -12,6 +12,7 @@ import {
   getItem,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { CommentV2 } from '$features/comments/comment-types-v2';
+import type { CommentAddParams, CommentRespondParams } from '$lib/client';
 import type { CommentsV2State, CommentThread } from './comments-types';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,30 @@ export const clearCommentsAction = createAction('comments/clear');
 
 /** Select a comment (or null to deselect). */
 export const selectCommentAction = createAction<[id: string | null]>('comments/selectComment');
+
+/** Saga-owned optimistic comment creation and persistence. */
+export const addCommentRequested = createAsyncAction<
+  [noteId: string, optimistic: CommentV2, params: CommentAddParams],
+  boolean
+>('comments/addCommentMutation', 'comments/addCommentRequested');
+
+/** Saga-owned optimistic thread reply and persistence. */
+export const respondToCommentRequested = createAsyncAction<
+  [noteId: string, optimistic: CommentV2, params: CommentRespondParams],
+  boolean
+>('comments/respondToCommentMutation', 'comments/respondToCommentRequested');
+
+/** Saga-owned optimistic comment deletion and rollback. */
+export const deleteCommentRequested = createAsyncAction<
+  [noteId: string, commentId: string, workspaceId?: string],
+  { existed: boolean; success: boolean }
+>('comments/deleteCommentMutation', 'comments/deleteCommentRequested');
+
+/** Saga-owned comment resolution. */
+export const resolveCommentRequested = createAsyncAction<
+  [workspaceId: string, commentId: string, noteId: string],
+  boolean
+>('comments/resolveCommentMutation', 'comments/resolveCommentRequested');
 
 // ---------------------------------------------------------------------------
 // Helpers

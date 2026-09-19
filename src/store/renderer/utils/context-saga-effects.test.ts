@@ -56,6 +56,36 @@ function createWorkerHarness() {
 }
 
 describe('context-scoped saga effects', () => {
+  it('ignores malformed context directives without terminating the watcher', async () => {
+    const input = stdChannel();
+    const handled: string[] = [];
+    let malformed = true;
+    const task = runSaga({ channel: input, dispatch: vi.fn(), getState: () => ({}) }, function* () {
+      yield* takeLatestInContext(
+        isWorkAction,
+        (action) => {
+          if (malformed) {
+            malformed = false;
+            return undefined;
+          }
+          return action.context;
+        },
+        function* worker(action: WorkAction) {
+          handled.push(action.id);
+        },
+      );
+    });
+    await settle();
+
+    input.put({ type: 'work', context: 'a', id: 'malformed' });
+    input.put({ type: 'work', context: 'a', id: 'valid' });
+    await settle();
+
+    expect(handled).toEqual(['valid']);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('runs latest work independently and cancels only stale same-context work', async () => {
     const input = stdChannel();
     const harness = createWorkerHarness();
@@ -232,6 +262,38 @@ describe('context-scoped saga effects', () => {
     task.cancel();
     await task.toPromise();
     expect(harness.canceled).toEqual(['a1', 'a3']);
+  });
+
+  it('cancels every active context matching a prefix without affecting siblings', async () => {
+    const input = stdChannel();
+    const harness = createWorkerHarness();
+    harness.addGate('a1');
+    harness.addGate('a2');
+    harness.addGate('b1');
+    const task = runSaga({ channel: input, dispatch: vi.fn(), getState: () => ({}) }, function* () {
+      yield* takeSingleFlightInContext(
+        isWorkAction,
+        (action) =>
+          action.cancel
+            ? { context: action.context, cancel: true, match: 'prefix' }
+            : action.context,
+        harness.worker,
+        'run',
+      );
+    });
+    await settle();
+
+    input.put({ type: 'work', context: 'a:one', id: 'a1' });
+    input.put({ type: 'work', context: 'a:two', id: 'a2' });
+    input.put({ type: 'work', context: 'b:one', id: 'b1' });
+    await settle();
+    input.put({ type: 'work', context: 'a:', id: 'cancel', cancel: true });
+    await settle();
+
+    expect(harness.canceled).toEqual(expect.arrayContaining(['a1', 'a2']));
+    expect(harness.canceled).not.toContain('b1');
+    task.cancel();
+    await task.toPromise();
   });
 
   it('processes lossless same-context bursts in FIFO order while other contexts run', async () => {

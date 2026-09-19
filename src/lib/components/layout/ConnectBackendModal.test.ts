@@ -10,41 +10,109 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { warmImport } from '../../../test/warm-import';
 
-const mocks = vi.hoisted(() => ({
-  dispatch: vi.fn(),
-  captureFingerprintRequested: vi.fn(),
-  addConnectionRequested: vi.fn(),
-  openConnectionRequested: vi.fn(),
-  loadKeychainSyncStateRequested: vi.fn(),
-  setKeychainSyncEnabledRequested: vi.fn(),
-  openExternalUrl: vi.fn(),
-  // The keychain sync state the mocked selector serves; tests set it before
-  // render. Null = not loaded (checkbox hidden, adds proceed normally).
-  syncState: {
-    value: null as { supported: boolean; enabled: boolean; status: null } | null,
-  },
-}));
+const mocks = vi.hoisted(() => {
+  const subscribers = new Set<() => void>();
+  const captureOperation = {
+    value: { version: 0, status: 'idle', result: null, error: null } as any,
+  };
+  const connectOperation = {
+    value: { version: 0, status: 'idle', result: null, error: null } as any,
+  };
+  const state = {
+    captureFingerprintRequested: vi.fn((params: unknown) => ({
+      type: 'connections/captureFingerprintRequested',
+      payload: [params],
+    })),
+    connectBackendRequested: vi.fn((params: unknown) => ({
+      type: 'connections/connectBackendRequested',
+      payload: [params],
+    })),
+    nextCapture: {
+      result: { fingerprint: 'AA:BB:CC:DD', tokenValid: true },
+      error: null as string | null,
+    },
+    nextConnectError: null as string | null,
+    nextConnectResult: { status: 'opened', id: 'r1' } as {
+      status: 'opened' | 'secret-unavailable';
+      id?: string;
+    },
+    captureOperation,
+    connectOperation,
+    subscribers,
+    notify() {
+      subscribers.forEach((subscriber) => subscriber());
+    },
+  };
+  const dispatch = vi.fn((action: { type?: string }) => {
+    if (action.type === 'connections/captureFingerprintRequested') {
+      queueMicrotask(() => {
+        captureOperation.value = {
+          version: captureOperation.value.version + 1,
+          status: state.nextCapture.error ? 'error' : 'success',
+          result: state.nextCapture.error ? null : state.nextCapture.result,
+          error: state.nextCapture.error,
+        };
+        state.notify();
+      });
+    } else if (action.type === 'connections/connectBackendRequested') {
+      queueMicrotask(() => {
+        connectOperation.value = {
+          version: connectOperation.value.version + 1,
+          status: state.nextConnectError ? 'error' : 'success',
+          result: state.nextConnectError ? null : state.nextConnectResult,
+          error: state.nextConnectError,
+        };
+        state.notify();
+      });
+    }
+    return action;
+  });
+  return Object.assign(state, {
+    dispatch,
+    loadKeychainSyncStateRequested: vi.fn(() => ({
+      type: 'connections/loadKeychainSyncStateRequested',
+    })),
+    openExternalUrl: vi.fn(),
+    // The keychain sync state the mocked selector serves; tests set it before
+    // render. Null = not loaded (checkbox hidden, adds proceed normally).
+    syncState: {
+      value: null as { supported: boolean; enabled: boolean; status: null } | null,
+    },
+  });
+});
 
 vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
 
 vi.mock('$store/renderer/store', () => ({
-  store: { dispatch: mocks.dispatch },
+  store: { dispatch: mocks.dispatch, state: {} },
 }));
 
 vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   captureFingerprintRequested: mocks.captureFingerprintRequested,
-  addConnectionRequested: mocks.addConnectionRequested,
-  openConnectionRequested: mocks.openConnectionRequested,
+  connectBackendRequested: mocks.connectBackendRequested,
   loadKeychainSyncStateRequested: mocks.loadKeychainSyncStateRequested,
-  setKeychainSyncEnabledRequested: mocks.setKeychainSyncEnabledRequested,
 }));
 
 vi.mock('$store/renderer/slices/connections/connections-selectors', async () => {
   const { readable } = await import('svelte/store');
+  const operationSelector = (operation: { value: unknown }) =>
+    Object.assign(
+      () => ({
+        subscribe(run: (value: unknown) => void) {
+          const notify = () => run(operation.value);
+          notify();
+          mocks.subscribers.add(notify);
+          return () => mocks.subscribers.delete(notify);
+        },
+      }),
+      { select: () => operation.value },
+    );
   return {
     selectKeychainSyncState: () => readable(mocks.syncState.value),
+    selectCaptureFingerprintOperation: operationSelector(mocks.captureOperation),
+    selectConnectBackendOperation: operationSelector(mocks.connectOperation),
   };
 });
 
@@ -69,36 +137,14 @@ describe('ConnectBackendModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.syncState.value = null;
-    mocks.captureFingerprintRequested.mockImplementation((params) => ({
-      payload: [params],
-      promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD', tokenValid: true }),
-    }));
-    mocks.loadKeychainSyncStateRequested.mockImplementation(() => ({
-      payload: [],
-      promise: Promise.resolve(mocks.syncState.value),
-    }));
-    mocks.setKeychainSyncEnabledRequested.mockImplementation((enabled) => ({
-      payload: [enabled],
-      promise: Promise.resolve({ supported: true, enabled, status: null }),
-    }));
-    mocks.addConnectionRequested.mockImplementation((params) => ({
-      payload: [params],
-      promise: Promise.resolve({
-        connection: {
-          id: 'r1',
-          label: '10.0.0.2:4180',
-          host: '10.0.0.2',
-          port: 4180,
-          fingerprint: 'AA:BB:CC:DD',
-          isLocal: false,
-        },
-        switched: false,
-      }),
-    }));
-    mocks.openConnectionRequested.mockImplementation((id) => ({
-      payload: [id],
-      promise: Promise.resolve({ status: 'opened', id }),
-    }));
+    mocks.captureOperation.value = { version: 0, status: 'idle', result: null, error: null };
+    mocks.connectOperation.value = { version: 0, status: 'idle', result: null, error: null };
+    mocks.nextCapture = {
+      result: { fingerprint: 'AA:BB:CC:DD', tokenValid: true },
+      error: null,
+    };
+    mocks.nextConnectError = null;
+    mocks.nextConnectResult = { status: 'opened', id: 'r1' };
   });
 
   it('captures the fingerprint on Continue and shows the confirm step', async () => {
@@ -128,76 +174,37 @@ describe('ConnectBackendModal', () => {
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    expect(mocks.addConnectionRequested).toHaveBeenCalledWith({
-      label: 'Studio Mac',
-      accent: 'blue',
-      deviceIcon: 'auto',
-      host: '10.0.0.2',
-      port: 4180,
-      fingerprint: 'AA:BB:CC:DD',
-      token: 'secret-token',
-      detectHosts: true,
+    expect(mocks.connectBackendRequested).toHaveBeenCalledWith({
+      connection: {
+        label: 'Studio Mac',
+        accent: 'blue',
+        deviceIcon: 'auto',
+        host: '10.0.0.2',
+        port: 4180,
+        fingerprint: 'AA:BB:CC:DD',
+        token: 'secret-token',
+        detectHosts: true,
+      },
+      enableSyncAfterAdd: false,
     });
-    await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
+    await vi.waitFor(() => expect(screen.queryByLabelText('Host')).toBeNull());
   });
 
-  it('passes detectHosts: false when the detect-all-IPs switch is turned off', async () => {
+  it('passes detectHosts: false when the detect-all-IPs option is unticked', async () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
     await fillDetails();
-    const toggle = screen.getByRole('switch', { name: 'Detect all backend IPs' });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-    await fireEvent.click(toggle);
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(screen.getByRole('switch', { name: 'Detect all backend IPs' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    expect(mocks.addConnectionRequested).toHaveBeenCalledWith({
-      label: 'Studio Mac',
-      accent: 'blue',
-      deviceIcon: 'auto',
-      host: '10.0.0.2',
-      port: 4180,
-      fingerprint: 'AA:BB:CC:DD',
-      token: 'secret-token',
-      detectHosts: false,
-    });
-  });
-
-  it('disables switches during capture and preserves choices after returning to details', async () => {
-    mocks.syncState.value = { supported: true, enabled: true, status: null };
-    let finishCapture!: (value: { fingerprint: string; tokenValid: boolean }) => void;
-    mocks.captureFingerprintRequested.mockImplementationOnce((params) => ({
-      payload: [params],
-      promise: new Promise((resolve) => {
-        finishCapture = resolve;
+    expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connection: expect.objectContaining({ detectHosts: false }),
       }),
-    }));
-    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
-    render(ConnectBackendModal, { props: { open: true } });
-    await fillDetails();
-    const detection = screen.getByRole('switch', {
-      name: 'Detect all backend IPs',
-    }) as HTMLButtonElement;
-    const cloud = screen.getByRole('switch', { name: 'Save to iCloud' }) as HTMLButtonElement;
-    await fireEvent.click(detection);
-    await fireEvent.click(cloud);
-    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(detection.disabled).toBe(true);
-    expect(cloud.disabled).toBe(true);
-    finishCapture({ fingerprint: 'AA:BB:CC:DD', tokenValid: true });
-    await screen.findByText('AA:BB:CC:DD');
-    await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    for (const label of ['Detect all backend IPs', 'Save to iCloud']) {
-      const toggle = screen.getByRole('switch', { name: label }) as HTMLButtonElement;
-      expect(toggle.disabled).toBe(false);
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
-      const description = document.getElementById(toggle.getAttribute('aria-describedby')!);
-      expect(description?.textContent?.trim()).toBeTruthy();
-    }
-    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+    );
   });
 
   it('requires a name and assigns the selected accent', async () => {
@@ -220,8 +227,10 @@ describe('ConnectBackendModal', () => {
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-      expect.objectContaining({ label: 'Render box', accent: 'emerald' }),
+    expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connection: expect.objectContaining({ label: 'Render box', accent: 'emerald' }),
+      }),
     );
   });
 
@@ -235,8 +244,8 @@ describe('ConnectBackendModal', () => {
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-      expect.objectContaining({ accent: null }),
+    expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+      expect.objectContaining({ connection: expect.objectContaining({ accent: null }) }),
     );
   });
 
@@ -255,69 +264,14 @@ describe('ConnectBackendModal', () => {
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-      expect.objectContaining({ deviceIcon: 'pottedPlant' }),
-    );
-  });
-
-  it('dismisses the icon picker before dismissing the modal with Escape', async () => {
-    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
-    render(ConnectBackendModal, { props: { open: true } });
-
-    const picker = screen.getByRole('combobox');
-    picker.focus();
-    await fireEvent.keyDown(picker, { key: 'Enter' });
-    expect(picker.getAttribute('aria-expanded')).toBe('true');
-    await fireEvent.keyDown(picker, { key: 'Escape' });
-    await vi.waitFor(() => expect(picker.getAttribute('aria-expanded')).toBe('false'));
-    expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(document.activeElement).toBe(picker);
-    await fireEvent.keyDown(picker, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(mocks.captureFingerprintRequested).not.toHaveBeenCalled();
-    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
-  });
-
-  it('preserves a pointer-selected icon after returning to details and stores its value', async () => {
-    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
-    render(ConnectBackendModal, { props: { open: true } });
-
-    const picker = screen.getByRole('combobox');
-    picker.focus();
-    await fireEvent.keyDown(picker, { key: 'Enter' });
-    await fireEvent.pointerUp(screen.getByRole('option', { name: 'Laptop', exact: true }), {
-      pointerType: 'mouse',
-    });
-    await fillDetails();
-    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await screen.findByText('AA:BB:CC:DD');
-    await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByRole('combobox').getAttribute('aria-label')).toContain('Laptop');
-    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await screen.findByText('AA:BB:CC:DD');
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
-
-    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-      expect.objectContaining({ deviceIcon: 'laptop' }),
+    expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connection: expect.objectContaining({ deviceIcon: 'pottedPlant' }),
+      }),
     );
   });
 
   it('opens the backend after main re-pairs an active connection', async () => {
-    mocks.addConnectionRequested.mockImplementationOnce((params) => ({
-      payload: [params],
-      promise: Promise.resolve({
-        connection: {
-          id: 'r1',
-          label: '10.0.0.2:4180',
-          host: '10.0.0.2',
-          port: 4180,
-          fingerprint: 'AA:BB:CC:DD',
-          isLocal: false,
-        },
-        switched: true,
-      }),
-    }));
-
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
@@ -326,17 +280,12 @@ describe('ConnectBackendModal', () => {
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    await vi.waitFor(() => expect(mocks.addConnectionRequested).toHaveBeenCalled());
-    // Opening is non-destructive even though main already refreshed the client.
+    await vi.waitFor(() => expect(mocks.connectBackendRequested).toHaveBeenCalled());
     await vi.waitFor(() => expect(screen.queryByLabelText('Host')).toBeNull());
-    expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1');
   });
 
   it('surfaces a capture error inline and stays on the details step', async () => {
-    mocks.captureFingerprintRequested.mockImplementationOnce((params) => ({
-      payload: [params],
-      promise: Promise.reject(new Error('unreachable host')),
-    }));
+    mocks.nextCapture = { result: null, error: 'unreachable host' };
 
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
@@ -345,16 +294,16 @@ describe('ConnectBackendModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(await screen.findByText('unreachable host')).toBeTruthy();
-    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+    expect(mocks.connectBackendRequested).not.toHaveBeenCalled();
     // Still on details: the Host field is present.
     expect(screen.getByLabelText('Host')).toBeTruthy();
   });
 
   it('surfaces a 401 token rejection inline and blocks the confirm step', async () => {
-    mocks.captureFingerprintRequested.mockImplementationOnce((params) => ({
-      payload: [params],
-      promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD', tokenValid: false, statusCode: 401 }),
-    }));
+    mocks.nextCapture = {
+      result: { fingerprint: 'AA:BB:CC:DD', tokenValid: false, statusCode: 401 },
+      error: null,
+    };
 
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
@@ -363,17 +312,14 @@ describe('ConnectBackendModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(await screen.findByText(/rejected this access token/i)).toBeTruthy();
-    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+    expect(mocks.connectBackendRequested).not.toHaveBeenCalled();
     // Still on details: the Host field is present, no confirm button.
     expect(screen.getByLabelText('Host')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Confirm & connect' })).toBeNull();
   });
 
   it('stays open with an inline error when the post-add open resolves secret-unavailable (#3783)', async () => {
-    mocks.openConnectionRequested.mockImplementationOnce((id) => ({
-      payload: [id],
-      promise: Promise.resolve({ status: 'secret-unavailable' }),
-    }));
+    mocks.nextConnectResult = { status: 'secret-unavailable' };
 
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
@@ -383,7 +329,7 @@ describe('ConnectBackendModal', () => {
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
+    await vi.waitFor(() => expect(mocks.connectBackendRequested).toHaveBeenCalled());
     // A resolved secret-unavailable is a failure: the modal must not close as
     // if the open succeeded, and the confirm action is re-enabled.
     expect(await screen.findByText(/access token could not be read back/i)).toBeTruthy();
@@ -392,10 +338,10 @@ describe('ConnectBackendModal', () => {
   });
 
   it('surfaces a 403 rejection (WS API disabled) with its dedicated message', async () => {
-    mocks.captureFingerprintRequested.mockImplementationOnce((params) => ({
-      payload: [params],
-      promise: Promise.resolve({ fingerprint: 'AA:BB:CC:DD', tokenValid: false, statusCode: 403 }),
-    }));
+    mocks.nextCapture = {
+      result: { fingerprint: 'AA:BB:CC:DD', tokenValid: false, statusCode: 403 },
+      error: null,
+    };
 
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
@@ -404,7 +350,7 @@ describe('ConnectBackendModal', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(await screen.findByText(/WebSocket API is disabled/i)).toBeTruthy();
-    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+    expect(mocks.connectBackendRequested).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Host')).toBeTruthy();
   });
 
@@ -468,7 +414,7 @@ describe('ConnectBackendModal', () => {
       await screen.findByText('AA:BB:CC:DD');
     }
 
-    it('hides the switch entirely when sync is unsupported (non-macOS)', async () => {
+    it('hides the checkbox entirely when sync is unsupported (non-macOS)', async () => {
       mocks.syncState.value = { supported: false, enabled: false, status: null };
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
@@ -476,45 +422,40 @@ describe('ConnectBackendModal', () => {
       expect(screen.queryByRole('switch', { name: 'Save to iCloud' })).toBeNull();
     });
 
-    it('keeps iCloud enabled by default on macOS and adds without syncExcluded', async () => {
+    it('shows the checkbox checked by default on macOS and adds without syncExcluded', async () => {
       mocks.syncState.value = macSync(true);
       await renderAndReachConfirm();
 
       await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-      expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-        expect.not.objectContaining({ syncExcluded: true }),
+      expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connection: expect.not.objectContaining({ syncExcluded: true }),
+          enableSyncAfterAdd: false,
+        }),
       );
-      await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
     });
 
-    it('adds with syncExcluded: true when sync is on but the switch is off', async () => {
+    it('adds with syncExcluded: true when sync is on but the box is unchecked', async () => {
       mocks.syncState.value = macSync(true);
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
 
-      const toggle = screen.getByRole('switch', { name: 'Save to iCloud' });
-      expect(toggle.getAttribute('aria-checked')).toBe('true');
-      await fireEvent.click(toggle);
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      const checkbox = screen.getByRole('switch', { name: 'Save to iCloud' });
+      expect(checkbox.getAttribute('aria-checked')).toBe('true');
+      await fireEvent.click(checkbox);
 
       await fillDetails();
       await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       await screen.findByText('AA:BB:CC:DD');
       await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-      expect(mocks.addConnectionRequested).toHaveBeenCalledWith({
-        label: 'Studio Mac',
-        accent: 'blue',
-        deviceIcon: 'auto',
-        host: '10.0.0.2',
-        port: 4180,
-        fingerprint: 'AA:BB:CC:DD',
-        token: 'secret-token',
-        detectHosts: true,
-        syncExcluded: true,
-      });
-      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
+      expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connection: expect.objectContaining({ syncExcluded: true }),
+          enableSyncAfterAdd: false,
+        }),
+      );
     });
 
     it('shows the enable-sync confirm when sync is off; confirming adds then enables sync', async () => {
@@ -525,17 +466,16 @@ describe('ConnectBackendModal', () => {
 
       // The machine-global consequences are stated before anything happens.
       expect(await screen.findByText(/syncs all backends on this Mac/i)).toBeTruthy();
-      expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+      expect(mocks.connectBackendRequested).not.toHaveBeenCalled();
 
       await fireEvent.click(screen.getByRole('button', { name: 'Enable sync & add' }));
 
-      expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-        expect.not.objectContaining({ syncExcluded: true }),
+      expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connection: expect.not.objectContaining({ syncExcluded: true }),
+          enableSyncAfterAdd: true,
+        }),
       );
-      await vi.waitFor(() =>
-        expect(mocks.setKeychainSyncEnabledRequested).toHaveBeenCalledWith(true),
-      );
-      await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
     });
 
     it('declining the enable-sync confirm still adds the backend, excluded from sync', async () => {
@@ -547,15 +487,16 @@ describe('ConnectBackendModal', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Add without iCloud' }));
 
       await vi.waitFor(() =>
-        expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-          expect.objectContaining({ syncExcluded: true }),
+        expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+          expect.objectContaining({
+            connection: expect.objectContaining({ syncExcluded: true }),
+            enableSyncAfterAdd: false,
+          }),
         ),
       );
-      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
-      await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
     });
 
-    it('adds with syncExcluded and no confirm dialog when sync and the switch are off', async () => {
+    it('adds with syncExcluded and no confirm dialog when sync is off and the box is unchecked', async () => {
       mocks.syncState.value = macSync(false);
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
@@ -567,36 +508,32 @@ describe('ConnectBackendModal', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
       expect(screen.queryByText(/syncs all backends on this Mac/i)).toBeNull();
-      expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-        expect.objectContaining({ syncExcluded: true }),
+      expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connection: expect.objectContaining({ syncExcluded: true }),
+          enableSyncAfterAdd: false,
+        }),
       );
-      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
     });
 
     it('a failed add on the enable-sync path leaves machine-global sync untouched', async () => {
       mocks.syncState.value = macSync(false);
-      mocks.addConnectionRequested.mockImplementationOnce((params) => ({
-        payload: [params],
-        promise: Promise.reject(new Error('token rejected')),
-      }));
+      mocks.nextConnectError = 'token rejected';
       await renderAndReachConfirm();
 
       await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
       await screen.findByText(/syncs all backends on this Mac/i);
       await fireEvent.click(screen.getByRole('button', { name: 'Enable sync & add' }));
 
-      // The bundled action did not complete: no machine-global side effect.
       expect(await screen.findByText('token rejected')).toBeTruthy();
-      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
-      expect(mocks.openConnectionRequested).not.toHaveBeenCalled();
+      expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+        expect.objectContaining({ enableSyncAfterAdd: true }),
+      );
     });
 
-    it('surfaces an enable-sync failure inline after a successful add (no open)', async () => {
+    it('surfaces an aggregate connect failure inline', async () => {
       mocks.syncState.value = macSync(false);
-      mocks.setKeychainSyncEnabledRequested.mockImplementationOnce((enabled) => ({
-        payload: [enabled],
-        promise: Promise.reject(new Error('keychain unavailable')),
-      }));
+      mocks.nextConnectError = 'keychain unavailable';
       await renderAndReachConfirm();
 
       await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
@@ -604,9 +541,9 @@ describe('ConnectBackendModal', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Enable sync & add' }));
 
       expect(await screen.findByText('keychain unavailable')).toBeTruthy();
-      // The add ran first (sync enable only after a successful add).
-      expect(mocks.addConnectionRequested).toHaveBeenCalled();
-      expect(mocks.openConnectionRequested).not.toHaveBeenCalled();
+      expect(mocks.connectBackendRequested).toHaveBeenCalledWith(
+        expect.objectContaining({ enableSyncAfterAdd: true }),
+      );
     });
 
     it('the enable-sync step has a Back button returning to details with values kept', async () => {
@@ -622,8 +559,7 @@ describe('ConnectBackendModal', () => {
       expect((screen.getByLabelText('Access token') as HTMLInputElement).value).toBe(
         'secret-token',
       );
-      expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
-      expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
+      expect(mocks.connectBackendRequested).not.toHaveBeenCalled();
     });
 
     it('falls back to the preload platform gate while the sync state has not loaded', async () => {

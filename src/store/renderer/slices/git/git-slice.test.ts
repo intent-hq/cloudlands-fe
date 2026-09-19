@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   gitReducer,
   initialState,
+  loadGitBranches,
+  setGitBranches,
   setGitStatus,
+  readGitStatusRequested,
+  setGitStatusReadError,
+  setGitStatusReadResult,
   getGitWorkspaceState,
   setSecondaryRootGit,
   setSecondaryRootGitError,
@@ -43,6 +48,71 @@ describe('gitReducer', () => {
       expect(ws.ahead).toBe(0);
       expect(ws.behind).toBe(0);
     });
+  });
+
+  describe('Git status read operations', () => {
+    it('settles only the matching request result', () => {
+      const staleStatus = makeGitStatus({ branch: 'stale' });
+      const freshStatus = makeGitStatus({ branch: 'fresh' });
+      const first = reduce(initialState, readGitStatusRequested('ws-1', true, 'request-1'));
+      const second = reduce(first, readGitStatusRequested('ws-1', true, 'request-2'));
+      const stale = reduce(second, setGitStatusReadResult('ws-1', 'request-1', staleStatus));
+      const settled = reduce(stale, setGitStatusReadResult('ws-1', 'request-2', freshStatus));
+
+      expect(stale).toBe(second);
+      expect(getGitWorkspaceState(settled, 'ws-1')).toEqual(
+        expect.objectContaining({
+          status: freshStatus,
+          statusReadOperation: {
+            requestId: 'request-2',
+            status: 'success',
+            result: freshStatus,
+            error: null,
+          },
+        }),
+      );
+    });
+
+    it('settles a matching failure without replacing cached status', () => {
+      const cached = makeGitStatus({ branch: 'cached' });
+      const loaded = reduce(initialState, setGitStatus('ws-1', cached));
+      const pending = reduce(loaded, readGitStatusRequested('ws-1', true, 'request-1'));
+      const failed = reduce(
+        pending,
+        setGitStatusReadError('ws-1', 'request-1', 'status unavailable'),
+      );
+
+      expect(getGitWorkspaceState(failed, 'ws-1')).toEqual(
+        expect.objectContaining({
+          status: cached,
+          statusReadOperation: {
+            requestId: 'request-1',
+            status: 'error',
+            result: null,
+            error: 'status unavailable',
+          },
+        }),
+      );
+    });
+  });
+
+  it('marks a branch load pending without clearing cached branch data', () => {
+    const branches = {
+      branches: ['main'],
+      remoteBranches: ['origin/release'],
+      currentBranch: 'main',
+      defaultBranch: 'main',
+    };
+    const loaded = reduce(initialState, setGitBranches('/repo', branches));
+    const pending = reduce(loaded, loadGitBranches('/repo', true));
+
+    expect(pending.byRepoPath['/repo']).toEqual(
+      expect.objectContaining({
+        branches,
+        branchesLoading: true,
+        branchesError: null,
+      }),
+    );
   });
 
   it('stores accept-changes status and loading state without clearing the cached value', () => {

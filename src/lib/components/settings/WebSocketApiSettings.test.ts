@@ -42,6 +42,10 @@ vi.mock('$lib/components/patterns/notify', () => ({
   notify: mockToast,
 }));
 
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: mockToast,
+}));
+
 // Mock the lazily-imported qrcode module so QR tests can assert the pairing URI.
 const qrMocks = vi.hoisted(() => ({
   toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,'),
@@ -59,6 +63,7 @@ vi.mock('qrcode', () => ({
 const connectionState = vi.hoisted(() => ({
   activeId: 'local',
   emit: () => {},
+  reset: () => {},
   syncState: { supported: true, enabled: true, status: null } as {
     supported: boolean;
     enabled: boolean;
@@ -69,14 +74,49 @@ const connectionState = vi.hoisted(() => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
-  const store = createAppStoreMock({
+  const { settingsOperationsReducer } =
+    await import('$store/renderer/slices/settings-events/settings-events-slice');
+  const { connectionsReducer, keychainSyncStateReceived } =
+    await import('$store/renderer/slices/connections/connections-slice');
+  let store: ReturnType<typeof createAppStoreMock>;
+  store = createAppStoreMock({
     state: () => ({ connections: { windowBackendId: connectionState.activeId } }),
+    reducers: {
+      connections: connectionsReducer,
+      settingsOperations: settingsOperationsReducer,
+    },
     dispatch: (action: { type: string }) => {
       connectionState.dispatched.push(action);
-      return { ...action, promise: Promise.resolve(connectionState.syncState) };
+      const request = action as { type: string; payload: unknown[] };
+      let promise =
+        request.type === 'settings/listRequested'
+          ? mocks.mockSettingsList()
+          : request.type === 'settings/updateRequested'
+            ? mocks.mockSettingsUpdate(request.payload[0])
+            : request.type === 'settings/getServerPairingInfoRequested'
+              ? mocks.mockPairingInfo()
+              : request.type === 'settings/rotateServerTokenRequested'
+                ? mocks.mockRotateToken()
+                : request.type === 'connections/loadSelfPublishedStateRequested'
+                  ? ipcMocks.invoke('connections:self-published-state')
+                  : request.type === 'connections/publishSelfRequested'
+                    ? ipcMocks.invoke('connections:publish-self')
+                    : request.type === 'connections/unpublishSelfRequested'
+                      ? ipcMocks.invoke('connections:unpublish-self')
+                      : request.type === 'connections/refreshSelfRequested'
+                        ? ipcMocks.invoke('connections:refresh-self')
+                        : Promise.resolve(connectionState.syncState);
+      if (request.type === 'connections/loadKeychainSyncStateRequested') {
+        promise = promise.then((result) => {
+          store.dispatch(keychainSyncStateReceived(result));
+          return result;
+        });
+      }
+      return { ...action, promise };
     },
   });
   connectionState.emit = () => store.emitState();
+  connectionState.reset = () => store.resetReducers();
   return { store };
 });
 
@@ -105,7 +145,9 @@ function installElectronApi() {
 
 describe('WebSocketApiSettings', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    connectionState.reset();
+    vi.resetAllMocks();
+    qrMocks.toDataURL.mockResolvedValue('data:image/png;base64,');
     connectionState.activeId = 'local';
     connectionState.syncState = { supported: true, enabled: true, status: null };
     connectionState.dispatched.length = 0;
@@ -217,7 +259,11 @@ describe('WebSocketApiSettings', () => {
       expect(mockToast.error).toHaveBeenCalledWith(
         expect.stringContaining('Port 5181 is already in use'),
       );
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_wsApi_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('false');
     });
   });
 
@@ -244,7 +290,11 @@ describe('WebSocketApiSettings', () => {
     // Assert: toast.error was called (daemon rolled back the setting)
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalled();
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(
+        screen
+          .getByRole('switch', { name: m.settings_wsApi_enable_label() })
+          .getAttribute('aria-checked'),
+      ).toBe('false');
     });
   });
 

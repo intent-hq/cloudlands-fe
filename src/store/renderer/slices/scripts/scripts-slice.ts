@@ -17,6 +17,10 @@ import type {
   ScriptOutputBuffer,
   ScriptOutputChunk,
   ScriptQuickAction,
+  ScriptCommandResult,
+  ScriptDefinitionInput,
+  ScriptDetectionChanges,
+  ScriptUpdateInput,
 } from './scripts-types';
 
 // ============================================================================
@@ -36,6 +40,7 @@ export const emptyWorkspaceState: ScriptsWorkspaceState = {
   scripts: {},
   outputBuffers: {},
   operations: {},
+  commandOperations: {},
   initialized: false,
   loading: false,
 };
@@ -98,6 +103,34 @@ export const scriptOperationFailed = createAction<
 >('scripts/scriptOperationFailed');
 
 export const clearScriptOperations = createAction<[wsId: string]>('scripts/clearScriptOperations');
+
+export const createScriptRequested = createAction<[wsId: string, input: ScriptDefinitionInput]>(
+  'scripts/createScriptRequested',
+);
+export const updateScriptRequested = createAction<
+  [wsId: string, scriptId: string, updates: ScriptUpdateInput]
+>('scripts/updateScriptRequested');
+export const removeScriptRequested = createAction<[wsId: string, scriptId: string]>(
+  'scripts/removeScriptRequested',
+);
+export const detectScriptsRequested = createAction<[wsId: string]>(
+  'scripts/detectScriptsRequested',
+);
+export const saveScriptsToRepoRequested = createAction<[wsId: string]>(
+  'scripts/saveScriptsToRepoRequested',
+);
+export const applyScriptDetectionRequested = createAction<
+  [wsId: string, changes: ScriptDetectionChanges]
+>('scripts/applyScriptDetectionRequested');
+export const restoreScriptsRequested = createAction<
+  [wsId: string, scripts: ScriptDefinitionInput[]]
+>('scripts/restoreScriptsRequested');
+export const scriptCommandSucceeded = createAction<
+  [wsId: string, key: string, result: ScriptCommandResult]
+>('scripts/scriptCommandSucceeded');
+export const scriptCommandFailed = createAction<[wsId: string, key: string, error: string]>(
+  'scripts/scriptCommandFailed',
+);
 
 /** Set initialized state */
 export const setScriptsInitialized =
@@ -178,7 +211,81 @@ scriptsReducer.with(
 scriptsReducer.with(clearScriptOperations, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (Object.keys(ws.operations).length === 0) return state;
-  return setWorkspaceState(state, wsId, { ...ws, operations: {} });
+  return setWorkspaceState(state, wsId, { ...ws, operations: {}, commandOperations: {} });
+});
+
+function commandKey(action: { type: string; payload: readonly unknown[] }): string {
+  if (action.type === updateScriptRequested.type) return `update:${String(action.payload[1])}`;
+  if (action.type === removeScriptRequested.type) return `remove:${String(action.payload[1])}`;
+  if (action.type === createScriptRequested.type) return 'create';
+  if (action.type === detectScriptsRequested.type) return 'detect';
+  if (action.type === saveScriptsToRepoRequested.type) return 'save';
+  if (action.type === applyScriptDetectionRequested.type) return 'apply';
+  return 'restore';
+}
+
+function requestCommand(state: ScriptsState, wsId: string, key: string): ScriptsState {
+  const ws = getWorkspaceState(state, wsId);
+  const previous = ws.commandOperations[key];
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    commandOperations: {
+      ...ws.commandOperations,
+      [key]: {
+        version: (previous?.version ?? 0) + 1,
+        status: 'loading',
+        result: null,
+        error: null,
+      },
+    },
+  });
+}
+
+scriptsReducer.with(createScriptRequested, (state, action) =>
+  requestCommand(state, action.payload[0], commandKey(action)),
+);
+scriptsReducer.with(updateScriptRequested, (state, action) =>
+  requestCommand(state, action.payload[0], commandKey(action)),
+);
+scriptsReducer.with(removeScriptRequested, (state, action) =>
+  requestCommand(state, action.payload[0], commandKey(action)),
+);
+scriptsReducer.with(detectScriptsRequested, (state, action) =>
+  requestCommand(state, action.payload[0], commandKey(action)),
+);
+scriptsReducer.with(saveScriptsToRepoRequested, (state, action) =>
+  requestCommand(state, action.payload[0], commandKey(action)),
+);
+scriptsReducer.with(applyScriptDetectionRequested, (state, action) =>
+  requestCommand(state, action.payload[0], commandKey(action)),
+);
+scriptsReducer.with(restoreScriptsRequested, (state, action) =>
+  requestCommand(state, action.payload[0], commandKey(action)),
+);
+
+scriptsReducer.with(scriptCommandSucceeded, (state, { payload: [wsId, key, result] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const operation = ws.commandOperations[key];
+  if (!operation) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    commandOperations: {
+      ...ws.commandOperations,
+      [key]: { ...operation, status: 'success', result },
+    },
+  });
+});
+scriptsReducer.with(scriptCommandFailed, (state, { payload: [wsId, key, error] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  const operation = ws.commandOperations[key];
+  if (!operation) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    commandOperations: {
+      ...ws.commandOperations,
+      [key]: { ...operation, status: 'error', error },
+    },
+  });
 });
 scriptsReducer.with(setScriptsInitialized, (state, { payload: [wsId, initialized] }) => {
   const ws = getWorkspaceState(state, wsId);

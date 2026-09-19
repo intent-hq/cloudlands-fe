@@ -8,11 +8,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
 
 // Mock the backend transport
-const { backendRequestMock, mockWorkspace, mockDismissed, recordLastUsedMock } = vi.hoisted(() => ({
+const {
+  backendRequestMock,
+  mockWorkspace,
+  mockDismissed,
+  mockPresence,
+  mockDispatch,
+  recordLastUsedMock,
+  notify,
+} = vi.hoisted(() => ({
   backendRequestMock: vi.fn(),
   mockWorkspace: { value: { id: 'ws-test', repositoryPath: '/test/repo' } as any },
   mockDismissed: { value: false },
+  mockPresence: {
+    value: { version: 1, status: 'success', hasScript: false } as {
+      version: number;
+      status: string;
+      hasScript: boolean | null;
+    },
+  },
+  mockDispatch: vi.fn(),
   recordLastUsedMock: vi.fn(),
+  notify: { error: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({
@@ -48,12 +65,20 @@ vi.mock('$store/renderer/slices/setup-scripts/setup-scripts-selectors', () => ({
       return () => {};
     },
   })),
+  selectSetupScriptPresence: vi.fn(() => ({
+    subscribe: (
+      fn: (value: { version: number; status: string; hasScript: boolean | null }) => void,
+    ) => {
+      fn(mockPresence.value);
+      return () => {};
+    },
+  })),
 }));
 
 // Mock appStore dispatch
 vi.mock('$store/renderer/store', () => ({
   store: {
-    dispatch: vi.fn(),
+    dispatch: mockDispatch,
   },
 }));
 
@@ -65,6 +90,10 @@ vi.mock('$lib/utils/client-logger', () => ({
     warn: vi.fn(),
     debug: vi.fn(),
   }),
+}));
+
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify,
 }));
 
 // Mock terminal history tracker
@@ -114,14 +143,6 @@ vi.mock('svelte/easing', () => ({
   cubicOut: () => {},
 }));
 
-// Mock sonner toast
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: {
-    error: vi.fn(),
-    success: vi.fn(),
-  },
-}));
-
 // Mock uuid
 vi.mock('uuid', () => ({
   v4: () => 'mock-uuid',
@@ -136,13 +157,12 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 }));
 
 import SetupScriptBanner from '../SetupScriptBanner.svelte';
-import type { WorkspaceSetupScript } from '$lib/client/app-client';
-import { notify } from '$lib/components/patterns/notify';
 
 describe('SetupScriptBanner wire contract', () => {
   beforeEach(() => {
     backendRequestMock.mockReset();
     mockWorkspace.value = { id: 'ws-test', repositoryPath: '/test/repo' } as any;
+    mockPresence.value = { version: 1, status: 'success', hasScript: false };
     mockHistories.value = [];
   });
 
@@ -150,99 +170,57 @@ describe('SetupScriptBanner wire contract', () => {
     vi.clearAllMocks();
   });
 
-  it('calls workspace.getSetupScript with workspaceId on mount', async () => {
-    const scriptRecord: WorkspaceSetupScript = {
-      script: '',
-      projectType: null,
-      updatedAt: Date.now(),
-      generatedBy: null,
-    };
-    backendRequestMock.mockResolvedValue({ setupScript: scriptRecord });
-
+  it('dispatches the setup-script presence request with workspaceId on mount', async () => {
     render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
 
     await waitFor(() => {
-      expect(backendRequestMock).toHaveBeenCalledWith('workspace.getSetupScript', {
-        workspaceId: 'ws-test',
-      });
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'setupScripts/loadSetupScriptPresenceRequested',
+          payload: ['ws-test'],
+        }),
+      );
     });
+    expect(backendRequestMock).not.toHaveBeenCalled();
   });
 
-  it('hides the banner when the daemon returns a non-empty script', async () => {
-    const scriptRecord: WorkspaceSetupScript = {
-      script: '#!/bin/bash\necho "setup"\n',
-      projectType: 'bash',
-      updatedAt: Date.now(),
-      generatedBy: 'agent',
-    };
-    backendRequestMock.mockResolvedValue({ setupScript: scriptRecord });
+  it('hides the banner when the selector reports a non-empty script', () => {
+    mockPresence.value = { version: 1, status: 'success', hasScript: true };
 
     const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
-
-    // Wait for request to complete and state to settle
-    await waitFor(() => {
-      expect(backendRequestMock).toHaveBeenCalled();
-    });
-
-    // Wait an additional tick for the effect to complete and DOM to update
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // Banner should not be visible
     expect(container.querySelector('.setup-script-banner')).toBeNull();
   });
 
-  it('shows the banner when the daemon returns an empty script', async () => {
-    const scriptRecord: WorkspaceSetupScript = {
-      script: '',
-      projectType: null,
-      updatedAt: Date.now(),
-      generatedBy: null,
-    };
-    backendRequestMock.mockResolvedValue({ setupScript: scriptRecord });
+  it('shows the banner when the selector reports no script', () => {
+    const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
+    expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+  });
 
+  it('hides the banner while the selector result is pending', () => {
+    mockPresence.value = { version: 1, status: 'loading', hasScript: null };
+    const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
+    expect(container.querySelector('.setup-script-banner')).toBeNull();
+  });
+
+  it('hides the banner after a failed presence read and retries on mount', async () => {
+    mockPresence.value = { version: 1, status: 'error', hasScript: null };
     const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
 
-    // Wait for request to complete and state to settle
+    expect(container.querySelector('.setup-script-banner')).toBeNull();
     await waitFor(() => {
-      expect(backendRequestMock).toHaveBeenCalled();
-    });
-
-    // Wait for the banner element to appear after the async effect completes
-    await waitFor(() => {
-      expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'setupScripts/loadSetupScriptPresenceRequested',
+          payload: ['ws-test'],
+        }),
+      );
     });
   });
 
-  it('shows the banner when the daemon returns null (no script)', async () => {
-    backendRequestMock.mockResolvedValue({ setupScript: null });
-
+  it('does not call the backend transport from the component', () => {
     const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
-
-    // Wait for request to complete
-    await waitFor(() => {
-      expect(backendRequestMock).toHaveBeenCalled();
-    });
-
-    // Wait for the banner element to appear after the async effect completes
-    await waitFor(() => {
-      expect(container.querySelector('.setup-script-banner')).toBeTruthy();
-    });
-  });
-
-  it('shows the banner on RPC failure (fallback behavior)', async () => {
-    backendRequestMock.mockRejectedValue(new Error('connection failed'));
-
-    const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
-
-    // Wait for request to complete (rejection)
-    await waitFor(() => {
-      expect(backendRequestMock).toHaveBeenCalled();
-    });
-
-    // Wait for the banner element to appear after the async effect handles the failure
-    await waitFor(() => {
-      expect(container.querySelector('.setup-script-banner')).toBeTruthy();
-    });
+    expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+    expect(backendRequestMock).not.toHaveBeenCalled();
   });
 
   /** Expand the editor panel and click Save (the panel auto-fills from history). */

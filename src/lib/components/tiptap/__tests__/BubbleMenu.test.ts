@@ -4,9 +4,31 @@ import { tick } from 'svelte';
 import BubbleMenu from '../BubbleMenu.svelte';
 import TooltipWrapper from '../comments/__tests__/TooltipWrapper.svelte';
 
-const { dispatchMock } = vi.hoisted(() => ({
-  dispatchMock: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const mutableReadable = <T>(initial: T) => {
+    let value = initial;
+    const subscribers = new Set<(current: T) => void>();
+    return {
+      subscribe(run: (current: T) => void) {
+        subscribers.add(run);
+        run(value);
+        return () => subscribers.delete(run);
+      },
+      set(next: T) {
+        value = next;
+        for (const subscriber of subscribers) subscriber(next);
+      },
+    };
+  };
+  return {
+    dispatch: vi.fn(),
+    creationRequest: mutableReadable<
+      | { requestId: string; agentId: string | null; loading: boolean; error: string | null }
+      | undefined
+    >(undefined),
+    createdAgent: undefined as { id: string; name: string; workspaceId: string } | undefined,
+  };
+});
 
 // Mock the createLogger function at module level
 vi.mock('$lib/utils/client-logger', () => {
@@ -53,9 +75,22 @@ vi.mock('$store/renderer/store', async () => {
 
   return createAppStoreMockModule({
     state: () => ({}),
-    dispatch: dispatchMock,
+    dispatch: mocks.dispatch,
   });
 });
+
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAgentCreationRequest: Object.assign(() => mocks.creationRequest, {
+    select: () => undefined,
+  }),
+}));
+
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentSession: Object.assign(() => ({ subscribe: () => () => {} }), {
+    select: (_state: unknown, agentId: string) =>
+      mocks.createdAgent?.id === agentId ? mocks.createdAgent : undefined,
+  }),
+}));
 
 describe('BubbleMenu', () => {
   let mockEditor: any;
@@ -90,7 +125,9 @@ describe('BubbleMenu', () => {
   beforeEach(() => {
     // Clear mock calls
     vi.clearAllMocks();
-    dispatchMock.mockReset();
+    mocks.dispatch.mockReset();
+    mocks.creationRequest.set(undefined);
+    mocks.createdAgent = undefined;
 
     // Reset event handlers
     editorEventHandlers = {};
@@ -336,11 +373,7 @@ describe('BubbleMenu', () => {
       name: 'Created Agent',
       workspaceId: 'test-workspace-id',
     };
-    dispatchMock.mockImplementation((action) => {
-      if (action.type === 'agentSessions/launchAgentRequested') {
-        action.success(createdAgent);
-      }
-    });
+    mocks.createdAgent = createdAgent;
 
     renderBubbleMenu({ onAgentLaunched });
     await triggerSelectionUpdate();
@@ -348,10 +381,19 @@ describe('BubbleMenu', () => {
     await fireEvent.click(document.body.querySelector('[aria-label="Send to Agent"]')!);
     await tick();
     await fireEvent.click(document.body.querySelector('.launch-submit-btn')!);
+    const launchAction = mocks.dispatch.mock.calls.find(
+      ([action]) => action.type === 'agentSessions/launchAgentRequested',
+    )?.[0];
+    mocks.creationRequest.set({
+      requestId: launchAction.payload[2].requestId,
+      agentId: createdAgent.id,
+      loading: false,
+      error: null,
+    });
     await flushPromises();
 
     await waitFor(() => {
-      expect(dispatchMock).toHaveBeenCalledWith(
+      expect(mocks.dispatch).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'agentSessions/launchAgentRequested' }),
       );
       expect(onAgentLaunched).toHaveBeenCalledWith(createdAgent);
@@ -361,18 +403,21 @@ describe('BubbleMenu', () => {
 
   it('should keep launch dialog open and avoid notifying when launch fails', async () => {
     const onAgentLaunched = vi.fn();
-    dispatchMock.mockImplementation((action) => {
-      if (action.type === 'agentSessions/launchAgentRequested') {
-        action.failure('creation failed');
-      }
-    });
-
     renderBubbleMenu({ onAgentLaunched });
     await triggerSelectionUpdate();
 
     await fireEvent.click(document.body.querySelector('[aria-label="Send to Agent"]')!);
     await tick();
     await fireEvent.click(document.body.querySelector('.launch-submit-btn')!);
+    const launchAction = mocks.dispatch.mock.calls.find(
+      ([action]) => action.type === 'agentSessions/launchAgentRequested',
+    )?.[0];
+    mocks.creationRequest.set({
+      requestId: launchAction.payload[2].requestId,
+      agentId: null,
+      loading: false,
+      error: 'creation failed',
+    });
     await flushPromises();
 
     expect(onAgentLaunched).not.toHaveBeenCalled();

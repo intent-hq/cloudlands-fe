@@ -9,9 +9,9 @@
    *      connection (`addConnectionRequested`, which encrypts the token in main)
    *      and open a window for it (`openConnectionRequested`).
    *
-   * On macOS a "Save to iCloud" switch (default on) controls whether the
-   * stored record syncs via iCloud Keychain. Turning it off adds the connection with
-   * `syncExcluded: true` (local-only). Keeping it on while keychain sync is
+   * On macOS a "Save to iCloud" checkbox (default checked) controls whether the
+   * stored record syncs via iCloud Keychain. Unchecking adds the connection with
+   * `syncExcluded: true` (local-only). Keeping it checked while keychain sync is
    * explicitly disabled inserts a `syncConfirm` step before the add: confirming
    * adds the backend first, then enables machine-global sync
    * (`setKeychainSyncEnabledRequested`) — so a failed add leaves no
@@ -39,12 +39,14 @@
   import { store as appStore } from '$store/renderer/store';
   import {
     captureFingerprintRequested,
-    addConnectionRequested,
-    openConnectionRequested,
+    connectBackendRequested,
     loadKeychainSyncStateRequested,
-    setKeychainSyncEnabledRequested,
   } from '$store/renderer/slices/connections/connections-slice';
-  import { selectKeychainSyncState } from '$store/renderer/slices/connections/connections-selectors';
+  import {
+    selectCaptureFingerprintOperation,
+    selectConnectBackendOperation,
+    selectKeychainSyncState,
+  } from '$store/renderer/slices/connections/connections-selectors';
   import {
     DEFAULT_CONNECTION_ACCENT,
     type ConnectionAccent,
@@ -119,17 +121,23 @@
     connectionAccentOptions(prefillAccent === undefined ? defaultAccent : prefillAccent),
   );
 
-  // Keychain sync state gates the iCloud switch: `supported` is the platform
+  // Keychain sync state gates the iCloud checkbox: `supported` is the platform
   // gate (macOS only), `enabled` decides whether the syncConfirm step is needed.
   // While the async state load is pending (or failed), fall back to a
-  // synchronous platform check so the consent switch renders on macOS even
+  // synchronous platform check so the consent checkbox renders on macOS even
   // when the user outraces the load — otherwise the add would proceed with the
-  // synced default behind a switch the user never saw. The loaded state wins
+  // synced default behind a checkbox the user never saw. The loaded state wins
   // once present.
   const platformIsMac =
     typeof window !== 'undefined' &&
     (window as { electronAPI?: { platform?: string } }).electronAPI?.platform === 'darwin';
   const syncState$ = selectKeychainSyncState();
+  const captureOperation$ = selectCaptureFingerprintOperation();
+  const connectOperation$ = selectConnectBackendOperation();
+  let handledCaptureVersion = $state(
+    selectCaptureFingerprintOperation.select(appStore.state).version,
+  );
+  let handledConnectVersion = $state(selectConnectBackendOperation.select(appStore.state).version);
   const syncSupported = $derived($syncState$?.supported ?? platformIsMac);
   const syncEnabled = $derived($syncState$?.enabled ?? false);
 
@@ -212,43 +220,46 @@
     reset();
   }
 
-  function toMessage(e: unknown): string {
-    return e instanceof Error ? e.message : String(e);
-  }
-
-  async function handleCapture() {
+  function handleCapture() {
     if (!canSubmitDetails) return;
     busy = true;
     error = null;
-    try {
-      const action = captureFingerprintRequested({
+    handledCaptureVersion = $captureOperation$.version;
+    appStore.dispatch(
+      captureFingerprintRequested({
         host: host.trim(),
         port: portNumber,
         token: token.trim(),
-      });
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (!result.tokenValid) {
-        // The daemon rejected the token on the capture upgrade (PROTOCOL §2.1:
-        // 401 bad token, 403 WS API disabled) — stay on the details step so the
-        // user can correct it instead of storing a connection that cannot auth.
-        error =
-          result.statusCode === 403
-            ? m.modals_connect_wsApiDisabled_error()
-            : m.modals_connect_tokenRejected_error();
-        return;
-      }
-      fingerprint = result.fingerprint;
-      step = 'confirm';
-    } catch (e) {
-      error = toMessage(e);
-    } finally {
-      busy = false;
-    }
+      }),
+    );
   }
 
-  async function handleConfirm() {
-    // Sync explicitly off but the switch kept on: enabling iCloud sync is
+  $effect(() => {
+    const operation = $captureOperation$;
+    if (operation.version <= handledCaptureVersion || operation.status === 'loading') return;
+    handledCaptureVersion = operation.version;
+    busy = false;
+    if (operation.status === 'error' || !operation.result) {
+      error = operation.error;
+      return;
+    }
+    const result = operation.result;
+    if (!result.tokenValid) {
+      // The daemon rejected the token on the capture upgrade (PROTOCOL §2.1:
+      // 401 bad token, 403 WS API disabled) — stay on the details step so the
+      // user can correct it instead of storing a connection that cannot auth.
+      error =
+        result.statusCode === 403
+          ? m.modals_connect_wsApiDisabled_error()
+          : m.modals_connect_tokenRejected_error();
+      return;
+    }
+    fingerprint = result.fingerprint;
+    step = 'confirm';
+  });
+
+  function handleConfirm() {
+    // Sync explicitly off but the box kept: enabling iCloud sync is
     // machine-global, so ask first instead of flipping it silently. Both
     // answers still add the backend (decline just excludes it from sync).
     if (syncSupported && !syncEnabled && saveToICloud) {
@@ -256,60 +267,52 @@
       step = 'syncConfirm';
       return;
     }
-    await storeAndOpen(syncSupported && !saveToICloud);
+    storeAndOpen(syncSupported && !saveToICloud);
   }
 
-  async function storeAndOpen(syncExcluded: boolean, opts: { enableSyncAfterAdd?: boolean } = {}) {
+  function storeAndOpen(syncExcluded: boolean, opts: { enableSyncAfterAdd?: boolean } = {}) {
     busy = true;
     error = null;
-    const trimmedHost = host.trim();
-    try {
-      const addAction = addConnectionRequested({
-        label: name.trim(),
-        accent,
-        deviceIcon,
-        host: trimmedHost,
-        port: portNumber,
-        fingerprint,
-        token: token.trim(),
-        ...(tcAddress ? { tcAddress } : {}),
-        detectHosts,
-        ...(syncExcluded ? { syncExcluded: true } : {}),
-      });
-      appStore.dispatch(addAction);
-      const { connection } = await addAction.promise;
-      if (opts.enableSyncAfterAdd) {
-        // Enable machine-global sync only once the add succeeded, so a failed
-        // add (bad token, WSS off on the target) leaves no machine-global
-        // side effect. A retry re-runs the add as an idempotent upsert.
-        const syncAction = setKeychainSyncEnabledRequested(true);
-        appStore.dispatch(syncAction);
-        await syncAction.promise;
-      }
-      const openAction = openConnectionRequested(connection.id);
-      appStore.dispatch(openAction);
-      const openResult = await openAction.promise;
-      if (openResult.status === 'secret-unavailable') {
-        // The device was stored but its token could not be read back (keychain
-        // locked or entry gone) — a resolved failure, not a success (#3783).
-        // Stay open so the outcome is visible; recovery lives in Devices settings.
-        error = m.modals_connect_secretUnavailable_error();
-        busy = false;
-        return;
-      }
-      close();
-    } catch (e) {
-      error = toMessage(e);
+    handledConnectVersion = $connectOperation$.version;
+    appStore.dispatch(
+      connectBackendRequested({
+        connection: {
+          label: name.trim(),
+          accent,
+          deviceIcon,
+          host: host.trim(),
+          port: portNumber,
+          fingerprint,
+          token: token.trim(),
+          ...(tcAddress ? { tcAddress } : {}),
+          detectHosts,
+          ...(syncExcluded ? { syncExcluded: true } : {}),
+        },
+        enableSyncAfterAdd: opts.enableSyncAfterAdd === true,
+      }),
+    );
+  }
+
+  $effect(() => {
+    const operation = $connectOperation$;
+    if (operation.version <= handledConnectVersion || operation.status === 'loading') return;
+    handledConnectVersion = operation.version;
+    if (operation.status === 'success' && operation.result?.status === 'secret-unavailable') {
+      error = m.modals_connect_secretUnavailable_error();
+      busy = false;
+    } else if (operation.status === 'success') close();
+    else {
+      error = operation.error;
       busy = false;
     }
+  });
+
+  function handleEnableSyncAndAdd() {
+    storeAndOpen(false, { enableSyncAfterAdd: true });
   }
 
-  async function handleEnableSyncAndAdd() {
-    await storeAndOpen(false, { enableSyncAfterAdd: true });
-  }
-
-  async function handleDeclineSync() {
-    await storeAndOpen(true);
+  function handleDeclineSync() {
+    storeAndOpen(true);
   }
 
   function back() {
@@ -318,7 +321,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    // Select keeps focus on its trigger and handles Escape at the document.
+    // The picker keeps focus on its trigger and handles Escape at the document.
     // Let an open picker dismiss itself before treating Escape as modal dismissal.
     if (
       e.key === 'Escape' &&
@@ -373,12 +376,12 @@
       accent = prefillAccent === undefined ? defaultAccent : prefillAccent;
       if (prefillHost && host === '') host = prefillHost;
       if (prefillPort != null && port === DEFAULT_WS_PORT) port = String(prefillPort);
-      // Refresh the keychain sync state so the iCloud switch gate is current
+      handledCaptureVersion = selectCaptureFingerprintOperation.select(appStore.state).version;
+      handledConnectVersion = selectConnectBackendOperation.select(appStore.state).version;
+      // Refresh the keychain sync state so the iCloud checkbox gate is current
       // even when settings never loaded it. A failed load leaves the state
-      // null → the platform fallback determines whether the switch is visible.
-      const loadAction = loadKeychainSyncStateRequested();
-      appStore.dispatch(loadAction);
-      loadAction.promise.catch(() => {});
+      // null → the checkbox stays hidden and the add proceeds normally.
+      appStore.dispatch(loadKeychainSyncStateRequested());
     }
   });
 </script>

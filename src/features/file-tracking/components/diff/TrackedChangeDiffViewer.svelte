@@ -22,7 +22,8 @@
   import type { LineStageIndicator, PureDiffLineAnnotation } from './types';
   import { batchedGitBranchBaseDiff, batchedGitDiff, dedupedShowFile } from './diff-ipc-batcher';
   import { gitlinkSidesFromHunks, gitlinkSidesFromShas, isGitlinkDiffChunk } from './gitlink';
-  import { appClient } from '$lib/client';
+  import { loadGitDiffs } from '$store/renderer/slices/git/git-slice';
+  import { selectGitDiffRead } from '$store/renderer/slices/git/git-selectors';
   import { LineType, type DiffChunk } from '$shared/types';
   import { hashContent } from './DiffViewer.svelte';
   import * as Diff from 'diff';
@@ -145,6 +146,7 @@
   let lastChangeFile = $state<string | undefined>(undefined);
   // Guard against duplicate loadDiffContent calls
   let isLoadingDiff = $state(false);
+  let awaitingCommittedDiff = $state(false);
   // Set when the loaded diff is a gitlink (submodule) entry — its path is a
   // directory, so working-tree file reads must be skipped (#1739).
   let isGitlinkChange = $state(false);
@@ -182,6 +184,11 @@
     effectiveWorkspaceIdStore,
     filePathStore,
   );
+  const committedDiffOptionsStore = writable<
+    { commitHash: string; path: string; gitRootId?: string } | undefined
+  >(undefined);
+  // svelte-ignore state_referenced_locally
+  const committedDiffRead$ = selectGitDiffRead(workspaceId, committedDiffOptionsStore);
 
   // Get workspace info
   const workspace = $derived($workspace$);
@@ -347,11 +354,12 @@
   // This is used after staging/unstaging operations to show the updated diff
   async function loadDiffContent(forceRefresh = false) {
     // Guard against duplicate concurrent calls (onMount + $effect can race)
-    if (isLoadingDiff) {
+    if (isLoadingDiff && !awaitingCommittedDiff) {
       logger.debug('[loadDiffContent] Skipping - already loading');
       return;
     }
     isLoadingDiff = true;
+    awaitingCommittedDiff = false;
 
     loading = true;
     error = null;
@@ -465,21 +473,14 @@
         });
 
         const wsIdForCommit = workspaceId || workspace?.id || '';
-        const chunks = await appClient.git.diffs(wsIdForCommit, {
+        const options = {
           commitHash: change.commitHash,
           path: filePath,
           ...(gitRootId ? { gitRootId } : {}),
-        });
-        const chunk = chunks.find((c) => c.file === filePath) ?? chunks[0];
-        if (chunk && chunk.chunks.length > 0) {
-          committedPatch = chunksToUnifiedPatch(chunk, filePath);
-          logger.info('[loadDiffContent] Committed hunks rendered to patch', {
-            chunkCount: chunk.chunks.length,
-            patchLength: committedPatch.length,
-          });
-        } else {
-          noChangesAtStage = true;
-        }
+        };
+        committedDiffOptionsStore.set(options);
+        awaitingCommittedDiff = true;
+        appStore.dispatch(loadGitDiffs(wsIdForCommit, options));
       } else {
         logger.debug('[loadDiffContent] Fetching via git:diff', {
           instanceId,
@@ -616,10 +617,35 @@
       logger.error('Failed to load diff content', err as Error);
       error = err instanceof Error ? err.message : m.ui_trackedDiff_loadFailed_error();
     } finally {
-      loading = false;
-      isLoadingDiff = false;
+      if (!awaitingCommittedDiff) {
+        loading = false;
+        isLoadingDiff = false;
+      }
     }
   }
+
+  $effect(() => {
+    const read = $committedDiffRead$;
+    if (!awaitingCommittedDiff || !read || read.loading) return;
+    if (read.error) {
+      error = read.error;
+    } else {
+      const filePath = resolvedFilePath;
+      const chunk = read.data.find((candidate) => candidate.file === filePath) ?? read.data[0];
+      if (chunk?.chunks.length) {
+        committedPatch = chunksToUnifiedPatch(chunk, filePath);
+        logger.info('[loadDiffContent] Committed hunks rendered to patch', {
+          chunkCount: chunk.chunks.length,
+          patchLength: committedPatch.length,
+        });
+      } else {
+        noChangesAtStage = true;
+      }
+    }
+    awaitingCommittedDiff = false;
+    loading = false;
+    isLoadingDiff = false;
+  });
 
   /**
    * Convert a jsdiff patch to git-compatible format.

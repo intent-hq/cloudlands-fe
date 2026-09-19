@@ -5,6 +5,7 @@ import {
   cancelled,
   delay,
   fork,
+  join,
   put,
   race,
   spawn,
@@ -26,8 +27,11 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 import { isBulkOperationProposal, isWorkspaceCreateProposal } from '$shared/types/proposal';
 import { navigateAwayIfViewing } from '$features/workspace/navigate-away-if-viewing';
 import { navigateToRoute } from '$lib/utils/navigation.client';
+import { isDaemonManagedRepoPath } from '$lib/components/workspace/initializer/recent-repo-display';
+import { takeLatestInContext } from '../../../utils/context-saga-effects';
 import { removeRepo } from '../../known-repos/known-repos-slice';
 import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
+import { setShowCreateModal } from '../../sidebar-nav/sidebar-nav-slice';
 import {
   proposalApplyStarted,
   proposalApplySucceeded,
@@ -42,7 +46,12 @@ import {
   removeWorkspaceEntity,
   setWorkspaceEntity,
   updateWorkspaceEntity,
+  updateWorkspaceRequested,
+  renameWorkspaceBranchRequested,
+  archiveWorkspaceRequested,
+  unarchiveWorkspaceRequested,
 } from '../../workspace/workspace-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { selectWorkspaceById, selectWorkspaceItems } from '../../workspace/workspace-selectors';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import {
@@ -67,6 +76,7 @@ import {
   requestArchiveWorkspace,
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
+  startPostMergeWorkspaceRequested,
 } from '../workspace-operations-slice';
 import {
   selectBulkArchiveComputeToken,
@@ -727,14 +737,213 @@ function* applyProposal(action: ReturnType<typeof applyWorkspaceProposal>): Saga
   else yield* applyCreateProposal(payload);
 }
 
+function workspaceUpdateContext(
+  action: ReturnType<typeof updateWorkspaceRequested> | ReturnType<typeof workspaceUnmounted>,
+) {
+  const workspaceId = action.payload[0];
+  return action.type === workspaceUnmounted.type
+    ? { context: workspaceId, cancel: true as const }
+    : workspaceId;
+}
+
+function workspaceBranchRenameContext(
+  action:
+    | ReturnType<typeof renameWorkspaceBranchRequested>
+    | ReturnType<typeof archiveWorkspaceRequested>
+    | ReturnType<typeof unarchiveWorkspaceRequested>
+    | ReturnType<typeof workspaceUnmounted>,
+) {
+  const workspaceId = action.payload[0];
+  return action.type === workspaceUnmounted.type
+    ? { context: workspaceId, cancel: true as const }
+    : workspaceId;
+}
+
+function* updateWorkspaceWorker(
+  action: ReturnType<typeof updateWorkspaceRequested> | ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  if (action.type === workspaceUnmounted.type) return;
+  const request = action as ReturnType<typeof updateWorkspaceRequested>;
+  void request.promise.catch(() => {});
+  let settled = false;
+  try {
+    const [workspaceId, changes] = request.payload;
+    const result = yield* call([workspaceClient, workspaceClient.update], {
+      id: workspaceId as WorkspaceId,
+      ...changes,
+    });
+    if (!result.ok) throw new Error(result.error);
+    yield* put(setWorkspaceEntity(result.data));
+    yield* put(request.success(result.data));
+    settled = true;
+  } catch (error) {
+    yield* put(request.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(request.failure(new Error('Workspace update cancelled')));
+    }
+  }
+}
+
+function* renameWorkspaceBranchWorker(
+  action: ReturnType<typeof renameWorkspaceBranchRequested> | ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  if (action.type === workspaceUnmounted.type) return;
+  const request = action as ReturnType<typeof renameWorkspaceBranchRequested>;
+  void request.promise.catch(() => {});
+  let settled = false;
+  try {
+    const [workspaceId, branch] = request.payload;
+    const renameResult = yield* call(() =>
+      invoke<{ success: boolean; error?: string }>(WORKSPACE_CHANNELS.RENAME_BRANCH, {
+        id: workspaceId,
+        newBranchName: branch,
+      }),
+    );
+    if (!renameResult.success) throw new Error(renameResult.error || 'Failed to rename branch');
+    const updateResult = yield* call([workspaceClient, workspaceClient.update], {
+      id: workspaceId as WorkspaceId,
+      branch,
+    });
+    if (!updateResult.ok) throw new Error(updateResult.error);
+    yield* put(setWorkspaceEntity(updateResult.data));
+    yield* put(request.success(updateResult.data));
+    settled = true;
+  } catch (error) {
+    yield* put(request.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(request.failure(new Error('Workspace branch rename cancelled')));
+    }
+  }
+}
+
+function* archiveWorkspaceRequestWorker(
+  action: ReturnType<typeof archiveWorkspaceRequested> | ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  if (action.type === workspaceUnmounted.type) return;
+  const request = action as ReturnType<typeof archiveWorkspaceRequested>;
+  void request.promise.catch(() => {});
+  let settled = false;
+  try {
+    const [workspaceId] = request.payload;
+    const result = yield* call(
+      [workspaceClient, workspaceClient.archive],
+      workspaceId as WorkspaceId,
+    );
+    if (!result.ok) throw new Error(result.error);
+    yield* put(
+      updateWorkspaceEntity(workspaceId, {
+        status: WorkspaceStatusEnum.Archived,
+        archived: true,
+      }),
+    );
+    yield* put(request.success(undefined));
+    settled = true;
+  } catch (error) {
+    yield* put(request.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(request.failure(new Error('Workspace archive cancelled')));
+  }
+}
+
+function* unarchiveWorkspaceRequestWorker(
+  action: ReturnType<typeof unarchiveWorkspaceRequested> | ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  if (action.type === workspaceUnmounted.type) return;
+  const request = action as ReturnType<typeof unarchiveWorkspaceRequested>;
+  void request.promise.catch(() => {});
+  let settled = false;
+  try {
+    const [workspaceId] = request.payload;
+    const result = yield* call(
+      [workspaceClient, workspaceClient.unarchive],
+      workspaceId as WorkspaceId,
+    );
+    if (!result.ok) throw new Error(result.error);
+    yield* put(
+      updateWorkspaceEntity(workspaceId, { status: WorkspaceStatusEnum.Active, archived: false }),
+    );
+    yield* put(request.success(undefined));
+    settled = true;
+  } catch (error) {
+    yield* put(request.failure(error instanceof Error ? error : new Error(String(error))));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled()))
+      yield* put(request.failure(new Error('Workspace unarchive cancelled')));
+  }
+}
+
+function persistWorkspacePrefill(repoPath: string): void {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('workspace-prefill', JSON.stringify({ repoPath }));
+    }
+  } catch {
+    // Storage is optional; the create-space flow must still open.
+  }
+}
+
+function* startPostMergeWorkspace(
+  action: ReturnType<typeof startPostMergeWorkspaceRequested>,
+): SagaGenerator<void> {
+  const [workspaceId, repositoryPath, worktreePath] = action.payload;
+  const archiveRequest = archiveWorkspaceRequested(workspaceId);
+  void archiveRequest.promise.catch(() => {});
+  yield* put(archiveRequest);
+  try {
+    yield* call(() => archiveRequest.promise);
+    if (
+      repositoryPath &&
+      repositoryPath !== worktreePath &&
+      !isDaemonManagedRepoPath(repositoryPath)
+    ) {
+      yield* call(persistWorkspacePrefill, repositoryPath);
+    }
+    yield* put(setShowCreateModal(true));
+  } catch {
+    (yield* call(getToast)).error(m.workspace_postMerge_archiveFailed_error());
+  }
+}
+
 export function* workspaceOperationsSaga(): SagaGenerator<void> {
+  const updateWatcher = yield* takeLatestInContext(
+    [updateWorkspaceRequested, workspaceUnmounted],
+    workspaceUpdateContext,
+    updateWorkspaceWorker,
+  );
+  const renameBranchWatcher = yield* takeLatestInContext(
+    [renameWorkspaceBranchRequested, workspaceUnmounted],
+    workspaceBranchRenameContext,
+    renameWorkspaceBranchWorker,
+  );
+  const archiveRequestWatcher = yield* takeLatestInContext(
+    [archiveWorkspaceRequested, workspaceUnmounted],
+    workspaceBranchRenameContext,
+    archiveWorkspaceRequestWorker,
+  );
+  const unarchiveRequestWatcher = yield* takeLatestInContext(
+    [unarchiveWorkspaceRequested, workspaceUnmounted],
+    workspaceBranchRenameContext,
+    unarchiveWorkspaceRequestWorker,
+  );
   yield* all([
+    join(updateWatcher),
+    join(renameBranchWatcher),
+    join(archiveRequestWatcher),
+    join(unarchiveRequestWatcher),
     takeEvery(requestDeleteWorkspace, requestDelete),
     takeEvery(confirmDeleteWorkspace, confirmDelete),
     takeEvery(confirmArchiveWorkspace, confirmArchive),
     takeEvery(requestArchiveWorkspace, archive),
     takeEvery(openBulkArchiveConfirm, computeBulkArchiveActiveWork),
     takeEvery(requestUnarchiveWorkspace, unarchive),
+    takeEvery(startPostMergeWorkspaceRequested, startPostMergeWorkspace),
     takeEvery(confirmBulkArchive, bulkArchive),
     takeEvery(confirmBulkDeleteArchived, bulkDeleteArchived),
     takeEvery(confirmBulkDeleteWarning, bulkDeleteAfterWarning),

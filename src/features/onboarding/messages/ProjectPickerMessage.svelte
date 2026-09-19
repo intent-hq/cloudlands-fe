@@ -10,9 +10,9 @@
    *   - reveals Message 3
    */
   import { onMount } from 'svelte';
+  import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
-  import { invoke } from '$shared/generated/ipc-client';
   import { fly } from '$lib/motion';
   import LocalRepoTab from './LocalRepoTab.svelte';
   import GitHubRepoTab from './GitHubRepoTab.svelte';
@@ -22,16 +22,26 @@
     selectWorkspaceInitializerDefaultParentPath,
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerLastSelectedRepo,
+    selectWorkspaceInitializerDirectoryStatus,
+    selectWorkspaceInitializerPrefillRead,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRepoSelection } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    readWorkspaceInitializerDirectoryStatusRequested,
+    readWorkspaceInitializerPrefillRequested,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 
   const logger = createLogger('ProjectPickerMessage');
 
-  const WORKSPACE_PREFILL_KEY = 'workspace-prefill';
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const defaultParentPath$ = selectWorkspaceInitializerDefaultParentPath();
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const branchByRepo$ = selectWorkspaceInitializerBranchByRepo();
+  const directoryStatusPathStore = writable('');
+  const directoryStatusOperation$ =
+    selectWorkspaceInitializerDirectoryStatus(directoryStatusPathStore);
+  const prefillOperation$ = selectWorkspaceInitializerPrefillRead(true);
 
   /**
    * Resolve the default on-disk location for the "New project" parent
@@ -125,6 +135,7 @@
   );
 
   // Check directory status when new project path changes
+  let pendingDirectoryStatusVersion = 0;
   $effect(() => {
     const targetPath = newProjectFullPath;
     if (!targetPath) {
@@ -133,29 +144,20 @@
     }
 
     isCheckingNewProjectDir = true;
-    const checkPath = async () => {
-      if (typeof window === 'undefined' || !window.electronAPI) {
-        isCheckingNewProjectDir = false;
-        return;
-      }
-      try {
-        const result = await invoke<any>('file:getDirectoryStatus', {
-          path: targetPath,
-        });
-        if (result.success && result.data) {
-          newProjectDirStatus = result.data;
-        } else {
-          newProjectDirStatus = null;
-        }
-      } catch {
-        newProjectDirStatus = null;
-      } finally {
-        isCheckingNewProjectDir = false;
-      }
-    };
+    directoryStatusPathStore.set(targetPath);
+    pendingDirectoryStatusVersion =
+      selectWorkspaceInitializerDirectoryStatus.select(appStore.state, targetPath).version + 1;
+    appStore.dispatch(readWorkspaceInitializerDirectoryStatusRequested(targetPath));
+  });
 
-    const timeout = setTimeout(checkPath, 300);
-    return () => clearTimeout(timeout);
+  $effect(() => {
+    const operation = $directoryStatusOperation$;
+    if (!pendingDirectoryStatusVersion || operation.version !== pendingDirectoryStatusVersion)
+      return;
+    if (operation.status === 'loading') return;
+    pendingDirectoryStatusVersion = 0;
+    newProjectDirStatus = operation.status === 'success' ? operation.data : null;
+    isCheckingNewProjectDir = false;
   });
 
   // Error when target directory exists and is non-empty.
@@ -205,33 +207,39 @@
 
   let didApplyPrefill = false;
   let didApplyPersistedRepo = $state(false);
+  let pendingPrefillVersion =
+    selectWorkspaceInitializerPrefillRead.select(appStore.state, true).version + 1;
 
-  // Pre-fill from sessionStorage (modal/deep-link/repo quick-actions), then Redux persistence.
-  try {
-    const prefill = sessionStorage.getItem(WORKSPACE_PREFILL_KEY);
-    if (prefill) {
-      const data = JSON.parse(prefill);
-      if (data.repoPath) {
-        localRepoPath = data.repoPath;
-        localBranch = typeof data.branch === 'string' ? data.branch : '';
-        localScope = data.scope;
-        localInitGit = false;
-        activeTab = 'local';
-      } else if (data.githubUrl) {
-        githubUrl = data.githubUrl;
-        activeTab = 'github';
-      } else if (data.projectName) {
-        projectName = data.projectName;
-        // svelte-ignore state_referenced_locally - intentional one-shot init-time read of the current default
-        parentPath = data.parentPath || parentPath;
-        activeTab = 'new';
-      }
-      sessionStorage.removeItem(WORKSPACE_PREFILL_KEY);
-      didApplyPrefill = true;
+  // Pre-fill from the saga-owned one-shot handoff, then Redux persistence.
+  appStore.dispatch(readWorkspaceInitializerPrefillRequested(true));
+  $effect(() => {
+    const operation = $prefillOperation$;
+    if (!pendingPrefillVersion || operation.version !== pendingPrefillVersion) return;
+    if (operation.status === 'loading') return;
+    pendingPrefillVersion = 0;
+    if (operation.status === 'error') {
+      logger.error('Failed to restore saved repo', operation.error);
+      return;
     }
-  } catch (e) {
-    logger.error('Failed to restore saved repo', e);
-  }
+    const data = operation.data;
+    if (!data) return;
+    if (data.repoPath) {
+      localRepoPath = data.repoPath;
+      localBranch = typeof data.branch === 'string' ? data.branch : '';
+      localScope = data.scope;
+      localInitGit = false;
+      activeTab = 'local';
+    } else if (data.githubUrl) {
+      githubUrl = data.githubUrl;
+      activeTab = 'github';
+    } else if (data.projectName) {
+      projectName = data.projectName;
+      parentPath = data.parentPath || parentPath;
+      activeTab = 'new';
+    }
+    didApplyPrefill = true;
+    notifyParent();
+  });
 
   $effect(() => {
     if (!$workspaceInitializerHydrated$ || didApplyPrefill || didApplyPersistedRepo) return;

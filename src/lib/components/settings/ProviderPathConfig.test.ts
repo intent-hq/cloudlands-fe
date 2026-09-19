@@ -23,8 +23,45 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { success: vi.fn(), error: vi.fn() },
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { providerPathSaved, providerPathSaveFailed, providerSettingsReducer } =
+    await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+  const store = createAppStoreMock({
+    reducers: { providerSettings: providerSettingsReducer },
+    dispatch: (action: { type: string; payload: unknown[] }) => {
+      if (action.type === 'providerSettings/saveProviderPathRequested') {
+        const [providerId, path, requestId] = action.payload as [string, string, string];
+        void mocks
+          .mockSettingsGet('providers.paths')
+          .then((entry: { value?: Record<string, string> } | null) =>
+            mocks.mockSettingsUpdate([
+              {
+                path: 'providers.paths',
+                value: { ...(entry?.value ?? {}), [providerId]: path },
+              },
+            ]),
+          )
+          .then(
+            () => store.dispatch(providerPathSaved(providerId, path, requestId)),
+            (error) =>
+              store.dispatch(
+                providerPathSaveFailed(
+                  providerId,
+                  requestId,
+                  error instanceof Error ? error.message : String(error),
+                ),
+              ),
+          );
+      }
+      return action;
+    },
+  });
+  return { store };
+});
+
+vi.mock('svelte-sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => ({

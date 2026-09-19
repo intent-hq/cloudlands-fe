@@ -25,3 +25,11 @@ export const selectIsAnyProviderLoading = store.createSelector((state) =>
 );
 
 export const selectNpxStatus = store.createSelector((state) => state.agentAvailability.npxStatus);
+
+export const selectHiddenProviderIds = store.createSelector(
+  (state) => state.agentAvailability.hiddenProviderIds,
+);
+
+export const selectProviderAvailabilityError = store.createSelector(
+  (state) => state.agentAvailability.availabilityError,
+);

@@ -22,6 +22,13 @@ export type ModelFallbackInfo = {
   toModel: string;
 };
 
+export type AgentModelUpdateOperation = {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  requestId: number;
+  model: string | null;
+  error: string | null;
+};
+
 export type ModelState = {
   availableModels: Collection<AuggieModel, 'value'>;
   /**
@@ -45,6 +52,7 @@ export type ModelState = {
   defaultReasoningEffort: string;
   modelPickerCollapsedGroups: string[];
   fallbackInfoByAgentId: Record<string, ModelFallbackInfo>;
+  agentModelUpdates: Record<string, AgentModelUpdateOperation>;
   /**
    * Default provider id — the provider leg of the default model triple
    * (`model.defaultProvider`, PROTOCOL §5.12; '' before hydration). Set by

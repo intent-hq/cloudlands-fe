@@ -10,6 +10,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
+import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import {
   getPendingAgentDeletion,
   removePendingAgentDeletion,
@@ -43,6 +44,8 @@ import {
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
 import {
   activateAgentRequested,
+  agentRestorationRequestFailed,
+  agentRestorationRequestSucceeded,
   deleteAgentSessionRequested,
   deleteAgentWithUndoRequested,
   removeAgent,
@@ -65,6 +68,15 @@ import { selectAgentSession } from '../agent-session-selectors';
 
 const logger = createLogger('AgentMutationSaga');
 const UNDO_DURATION_MS = 15_000;
+
+type RenameAction = ReturnType<typeof renameAgentSessionRequested>;
+type RenameRollback = NonNullable<RenameAction['payload'][3]>;
+type PendingRename = {
+  action: RenameAction;
+  name: string;
+  rollback?: RenameRollback;
+};
+type PendingRenames = Map<string, PendingRename[]>;
 /**
  * How long the pending-registry tombstone outlives the daemon-owned commit
  * deadline. Stale `agent.list`/`agent.get` responses (background polls, bulk
@@ -76,6 +88,44 @@ export const AGENT_DELETION_TOMBSTONE_TTL_MS = 60_000;
 function mutationError(error: unknown, fallback: string): Error {
   if (error instanceof Error) return error;
   return new Error(error ? String(error) : fallback);
+}
+
+function markPromiseHandled(action: { promise: Promise<unknown> }): void {
+  action.promise.catch(() => {});
+}
+
+function beginRename(pending: PendingRenames, agentId: string, request: PendingRename): void {
+  const requests = pending.get(agentId) ?? [];
+  requests.push(request);
+  pending.set(agentId, requests);
+}
+
+function settleRenameSuccess(pending: PendingRenames, agentId: string, action: RenameAction): void {
+  const requests = pending.get(agentId);
+  const index = requests?.findIndex((request) => request.action === action) ?? -1;
+  if (!requests || index < 0) return;
+  requests.splice(0, index + 1);
+  if (requests.length === 0) pending.delete(agentId);
+}
+
+function settleRenameFailure(
+  pending: PendingRenames,
+  agentId: string,
+  action: RenameAction,
+): RenameRollback | undefined {
+  const requests = pending.get(agentId);
+  const index = requests?.findIndex((request) => request.action === action) ?? -1;
+  if (!requests || index < 0) return undefined;
+
+  const request = requests[index];
+  const isLatest = index === requests.length - 1;
+  const next = requests[index + 1];
+  if (request.rollback && next?.rollback?.previousName === request.name) {
+    next.rollback = request.rollback;
+  }
+  requests.splice(index, 1);
+  if (requests.length === 0) pending.delete(agentId);
+  return isLatest ? request.rollback : undefined;
 }
 
 async function showError(message: string): Promise<void> {
@@ -202,7 +252,8 @@ function* restoreRetiredAgent(
 function* restoreAgent(
   action: ReturnType<typeof restoreAgentSessionRequested>,
 ): SagaGenerator<void> {
-  const [wsId, agentId] = action.payload;
+  markPromiseHandled(action);
+  const [wsId, agentId, requestId] = action.payload;
   let settled = false;
   try {
     const existing = yield* selectAgentSession.effect(agentId);
@@ -221,13 +272,30 @@ function* restoreAgent(
         yield* put(action.success(session));
       }
     }
+    if (requestId) yield* put(agentRestorationRequestSucceeded(wsId, requestId, agentId));
     settled = true;
   } catch (error) {
-    yield* put(action.failure(mutationError(error, m.agent_mutation_restoreFailed_error())));
+    const failure = mutationError(error, m.agent_mutation_restoreFailed_error());
+    if (requestId) {
+      yield* put(
+        agentRestorationRequestFailed(
+          wsId,
+          requestId,
+          agentId,
+          failure.message,
+          isAgentNotFoundError(error),
+        ),
+      );
+    }
+    yield* put(action.failure(failure));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
-      yield* put(action.failure(new Error(m.agent_mutation_restoreFailed_error())));
+      const failure = new Error(m.agent_mutation_restoreFailed_error());
+      if (requestId) {
+        yield* put(agentRestorationRequestFailed(wsId, requestId, agentId, failure.message, false));
+      }
+      yield* put(action.failure(failure));
     }
   }
 }
@@ -294,6 +362,7 @@ function* activateAgent(action: ReturnType<typeof activateAgentRequested>): Saga
 }
 
 function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaGenerator<void> {
+  markPromiseHandled(action);
   const [wsId, agentId, , options] = action.payload;
   const specialistUpdate = options?.specialistUpdate;
   if (!specialistUpdate) {
@@ -333,15 +402,31 @@ function* saveAgent(action: ReturnType<typeof saveAgentSessionRequested>): SagaG
   }
 }
 
-function* renameAgent(action: ReturnType<typeof renameAgentSessionRequested>): SagaGenerator<void> {
-  const [wsId, agentId, name] = action.payload;
+function* renameAgent(
+  pending: PendingRenames,
+  action: ReturnType<typeof renameAgentSessionRequested>,
+): SagaGenerator<void> {
+  markPromiseHandled(action);
+  const [wsId, agentId, name, rollback] = action.payload;
+  beginRename(pending, agentId, { action, name, rollback });
   let settled = false;
   try {
     const result = yield* call([appClient.agents, appClient.agents.rename], agentId, name, wsId);
     if (!result.success) throw new Error(result.error || m.agent_mutation_renameFailed_error());
+    settleRenameSuccess(pending, agentId, action);
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
+    const currentRollback = settleRenameFailure(pending, agentId, action);
+    const current = yield* selectAgentSession.effect(agentId);
+    if (currentRollback && current?.name === name && current.nameExplicitlySet === true) {
+      yield* put(
+        updateSession(agentId, {
+          name: currentRollback.previousName,
+          nameExplicitlySet: currentRollback.previousNameExplicitlySet,
+        }),
+      );
+    }
     yield* put(action.failure(mutationError(error, m.agent_mutation_renameSessionFailed_error())));
     settled = true;
   } finally {
@@ -352,6 +437,7 @@ function* renameAgent(action: ReturnType<typeof renameAgentSessionRequested>): S
 }
 
 function* stopAgent(action: ReturnType<typeof stopAgentSessionRequested>): SagaGenerator<void> {
+  markPromiseHandled(action);
   const [, agentId] = action.payload;
   let settled = false;
   try {
@@ -428,6 +514,7 @@ function* setNotificationsMuted(
 function* dismissQuestions(
   action: ReturnType<typeof agentSessionDismissQuestionsRequested>,
 ): SagaGenerator<void> {
+  markPromiseHandled(action);
   const [agentId, workspaceId, messageId] = action.payload;
   let settled = false;
   try {
@@ -455,6 +542,7 @@ function* dismissQuestions(
 function* resolveProposal(
   action: ReturnType<typeof agentProposalResolveRequested>,
 ): SagaGenerator<void> {
+  markPromiseHandled(action);
   const [agentId, workspaceId, request] = action.payload;
   let settled = false;
   try {
@@ -496,6 +584,7 @@ function* resolveProposal(
 function* cancelAgentSubscriptions(
   action: ReturnType<typeof cancelAgentSubscriptionsRequested>,
 ): SagaGenerator<void> {
+  markPromiseHandled(action);
   const [workspaceId, agentId, scope = {}] = action.payload;
   let settled = false;
   try {
@@ -565,6 +654,7 @@ function* rollbackImmediateDeletion(entry: PendingAgentDeletion): SagaGenerator<
 function* deleteWithUndo(
   action: ReturnType<typeof deleteAgentWithUndoRequested>,
 ): SagaGenerator<void> {
+  markPromiseHandled(action);
   const [wsId, agentId, agentName] = action.payload;
   let settled = false;
   let entry: PendingAgentDeletion | null = null;
@@ -673,6 +763,7 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
 function* deleteImmediately(
   action: ReturnType<typeof deleteAgentSessionRequested>,
 ): SagaGenerator<void> {
+  markPromiseHandled(action);
   const [wsId, agentId] = action.payload;
   const snapshot = yield* selectAgentSession.effect(agentId);
   const entry: PendingAgentDeletion = { wsId, agentId, snapshot };
@@ -709,12 +800,13 @@ function* deleteImmediately(
 }
 
 export function* agentMutationSaga(): SagaGenerator<void> {
+  const pendingRenames: PendingRenames = new Map();
   yield* all([
     takeEvery(restoreAgentSessionRequested, restoreAgent),
     takeEvery(restoreRetiredAgentRequested, restoreRetiredAgent),
     takeEvery(activateAgentRequested, activateAgent),
     takeEvery(saveAgentSessionRequested, saveAgent),
-    takeEvery(renameAgentSessionRequested, renameAgent),
+    takeEvery(renameAgentSessionRequested, renameAgent, pendingRenames),
     takeEvery(stopAgentSessionRequested, stopAgent),
     takeEvery(setAgentNotificationsMutedRequested, setNotificationsMuted),
     takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),

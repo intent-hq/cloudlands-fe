@@ -108,8 +108,7 @@
     selectUnslothStopping,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
-    pollSystemStatus,
-    pollUnslothStatus,
+    setDetailsPollingActive,
     stopUnslothRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
@@ -120,6 +119,7 @@
     selectCertWarningsByConnectionId,
     selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
+    selectOpenConnectionOperations,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     certMismatchCleared,
@@ -153,6 +153,7 @@
   const certWarningsById$ = selectCertWarningsByConnectionId();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
+  const openOperations$ = selectOpenConnectionOperations();
 
   let dropdownOpen = $state(false);
   let menuBody = $state<HTMLDivElement | null>(null);
@@ -160,6 +161,7 @@
   const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
+  let pendingOpenRequests = $state<Record<string, { requestId: string; label: string }>>({});
 
   const healthIconColors: Record<DaemonHealth, string> = {
     healthy: 'text-subtle',
@@ -316,30 +318,19 @@
     return uptimeSeconds + elapsedSeconds;
   }
 
-  // Trigger stats refresh when menu opens. Intentionally not gated on health:
-  // this is a single poll per open (not a repeating interval) and doubles as an
-  // immediate recovery check when the daemon was down.
+  // The root daemon-health saga owns details polling and cancels it on close.
   $effect(() => {
-    if (dropdownOpen) {
-      appStore.dispatch(pollSystemStatus());
-      appStore.dispatch(pollUnslothStatus());
-    }
+    appStore.dispatch(setDetailsPollingActive(dropdownOpen));
+    return () => appStore.dispatch(setDetailsPollingActive(false));
   });
 
-  // Tick live uptime and refresh stats every second while dropdown is open
+  // This display-only timer extrapolates the rendered uptime between Redux updates.
   $effect(() => {
     if (dropdownOpen) {
       // Initialize live uptime
       liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$, $health$);
 
-      // Update every second. Skip the stats poll while the daemon is down —
-      // the dropdown shows the "Not running" placeholder and each poll would
-      // just fail; the 10s background interval still detects recovery.
       const interval = setInterval(() => {
-        if ($health$ !== 'down') {
-          appStore.dispatch(pollSystemStatus());
-          appStore.dispatch(pollUnslothStatus());
-        }
         liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$, $health$);
       }, 1000);
 
@@ -411,26 +402,35 @@
    * not a success (#3783): surface it and route to Devices settings, where the
    * token can be re-entered.
    */
-  async function openConnectionOrRecover(id: string) {
-    try {
-      const action = openConnectionRequested(id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') {
-        toast.error(
-          m.layout_daemonStatus_secretUnavailable_error({ label: connectionDisplayLabel(id) }),
-        );
-        void navigateToSettings({ tab: 'devices' });
-      }
-    } catch {
-      // Other failures are surfaced via the slice's op-status/error; nothing
-      // more to do here (the list/active refresh arrives via connections:changed).
-    }
+  function openConnectionOrRecover(id: string) {
+    const action = openConnectionRequested(id);
+    pendingOpenRequests = {
+      ...pendingOpenRequests,
+      [id]: { requestId: action.payload[1], label: connectionDisplayLabel(id) },
+    };
+    appStore.dispatch(action);
   }
 
-  async function handleOpenConnection(id: string) {
+  $effect(() => {
+    const operations = $openOperations$;
+    let remaining = pendingOpenRequests;
+    for (const [id, pending] of Object.entries(pendingOpenRequests)) {
+      const operation = operations[id];
+      if (!operation || operation.requestId !== pending.requestId) continue;
+      if (operation.status === 'loading' || operation.status === 'idle') continue;
+      const { [id]: _settled, ...next } = remaining;
+      remaining = next;
+      if (operation.status === 'success' && operation.result?.status === 'secret-unavailable') {
+        toast.error(m.layout_daemonStatus_secretUnavailable_error({ label: pending.label }));
+        void navigateToSettings({ tab: 'devices' });
+      }
+    }
+    if (remaining !== pendingOpenRequests) pendingOpenRequests = remaining;
+  });
+
+  function handleOpenConnection(id: string) {
     dropdownOpen = false;
-    await openConnectionOrRecover(id);
+    openConnectionOrRecover(id);
   }
 
   // --- Cert-mismatch modal actions ---------------------------------------
@@ -439,20 +439,14 @@
     appStore.dispatch(certMismatchCleared());
   }
 
-  async function openLocalFromCertMismatch() {
+  function openLocalFromCertMismatch() {
     dismissCertMismatch();
-    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
+    openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 
-  async function forgetMismatchedConnection(id: string) {
+  function forgetMismatchedConnection(id: string) {
     dismissCertMismatch();
-    try {
-      const action = forgetConnectionRequested(id);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      // no-op; refresh via connections:changed.
-    }
+    appStore.dispatch(forgetConnectionRequested(id));
   }
 
   // --- Protocol-mismatch modal actions (advisory, non-blocking) ----------
@@ -463,9 +457,9 @@
   }
 
   /** Open the local sidecar's window from the advisory modal. */
-  async function openLocalFromProtocolMismatch() {
+  function openLocalFromProtocolMismatch() {
     continueWithProtocolMismatch();
-    await openConnectionOrRecover(LOCAL_CONNECTION_ID);
+    openConnectionOrRecover(LOCAL_CONNECTION_ID);
   }
 </script>
 

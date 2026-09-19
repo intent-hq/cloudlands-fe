@@ -1,11 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  getProviderModels: vi.fn(),
+  setModel: vi.fn(),
+  reconcileEffort: vi.fn(),
+}));
 vi.mock('$lib/client', () => ({ appClient: { models: { list: mocks.list } } }));
+vi.mock('$features/agent/agent.client', () => ({ agentClient: { setModel: mocks.setModel } }));
+vi.mock('$features/agent/reasoning-effort', () => ({
+  reconcileAgentReasoningEffort: mocks.reconcileEffort,
+}));
+vi.mock('../model-utils', () => ({
+  getModelsForProviderForLoadingState: mocks.getProviderModels,
+}));
 
 import { m } from '$shared/paraglide/messages.js';
-import { reloadModelsForProvider } from '../model-slice';
+import { reloadModelsForProvider, setAgentModelRequested } from '../model-slice';
+import { loadProviderModelsRequested } from '../../provider-models/provider-models-slice';
 import { modelReloadSaga, reloadModelsWorker } from './model-reload-saga';
 
 const settle = async () => {
@@ -113,5 +126,71 @@ describe('modelReloadSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
+  });
+
+  it('debounces and force-refreshes one provider through the saga', async () => {
+    vi.useFakeTimers();
+    const result = {
+      models: [{ value: 'codex:gpt-6', label: 'GPT-6' }],
+      warning: 'stale adapter',
+      stale: true,
+    };
+    mocks.getProviderModels.mockResolvedValue(result);
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const state = { providerModels: { byProviderId: {}, clearEpoch: 0 } };
+    const task = runSaga({ channel, dispatch, getState: () => state }, modelReloadSaga);
+    const action = loadProviderModelsRequested('codex', true, true);
+
+    channel.put(action);
+    await vi.advanceTimersByTimeAsync(49);
+    expect(mocks.getProviderModels).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(action.promise).resolves.toEqual(result);
+
+    expect(mocks.getProviderModels).toHaveBeenCalledExactlyOnceWith('codex', {
+      forceRefresh: true,
+    });
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched.type)).toEqual([
+      'model/setLoadingStateForProvider',
+      'providerModels/providerModelsLoaded',
+      'model/setLoadingStateForProvider',
+      'providerModels/loadProviderModelsRequested_SUCCESS',
+    ]);
+    task.cancel();
+    vi.useRealTimers();
+  });
+
+  it('sends the exact agent model request and reconciles effort from the protocol response', async () => {
+    mocks.setModel.mockResolvedValue({ ok: true, data: { success: true, modelId: 'gpt-6' } });
+    mocks.reconcileEffort.mockResolvedValue(true);
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const state = {
+      agentSessions: { byAgentId: { 'agent-1': { reasoningEffort: 'xhigh' } } },
+    };
+    const task = runSaga({ channel, dispatch, getState: () => state }, modelReloadSaga);
+    const action = setAgentModelRequested(7, 'agent-1', 'ws-1', 'codex:gpt-6', 'codex', [
+      'low',
+      'high',
+    ]);
+
+    channel.put(action);
+    await expect(action.promise).resolves.toBeUndefined();
+
+    expect(mocks.setModel).toHaveBeenCalledExactlyOnceWith(
+      'agent-1',
+      'codex:gpt-6',
+      'ws-1',
+      'codex',
+    );
+    expect(mocks.reconcileEffort).toHaveBeenCalledExactlyOnceWith('agent-1', 'ws-1', 'xhigh', [
+      'low',
+      'high',
+    ]);
+    expect(dispatch.mock.calls.map(([dispatched]) => dispatched.type)).toContain(
+      'model/setAgentModelRequested_SUCCESS',
+    );
+    task.cancel();
   });
 });

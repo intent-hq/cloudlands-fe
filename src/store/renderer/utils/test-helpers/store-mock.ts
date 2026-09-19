@@ -11,6 +11,7 @@ type AppStoreMockOptions = {
    * re-notify-everything mode masks a missing reactivity dependency.
    */
   dedupeEmits?: boolean;
+  reducers?: Record<string, (state: any, action: any) => any>;
 };
 type StoreReadableStateSource = {
   state?: unknown;
@@ -49,11 +50,53 @@ export const createAppStoreMock = ({
   state,
   dispatch,
   dedupeEmits = false,
+  reducers = {},
 }: AppStoreMockOptions = {}) => {
   // Live subscribers to the mock's readables; `emitState()` re-notifies them
   // all so tests can simulate a store-state change after mutating the state
   // source (e.g. clearing a seeded slice).
   const listeners = new Set<() => void>();
+  const reducerState: Record<string, any> = {};
+  const touchedReducerFields: Record<string, Set<string>> = {};
+  let reducerGeneration = 0;
+  const externalState = () => {
+    const value = resolveState(state);
+    return value && typeof value === 'object' ? (value as Record<string, any>) : {};
+  };
+  for (const [key, reducer] of Object.entries(reducers)) {
+    reducerState[key] = reducer(undefined, { type: '@@test/init' });
+    touchedReducerFields[key] = new Set();
+  }
+  const currentState = () => {
+    const external = externalState();
+    const combined = { ...external };
+    for (const [key, reduced] of Object.entries(reducerState)) {
+      const externalSlice = external[key];
+      const slice = {
+        ...reduced,
+        ...(externalSlice && typeof externalSlice === 'object' ? externalSlice : {}),
+      };
+      for (const field of touchedReducerFields[key]) slice[field] = reduced[field];
+      combined[key] = slice;
+    }
+    return combined;
+  };
+  const notify = () => {
+    for (const listener of [...listeners]) listener();
+  };
+  const reduce = (action: any) => {
+    const before = currentState();
+    for (const [key, reducer] of Object.entries(reducers)) {
+      const current = before[key];
+      const next = reducer(current, action);
+      reducerState[key] = next;
+      if (!next || typeof next !== 'object') continue;
+      for (const field of Object.keys(next)) {
+        if (next[field] !== current?.[field]) touchedReducerFields[key].add(field);
+      }
+    }
+    notify();
+  };
   const readable = <T>(getter: () => T) => ({
     subscribe: (listener: (value: T) => void) => {
       let last = getter();
@@ -72,11 +115,39 @@ export const createAppStoreMock = ({
   });
   const appStore = {
     get state() {
-      return resolveState(state);
+      return currentState();
     },
-    dispatch: (...args: any[]) => (dispatch ?? noop)(...args),
-    emitState: () => {
-      for (const notify of [...listeners]) notify();
+    dispatch: (action: any, ...args: any[]) => {
+      reduce(action);
+      const result = (dispatch ?? noop)(action, ...args) as any;
+      if (
+        result?.promise &&
+        result.promise !== action.promise &&
+        typeof action.success === 'function' &&
+        typeof action.failure === 'function'
+      ) {
+        const generation = reducerGeneration;
+        void action.promise?.catch(() => {});
+        void Promise.resolve(result.promise).then(
+          (response) => {
+            if (generation === reducerGeneration) reduce(action.success(response));
+          },
+          (error) => {
+            if (generation === reducerGeneration)
+              reduce(action.failure(error instanceof Error ? error : new Error(String(error))));
+          },
+        );
+      }
+      return result;
+    },
+    emitState: notify,
+    resetReducers: () => {
+      reducerGeneration += 1;
+      for (const [key, reducer] of Object.entries(reducers)) {
+        reducerState[key] = reducer(undefined, { type: '@@test/init' });
+        touchedReducerFields[key].clear();
+      }
+      notify();
     },
     getReadableState: () => readable(() => appStore.state),
     createSelector: (selectorFunc: (state: any, ...args: any[]) => any) => {

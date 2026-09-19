@@ -269,7 +269,7 @@ describe('workspaceTransferSaga — steps 3–4', () => {
     const openAction = h.dispatch.mock.calls
       .map(([action]) => action)
       .find((action) => action.type === openConnectionRequested('conn-1').type);
-    expect(openAction?.payload).toEqual(['conn-1']);
+    expect(openAction?.payload).toEqual(['conn-1', expect.any(String)]);
     h.task.cancel();
   });
 

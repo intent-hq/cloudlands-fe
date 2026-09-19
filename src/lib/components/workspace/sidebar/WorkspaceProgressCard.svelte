@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { Input } from '$lib/components/ui/input';
-  import { Textarea } from '$lib/components/ui/textarea';
-  /* eslint-disable max-lines */
   import { slide } from '$lib/motion';
   import type { Note } from '$shared/types';
   import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
@@ -26,6 +23,8 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
+  import { Input } from '$lib/components/ui/input';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -38,20 +37,13 @@
     toggleSidebarSide,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { handleLink } from '$features/navigation/link-handler';
-  import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { m } from '$shared/paraglide/messages.js';
-  import { onDestroy, tick, onMount } from 'svelte';
-  import { writable } from 'svelte/store';
-  import { logger, createLogger } from '$lib/utils/client-logger';
   import { WorkspaceId } from '$shared/types/branded-ids';
-
+  import { notify } from '$lib/components/patterns/notify';
+  import { onDestroy, tick } from 'svelte';
+  import { writable } from 'svelte/store';
+  import { logger } from '$lib/utils/client-logger';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import {
-    fetchReadyTasks,
-    applyReadyTasks,
-  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { listenSync } from '$lib/electron-bridge';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import {
     acceptChangesConsumerMounted,
@@ -67,13 +59,12 @@
   import {
     requestArchiveWorkspace,
     requestDeleteWorkspace,
+    requestUnarchiveWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
-  import {
-    loadWorkspacesRequested,
-    setWorkspaceEntity,
-  } from '$store/renderer/slices/workspace/workspace-slice';
+  import { updateWorkspaceRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     selectWorkspaceById,
+    selectWorkspaceMutation,
     selectWorkspaceProgressActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import type {
@@ -90,9 +81,6 @@
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
   import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
-
-  const readyLogger = createLogger('ReadyTasks');
-
   interface Props {
     workspaceId?: string;
     onOpenNote?: (noteId: string) => void;
@@ -100,7 +88,6 @@
   }
 
   let { workspaceId, onOpenNote: _onOpenNote, onAcceptChanges }: Props = $props();
-
   const workspaceIdStore = writable('');
   $effect(() => {
     workspaceIdStore.set(workspaceId ?? '');
@@ -117,6 +104,8 @@
   // fetch in flight" so event-driven refetches never remount the bar and
   // replay its entrance animation (the flex-grow transition animates the diff).
   const tasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
+  const titleMutation$ = selectWorkspaceMutation(workspaceIdStore, writable('title'));
+  const statusMutation$ = selectWorkspaceMutation(workspaceIdStore, writable('status-message'));
 
   // Aggregated presentational inputs for the workspace progress selectors. Kept
   // in sync via an $effect below once the derived state is available. PR identity
@@ -188,6 +177,29 @@
   let copiedBranchName = $state(false);
   let branchTooltipOpen = $state(false);
   let copyBranchNameTimeout: ReturnType<typeof setTimeout> | null = null;
+  let handledTitleMutationVersion = 0;
+  let handledStatusMutationVersion = 0;
+
+  $effect(() => {
+    const mutation = $titleMutation$;
+    isSavingTitle = mutation.loading;
+    if (mutation.loading || mutation.version <= handledTitleMutationVersion) return;
+    handledTitleMutationVersion = mutation.version;
+    isEditingTitle = false;
+    if (mutation.error) {
+      editedTitle = $workspace?.title || m.workspace_links_untitled_label();
+      notify.error(mutation.error);
+    }
+  });
+
+  $effect(() => {
+    const mutation = $statusMutation$;
+    isSavingStatusMessage = mutation.loading;
+    if (mutation.loading || mutation.version <= handledStatusMutationVersion) return;
+    handledStatusMutationVersion = mutation.version;
+    isEditingStatusMessage = false;
+    if (mutation.error) editedStatusMessage = $workspace?.statusMessage || '';
+  });
 
   function handleRepoTooltipOpenChange(open: boolean) {
     repoTooltipOpen = open;
@@ -262,18 +274,9 @@
     appStore.dispatch(requestArchiveWorkspace($workspace.id));
   }
 
-  async function handleUnarchive() {
+  function handleUnarchive() {
     if (!$workspace) return;
-    const { notify } = await import('$lib/components/patterns/notify');
-    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
-
-    const result = await workspaceClient.unarchive($workspace.id);
-    if (result.ok) {
-      appStore.dispatch(loadWorkspacesRequested());
-      notify.success(m.workspace_progressCard_unarchivedSpace_toast({ title: workspaceTitle }));
-    } else {
-      notify.error(m.workspace_progressCard_unarchiveFailed_error());
-    }
+    appStore.dispatch(requestUnarchiveWorkspace($workspace.id));
   }
 
   function startEditingTitle() {
@@ -288,7 +291,7 @@
     });
   }
 
-  async function saveTitle() {
+  function saveTitle() {
     if (isSavingTitle || !$workspace || !editedTitle.trim()) {
       isEditingTitle = false;
       return;
@@ -296,13 +299,7 @@
 
     const newTitle = editedTitle.trim();
     if (newTitle !== $workspace.title) {
-      isSavingTitle = true;
-      isEditingTitle = false;
-      try {
-        await renameWorkspaceTitle($workspace, newTitle);
-      } finally {
-        isSavingTitle = false;
-      }
+      appStore.dispatch(updateWorkspaceRequested($workspace.id, { title: newTitle }, 'title'));
     }
     isEditingTitle = false;
   }
@@ -330,7 +327,7 @@
     });
   }
 
-  async function saveStatusMessage() {
+  function saveStatusMessage() {
     if (skipNextStatusBlurSave) {
       skipNextStatusBlurSave = false;
       return;
@@ -349,25 +346,13 @@
       return;
     }
 
-    isSavingStatusMessage = true;
-    try {
-      const result = await workspaceClient.update({
-        id: $workspace.id,
-        statusMessage: newStatusMessage,
-      });
-      if (result.ok) {
-        appStore.dispatch(setWorkspaceEntity(result.data));
-      } else {
-        logger.error('Failed to update workspace status', { error: result.error });
-        editedStatusMessage = $workspace.statusMessage || '';
-      }
-    } catch (error) {
-      logger.error('Failed to update workspace status:', error);
-      editedStatusMessage = $workspace.statusMessage || '';
-    } finally {
-      isEditingStatusMessage = false;
-      isSavingStatusMessage = false;
-    }
+    appStore.dispatch(
+      updateWorkspaceRequested(
+        $workspace.id,
+        { statusMessage: newStatusMessage },
+        'status-message',
+      ),
+    );
   }
 
   function handleStatusMessageKeydown(e: KeyboardEvent) {
@@ -481,77 +466,6 @@
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-  });
-
-  // Ready tasks state — derived from Redux store
-  let currentReadyIndex = $state(0);
-
-  // Deduplicate notes by ID
-  function deduplicateNotes(notesList: Note[]): Note[] {
-    const seen = new Set<string>();
-    return notesList.filter((n) => {
-      const noteId = n.id as string;
-      if (seen.has(noteId)) return false;
-      seen.add(noteId);
-      return true;
-    });
-  }
-
-  // Auto-load ready tasks on initial load (only once)
-  // Keep this as an effect since it needs to react to notes changes
-  let lastFetchReadyTasksKey: string | undefined;
-  $effect(() => {
-    if (workspaceId && $notes.length > 0) {
-      const fetchKey = workspaceId + ':' + $notes.length;
-      if (fetchKey !== lastFetchReadyTasksKey) {
-        lastFetchReadyTasksKey = fetchKey;
-        appStore.dispatch(fetchReadyTasks(workspaceId));
-      }
-    }
-  });
-
-  // Listen for ready tasks changes from backend
-  // Using onMount with listenSync for proper cleanup on unmount
-  onMount(() => {
-    if (!workspaceId) return;
-
-    // Capture workspaceId at mount time
-    const mountedWorkspaceId = workspaceId;
-
-    // Use listenSync for synchronous cleanup - no race conditions on unmount
-    const unsubscribe = listenSync<{
-      workspaceId: string;
-      data: {
-        readyTaskIds: string[];
-        triggeredBy?: {
-          noteId: string;
-          previousStatus: string;
-          newStatus: string;
-        };
-        computedAt: string;
-      };
-    }>('task:ready-tasks-changed', (event) => {
-      const payload = event.payload;
-      const eventWorkspaceId = payload?.workspaceId;
-      const readyTaskIds = payload?.data?.readyTaskIds;
-
-      if (eventWorkspaceId !== mountedWorkspaceId) return;
-
-      // Update ready tasks from the notes we already have
-      // Deduplicate to prevent duplicate entries if notes array has duplicates
-      if (readyTaskIds) {
-        const filtered = $notes.filter((n) => readyTaskIds.includes(n.id as string));
-        const deduped = deduplicateNotes(filtered);
-        appStore.dispatch(applyReadyTasks(mountedWorkspaceId, deduped));
-        // Reset index if current is out of bounds
-        if (currentReadyIndex >= deduped.length) {
-          currentReadyIndex = Math.max(0, deduped.length - 1);
-        }
-        readyLogger.info('Ready tasks updated from backend', { count: deduped.length }); // i18n-ignore (log line)
-      }
-    });
-
-    return unsubscribe;
   });
 
   // Get spec note
@@ -822,20 +736,19 @@
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
-               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+               transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none"
             placeholder={m.workspace_links_untitled_label()}
           />
         {:else}
           <Button
             variant="plain"
-            class="relative z-10 text-xl font-semibold text-foreground bg-transparent {!$workspace?.title
-              ? 'opacity-50'
-              : ''}
+            class="relative z-10 text-xl font-semibold text-foreground bg-transparent
                border-none py-0.5 pr-1 rounded cursor-text text-left
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-normal
-               focus-visible:outline-1 focus-visible:outline-primary-ink/50 focus-visible:-outline-offset-1
-               disabled:cursor-default disabled:opacity-50 truncate min-w-0"
+               transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none leading-normal
+               focus-visible:outline-1 focus-visible:outline-primary/50 focus-visible:-outline-offset-1
+               disabled:cursor-default disabled:opacity-50 truncate min-w-0
+               {!$workspace?.title ? 'opacity-50' : ''}"
             onclick={startEditingTitle}
             title={m.workspace_sidebarHeader_editTitle_tooltip()}
             disabled={!$workspace}
@@ -864,7 +777,7 @@
               data-workspace-actions-kebab
               data-workspace-actions-trigger
               aria-label={m.workspace_progressCard_actions_ariaLabel()}
-              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-transparent hover:border-none"
+              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-spring-fast ease-spring-fast motion-reduce:transition-none hover:bg-transparent hover:border-none"
               disabled={isDeleting}
             >
               {#if isDeleting}
@@ -1141,21 +1054,21 @@
               rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
               class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
-                     focus:ring-none! focus:outline-none! transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
+                     focus:ring-none! focus:outline-none! transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
               placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
             ></Textarea>
           {:else if $workspace && currentStatusMessage}
             <Button
               variant="plain"
-              truncateLabel={false}
-              labelClass="line-clamp-3"
-              class="type-body relative z-10 h-auto w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
-                     transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
+              class="type-body relative z-10 w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+                     transition-all duration-spring-fast ease-spring-fast motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
               onclick={startEditingStatusMessage}
-              title={currentStatusMessage}
+              title={currentStatusMessage
+                ? m.workspace_sidebarHeader_editStatus_tooltip()
+                : m.workspace_sidebarHeader_addStatus_tooltip()}
               aria-label={currentStatusMessage
                 ? m.workspace_sidebarHeader_editStatus_ariaLabel()
                 : m.workspace_sidebarHeader_addStatus_ariaLabel()}
@@ -1184,7 +1097,7 @@
           type="button"
           class="block w-full cursor-zoom-in bg-transparent border-none p-0
                  focus-visible:outline focus-visible:outline-1
-                 focus-visible:outline-primary-ink/50 focus-visible:outline-offset-1"
+                 focus-visible:outline-primary/50 focus-visible:outline-offset-1"
           onclick={() => (statusImageLightboxOpen = true)}
           title={m.workspace_progressCard_statusImage_title()}
           aria-label={m.workspace_progressCard_statusImage_ariaLabel()}
@@ -1222,7 +1135,7 @@
         {#if displayReadyTasks.length > 1}
           <span class="flex items-center gap-1">
             <Button
-              variant="ghost-light"
+              variant="plain"
               class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigatePrev}
               disabled={displayReadyTasks.length <= 1}
@@ -1231,7 +1144,7 @@
               <Fa icon={faChevronLeft} size="xs" />
             </Button>
             <Button
-              variant="ghost-light"
+              variant="plain"
               class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigateNext}
               disabled={displayReadyTasks.length <= 1}
@@ -1242,8 +1155,9 @@
           </span>
         {/if}
       </div>
+
       <Button
-        variant="ghost-light"
+        variant="plain"
         class="flex items-center gap-2 w-full text-left text-sm text-subtle transition-colors py-1 rounded cursor-pointer"
         onclick={() => onOpenNote?.(currentDisplayReadyTask.id as string)}
         onmouseenter={() => (highlightedNoteId = currentDisplayReadyTask.id as string)}
@@ -1277,7 +1191,6 @@
   .edit-input::selection {
     background: hsl(var(--ring) / 0.3);
   }
-
   @container style(--motion-reduced: 1) {
     [data-workspace-title-edit-decoration],
     [data-workspace-status-edit-decoration] {

@@ -30,6 +30,7 @@ import {
   setWorkspaceHasLoaded,
   setWorkspaceLoading,
   updateWorkspaceEntity,
+  updateWorkspaceRequested,
   workspaceReducer,
 } from './workspace-slice';
 import {
@@ -161,6 +162,97 @@ describe('workspaceReducer', () => {
       expect(state.pendingCreations).toEqual({});
     });
 
+    it('ignores a stale workspace mutation failure', () => {
+      const first = updateWorkspaceRequested('ws-1', { title: 'First' }, 'details', 'request-1');
+      const second = updateWorkspaceRequested('ws-1', { title: 'Second' }, 'details', 'request-2');
+      void first.promise.catch(() => {});
+      let state = workspaceReducer(initialState, first);
+      state = workspaceReducer(state, second);
+
+      const next = workspaceReducer(state, first.failure(new Error('stale failure')));
+
+      expect(next).toBe(state);
+      expect(next.mutations['ws-1:details']).toMatchObject({
+        loading: true,
+        error: null,
+        version: 2,
+        requestId: 'request-2',
+      });
+    });
+
+    it('ignores a stale workspace mutation success', () => {
+      const first = updateWorkspaceRequested('ws-1', { title: 'First' }, 'details', 'request-1');
+      const second = updateWorkspaceRequested('ws-1', { title: 'Second' }, 'details', 'request-2');
+      let state = workspaceReducer(initialState, first);
+      state = workspaceReducer(state, second);
+
+      const next = workspaceReducer(
+        state,
+        first.success(makeWorkspace({ id: 'ws-1', title: 'First' })),
+      );
+
+      expect(next).toBe(state);
+      expect(next.mutations['ws-1:details']).toMatchObject({
+        loading: true,
+        error: null,
+        version: 2,
+        requestId: 'request-2',
+      });
+    });
+
+    it('settles the matching workspace mutation success with serializable state', () => {
+      const request = updateWorkspaceRequested(
+        'ws-1',
+        { title: 'Updated' },
+        'details',
+        'request-1',
+      );
+      const loading = workspaceReducer(initialState, request);
+
+      const next = workspaceReducer(
+        loading,
+        request.success(makeWorkspace({ id: 'ws-1', title: 'Updated' })),
+      );
+
+      expect(next.mutations['ws-1:details']).toMatchObject({
+        loading: false,
+        error: null,
+        version: 1,
+        requestId: 'request-1',
+      });
+      expect(JSON.parse(JSON.stringify(next.mutations))).toEqual(next.mutations);
+    });
+
+    it('settles only the matching workspace mutation scope', () => {
+      const details = updateWorkspaceRequested(
+        'ws-1',
+        { title: 'Updated' },
+        'details',
+        'request-details',
+      );
+      const settings = updateWorkspaceRequested(
+        'ws-1',
+        { statusMessage: 'Working' },
+        'settings',
+        'request-settings',
+      );
+      void details.promise.catch(() => {});
+      let state = workspaceReducer(initialState, details);
+      state = workspaceReducer(state, settings);
+
+      const next = workspaceReducer(state, details.failure(new Error('details failed')));
+
+      expect(next.mutations['ws-1:details']).toMatchObject({
+        loading: false,
+        error: 'details failed',
+      });
+      expect(next.mutations['ws-1:settings']).toMatchObject({
+        loading: true,
+        error: null,
+        requestId: 'request-settings',
+      });
+    });
+
     it('replaces visible workspace items while preserving enrichment and pending creations', () => {
       const existing = makeWorkspace({
         id: 'ws-1',
@@ -266,6 +358,26 @@ describe('workspaceReducer', () => {
       expect(reset.loading).toBe(false);
       expect(reset.pendingDeletions).toEqual({});
       expect(reset.recency).toEqual(initialState.recency);
+    });
+
+    it('clears correlated mutation state', () => {
+      const request = updateWorkspaceRequested(
+        'ws-1',
+        { title: 'Updated' },
+        'details',
+        'request-1',
+      );
+      void request.promise.catch(() => {});
+      const state = workspaceReducer(initialState, request);
+
+      expect(state.mutations['ws-1:details']).toMatchObject({
+        loading: true,
+        requestId: 'request-1',
+      });
+
+      const reset = workspaceReducer(state, resetWorkspaceState());
+
+      expect(reset.mutations).toEqual({});
     });
   });
 

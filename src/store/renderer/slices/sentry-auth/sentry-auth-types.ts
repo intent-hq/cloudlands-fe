@@ -5,6 +5,8 @@
  */
 
 import type { SentryProject } from '$features/sentry-auth/types';
+import type { SentryIssueResult } from '$features/sentry-auth/types';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 export type SentryAuthState = {
   /** Whether user is authenticated with Sentry */
@@ -19,6 +21,10 @@ export type SentryAuthState = {
   projects: SentryProject[];
   /** Whether projects are being loaded */
   isLoadingProjects: boolean;
+  /** Cached issue list used by simple pickers. */
+  issues: Collection<SentryIssueResult, 'id'>;
+  isLoadingIssues: boolean;
+  issuesLoaded: boolean;
 };
 
 // Re-export types that consumers need

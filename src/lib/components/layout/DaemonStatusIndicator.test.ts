@@ -20,7 +20,8 @@ let mockStoreState: Partial<StoreState> = {
     polling: false,
   },
 };
-let mockDispatch = vi.fn();
+const mockDispatch = vi.fn();
+let mockEmitState = () => {};
 const mockNavigateToSettings = vi.fn();
 const mockToastError = vi.fn();
 
@@ -35,6 +36,7 @@ const DEFAULT_CONNECTIONS = {
   error: null,
   certMismatch: null,
   certWarnings: {},
+  openOperations: {},
 };
 
 // Mock svelte-fa
@@ -61,13 +63,13 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 // Mock the store module
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const appStore = createAppStoreMock({
+    state: () => ({ connections: { ...DEFAULT_CONNECTIONS }, ...mockStoreState }),
+    dispatch: mockDispatch,
+  });
+  mockEmitState = appStore.emitState;
   return {
-    get store() {
-      return createAppStoreMock({
-        state: () => ({ connections: { ...DEFAULT_CONNECTIONS }, ...mockStoreState }),
-        dispatch: mockDispatch,
-      });
-    },
+    store: appStore,
   };
 });
 
@@ -84,7 +86,7 @@ const DaemonStatusIndicatorPreloaded = (await import('./DaemonStatusIndicator.sv
 describe('DaemonStatusIndicator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDispatch = vi.fn();
+    mockDispatch.mockReset();
     mockStoreState = {
       daemonHealth: {
         health: 'down',
@@ -1329,7 +1331,7 @@ describe('DaemonStatusIndicator', () => {
       attachedAgentCount: 2,
     };
 
-    it('dispatches pollUnslothStatus when the dropdown opens', async () => {
+    it('activates saga-owned details polling when the dropdown opens', async () => {
       mockStoreState = { daemonHealth: { ...healthyDaemonHealth } };
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
@@ -1338,10 +1340,10 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText(/^Status - /));
 
-      const unslothPolls = mockDispatch.mock.calls.filter(
-        ([action]) => action?.type === 'daemonHealth/pollUnslothStatus',
-      );
-      expect(unslothPolls.length).toBeGreaterThanOrEqual(1);
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'daemonHealth/setDetailsPollingActive',
+        payload: [true],
+      });
     });
 
     it('renders the unsloth section when a server is running', async () => {
@@ -1493,13 +1495,8 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
-  describe('1s polling while dropdown is open', () => {
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it('dispatches pollSystemStatus every 1s while open and stops on close', async () => {
-      vi.useFakeTimers();
+  describe('saga-owned polling while dropdown is open', () => {
+    it('signals polling active while open and inactive after close', async () => {
       mockStoreState = {
         daemonHealth: {
           health: 'healthy',
@@ -1520,27 +1517,19 @@ describe('DaemonStatusIndicator', () => {
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
 
-      const pollCalls = () =>
-        mockDispatch.mock.calls.filter(
-          ([action]) => action?.type === 'daemonHealth/pollSystemStatus',
-        ).length;
-
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
       await fireEvent.click(trigger);
 
-      // Opening dispatches an immediate poll.
-      const baseline = pollCalls();
-      expect(baseline).toBeGreaterThanOrEqual(1);
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'daemonHealth/setDetailsPollingActive',
+        payload: [true],
+      });
 
-      // Every 1s while open: one more poll per second.
-      vi.advanceTimersByTime(3000);
-      expect(pollCalls()).toBe(baseline + 3);
-
-      // Closing stops the interval: no further dispatches.
       await fireEvent.click(trigger);
-      const afterClose = pollCalls();
-      vi.advanceTimersByTime(3000);
-      expect(pollCalls()).toBe(afterClose);
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'daemonHealth/setDetailsPollingActive',
+        payload: [false],
+      });
     });
   });
 
@@ -1588,7 +1577,45 @@ describe('DaemonStatusIndicator', () => {
         error: null,
         certMismatch: null,
         certWarnings: {},
+        openOperations: {},
       };
+    }
+
+    function setOpenOperation(
+      id: string,
+      requestId: string,
+      operation:
+        | {
+            status: 'success';
+            result: { status: 'opened'; id: string } | { status: 'secret-unavailable' };
+            error: null;
+          }
+        | { status: 'error'; result: null; error: string },
+    ) {
+      const connections = mockStoreState.connections as ReturnType<typeof withConnections>;
+      mockStoreState = {
+        ...mockStoreState,
+        connections: {
+          ...connections,
+          openOperations: {
+            ...connections.openOperations,
+            [id]: {
+              requestId,
+              version: 1,
+              ...operation,
+            },
+          },
+        },
+      };
+      mockEmitState();
+    }
+
+    function settleOpen(
+      id: string,
+      requestId: string,
+      result: { status: 'opened'; id: string } | { status: 'secret-unavailable' },
+    ) {
+      setOpenOperation(id, requestId, { status: 'success', result, error: null });
     }
 
     it('checks the remote row and shows its trigger name while persisted activeId stays local', async () => {
@@ -1678,7 +1705,7 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(remoteRow!);
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          payload: ['r1'],
+          payload: ['r1', expect.any(String)],
           type: 'connections/openRequested',
           asyncActionType: 'connections/open',
         }),
@@ -1690,14 +1717,12 @@ describe('DaemonStatusIndicator', () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
       // Settle the open the way the saga would: a RESOLVED secret-unavailable
       // status (the stored token cannot be read), not a rejection.
-      mockDispatch.mockImplementation(
-        (action: { type: string; success?: (r: unknown) => void }) => {
-          if (action.type === 'connections/openRequested') {
-            action.success?.({ status: 'secret-unavailable' });
-          }
-          return action;
-        },
-      );
+      mockDispatch.mockImplementation((action: { type: string; payload: [string, string] }) => {
+        if (action.type === 'connections/openRequested') {
+          settleOpen(action.payload[0], action.payload[1], { status: 'secret-unavailable' });
+        }
+        return action;
+      });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
@@ -1711,14 +1736,12 @@ describe('DaemonStatusIndicator', () => {
 
     it('does not surface an error or navigate when the open resolves opened', async () => {
       mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
-      mockDispatch.mockImplementation(
-        (action: { type: string; success?: (r: unknown) => void }) => {
-          if (action.type === 'connections/openRequested') {
-            action.success?.({ status: 'opened', id: 'r1' });
-          }
-          return action;
-        },
-      );
+      mockDispatch.mockImplementation((action: { type: string; payload: [string, string] }) => {
+        if (action.type === 'connections/openRequested') {
+          settleOpen(action.payload[0], action.payload[1], { status: 'opened', id: 'r1' });
+        }
+        return action;
+      });
 
       const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
       render(DaemonStatusIndicator);
@@ -1730,6 +1753,90 @@ describe('DaemonStatusIndicator', () => {
           expect.objectContaining({ type: 'connections/openRequested' }),
         ),
       );
+      expect(mockToastError).not.toHaveBeenCalled();
+      expect(mockNavigateToSettings).not.toHaveBeenCalled();
+    });
+
+    it('ignores a stale same-device completion and handles only the current request', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+      render(DaemonStatusIndicatorPreloaded);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+      const first = mockDispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'connections/openRequested');
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+      const opens = mockDispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'connections/openRequested');
+      const second = opens.at(-1);
+
+      settleOpen('r1', first.payload[1], { status: 'secret-unavailable' });
+      await tick();
+      expect(mockToastError).not.toHaveBeenCalled();
+      settleOpen('r1', second.payload[1], { status: 'secret-unavailable' });
+      await vi.waitFor(() => expect(mockToastError).toHaveBeenCalledOnce());
+      expect(mockNavigateToSettings).toHaveBeenCalledOnce();
+    });
+
+    it('consumes independent overlapping device results without cross-attribution', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+      render(DaemonStatusIndicatorPreloaded);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('This machine (local)').closest('[role="menuitem"]')!);
+      const opens = mockDispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'connections/openRequested');
+      const remoteOpen = opens.find((action) => action.payload[0] === 'r1');
+      const localOpen = opens.find((action) => action.payload[0] === 'local');
+
+      settleOpen('local', localOpen.payload[1], { status: 'secret-unavailable' });
+      settleOpen('r1', remoteOpen.payload[1], { status: 'secret-unavailable' });
+      await vi.waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(2));
+      expect(mockToastError.mock.calls.map(([message]) => String(message))).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('This machine (local)'),
+          expect.stringContaining('desk:4180'),
+        ]),
+      );
+    });
+
+    it('does not surface rejected opens through the secret-recovery path', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+      render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+      const open = mockDispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'connections/openRequested');
+
+      setOpenOperation('r1', open.payload[1], {
+        status: 'error',
+        result: null,
+        error: 'unreachable',
+      });
+      await tick();
+      expect(mockToastError).not.toHaveBeenCalled();
+      expect(mockNavigateToSettings).not.toHaveBeenCalled();
+    });
+
+    it('does not react to an open result after unmount', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+      const view = render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText('desk:4180').closest('[role="menuitem"]')!);
+      const open = mockDispatch.mock.calls
+        .map(([action]) => action)
+        .find((action) => action.type === 'connections/openRequested');
+
+      view.unmount();
+      settleOpen('r1', open.payload[1], { status: 'secret-unavailable' });
+      await tick();
       expect(mockToastError).not.toHaveBeenCalled();
       expect(mockNavigateToSettings).not.toHaveBeenCalled();
     });
@@ -2059,6 +2166,7 @@ describe('DaemonStatusIndicator', () => {
         status: 'idle',
         error: null,
         certMismatch: mismatch,
+        openOperations: {},
       };
     }
 
@@ -2094,7 +2202,7 @@ describe('DaemonStatusIndicator', () => {
       );
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          payload: ['local'],
+          payload: ['local', expect.any(String)],
           type: 'connections/openRequested',
           asyncActionType: 'connections/open',
         }),
@@ -2117,7 +2225,7 @@ describe('DaemonStatusIndicator', () => {
       );
       expect(mockDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
-          payload: ['r1'],
+          payload: ['r1', expect.any(String)],
           type: 'connections/forgetRequested',
           asyncActionType: 'connections/forget',
         }),

@@ -2,6 +2,13 @@ import type { AgentSession, AgentMessage, ContentBlock, AgentId } from '$shared/
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  removeItem,
+  upsertItem,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
 import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';
@@ -48,6 +55,23 @@ export interface WorkspaceAgentState {
   retiredAgentsLoaded: boolean;
   /** True while the on-demand retired-only read is in flight. */
   isLoadingRetiredAgents: boolean;
+  creationRequests: Collection<AgentCreationRequestEntry, 'requestId'>;
+  restorationRequests: Collection<AgentRestorationRequestEntry, 'requestId'>;
+}
+
+export interface AgentCreationRequestEntry {
+  requestId: string;
+  agentId: string | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export interface AgentRestorationRequestEntry {
+  requestId: string;
+  agentId: string;
+  loading: boolean;
+  error: string | null;
+  notFound: boolean;
 }
 
 export interface WorkspaceAgentsState {
@@ -65,6 +89,8 @@ export interface BackendActiveStreamPayload {
 }
 
 export interface AgentCreationRequestOptions {
+  /** Optional UI correlation key for selector-backed creation result handling. */
+  requestId?: string;
   openAgent?: boolean;
   openInAdjacentPanel?: boolean;
   panelId?: string;
@@ -199,6 +225,8 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   retiredCount: 0,
   retiredAgentsLoaded: false,
   isLoadingRetiredAgents: false,
+  creationRequests: createCollection('requestId'),
+  restorationRequests: createCollection('requestId'),
 };
 
 export const initialState: WorkspaceAgentsState = {
@@ -242,6 +270,10 @@ export const setIsLoadingAgents = createAction<[wsId: string, loading: boolean]>
 export const hydrateAgentsRequested = createAction<[wsId: string]>(
   'workspaceAgents/hydrateAgentsRequested',
 );
+/** Saga-only completion: accepted hydration reads have drained (or were cancelled). */
+export const agentsHydrationSettled = createAction<[wsId: string]>(
+  'workspaceAgents/agentsHydrationSettled',
+);
 /**
  * Saga-only trigger (no reducer entry): load the workspace's retired rows on
  * demand via the retired-only read (`retiredOnly: true`, §5.5) when the
@@ -283,6 +315,15 @@ export const createAgentFromConfigRequested = createAsyncAction<
   [wsId: string, config: UnifiedAgentConfig, options?: AgentCreationRequestOptions],
   AgentSession
 >('workspaceAgents/createAgentFromConfig', 'workspaceAgents/createAgentFromConfigRequested');
+export const agentCreationRequestSucceeded = createAction<
+  [wsId: string, requestId: string, agentId: string]
+>('workspaceAgents/agentCreationRequestSucceeded');
+export const agentCreationRequestFailed = createAction<
+  [wsId: string, requestId: string, error: string]
+>('workspaceAgents/agentCreationRequestFailed');
+export const clearAgentCreationRequest = createAction<[wsId: string, requestId: string]>(
+  'workspaceAgents/clearAgentCreationRequest',
+);
 export const forkAgentRequested = createAction<[wsId: string, request: ForkAgentRequest]>(
   'workspaceAgents/forkAgentRequested',
 );
@@ -348,7 +389,12 @@ export const saveAgentSessionRequested = createAsyncAction<
   void
 >('workspaceAgents/saveAgentSession', 'workspaceAgents/saveAgentSessionRequested');
 export const renameAgentSessionRequested = createAsyncAction<
-  [wsId: string, agentId: string, name: string],
+  [
+    wsId: string,
+    agentId: string,
+    name: string,
+    rollback?: { previousName: string; previousNameExplicitlySet: boolean },
+  ],
   void
 >('workspaceAgents/renameAgentSession', 'workspaceAgents/renameAgentSessionRequested');
 export const stopAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(
@@ -424,9 +470,19 @@ export const activateAgentRequested = createAsyncAction<
 >('workspaceAgents/activateAgent', 'workspaceAgents/activateAgentRequested');
 
 export const restoreAgentSessionRequested = createAsyncAction<
-  [wsId: string, agentId: string],
+  [wsId: string, agentId: string, requestId?: string],
   AgentSession | null
 >('workspaceAgents/restoreAgentSession', 'workspaceAgents/restoreAgentSessionRequested');
+
+export const agentRestorationRequestSucceeded = createAction<
+  [wsId: string, requestId: string, agentId: string]
+>('workspaceAgents/agentRestorationRequestSucceeded');
+export const agentRestorationRequestFailed = createAction<
+  [wsId: string, requestId: string, agentId: string, error: string, notFound: boolean]
+>('workspaceAgents/agentRestorationRequestFailed');
+export const clearAgentRestorationRequest = createAction<[wsId: string, requestId: string]>(
+  'workspaceAgents/clearAgentRestorationRequest',
+);
 
 /**
  * Un-retire a soft-retired agent via `agent.restore` (§5.5). Distinct from
@@ -440,6 +496,124 @@ export const restoreRetiredAgentRequested = createAsyncAction<
 >('workspaceAgents/restoreRetiredAgent', 'workspaceAgents/restoreRetiredAgentRequested');
 
 export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initialState);
+workspaceAgentsReducer.with(
+  createAgentFromConfigRequested,
+  (state, { payload: [wsId, , options] }) => {
+    if (!options?.requestId) return state;
+    const workspaceState = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      creationRequests: upsertItem(workspaceState.creationRequests, {
+        requestId: options.requestId,
+        agentId: null,
+        loading: true,
+        error: null,
+      }),
+    });
+  },
+);
+workspaceAgentsReducer.with(
+  agentCreationRequestSucceeded,
+  (state, { payload: [wsId, requestId, agentId] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (!getItem(workspaceState.creationRequests, requestId)) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      creationRequests: upsertItem(workspaceState.creationRequests, {
+        requestId,
+        agentId,
+        loading: false,
+        error: null,
+      }),
+    });
+  },
+);
+workspaceAgentsReducer.with(
+  agentCreationRequestFailed,
+  (state, { payload: [wsId, requestId, error] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    if (!getItem(workspaceState.creationRequests, requestId)) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      creationRequests: upsertItem(workspaceState.creationRequests, {
+        requestId,
+        agentId: null,
+        loading: false,
+        error,
+      }),
+    });
+  },
+);
+workspaceAgentsReducer.with(clearAgentCreationRequest, (state, { payload: [wsId, requestId] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    creationRequests: removeItem(workspaceState.creationRequests, requestId),
+  });
+});
+workspaceAgentsReducer.with(
+  restoreAgentSessionRequested,
+  (state, { payload: [wsId, agentId, requestId] }) => {
+    if (!requestId) return state;
+    const workspaceState = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      restorationRequests: upsertItem(workspaceState.restorationRequests, {
+        requestId,
+        agentId,
+        loading: true,
+        error: null,
+        notFound: false,
+      }),
+    });
+  },
+);
+workspaceAgentsReducer.with(
+  agentRestorationRequestSucceeded,
+  (state, { payload: [wsId, requestId, agentId] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    const current = getItem(workspaceState.restorationRequests, requestId);
+    if (!current || current.agentId !== agentId) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      restorationRequests: upsertItem(workspaceState.restorationRequests, {
+        requestId,
+        agentId,
+        loading: false,
+        error: null,
+        notFound: false,
+      }),
+    });
+  },
+);
+workspaceAgentsReducer.with(
+  agentRestorationRequestFailed,
+  (state, { payload: [wsId, requestId, agentId, error, notFound] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    const current = getItem(workspaceState.restorationRequests, requestId);
+    if (!current || current.agentId !== agentId) return state;
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      restorationRequests: upsertItem(workspaceState.restorationRequests, {
+        requestId,
+        agentId,
+        loading: false,
+        error,
+        notFound,
+      }),
+    });
+  },
+);
+workspaceAgentsReducer.with(
+  clearAgentRestorationRequest,
+  (state, { payload: [wsId, requestId] }) => {
+    const workspaceState = getWorkspaceState(state, wsId);
+    return setWorkspaceState(state, wsId, {
+      ...workspaceState,
+      restorationRequests: removeItem(workspaceState.restorationRequests, requestId),
+    });
+  },
+);
 workspaceAgentsReducer.with(setAgents, (state, { payload: [wsId, agents] }) => {
   const workspaceState = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, reconcileWorkspaceAgentSnapshot(workspaceState, agents));

@@ -11,16 +11,17 @@
 
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { appClient, type AppSettingChange, type SettingDefinitionWithValue } from '$lib/client';
+  import type { AppSettingChange, SettingDefinitionWithValue } from '$lib/client';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    getServerPairingInfoRequested,
+    listSettingsRequested,
+    rotateServerTokenRequested,
+    updateSettingsRequested,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
   import WebSocketApiSettings from './WebSocketApiSettings.svelte';
 
   let writes = $state<AppSettingChange[]>([]);
-  const previous = {
-    list: appClient.settings.list,
-    update: appClient.settings.update,
-    pairingInfo: appClient.server.pairingInfo,
-    rotateToken: appClient.server.rotateToken,
-  };
   const definitions = [
     { path: 'server.wsApi.enabled', value: true, type: 'boolean' },
     { path: 'server.wsApi.port', value: 5181, type: 'number' },
@@ -30,26 +31,39 @@
     category: 'server',
     ...entry,
   })) as SettingDefinitionWithValue[];
-  appClient.settings.list = async () => definitions;
-  appClient.settings.update = async (changes) => {
-    writes = [...writes, ...changes];
-    return changes;
-  };
-  // Synthetic, non-authenticating pairing data only. No daemon or real tokens.
-  appClient.server.pairingInfo = async () => ({
+  const pairingInfo = {
     token: 'preview-not-a-real-token',
     certFingerprint: 'AA:BB:CC',
     port: 5181,
     path: '/ws',
     localIps: ['192.0.2.10'],
     hostname: 'preview-device',
+  };
+  const originalDispatch = appStore.dispatch;
+  Object.defineProperty(appStore, 'dispatch', {
+    configurable: true,
+    value: (action: Parameters<typeof originalDispatch>[0]) => {
+      const result = originalDispatch(action);
+      if (action.type === listSettingsRequested.type) {
+        const request = action as ReturnType<typeof listSettingsRequested>;
+        originalDispatch(request.success(definitions));
+      } else if (action.type === updateSettingsRequested.type) {
+        const request = action as ReturnType<typeof updateSettingsRequested>;
+        const changes = request.payload[0];
+        writes = [...writes, ...changes];
+        originalDispatch(request.success(changes));
+      } else if (action.type === getServerPairingInfoRequested.type) {
+        const request = action as ReturnType<typeof getServerPairingInfoRequested>;
+        originalDispatch(request.success(pairingInfo));
+      } else if (action.type === rotateServerTokenRequested.type) {
+        const request = action as ReturnType<typeof rotateServerTokenRequested>;
+        originalDispatch(request.success({ token: 'preview-rotated-not-a-real-token' }));
+      }
+      return result;
+    },
   });
-  appClient.server.rotateToken = async () => ({ token: 'preview-rotated-not-a-real-token' });
   onDestroy(() => {
-    appClient.settings.list = previous.list;
-    appClient.settings.update = previous.update;
-    appClient.server.pairingInfo = previous.pairingInfo;
-    appClient.server.rotateToken = previous.rotateToken;
+    Object.defineProperty(appStore, 'dispatch', { configurable: true, value: originalDispatch });
   });
 </script>
 

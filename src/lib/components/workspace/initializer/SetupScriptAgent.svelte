@@ -1,18 +1,25 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { writable } from 'svelte/store';
   import { createLogger } from '$lib/utils/client-logger';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
-  import { appClient } from '$lib/client';
   import { store as appStore } from '$store/renderer/store';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { generateWorkspaceSetupScriptRequested } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import { selectWorkspaceInitializerSetupScriptGeneration } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { waitForWorkspaceInitializerOperation } from './wait-for-operation';
   import { faTimes, faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
 
   const logger = createLogger('SetupScriptAgent');
+  const setupScriptWorkspaceIdStore = writable('');
+  const setupScriptOperation$ = selectWorkspaceInitializerSetupScriptGeneration(
+    setupScriptWorkspaceIdStore,
+  );
 
   interface Props {
     repoPath: string;
@@ -69,7 +76,13 @@
         return;
       }
 
-      const setupScript = await appClient.setupScripts.generate(workspaceId);
+      setupScriptWorkspaceIdStore.set(workspaceId);
+      const version =
+        selectWorkspaceInitializerSetupScriptGeneration.select(appStore.state, workspaceId)
+          .version + 1;
+      const settled = waitForWorkspaceInitializerOperation(setupScriptOperation$, version);
+      appStore.dispatch(generateWorkspaceSetupScriptRequested(workspaceId));
+      const setupScript = await settled;
       if (!isComponentMounted) return;
       if (!setupScript || !setupScript.script) {
         error = m.workspace_setupScriptAgent_generateFailed_error();

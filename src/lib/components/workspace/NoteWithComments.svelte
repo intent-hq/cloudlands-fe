@@ -75,15 +75,12 @@
   import { createLogger } from '$lib/utils/client-logger';
 
   import {
+    cancelExternalNoteUpdateCoordination,
+    coordinateExternalNoteUpdate,
     restoreNoteVersion,
     clearNewlyCreatedNoteId,
-  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import {
-    flushNoteContent,
-    hasPendingNoteContent,
-    settleNoteContent,
     updateNoteContent,
-  } from '$features/notes/notes-write-service';
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
     selectNoteById,
     selectNewlyCreatedNoteId,
@@ -537,7 +534,7 @@
   // onUpdate by editor-config), so every update reaching debounceUpdate is
   // user input, whenever it lands.
   let isRestorePending = false;
-  let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let hasPendingEditorSave = false;
   let isUserTyping = false;
   let userTypingTimeout: ReturnType<typeof setTimeout> | null = null;
   let isRecoverySave = false;
@@ -736,14 +733,6 @@
       // (monorepo#534; the pipeline itself no longer skips while typing): the
       // debounced save would otherwise erase the divergence from Redux while
       // the daemon still holds the external change.
-      //
-      // ORDERING DEPENDENCY: this check must run before saveEditorContent()
-      // fires — the save updates lastKnownContent and optimistically
-      // overwrites Redux, erasing the divergence signal. It holds because
-      // userTypingTimeout is registered BEFORE saveDebounceTimer below with
-      // the same 1000ms delay, and same-delay timers fire in registration
-      // order. Do not reorder the timers or shorten the save debounce below
-      // the typing timeout.
       if (
         shouldRequeueExternalUpdateAfterTypingStops({
           reduxContent: currentNoteContent,
@@ -760,20 +749,14 @@
       }
     }, 1000);
 
-    if (saveDebounceTimer) {
-      clearTimeout(saveDebounceTimer);
-    }
-
-    saveDebounceTimer = setTimeout(() => {
-      saveEditorContent();
-    }, 1000);
+    void saveEditorContent();
   }
 
   /**
    * Save the current editor content to the store and backend.
    * Called both by debounce timer and on cleanup to prevent data loss.
    */
-  async function saveEditorContent(immediate = false) {
+  async function saveEditorContent(immediate = false, force = false) {
     if (!editor || !workspace?.id || !noteId) return;
 
     // Check if this is a recovery save at the start
@@ -790,7 +773,7 @@
       });
 
       // Check if content actually changed
-      if (markdownContent === lastKnownContent) {
+      if (!force && markdownContent === lastKnownContent) {
         // No actual change, skip update to prevent cursor jump
         return;
       }
@@ -814,18 +797,21 @@
           // instead of merging. The store rev is that base only while it is
           // authoritative (no save unacknowledged) and its content IS the
           // editor's baseline — then it is also the freshest rev for it.
-          if (!hasPendingNoteContent(workspace.id, noteId) && (note.content || '') === baseline) {
+          if ((note.content || '') === baseline) {
             lastKnownRev = note.rev;
           }
           // The baseline also names the text the draft was typed on: a
           // pending draft the service has since rebased onto an echo the
           // editor has not shown yet would otherwise make this draft read as
           // deleting the rebased-in change.
-          updateNoteContent(workspace.id, noteId, markdownContent, {
-            immediate,
-            baseRev: lastKnownRev,
-            baseContent: baseline,
-          });
+          appStore.dispatch(
+            updateNoteContent(workspace.id, noteId, markdownContent, {
+              immediate,
+              baseRev: lastKnownRev,
+              baseContent: baseline,
+            }),
+          );
+          hasPendingEditorSave = !immediate;
         }
       }
 
@@ -997,7 +983,7 @@
   // The saga calls notesClient.restoreVersion and dispatches handleExternalNoteUpdate,
   // which triggers the existing external content update flow (Redux content change →
   // safety-net externalUpdateVersion increment → runExternalContentUpdateEffect).
-  async function handleRestoreVersion(versionId: string) {
+  function handleRestoreVersion(versionId: string) {
     const targetWorkspaceId = workspace?.id;
     const targetNoteId = noteId;
     if (!targetNoteId || !targetWorkspaceId) {
@@ -1016,29 +1002,9 @@
     // is what the pipeline would then apply. A save already in flight is not
     // safe either: the daemon dispatches requests concurrently, so the restore
     // could commit first — wait for its ack too. Mirrors the saga's own flush.
-    // A keystroke typed while that settle is pending lands on the component
-    // debounce again, where the write-service cannot see it: settle only
-    // covers its own queue. Stage and settle until both are quiescent, so it
-    // is persisted as its own pre-restore version like the typing before the
-    // click, rather than dropped by the restored apply or merged onto the
-    // restored text by a save sent after the restore RPC (intent#4887).
-    // No iteration cap: a pass repeats only when the debounce is armed again
-    // during it (new typing, or the external-update stageUnsavedEdits
-    // fallback), and each such pass drains that debounce into the write-
-    // service before settling again, so the loop ends once outstanding
-    // writes have settled and nothing re-arms the debounce. Capping and
-    // dispatching anyway would recreate the bug.
-    do {
-      if (saveDebounceTimer) {
-        clearTimeout(saveDebounceTimer);
-        saveDebounceTimer = null;
-        void saveEditorContent();
-      }
-      await settleNoteContent(targetWorkspaceId, targetNoteId);
-      if (isComponentDestroyed || noteId !== targetNoteId || workspace?.id !== targetWorkspaceId) {
-        return;
-      }
-    } while (saveDebounceTimer);
+    if (hasPendingEditorSave) {
+      void saveEditorContent(true, true);
+    }
 
     logger.info('[RestoreVersion] Dispatching restoreNoteVersion', {
       noteId: targetNoteId,
@@ -1356,9 +1322,6 @@
       if (editor) {
         editor.destroy();
       }
-      if (saveDebounceTimer) {
-        clearTimeout(saveDebounceTimer);
-      }
     };
   }
 
@@ -1383,13 +1346,8 @@
     // Flush any pending save BEFORE destroying the editor
     // This prevents data loss when switching to version view or navigating away
     // Must happen before cleanupFn() which destroys the editor
-    if (saveDebounceTimer) {
-      clearTimeout(saveDebounceTimer);
-      saveDebounceTimer = null;
-      // Save immediately if there might be pending changes
-      if (editor && !editor.isDestroyed) {
-        void saveEditorContent(true);
-      }
+    if (hasPendingEditorSave && editor && !editor.isDestroyed) {
+      void saveEditorContent(true, true);
     }
     if (userTypingTimeout) {
       clearTimeout(userTypingTimeout);
@@ -1460,6 +1418,7 @@
       lastWorkspaceId = currentWorkspaceId;
       lastNoteId = currentNoteId;
       lastKnownContent = '';
+      hasPendingEditorSave = false;
       lastKnownRev = undefined;
       hasUserEditedSinceLastSave = false;
       isRestorePending = false;
@@ -1645,6 +1604,13 @@
   // Watch for external content changes and update editor
   $effect(() => {
     const updateVersion = externalUpdateVersion;
+    const workspaceId = workspace?.id;
+    const currentNoteId = noteId;
+
+    if (!workspaceId || !currentNoteId) return;
+    const coordination = appStore.dispatch(
+      coordinateExternalNoteUpdate(workspaceId, currentNoteId, updateVersion),
+    );
 
     void runExternalContentUpdateEffect({
       updateVersion,
@@ -1653,35 +1619,13 @@
       isDestroyed: () => isComponentDestroyed,
       getEditor: () => editor as any,
       getIsInitialized: () => isInitialized,
-      getHasPendingNoteContent: () =>
-        workspace?.id && noteId ? hasPendingNoteContent(workspace.id, noteId) : false,
-      // Hand the current editor text to the write-service now — the pending
-      // flush must carry keystrokes still waiting on saveDebounceTimer.
+      coordinateExternalUpdate: () => coordination.promise,
+      // Ensure the saga has the current editor text before it evaluates its
+      // pending-save gate.
       stageUnsavedEdits: () => {
-        if (saveDebounceTimer) {
-          clearTimeout(saveDebounceTimer);
-          saveDebounceTimer = null;
-        }
-        const baseline = lastKnownContent;
+        if (!workspace?.id || !noteId) return;
+        if (!selectNoteById.select(appStore.state, workspace.id, noteId)) return;
         void saveEditorContent();
-        // saveEditorContent moves lastKnownContent to the editor text before
-        // the write-service confirms it holds the save. A stage that queued
-        // nothing leaves those keystrokes unsaved: keep the baseline so the
-        // apply folds them in, and re-arm the debounced save to carry them.
-        if (lastKnownContent === baseline) return;
-        if (workspace?.id && noteId && hasPendingNoteContent(workspace.id, noteId)) return;
-        lastKnownContent = baseline;
-        saveDebounceTimer = setTimeout(() => {
-          saveEditorContent();
-        }, 1000);
-      },
-      flushNoteContent,
-      onPendingSaveSettled: () => {
-        // Re-queue once an in-flight save's window closes. Reset the
-        // safety-net dedupe first: if the resolved save left the Redux
-        // snapshot unchanged, the dedupe would otherwise block the re-fire.
-        lastSafetyNetSyncedContent = undefined;
-        externalUpdateVersion = externalUpdateVersion + 1;
       },
       getCurrentNoteContent: () => currentNoteContent,
       getCurrentNoteRev: () => currentNoteRev,
@@ -1711,6 +1655,10 @@
       logger,
       workspaceFileVersion,
     });
+
+    return () => {
+      appStore.dispatch(cancelExternalNoteUpdateCoordination(workspaceId, currentNoteId));
+    };
   });
 
   // Safety-net effect: watches Redux content directly and queues the

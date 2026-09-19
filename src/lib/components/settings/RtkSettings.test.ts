@@ -1,310 +1,73 @@
-/**
- * @vitest-environment jsdom
- */
+/** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import RtkSettings from './RtkSettings.svelte';
-import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
-import { m } from '$shared/paraglide/messages.js';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 
-// Mock appClient and IPC invoke
 const mocks = vi.hoisted(() => ({
-  mockSettingsGet: vi.fn(),
-  mockSettingsUpdate: vi.fn(),
-  mockTerminalsCreate: vi.fn(),
-  mockTerminalsWrite: vi.fn(),
-  mockInvoke: vi.fn(),
-  mockDispatch: vi.fn(),
-  mockToastError: vi.fn(),
+  dispatch: vi.fn(),
+  state: { current: {} as Record<string, unknown> },
 }));
 
-vi.mock('$lib/client', () => ({
-  appClient: {
-    settings: {
-      get: mocks.mockSettingsGet,
-      update: mocks.mockSettingsUpdate,
-    },
-    terminals: {
-      create: mocks.mockTerminalsCreate,
-      write: mocks.mockTerminalsWrite,
-    },
-  },
-}));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => mocks.state.current, dispatch: mocks.dispatch });
+});
 
-vi.mock('$shared/generated/ipc-client', () => ({
-  invoke: mocks.mockInvoke,
-}));
+import {
+  checkRtkRequested,
+  initializeRtkSettings,
+  installRtkRequested,
+  updateRtkEnabledRequested,
+} from '$store/renderer/slices/host-requirements/host-requirements-slice';
+import RtkSettings from './RtkSettings.svelte';
 
-// Mock store - minimal implementation
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    dispatch: mocks.mockDispatch,
-    createSelector: vi.fn((fn) => fn),
-    state: {},
-  },
-}));
-
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { success: vi.fn(), info: vi.fn(), error: mocks.mockToastError, warning: vi.fn() },
-}));
+const hostRequirements = (available: boolean, enabled = false) => ({
+  rtk: { checked: true, available },
+  rtkEnabled: enabled,
+  rtkSettingsLoaded: true,
+  rtkChecking: false,
+  rtkUpdating: false,
+  rtkError: null,
+});
 
 describe('RtkSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.state.current = { hostRequirements: hostRequirements(true) };
   });
 
-  afterEach(() => {
-    cleanup();
+  afterEach(cleanup);
+
+  it('dispatches initialization on mount and setting intent on toggle', async () => {
+    render(RtkSettings);
+    expect(mocks.dispatch).toHaveBeenCalledWith(initializeRtkSettings());
+
+    await fireEvent.click(screen.getByRole('switch', { name: /rtk/i }));
+    expect(mocks.dispatch).toHaveBeenCalledWith(updateRtkEnabledRequested(true));
   });
 
-  it('shows loading through both settings and availability without exposing or writing a false value', async () => {
-    let resolveSettings!: (value: { path: string; value: boolean }) => void;
-    let resolveAvailability!: (value: { data: { available: boolean } }) => void;
-    mocks.mockSettingsGet.mockReturnValue(new Promise((resolve) => (resolveSettings = resolve)));
-    mocks.mockInvoke.mockReturnValue(new Promise((resolve) => (resolveAvailability = resolve)));
+  it('renders unavailable state and dispatches probe and install intent', async () => {
+    mocks.state.current = { hostRequirements: hostRequirements(false) };
+    render(RtkSettings);
 
-    const { container } = render(RtkSettings);
-    expect(screen.getByRole('status', { name: m.ui_spinner_loading_ariaLabel() })).toBeTruthy();
-    expect(container.querySelector('#rtk-enabled')?.getAttribute('aria-busy')).toBe('true');
-    expect(screen.queryByRole('switch')).toBeNull();
-    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
-
-    resolveSettings({ path: 'rtk.enabled', value: true });
-    await waitFor(() =>
-      expect(mocks.mockInvoke).toHaveBeenCalledWith(SYSTEM_CHANNELS.CHECK_RTK, undefined),
+    const buttons = screen.getAllByRole('button');
+    const checkButton = buttons.find((button) => button.textContent?.includes('Check'));
+    const installButton = buttons.find((button) =>
+      button.textContent?.includes('brew install rtk'),
     );
-    expect(screen.getByRole('status', { name: m.ui_spinner_loading_ariaLabel() })).toBeTruthy();
-    expect(screen.queryByRole('switch')).toBeNull();
-
-    resolveAvailability({ data: { available: true } });
-    const toggle = await screen.findByRole('switch', { name: m.settings_rtk_label() });
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect(toggle.hasAttribute('disabled')).toBe(false);
-    expect(screen.queryByRole('status')).toBeNull();
-    expect(container.querySelector('#rtk-enabled')?.hasAttribute('aria-busy')).toBe(false);
-    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    expect(checkButton).toBeDefined();
+    expect(installButton).toBeDefined();
+    await fireEvent.click(checkButton!);
+    await fireEvent.click(installButton!);
+    expect(mocks.dispatch).toHaveBeenCalledWith(checkRtkRequested());
+    expect(mocks.dispatch).toHaveBeenCalledWith(installRtkRequested());
   });
 
-  it('finishes loading with a disabled known value when the availability probe rejects', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
-    mocks.mockInvoke.mockRejectedValue(new Error('Probe failed'));
+  it('disables setting changes while an update is in flight', () => {
+    mocks.state.current = {
+      hostRequirements: { ...hostRequirements(true), rtkUpdating: true },
+    };
     render(RtkSettings);
-    const toggle = await screen.findByRole('switch');
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect(toggle.hasAttribute('disabled')).toBe(true);
-    expect(screen.queryByRole('status')).toBeNull();
-    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
-  });
-
-  it('finishes loading with an error and no unknown toggle when the settings request rejects', async () => {
-    mocks.mockSettingsGet.mockRejectedValue(new Error('Settings failed'));
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-    render(RtkSettings);
-    await screen.findByRole('alert');
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
-    expect(screen.queryByRole('switch')).toBeNull();
-    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
-  });
-
-  it('loads rtk.enabled from daemon settings catalog on mount', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-
-    render(RtkSettings);
-
-    await waitFor(() => {
-      expect(mocks.mockSettingsGet).toHaveBeenCalledWith('rtk.enabled');
-    });
-  });
-
-  it('renders one self-owned label and description in the available state', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-
-    render(RtkSettings);
-
-    await screen.findByRole('switch', { name: m.settings_rtk_label() });
-    expect(screen.getAllByText(m.settings_rtk_label())).toHaveLength(1);
-    expect(screen.getAllByText(m.settings_rtk_enabledDescription())).toHaveLength(1);
-  });
-
-  it('defaults to false when settings.get returns no value', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: undefined });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-
-    render(RtkSettings);
-
-    const toggle = await screen.findByRole('switch');
-    expect(toggle.getAttribute('data-state')).toBe('unchecked');
-  });
-
-  it('calls settings.update with correct arguments when toggle is clicked', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'rtk.enabled', value: true }]);
-
-    render(RtkSettings);
-
-    const toggle = await screen.findByRole('switch');
-    await fireEvent.click(toggle);
-
-    await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: 'rtk.enabled', value: true }]);
-    });
-  });
-
-  it('disables repeat toggles until the pending value is saved', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-    let finishSave!: () => void;
-    let persistedValue = false;
-    mocks.mockSettingsUpdate.mockImplementation(
-      (changes: { path: string; value: boolean }[]) =>
-        new Promise<void>((resolve) => {
-          finishSave = () => {
-            persistedValue = changes[0].value;
-            resolve();
-          };
-        }),
-    );
-
-    render(RtkSettings);
-
-    const toggle = await screen.findByRole('switch');
-    await fireEvent.click(toggle);
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-    expect(toggle.hasAttribute('disabled')).toBe(true);
-
-    await fireEvent.click(toggle);
-    expect(mocks.mockSettingsUpdate).toHaveBeenCalledTimes(1);
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-
-    finishSave();
-    await waitFor(() => expect(toggle.hasAttribute('disabled')).toBe(false));
-    expect(persistedValue).toBe(true);
-    expect(toggle.getAttribute('aria-checked')).toBe(String(persistedValue));
-  });
-
-  it('toggles from enabled to disabled', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'rtk.enabled', value: false }]);
-
-    render(RtkSettings);
-
-    const toggle = await screen.findByRole('switch');
-    await fireEvent.click(toggle);
-
-    await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-        { path: 'rtk.enabled', value: false },
-      ]);
-    });
-  });
-
-  it('checks rtk availability via system:check-rtk IPC', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-
-    render(RtkSettings);
-
-    await waitFor(() => {
-      expect(mocks.mockInvoke).toHaveBeenCalledWith(SYSTEM_CHANNELS.CHECK_RTK, undefined);
-    });
-  });
-
-  it('disables toggle when rtk is not available', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: false } });
-
-    render(RtkSettings);
-
-    const toggle = await screen.findByRole('switch');
-    expect(toggle.hasAttribute('disabled')).toBe(true);
-  });
-
-  it('surfaces a settings.get transport failure', async () => {
-    mocks.mockSettingsGet.mockResolvedValue(null);
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-
-    render(RtkSettings);
-
-    await waitFor(() => {
-      expect(screen.getByText(m.settings_rtk_loadError())).toBeTruthy();
-    });
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
-    expect(screen.queryByRole('switch')).toBeNull();
-    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
-  });
-
-  // Review fix (PR #705): a failed daemon-first `terminal.create` must not
-  // fabricate a local-id tab or toggle the overlay — Redux terminal tabs are
-  // keyed by daemon-assigned ids that hydration (`terminal.list`) matches.
-  describe('installRtk create-failure fallback', () => {
-    async function renderUnavailableAndClickInstall() {
-      mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
-      mocks.mockInvoke.mockResolvedValue({ data: { available: false } });
-
-      render(RtkSettings);
-
-      const installButton = await screen.findByText('brew install rtk');
-      await fireEvent.click(installButton);
-      await waitFor(() => {
-        expect(mocks.mockTerminalsCreate).toHaveBeenCalled();
-      });
-    }
-
-    it('does not dispatch any terminal action when terminal.create reports failure', async () => {
-      mocks.mockTerminalsCreate.mockResolvedValue({ success: false, error: 'boom' });
-
-      await renderUnavailableAndClickInstall();
-
-      expect(mocks.mockDispatch).not.toHaveBeenCalled();
-      expect(mocks.mockToastError).toHaveBeenCalled();
-    });
-
-    it('does not dispatch any terminal action when terminal.create throws', async () => {
-      mocks.mockTerminalsCreate.mockRejectedValue(new Error('transport down'));
-
-      await renderUnavailableAndClickInstall();
-
-      expect(mocks.mockDispatch).not.toHaveBeenCalled();
-      expect(mocks.mockToastError).toHaveBeenCalled();
-    });
-
-    it('dispatches daemon-id-keyed tab actions on success', async () => {
-      mocks.mockTerminalsCreate.mockResolvedValue({ success: true, id: 'pty-daemon-7' });
-      mocks.mockTerminalsWrite.mockResolvedValue({ success: true });
-
-      await renderUnavailableAndClickInstall();
-
-      await waitFor(() => {
-        expect(mocks.mockDispatch).toHaveBeenCalled();
-      });
-      const dispatched = mocks.mockDispatch.mock.calls.map(
-        (call) => call[0] as { type: string; payload: unknown[] },
-      );
-      const addAction = dispatched.find((action) => action.type === 'terminals/addTerminal');
-      expect(addAction?.payload[1]).toBe('pty-daemon-7');
-      expect(mocks.mockToastError).not.toHaveBeenCalled();
-    });
-  });
-
-  it('reverts toggle state when settings.update fails', async () => {
-    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-    mocks.mockSettingsUpdate.mockRejectedValue(new Error('Network error'));
-
-    render(RtkSettings);
-
-    const toggle = await screen.findByRole('switch');
-    expect(toggle.getAttribute('data-state')).toBe('unchecked');
-
-    await fireEvent.click(toggle);
-
-    await waitFor(() =>
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([{ path: 'rtk.enabled', value: true }]),
-    );
-    expect(toggle.getAttribute('data-state')).toBe('unchecked');
+    expect(screen.getByRole('switch', { name: /rtk/i }).hasAttribute('disabled')).toBe(true);
   });
 });

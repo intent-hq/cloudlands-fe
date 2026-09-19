@@ -1,21 +1,18 @@
 <script lang="ts">
-  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { untrack } from 'svelte';
+  import { toStore } from 'svelte/store';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
+  import { ListView } from '$lib/components/patterns/collection';
+  import { notify } from '$lib/components/patterns/notify';
+  import DeviceIcon from '$lib/components/DeviceIcon.svelte';
+  import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import {
-    Button,
     Input,
     Label,
+    Menu,
     Switch,
     Tooltip,
   } from '$lib/components/patterns/settings/custom-controls';
-  import {
-    ListRow,
-    ListView,
-    RowActions,
-    type ActionDefinition,
-  } from '$lib/components/patterns/collection';
-  import DeviceIcon from '$lib/components/DeviceIcon.svelte';
-  import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -38,19 +35,23 @@
   import {
     selectConnectedIds,
     selectKeychainSyncState,
+    selectKeychainSyncWriteOperation,
+    selectOpenConnectionOperation,
     selectPinnedDaemonVersion,
+    selectSaveConnectionOperation,
+    selectTestConnectionOperation,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
     openConnectionRequested,
-    rotateConnectionSecretRequested,
+    saveConnectionRequested,
     setKeychainSyncEnabledRequested,
     testConnectionRequested,
     updateBackendRequested,
-    updateConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import {
     faArrowsRotate,
     faCopy,
+    faEllipsisVertical,
     faPen,
     faPlug,
     faTrash,
@@ -68,9 +69,15 @@
   }
 
   let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
+  const deviceId$ = toStore(() => device.id);
+  const initialDeviceId = untrack(() => device.id);
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
   const syncState$ = selectKeychainSyncState();
+  const syncWriteOperation$ = selectKeychainSyncWriteOperation();
+  const openOperation$ = selectOpenConnectionOperation(deviceId$);
+  const saveOperation$ = selectSaveConnectionOperation(deviceId$);
+  const testOperation$ = selectTestConnectionOperation(deviceId$);
   let name = $state('');
   let host = $state('');
   let port = $state('');
@@ -86,6 +93,7 @@
   // confirmed submit (and any fingerprint re-submit) proceed.
   let cloudRemovalPending = $state(false);
   let cloudRemovalConfirmed = $state(false);
+  let enableSyncAfterUpdate = false;
   let busy = $state<'update' | 'test' | null>(null);
   let daemonUpdating = $state(false);
   let feedbackOperation = $state<'update' | 'test' | null>(null);
@@ -98,9 +106,23 @@
   } | null>(null);
   let initializedPanel = $state<string | null>(null);
   let actionsButton: HTMLButtonElement | null = $state(null);
+  let actionsMenuOpen = $state(false);
   let firstEditInput: HTMLInputElement | null = $state(null);
   let secretInput: HTMLInputElement | null = $state(null);
   let focusSecretOnEdit = $state(false);
+  let handledOpenVersion = $state(
+    selectOpenConnectionOperation.select(appStore.state, initialDeviceId).version,
+  );
+  let pendingOpenRequestId = $state<string | null>(null);
+  let pendingLocalIconUpdate = $state(false);
+  let pendingSaveRequestId = $state<string | null>(null);
+  let pendingSyncRequestId = $state<string | null>(null);
+  let handledSaveVersion = $state(
+    selectSaveConnectionOperation.select(appStore.state, initialDeviceId).version,
+  );
+  let handledTestVersion = $state(
+    selectTestConnectionOperation.select(appStore.state, initialDeviceId).version,
+  );
 
   const savedAccent = $derived(
     device.accent === undefined ? DEFAULT_CONNECTION_ACCENT : device.accent,
@@ -157,34 +179,6 @@
     });
   });
   const canUpdateDaemon = $derived(canRequestDeviceUpdate(device, $connectedIds$, $pinnedVersion$));
-  const rowActions = $derived.by((): ActionDefinition[] => [
-    ...(!device.isLocal
-      ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
-      : []),
-    ...(canUpdateDaemon
-      ? [
-          {
-            id: 'update',
-            label: daemonUpdating
-              ? m.settings_devices_updating_label()
-              : m.layout_daemonStatus_update_action(),
-            icon: faArrowsRotate,
-            disabled: daemonUpdating,
-          },
-        ]
-      : []),
-    ...(!device.isLocal
-      ? [
-          { id: 'edit', label: m.settings_devices_edit_label(), icon: faPen },
-          {
-            id: 'remove',
-            label: m.settings_devices_remove_label(),
-            icon: faTrash,
-            destructive: true,
-          },
-        ]
-      : []),
-  ]);
 
   function resetPanel() {
     name = device.label;
@@ -240,16 +234,12 @@
     }
   }
 
-  async function connectDevice() {
+  function connectDevice() {
     connectionError = false;
-    try {
-      const action = openConnectionRequested(device.id);
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') openEditForSecretRecovery();
-    } catch {
-      connectionError = true;
-    }
+    handledOpenVersion = $openOperation$.version;
+    const request = openConnectionRequested(device.id);
+    pendingOpenRequestId = request.payload[1];
+    appStore.dispatch(request);
   }
 
   async function requestDaemonUpdate() {
@@ -267,22 +257,20 @@
     }
   }
 
-  function handleRowAction(id: string) {
-    switch (id) {
-      case 'connect':
-        void connectDevice();
-        break;
-      case 'update':
-        void requestDaemonUpdate();
-        break;
-      case 'edit':
-        onOpenPanel('edit');
-        break;
-      case 'remove':
-        onRequestRemove(device);
-        break;
-    }
-  }
+  $effect(() => {
+    const operation = $openOperation$;
+    if (
+      !pendingOpenRequestId ||
+      operation.requestId !== pendingOpenRequestId ||
+      operation.version <= handledOpenVersion ||
+      operation.status === 'loading'
+    )
+      return;
+    handledOpenVersion = operation.version;
+    pendingOpenRequestId = null;
+    if (operation.status === 'error') connectionError = true;
+    else if (operation.result?.status === 'secret-unavailable') openEditForSecretRecovery();
+  });
 
   function accentLabel(value: Exclude<ConnectionAccent, null>): string {
     return {
@@ -313,7 +301,7 @@
     return status === 'connected'
       ? 'bg-green-500'
       : status === 'connecting'
-        ? 'bg-warning'
+        ? 'bg-yellow-500'
         : 'bg-muted-foreground/50';
   }
 
@@ -350,25 +338,21 @@
     };
   }
 
-  async function updateLocalDeviceIcon(nextDeviceIcon: DeviceIconChoice) {
+  function updateLocalDeviceIcon(nextDeviceIcon: DeviceIconChoice) {
     if (!device.isLocal || busy) return;
     busy = 'update';
-    try {
-      const action = updateConnectionRequested({
+    pendingLocalIconUpdate = true;
+    handledSaveVersion = $saveOperation$.version;
+    const request = saveConnectionRequested({
+      update: {
         id: device.id,
         label: device.label,
         accent: null,
         deviceIcon: nextDeviceIcon,
-      });
-      appStore.dispatch(action);
-      await action.promise;
-    } catch {
-      localDeviceIcon = savedDeviceIcon;
-      const { toast } = await import('$lib/components/ui/toast');
-      toast.error(m.settings_devices_update_error());
-    } finally {
-      busy = null;
-    }
+      },
+    });
+    pendingSaveRequestId = request.payload[1];
+    appStore.dispatch(request);
   }
 
   // Any change of the switch invalidates the removal prompt and an earlier
@@ -390,115 +374,155 @@
     void updateDevice();
   }
 
-  async function updateDevice(confirmedFingerprint?: string, confirmedSecretFingerprint?: string) {
+  function updateDevice(confirmedFingerprint?: string, confirmedSecretFingerprint?: string) {
     if (editInvalid || busy) return;
     if (savedPushToCloud && !pushToCloud && !cloudRemovalConfirmed) {
       cloudRemovalPending = true;
       return;
     }
     // Captured up front: the connections broadcast can refresh `device`
-    // before the update promise settles.
-    const enableSyncAfterUpdate = !savedPushToCloud && pushToCloud && !syncEnabled;
+    // before the correlated save result settles.
+    enableSyncAfterUpdate = !savedPushToCloud && pushToCloud && !syncEnabled;
     busy = 'update';
     feedbackOperation = 'update';
     feedback = { kind: 'progress', message: m.settings_devices_updating_label() };
     pendingFingerprint = null;
-    try {
-      const token = secret.trim();
-      if (token) {
-        feedback = { kind: 'progress', message: m.settings_devices_replacingSecret_label() };
-        const rotateAction = rotateConnectionSecretRequested({
-          id: device.id,
-          token,
-          ...(confirmedSecretFingerprint
-            ? { confirmedFingerprint: confirmedSecretFingerprint }
-            : {}),
-        });
-        appStore.dispatch(rotateAction);
-        const rotateResult = await rotateAction.promise;
-        if (rotateResult.status === 'fingerprint-confirmation-required') {
-          pendingFingerprint = {
-            operation: 'secret',
-            expected: rotateResult.expectedFingerprint,
-            actual: rotateResult.actualFingerprint,
-          };
-          feedback = { kind: 'error', message: blockedMessage(rotateResult) };
-          return;
-        }
-        if (rotateResult.status !== 'updated') {
-          feedback = { kind: 'error', message: blockedMessage(rotateResult) };
-          return;
-        }
-        secret = '';
-        feedback = { kind: 'progress', message: m.settings_devices_updating_label() };
-      }
-      const action = updateConnectionRequested(updateParams(confirmedFingerprint));
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'updated') {
-        if (enableSyncAfterUpdate) {
-          // Re-including a record only reaches the keychain once the
-          // machine-global sync pref is on; enable it after the update
-          // succeeded so a rejected edit leaves no machine-global side effect.
-          feedback = { kind: 'progress', message: m.settings_devices_enablingSync_label() };
-          try {
-            const syncAction = setKeychainSyncEnabledRequested(true);
-            appStore.dispatch(syncAction);
-            await syncAction.promise;
-          } catch {
-            feedback = { kind: 'error', message: m.settings_devices_enableSync_error() };
-            return;
+    const token = secret.trim();
+    if (token) feedback = { kind: 'progress', message: m.settings_devices_replacingSecret_label() };
+    handledSaveVersion = $saveOperation$.version;
+    const request = saveConnectionRequested({
+      update: updateParams(confirmedFingerprint),
+      ...(token
+        ? {
+            secret: {
+              id: device.id,
+              token,
+              ...(confirmedSecretFingerprint
+                ? { confirmedFingerprint: confirmedSecretFingerprint }
+                : {}),
+            },
           }
-        }
-        closePanel();
+        : {}),
+    });
+    pendingSaveRequestId = request.payload[1];
+    appStore.dispatch(request);
+  }
+
+  function finishSuccessfulUpdate() {
+    if (!enableSyncAfterUpdate) {
+      closePanel();
+      return;
+    }
+    feedback = { kind: 'progress', message: m.settings_devices_enablingSync_label() };
+    const request = setKeychainSyncEnabledRequested(true);
+    pendingSyncRequestId = request.payload[1];
+    appStore.dispatch(request);
+  }
+
+  $effect(() => {
+    const operation = $syncWriteOperation$;
+    if (!pendingSyncRequestId || operation.requestId !== pendingSyncRequestId) return;
+    if (operation.status !== 'error' && operation.status !== 'success') return;
+    pendingSyncRequestId = null;
+    if (operation.status === 'error') {
+      feedback = { kind: 'error', message: m.settings_devices_enableSync_error() };
+    } else {
+      closePanel();
+    }
+  });
+
+  $effect(() => {
+    const operation = $saveOperation$;
+    if (!pendingSaveRequestId || operation.requestId !== pendingSaveRequestId) return;
+    if (operation.version <= handledSaveVersion || operation.status === 'loading') return;
+    handledSaveVersion = operation.version;
+    pendingSaveRequestId = null;
+    busy = null;
+    if (pendingLocalIconUpdate) {
+      pendingLocalIconUpdate = false;
+      if (
+        operation.status === 'error' ||
+        !operation.result ||
+        operation.result.stage !== 'update' ||
+        operation.result.result.status !== 'updated'
+      ) {
+        localDeviceIcon = savedDeviceIcon;
+        notify.error(m.settings_devices_update_error());
+      }
+      return;
+    }
+    if (operation.status === 'error' || !operation.result) {
+      feedback = { kind: 'error', message: m.settings_devices_update_error() };
+      return;
+    }
+    const { stage, result } = operation.result;
+    if (stage === 'secret') {
+      if (result.status === 'updated') {
+        finishSuccessfulUpdate();
+        return;
       } else if (result.status === 'secret-unavailable') {
         openEditForSecretRecovery();
       } else if (result.status === 'fingerprint-confirmation-required') {
         pendingFingerprint = {
-          operation: 'update',
+          operation: 'secret',
           expected: result.expectedFingerprint,
           actual: result.actualFingerprint,
         };
-        feedback = { kind: 'error', message: blockedMessage(result) };
-      } else {
-        feedback = { kind: 'error', message: blockedMessage(result) };
       }
-    } catch {
-      feedback = { kind: 'error', message: m.settings_devices_update_error() };
-    } finally {
-      busy = null;
+      feedback = { kind: 'error', message: blockedMessage(result) };
+      return;
     }
-  }
+    secret = '';
+    if (result.status === 'updated') {
+      finishSuccessfulUpdate();
+    } else if (result.status === 'secret-unavailable') {
+      openEditForSecretRecovery();
+    } else if (result.status === 'fingerprint-confirmation-required') {
+      pendingFingerprint = {
+        operation: 'update',
+        expected: result.expectedFingerprint,
+        actual: result.actualFingerprint,
+      };
+      feedback = { kind: 'error', message: blockedMessage(result) };
+    } else {
+      feedback = { kind: 'error', message: blockedMessage(result) };
+    }
+  });
 
-  async function testDevice() {
+  function testDevice() {
     if (hostInvalid || portInvalid || busy) return;
     busy = 'test';
     feedbackOperation = 'test';
     pendingFingerprint = null;
     feedback = { kind: 'progress', message: m.settings_devices_testing_label() };
-    try {
-      const action = testConnectionRequested({
+    handledTestVersion = $testOperation$.version;
+    appStore.dispatch(
+      testConnectionRequested({
         id: device.id,
         host: trimmedHost,
         port: portNumber,
         ...(secret.trim() ? { token: secret.trim() } : {}),
-      });
-      appStore.dispatch(action);
-      const result = await action.promise;
-      if (result.status === 'secret-unavailable') {
-        openEditForSecretRecovery();
-      } else {
-        feedback =
-          result.status === 'success'
-            ? { kind: 'success', message: m.settings_devices_testSuccess_label() }
-            : { kind: 'error', message: blockedMessage(result) };
-      }
-    } catch {
-      feedback = { kind: 'error', message: m.settings_devices_testFailed_error() };
-    } finally {
-      busy = null;
-    }
+      }),
+    );
   }
+
+  $effect(() => {
+    const operation = $testOperation$;
+    if (operation.version <= handledTestVersion || operation.status === 'loading') return;
+    handledTestVersion = operation.version;
+    busy = null;
+    const result = operation.result;
+    if (operation.status === 'error' || !result) {
+      feedback = { kind: 'error', message: m.settings_devices_testFailed_error() };
+    } else if (result.status === 'secret-unavailable') {
+      openEditForSecretRecovery();
+    } else {
+      feedback =
+        result.status === 'success'
+          ? { kind: 'success', message: m.settings_devices_testSuccess_label() }
+          : { kind: 'error', message: blockedMessage(result) };
+    }
+  });
 
   function confirmFingerprint() {
     if (!pendingFingerprint) return;
@@ -511,67 +535,125 @@
     if (!device.tcAddress) return;
     try {
       await navigator.clipboard.writeText(device.tcAddress);
-      const { notify } = await import('$lib/components/patterns/notify');
       notify.success(m.settings_devices_tcAddress_copied());
     } catch {
-      const { notify } = await import('$lib/components/patterns/notify');
       notify.error(m.settings_devices_tcAddress_copyError());
     }
   }
 </script>
 
-<article
-  class="group/collection-row"
-  aria-labelledby={`device-${device.id}-name`}
-  aria-busy={busy !== null}
->
-  <ListRow class="px-4 sm:px-5">
-    {#snippet leading()}
-      <span class="flex items-center gap-3">
-        <span
-          class={cn(
-            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-            statusClass(openStatus),
-          )}
-          role="status"
-          aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
-        ></span>
-        <DeviceIcon record={device} size={20} class="text-foreground" />
-      </span>
-    {/snippet}
-    {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
-    {#snippet meta()}
-      {#if openStatus === 'connected' && device.intentdVersion}
-        {#if daemonBehindTooltip}
-          <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
-            <span>{device.intentdVersion}</span>
-          </Tooltip>
-        {:else}
-          <span>{device.intentdVersion}</span>
+<article aria-labelledby={`device-${device.id}-name`} aria-busy={busy !== null}>
+  <div class="flex min-w-0 items-center gap-3 px-4 py-3 sm:px-5">
+    <span
+      class={cn(
+        'size-2.5 shrink-0 rounded-full ring-2 ring-background outline outline-1 outline-border',
+        statusClass(openStatus),
+      )}
+      role="status"
+      aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
+    ></span>
+    <DeviceIcon record={device} size={20} class="text-foreground" />
+    <div class="min-w-0 flex-1">
+      <div class="flex min-w-0 items-baseline gap-2">
+        <p
+          id={`device-${device.id}-name`}
+          class="min-w-0 truncate type-body font-medium text-foreground"
+        >
+          {displayName}
+        </p>
+        {#if openStatus === 'connected' && device.intentdVersion}
+          {#if daemonBehindTooltip}
+            <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
+              <span>{device.intentdVersion}</span>
+            </Tooltip>
+          {:else}
+            <span class="shrink-0 whitespace-nowrap type-caption text-muted-foreground">
+              {device.intentdVersion}
+            </span>
+          {/if}
         {/if}
-      {/if}
-    {/snippet}
-    {#snippet trailing()}
-      {#if device.isLocal}
-        <DeviceIconPicker
-          record={device}
-          bind:value={localDeviceIcon}
-          disabled={busy !== null}
-          portal={true}
-          onchange={(value) => void updateLocalDeviceIcon(value)}
-        />
-      {/if}
-      {#if !device.isLocal || canUpdateDaemon}
-        <RowActions
-          actions={rowActions}
-          onAction={handleRowAction}
-          visibleCount={0}
-          overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
-          bind:overflowTriggerRef={actionsButton}
-        />
-      {/if}
-    {/snippet}
-  </ListRow>
+      </div>
+    </div>
+    {#if device.isLocal}
+      <DeviceIconPicker
+        record={device}
+        bind:value={localDeviceIcon}
+        disabled={busy !== null}
+        portal={true}
+        class="w-48 shrink-0"
+        onchange={(value) => void updateLocalDeviceIcon(value)}
+      />
+    {/if}
+    <!-- The local row has no remote-only actions (Connect/Edit/Remove), so its
+         menu only exists while the Update action is offered. -->
+    {#if !device.isLocal || canUpdateDaemon}
+      <Menu.Root bind:open={actionsMenuOpen}>
+        <Menu.Trigger>
+          {#snippet child({ props })}
+            <Button
+              {...props}
+              bind:ref={actionsButton}
+              variant="ghost-light"
+              size="icon-xs"
+              aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+            >
+              <Fa icon={faEllipsisVertical} />
+            </Button>
+          {/snippet}
+        </Menu.Trigger>
+        <Menu.Content align="end" class="p-0!">
+          <div class="w-44 py-1">
+            {#if !device.isLocal}
+              <Menu.Item
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  void connectDevice();
+                }}
+              >
+                <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_connect_label()}
+              </Menu.Item>
+            {/if}
+            {#if canUpdateDaemon}
+              <Menu.Item
+                disabled={daemonUpdating}
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  void requestDaemonUpdate();
+                }}
+              >
+                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
+                {daemonUpdating
+                  ? m.settings_devices_updating_label()
+                  : m.layout_daemonStatus_update_action()}
+              </Menu.Item>
+            {/if}
+            {#if !device.isLocal}
+              <Menu.Item
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  onOpenPanel('edit');
+                }}
+              >
+                <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_edit_label()}
+              </Menu.Item>
+              <Menu.Item
+                destructive
+                onclick={() => {
+                  actionsMenuOpen = false;
+                  onRequestRemove(device);
+                }}
+              >
+                <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
+                {m.settings_devices_remove_label()}
+              </Menu.Item>
+            {/if}
+          </div>
+        </Menu.Content>
+      </Menu.Root>
+    {/if}
+  </div>
 
   {#if connectionError}
     <p class="px-4 pb-3 type-body text-danger sm:px-5" role="alert">
@@ -599,7 +681,7 @@
               disabled={busy !== null}
               aria-invalid={nameInvalid || undefined}
             />
-            {#if nameInvalid}<p class="type-body text-danger">
+            {#if nameInvalid}<p class="type-caption text-danger">
                 {m.settings_devices_nameRequired_error()}
               </p>{/if}
           </div>
@@ -612,7 +694,7 @@
                 disabled={busy !== null}
                 aria-invalid={hostInvalid || undefined}
               />
-              {#if hostInvalid}<p class="type-body text-danger">
+              {#if hostInvalid}<p class="type-caption text-danger">
                   {m.settings_devices_hostRequired_error()}
                 </p>{/if}
             </div>
@@ -626,7 +708,7 @@
                 disabled={busy !== null}
                 aria-invalid={portInvalid || undefined}
               />
-              {#if portInvalid}<p class="type-body text-danger">
+              {#if portInvalid}<p class="type-caption text-danger">
                   {m.settings_devices_portInvalid_error()}
                 </p>{/if}
             </div>
@@ -695,6 +777,7 @@
             bind:value={deviceIcon}
             disabled={busy !== null}
             portal={true}
+            class="w-full"
           />
         </div>
       </div>
@@ -730,11 +813,11 @@
               <dd class="flex items-center gap-1">
                 <code class="min-w-0 break-all font-mono text-foreground">{device.tcAddress}</code>
                 <Button
+                  variant="plain"
+                  size="icon-compact"
                   type="button"
-                  variant="ghost-light"
-                  size="icon-xs"
                   onclick={() => void copyTcAddress()}
-                  class="size-5 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                  class="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
                   aria-label={m.settings_devices_tcAddress_copy()}
                 >
                   <Fa icon={faCopy} class="size-3" />
@@ -744,36 +827,42 @@
           {/if}
         </dl>
         <div class="space-y-3">
-          <SettingsFieldRow
-            id={`device-${device.id}-detect-hosts-field`}
-            compact
-            label={m.modals_connect_detectHosts_label()}
-            description={m.modals_connect_detectHosts_description()}
-          >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p id={`device-${device.id}-detect-hosts-label`} class="type-body text-foreground">
+                {m.modals_connect_detectHosts_label()}
+              </p>
+              <p class="type-caption text-muted-foreground">
+                {m.modals_connect_detectHosts_description()}
+              </p>
+            </div>
             <Switch
               id={`device-${device.id}-detect-hosts`}
               size="sm"
               bind:checked={detectHosts}
               disabled={busy !== null}
-              ariaLabelledby={`device-${device.id}-detect-hosts-field-label`}
+              ariaLabelledby={`device-${device.id}-detect-hosts-label`}
             />
-          </SettingsFieldRow>
-          <SettingsFieldRow
-            id={`device-${device.id}-push-to-cloud-field`}
-            compact
-            label={m.settings_devices_pushToCloud_label()}
-            description={syncSupported
-              ? m.settings_devices_pushToCloud_description()
-              : m.settings_backendSync_unsupported_description()}
-          >
+          </div>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p id={`device-${device.id}-push-to-cloud-label`} class="type-body text-foreground">
+                {m.settings_devices_pushToCloud_label()}
+              </p>
+              <p class="type-caption text-muted-foreground">
+                {syncSupported
+                  ? m.settings_devices_pushToCloud_description()
+                  : m.settings_backendSync_unsupported_description()}
+              </p>
+            </div>
             <Switch
               id={`device-${device.id}-push-to-cloud`}
               size="sm"
               bind:checked={() => pushToCloud, setPushToCloud}
               disabled={busy !== null || !syncSupported}
-              ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
+              ariaLabelledby={`device-${device.id}-push-to-cloud-label`}
             />
-          </SettingsFieldRow>
+          </div>
         </div>
       </div>
 
@@ -785,7 +874,7 @@
           <p class="type-body font-medium text-foreground">
             {m.settings_devices_removeFromCloud_title()}
           </p>
-          <p class="type-body text-muted-foreground">
+          <p class="type-caption text-muted-foreground">
             {m.settings_devices_removeFromCloud_description()}
           </p>
           <div class="flex justify-end gap-2">
@@ -805,7 +894,7 @@
           <p class="type-body font-medium text-foreground">
             {m.settings_devices_confirmFingerprint_title()}
           </p>
-          <p class="type-body text-muted-foreground">
+          <p class="type-caption text-muted-foreground">
             {m.settings_devices_confirmFingerprint_description()}
           </p>
           <dl class="grid gap-2 type-caption sm:grid-cols-2">

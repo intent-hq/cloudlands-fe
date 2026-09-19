@@ -15,6 +15,9 @@ import {
   loadWorkspaceTerminals,
   hydrateHeight,
   hydratePlacements,
+  createTerminalFromOverlayRequested,
+  createTerminalFromOverlaySucceeded,
+  createTerminalFromOverlayFailed,
   type TerminalOverlayState,
   type TerminalTab,
 } from './terminals-slice';
@@ -41,6 +44,7 @@ const initialState: TerminalOverlayState = {
   workspaceHeights: {},
   workspacePlacements: {},
   workspaces: {},
+  overlayCreateOperations: {},
 };
 
 /** Helper to get workspace state from the top-level state */
@@ -63,6 +67,34 @@ describe('terminalsReducer', () => {
   it('should return initial state', () => {
     const state = terminalsReducer(undefined, { type: '@@INIT' });
     expect(state).toEqual(initialState);
+  });
+
+  describe('overlay terminal creation', () => {
+    it('exposes request, success, and failure state by workspace', () => {
+      let state = terminalsReducer(initialState, createTerminalFromOverlayRequested(WS));
+      expect(state.overlayCreateOperations[WS]).toEqual({
+        version: 1,
+        status: 'loading',
+        terminalId: null,
+        error: null,
+      });
+
+      state = terminalsReducer(state, createTerminalFromOverlaySucceeded(WS, 'pty-1'));
+      expect(state.overlayCreateOperations[WS]).toMatchObject({
+        version: 1,
+        status: 'success',
+        terminalId: 'pty-1',
+      });
+
+      state = terminalsReducer(state, createTerminalFromOverlayRequested(WS));
+      state = terminalsReducer(state, createTerminalFromOverlayFailed(WS, 'offline'));
+      expect(state.overlayCreateOperations[WS]).toEqual({
+        version: 2,
+        status: 'error',
+        terminalId: null,
+        error: 'offline',
+      });
+    });
   });
 
   describe('openTerminalOverlay', () => {

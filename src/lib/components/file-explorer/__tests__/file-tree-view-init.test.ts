@@ -7,7 +7,7 @@ import FileTreeView from '../file-tree-view.svelte';
 import { warmImport } from '../../../../test/warm-import';
 
 const {
-  appStore,
+  appStoreOptions,
   createReadable,
   dispatchMock,
   error$,
@@ -53,11 +53,12 @@ const {
   const initializationInputs$ = createReadable(initialInputs);
   const error$ = createReadable<string | null>(null);
   const workspacePath$ = createReadable('/repo');
+  const dispatchMock = vi.fn();
 
   return {
-    appStore: { state: {}, dispatch: vi.fn() },
+    appStoreOptions: { state: () => ({ files: { byWorkspaceId: {} } }), dispatch: dispatchMock },
     createReadable,
-    dispatchMock: vi.fn(),
+    dispatchMock,
     error$,
     initializeFileExplorerMock: vi.fn((...payload: unknown[]) => ({
       type: 'fileExplorer/initializeFileExplorer',
@@ -70,7 +71,11 @@ const {
   };
 });
 
-vi.mock('$store/renderer/store', () => ({ store: appStore }));
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule(appStoreOptions);
+});
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
@@ -159,7 +164,6 @@ warmImport(() => import('../../chat/__tests__/mocks/SlotOnly.svelte'));
 describe('FileTreeView initialization trigger', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
-    appStore.dispatch = dispatchMock;
     shouldInitializeState.value = true;
     error$.set(null);
     initializationInputs$.set({

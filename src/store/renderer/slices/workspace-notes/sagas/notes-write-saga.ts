@@ -27,6 +27,10 @@ import {
 } from '../../note-read-tracking/note-read-tracking-slice';
 import { openTab, openTabInRightmostColumnRequested } from '../../panel-layout/panel-layout-slice';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import {
+  registerNoteRevisionMutationQueue,
+  type NoteRevisionMutationRequest,
+} from '../note-mutation-queue';
 import { withPreservedUnmetDependsOn } from '../workspace-notes-normalization';
 import { selectNoteById, selectWorkspaceNotesState } from '../workspace-notes-selectors';
 import {
@@ -35,9 +39,12 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  cancelExternalNoteUpdateCoordination,
+  coordinateExternalNoteUpdate,
   createNote,
   deleteNote,
   loadWorkspaceNotesSucceeded,
+  noteContentSavePendingChanged,
   removeOptimisticNote,
   updateNote,
   updateNoteContent,
@@ -47,6 +54,8 @@ import { toRuntimeNote } from './note-payload-mappers';
 
 const logger = createLogger('NotesWriteSaga');
 export const NOTE_CONTENT_SAVE_DEBOUNCE_MS = 800;
+export const EXTERNAL_NOTE_UPDATE_DEBOUNCE_MS = 150;
+export const PENDING_NOTE_SAVE_RECHECK_INTERVAL_MS = 250;
 
 // A draft is enqueued as the very same object that `unackedDrafts` holds, so
 // an in-place rebase reaches a command already waiting on the queue.
@@ -67,8 +76,17 @@ type MetadataCommand = {
   titleOnly: boolean;
 };
 type DeleteCommand = { kind: 'delete'; workspaceId: string; noteId: string; snapshot?: Note };
-type MutationCommand = ContentCommand | MetadataCommand | DeleteCommand;
-type MutationEnvelope = { command: MutationCommand; completion?: Channel<boolean> };
+type RevisionBumpCommand = NoteRevisionMutationRequest & { kind: 'revision-bump' };
+type MutationCommand = ContentCommand | MetadataCommand | DeleteCommand | RevisionBumpCommand;
+type ExternalMutationCompletion = {
+  resolve: (result: MutationResult) => void;
+  reject: (error: Error) => void;
+};
+type MutationEnvelope = {
+  command: MutationCommand;
+  completion?: Channel<boolean>;
+  externalCompletion?: ExternalMutationCompletion;
+};
 type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
@@ -87,6 +105,7 @@ const unackedDrafts = new Map<string, PendingContent[]>();
 // advanced to each echo's rev as the pending drafts are rebased onto it, and
 // sent as `expectedVersion`.
 const draftBaseRev = new Map<string, number>();
+const pendingExternalUpdateSaveKeys = new Set<string>();
 let noteMutationQueue: Channel<MutationEnvelope> | undefined;
 
 function noteKey(workspaceId: string, noteId: string): string {
@@ -99,6 +118,107 @@ function isWorkspaceCleanup(action: ObservedAction, workspaceId: string): boolea
     Array.isArray(action.payload) &&
     action.payload[0] === workspaceId
   );
+}
+
+function isExternalUpdateRequestForNote(
+  action: ObservedAction,
+  workspaceId: string,
+  noteId: string,
+): boolean {
+  return (
+    action.type === coordinateExternalNoteUpdate.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId &&
+    action.payload[1] === noteId
+  );
+}
+
+function isExternalUpdateCancellationForNote(
+  action: ObservedAction,
+  workspaceId: string,
+  noteId: string,
+): boolean {
+  return (
+    action.type === cancelExternalNoteUpdateCoordination.type &&
+    Array.isArray(action.payload) &&
+    action.payload[0] === workspaceId &&
+    action.payload[1] === noteId
+  );
+}
+
+function* waitForExternalUpdateWindow(
+  durationMs: number,
+  workspaceId: string,
+  noteId: string,
+): SagaGenerator<'ready' | 'superseded' | 'cancelled'> {
+  const { ready, superseded, cancelledByContext, workspaceCleanup } = yield* race({
+    ready: delay(durationMs),
+    superseded: take((action: ObservedAction) =>
+      isExternalUpdateRequestForNote(action, workspaceId, noteId),
+    ),
+    cancelledByContext: take((action: ObservedAction) =>
+      isExternalUpdateCancellationForNote(action, workspaceId, noteId),
+    ),
+    workspaceCleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, workspaceId)),
+  });
+  if (superseded) return 'superseded';
+  if (cancelledByContext || workspaceCleanup) return 'cancelled';
+  return ready === undefined ? 'cancelled' : 'ready';
+}
+
+function* coordinateExternalUpdateWorker(action: ReturnType<typeof coordinateExternalNoteUpdate>) {
+  const [workspaceId, noteId, updateVersion] = action.payload;
+  let settled = false;
+  let waitedForPendingSave = false;
+  const result = (decision: 'apply' | 'superseded' | 'cancelled') => ({
+    decision,
+    updateVersion,
+    waitedForPendingSave,
+  });
+
+  try {
+    const debounceDecision = yield* call(
+      waitForExternalUpdateWindow,
+      EXTERNAL_NOTE_UPDATE_DEBOUNCE_MS,
+      workspaceId,
+      noteId,
+    );
+    if (debounceDecision !== 'ready') {
+      yield* put(action.success(result(debounceDecision)));
+      settled = true;
+      return;
+    }
+
+    const key = noteKey(workspaceId, noteId);
+    while (pendingExternalUpdateSaveKeys.has(key)) {
+      waitedForPendingSave = true;
+      const pendingDecision = yield* call(
+        waitForExternalUpdateWindow,
+        PENDING_NOTE_SAVE_RECHECK_INTERVAL_MS,
+        workspaceId,
+        noteId,
+      );
+      if (pendingDecision !== 'ready') {
+        yield* put(action.success(result(pendingDecision)));
+        settled = true;
+        return;
+      }
+    }
+
+    yield* put(action.success(result('apply')));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.success(result('cancelled')));
+    }
+  }
+}
+
+function* trackPendingNoteContent(action: ReturnType<typeof noteContentSavePendingChanged>) {
+  const [workspaceId, noteId, isPending] = action.payload;
+  const key = noteKey(workspaceId, noteId);
+  if (isPending) pendingExternalUpdateSaveKeys.add(key);
+  else pendingExternalUpdateSaveKeys.delete(key);
 }
 
 function temporaryNoteId(): string {
@@ -335,11 +455,13 @@ function* saveMetadata(command: MetadataCommand) {
 
 function* removeNote(command: DeleteCommand) {
   const { workspaceId, noteId, snapshot } = command;
+  const current = snapshot ?? (yield* selectNoteById.effect(workspaceId, noteId));
+  if (!snapshot) yield* put(applyNoteDeleted(workspaceId, noteId));
   try {
     const result: MutationResult = yield* call(
       [appClient.notes, appClient.notes.delete],
       noteId,
-      snapshot?.rev,
+      current?.rev,
       workspaceId,
     );
     if (result.success) return;
@@ -348,17 +470,32 @@ function* removeNote(command: DeleteCommand) {
     notify.error(m.notes_writeService_deleteFailed_error(), {
       description: result.error ?? m.notes_writeService_unknown_error(),
     });
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (current) yield* put(applyNoteCreated(workspaceId, current));
   } catch (error) {
     logger.error('Failed to delete note', error);
-    if (snapshot) yield* put(applyNoteCreated(workspaceId, snapshot));
+    if (current) yield* put(applyNoteCreated(workspaceId, current));
   }
 }
 
-function* runMutation(command: MutationCommand) {
+function* runRevisionBump(command: RevisionBumpCommand): SagaGenerator<MutationResult> {
+  const note = yield* selectNoteById.effect(command.workspaceId, command.noteId);
+  const result: MutationResult = yield* call(command.run);
+  if (result.success) {
+    if (result.noteRev !== undefined) {
+      yield* call(setRevisionIfNewer, command.workspaceId, command.noteId, result.noteRev);
+    } else if (note?.rev !== undefined) {
+      yield* call(advanceRevision, command.workspaceId, command.noteId, note.rev);
+    }
+  }
+  return result;
+}
+
+function* runMutation(command: MutationCommand): SagaGenerator<MutationResult | undefined> {
   if (command.kind === 'content') yield* call(saveContent, command);
   else if (command.kind === 'metadata') yield* call(saveMetadata, command);
-  else yield* call(removeNote, command);
+  else if (command.kind === 'delete') yield* call(removeNote, command);
+  else return yield* call(runRevisionBump, command);
+  return undefined;
 }
 
 function* enqueueMutation(
@@ -384,20 +521,47 @@ export function* flushPendingNoteContent(workspaceId: string, noteId: string) {
   const pending = pendingContent.get(key);
   if (!pending) return;
   pendingContent.delete(key);
-  if (noteMutationQueue) yield* enqueueMutation(noteMutationQueue, pending, true);
-  else yield* call(runMutation, pending);
+  try {
+    if (noteMutationQueue) yield* enqueueMutation(noteMutationQueue, pending, true);
+    else yield* call(runMutation, pending);
+  } finally {
+    pendingExternalUpdateSaveKeys.delete(key);
+    yield* put(noteContentSavePendingChanged(workspaceId, noteId, false));
+  }
+}
+
+/** Wait until every debounced, queued, or in-flight content save is acknowledged. */
+export function* settlePendingNoteContent(workspaceId: string, noteId: string) {
+  const key = noteKey(workspaceId, noteId);
+  yield* call(flushPendingNoteContent, workspaceId, noteId);
+  while (pendingExternalUpdateSaveKeys.has(key)) {
+    const action = yield* take(noteContentSavePendingChanged);
+    const [changedWorkspaceId, changedNoteId, isPending] = action.payload;
+    if (changedWorkspaceId !== workspaceId || changedNoteId !== noteId || isPending) {
+      continue;
+    }
+  }
 }
 
 function* handleContentAction(
   queue: Channel<MutationEnvelope>,
   action: ReturnType<typeof updateNoteContent>,
 ) {
-  const [workspaceId, noteId, content, immediate] = action.payload;
-  if (!workspaceId || !noteId || typeof content !== 'string') return;
+  const [workspaceId, noteId, requestedContent, immediateOrOptions] = action.payload;
+  if (!workspaceId || !noteId || typeof requestedContent !== 'string') return;
   const key = noteKey(workspaceId, noteId);
+  const options =
+    typeof immediateOrOptions === 'boolean'
+      ? { immediate: immediateOrOptions }
+      : (immediateOrOptions ?? {});
   if (!draftBaseRev.has(key)) {
-    const baseRev = (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
+    const baseRev = options.baseRev ?? (yield* selectNoteById.effect(workspaceId, noteId))?.rev;
     if (baseRev !== undefined) draftBaseRev.set(key, baseRev);
+  }
+  let content = requestedContent;
+  const newest = (unackedDrafts.get(key) ?? []).at(-1);
+  if (newest && options.baseContent !== undefined && options.baseContent !== newest.content) {
+    content = rebaseText(options.baseContent, newest.content, content);
   }
   yield* put(applyLocalNoteUpdate(workspaceId, noteId, { content }));
   const seq = (latestEditSeq.get(key) ?? 0) + 1;
@@ -408,15 +572,21 @@ function* handleContentAction(
   if (replaced) forgetDraft(key, replaced);
   unackedDrafts.set(key, [...(unackedDrafts.get(key) ?? []), pending]);
   pendingContent.set(key, pending);
+  pendingExternalUpdateSaveKeys.add(key);
+  yield* put(noteContentSavePendingChanged(workspaceId, noteId, true));
   try {
-    if (!immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
+    if (!options.immediate) yield* delay(NOTE_CONTENT_SAVE_DEBOUNCE_MS);
     if (pendingContent.get(key) !== pending) return;
     pendingContent.delete(key);
     yield* enqueueMutation(queue, pending, true);
+    pendingExternalUpdateSaveKeys.delete(key);
+    yield* put(noteContentSavePendingChanged(workspaceId, noteId, false));
   } finally {
     if ((yield* cancelled()) && pendingContent.get(key) === pending) {
       pendingContent.delete(key);
       forgetDraft(key, pending);
+      pendingExternalUpdateSaveKeys.delete(key);
+      yield* put(noteContentSavePendingChanged(workspaceId, noteId, false));
     }
   }
 }
@@ -428,20 +598,25 @@ function* handleTitleAction(
   const [workspaceId, noteId, title] = action.payload;
   if (!workspaceId || !noteId || typeof title !== 'string') return;
   const before = yield* selectNoteById.effect(workspaceId, noteId);
-  yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
-  yield* call(flushPendingNoteContent, workspaceId, noteId);
-  yield* enqueueMutation(
-    queue,
-    {
-      kind: 'metadata',
-      workspaceId,
-      noteId,
-      patch: { title },
-      rollback: { title: before?.title ?? '' },
-      titleOnly: true,
-    },
-    true,
-  );
+  try {
+    yield* put(applyLocalNoteUpdate(workspaceId, noteId, { title }));
+    yield* call(flushPendingNoteContent, workspaceId, noteId);
+    yield* enqueueMutation(
+      queue,
+      {
+        kind: 'metadata',
+        workspaceId,
+        noteId,
+        patch: { title },
+        rollback: { title: before?.title ?? '' },
+        titleOnly: true,
+      },
+      true,
+    );
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
 }
 
 function* handleMetadataAction(
@@ -475,10 +650,13 @@ function* handleDeleteAction(
 ) {
   const [workspaceId, noteId] = action.payload;
   if (!workspaceId || !noteId) return;
-  yield* call(flushPendingNoteContent, workspaceId, noteId);
-  const snapshot = yield* selectNoteById.effect(workspaceId, noteId);
-  yield* put(applyNoteDeleted(workspaceId, noteId));
-  yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId, snapshot }, true);
+  try {
+    yield* call(flushPendingNoteContent, workspaceId, noteId);
+    yield* enqueueMutation(queue, { kind: 'delete', workspaceId, noteId }, true);
+    yield* put(action.success(undefined));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
 }
 
 function* createNewNote(
@@ -583,10 +761,14 @@ function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCl
   for (const key of unackedDrafts.keys()) {
     if (key.startsWith(`${workspaceId}:`)) unackedDrafts.delete(key);
   }
+  for (const key of pendingExternalUpdateSaveKeys) {
+    if (key.startsWith(`${workspaceId}:`)) pendingExternalUpdateSaveKeys.delete(key);
+  }
   const queued = yield* flush(queue);
   for (const envelope of queued) {
     if (envelope.command.workspaceId === workspaceId) {
       if (envelope.completion) yield* put(envelope.completion, false);
+      envelope.externalCompletion?.reject(new Error('Note mutation cancelled'));
     } else {
       yield* put(queue, envelope);
     }
@@ -596,18 +778,28 @@ function* cleanupWorkspace(queue: Channel<MutationEnvelope>, action: WorkspaceCl
 function* consumeMutations(queue: Channel<MutationEnvelope>) {
   while (true) {
     const envelope = yield* take(queue);
-    const { command, completion } = envelope;
+    const { command, completion, externalCompletion } = envelope;
     const { mutation } = yield* race({
       mutation: call(runMutation, command),
       cleanup: take((action: ObservedAction) => isWorkspaceCleanup(action, command.workspaceId)),
     });
     if (completion) yield* put(completion, mutation !== undefined);
+    if (externalCompletion) {
+      if (mutation) externalCompletion.resolve(mutation);
+      else externalCompletion.reject(new Error('Note mutation cancelled'));
+    }
   }
 }
 
 export function* notesWriteSaga() {
   const queue = channel<MutationEnvelope>(buffers.expanding());
   noteMutationQueue = queue;
+  const unregisterRevisionQueue = registerNoteRevisionMutationQueue((request, completion) => {
+    queue.put({
+      command: { kind: 'revision-bump', ...request },
+      externalCompletion: completion,
+    });
+  });
   try {
     yield* takeLatestInContext(
       updateNoteContent,
@@ -620,17 +812,22 @@ export function* notesWriteSaga() {
     yield* takeEvery(deleteNote, handleDeleteAction, queue);
     yield* takeEvery(createNote, handleCreateAction);
     yield* takeEvery(createNoteRequested, handleCreateRequested);
+    yield* takeEvery(coordinateExternalNoteUpdate, coordinateExternalUpdateWorker);
+    yield* takeEvery(noteContentSavePendingChanged, trackPendingNoteContent);
     yield* takeEvery(workspaceUnmounted, cleanupWorkspace, queue);
     yield* call(consumeMutations, queue);
   } finally {
     const queued = yield* flush(queue);
     for (const envelope of queued) {
       if (envelope.completion) yield* put(envelope.completion, false);
+      envelope.externalCompletion?.reject(new Error('Note mutation cancelled'));
     }
     pendingContent.clear();
     latestEditSeq.clear();
     draftBaseRev.clear();
     unackedDrafts.clear();
+    pendingExternalUpdateSaveKeys.clear();
+    unregisterRevisionQueue();
     queue.close();
     if (noteMutationQueue === queue) noteMutationQueue = undefined;
   }

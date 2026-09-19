@@ -12,7 +12,7 @@
  * derived goes null after removeScript exactly like production.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, waitFor } from '@testing-library/svelte';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import type { ScriptWithState } from '$features/scripts/types';
 
@@ -119,18 +119,8 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn(),
-    restart: vi.fn(),
-    remove: vi.fn().mockResolvedValue({ success: true }),
-    update: vi.fn(),
-  },
-}));
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/ui/toast', () => ({
+  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: vi.fn(), clearTerminal: vi.fn() },
@@ -146,8 +136,9 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { fireEvent, screen } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
-import { scriptsClient } from '$features/scripts/scripts.client';
 import {
+  removeScript,
+  scriptCommandSucceeded,
   setScriptsData,
   setScriptsInitialized,
 } from '$store/renderer/slices/scripts/scripts-slice';
@@ -214,10 +205,18 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
     const { component } = render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
     await (component as any).handleScriptAction('delete', 'script-1');
 
-    expect(scriptsClient.remove).toHaveBeenCalledWith(WS_A, 'script-1');
-    expect(dispatchedTypes()).toContain('scripts/removeScript');
-    expect(dispatchedTypes()).toContain('terminals/clearScriptSelection');
-    expect(rawSelectedScriptId(WS_A)).toBeNull();
+    expect(dispatchedTypes()).toContain('scripts/removeScriptRequested');
+    appStore.dispatch(removeScript(WS_A, 'script-1'));
+    appStore.dispatch(
+      scriptCommandSucceeded(WS_A, 'remove:script-1', {
+        kind: 'remove',
+        scriptId: 'script-1',
+      }),
+    );
+    await waitFor(() => {
+      expect(dispatchedTypes()).toContain('terminals/clearScriptSelection');
+      expect(rawSelectedScriptId(WS_A)).toBeNull();
+    });
   });
 
   it('keeps the selection when a different script is deleted', async () => {

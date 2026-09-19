@@ -25,6 +25,8 @@ import {
   type FileSpecialist,
 } from '../../specialists/specialists-slice';
 import {
+  agentCreationRequestFailed,
+  agentCreationRequestSucceeded,
   createAgentFromConfigRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
@@ -378,11 +380,11 @@ describe('agentCreationSaga', () => {
 
   it('chains launch through create-from-config and settles both actions', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-    const { channel, task } = start();
+    const { channel, dispatched, task } = start();
     const action = agentSessionLaunchAgentRequested(
       WS,
       { name: 'Launch', agentType: createAgentTypeId('chat'), source: 'test' },
-      { openAgent: false },
+      { openAgent: false, requestId: 'launch-request' },
     );
     channel.put(action);
 
@@ -391,23 +393,31 @@ describe('agentCreationSaga', () => {
       expect.anything(),
       expect.objectContaining({ model: 'sonnet', provider: 'augment' }),
     );
+    expect(dispatched).toContainEqual(agentCreationRequestSucceeded(WS, 'launch-request', AGENT));
     task.cancel();
     await task.toPromise();
   });
 
   it('surfaces create-from-config failures and still rejects its promise', async () => {
     mocks.createAgent.mockResolvedValue({ success: false, error: 'request failed' });
-    const { channel, task } = start();
-    const action = createAgentFromConfigRequested(WS, {
-      name: 'Configured',
-      workspaceId: WorkspaceId(WS),
-      agentType: createAgentTypeId('chat'),
-      source: 'test',
-    });
+    const { channel, dispatched, task } = start();
+    const action = createAgentFromConfigRequested(
+      WS,
+      {
+        name: 'Configured',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      },
+      { requestId: 'failed-request' },
+    );
     channel.put(action);
 
     await expect(action.promise).rejects.toThrow('request failed');
     expect(mocks.toastError).toHaveBeenCalledOnce();
+    expect(dispatched).toContainEqual(
+      agentCreationRequestFailed(WS, 'failed-request', 'request failed'),
+    );
     task.cancel();
     await task.toPromise();
   });
@@ -651,18 +661,25 @@ describe('agentCreationSaga', () => {
 
   it('rejects an in-flight promise action when the saga is cancelled', async () => {
     mocks.createAgent.mockReturnValue(new Promise(() => {}));
-    const { channel, task } = start();
-    const action = createAgentFromConfigRequested(WS, {
-      name: 'Cancelled',
-      workspaceId: WorkspaceId(WS),
-      agentType: createAgentTypeId('chat'),
-      source: 'test',
-    });
+    const { channel, dispatched, task } = start();
+    const action = createAgentFromConfigRequested(
+      WS,
+      {
+        name: 'Cancelled',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      },
+      { requestId: 'cancelled-request' },
+    );
     channel.put(action);
     await settle();
     task.cancel();
 
     await expect(action.promise).rejects.toThrow('Failed to create agent');
+    expect(dispatched).toContainEqual(
+      agentCreationRequestFailed(WS, 'cancelled-request', 'Failed to create agent'),
+    );
     await task.toPromise();
   });
 

@@ -126,8 +126,16 @@ describe('connections selectors', () => {
   });
 
   describe('selectIsConnecting', () => {
-    it('is true only while an operation is in flight', () => {
+    it('is true while either the legacy operation or a keyed open request is in flight', () => {
       expect(selectIsConnecting.select(stateWith({ status: 'connecting' }))).toBe(true);
+      expect(
+        selectIsConnecting.select(
+          stateWith({
+            status: 'idle',
+            openingIds: ['remote'],
+          }),
+        ),
+      ).toBe(true);
       expect(selectIsConnecting.select(stateWith({ status: 'idle' }))).toBe(false);
       expect(selectIsConnecting.select(stateWith({ status: 'error' }))).toBe(false);
     });

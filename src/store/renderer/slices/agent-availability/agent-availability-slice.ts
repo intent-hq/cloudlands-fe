@@ -22,6 +22,8 @@ export const initialState: AgentAvailabilityState = {
   hasCheckedOnce: false,
   watchedTerminalIds: [],
   npxStatus: null,
+  hiddenProviderIds: null,
+  availabilityError: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -57,7 +59,7 @@ export const checkSingleProviderFailure = createAction<[providerId: string, epoc
 );
 
 /** Request a bulk check of all providers. */
-export const checkAllProvidersRequested = createAction(
+export const checkAllProvidersRequested = createAction<[refreshModels?: boolean]>(
   'agentAvailability/checkAllProvidersRequested',
 );
 
@@ -101,6 +103,14 @@ export const setNpxStatus = createAction<[npxStatus: NpxStatus | null]>(
   'agentAvailability/setNpxStatus',
 );
 
+export const providerAvailabilitySummaryLoaded = createAction<[hiddenProviderIds: string[] | null]>(
+  'agentAvailability/providerAvailabilitySummaryLoaded',
+);
+
+export const providerAvailabilitySummaryFailed = createAction<[error: string]>(
+  'agentAvailability/providerAvailabilitySummaryFailed',
+);
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -117,6 +127,11 @@ agentAvailabilityReducer.with(antigravitySetupVerified, (state) => ({
     ...state.providerCheckEpochMap,
     antigravity: (state.providerCheckEpochMap.antigravity ?? 0) + 1,
   },
+}));
+
+agentAvailabilityReducer.with(checkAllProvidersRequested, (state) => ({
+  ...state,
+  availabilityError: null,
 }));
 
 /** Whether a result carrying `epoch` is stale (a newer check started since). */
@@ -237,3 +252,18 @@ agentAvailabilityReducer.with(setNpxStatus, (state, { payload: [npxStatus] }) =>
   ...state,
   npxStatus,
 }));
+agentAvailabilityReducer.with(
+  providerAvailabilitySummaryLoaded,
+  (state, { payload: [hiddenProviderIds] }) => ({
+    ...state,
+    hiddenProviderIds,
+    availabilityError: null,
+  }),
+);
+agentAvailabilityReducer.with(
+  providerAvailabilitySummaryFailed,
+  (state, { payload: [availabilityError] }) => ({
+    ...state,
+    availabilityError,
+  }),
+);

@@ -27,11 +27,57 @@ const mocks = vi.hoisted(() => ({
   forget: vi.fn(),
   updateBackend: vi.fn(),
   setSyncEnabled: vi.fn(),
+  syncOperation: { loadStatus: 'idle', writeStatus: 'idle' },
+  syncWriteOperation: {
+    requestId: null as string | null,
+    version: 0,
+    status: 'idle',
+    result: null,
+    error: null,
+  },
   toastError: vi.fn(),
+  subscribers: new Set<() => void>(),
+  requestSequence: 0,
+  openOperation: {
+    requestId: null as string | null,
+    version: 0,
+    status: 'idle',
+    result: null,
+    error: null,
+  },
+  saveOperation: {
+    requestId: null as string | null,
+    version: 0,
+    status: 'idle',
+    result: null,
+    error: null,
+  },
+  testOperation: { version: 0, status: 'idle', result: null, error: null },
+  forgetOperation: {
+    requestId: null as string | null,
+    version: 0,
+    status: 'idle',
+    result: null,
+    error: null,
+  },
+  notify: () => {
+    for (const notify of mocks.subscribers) notify();
+  },
+  readArg: <T>(arg: T | { subscribe: (run: (value: T) => void) => () => void }): T => {
+    if (!arg || typeof arg !== 'object' || !('subscribe' in arg)) return arg as T;
+    let value!: T;
+    const unsubscribe = arg.subscribe((next) => {
+      value = next;
+    });
+    unsubscribe();
+    return value;
+  },
   readable: <T>(get: () => T) => ({
     subscribe(run: (value: T) => void) {
-      run(get());
-      return () => {};
+      const notify = () => run(get());
+      notify();
+      mocks.subscribers.add(notify);
+      return () => mocks.subscribers.delete(notify);
     },
   }),
 }));
@@ -46,8 +92,46 @@ vi.mock('$store/renderer/slices/connections/connections-selectors', () => ({
   selectRemoteConnections: () =>
     mocks.readable(() => mocks.connections.filter((connection) => !connection.isLocal)),
   selectKeychainSyncState: () => mocks.readable(() => mocks.keychainSync),
+  selectKeychainSyncOperationState: () => mocks.readable(() => mocks.syncOperation),
+  selectKeychainSyncWriteOperation: () => mocks.readable(() => mocks.syncWriteOperation),
   selectPinnedDaemonVersion: () => mocks.readable(() => mocks.pinnedVersion),
   selectConnectedIds: () => mocks.readable(() => mocks.connectedIds),
+  selectCaptureFingerprintOperation: Object.assign(
+    () => mocks.readable(() => ({ version: 0, status: 'idle', result: null, error: null })),
+    { select: () => ({ version: 0, status: 'idle', result: null, error: null }) },
+  ),
+  selectConnectBackendOperation: Object.assign(
+    () => mocks.readable(() => ({ version: 0, status: 'idle', result: null, error: null })),
+    { select: () => ({ version: 0, status: 'idle', result: null, error: null }) },
+  ),
+  selectOpenConnectionOperation: Object.assign(
+    (id: unknown) =>
+      mocks.readable(() =>
+        mocks.readArg(id) === 'remote-1'
+          ? mocks.openOperation
+          : { requestId: null, version: 0, status: 'idle', result: null, error: null },
+      ),
+    { select: () => mocks.openOperation },
+  ),
+  selectSaveConnectionOperation: Object.assign(
+    (id: unknown) =>
+      mocks.readable(() =>
+        ['remote-1', 'local'].includes(mocks.readArg(id) as string)
+          ? mocks.saveOperation
+          : { version: 0, status: 'idle', result: null, error: null },
+      ),
+    { select: () => mocks.saveOperation },
+  ),
+  selectTestConnectionOperation: Object.assign(
+    (id: unknown) =>
+      mocks.readable(() =>
+        mocks.readArg(id) === 'remote-1'
+          ? mocks.testOperation
+          : { version: 0, status: 'idle', result: null, error: null },
+      ),
+    { select: () => mocks.testOperation },
+  ),
+  selectForgetConnectionOperation: () => mocks.readable(() => mocks.forgetOperation),
 }));
 
 vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
@@ -67,19 +151,110 @@ vi.mock('$lib/utils/device-update-eligibility', async (importOriginal) => {
 
 vi.mock('$store/renderer/slices/connections/connections-slice', () => ({
   updateConnectionRequested: (params: unknown) => mocks.update(params),
-  testConnectionRequested: (params: unknown) => mocks.test(params),
-  rotateConnectionSecretRequested: (params: unknown) => mocks.rotate(params),
-  openConnectionRequested: (id: string) => mocks.open(id),
-  forgetConnectionRequested: (id: string) => mocks.forget(id),
-  updateBackendRequested: (id: string) => mocks.updateBackend(id),
+  testConnectionRequested: (params: unknown) => {
+    mocks.test(params);
+    return { type: 'connections/testRequested', payload: [params] };
+  },
+  rotateConnectionSecretRequested: (params: unknown) => ({
+    type: 'connections/rotateSecretRequested',
+    payload: [params],
+  }),
+  saveConnectionRequested: (params: { update: unknown; secret?: unknown }) => {
+    if (params.secret) mocks.rotate(params.secret);
+    const updateAction = mocks.update(params.update) as { promise?: Promise<unknown> };
+    const version = mocks.saveOperation.version + 1;
+    const requestId = `save-request-${++mocks.requestSequence}`;
+    mocks.saveOperation = { requestId, version, status: 'loading', result: null, error: null };
+    void Promise.resolve(updateAction.promise).then(
+      (result) => {
+        mocks.saveOperation = {
+          version,
+          requestId,
+          status: 'success',
+          result: { stage: 'update', result },
+          error: null,
+        };
+        mocks.notify();
+      },
+      (error) => {
+        mocks.saveOperation = {
+          version,
+          requestId,
+          status: 'error',
+          result: null,
+          error: error instanceof Error ? error.message : String(error),
+        };
+        mocks.notify();
+      },
+    );
+    return {
+      type: 'connections/saveRequested',
+      payload: [params, requestId],
+      promise: updateAction.promise,
+    };
+  },
+  openConnectionRequested: (id: string) => {
+    mocks.open(id);
+    return {
+      type: 'connections/openRequested',
+      payload: [id, `open-request-${++mocks.requestSequence}`],
+    };
+  },
+  forgetConnectionRequested: (id: string) => {
+    mocks.forget(id);
+    return {
+      type: 'connections/forgetRequested',
+      payload: [id, `forget-request-${++mocks.requestSequence}`],
+    };
+  },
+  updateBackendRequested: (id: string) => {
+    mocks.updateBackend(id);
+    return { type: 'connections/updateBackendRequested', payload: [id] };
+  },
   captureFingerprintRequested: vi.fn(),
   addConnectionRequested: vi.fn(),
   loadKeychainSyncStateRequested: () => ({ promise: Promise.resolve() }),
-  setKeychainSyncEnabledRequested: (enabled: boolean) => mocks.setSyncEnabled(enabled),
+  setKeychainSyncEnabledRequested: (enabled: boolean) => {
+    const action = mocks.setSyncEnabled(enabled) as { promise?: Promise<unknown> };
+    const requestId = `sync-request-${++mocks.requestSequence}`;
+    const version = mocks.syncWriteOperation.version + 1;
+    mocks.syncOperation = { ...mocks.syncOperation, writeStatus: 'loading' };
+    mocks.syncWriteOperation = {
+      requestId,
+      version,
+      status: 'loading',
+      result: null,
+      error: null,
+    };
+    mocks.notify();
+    void Promise.resolve(action.promise).then(
+      () => {
+        mocks.syncOperation = { ...mocks.syncOperation, writeStatus: 'success' };
+        mocks.syncWriteOperation = {
+          ...mocks.syncWriteOperation,
+          requestId,
+          version,
+          status: 'success',
+        };
+        mocks.notify();
+      },
+      () => {
+        mocks.syncOperation = { ...mocks.syncOperation, writeStatus: 'error' };
+        mocks.syncWriteOperation = {
+          ...mocks.syncWriteOperation,
+          requestId,
+          version,
+          status: 'error',
+        };
+        mocks.notify();
+      },
+    );
+    return { ...action, payload: [enabled, requestId] };
+  },
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { error: mocks.toastError, success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: vi.fn() },
 }));
 
 import DevicesSettings from './DevicesSettings.svelte';
@@ -115,8 +290,39 @@ describe('DevicesSettings', () => {
     mocks.pinnedVersion = null;
     mocks.connectedIds = [];
     mocks.keychainSync = null;
+    mocks.syncOperation = { loadStatus: 'idle', writeStatus: 'idle' };
+    mocks.syncWriteOperation = {
+      requestId: null,
+      version: 0,
+      status: 'idle',
+      result: null,
+      error: null,
+    };
     mocks.isDaemonBehindPin = null;
     mocks.canRequestDeviceUpdate = null;
+    mocks.requestSequence = 0;
+    mocks.openOperation = {
+      requestId: null,
+      version: 0,
+      status: 'idle',
+      result: null,
+      error: null,
+    };
+    mocks.saveOperation = {
+      requestId: null,
+      version: 0,
+      status: 'idle',
+      result: null,
+      error: null,
+    };
+    mocks.testOperation = { version: 0, status: 'idle', result: null, error: null };
+    mocks.forgetOperation = {
+      requestId: null,
+      version: 0,
+      status: 'idle',
+      result: null,
+      error: null,
+    };
     mocks.update.mockImplementation((params) => ({
       type: 'connections/updateRequested',
       payload: [params],
@@ -265,36 +471,47 @@ describe('DevicesSettings', () => {
 
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
     expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'connections/openRequested', payload: [remote.id] }),
+      expect.objectContaining({
+        type: 'connections/openRequested',
+        payload: [remote.id, 'open-request-1'],
+      }),
     );
     expect(mocks.test).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('surfaces Connect failure without testing or saving the device', async () => {
-    mocks.open.mockImplementation((id) => ({
-      type: 'connections/openRequested',
-      payload: [id],
-      promise: Promise.reject(new Error('open failed')),
-    }));
     render(DevicesSettings);
 
     await openAction('Connect');
+    mocks.openOperation = {
+      requestId: 'open-request-1',
+      version: 1,
+      status: 'error',
+      result: null,
+      error: 'open failed',
+    };
+    mocks.notify();
 
-    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    const remoteRow = screen.getByText('Studio Mac').closest('article');
+    expect(remoteRow).not.toBeNull();
+    await waitFor(() => expect(within(remoteRow!).getByRole('alert')).toBeTruthy());
     expect(mocks.test).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('opens the write-only replacement flow when Connect cannot decrypt the saved secret', async () => {
-    mocks.open.mockImplementation((id) => ({
-      type: 'connections/openRequested',
-      payload: [id],
-      promise: Promise.resolve({ status: 'secret-unavailable' }),
-    }));
     render(DevicesSettings);
 
     await openAction('Connect');
+    mocks.openOperation = {
+      requestId: 'open-request-1',
+      version: 1,
+      status: 'success',
+      result: { status: 'secret-unavailable' },
+      error: null,
+    };
+    mocks.notify();
 
     await waitFor(() => expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy());
     expect((screen.getByLabelText('Access token') as HTMLInputElement).value).toBe('');
@@ -891,12 +1108,15 @@ describe('DevicesSettings', () => {
     });
 
     it('keeps the panel open with an error when enabling sync after re-inclusion fails', async () => {
+      let rejectSync!: (error: Error) => void;
       mocks.keychainSync = { supported: true, enabled: false, status: null };
       mocks.connections = [local, { ...remote, syncExcluded: true }];
       mocks.setSyncEnabled.mockImplementation((enabled) => ({
         type: 'connections/setKeychainSyncEnabledRequested',
         payload: [enabled],
-        promise: Promise.reject(new Error('keychain locked')),
+        promise: new Promise((_, reject) => {
+          rejectSync = reject;
+        }),
       }));
       render(DevicesSettings);
       await openAction('Edit');
@@ -905,6 +1125,7 @@ describe('DevicesSettings', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Update' }));
 
       await waitFor(() => expect(mocks.setSyncEnabled).toHaveBeenCalledWith(true));
+      rejectSync(new Error('keychain locked'));
       expect(await screen.findByRole('alert')).toBeTruthy();
       expect(screen.getByRole('form', { name: 'Edit Studio Mac' })).toBeTruthy();
     });
@@ -937,14 +1158,6 @@ describe('DevicesSettings', () => {
   });
 
   it('tests current unsaved address values without updating or opening a connection', async () => {
-    let resolveTest!: (result: { status: 'success'; fingerprint: string }) => void;
-    mocks.test.mockImplementation((params) => ({
-      type: 'connections/testRequested',
-      payload: [params],
-      promise: new Promise((resolve) => {
-        resolveTest = resolve;
-      }),
-    }));
     render(DevicesSettings);
     await openAction('Edit');
     const form = screen.getByRole('form', { name: 'Edit Studio Mac' });
@@ -964,7 +1177,13 @@ describe('DevicesSettings', () => {
     });
     expect(testButton.getAttribute('aria-busy')).toBe('true');
     expect(within(form).getByRole('status')).toBeTruthy();
-    resolveTest({ status: 'success', fingerprint: remote.fingerprint! });
+    mocks.testOperation = {
+      version: 1,
+      status: 'success',
+      result: { status: 'success', fingerprint: remote.fingerprint! },
+      error: null,
+    };
+    mocks.notify();
     await waitFor(() => expect(testButton.getAttribute('aria-busy')).toBeNull());
     expect(within(form).getByRole('status')).toBeTruthy();
     expect(mocks.update).not.toHaveBeenCalled();
@@ -974,17 +1193,19 @@ describe('DevicesSettings', () => {
   });
 
   it('announces a failed connection test and leaves the action available to retry', async () => {
-    mocks.test.mockImplementation((params) => ({
-      type: 'connections/testRequested',
-      payload: [params],
-      promise: Promise.resolve({ status: 'failed', reason: 'connect-failed' }),
-    }));
     render(DevicesSettings);
     await openAction('Edit');
     const form = screen.getByRole('form', { name: 'Edit Studio Mac' });
     const testButton = screen.getByRole('button', { name: 'Test connection' });
 
     await fireEvent.click(testButton);
+    mocks.testOperation = {
+      version: 1,
+      status: 'success',
+      result: { status: 'failed', reason: 'connect-failed' },
+      error: null,
+    };
+    mocks.notify();
 
     expect(await within(form).findByRole('alert')).toBeTruthy();
     expect(testButton.hasAttribute('disabled')).toBe(false);
@@ -1010,15 +1231,17 @@ describe('DevicesSettings', () => {
   });
 
   it('opens the write-only replacement flow when the saved secret is unavailable', async () => {
-    mocks.test.mockImplementation((params) => ({
-      type: 'connections/testRequested',
-      payload: [params],
-      promise: Promise.resolve({ status: 'secret-unavailable' }),
-    }));
     render(DevicesSettings);
     await openAction('Edit');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    mocks.testOperation = {
+      version: 1,
+      status: 'success',
+      result: { status: 'secret-unavailable' },
+      error: null,
+    };
+    mocks.notify();
 
     const edit = screen.getByRole('form', { name: 'Edit Studio Mac' });
     const token = screen.getByLabelText('Access token') as HTMLInputElement;
@@ -1050,19 +1273,15 @@ describe('DevicesSettings', () => {
   });
 
   it('requires explicit confirmation before trusting a changed certificate', async () => {
-    mocks.update
-      .mockImplementationOnce((params) => ({
-        payload: [params],
-        promise: Promise.resolve({
-          status: 'fingerprint-confirmation-required',
-          expectedFingerprint: 'AA:BB',
-          actualFingerprint: 'CC:DD',
-        }),
-      }))
-      .mockImplementationOnce((params) => ({
-        payload: [params],
-        promise: Promise.resolve({ status: 'updated', connection: remote }),
-      }));
+    mocks.update.mockImplementation((params) => ({
+      type: 'connections/updateRequested',
+      payload: [params],
+      promise: Promise.resolve({
+        status: 'fingerprint-confirmation-required',
+        expectedFingerprint: 'AA:BB',
+        actualFingerprint: 'CC:DD',
+      }),
+    }));
     render(DevicesSettings);
     await openAction('Edit');
     await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), {
@@ -1112,11 +1331,6 @@ describe('DevicesSettings', () => {
   });
 
   it('requires confirmation before remove and keeps a retry action after failure', async () => {
-    mocks.forget.mockImplementationOnce((id) => ({
-      type: 'connections/forgetRequested',
-      payload: [id],
-      promise: Promise.reject(new Error('keychain unavailable')),
-    }));
     render(DevicesSettings);
 
     await openAction('Remove');
@@ -1127,16 +1341,27 @@ describe('DevicesSettings', () => {
     const removeButtons = screen.getAllByRole('button', { name: 'Remove' });
     await fireEvent.click(removeButtons[removeButtons.length - 1]);
     expect(mocks.forget).toHaveBeenCalledWith('remote-1');
+    mocks.forgetOperation = {
+      requestId: 'forget-request-1',
+      version: 1,
+      status: 'error',
+      result: null,
+      error: 'keychain unavailable',
+    };
+    mocks.notify();
     expect((await screen.findByRole('alert')).textContent).toContain(
       'Could not remove the device.',
     );
 
-    mocks.forget.mockImplementationOnce((id) => ({
-      type: 'connections/forgetRequested',
-      payload: [id],
-      promise: Promise.resolve(),
-    }));
     await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(mocks.forget).toHaveBeenCalledTimes(2));
+    mocks.forgetOperation = {
+      requestId: 'forget-request-2',
+      version: 2,
+      status: 'success',
+      result: true,
+      error: null,
+    };
+    mocks.notify();
   });
 });

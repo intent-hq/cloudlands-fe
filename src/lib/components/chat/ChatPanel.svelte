@@ -84,10 +84,6 @@
     releaseChatInterestLease,
   } from '$features/agent/utils/chat-interest-leases';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import {
-    selectWorkspaceTasks,
-    selectWorkspaceTasksInitialized,
-  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { clearBrowserElementCapture } from '$store/renderer/slices/browser/browser-slice';
@@ -110,15 +106,15 @@
 
   import {
     sendMessage,
-    sendQueuedMessageNowRequested,
     initializeChatRequested,
     refreshChatTranscriptRequested,
     chatRebindStarted,
     chatRebindEnded,
     chatTrackedWorkspaceSet,
-    chatErrorCleared,
-    chatSendFailed,
-    chatQueuedRetryRecordUpdated,
+    editQueuedMessageRequested,
+    retryAgentRequested,
+    listUserMessagesRequested,
+    sendQueuedMessageNowRequested,
     olderHistoryPageRequested,
     historyGapFillRequested,
     historySeekRequested,
@@ -147,14 +143,21 @@
     selectTranscriptHydratedOnce,
     selectTranscriptHydration,
     selectTranscriptSnapshotMeta,
+    selectUserMessageIndex,
+    selectChatDraftOperations,
+    selectQueuedMessageEditOperations,
   } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
-  import { appClient } from '$lib/client';
   import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import { createChatPanelDraftActions, clearChatPanelDraft } from './chat-panel-draft-actions';
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
+  import {
+    selectWorkspaceTasks,
+    selectWorkspaceTasksInitialized,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import type { Workspace, AgentMetadata, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
@@ -181,7 +184,6 @@
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import ConversationTurnGap from './ConversationTurnGap.svelte';
-  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
@@ -241,7 +243,7 @@
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
   import { faLock, faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
-  import { crispOut, spring, springIn } from '$lib/motion';
+  import { crispOut, springIn } from '$lib/motion';
   import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { seekConversationToMessage } from '$lib/utils/open-message';
@@ -268,7 +270,6 @@
     getUserMessageNavigationItemsFromIndex,
     mergeUserMessageNavigationItems,
     type ChatNavigationState,
-    type UserMessageNavigationItem,
   } from './chat-message-navigation';
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
   import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
@@ -528,6 +529,8 @@
   // asynchronously and can land after the quota failure does.
   const providerCatalogEntries$ = selectProviderCatalogEntries();
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
+  const chatDraftOperations$ = selectChatDraftOperations(workspaceIdStore, agentIdStore);
+  const queuedMessageEditOperations$ = selectQueuedMessageEditOperations(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
@@ -685,20 +688,6 @@
   // svelte-ignore state_referenced_locally -- this records the identity at instance creation.
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
-  let panelInterestAgentId: string | null = null;
-
-  function activePanelInterestAgentId(): string | null {
-    return isActive && agentId && !agentId.startsWith('terminal-') ? agentId : null;
-  }
-
-  function transferPanelInterestLease(nextAgentId: string | null): void {
-    if (nextAgentId === panelInterestAgentId) return;
-    if (nextAgentId) acquireChatInterestLease(nextAgentId, instanceId);
-    const previousAgentId = panelInterestAgentId;
-    panelInterestAgentId = nextAgentId;
-    if (previousAgentId) releaseChatInterestLease(previousAgentId, instanceId);
-  }
-
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
   let panelHeight = $state(0);
@@ -721,9 +710,17 @@
   // agent). Merged with the tail-derived items — tail wins by id (freshest,
   // incl. streaming) and provides instant content before the fetch resolves;
   // any fetch failure silently leaves the tail-only fallback in place.
-  let userMessageIndexItems = $state<UserMessageNavigationItem[] | null>(null);
-  let userMessageIndexUnsupported = false;
-  let userMessageIndexFetchInFlight = $state(false);
+  // svelte-ignore state_referenced_locally -- agentId is immutable for this keyed panel instance.
+  const userMessageIndex$ = selectUserMessageIndex(agentId);
+  const userMessageIndexItems = $derived(
+    $userMessageIndex$?.data?.ok
+      ? getUserMessageNavigationItemsFromIndex($userMessageIndex$.data.items)
+      : null,
+  );
+  const userMessageIndexUnsupported = $derived(
+    $userMessageIndex$?.data?.ok === false && $userMessageIndex$.data.unsupported === true,
+  );
+  const userMessageIndexFetchInFlight = $derived($userMessageIndex$?.loading === true);
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
@@ -1118,8 +1115,7 @@
     chatTranscriptBottomInsetClass({
       isChiefWorkspace,
       isCompactMode,
-      // The queue now lives in the composer, so the transcript always owns its
-      // normal trailing inset.
+      // The queue lives in the composer, so the transcript owns its normal trailing inset.
       showQueue: false,
     }),
   );
@@ -1131,17 +1127,11 @@
   // reload) and clears the pending question set, so the sticky wizard stays
   // hidden across later turns. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
-  // Returns the action promise so the wizard clears its stored draft only
-  // after the dismissal is confirmed (a failure keeps the draft).
-  async function handleQuestionWizardDismiss(): Promise<void> {
+  function handleQuestionWizardDismiss(): void {
     if (!workspace || !pendingQuestions) return;
-    const action = agentSessionDismissQuestionsRequested(
-      agentId,
-      workspace.id,
-      pendingQuestions.messageId,
+    appStore.dispatch(
+      agentSessionDismissQuestionsRequested(agentId, workspace.id, pendingQuestions.messageId),
     );
-    appStore.dispatch(action);
-    await action.promise;
   }
 
   // Completing the wizard flattens all answers into ONE plain-text user
@@ -1832,7 +1822,7 @@
   // draft (initial inputValue + setChatDraft on value change) stays alongside
   // it as the synchronous same-process remount cache.
   const draftManager = createChatDraftManager({
-    drafts: appClient.drafts,
+    drafts: createChatPanelDraftActions(chatDraftOperations$),
     active: () => isActive,
     workspaceId: () => workspace?.id,
     agentId: () => agentId,
@@ -2200,8 +2190,6 @@
       revealDeferred: deferTranscriptReveal,
     }),
   );
-  // Cache each segment by its selector reference. Live text and session/task
-  // updates must not rescan unchanged scrollback history for a native plan.
   const historyNativePlan = $derived(selectNativeExecutionPlan([$agentHistoryMessages$]));
   const liveNativePlan = $derived(selectNativeExecutionPlan([$agentMessages$]));
   const taskProgressItems = $derived(
@@ -3679,10 +3667,6 @@
 
   // Initialize chat on mount
   onMount(() => {
-    // Establish interest before initialization can open a subscription and
-    // before any viewed-agent sweep can decide which registrations to keep.
-    transferPanelInterestLease(activePanelInterestAgentId());
-
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3787,7 +3771,10 @@
   });
 
   $effect(() => {
-    transferPanelInterestLease(activePanelInterestAgentId());
+    const interestedAgentId = agentId;
+    if (!isActive || !interestedAgentId || interestedAgentId.startsWith('terminal-')) return;
+    acquireChatInterestLease(interestedAgentId, instanceId);
+    return () => releaseChatInterestLease(interestedAgentId, instanceId);
   });
 
   // ── Auto-focus on mount (used by Chief of Staff) ──
@@ -3929,9 +3916,9 @@
   }
 
   /**
-   * Smoothly scroll to a specific position with the moderate motion tier.
+   * Smoothly scroll to a specific position with 150ms animation.
    */
-  function smoothScrollToPosition(top: number, duration: number = spring.moderate.settleMs) {
+  function smoothScrollToPosition(top: number, duration: number = 150) {
     if (!isActive) return;
     animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
   }
@@ -4616,7 +4603,6 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
-    transferPanelInterestLease(null);
     flushPendingDraftWrite();
     flushPendingSelectionWrites();
     cancelAllSendTransitions();
@@ -4690,20 +4676,8 @@
 
   // Handle editing a queued message. The client seam folds transport errors
   // into `{ success: false, error }`, so branching on `result.success` is safe.
-  async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
-    const result = await appClient.agents.editQueued(agentId, messageId, content, editing);
-    if (!result.success) {
-      logger.error('Failed to edit queued message', { messageId, error: result.error });
-    } else {
-      // #1011: sync the parked retry record with what the daemon actually
-      // persisted (save applies the edit; hold/cancel echo the original) —
-      // otherwise a post-drain "Try again" resends the pre-edit text. Prefer
-      // the authoritative echoed queuedMessage.content over the local arg so
-      // the record can't drift from the daemon's entry.
-      const persistedText = result.queuedMessage?.content ?? content;
-      appStore.dispatch(chatQueuedRetryRecordUpdated(agentId, messageId, persistedText));
-    }
-    return result;
+  function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
+    appStore.dispatch(editQueuedMessageRequested(agentId, messageId, content, editing));
   }
 
   // Handle removing a queued message — the saga removes it optimistically from
@@ -4714,18 +4688,22 @@
 
   // Handle sending a queued message immediately (interrupts current stream).
   // One atomic daemon call (`agent.sendQueuedMessageNow`, monorepo#1032): the
-  // saga needs only agentId/wsId/queuedMessageId — the daemon owns
+  // send middleware needs only agentId/wsId/queuedMessageId — the daemon owns
   // the entry's content/attachments and dequeues + delivers transactionally.
-  async function handleSendQueuedMessageNow(messageId: string) {
-    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
+  function handleSendQueuedMessageNow(messageId: string) {
+    if (!$queuedMessages$.some((message) => message.id === messageId) || !workspace) return;
+
     logger.info('Send queued message now triggered', { messageId, agentId });
+
     const action = sendQueuedMessageNowRequested(agentId, workspace.id, messageId);
     appStore.dispatch(action);
-    const outcome = await action.promise;
-    if (outcome === 'delivered') {
-      void performLocalSendCleanup({ clearInput: false, followBottom: true });
-    }
-    return outcome;
+
+    void performLocalSendCleanup({
+      clearInput: false,
+      followBottom: true,
+    });
+
+    return action.promise;
   }
 
   // Build workspace context string for agent messages
@@ -4886,7 +4864,7 @@
       commitDraftWrite('');
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
-        await appClient.drafts.clear(workspace.id, agentId);
+        clearChatPanelDraft(workspace.id, agentId);
       }
     }
   }
@@ -4985,7 +4963,7 @@
   }
 
   // Handle retrying the last failed message
-  async function handleRetry() {
+  function handleRetry() {
     if (!workspace || !agentId) return;
 
     // When agent status is "error" (spawn failure after retries exhausted),
@@ -4993,39 +4971,7 @@
     // Otherwise fall through to the regular retry-last-message path.
     const currentStatus = $agentSession$?.status;
     if (currentStatus === AgentStatus.Error) {
-      // Capture the current error message before clearing so we can restore it on failure
-      const priorError = $chatError$ || m.chat_chatPanel_agentFailedToStart_error();
-
-      // Clear the current error so the UI shows loading state
-      appStore.dispatch(chatErrorCleared(agentId));
-
-      const result = await appClient.agents.retry(agentId, workspace.id);
-
-      if (!result.ok) {
-        // Retry was rejected - surface the error or fall back to prior error
-        const errorToShow = result.error || priorError;
-        appStore.dispatch(chatSendFailed(agentId, errorToShow));
-        appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
-        return;
-      }
-
-      // ok:true — the daemon cleared the error and emits agent:status-changed
-      // (pending when a queued message is redriven, idle when the queue was
-      // empty). Converge the local session status from the RPC ack too, so the
-      // error banner clears even if the status event is missed (STAB-54).
-      // Only an explicit `redriven: false` means idle; `undefined` (older
-      // daemon omitting the field) keeps the pre-STAB-54 pending behaviour.
-      appStore.dispatch(
-        updateAgentSessionFields(agentId, {
-          status: result.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
-          stopReason: null,
-        }),
-      );
-      if (result.redriven === false) {
-        // Nothing was queued to redrive — the error is cleared, but no new
-        // turn starts. Tell the user what to do next instead of a silent no-op.
-        notify.info(m.chat_chatPanel_nothingToRetry_toast());
-      }
+      appStore.dispatch(retryAgentRequested(agentId, workspace.id));
       return;
     }
 
@@ -5147,24 +5093,20 @@
     }
 
     // Persist only the specialist fields resolved by this picker change.
-    const saveAction = saveAgentSessionRequested(workspace.id, agentId, true, {
-      specialistUpdate: {
-        specialist: specialistId,
-        ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
-        ...(specialistId === null
-          ? { systemPrompt: null }
-          : behaviorPrompt !== undefined
-            ? { systemPrompt: behaviorPrompt }
-            : {}),
-      },
-      specialistRollback: { metadata: session.metadata, model: session.model },
-    });
-    appStore.dispatch(saveAction);
-    // The mutation saga owns rollback and the user-visible error; observe the
-    // rejection here so this component dispatch is not an unhandled promise.
-    void saveAction.promise.catch((error) => {
-      logger.error('Failed to persist agent specialist change', { agentId, error });
-    });
+    appStore.dispatch(
+      saveAgentSessionRequested(workspace.id, agentId, true, {
+        specialistUpdate: {
+          specialist: specialistId,
+          ...(specialistId && newModel !== undefined ? { model: newModel } : {}),
+          ...(specialistId === null
+            ? { systemPrompt: null }
+            : behaviorPrompt !== undefined
+              ? { systemPrompt: behaviorPrompt }
+              : {}),
+        },
+        specialistRollback: { metadata: session.metadata, model: session.model },
+      }),
+    );
     logger.info('Agent specialist change dispatched', {
       agentId,
       specialistId,
@@ -5254,17 +5196,9 @@
             ...(blocks?.fileBlocks?.length ? { fileBlocks: blocks.fileBlocks } : {}),
           }
         : undefined;
-    const action = agentSessionEditAndRegenerateRequested(
-      agentId,
-      workspace.id,
-      messageId,
-      newText,
-      options,
+    appStore.dispatch(
+      agentSessionEditAndRegenerateRequested(agentId, workspace.id, messageId, newText, options),
     );
-    appStore.dispatch(action);
-    // Failures are surfaced via toast by the edit-regenerate middleware;
-    // swallow the rejection here to avoid an unhandled-rejection warning.
-    action.promise.catch(() => {});
     // No launch-bubble transition on this path (there is no composer origin);
     // just re-engage auto-follow and scroll so the regeneration is visible.
     void performLocalSendCleanup({ followBottom: true });
@@ -5273,16 +5207,11 @@
   // Handle regenerating from a specific assistant message
   function handleRegenerateFromMessage(assistantMessageId: string) {
     if (!workspace) return;
-    const action = agentSessionRegenerateFromMessageRequested(
-      agentId,
-      workspace.id,
-      assistantMessageId,
+    appStore.dispatch(
+      agentSessionRegenerateFromMessageRequested(agentId, workspace.id, assistantMessageId),
     );
-    appStore.dispatch(action);
     // Failures are surfaced via toast by the regenerate saga (before it
-    // delegates) or by the edit-regenerate saga it delegates to; swallow the
-    // rejection here.
-    action.promise.catch(() => {});
+    // delegates) or by the edit-regenerate saga it delegates to.
   }
 
   // Handle selecting a suggested prompt - sends immediately
@@ -5368,22 +5297,7 @@
   export function refreshUserMessageIndex(): void {
     if (!isActive || userMessageIndexUnsupported || userMessageIndexFetchInFlight || !agentId)
       return;
-    userMessageIndexFetchInFlight = true;
-    void appClient.agents
-      .listUserMessages(agentId)
-      .then((result) => {
-        if (!isActive) return;
-        if (result.ok) {
-          userMessageIndexItems = getUserMessageNavigationItemsFromIndex(result.items);
-        } else if (result.unsupported) {
-          userMessageIndexUnsupported = true;
-        } else {
-          logger.debug('Failed to refresh user-message index', { error: result.error });
-        }
-      })
-      .finally(() => {
-        userMessageIndexFetchInFlight = false;
-      });
+    appStore.dispatch(listUserMessagesRequested(agentId));
   }
 
   export function getMessages() {
@@ -5547,7 +5461,7 @@
       class="absolute inset-0 z-50 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/5 pointer-events-none"
       data-testid="chat-panel-drop-overlay"
     >
-      <div class="flex flex-col items-start gap-2 text-left text-primary-ink">
+      <div class="flex flex-col items-center gap-2 text-primary">
         <Fa icon={faPaperclip} class="w-6 h-6" />
         <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>
@@ -5600,7 +5514,6 @@
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
             <PinnedTurnPrompt
               message={pinnedPrompt.message}
-              surface={pinnedPrompt.surface}
               {workspace}
               onActivate={handlePinnedPromptClick}
             />
@@ -5697,7 +5610,7 @@
         {/snippet}
 
         {#if transcriptHydrationFailed && $agentMessages$.length === 0}
-          <div class="flex min-h-48 flex-col items-start justify-center gap-3 p-6 text-left">
+          <div class="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
             <p class="text-sm text-muted-foreground">{m.chat_shared_actionFailed_label()}</p>
             <Button variant="outline" onclick={handleRetryTranscriptHydration}>
               {m.chat_shared_retry_label()}
@@ -6093,7 +6006,7 @@
                    stops (see syncOlderHistoryIndicator). -->
               {#if olderHistoryIndicatorVisible}
                 <div
-                  class="flex items-center justify-start gap-2 py-2 text-left text-xs text-muted-foreground"
+                  class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
                   data-testid="chat-older-history-loading"
                   aria-live="polite"
                 >
@@ -6116,7 +6029,7 @@
                 {#if groupIndex === historyGapBeforeGroupIndex}
                   <div
                     bind:this={historyGapSentinel}
-                    class="flex items-center justify-start py-3 text-left"
+                    class="flex items-center justify-center py-3"
                     data-testid="chat-history-gap"
                   >
                     {#if $fetchingGapFill$}
@@ -6604,6 +6517,7 @@
           </div>
         {/if}
 
+        <!-- Pending attention request (discussion/blocker) remains in transcript order. -->
         {#if workspace?.id && agentId}
           <AttentionRequestBanner {agentId} />
         {/if}
@@ -6612,9 +6526,9 @@
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
           <!-- {#key} forces a full remount when workspace or agent changes,
-             preventing stale utility UI from leaking across switches.
-             Hidden until transcript hydration settles; the workspace-task
-             task progress is routed to the panel header instead. -->
+             preventing stale subscription UI from leaking across switches.
+             Hidden until the transcript hydration settles so the card never
+             pops in ahead of (or during) the transcript skeleton. -->
           {#if workspace?.id && showTranscriptUtilityCard}
             {#key `${workspace.id}::${agentId}`}
               <EventSubscriptionsCard
@@ -6813,6 +6727,7 @@
                       <QueuedMessageList
                         bind:this={queuedMessageListRef}
                         messages={visibleQueuedMessages}
+                        editOperations={$queuedMessageEditOperations$}
                         onedit={handleEditQueuedMessage}
                         onremove={handleRemoveQueuedMessage}
                         onsendnow={handleSendQueuedMessageNow}
@@ -6887,25 +6802,22 @@
 
   /* Flash animation for message navigation */
   :global(.message-highlight-flash) {
-    animation: message-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
+    animation: message-flash 0.6s ease-out;
   }
 
   /* Flash animation for scroll-to-turn navigation */
   :global(.highlight-flash) {
-    animation: highlight-flash calc(var(--spring-slow) * 6) var(--spring-exit-ease);
+    animation: highlight-flash 1.5s ease-out;
   }
 
   /* Transient scroll re-lock confirmation: hold briefly, then fade out.
      Forwards fill keeps it invisible until the element unmounts. */
   .lock-confirmation {
-    animation: lock-confirmation-fade calc(var(--spring-slow) * 6) var(--spring-exit-ease) forwards;
+    animation: lock-confirmation-fade 1.5s ease-out forwards;
   }
 
   @container style(--motion-reduced: 1) {
-    .lock-confirmation,
-    :global(.message-highlight-flash),
-    :global(.highlight-flash),
-    .input-flash :global(.rich-input-container) {
+    .lock-confirmation {
       animation: none;
       opacity: 0.9;
     }
@@ -6943,7 +6855,7 @@
 
   /* Subtle flash animation for input when draft prompt is applied */
   .input-flash :global(.rich-input-container) {
-    animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
+    animation: input-flash 0.6s ease-out;
   }
 
   .conversation-composer {

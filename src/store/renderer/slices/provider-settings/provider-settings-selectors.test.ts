@@ -38,6 +38,7 @@ import {
   selectIsProviderModelAccessAllowed,
   selectModelFetchProviderIds,
   selectQuotaRetryProviderIds,
+  selectProviderPathSaveState,
 } from './provider-settings-selectors';
 
 const providerCatalog = providerCatalogReducer(
@@ -81,6 +82,27 @@ describe('provider-settings selectors', () => {
     const state = mockState({}, 'codex');
     expect(selectIsProviderActive.select(state, 'codex')).toBe(true);
     expect(selectIsProviderActive.select(state, 'auggie')).toBe(false);
+  });
+
+  it('selects save state independently for each provider', () => {
+    const state = mockState({});
+    state.providerSettings = {
+      ...providerSettingsInitialState,
+      configuredPaths: { codex: '/saved/codex', 'claude-code': '/saved/claude' },
+      providerPathSaving: { codex: true },
+      providerPathSaveErrors: { 'claude-code': 'save failed' },
+    };
+
+    expect(selectProviderPathSaveState.select(state, 'codex')).toEqual({
+      saving: true,
+      error: null,
+      configuredPath: '/saved/codex',
+    });
+    expect(selectProviderPathSaveState.select(state, 'claude-code')).toEqual({
+      saving: false,
+      error: 'save failed',
+      configuredPath: '/saved/claude',
+    });
   });
 
   describe('enabled provider selectors', () => {

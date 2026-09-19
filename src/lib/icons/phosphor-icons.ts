@@ -597,6 +597,7 @@ export const faShield = icon('shield');
 export const faShieldAlt = icon('shield-halved');
 export const faShieldHalved = faShieldAlt;
 export const faSliders = icon('sliders');
+export const faSpinner = icon('spinner');
 export const faSquare = icon('square');
 export const faSquareCheck = icon('square-check');
 export const faSquarePen = icon('square-pen');

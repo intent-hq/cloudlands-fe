@@ -4,14 +4,17 @@
    *
    * A controlled dropdown panel for configuring a provider's CLI executable path.
    */
-  import { appClient } from '$lib/client';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
+  import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import PathSettingField from './PathSettingField.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { store as appStore } from '$store/renderer/store';
+  import { saveProviderPathRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { selectProviderPathSaveState } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 
   const logger = createLogger('ProviderPathConfig');
 
@@ -81,28 +84,26 @@
     open = $bindable(),
   }: Props = $props();
 
-  async function savePath(path: string) {
-    try {
-      // The daemon owns provider path overrides (providers.paths, PROTOCOL
-      // §5.12), keyed by provider id: host.checkAuggie reads
-      // providers.paths.auggie, and ProviderSelector reads the same object
-      // for its configured-path fields. The legacy settings:set IPC is not
-      // bridged in this build.
-      const entry = await appClient.settings.get('providers.paths');
-      const existing =
-        entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
-          ? (entry.value as Record<string, unknown>)
-          : {};
-      await appClient.settings.update([
-        { path: 'providers.paths', value: { ...existing, [providerId]: path } },
-      ]);
-      onPathChange?.(path);
-      notify.success(m.settings_providerPath_saved());
-      logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, path);
-    } catch (error) {
-      logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, error);
+  const saveState$ = selectProviderPathSaveState(untrack(() => providerId));
+  let savePending = false;
+
+  $effect(() => {
+    const state = $saveState$;
+    if (!savePending || state.saving) return;
+    savePending = false;
+    if (state.error) {
+      logger.error(`[ProviderPathConfig] Failed to save ${providerId} path:`, state.error);
       notify.error(m.settings_providerPath_saveError());
+    } else {
+      onPathChange?.(state.configuredPath);
+      notify.success(m.settings_providerPath_saved());
+      logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, state.configuredPath);
     }
+  });
+
+  function savePath(path: string) {
+    savePending = true;
+    appStore.dispatch(saveProviderPathRequested(providerId, path));
   }
 
   // Determine the display path (configured > resolved > placeholder). For
@@ -156,7 +157,7 @@
         <p class="type-body font-medium text-foreground">
           {m.settings_providerPath_header({ name: providerName })}
         </p>
-        <p class="type-body text-subtle">
+        <p class="type-caption text-subtle">
           {#if npxPackage && resolvedPath}
             {m.settings_providerPath_npxOverrideHint_before({ package: npxPackage })}
             <code class="px-1 py-0.5 bg-muted rounded text-ui">{cliCommand}</code>
@@ -212,8 +213,8 @@
             {/if}
           </p>
           <code
-            class="mt-0.5 block rounded bg-muted/50 px-1 py-0.5 break-all {overridden
-              ? 'text-muted-foreground'
+            class="mt-0.5 block px-1 py-0.5 bg-muted/50 rounded break-all {overridden
+              ? 'opacity-60'
               : ''}">{path}</code
           >
         </div>

@@ -65,6 +65,7 @@ const remoteRecord = {
 };
 
 function withConnections(windowBackendId: string) {
+  const idleOperation = { requestId: null, version: 0, status: 'idle', result: null, error: null };
   return {
     connections: createCollection('id', [localRecord, remoteRecord]),
     activeId: 'local',
@@ -72,6 +73,8 @@ function withConnections(windowBackendId: string) {
     status: 'idle',
     error: null,
     certMismatch: null,
+    captureFingerprintOperation: idleOperation,
+    connectBackendOperation: idleOperation,
   } as unknown as StoreState['connections'];
 }
 
@@ -140,7 +143,7 @@ describe('HudBackendMenu', () => {
 
     expect(mockDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        payload: ['r1'],
+        payload: ['r1', expect.any(String)],
         type: 'connections/openRequested',
         asyncActionType: 'connections/open',
       }),

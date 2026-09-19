@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => ({
   updateSpecialist: vi.fn(),
   rename: vi.fn(),
   setNotificationsMuted: vi.fn(),
+  stop: vi.fn(),
   deleteAgent: vi.fn(),
   cancelDelete: vi.fn(),
+  cancelSubscriptions: vi.fn(),
   dismissQuestions: vi.fn(),
   resolveProposal: vi.fn(),
   restore: vi.fn(),
@@ -24,8 +26,10 @@ vi.mock('$lib/client', () => ({
       updateSpecialist: mocks.updateSpecialist,
       rename: mocks.rename,
       setNotificationsMuted: mocks.setNotificationsMuted,
+      stop: mocks.stop,
       delete: mocks.deleteAgent,
       cancelDelete: mocks.cancelDelete,
+      cancelSubscriptions: mocks.cancelSubscriptions,
       dismissQuestions: mocks.dismissQuestions,
       resolveProposal: mocks.resolveProposal,
       restore: mocks.restore,
@@ -48,6 +52,7 @@ import { store as appStore } from '$store/renderer/store';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import {
+  cancelAgentSubscriptionsRequested,
   refreshWorkspaceSubscriptionEntriesRequested,
   removeWatchedAgent,
 } from '../../agent-subscription-ui/agent-subscription-ui-slice';
@@ -61,6 +66,7 @@ import {
   restoreRetiredAgentRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
+  stopAgentSessionRequested,
   undoAgentDeletionRequested,
   initialState as workspaceAgentsInitialState,
   workspaceAgentsReducer,
@@ -125,17 +131,46 @@ function start(
   let state = { agentSessions: { ...agentSessionInitialState, byAgentId: sessions } };
   const dispatch = (action: any) => {
     if (live) state = { agentSessions: agentSessionReducer(state.agentSessions, action) };
+    else if (action.type === updateSession.type) {
+      const [agentId, updates] = action.payload;
+      sessions[agentId] = { ...sessions[agentId], ...updates };
+    }
     dispatched.push(action);
     channel.put(action);
     return action;
   };
   const task = runSaga({ channel, getState: () => state, dispatch }, agentMutationSaga);
-  return { channel, dispatched, dispatch, task, getState: () => state };
+  return { channel, dispatched, dispatch, sessions, task, getState: () => state };
 }
 
 async function stop(task: Task): Promise<void> {
   task.cancel();
   await task.toPromise();
+}
+
+async function expectFireAndForgetFailureHandled(
+  channel: ReturnType<typeof stdChannel>,
+  dispatched: any[],
+  action: { type: string; promise: Promise<unknown>; failure: (error: Error) => { type: string } },
+): Promise<void> {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    channel.put(action);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (dispatched.some((candidate) => candidate.type === action.failure(new Error()).type))
+        break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    expect(dispatched).toContainEqual(
+      expect.objectContaining({ type: action.failure(new Error()).type }),
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
 }
 
 describe('agentMutationSaga', () => {
@@ -300,14 +335,21 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
-  it('forwards exact rename parameters and settles daemon failure', async () => {
+  it('forwards exact rename parameters and rolls back optimistic state on daemon failure', async () => {
     mocks.rename.mockResolvedValue({ success: false, error: 'rename rejected' });
-    const { channel, task } = start();
-    const action = renameAgentSessionRequested(WS, A1, 'New Name');
+    const optimistic = session(A1, { name: 'New Name', nameExplicitlySet: true });
+    const { channel, dispatched, task } = start({ [A1]: optimistic });
+    const action = renameAgentSessionRequested(WS, A1, 'New Name', {
+      previousName: 'Original Name',
+      previousNameExplicitlySet: false,
+    });
     channel.put(action);
 
     await expect(action.promise).rejects.toThrow('rename rejected');
     expect(mocks.rename).toHaveBeenCalledWith(A1, 'New Name', WS);
+    expect(dispatched).toContainEqual(
+      updateSession(A1, { name: 'Original Name', nameExplicitlySet: false }),
+    );
     await stop(task);
   });
 
@@ -331,6 +373,100 @@ describe('agentMutationSaga', () => {
     });
     expect(dispatched).toContainEqual(
       updateSession(A1, { notificationsMuted: true, hasUnread: false }),
+    );
+    await stop(task);
+  });
+
+  it('does not let an older rename failure overwrite a newer successful rename', async () => {
+    let releaseFirst!: (result: { success: false; error: string }) => void;
+    mocks.rename
+      .mockReturnValueOnce(new Promise((resolve) => (releaseFirst = resolve)))
+      .mockResolvedValueOnce({ success: true });
+    const { channel, dispatched, sessions, task } = start();
+    sessions[A1] = session(A1, { name: 'First Name', nameExplicitlySet: true });
+    const first = renameAgentSessionRequested(WS, A1, 'First Name', {
+      previousName: A1,
+      previousNameExplicitlySet: false,
+    });
+    channel.put(first);
+    await settle();
+
+    sessions[A1] = session(A1, { name: 'Second Name', nameExplicitlySet: true });
+    const second = renameAgentSessionRequested(WS, A1, 'Second Name', {
+      previousName: 'First Name',
+      previousNameExplicitlySet: true,
+    });
+    channel.put(second);
+    await expect(second.promise).resolves.toBeUndefined();
+    releaseFirst({ success: false, error: 'first rejected' });
+    await expect(first.promise).rejects.toThrow('first rejected');
+
+    expect(sessions[A1].name).toBe('Second Name');
+    expect(dispatched.filter((candidate) => candidate.type === updateSession.type)).toEqual([]);
+    await stop(task);
+  });
+
+  it('propagates an older failure rollback through a newer failed optimistic rename', async () => {
+    let releaseFirst!: (result: { success: false; error: string }) => void;
+    let releaseSecond!: (result: { success: false; error: string }) => void;
+    mocks.rename
+      .mockReturnValueOnce(new Promise((resolve) => (releaseFirst = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (releaseSecond = resolve)));
+    const { channel, sessions, task } = start();
+    sessions[A1] = session(A1, { name: 'First Name', nameExplicitlySet: true });
+    const first = renameAgentSessionRequested(WS, A1, 'First Name', {
+      previousName: A1,
+      previousNameExplicitlySet: false,
+    });
+    channel.put(first);
+    await settle();
+
+    sessions[A1] = session(A1, { name: 'Second Name', nameExplicitlySet: true });
+    const second = renameAgentSessionRequested(WS, A1, 'Second Name', {
+      previousName: 'First Name',
+      previousNameExplicitlySet: true,
+    });
+    channel.put(second);
+    await settle();
+    releaseFirst({ success: false, error: 'first rejected' });
+    await expect(first.promise).rejects.toThrow('first rejected');
+    expect(sessions[A1].name).toBe('Second Name');
+
+    releaseSecond({ success: false, error: 'second rejected' });
+    await expect(second.promise).rejects.toThrow('second rejected');
+    expect(sessions[A1]).toEqual(expect.objectContaining({ name: A1, nameExplicitlySet: false }));
+    await stop(task);
+  });
+
+  it('rolls a newer failure back to an older successful rename', async () => {
+    let releaseFirst!: (result: { success: true }) => void;
+    let releaseSecond!: (result: { success: false; error: string }) => void;
+    mocks.rename
+      .mockReturnValueOnce(new Promise((resolve) => (releaseFirst = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (releaseSecond = resolve)));
+    const { channel, sessions, task } = start();
+    sessions[A1] = session(A1, { name: 'First Name', nameExplicitlySet: true });
+    const first = renameAgentSessionRequested(WS, A1, 'First Name', {
+      previousName: A1,
+      previousNameExplicitlySet: false,
+    });
+    channel.put(first);
+    await settle();
+
+    sessions[A1] = session(A1, { name: 'Second Name', nameExplicitlySet: true });
+    const second = renameAgentSessionRequested(WS, A1, 'Second Name', {
+      previousName: 'First Name',
+      previousNameExplicitlySet: true,
+    });
+    channel.put(second);
+    await settle();
+    releaseFirst({ success: true });
+    await expect(first.promise).resolves.toBeUndefined();
+    releaseSecond({ success: false, error: 'second rejected' });
+    await expect(second.promise).rejects.toThrow('second rejected');
+
+    expect(sessions[A1]).toEqual(
+      expect.objectContaining({ name: 'First Name', nameExplicitlySet: true }),
     );
     await stop(task);
   });
@@ -466,6 +602,77 @@ describe('agentMutationSaga', () => {
     expect(final?.hasUnread).toBe(false);
     await stop(task);
   });
+  it.each([
+    [
+      'specialist save',
+      () => {
+        mocks.updateSpecialist.mockResolvedValue({ success: false, error: 'save rejected' });
+        return saveAgentSessionRequested(WS, A1, true, {
+          specialistUpdate: { specialist: 'spec-writer' },
+        });
+      },
+    ],
+    [
+      'rename',
+      () => {
+        mocks.rename.mockResolvedValue({ success: false, error: 'rename rejected' });
+        return renameAgentSessionRequested(WS, A1, 'New Name');
+      },
+    ],
+    [
+      'stop',
+      () => {
+        mocks.stop.mockResolvedValue({ success: false, error: 'stop rejected' });
+        return stopAgentSessionRequested(WS, A1);
+      },
+    ],
+    [
+      'delete with undo',
+      () => {
+        mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
+        return deleteAgentWithUndoRequested(WS, A1, 'Agent');
+      },
+    ],
+    [
+      'immediate delete',
+      () => {
+        mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });
+        return deleteAgentSessionRequested(WS, A1);
+      },
+    ],
+    [
+      'question dismissal',
+      () => {
+        mocks.dismissQuestions.mockResolvedValue({ success: false, error: 'dismiss rejected' });
+        return agentSessionDismissQuestionsRequested(A1, WS, 'msg-q1');
+      },
+    ],
+    [
+      'proposal resolution',
+      () => {
+        mocks.resolveProposal.mockResolvedValue({ success: false, error: 'resolve rejected' });
+        return agentProposalResolveRequested(A1, WS, {
+          proposalId: 'proposal-1',
+          outcome: 'dismissed',
+        });
+      },
+    ],
+    [
+      'subscription cancellation',
+      () => {
+        mocks.cancelSubscriptions.mockResolvedValue({ success: false, error: 'cancel rejected' });
+        return cancelAgentSubscriptionsRequested(WS, A1, { subscriptionId: 'sub-1' });
+      },
+    ],
+  ] as const)(
+    'handles fire-and-forget %s rejection inside the owning saga',
+    async (_name, create) => {
+      vi.useRealTimers();
+      const { channel, dispatched, task } = start();
+      await expectFireAndForgetFailureHandled(channel, dispatched, create());
+      await stop(task);
+    },
+  );
 
   it('restores an immediately deleted session once and rejects on daemon failure', async () => {
     mocks.deleteAgent.mockResolvedValue({ success: false, error: 'delete rejected' });

@@ -115,6 +115,12 @@ export const EXECUTOR_CONFIGS: Record<
     name: 'Code Walkthrough Generator', // i18n-ignore (internal background-agent session name)
     agentType: 'code-walkthrough',
   },
+  'script-detect': {
+    resultTag: 'DETECTED_SCRIPTS',
+    timeout: 90000,
+    name: 'Script Detection Assistant', // i18n-ignore (internal background-agent session name)
+    agentType: 'script-detect',
+  },
 };
 
 /** Maximum diff size per file in characters before skipping */

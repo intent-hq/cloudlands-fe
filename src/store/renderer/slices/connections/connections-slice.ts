@@ -21,9 +21,11 @@ import type {
   AddConnectionResult,
   CaptureFingerprintParams,
   CaptureFingerprintResult,
+  ConnectBackendParams,
   ConnectionRecord,
   ConnectionsState,
   ConnectionsListResult,
+  ConnectionResultState,
   KeychainSyncStateResult,
   KeychainSyncUiStatus,
   OpenConnectionResult,
@@ -39,6 +41,12 @@ import type {
   ConnectionCertWarningsEvent,
   ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
+  PublishSelfResult,
+  RefreshSelfResult,
+  SelfPublishedStateResult,
+  SaveConnectionParams,
+  SaveConnectionResult,
+  UnpublishSelfResult,
 } from './connections-types';
 
 // ---------------------------------------------------------------------------
@@ -61,6 +69,41 @@ export const initialState: ConnectionsState = {
   protocolMismatch: null,
   protocolMismatchModalDismissed: false,
   keychainSync: null,
+  keychainSyncLoadStatus: 'idle',
+  keychainSyncWriteOperation: {
+    requestId: null,
+    version: 0,
+    status: 'idle',
+    result: null,
+    error: null,
+  },
+  selfPublishedState: null,
+  selfPublishedStateStatus: 'idle',
+  selfPublishStatus: 'idle',
+  selfPublishError: null,
+  selfPublishVersion: 0,
+  selfUnpublishStatus: 'idle',
+  selfUnpublishError: null,
+  selfUnpublishVersion: 0,
+  selfUnpublishRemoved: false,
+  captureFingerprintOperation: {
+    requestId: null,
+    version: 0,
+    status: 'idle',
+    result: null,
+    error: null,
+  },
+  connectBackendOperation: {
+    requestId: null,
+    version: 0,
+    status: 'idle',
+    result: null,
+    error: null,
+  },
+  openOperations: {},
+  saveOperations: {},
+  testOperations: {},
+  forgetOperations: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -96,8 +139,8 @@ export const connectOperationFailed = createAction<[error: string]>('connections
 
 /**
  * An open operation for one backend started. Records the id in `openingIds`
- * and moves status to 'connecting' — opens run concurrently, so each is
- * tracked per id.
+ * and moves status to 'connecting'. Different IDs may run concurrently;
+ * repeat operations for one ID are serialized by the saga.
  */
 export const openOperationStarted = createAction<[id: string]>('connections/openStarted');
 
@@ -208,15 +251,25 @@ export const rotateConnectionSecretRequested = createAsyncAction<
 >('connections/rotateSecret', 'connections/rotateSecretRequested');
 
 /** Saga-owned non-destructive open/focus request for one backend. */
-export const openConnectionRequested = createAsyncAction<[id: string], OpenConnectionResult>(
+export const openConnectionRequested = createAsyncAction<
+  [id: string, requestId?: string],
+  [id: string, requestId: string],
+  OpenConnectionResult
+>(
   'connections/open',
   'connections/openRequested',
+  (id, requestId = globalThis.crypto.randomUUID()) => [id, requestId],
 );
 
 /** Saga-owned stored-connection removal request. */
-export const forgetConnectionRequested = createAsyncAction<[id: string], void>(
+export const forgetConnectionRequested = createAsyncAction<
+  [id: string, requestId?: string],
+  [id: string, requestId: string],
+  void
+>(
   'connections/forget',
   'connections/forgetRequested',
+  (id, requestId = globalThis.crypto.randomUUID()) => [id, requestId],
 );
 
 /**
@@ -258,9 +311,46 @@ export const loadKeychainSyncStateRequested = createAsyncAction<[], KeychainSync
 
 /** Saga-owned keychain-sync opt-in toggle request. */
 export const setKeychainSyncEnabledRequested = createAsyncAction<
-  [enabled: boolean],
+  [enabled: boolean, requestId?: string],
+  [enabled: boolean, requestId: string],
   KeychainSyncStateResult
->('connections/setKeychainSyncEnabled', 'connections/setKeychainSyncEnabledRequested');
+>(
+  'connections/setKeychainSyncEnabled',
+  'connections/setKeychainSyncEnabledRequested',
+  (enabled, requestId = globalThis.crypto.randomUUID()) => [enabled, requestId],
+);
+
+export const loadSelfPublishedStateRequested = createAsyncAction<[], SelfPublishedStateResult>(
+  'connections/loadSelfPublishedState',
+  'connections/loadSelfPublishedStateRequested',
+);
+export const publishSelfRequested = createAsyncAction<[], PublishSelfResult>(
+  'connections/publishSelf',
+  'connections/publishSelfRequested',
+);
+export const unpublishSelfRequested = createAsyncAction<[], UnpublishSelfResult>(
+  'connections/unpublishSelf',
+  'connections/unpublishSelfRequested',
+);
+export const refreshSelfRequested = createAsyncAction<[], RefreshSelfResult>(
+  'connections/refreshSelf',
+  'connections/refreshSelfRequested',
+);
+
+export const saveConnectionRequested = createAsyncAction<
+  [params: SaveConnectionParams, requestId?: string],
+  [params: SaveConnectionParams, requestId: string],
+  SaveConnectionResult
+>(
+  'connections/save',
+  'connections/saveRequested',
+  (params, requestId = globalThis.crypto.randomUUID()) => [params, requestId],
+);
+
+export const connectBackendRequested = createAsyncAction<
+  [params: ConnectBackendParams],
+  OpenConnectionResult
+>('connections/connectBackend', 'connections/connectBackendRequested');
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -336,8 +426,7 @@ connectionsReducer.with(connectOperationFailed, (state, { payload: [error] }) =>
   return { ...state, status: 'error', error };
 });
 /**
- * Drop exactly one occurrence of `id` from the in-flight multiset so a repeat
- * open of the same backend keeps the id tracked until its own settle.
+ * Drop exactly one occurrence of `id` from the in-flight list.
  */
 function removeOneOpening(openingIds: string[], id: string): string[] {
   const index = openingIds.indexOf(id);
@@ -351,8 +440,8 @@ connectionsReducer.with(openOperationStarted, (state, { payload: [id] }) => {
   // the window's own backend (the clearing is not scoped to the opened id).
   // Opening does not itself replace the client (main's connectBackendClient
   // reuses the pooled instance; replacement happens on re-pair/config
-  // changes). One entry per operation (not per id): takeEvery admits repeat
-  // opens of the same backend and each must settle on its own.
+  // changes). The saga serializes repeat opens for one backend, while opens
+  // for different backend IDs remain independent.
   const openingIds = [...state.openingIds, id];
   return { ...state, openingIds, status: 'connecting', error: null, authRejected: null };
 });
@@ -427,3 +516,273 @@ connectionsReducer.with(keychainSyncStatusReceived, (state, { payload: [status] 
   if (!state.keychainSync) return state;
   return { ...state, keychainSync: { ...state.keychainSync, status } };
 });
+connectionsReducer.with(loadKeychainSyncStateRequested, (state) => ({
+  ...state,
+  keychainSyncLoadStatus: 'loading',
+}));
+connectionsReducer.with(loadKeychainSyncStateRequested.success, (state) => ({
+  ...state,
+  keychainSyncLoadStatus: 'success',
+}));
+connectionsReducer.with(loadKeychainSyncStateRequested.failure, (state) => ({
+  ...state,
+  keychainSyncLoadStatus: 'error',
+}));
+connectionsReducer.with(setKeychainSyncEnabledRequested, (state, { payload: [, requestId] }) => ({
+  ...state,
+  keychainSyncWriteOperation: loadingResult(state.keychainSyncWriteOperation, requestId),
+}));
+connectionsReducer.with(setKeychainSyncEnabledRequested.success, (state, { payload }) => {
+  const requestId = payload.request[1];
+  if (state.keychainSyncWriteOperation.requestId !== requestId) return state;
+  return {
+    ...state,
+    keychainSync: payload.response,
+    keychainSyncWriteOperation: {
+      ...state.keychainSyncWriteOperation,
+      status: 'success',
+      result: payload.response,
+    },
+  };
+});
+connectionsReducer.with(setKeychainSyncEnabledRequested.failure, (state, { payload }) => {
+  const requestId = payload.request[1];
+  if (state.keychainSyncWriteOperation.requestId !== requestId) return state;
+  return {
+    ...state,
+    keychainSyncWriteOperation: {
+      ...state.keychainSyncWriteOperation,
+      status: 'error',
+      error: payload.error.message,
+    },
+  };
+});
+connectionsReducer.with(loadSelfPublishedStateRequested, (state) => ({
+  ...state,
+  selfPublishedStateStatus: 'loading',
+}));
+connectionsReducer.with(loadSelfPublishedStateRequested.success, (state, { payload }) => ({
+  ...state,
+  selfPublishedState: payload.response,
+  selfPublishedStateStatus: 'success',
+}));
+connectionsReducer.with(loadSelfPublishedStateRequested.failure, (state) => ({
+  ...state,
+  selfPublishedStateStatus: 'error',
+}));
+connectionsReducer.with(publishSelfRequested, (state) => ({
+  ...state,
+  selfPublishStatus: 'loading',
+  selfPublishError: null,
+  selfPublishVersion: state.selfPublishVersion + 1,
+}));
+connectionsReducer.with(publishSelfRequested.success, (state) => ({
+  ...state,
+  selfPublishedState: state.selfPublishedState
+    ? { ...state.selfPublishedState, published: true, suppressed: false }
+    : state.selfPublishedState,
+  selfPublishStatus: 'success',
+}));
+connectionsReducer.with(publishSelfRequested.failure, (state, { payload }) => ({
+  ...state,
+  selfPublishStatus: 'error',
+  selfPublishError: payload.error.message,
+}));
+connectionsReducer.with(unpublishSelfRequested, (state) => ({
+  ...state,
+  selfUnpublishStatus: 'loading',
+  selfUnpublishError: null,
+  selfUnpublishVersion: state.selfUnpublishVersion + 1,
+}));
+connectionsReducer.with(unpublishSelfRequested.success, (state, { payload }) => ({
+  ...state,
+  selfPublishedState: state.selfPublishedState
+    ? { ...state.selfPublishedState, published: false }
+    : state.selfPublishedState,
+  selfUnpublishStatus: 'success',
+  selfUnpublishRemoved: payload.response.removed,
+}));
+connectionsReducer.with(unpublishSelfRequested.failure, (state, { payload }) => ({
+  ...state,
+  selfUnpublishStatus: 'error',
+  selfUnpublishError: payload.error.message,
+}));
+
+function loadingResult<T>(
+  previous?: { version: number },
+  requestId: string | null = null,
+): ConnectionResultState<T> {
+  return {
+    requestId,
+    version: (previous?.version ?? 0) + 1,
+    status: 'loading',
+    result: null,
+    error: null,
+  };
+}
+
+connectionsReducer.with(captureFingerprintRequested, (state) => ({
+  ...state,
+  captureFingerprintOperation: loadingResult(state.captureFingerprintOperation),
+}));
+connectionsReducer.with(captureFingerprintRequested.success, (state, { payload }) => ({
+  ...state,
+  captureFingerprintOperation: {
+    ...state.captureFingerprintOperation,
+    status: 'success',
+    result: payload.response,
+  },
+}));
+connectionsReducer.with(captureFingerprintRequested.failure, (state, { payload }) => ({
+  ...state,
+  captureFingerprintOperation: {
+    ...state.captureFingerprintOperation,
+    status: 'error',
+    error: payload.error.message,
+  },
+}));
+
+connectionsReducer.with(openConnectionRequested, (state, { payload: [id, requestId] }) => ({
+  ...state,
+  openOperations: {
+    ...state.openOperations,
+    [id]: loadingResult(state.openOperations[id], requestId),
+  },
+}));
+connectionsReducer.with(openConnectionRequested.success, (state, { payload }) => {
+  const [id, requestId] = payload.request;
+  if (state.openOperations[id]?.requestId !== requestId) return state;
+  return {
+    ...state,
+    openOperations: {
+      ...state.openOperations,
+      [id]: { ...state.openOperations[id], status: 'success' as const, result: payload.response },
+    },
+  };
+});
+connectionsReducer.with(openConnectionRequested.failure, (state, { payload }) => {
+  const [id, requestId] = payload.request;
+  if (state.openOperations[id]?.requestId !== requestId) return state;
+  return {
+    ...state,
+    openOperations: {
+      ...state.openOperations,
+      [id]: { ...state.openOperations[id], status: 'error' as const, error: payload.error.message },
+    },
+  };
+});
+
+connectionsReducer.with(saveConnectionRequested, (state, { payload: [params, requestId] }) => ({
+  ...state,
+  saveOperations: {
+    ...state.saveOperations,
+    [params.update.id]: loadingResult(state.saveOperations[params.update.id], requestId),
+  },
+}));
+connectionsReducer.with(saveConnectionRequested.success, (state, { payload }) => {
+  const [params, requestId] = payload.request;
+  const id = params.update.id;
+  if (state.saveOperations[id]?.requestId !== requestId) return state;
+  return {
+    ...state,
+    saveOperations: {
+      ...state.saveOperations,
+      [id]: { ...state.saveOperations[id], status: 'success' as const, result: payload.response },
+    },
+  };
+});
+connectionsReducer.with(saveConnectionRequested.failure, (state, { payload }) => {
+  const [params, requestId] = payload.request;
+  const id = params.update.id;
+  if (state.saveOperations[id]?.requestId !== requestId) return state;
+  return {
+    ...state,
+    saveOperations: {
+      ...state.saveOperations,
+      [id]: { ...state.saveOperations[id], status: 'error' as const, error: payload.error.message },
+    },
+  };
+});
+
+connectionsReducer.with(testConnectionRequested, (state, { payload: [params] }) => ({
+  ...state,
+  testOperations: {
+    ...state.testOperations,
+    [params.id]: loadingResult(state.testOperations[params.id]),
+  },
+}));
+connectionsReducer.with(testConnectionRequested.success, (state, { payload }) => {
+  const id = payload.request[0].id;
+  return {
+    ...state,
+    testOperations: {
+      ...state.testOperations,
+      [id]: { ...state.testOperations[id], status: 'success' as const, result: payload.response },
+    },
+  };
+});
+connectionsReducer.with(testConnectionRequested.failure, (state, { payload }) => {
+  const id = payload.request[0].id;
+  return {
+    ...state,
+    testOperations: {
+      ...state.testOperations,
+      [id]: { ...state.testOperations[id], status: 'error' as const, error: payload.error.message },
+    },
+  };
+});
+
+connectionsReducer.with(forgetConnectionRequested, (state, { payload: [id, requestId] }) => ({
+  ...state,
+  forgetOperations: {
+    ...state.forgetOperations,
+    [id]: loadingResult(state.forgetOperations[id], requestId),
+  },
+}));
+connectionsReducer.with(forgetConnectionRequested.success, (state, { payload }) => {
+  const [id, requestId] = payload.request;
+  if (state.forgetOperations[id]?.requestId !== requestId) return state;
+  return {
+    ...state,
+    forgetOperations: {
+      ...state.forgetOperations,
+      [id]: { ...state.forgetOperations[id], status: 'success' as const, result: true },
+    },
+  };
+});
+connectionsReducer.with(forgetConnectionRequested.failure, (state, { payload }) => {
+  const [id, requestId] = payload.request;
+  if (state.forgetOperations[id]?.requestId !== requestId) return state;
+  return {
+    ...state,
+    forgetOperations: {
+      ...state.forgetOperations,
+      [id]: {
+        ...state.forgetOperations[id],
+        status: 'error' as const,
+        error: payload.error.message,
+      },
+    },
+  };
+});
+
+connectionsReducer.with(connectBackendRequested, (state) => ({
+  ...state,
+  connectBackendOperation: loadingResult(state.connectBackendOperation),
+}));
+connectionsReducer.with(connectBackendRequested.success, (state, { payload }) => ({
+  ...state,
+  connectBackendOperation: {
+    ...state.connectBackendOperation,
+    status: 'success',
+    result: payload.response,
+  },
+}));
+connectionsReducer.with(connectBackendRequested.failure, (state, { payload }) => ({
+  ...state,
+  connectBackendOperation: {
+    ...state.connectBackendOperation,
+    status: 'error',
+    error: payload.error.message,
+  },
+}));

@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { Note, Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { warmImport } from '../../../../../test/warm-import';
@@ -52,9 +53,10 @@ vi.mock('$store/renderer/store', async () => {
     state: () => ({
       panelLayout: {
         byWorkspaceId: {
-          'ws-1': { columnCount: 1 },
+          'ws-1': { columnCount: 1, panels: {}, hiddenTabs: createCollection('id') },
         },
       },
+      git: { byWorkspaceId: {} },
     }),
     dispatch: mocks.dispatch,
   });
@@ -65,6 +67,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => []),
+  selectWorkspaceMutation: mocks.selector(() => ({ loading: false, error: null, version: 0 })),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -103,6 +106,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
   })),
+  updateWorkspaceRequested: vi.fn((...args: unknown[]) => ({
+    type: 'workspace/updateRequested',
+    payload: args,
+  })),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
@@ -121,6 +128,7 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
+  toggleSidebar: vi.fn(() => ({ type: 'uiLayout/toggleSidebar' })),
   toggleSidebarSide: vi.fn(() => ({ type: 'uiLayout/toggleSidebarSide' })),
 }));
 
@@ -131,6 +139,14 @@ vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice'
   })),
   requestDeleteWorkspace: vi.fn((id: string) => ({
     type: 'workspaceOperations/delete',
+    payload: [id],
+  })),
+  requestArchiveWorkspace: vi.fn((id: string) => ({
+    type: 'workspaceOperations/archive',
+    payload: [id],
+  })),
+  requestUnarchiveWorkspace: vi.fn((id: string) => ({
+    type: 'workspaceOperations/unarchive',
     payload: [id],
   })),
 }));

@@ -22,6 +22,29 @@ vi.mock('$lib/client', () => ({
   },
 }));
 
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { settingsOperationsReducer } =
+    await import('$store/renderer/slices/settings-events/settings-events-slice');
+  return {
+    store: createAppStoreMock({
+      reducers: { settingsOperations: settingsOperationsReducer },
+      dispatch: (action: { type: string; payload: unknown[] }) => ({
+        ...action,
+        promise:
+          action.type === 'settings/getRequested'
+            ? mocks
+                .mockSettingsList()
+                .then(
+                  (entries: Array<{ path: string }>) =>
+                    entries.find((entry) => entry.path === action.payload[0]) ?? null,
+                )
+            : mocks.mockSettingsUpdate(action.payload[0]),
+      }),
+    }),
+  };
+});
+
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa, Fa: MockFa };
@@ -117,7 +140,11 @@ describe('AgentBackendSettings', () => {
 
     render(AgentBackendSettings);
 
-    const input = await waitFor(() => screen.getByPlaceholderText('Auto') as HTMLInputElement);
+    const input = await waitFor(() => {
+      const field = screen.getByPlaceholderText('Auto') as HTMLInputElement;
+      expect(field.value).toBe('12');
+      return field;
+    });
 
     await fireEvent.input(input, { target: { value: '' } });
     await fireEvent.blur(input);
@@ -135,7 +162,11 @@ describe('AgentBackendSettings', () => {
 
     render(AgentBackendSettings);
 
-    const input = await waitFor(() => screen.getByPlaceholderText('Auto') as HTMLInputElement);
+    const input = await waitFor(() => {
+      const field = screen.getByPlaceholderText('Auto') as HTMLInputElement;
+      expect(field.value).toBe('12');
+      return field;
+    });
 
     await fireEvent.input(input, { target: { value: '0' } });
     await fireEvent.blur(input);
@@ -170,8 +201,11 @@ describe('AgentBackendSettings', () => {
 
     render(AgentBackendSettings);
 
-    const input = await waitFor(() => screen.getByPlaceholderText('Auto') as HTMLInputElement);
-    expect(input.value).toBe('10');
+    const input = await waitFor(() => {
+      const field = screen.getByPlaceholderText('Auto') as HTMLInputElement;
+      expect(field.value).toBe('10');
+      return field;
+    });
 
     await fireEvent.input(input, { target: { value: '-5' } });
     await fireEvent.blur(input);
@@ -227,8 +261,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_off_label());
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
+        m.settings_agentBackend_flushQueuedMessages_off_label(),
+      );
+    });
   });
 
   it('renders "System Messages Only" when the daemon reports systemOnly', async () => {
@@ -236,10 +273,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(
-      m.settings_agentBackend_flushQueuedMessages_systemOnly_label(),
-    );
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
+        m.settings_agentBackend_flushQueuedMessages_systemOnly_label(),
+      );
+    });
   });
 
   it('renders "Off (FIFO)" when the daemon reports off', async () => {
@@ -247,8 +285,11 @@ describe('AgentBackendSettings — flush queued messages mode', () => {
 
     render(AgentBackendSettings);
 
-    const trigger = await waitFor(() => screen.getByRole('combobox', FLUSH_TRIGGER));
-    expect(trigger.textContent).toContain(m.settings_agentBackend_flushQueuedMessages_off_label());
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', FLUSH_TRIGGER).textContent).toContain(
+        m.settings_agentBackend_flushQueuedMessages_off_label(),
+      );
+    });
   });
 
   it('persists a selection of systemOnly via settings.update with the exact payload', async () => {

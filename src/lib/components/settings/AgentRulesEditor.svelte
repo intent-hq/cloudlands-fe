@@ -12,10 +12,17 @@
     IntentMarkLoader,
     Textarea,
   } from '$lib/components/patterns/settings/custom-controls';
-  import { Logger } from '$lib/utils/logger';
-  import { appClient } from '$lib/client';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger, formatNumber } from '$lib/i18n/format';
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    getUserRuleRequested,
+    updateUserRuleRequested,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectUserRuleOperation,
+    selectUserRuleUpdateOperation,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
 
   interface Props {
     class?: string;
@@ -23,10 +30,15 @@
 
   let { class: className = '' }: Props = $props();
 
-  const logger = new Logger({ category: 'AgentRulesEditor' });
-
   const RULE_TYPE = 'base-system-prompt';
   const DEBOUNCE_MS = 1000;
+  const READ_KEY = 'agent-rules:read';
+  const WRITE_KEY = 'agent-rules:write';
+  const readOperation$ = selectUserRuleOperation(READ_KEY);
+  const writeOperation$ = selectUserRuleUpdateOperation(WRITE_KEY);
+  let seenReadVersion = selectUserRuleOperation.select(appStore.state, READ_KEY).version;
+  let seenWriteVersion = selectUserRuleUpdateOperation.select(appStore.state, WRITE_KEY).version;
+  let sentContent = '';
 
   // Character limit constants - similar to WorkspaceRulesEditor
   const MAX_RULES_LENGTH = 50000; // 50k characters
@@ -62,8 +74,10 @@
   let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
   let savedStatusTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  onMount(async () => {
-    await loadRules();
+  onMount(() => {
+    loading = true;
+    errorMessage = null;
+    appStore.dispatch(getUserRuleRequested(RULE_TYPE, READ_KEY));
   });
 
   onDestroy(() => {
@@ -81,34 +95,48 @@
     }, 5000);
   }
 
-  async function loadRules() {
-    try {
-      loading = true;
-      errorMessage = null;
-
-      // rules.get (§5.21): an absent override reads back as an empty default;
-      // null means the wire probe itself failed.
-      const rule = await appClient.settings.getUserRule(RULE_TYPE);
-      if (rule === null) {
-        showError(m.settings_agentRules_loadError());
-        return;
-      }
-      rulesContent = rule.content;
-      originalContent = rulesContent;
-      // Trimmed, like every payload saveRules persists: all drift
-      // comparisons are trimmed-vs-trimmed, so padding whitespace in a rule
-      // set outside this editor cannot register as unsaved drift.
-      lastSavedContent = rulesContent.trim();
-      hasChanges = false;
-    } catch (error) {
-      logger.error('Failed to load rules', error instanceof Error ? error : undefined);
+  $effect(() => {
+    const operation = $readOperation$;
+    if (operation.version <= seenReadVersion || operation.status === 'loading') return;
+    seenReadVersion = operation.version;
+    loading = false;
+    const rule = operation.status === 'success' ? operation.data : null;
+    if (rule === null) {
       showError(m.settings_agentRules_loadError());
-    } finally {
-      loading = false;
+      return;
     }
-  }
+    rulesContent = rule.content;
+    originalContent = rulesContent;
+    lastSavedContent = rulesContent.trim();
+    hasChanges = false;
+  });
 
-  async function saveRules() {
+  $effect(() => {
+    const operation = $writeOperation$;
+    if (operation.version <= seenWriteVersion || operation.status === 'loading') return;
+    seenWriteVersion = operation.version;
+    saveInFlight = false;
+    const result = operation.status === 'success' ? operation.data : null;
+    if (result?.success) {
+      lastSavedContent = sentContent;
+      hasChanges = rulesContent.trim() !== originalContent;
+      if (rulesContent.trim() === lastSavedContent) {
+        saveStatus = 'saved';
+        if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
+        savedStatusTimeout = setTimeout(() => {
+          saveStatus = 'idle';
+        }, 2000);
+      }
+    } else {
+      saveStatus = 'idle';
+      showError(result?.error || m.settings_agentRules_saveErrorShort());
+    }
+    const trailing = trailingSaveNeeded;
+    trailingSaveNeeded = false;
+    if (trailing || (result?.success && rulesContent.trim() !== lastSavedContent)) void saveRules();
+  });
+
+  function saveRules() {
     if (saveInFlight) {
       trailingSaveNeeded = true;
       return;
@@ -148,54 +176,10 @@
     }
 
     saveInFlight = true;
-    let saveSucceeded = false;
-    try {
-      saveStatus = 'saving';
-      errorMessage = null;
-
-      const result = await appClient.settings.updateUserRule(RULE_TYPE, trimmedContent);
-
-      if (result.success) {
-        saveSucceeded = true;
-        lastSavedContent = trimmedContent;
-        // Don't rewrite rulesContent with the trimmed value - reassigning it
-        // mid-edit clobbers the textarea and swallows leading/trailing
-        // newlines the user just typed
-        // Don't update originalContent - we want to keep track of what was loaded
-        // so "Undo changes" can revert to the initial state
-        hasChanges = rulesContent.trim() !== originalContent;
-
-        // Only show "saved" when the persisted value matches the live text;
-        // otherwise the trailing save below re-runs and reports instead.
-        if (rulesContent.trim() === lastSavedContent) {
-          saveStatus = 'saved';
-
-          // Clear saved status after 2 seconds
-          if (savedStatusTimeout) clearTimeout(savedStatusTimeout);
-          savedStatusTimeout = setTimeout(() => {
-            saveStatus = 'idle';
-          }, 2000);
-        }
-      } else {
-        saveStatus = 'idle';
-        showError(result.error || m.settings_agentRules_saveErrorShort());
-      }
-    } catch (error) {
-      logger.error('Failed to save rules', error instanceof Error ? error : undefined);
-      saveStatus = 'idle';
-      showError(m.settings_agentRules_saveError());
-    } finally {
-      saveInFlight = false;
-    }
-
-    // Trailing coalesce: if the text changed while the request was in flight
-    // (or another save was requested), save again immediately so the backend
-    // converges to the latest text.
-    const trailing = trailingSaveNeeded;
-    trailingSaveNeeded = false;
-    if (trailing || (saveSucceeded && rulesContent.trim() !== lastSavedContent)) {
-      void saveRules();
-    }
+    saveStatus = 'saving';
+    errorMessage = null;
+    sentContent = trimmedContent;
+    appStore.dispatch(updateUserRuleRequested(RULE_TYPE, trimmedContent, undefined, WRITE_KEY));
   }
 
   function handleContentChange() {
@@ -274,7 +258,7 @@
     </div>
   {:else if isApproachingLimit}
     <div
-      class="flex items-center gap-2 p-3 bg-warning/10 border border-warning/30 rounded-md text-warning-ink shrink-0"
+      class="flex items-center gap-2 p-3 bg-warning/10 border border-warning/30 rounded-md text-warning shrink-0"
     >
       <Fa icon={faTriangleExclamation} class="w-4 h-4 flex-shrink-0" />
       <span class="type-body">
@@ -290,7 +274,7 @@
 
   {#if loading}
     <div
-      class="flex grow items-center justify-start rounded-lg border border-border bg-muted/20 px-4 py-16 text-left text-subtle"
+      class="flex items-center justify-center py-16 text-subtle border border-border rounded-lg bg-muted/20 grow"
     >
       <IntentMarkLoader size={16} class="mr-2" />
       {m.settings_agentRules_loading()}
@@ -321,7 +305,7 @@
       <div
         class="flex items-center justify-end shrink-0 {isOverLimit
           ? 'text-danger'
-          : 'text-warning-ink'}"
+          : 'text-warning'}"
       >
         <span>
           {m.settings_autoSave_limitUsed({
@@ -346,6 +330,11 @@
   .agent-rules-textarea :global(textarea::placeholder) {
     opacity: 0.4;
     font-style: italic;
+  }
+
+  /* Warning color fallback if not defined in theme */
+  .text-warning {
+    color: hsl(38, 92%, 50%);
   }
 
   .bg-warning\/10 {

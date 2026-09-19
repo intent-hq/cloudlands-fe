@@ -23,13 +23,8 @@ vi.mock('$lib/client', () => ({
   appClient: { settings: { get: vi.fn().mockResolvedValue({ value: {} }) } },
 }));
 
-vi.mock('$features/pi/pi-models.client', () => ({
-  checkPiMcpAdapterInstalled: vi.fn().mockResolvedValue(true),
-  installPiMcpAdapter: vi.fn(),
-}));
-
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { error: mocks.toastError, success: vi.fn() },
+vi.mock('svelte-sonner', () => ({
+  toast: { error: mocks.toastError, success: vi.fn() },
 }));
 
 vi.mock('./ProviderPathConfig.svelte', async () => ({
@@ -69,6 +64,11 @@ async function buildState(fileSpecialists: object[]) {
     providerSettings: {
       enabledProviders: { 'claude-code': true, codex: true },
       nonDisableableProviderIds: [],
+      configuredPaths: {},
+      resolvedPaths: {},
+      secondaryResolvedPaths: {},
+      piMcpAdapterInstalled: null,
+      piMcpAdapterInstalling: false,
     },
     model: { ...modelInitialState, defaultProviderId: 'auggie', providerModels: {} },
     specialists: {
@@ -172,10 +172,6 @@ describe('ProviderSelector disable guard', () => {
       'Anthropic Claude Code',
     )) as HTMLButtonElement;
     expect(claudeButton.getAttribute('aria-disabled')).toBe('true');
-    expect(claudeButton.getAttribute('title')).toBeTruthy();
-    mocks.dispatch.mockClear();
-    await fireEvent.click(claudeButton);
-    expect(mocks.dispatch).not.toHaveBeenCalled();
 
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),

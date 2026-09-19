@@ -27,12 +27,16 @@ import {
   selectWorkspaceForegroundAgentIds,
   selectWorkspaceHasAgent,
   selectWorkspaceHasUnreadForegroundAgents,
+  selectAgentCreationRequest,
 } from './workspace-agents-selectors';
 import {
   addAgent,
+  agentCreationRequestFailed,
+  agentCreationRequestSucceeded,
   adjustRetiredCount,
   agentsLoaded,
   createAgentRequested,
+  createAgentFromConfigRequested,
   createAgentWithSpecialistRequested,
   emptyWorkspaceAgentState,
   initialState,
@@ -42,6 +46,7 @@ import {
   setActiveAgentId,
   recordAgentCreatedEvent,
   cleanupAgentCreatedEvents,
+  clearAgentCreationRequest,
   setAgents,
   setAgentsLoaded,
   setInitialAgentId,
@@ -108,6 +113,45 @@ function mockState(
 describe('workspaceAgentsReducer', () => {
   it('returns the initial state', () => {
     expect(workspaceAgentsReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('tracks correlated agent creation request state through completion and cleanup', () => {
+    const requestId = 'request-1';
+    let state = workspaceAgentsReducer(
+      initialState,
+      createAgentFromConfigRequested(WS_1, {} as never, { requestId }),
+    );
+    expect(selectAgentCreationRequest.select(mockState(state), WS_1, requestId)).toEqual({
+      requestId,
+      agentId: null,
+      loading: true,
+      error: null,
+    });
+
+    state = workspaceAgentsReducer(
+      state,
+      agentCreationRequestSucceeded(WS_1, requestId, 'agent-1'),
+    );
+    expect(selectAgentCreationRequest.select(mockState(state), WS_1, requestId)).toEqual({
+      requestId,
+      agentId: 'agent-1',
+      loading: false,
+      error: null,
+    });
+
+    state = workspaceAgentsReducer(
+      state,
+      agentCreationRequestFailed(WS_1, requestId, 'creation failed'),
+    );
+    expect(selectAgentCreationRequest.select(mockState(state), WS_1, requestId)).toEqual({
+      requestId,
+      agentId: null,
+      loading: false,
+      error: 'creation failed',
+    });
+
+    state = workspaceAgentsReducer(state, clearAgentCreationRequest(WS_1, requestId));
+    expect(selectAgentCreationRequest.select(mockState(state), WS_1, requestId)).toBeUndefined();
   });
 
   it('stores agent IDs for a workspace', () => {

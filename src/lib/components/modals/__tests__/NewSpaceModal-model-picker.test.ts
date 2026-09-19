@@ -15,13 +15,28 @@ const mocks = vi.hoisted(() => {
     description: index === 11 ? 'Last model' : `Model ${index + 1}`,
     effortLevels: index === 5 ? ['low', 'medium', 'high'] : undefined,
   }));
-  return { readable, models, dispatch: vi.fn(), onClose: vi.fn() };
+  const dispatch = vi.fn(
+    (action: {
+      type?: string;
+      payload?: unknown;
+      promise?: Promise<unknown>;
+      success?: (value: unknown) => unknown;
+    }) => {
+      if (action.type === 'providerModels/loadProviderModelsRequested') {
+        action.success?.({ models });
+      }
+      return action;
+    },
+  );
+  return { readable, models, dispatch, onClose: vi.fn() };
 });
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
   const { initialState, providerCatalogLoaded, providerCatalogReducer } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_PROVIDER_CATALOG } =
@@ -39,20 +54,27 @@ vi.mock('$store/renderer/store', async () => {
       hardwareConsole: { pttRecording: false, voiceTranscribing: false },
     }),
     dispatch: mocks.dispatch,
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
   });
 });
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(true),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(null),
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
-  // A remembered orchestration choice: the modal opens in team mode so the
-  // team card's picker is live from the start.
-  selectWorkspaceInitializerLastSubmittedAgent: () =>
-    mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable([]),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(true),
+    selectCompactWorkspaceInitializerFormState: () => mocks.readable(null),
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(null),
+    // A remembered orchestration choice: the modal opens in team mode so the
+    // team card's picker is live from the start.
+    selectWorkspaceInitializerLastSubmittedAgent: () =>
+      mocks.readable({ selectedSpecialist: 'spec-writer', isTeamMode: true }),
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable([]),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(null),
+  }),
+);
 
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => mocks.readable('auggie'),
@@ -71,6 +93,7 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectLoadError: () => mocks.readable(null),
   selectAllProviderWarnings: () => mocks.readable({}),
   selectAllProviderStaleFlags: () => mocks.readable({}),
+  selectAllProviderLoadingStates: () => mocks.readable({}),
   selectModelEffortLevels: {
     select: (_state: unknown, modelId: string | undefined) =>
       mocks.models.find((model) => model.value === modelId)?.effortLevels,
@@ -79,7 +102,27 @@ vi.mock('$store/renderer/slices/model/model-selectors', () => ({
     select: () => undefined,
     withStore: () => () => mocks.readable(undefined),
   }),
+  selectAgentModelUpdate: () =>
+    mocks.readable({ status: 'idle', requestId: 0, model: null, error: null }),
 }));
+
+vi.mock('$store/renderer/slices/provider-models/provider-models-selectors', () => {
+  const cache = {
+    auggie: {
+      models: mocks.models,
+      fetchedAt: '2026-01-01T00:00:00.000Z',
+    },
+  };
+  return {
+    selectProviderModelsCacheMap: Object.assign(() => mocks.readable(cache), {
+      select: () => cache,
+    }),
+    selectProviderModelsCacheEntry: {
+      select: (_state: unknown, providerId: string) => cache[providerId as keyof typeof cache],
+    },
+    selectProviderModelsClearEpoch: Object.assign(() => mocks.readable(0), { select: () => 0 }),
+  };
+});
 
 vi.mock('$store/renderer/slices/model/model-utils', () => ({
   getModelsForProvider: vi.fn(async () => mocks.models),
@@ -437,15 +480,17 @@ describe('NewSpaceModal model-picker composition', () => {
   it('dismisses nested reasoning before the modal-aware model picker on Escape', async () => {
     render(NewSpaceModal, { props: { open: true, onClose: mocks.onClose } });
     const dialog = await screen.findByRole('dialog', { name: 'New Workspace' });
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
     const team = modeCard(/Agent orchestration/i);
-    const modelTrigger = pickerTrigger(team);
+    let modelTrigger = pickerTrigger(team);
 
     await fireEvent.click(modelTrigger);
     const modelListbox = await within(dialog).findByRole('listbox');
     await fireEvent.click(
       await within(modelListbox).findByRole('option', { name: /GPT 5\.6/ }, { timeout: 5000 }),
     );
-    await waitFor(() => expect(modelTrigger.textContent).toContain('GPT 5.6'));
+    await waitFor(() => expect(pickerTrigger(team).textContent).toContain('GPT 5.6'));
+    modelTrigger = pickerTrigger(team);
 
     await fireEvent.click(modelTrigger);
     const reasoningTrigger = await within(dialog).findByTestId('effort-picker-trigger');
@@ -461,14 +506,17 @@ describe('NewSpaceModal model-picker composition', () => {
     await waitFor(() => {
       expect(within(dialog).getAllByRole('listbox')).toHaveLength(1);
       expect(reasoningTrigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(reasoningTrigger);
     });
-    expect(document.activeElement).toBe(reasoningTrigger);
     expect(persistedStates()).toHaveLength(persistedCount);
     expect(mocks.onClose).not.toHaveBeenCalled();
 
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     await fireEvent.keyDown(reasoningTrigger, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
-    expect(document.activeElement).toBe(modelTrigger);
+    await waitFor(() => {
+      expect(screen.queryByRole('listbox')).toBeNull();
+      expect(document.activeElement).toBe(pickerTrigger(team));
+    });
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
     expect(persistedStates()).toHaveLength(persistedCount);
     expect(mocks.onClose).not.toHaveBeenCalled();

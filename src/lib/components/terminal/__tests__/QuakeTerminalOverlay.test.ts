@@ -2,24 +2,32 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockDispatch, mockUpdate, scriptEntries, selectorSubscribers, terminalState, notify } =
-  vi.hoisted(() => ({
-    mockDispatch: vi.fn(),
-    mockUpdate: vi.fn(),
-    scriptEntries: { value: [] as any[] },
-    selectorSubscribers: new Set<() => void>(),
-    terminalState: {
-      activeId: 'terminal-1' as string | null,
-      height: 50,
-      isOpen: true,
-      terminals: [{ id: 'terminal-1', name: 'Terminal 1' }] as any[],
-      byWorkspace: {} as Record<
-        string,
-        { activeId: string | null; isOpen: boolean; terminals: any[] }
-      >,
-    },
-    notify: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
-  }));
+const {
+  commandOperations,
+  mockDispatch,
+  scriptEntries,
+  selectorSubscribers,
+  terminalState,
+  toast,
+} = vi.hoisted(() => ({
+  commandOperations: {
+    byWorkspace: {} as Record<string, Record<string, any>>,
+  },
+  mockDispatch: vi.fn(),
+  scriptEntries: { value: [] as any[] },
+  selectorSubscribers: new Set<() => void>(),
+  terminalState: {
+    activeId: 'terminal-1' as string | null,
+    height: 50,
+    isOpen: true,
+    terminals: [{ id: 'terminal-1', name: 'Terminal 1' }] as any[],
+    byWorkspace: {} as Record<
+      string,
+      { activeId: string | null; isOpen: boolean; terminals: any[] }
+    >,
+  },
+  toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { get } = await import('svelte/store');
@@ -88,6 +96,23 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => {
         scopedReadable(workspaceIdStore, () => ({ selectedScriptId: null })),
       { select: () => ({ selectedScriptId: null }) },
     ),
+    selectOverlayTerminalCreateOperation: Object.assign(
+      (workspaceIdOrStore: any) =>
+        typeof workspaceIdOrStore === 'string'
+          ? readable(() => ({
+              version: 0,
+              status: 'idle',
+              result: null,
+              error: null,
+            }))
+          : scopedReadable(workspaceIdOrStore, () => ({
+              version: 0,
+              status: 'idle',
+              result: null,
+              error: null,
+            })),
+      { select: () => ({ version: 0, status: 'idle', result: null, error: null }) },
+    ),
   };
 });
 
@@ -113,11 +138,83 @@ vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => {
       return () => {};
     },
   });
+  const scopedReadable = <T>(
+    workspaceIdStore: { subscribe: (listener: (workspaceId: string) => void) => () => void },
+    read: (workspaceId: string) => T,
+  ) => ({
+    subscribe: (listener: (value: T) => void) => {
+      let currentWorkspaceId = '';
+      const unsubscribeWorkspace = workspaceIdStore.subscribe((workspaceId) => {
+        currentWorkspaceId = workspaceId;
+        listener(read(workspaceId));
+      });
+      const emit = () => listener(read(currentWorkspaceId));
+      selectorSubscribers.add(emit);
+      return () => {
+        selectorSubscribers.delete(emit);
+        unsubscribeWorkspace();
+      };
+    },
+  });
+  const dualScopedReadable = <T>(
+    firstStore: { subscribe: (listener: (value: string) => void) => () => void },
+    secondStore: { subscribe: (listener: (value: string) => void) => () => void },
+    read: (first: string, second: string) => T,
+  ) => ({
+    subscribe: (listener: (value: T) => void) => {
+      let first = '';
+      let second = '';
+      const emit = () => listener(read(first, second));
+      const unsubscribeFirst = firstStore.subscribe((value) => {
+        first = value;
+        emit();
+      });
+      const unsubscribeSecond = secondStore.subscribe((value) => {
+        second = value;
+        emit();
+      });
+      selectorSubscribers.add(emit);
+      return () => {
+        selectorSubscribers.delete(emit);
+        unsubscribeFirst();
+        unsubscribeSecond();
+      };
+    },
+  });
   return {
     selectWorkspaceScriptEntries: Object.assign(() => readable(() => scriptEntries.value), {
       select: () => scriptEntries.value,
     }),
     selectWorkspaceScriptsInitialized: () => readable(() => true),
+    selectWorkspaceScriptOperations: () => readable(() => ({})),
+    selectWorkspaceScriptCommandOperations: (workspaceIdStore: any) =>
+      scopedReadable(
+        workspaceIdStore,
+        (workspaceId) => commandOperations.byWorkspace[workspaceId] ?? {},
+      ),
+    selectScriptCommandOperation: Object.assign(
+      (workspaceIdStore: any, keyStore: any) =>
+        dualScopedReadable(
+          workspaceIdStore,
+          keyStore,
+          (workspaceId, key) =>
+            commandOperations.byWorkspace[workspaceId]?.[key] ?? {
+              version: 0,
+              status: 'idle',
+              result: null,
+              error: null,
+            },
+        ),
+      {
+        select: (_state: any, workspaceId: string, key: string) =>
+          commandOperations.byWorkspace[workspaceId]?.[key] ?? {
+            version: 0,
+            status: 'idle',
+            result: null,
+            error: null,
+          },
+      },
+    ),
   };
 });
 
@@ -125,20 +222,27 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', () => ({
   refreshScripts: (...payload: any[]) => ({ type: 'scripts/refresh', payload }),
   disposeScripts: (...payload: any[]) => ({ type: 'scripts/dispose', payload }),
   removeScript: (...payload: any[]) => ({ type: 'scripts/remove', payload }),
+  startScriptRequested: (...payload: any[]) => ({ type: 'scripts/startScriptRequested', payload }),
+  stopScriptRequested: (...payload: any[]) => ({ type: 'scripts/stopScriptRequested', payload }),
+  restartScriptRequested: (...payload: any[]) => ({
+    type: 'scripts/restartScriptRequested',
+    payload,
+  }),
+  removeScriptRequested: (...payload: any[]) => ({
+    type: 'scripts/removeScriptRequested',
+    payload,
+  }),
+  updateScriptRequested: (...payload: any[]) => ({
+    type: 'scripts/updateScriptRequested',
+    payload,
+  }),
+  detectScriptsRequested: (...payload: any[]) => ({
+    type: 'scripts/detectScriptsRequested',
+    payload,
+  }),
 }));
 
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn().mockResolvedValue({ success: true }),
-    update: mockUpdate,
-    remove: vi.fn().mockResolvedValue({ success: true }),
-    start: vi.fn().mockResolvedValue({ success: true }),
-    stop: vi.fn().mockResolvedValue({ success: true }),
-    restart: vi.fn().mockResolvedValue({ success: true }),
-  },
-}));
-
-vi.mock('$lib/components/patterns/notify', () => ({ notify }));
+vi.mock('$lib/components/ui/toast', () => ({ toast }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { clearTerminal: vi.fn(), disposeTerminal: vi.fn() },
 }));
@@ -200,7 +304,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUpdate.mockResolvedValue({ success: true });
+    commandOperations.byWorkspace = {};
     scriptEntries.value = [runningScript];
     terminalState.activeId = 'terminal-1';
     terminalState.height = 50;
@@ -219,9 +323,7 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     document.body.style.userSelect = '';
   });
 
-  it('awaits a script rename and keeps the editor open when the mutation fails in-band', async () => {
-    let resolveUpdate!: (result: { success: boolean; error?: string }) => void;
-    mockUpdate.mockImplementationOnce(() => new Promise((resolve) => (resolveUpdate = resolve)));
+  it('keeps the editor open when the selector-backed rename fails', async () => {
     render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
 
     await fireEvent.dblClick(screen.getByRole('tab', { name: 'Running dev' }));
@@ -229,24 +331,33 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     await fireEvent.input(input, { target: { value: 'renamed dev' } });
     await fireEvent.blur(input);
 
-    expect(mockUpdate).toHaveBeenCalledWith('ws-1', 'script-1', { name: 'renamed dev' });
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'scripts/updateScriptRequested',
+      payload: ['ws-1', 'script-1', { name: 'renamed dev' }],
+    });
     expect(mockDispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'scripts/refresh' }),
     );
     expect(screen.getByPlaceholderText('Name')).toBeTruthy();
 
-    resolveUpdate({ success: false, error: 'Rename rejected' });
+    commandOperations.byWorkspace['ws-1'] = {
+      'update:script-1': {
+        version: 1,
+        status: 'error',
+        result: null,
+        error: 'Rename rejected',
+      },
+    };
+    await notifyTerminalState();
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('Rename rejected'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Rename rejected'));
     expect(mockDispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'scripts/refresh' }),
     );
     expect(screen.getByPlaceholderText('Name')).toBeTruthy();
   });
 
-  it('reconciles a deferred rename to its captured workspace without closing B editing UI', async () => {
-    let resolveUpdate!: (result: { success: boolean; error?: string }) => void;
-    mockUpdate.mockImplementationOnce(() => new Promise((resolve) => (resolveUpdate = resolve)));
+  it('reconciles a selector-backed rename to its captured workspace without closing B editing UI', async () => {
     const { rerender } = render(QuakeTerminalOverlay, {
       props: { workspaceId: 'ws-a' as any },
     });
@@ -255,21 +366,21 @@ describe('QuakeTerminalOverlay lifecycle', () => {
     const input = screen.getByPlaceholderText('Name');
     await fireEvent.input(input, { target: { value: 'renamed in A' } });
     await fireEvent.blur(input);
-    expect(mockUpdate).toHaveBeenCalledWith('ws-a', 'script-1', { name: 'renamed in A' });
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: 'scripts/updateScriptRequested',
+      payload: ['ws-a', 'script-1', { name: 'renamed in A' }],
+    });
 
     await rerender({ workspaceId: 'ws-b' as any });
-    resolveUpdate({ success: true });
-
-    await waitFor(() =>
-      expect(mockDispatch).toHaveBeenCalledWith({
-        type: 'scripts/refresh',
-        payload: ['ws-a'],
-      }),
-    );
-    expect(mockDispatch).not.toHaveBeenCalledWith({
-      type: 'scripts/refresh',
-      payload: ['ws-b'],
-    });
+    commandOperations.byWorkspace['ws-a'] = {
+      'update:script-1': {
+        version: 1,
+        status: 'success',
+        result: { kind: 'update', script: runningScript },
+        error: null,
+      },
+    };
+    await notifyTerminalState();
     expect((screen.getByPlaceholderText('Name') as HTMLInputElement).value).toBe('renamed in A');
   });
 

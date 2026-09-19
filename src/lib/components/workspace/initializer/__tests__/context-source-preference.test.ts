@@ -4,14 +4,11 @@
  * Unit tests for the Add-context picker's last-used-source persistence and
  * provider ordering helpers.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  LAST_SOURCE_STORAGE_KEY,
-  loadLastUsedSource,
   orderProviders,
   orderSources,
   resolveActiveSource,
-  saveLastUsedSource,
   type ProviderConnectionState,
 } from '../context-source-preference';
 
@@ -64,53 +61,6 @@ describe('orderSources', () => {
 
   it('fresh install source order is GitHub, Linear, Sentry', () => {
     expect(orderSources(conn(), null)).toEqual(['github-issues', 'github-prs', 'linear', 'sentry']);
-  });
-});
-
-describe('persistence', () => {
-  // The global test setup replaces window.localStorage with a non-storing
-  // vi.fn mock; back it with an in-memory store for round-trip tests.
-  let store: Map<string, string>;
-
-  beforeEach(() => {
-    store = new Map();
-    vi.mocked(localStorage.getItem).mockImplementation((key) => store.get(key) ?? null);
-    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
-      store.set(key, String(value));
-    });
-  });
-
-  afterEach(() => {
-    vi.mocked(localStorage.getItem).mockImplementation(() => null);
-    vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
-  });
-
-  it('round-trips the saved source', () => {
-    saveLastUsedSource('github-prs');
-    expect(loadLastUsedSource()).toBe('github-prs');
-  });
-
-  it('returns null when nothing is stored', () => {
-    expect(loadLastUsedSource()).toBeNull();
-  });
-
-  it('returns null for a corrupt stored value', () => {
-    localStorage.setItem(LAST_SOURCE_STORAGE_KEY, 'bogus-source');
-    expect(loadLastUsedSource()).toBeNull();
-  });
-
-  it('returns null when localStorage.getItem throws', () => {
-    vi.mocked(localStorage.getItem).mockImplementation(() => {
-      throw new Error('denied');
-    });
-    expect(loadLastUsedSource()).toBeNull();
-  });
-
-  it('does not throw when localStorage.setItem throws', () => {
-    vi.mocked(localStorage.setItem).mockImplementation(() => {
-      throw new Error('quota');
-    });
-    expect(() => saveLastUsedSource('linear')).not.toThrow();
   });
 });
 

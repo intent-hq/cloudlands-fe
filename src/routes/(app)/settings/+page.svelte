@@ -71,21 +71,20 @@
     selectUpdateChannel,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { isUpdateChannel } from '$features/auto-update/types';
-
   import { Select } from '$lib/components/ui/select';
   import { m } from '$shared/paraglide/messages.js';
   import { resolveHashToTarget } from '$shared/app-ui-targets';
-
-  import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
   import { navigateBackFromSettings } from '$lib/utils/workspace-navigation';
   import { workspaceIdFromRouteParam } from '$lib/utils/workspace-route-context';
+  import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount, untrack } from 'svelte';
+  import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
-
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
   const updateChannel$ = selectUpdateChannel();
@@ -100,7 +99,6 @@
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
-
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
   const udsSocketPath = $derived(
@@ -110,7 +108,6 @@
       ? $daemonTransport$.target
       : null,
   );
-
   const validTabs: SettingsTab[] = [
     'display',
     'app-behavior',
@@ -123,11 +120,9 @@
     'input',
     'specialists',
   ];
-
   function isSettingsTab(tab: string): tab is SettingsTab {
     return validTabs.includes(tab as SettingsTab);
   }
-
   const hashToTab: Record<string, SettingsTab> = {
     'default-model': 'providers',
     'global-instructions': 'agent-behavior',
@@ -178,12 +173,10 @@
     general: 'advanced',
     developer: 'advanced',
   };
-
   function resolveHashTab(targetId: string): SettingsTab | undefined {
     const targetTab = hashToTab[targetId] ?? resolveHashToTarget(targetId)?.tab;
     return targetTab && isSettingsTab(targetTab) ? targetTab : undefined;
   }
-
   function resolveLegacyTab(tabParam: string): SettingsTab | undefined {
     if (tabParam === 'accounts') return 'providers';
     if (
@@ -199,7 +192,6 @@
     if (tabParam === 'system' || tabParam === 'tools' || tabParam === 'git-workspace')
       return 'setup';
   }
-
   function resolveTabFromUrl(tabParam: string | null, targetId: string): SettingsTab {
     const targetTab = resolveHashTab(targetId);
     if (targetTab) return targetTab;
@@ -312,6 +304,7 @@
 
   // Check if we're in development mode
   const isDevMode = import.meta.env.DEV;
+  const isMac = isMacPlatform();
 
   // Hardware section: hidden where WebHID is missing entirely. In Electron
   // (silent grants, so getDevices() reflects physical presence) it is further
@@ -324,6 +317,8 @@
   const showHardwareSection = $derived(
     webHidAvailable && (!isElectronPlatform() || hardwareDevicePresent),
   );
+
+  const backLabel = $derived(m.settings_back_back());
 
   // Component refs for reset functionality
   let gitWorkspaceSettingsRef: GitWorkspaceSettings | undefined = $state();
@@ -480,7 +475,22 @@
 </script>
 
 {#snippet sidebarHeader()}
-  <SettingsSidebarBack onBack={navigateBackFromSettings} />
+  <div class="px-5 pt-8 pb-3">
+    <!-- Back button with keyboard shortcut -->
+    <Button
+      variant="ghost"
+      onclick={navigateBackFromSettings}
+      class="group flex items-center gap-1.5 type-body text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    >
+      <Fa icon={faArrowLeft} class="type-caption opacity-50 mr-1" />
+      <span>{backLabel}</span>
+      <kbd
+        class="type-caption ml-2 px-1.5 py-0.5 font-medium bg-muted text-muted-foreground border border-border rounded"
+      >
+        {isMac ? '⌘' : 'Ctrl'},
+      </kbd>
+    </Button>
+  </div>
 {/snippet}
 
 {#snippet agentsNavigation()}
@@ -558,7 +568,7 @@
             id="utility-default-model"
             data-highlight-id="utility-default-model"
             use:highlightTarget
-            class="mt-10 mb-6"
+            class="mb-6"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_defaults()}
@@ -752,14 +762,14 @@
                 id="reduce-motion-on-battery"
                 data-highlight-id="reduce-motion-on-battery"
                 use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
+                class="px-6 py-5"
               >
                 <ReduceMotionOnBatterySettings />
               </section>
             </div>
           </div>
 
+          <!-- Font Style -->
           <div id="font-style" data-highlight-id="font-style" use:highlightTarget class="mb-6">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_fontStyle()}
@@ -968,8 +978,14 @@
               workspaceId={settingsWorkspaceId}
             />
           </div>
-
-          <AgentFeaturesSettings />
+          <div
+            id="agent-features"
+            data-highlight-id="agent-features"
+            use:highlightTarget
+            class="mb-6"
+          >
+            <AgentFeaturesSettings />
+          </div>
         {/if}
 
         <!-- Input -->

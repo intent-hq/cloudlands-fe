@@ -1,11 +1,11 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
-  import { appClient } from '$lib/client';
   import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
+  import PathSettingField from './PathSettingField.svelte';
   import {
     SettingsForm,
     defineSettings,
@@ -15,8 +15,17 @@
   import { Checkbox } from '$lib/components/patterns/settings/custom-controls';
   // eslint-disable-next-line intent/settings-use-schema -- shared inline recipe used inside schema description snippets
   import { InlineCode } from '$lib/components/ui/inline-code';
-  import PathSettingField from './PathSettingField.svelte';
   import type { Snippet } from 'svelte';
+  import {
+    getSystemCapabilitiesRequested,
+    listSettingsRequested,
+    updateSettingsRequested,
+  } from '$store/renderer/slices/settings-events/settings-events-slice';
+  import {
+    selectSettingsListOperation,
+    selectSettingsUpdateOperation,
+    selectSystemCapabilitiesOperation,
+  } from '$store/renderer/slices/settings-events/settings-events-selectors';
 
   let { shellAdditions }: { shellAdditions?: Snippet } = $props();
 
@@ -40,6 +49,19 @@
   // setting (older daemons don't have it); we also never write the path back
   // to a daemon that didn't report it.
   let gitCredentialSettingSupported = $state(false);
+  const LIST_KEY = 'git-workspace:list';
+  const CAPABILITIES_KEY = 'git-workspace:capabilities';
+  const UPDATE_KEY = 'git-workspace:update';
+  const listOperation$ = selectSettingsListOperation(LIST_KEY);
+  const capabilitiesOperation$ = selectSystemCapabilitiesOperation(CAPABILITIES_KEY);
+  const updateOperation$ = selectSettingsUpdateOperation(UPDATE_KEY);
+  let seenListVersion = selectSettingsListOperation.select(appStore.state, LIST_KEY).version;
+  let seenCapabilitiesVersion = selectSystemCapabilitiesOperation.select(
+    appStore.state,
+    CAPABILITIES_KEY,
+  ).version;
+  let seenUpdateVersion = selectSettingsUpdateOperation.select(appStore.state, UPDATE_KEY).version;
+  let pendingValues: Record<string, unknown> | null = null;
 
   // CoW toggle is visible only when the machine supports it — a direct probe
   // of the workspaces root via `system.capabilities` (PROTOCOL §5.7), with no
@@ -87,17 +109,17 @@
     handleSave();
   }
 
-  onMount(async () => {
-    void loadCowCapability();
-    await loadSettings();
+  onMount(() => {
+    appStore.dispatch(getSystemCapabilitiesRequested(CAPABILITIES_KEY));
+    appStore.dispatch(listSettingsRequested(LIST_KEY));
   });
 
-  async function loadCowCapability() {
-    // capabilities() always resolves ({} on failure), so unknown/error keeps
-    // the toggle hidden rather than crashing the settings pane.
-    const caps = await appClient.system.capabilities();
-    cowSupported = caps.cowSupported === true;
-  }
+  $effect(() => {
+    const operation = $capabilitiesOperation$;
+    if (operation.version <= seenCapabilitiesVersion || operation.status === 'loading') return;
+    seenCapabilitiesVersion = operation.version;
+    cowSupported = operation.status === 'success' && operation.data?.cowSupported === true;
+  });
 
   function stringValue(value: unknown): string {
     return typeof value === 'string' ? value : '';
@@ -117,9 +139,12 @@
     };
   }
 
-  async function loadSettings() {
-    const settings = await appClient.settings.list();
-    if (settings.length === 0) {
+  $effect(() => {
+    const operation = $listOperation$;
+    if (operation.version <= seenListVersion || operation.status === 'loading') return;
+    seenListVersion = operation.version;
+    const settings = operation.status === 'success' ? operation.data : null;
+    if (!settings || settings.length === 0) {
       settingsError = m.settings_gitWorkspace_loadError();
       return;
     }
@@ -136,25 +161,32 @@
     // malformed/unexpected values fail safe to off.
     exposeGitCredential = byPath.get(SETTING_PATHS.exposeGitCredential) === true;
     loadedValues = currentValues();
-  }
+  });
 
-  async function handleSave() {
+  $effect(() => {
+    const operation = $updateOperation$;
+    if (operation.version <= seenUpdateVersion || operation.status === 'loading') return;
+    seenUpdateVersion = operation.version;
+    if (operation.status === 'success' && pendingValues) {
+      settingsError = '';
+      loadedValues = pendingValues;
+      pendingValues = null;
+      appStore.dispatch(refreshAutoCommitSettings());
+    } else if (operation.status === 'error') {
+      pendingValues = null;
+      settingsError = m.settings_gitWorkspace_saveError();
+      logger.error('Failed to save settings:', operation.error);
+    }
+  });
+
+  function handleSave() {
     const values = currentValues();
     const changes = Object.entries(values)
       .filter(([path, value]) => value !== loadedValues[path])
       .map(([path, value]) => ({ path, value }));
     if (changes.length === 0) return;
-    try {
-      await appClient.settings.update(changes);
-      settingsError = '';
-      loadedValues = values;
-
-      // Refresh global autoCommit so workspaces pick up the new setting
-      appStore.dispatch(refreshAutoCommitSettings());
-    } catch (error) {
-      settingsError = m.settings_gitWorkspace_saveError();
-      logger.error('Failed to save settings:', error);
-    }
+    pendingValues = values;
+    appStore.dispatch(updateSettingsRequested(changes, UPDATE_KEY));
   }
 
   /**
@@ -221,7 +253,7 @@
               get: () => Boolean(autoCommit),
               set: (value: boolean) => {
                 autoCommit = value;
-                void handleSave();
+                handleSave();
               },
             },
             {
@@ -233,7 +265,7 @@
               get: () => Boolean(exposeGitCredential),
               set: (value: boolean) => {
                 exposeGitCredential = value;
-                void handleSave();
+                handleSave();
               },
             },
           ],
@@ -327,7 +359,7 @@
     checked={cowIsolation}
     onCheckedChange={(value) => {
       cowIsolation = value;
-      void handleSave();
+      handleSave();
     }}
     ariaLabelledby={labelId}
     ariaDescribedby={descriptionId}

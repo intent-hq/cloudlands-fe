@@ -28,6 +28,27 @@ export const selectEnabledProviders = store.createSelector((state): Record<strin
   return state.providerSettings.enabledProviders;
 });
 
+export const selectConfiguredProviderPaths = store.createSelector(
+  (state) => state.providerSettings.configuredPaths,
+);
+export const selectResolvedProviderPaths = store.createSelector(
+  (state) => state.providerSettings.resolvedPaths,
+);
+export const selectSecondaryResolvedProviderPaths = store.createSelector(
+  (state) => state.providerSettings.secondaryResolvedPaths,
+);
+export const selectProviderPathSaveState = store.createSelector((state, providerId: string) => ({
+  saving: state.providerSettings.providerPathSaving[providerId] ?? false,
+  error: state.providerSettings.providerPathSaveErrors[providerId] ?? null,
+  configuredPath: state.providerSettings.configuredPaths[providerId] ?? '',
+}));
+export const selectPiMcpAdapterInstalled = store.createSelector(
+  (state) => state.providerSettings.piMcpAdapterInstalled,
+);
+export const selectPiMcpAdapterInstalling = store.createSelector(
+  (state) => state.providerSettings.piMcpAdapterInstalling,
+);
+
 export const selectIsProviderEnabled = store.createSelector(
   (state, providerId: string): boolean => {
     const nonDisableable = state.providerSettings.nonDisableableProviderIds ?? [];

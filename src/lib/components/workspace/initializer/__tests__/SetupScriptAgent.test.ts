@@ -1,21 +1,43 @@
 /**
  * @vitest-environment jsdom
  *
- * SetupScriptAgent now generates drafts through the AppClient seam
- * (`workspace.generateSetupScript`, PROTOCOL §5.25) instead of the deleted
- * `setup-scripts:*` streaming IPC flow. These tests cover the seam calls and
- * the unmount race the old listener-cleanup tests guarded against.
+ * SetupScriptAgent dispatches the saga-owned `workspace.generateSetupScript`
+ * request (PROTOCOL §5.25). These tests cover the action contract and unmount
+ * race the old listener-cleanup tests guarded against.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  workspaceItems: [] as Array<{
+    id: string;
+    path?: string;
+    repositoryPath?: string;
+    worktreePath?: string;
+  }>,
   generate: vi.fn(),
 }));
 
-vi.mock('$lib/client', () => ({
-  appClient: {
-    setupScripts: { generate: mocks.generate },
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
+  return createAppStoreMockModule({
+    state: {},
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
+    dispatch: (action: any) => {
+      if (action?.type === 'workspaceInitializer/generateSetupScriptRequested') {
+        return { promise: Promise.resolve(mocks.generate(...action.payload)) };
+      }
+      return action;
+    },
+  });
+});
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceItems: {
+    select: () => mocks.workspaceItems,
   },
 }));
 
@@ -32,11 +54,6 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import SetupScriptAgent from '../SetupScriptAgent.svelte';
-import { initAppStore, store as appStore } from '$store/renderer/store';
-import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
-
-let storeContext: ReturnType<typeof initAppStore> | undefined;
-
 /** §5.25 SetupScript record as the daemon returns it. */
 const RUST_DRAFT = {
   script: '#!/usr/bin/env bash\nset -euo pipefail\ncargo fetch\n',
@@ -48,17 +65,11 @@ const RUST_DRAFT = {
 describe('SetupScriptAgent (workspace.generateSetupScript flow)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    storeContext = initAppStore(appStore);
-    appStore.dispatch(
-      replaceWorkspaceList([{ id: 'ws-1', path: '/repo', repositoryPath: '/repo' } as never]),
-    );
+    mocks.workspaceItems = [{ id: 'ws-1', path: '/repo', repositoryPath: '/repo' }];
   });
 
   afterEach(() => {
-    appStore.dispatch(replaceWorkspaceList([]));
     cleanup();
-    storeContext?.dispose();
-    storeContext = undefined;
   });
 
   it('resolves the workspace by repo path, requests a draft, and renders it', async () => {
@@ -108,7 +119,7 @@ describe('SetupScriptAgent (workspace.generateSetupScript flow)', () => {
   });
 
   it('shows an error when no workspace matches the repo path', async () => {
-    appStore.dispatch(replaceWorkspaceList([{ id: 'ws-other', path: '/elsewhere' } as never]));
+    mocks.workspaceItems = [{ id: 'ws-other', path: '/elsewhere' }];
 
     render(SetupScriptAgent, { props: { repoPath: '/repo' } });
 

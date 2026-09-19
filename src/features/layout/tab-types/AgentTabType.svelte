@@ -229,21 +229,14 @@
     await action.promise.catch(() => {});
   }
 
-  async function handleDeleteAgent() {
+  function handleDeleteAgent() {
     if (!tab.agentId || isAgentDeleting) return;
     const agentIdToDelete = tab.agentId;
     const agentName = agentSession?.name || tab.title || '';
     isAgentDeleting = true;
-    try {
-      appStore.dispatch(closeTab(workspaceId, tab.id));
-      const action = deleteAgentWithUndoRequested(workspaceId, agentIdToDelete, agentName);
-      appStore.dispatch(action);
-      await action.promise;
-    } catch (error) {
-      logger.error('Failed to delete agent', error);
-    } finally {
-      isAgentDeleting = false;
-    }
+    appStore.dispatch(closeTab(workspaceId, tab.id));
+    appStore.dispatch(deleteAgentWithUndoRequested(workspaceId, agentIdToDelete, agentName));
+    isAgentDeleting = false;
   }
 
   // Register header state and actions

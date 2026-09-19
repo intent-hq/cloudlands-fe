@@ -262,6 +262,10 @@ test('keeps attachments, controls, tab order, and resize behavior inside the nes
   const component = await mount(ChatPanelComposerGeometryHost, {
     props: { draft: 'Resizable attachment draft', width: 420 },
   });
+  await expect(component).toHaveAttribute('data-draft-request-id', /[0-9]+/);
+  expect(await component.getAttribute('data-settled-draft-request-id')).toBe(
+    await component.getAttribute('data-draft-request-id'),
+  );
   const input = component.getByTestId('message-input');
   const editor = component.locator('.tiptap-editor');
   const resize = input.locator('.resize-handle');

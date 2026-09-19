@@ -79,8 +79,11 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
   return createAppStoreMockModule({
     state: () => ({ model: { defaultProviderId: mocks.activeProviderId } }),
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
     dispatch: mocks.dispatch,
   });
 });
@@ -90,12 +93,18 @@ vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
   selectOnboardingState: () => mocks.readable(() => ({ step: 'configuring' })),
 }));
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => mocks.initializerHydrated),
-  selectWorkspaceInitializerOnboardingFormState: {
-    select: () => mocks.persistedOnboardingFormState,
-  },
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(() => mocks.initializerHydrated),
+    selectWorkspaceInitializerOnboardingFormState: {
+      select: () => mocks.persistedOnboardingFormState,
+    },
+  }),
+);
 
 vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
   selectGitHubAuthIsAuthenticating: { select: vi.fn(() => false) },
@@ -213,6 +222,7 @@ vi.mock('svelte-fa', async () => ({
 
 import OnboardingPage from '../OnboardingPage.svelte';
 import { REPO_CONFIG_SCRIPT_NAME, SETUP_SCRIPT_TEMPLATES } from '$features/setup-scripts';
+import { store as appStore } from '$store/renderer/store';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -272,6 +282,62 @@ const textOf = (result: ReturnType<typeof renderPage>, testId: string) =>
 const dispatchedActions = () =>
   mocks.dispatch.mock.calls.map(([action]) => action as { type: string; payload?: unknown[] });
 
+function installWorkspaceInitializerDispatchMock() {
+  mocks.dispatch.mockImplementation(
+    (action: {
+      type?: string;
+      payload?: unknown[];
+      success?: (result: unknown) => unknown;
+      failure?: (error: Error) => unknown;
+    }) => {
+      if (action.type === 'workspaceInitializer/pullRepositoryRequested' && action.payload) {
+        return {
+          promise: Promise.resolve(mocks.gitPull(...(action.payload.slice(1) as [string, string]))),
+        };
+      }
+      if (action.type === 'workspaceInitializer/createWorkspaceRequested') {
+        return {
+          promise: Promise.resolve(
+            mocks.workspaceCreate(action.payload?.[0] as Record<string, unknown>),
+          ),
+        };
+      }
+      if (action.type === 'workspaceInitializer/readGitRemoteRequested') {
+        return {
+          promise: Promise.resolve(mocks.getRemoteUrl(action.payload?.[0] as string)).then(
+            (response) => {
+              const data = response as {
+                success?: boolean;
+                data?: { owner?: string; repo?: string };
+              };
+              return data.success && data.data?.owner && data.data.repo ? data.data : null;
+            },
+          ),
+        };
+      }
+      if (action.type === 'workspaceInitializer/readPrefillRequested') {
+        return { promise: Promise.resolve(null) };
+      }
+      if (action.type === 'workspaceInitializer/restoreNewWorkspaceDraftRequested') {
+        return { promise: Promise.resolve({ status: 'empty' }) };
+      }
+      if (action.type === 'workspaceInitializer/resolveModelRequested') {
+        const model = action.payload?.[1] as string | undefined;
+        const provider = action.payload?.[2] as string | undefined;
+        return {
+          promise: Promise.resolve(
+            mocks.resolveModel(
+              {},
+              model ? { model, ...(provider ? { provider } : {}) } : undefined,
+            ),
+          ),
+        };
+      }
+      return action;
+    },
+  );
+}
+
 /**
  * Reset every shared mock (implementation AND call history — clearAllMocks
  * keeps implementations, so a per-test mockImplementation/mockResolvedValue
@@ -303,6 +369,7 @@ function installDefaultMockImplementations() {
   mocks.initializerHydrated = false;
   mocks.persistedOnboardingFormState = null;
   mocks.activeProviderId = '';
+  installWorkspaceInitializerDispatchMock();
 }
 
 /**
@@ -320,6 +387,7 @@ async function settleInFlightCreates() {
 }
 
 beforeEach(() => {
+  (appStore as typeof appStore & { resetReducers: () => void }).resetReducers();
   installDefaultMockImplementations();
   sessionStorage.clear();
 });

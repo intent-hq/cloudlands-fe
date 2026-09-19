@@ -8,6 +8,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { m } from '$shared/paraglide/messages.js';
 import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store as appStore } from '$store/renderer/store';
+import { settingsOperationsSaga } from '$store/renderer/slices/settings-events/sagas/settings-operations-saga';
 import {
   SETTINGS_PROTOCOL_FIXTURES,
   SHIPPED_WEBSOCKET_SETTING_FIXTURES,
@@ -30,10 +31,12 @@ describe('Settings deterministic mock-BE contracts', () => {
   const originalInvoke = window.electronAPI!.invoke;
   const client = new LiveAppClient();
   let storeContext: ReduxStoreContext | undefined;
+  let stopSettingsOperationsSaga: (() => void) | undefined;
 
   beforeEach(() => {
     __resetSettingsReadCacheForTests();
     storeContext = initAppStore(appStore);
+    stopSettingsOperationsSaga = appStore.runSaga(settingsOperationsSaga);
     resetMockIpcRouter();
     window.electronAPI!.invoke = vi.fn((channel: string, payload?: unknown) =>
       mockInvoke(channel, payload),
@@ -41,6 +44,8 @@ describe('Settings deterministic mock-BE contracts', () => {
   });
 
   afterEach(() => {
+    stopSettingsOperationsSaga?.();
+    stopSettingsOperationsSaga = undefined;
     storeContext?.dispose();
     storeContext = undefined;
     cleanup();

@@ -48,7 +48,12 @@ const testState = vi.hoisted(() => {
     );
   const selector = <T>(value: T) => selectorFrom(() => value);
   const state = {
-    dispatch: vi.fn(),
+    dispatch: vi.fn((action: { type?: string; payload?: unknown }) => {
+      if (action.type?.endsWith('Requested')) {
+        return { ...action, promise: Promise.resolve(null) };
+      }
+      return action;
+    }),
     readable,
     selector,
     selectorFrom,
@@ -144,6 +149,11 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatQuotaExceeded: testState.selector(null),
   selectChatReceivedFirstChunk: testState.selector(false),
   selectChatStatusEvents: testState.selector([]),
+  selectChatDraftOperations: testState.selector({
+    load: { status: 'idle', requestId: null, data: null, error: null },
+    write: { status: 'idle', requestId: null, data: null, error: null },
+  }),
+  selectQueuedMessageEditOperations: testState.selector({}),
   selectChatStreamingStartTime: testState.selector(null),
   selectFetchingGapFill: testState.selector(false),
   selectFetchingHistorySeek: testState.selector(false),
@@ -155,6 +165,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectTranscriptHydration: testState.selectorFrom(() => testState.transcriptHydration),
   selectTranscriptHydratedOnce: testState.selectorFrom(() => testState.transcriptHydratedOnce),
   selectTranscriptSnapshotMeta: testState.selector(undefined),
+  selectUserMessageIndex: testState.selector(undefined),
 }));
 vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
   selectAgentQueueMessages: testState.selector([]),

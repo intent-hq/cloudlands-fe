@@ -210,6 +210,33 @@ describe('editRegenerateSaga', () => {
     await task.toPromise();
   });
 
+  it('handles a fire-and-forget daemon failure without an unhandled rejection', async () => {
+    mocks.editAndRegenerate.mockResolvedValue({ success: false, error: 'bad message' });
+    const { channel, dispatched, task } = start();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const action = agentSessionEditAndRegenerateRequested(AGENT, WS, 'm1', 'edited');
+      channel.put(action);
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (dispatched.some((candidate) => candidate.type === action.failure(new Error()).type)) {
+          break;
+        }
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      expect(dispatched).toContainEqual(
+        expect.objectContaining({ type: action.failure(new Error()).type }),
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      task.cancel();
+      await task.toPromise();
+    }
+  });
+
   it('runs repeated edits for the same agent independently', async () => {
     let releaseFirst!: (value: { success: true }) => void;
     mocks.editAndRegenerate

@@ -1,13 +1,9 @@
 <script lang="ts">
   /* eslint-disable max-lines */
-  import { onMount, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import { agentClient } from '$features/agent/agent.client';
-  import {
-    applyReasoningEffort,
-    reconcileAgentReasoningEffort,
-  } from '$features/agent/reasoning-effort';
+  import { applyReasoningEffort } from '$features/agent/reasoning-effort';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -44,7 +40,9 @@
     selectLoadError,
     selectAllProviderWarnings,
     selectAllProviderStaleFlags,
+    selectAllProviderLoadingStates,
     selectAgentModelEffortLevels,
+    selectAgentModelUpdate,
   } from '$store/renderer/slices/model/model-selectors';
   import {
     clearModelFallbackInfo,
@@ -52,6 +50,7 @@
     setLoadingStateForProvider,
     setModelFallbackInfo,
     setModelPickerGroupCollapsed,
+    setAgentModelRequested,
   } from '$store/renderer/slices/model/model-slice';
   import type { ModelFallbackInfo } from '$store/renderer/slices/model/model-types';
   import { selectHasCheckedOnce } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
@@ -64,10 +63,9 @@
     selectModelFetchProviderIds,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
-    getModelsForProvider,
-    getModelsForProviderForLoadingState,
-  } from '$store/renderer/slices/model/model-utils';
-  import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
+    loadProviderModelsRequested,
+    providerModelsLoaded,
+  } from '$store/renderer/slices/provider-models/provider-models-slice';
   import {
     selectProviderModelsCacheEntry,
     selectProviderModelsCacheMap,
@@ -75,6 +73,7 @@
   } from '$store/renderer/slices/provider-models/provider-models-selectors';
 
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+  import { getModelsForProviderForLoadingState } from '$store/renderer/slices/model/model-utils';
   import {
     selectEffectiveDefaultProviderId,
     selectNormalizedProviderId,
@@ -96,9 +95,9 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { notify } from '$lib/components/patterns/notify';
-  import { m } from '$shared/paraglide/messages.js';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
+  import { m } from '$shared/paraglide/messages.js';
   import {
     faArrowsRotate,
     faCheck,
@@ -146,8 +145,10 @@
   const loadError$ = selectLoadError();
   const allProviderWarnings$ = selectAllProviderWarnings();
   const allProviderStaleFlags$ = selectAllProviderStaleFlags();
+  const allProviderLoadingStates$ = selectAllProviderLoadingStates();
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const daemonHealth$ = selectDaemonHealth();
+  const providerModelsCacheMap$ = selectProviderModelsCacheMap();
 
   // The availability status map gates which providers the picker offers, but
   // outside onboarding nothing else triggers the bulk check — a fresh session
@@ -216,7 +217,7 @@
     defaultOptionDescription?: string;
     // Wraps the resolved defaultModelId label on the trigger when no explicit
     // model is selected (e.g. "Default ({model})" for the specialist editor's
-    // inherit state). Also applies to the catalog-default fallback.
+    // inherit state). Only applied when defaultModelId is set.
     formatDefaultModelLabel?: (modelLabel: string) => string;
     // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
@@ -283,8 +284,14 @@
   );
 
   const agentSession$ = useAgentSession(() => agentId);
-
+  const agentId$ = writable<string | undefined>();
+  const agentModelUpdate$ = selectAgentModelUpdate(agentId$);
   let pendingModelUpdate = $state<string | null>(null);
+  let modelUpdateRequestId = 0;
+
+  $effect(() => {
+    agentId$.set(agentId);
+  });
 
   // Provider from the prop or agent session, or null when neither determines
   // one (fetching then uses the active provider; the trigger icon prefers the
@@ -310,6 +317,14 @@
   let agentProviderLoading = $state(false);
   let agentProviderError = $state<string | null>(null);
 
+  function getProviderWarningNotice(
+    providerId: string,
+    warnings: Record<string, string>,
+  ): ProviderWarningNotice | null {
+    const normalizedId = normalizeProviderId(providerId);
+    return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
+  }
+
   function setProviderWarningState(
     providerId: string,
     warning: string | undefined,
@@ -326,14 +341,6 @@
     appStore.dispatch(
       setLoadingStateForProvider({ providerId: normalizedId, status: 'error', error }),
     );
-  }
-
-  function getProviderWarningNotice(
-    providerId: string,
-    warnings: Record<string, string>,
-  ): ProviderWarningNotice | null {
-    const normalizedId = normalizeProviderId(providerId);
-    return createProviderWarningNotice(normalizedId, warnings[normalizedId]);
   }
 
   // Hydrate from the session-lifetime provider-models cache
@@ -367,6 +374,7 @@
   const refreshingProviderEpochs = new Map<string, number>();
   let allProvidersLoaded = $state(seededAllProvidersLoaded);
   let lastFetchedProviderIds = '';
+  let fetchDebounceTimer: ReturnType<typeof setTimeout>;
 
   function advanceProviderFetchGeneration(providerId: string): number {
     const generation = (providerFetchGenerations.get(providerId) ?? 0) + 1;
@@ -381,19 +389,10 @@
     );
   }
 
-  function setProviderLoading(providerId: string, loading: boolean) {
-    const nextLoading = {
-      ...allProviderLoading,
-      [providerId]: loading,
-    };
-    allProviderLoading = nextLoading;
-    allProvidersLoaded = Object.values(nextLoading).every((isLoading) => !isLoading);
-  }
-
   async function fetchAllProviderModels(enabledIds: string[]) {
     enabledIds = enabledIds.filter(canUseProviderModels);
     const key = enabledIds.slice().sort().join(',');
-    if (key === lastFetchedProviderIds && allProvidersLoaded) return;
+    if (key === lastFetchedProviderIds) return;
     lastFetchedProviderIds = key;
 
     allProvidersLoaded = false;
@@ -438,17 +437,10 @@
           providerFetchGenerations.get(providerId) !== providerGeneration ||
           selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
         try {
-          const result = await getModelsForProviderForLoadingState(providerId);
+          appStore.dispatch(loadProviderModelsRequested(providerId, false, true));
           if (isStale()) return;
           const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
           allProviderErrors = remainingErrors;
-          allProviderModels = {
-            ...allProviderModels,
-            [providerId]: toDropdownOptions(result.models),
-          };
-          // Write through to the session cache (providerId is normalized here).
-          appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
-          setProviderWarningState(providerId, result.warning, result.stale);
         } catch (err) {
           if (isStale()) return;
           const providerError = formatProviderLoadError(providerId, err);
@@ -456,11 +448,8 @@
             ...allProviderErrors,
             [providerId]: providerError,
           };
-          setProviderErrorState(providerId, providerError.displayText);
         } finally {
-          if (!isStale()) {
-            setProviderLoading(providerId, false);
-          }
+          // Redux loading state owns terminal settlement for dispatched requests.
         }
       }),
     );
@@ -507,23 +496,75 @@
       agentFetchGeneration !== currentGen ||
       selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
     try {
-      const result = await getModelsForProviderForLoadingState(providerId);
+      appStore.dispatch(loadProviderModelsRequested(providerId));
       if (isStale()) return;
-      agentProviderModels = result.models;
-      // Write through so the next mount of this picker hydrates too.
-      appStore.dispatch(providerModelsLoaded(cacheId, result, cacheEpoch));
-      setProviderWarningState(providerId, result.warning, result.stale);
     } catch (err) {
       if (isStale()) return;
       const providerError = formatProviderLoadError(providerId, err);
       agentProviderError = providerError.displayText;
-      setProviderErrorState(providerId, providerError.displayText);
     } finally {
-      if (!isStale()) {
-        agentProviderLoading = false;
-      }
+      // Redux loading state owns terminal settlement for dispatched requests.
     }
   }
+
+  $effect(() => {
+    const cache = $providerModelsCacheMap$;
+    const enabled = $availableEnabledProviderIds$.map(normalizeProviderId);
+    const nextModels = untrack(() => ({ ...allProviderModels }));
+    for (const [providerId, entry] of Object.entries(cache)) {
+      if (
+        enabled.length === 0 ||
+        enabled.includes(providerId) ||
+        providerId === effectiveProviderId
+      ) {
+        nextModels[providerId] = toDropdownOptions(entry.models);
+      }
+    }
+    allProviderModels = nextModels;
+    const cachedAgent = cache[normalizeProviderId(effectiveProviderId)];
+    if (cachedAgent && usesAgentProviderFetch) {
+      agentProviderModels = cachedAgent.models;
+      agentProviderLoading = false;
+      agentProviderError = null;
+    }
+  });
+
+  $effect(() => {
+    const loadingStates = $allProviderLoadingStates$;
+    untrack(() => {
+      const nextLoading = { ...allProviderLoading };
+      const nextErrors = { ...allProviderErrors };
+      const nextRefreshing = new Set(refreshingProviders);
+      for (const [providerId, loadingState] of Object.entries(loadingStates)) {
+        const isAgentProvider =
+          providerId === normalizeProviderId(effectiveProviderId) && usesAgentProviderFetch;
+        nextLoading[providerId] = loadingState.status === 'loading';
+        if (loadingState.status === 'error' && !isAgentProvider) {
+          nextErrors[providerId] = formatProviderLoadError(
+            providerId,
+            new Error(loadingState.error ?? 'Provider model request failed'),
+          );
+        } else if (loadingState.status === 'success') {
+          delete nextErrors[providerId];
+        }
+        if (loadingState.status !== 'loading') {
+          nextRefreshing.delete(providerId);
+          refreshingProviderEpochs.delete(providerId);
+        }
+        if (isAgentProvider) {
+          agentProviderLoading = loadingState.status === 'loading' && agentProviderModels === null;
+          agentProviderError =
+            loadingState.status === 'error'
+              ? formatProviderLoadError(providerId, new Error(loadingState.error ?? '')).displayText
+              : null;
+        }
+      }
+      allProviderLoading = nextLoading;
+      allProviderErrors = nextErrors;
+      allProvidersLoaded = Object.values(nextLoading).every((loading) => !loading);
+      refreshingProviders = nextRefreshing;
+    });
+  });
 
   $effect(() => {
     const epid = effectiveProviderId;
@@ -535,10 +576,11 @@
       return;
     }
 
-    void fetchAgentProviderModels(epid);
+    untrack(() => {
+      void fetchAgentProviderModels(epid);
+    });
   });
 
-  let fetchDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const providerIds = $modelFetchProviderIds$;
     clearTimeout(fetchDebounceTimer);
@@ -616,6 +658,7 @@
     const providerGeneration = advanceProviderFetchGeneration(providerId);
     refreshingProviderEpochs.set(providerId, cacheEpoch);
     refreshingProviders = new Set([...refreshingProviders, providerId]);
+    let sagaHandlesRefresh = false;
     const isStale = () =>
       providerFetchGenerations.get(providerId) !== providerGeneration ||
       selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch;
@@ -623,9 +666,18 @@
       // True force refresh: the daemon skips its cache and awaits a fresh
       // probe (PROTOCOL §6.7), so the spinner spins for the real probe
       // duration and the returned list replaces the group immediately.
-      const result = await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
+      const request = loadProviderModelsRequested(providerId, true);
+      request.promise.catch(() => {});
+      appStore.dispatch(request);
+      sagaHandlesRefresh =
+        $allProviderLoadingStates$[normalizeProviderId(providerId)]?.status === 'loading';
+      const result = sagaHandlesRefresh
+        ? await request.promise
+        : await getModelsForProviderForLoadingState(providerId, { forceRefresh: true });
       if (isStale()) return;
-      setProviderWarningState(providerId, result.warning, result.stale);
+      if (!sagaHandlesRefresh) {
+        setProviderWarningState(providerId, result.warning, result.stale);
+      }
       if (providerId === effectiveProviderId && usesAgentProviderFetch) {
         agentProviderModels = result.models;
       }
@@ -635,8 +687,9 @@
         ...allProviderModels,
         [providerId]: toDropdownOptions(result.models),
       };
-      // Write through to the session cache (group keys are normalized ids).
-      appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
+      if (!sagaHandlesRefresh) {
+        appStore.dispatch(providerModelsLoaded(providerId, result, cacheEpoch));
+      }
     } catch (err) {
       if (isStale()) return;
       const providerError = formatProviderLoadError(providerId, err);
@@ -644,7 +697,9 @@
         ...allProviderErrors,
         [providerId]: providerError,
       };
-      setProviderErrorState(providerId, providerError.displayText);
+      if (!sagaHandlesRefresh) {
+        setProviderErrorState(providerId, providerError.displayText);
+      }
       logger.warn('Failed to refresh models for provider', { providerId, error: err });
     } finally {
       refreshingProviderEpochs.delete(providerId);
@@ -713,7 +768,7 @@
       const model = pendingModelUpdate;
       pendingModelUpdate = null;
       logger.info('Applying deferred model update:', { model, agentId });
-      void applyBackendModelUpdate(model);
+      applyBackendModelUpdate(model);
     }
   });
 
@@ -735,6 +790,13 @@
         ),
       );
     const defaultNormalized = normalizeProviderId($defaultProviderId$);
+    if (
+      defaultNormalized &&
+      normalizeProviderId($availableModelsProviderId$) === defaultNormalized &&
+      matchesIn(defaultNormalized, $availableModels$)
+    ) {
+      return { providerId: defaultNormalized, modelId };
+    }
     if (defaultNormalized && matchesIn(defaultNormalized, allProviderModels[defaultNormalized])) {
       return { providerId: defaultNormalized, modelId };
     }
@@ -744,44 +806,38 @@
     return { providerId: $defaultProviderId$, modelId };
   }
 
-  async function applyBackendModelUpdate(model: string) {
-    if (agentId && workspaceId) {
-      try {
-        // Send the picked model's provider explicitly: the owning catalog
-        // group's provider (legacy compound prefix wins). Without it the
-        // daemon resolves a bare id against the session's current provider,
-        // rejecting cross-provider picks.
-        const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
-        const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
-        if (result.ok && result.data.success) {
-          logger.info('Updated agent model via IPC:', { agentId, model });
-          const targetOption = flatModelOptions.find(
-            (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(model),
-          );
-          const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
-          const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
-          await reconcileAgentReasoningEffort(
-            agentId,
-            workspaceId,
-            currentEffort,
-            supportedEfforts,
-          );
-        } else {
-          const errorMsg = result.ok ? result.data.error : result.error;
-          logger.warn('Failed to update agent model:', {
-            agentId,
-            model,
-            error: errorMsg,
-          });
-          if (errorMsg) {
-            notify.error(errorMsg, { duration: 6000 });
-          }
-        }
-      } catch (error) {
-        logger.error('Error updating agent model:', { agentId, model, error });
-      }
-    }
+  function applyBackendModelUpdate(model: string) {
+    if (!agentId || !workspaceId) return;
+    const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
+    const targetOption = flatModelOptions.find(
+      (option) => normalizeModelIdForMatch(option.value) === normalizeModelIdForMatch(model),
+    );
+    const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
+    appStore.dispatch(
+      setAgentModelRequested(
+        ++modelUpdateRequestId,
+        agentId,
+        workspaceId,
+        model,
+        pickedProviderId,
+        supportedEfforts,
+      ),
+    );
   }
+
+  const unsubscribeAgentModelUpdate = agentModelUpdate$.subscribe((operation) => {
+    if (operation.requestId === 0 || operation.requestId !== modelUpdateRequestId) return;
+    if (operation.status === 'success') {
+      logger.info('Updated agent model via IPC:', { agentId, model: operation.model });
+    } else if (operation.status === 'error') {
+      logger.warn('Failed to update agent model:', {
+        agentId,
+        model: operation.model,
+        error: operation.error,
+      });
+    }
+  });
+  onDestroy(unsubscribeAgentModelUpdate);
 
   async function handleModelSelect(model: string | undefined) {
     if (model !== undefined && !canUseProviderModels(resolvePickedTriple(model).providerId)) {
@@ -825,7 +881,7 @@
         pendingModelUpdate = model;
         logger.info('Model update deferred until streaming ends:', { model, agentId });
       } else {
-        await applyBackendModelUpdate(model);
+        applyBackendModelUpdate(model);
       }
     }
   }
@@ -1162,6 +1218,10 @@
   });
 
   const blockingLoadError = $derived.by<ProviderLoadError | null>(() => {
+    if (usesAgentProviderFetch && agentProviderModels === null && agentProviderError) {
+      return formatProviderLoadError(effectiveProviderId, agentProviderError);
+    }
+
     if (loadError) {
       return formatProviderLoadError(effectiveProviderId, loadError);
     }
@@ -1236,6 +1296,8 @@
         .map((group) => group.parentKey ?? group.key),
     ]),
   ]);
+  let activeBrowseProviderId = $state('');
+  const providerTabsEnabled = $derived(activeBrowseProviderId !== '');
   const preferredBrowseProviderId = $derived(
     providerTabIds.includes(selectedModelProviderId)
       ? selectedModelProviderId
@@ -1243,28 +1305,20 @@
         ? normalizeProviderId(effectiveProviderId)
         : (providerTabIds[0] ?? ''),
   );
-  let activeBrowseProviderId = $state('');
-  let providerBrowseChanged = $state(false);
-  const providerTabsEnabled = $derived(activeBrowseProviderId !== '');
 
   $effect(() => {
-    if (
-      !providerTabIds.includes(activeBrowseProviderId) ||
-      (dropdownOpen && !providerBrowseChanged)
-    ) {
+    if (!providerTabIds.includes(activeBrowseProviderId)) {
       activeBrowseProviderId = preferredBrowseProviderId;
     }
   });
 
   $effect(() => {
-    if (dropdownOpen) {
-      activeBrowseProviderId = untrack(() => preferredBrowseProviderId);
-    } else {
-      providerBrowseChanged = false;
+    if (dropdownOpen && providerTabsEnabled) {
+      activeBrowseProviderId = preferredBrowseProviderId;
     }
   });
 
-  // Display groups — every picker browses one provider at a time.
+  // Display groups — provider tabs replace the tall group stack in the chat picker.
   const displayGroups = $derived.by(() =>
     groupedModelOptions
       .filter((group) => {
@@ -1426,12 +1480,11 @@
   }
 
   function selectProviderTab(providerId: string) {
-    providerBrowseChanged = true;
     activeBrowseProviderId = providerId;
   }
 
   function handleProviderTabKeydown(event: KeyboardEvent, providerId: string) {
-    const currentIndex = railProviderIds.indexOf(providerId);
+    const currentIndex = providerTabIds.indexOf(providerId);
     if (currentIndex < 0) return;
 
     let nextIndex: number | undefined;
@@ -1441,7 +1494,7 @@
       nextIndex = (currentIndex - 1 + railProviderIds.length) % railProviderIds.length;
     }
     if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = railProviderIds.length - 1;
+    if (event.key === 'End') nextIndex = providerTabIds.length - 1;
     if (nextIndex === undefined) return;
 
     event.preventDefault();
@@ -1688,18 +1741,8 @@
       // response stale for local state as well as the cache write-through.
       const cacheEpoch = selectProviderModelsClearEpoch.select(appStore.state);
       try {
-        const models = await getModelsForProvider(currentProvider);
+        appStore.dispatch(loadProviderModelsRequested(currentProvider));
         if (selectProviderModelsClearEpoch.select(appStore.state) !== cacheEpoch) return;
-        if (models.length > 0) {
-          const normalizedId = normalizeProviderId(currentProvider);
-          allProviderModels = {
-            ...allProviderModels,
-            [normalizedId]: toDropdownOptions(models),
-          };
-          // Write through to the session cache like the other fetch paths.
-          appStore.dispatch(providerModelsLoaded(normalizedId, { models }, cacheEpoch));
-          return;
-        }
       } catch (err) {
         logger.warn('Retry fetch failed for provider', { provider: currentProvider, error: err });
       }
@@ -1759,8 +1802,6 @@
         return;
       }
     }
-    // Keyboard selection removes the focused search/listbox. Return to its
-    // trigger instead of leaving focus on body; pointer callers keep their policy.
     if (modalAware || !event) {
       queueMicrotask(() => {
         dropdownOpen = false;
@@ -1926,6 +1967,8 @@
     triggerClass={cn(
       'max-w-full px-2!',
       (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
+      (variant === 'outline' || variant === 'default') &&
+        'focus-visible:border-ring! focus-visible:ring-2 focus-visible:ring-ring/40',
       triggerClass,
     )}
     contentClass={cn(
@@ -1964,7 +2007,7 @@
               <IntentMarkLoader size={12} />
             </span>
           {:else if showModelWarning}
-            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
+            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-foreground shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
@@ -2008,7 +2051,6 @@
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
               aria-label={providerDisplayName(providerTabId)}
-              title={providerDisplayName(providerTabId)}
               tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
               class={cn(
                 'text-muted-foreground hover:bg-muted/40',
@@ -2081,7 +2123,10 @@
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
           <div class="flex items-start gap-2" role="alert">
-            <Fa icon={faTriangleExclamation} class="h-3.5 w-3.5 text-warning-ink mt-0.5 shrink-0" />
+            <Fa
+              icon={faTriangleExclamation}
+              class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0"
+            />
             <div class="min-w-0">
               <div class="text-xs font-medium text-foreground leading-tight">
                 {warningMessage.title}

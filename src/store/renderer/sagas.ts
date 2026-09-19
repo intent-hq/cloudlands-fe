@@ -31,12 +31,14 @@ import { chatScrollbackSaga } from './slices/chat-state/sagas/chat-scrollback-sa
 import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
+import { commentsWriteSaga } from './slices/comments/sagas/comments-write-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
 import { externalEditorsPersistenceSaga } from './slices/external-editors/sagas/external-editors-persistence-saga';
 import { fileExplorerSaga } from './slices/file-explorer/sagas/file-explorer-saga';
+import { featureCodesSaga } from './slices/feature-codes/sagas/feature-codes-saga';
 import { fileContentPruneSaga } from './slices/file-prune/sagas/file-content-prune-saga';
 import { filesReadSaga } from './slices/files/sagas/files-read-saga';
 import { filesWriteSaga } from './slices/files/sagas/files-write-saga';
@@ -52,7 +54,9 @@ import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-p
 import { promptPickerSaga } from './slices/hardware-console/sagas/prompt-picker-saga';
 import { voiceTranscriptionSaga } from './slices/hardware-console/sagas/voice-transcription-saga';
 import { hostRequirementsSaga } from './slices/host-requirements/sagas/host-requirements-saga';
+import { hudSaga } from './slices/hud/sagas/hud-saga';
 import { legacyImportSaga } from './slices/legacy-import/sagas/legacy-import-saga';
+import { issueSuggestionsSaga } from './slices/issue-suggestions/sagas/issue-suggestions-saga';
 import { linearAuthSaga } from './slices/linear-auth/sagas/linear-auth-saga';
 import { mcpSettingsSaga } from './slices/mcp-settings/sagas/mcp-settings-saga';
 import { modelBootSaga } from './slices/model/sagas/model-boot-saga';
@@ -75,8 +79,10 @@ import { releaseNotesSaga } from './slices/release-notes/sagas/release-notes-sag
 import { sentryAuthSaga } from './slices/sentry-auth/sagas/sentry-auth-saga';
 import { scriptsOperationSaga } from './slices/scripts/sagas/scripts-operation-saga';
 import { settingsHydrationSaga } from './slices/settings-events/sagas/settings-hydration-saga';
+import { settingsOperationsSaga } from './slices/settings-events/sagas/settings-operations-saga';
 import { settingsProposalHistorySaga } from './slices/settings-proposal-history/sagas/settings-proposal-history-saga';
 import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
+import { setupScriptsSaga } from './slices/setup-scripts/sagas/setup-scripts-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
 import { specialistProposalHistorySaga } from './slices/specialist-proposal-history/sagas/specialist-proposal-history-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
@@ -90,6 +96,7 @@ import { taskAgentAssociationsSaga } from './slices/task-agent-associations/saga
 import { terminalCommandsSaga } from './slices/terminals/sagas/terminal-commands-saga';
 import { terminalCreationSaga } from './slices/terminals/sagas/terminal-creation-saga';
 import { terminalPersistenceSaga } from './slices/terminals/sagas/terminal-persistence-saga';
+import { terminalOperationSaga } from './slices/terminals/sagas/terminal-operation-saga';
 import { themeSaga } from './slices/theme/sagas/theme-saga';
 import { uiLayoutPersistenceSaga } from './slices/ui-layout/sagas/ui-layout-persistence-saga';
 import { unreadTrackingSaga } from './slices/unread-tracking/sagas/unread-tracking-saga';
@@ -133,6 +140,7 @@ export const sagas = [
   daemonHealthSaga,
   connectionsSaga,
   settingsHydrationSaga,
+  settingsOperationsSaga,
   activeStreamsSaga,
   agentReadSaga,
   agentSubscriptionReadSaga,
@@ -141,6 +149,7 @@ export const sagas = [
   chatSendSaga,
   chatScrollbackSaga,
   switchTimingSaga,
+  commentsWriteSaga,
   permissionResponseSaga,
   agentStreamSaga,
   agentCreationSaga,
@@ -152,6 +161,7 @@ export const sagas = [
   gitReadSaga,
   acceptChangesStatusSaga,
   fileExplorerSaga,
+  featureCodesSaga,
   filesReadSaga,
   filesWriteSaga,
   workspaceNotesSaga,
@@ -177,7 +187,9 @@ export const sagas = [
   modelReloadSaga,
   providerAvailabilitySaga,
   setupPromptSaga,
+  setupScriptsSaga,
   hostRequirementsSaga,
+  hudSaga,
   backgroundHooksSaga,
   hardwareConsoleSaga,
   voiceSettingsSaga,
@@ -192,6 +204,7 @@ export const sagas = [
   githubRepoSearchSaga,
   sentryAuthSaga,
   linearAuthSaga,
+  issueSuggestionsSaga,
   mcpSettingsSaga,
   directoryPickerSaga,
   legacyImportSaga,
@@ -213,6 +226,7 @@ export const sagas = [
   terminalCreationSaga,
   terminalPersistenceSaga,
   terminalCommandsSaga,
+  terminalOperationSaga,
   externalEditorsPersistenceSaga,
   workspaceSettingsSaga,
   updateChannelSaga,

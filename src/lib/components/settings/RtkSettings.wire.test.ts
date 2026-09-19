@@ -1,21 +1,12 @@
-/**
- * @vitest-environment jsdom
- *
- * Wire contract test for RtkSettings — asserts PROTOCOL §5.12 request shapes at the
- * transport boundary (backendRequest). Mocks backendRequest, not the appClient facade,
- * and uses the real LiveSettingsClient to verify the exact wire payloads.
- */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { runSaga, stdChannel } from 'redux-saga';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock backend transport (the wire seam)
-const mocks = vi.hoisted(() => ({
-  mockBackendRequest: vi.fn(),
-  mockInvoke: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ backendRequest: vi.fn(), invoke: vi.fn() }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
-  backendRequest: mocks.mockBackendRequest,
+  backendRequest: mocks.backendRequest,
+  backendSubscribe: vi.fn(),
+  backendUnsubscribe: vi.fn(),
   onBackendNotification: vi.fn(() => () => {}),
   onBackendReconnected: vi.fn(() => () => {}),
   BackendError: class BackendError extends Error {
@@ -26,62 +17,39 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     code: string;
   },
 }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
+vi.mock('$lib/client', async () => {
+  const { LiveSettingsClient } = await import('$lib/client/live/live-settings-client');
+  const { LiveTerminalsClient } = await import('$lib/client/live/live-terminals-client');
+  return {
+    appClient: { settings: new LiveSettingsClient(), terminals: new LiveTerminalsClient() },
+  };
+});
 
-vi.mock('$shared/generated/ipc-client', () => ({
-  invoke: mocks.mockInvoke,
-}));
+import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
+import {
+  initializeRtkSettings,
+  installRtkRequested,
+  rtkSettingLoaded,
+  rtkUpdateSucceeded,
+  updateRtkEnabledRequested,
+} from '$store/renderer/slices/host-requirements/host-requirements-slice';
+import { hostRequirementsSaga } from '$store/renderer/slices/host-requirements/sagas/host-requirements-saga';
 
-// Mock store
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    dispatch: vi.fn(),
-    createSelector: vi.fn((fn) => fn),
-    state: {},
-  },
-}));
+const settle = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+};
 
-import RtkSettings from './RtkSettings.svelte';
-import { __resetSettingsReadCacheForTests } from '$lib/client/live/live-settings-client';
+describe('RtkSettings mock-BE contract', () => {
+  beforeEach(() => vi.clearAllMocks());
 
-describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    __resetSettingsReadCacheForTests();
-    cleanup();
-  });
-
-  it('issues settings.get with PROTOCOL-shaped { path: "rtk.enabled" } on mount', async () => {
-    mocks.mockBackendRequest.mockImplementation(async (method: string, params: unknown) => {
+  it('sends exact settings and terminal requests and handles protocol responses', async () => {
+    mocks.invoke.mockResolvedValue({ success: true, data: { available: true } });
+    mocks.backendRequest.mockImplementation(async (method: string) => {
       if (method === 'settings.get') {
-        // Assert PROTOCOL §5.12 settings.get shape: { path: string }
-        expect(params).toEqual({ path: 'rtk.enabled' });
-        // Return complete PROTOCOL §5.12 settings.get response
-        return {
-          path: 'rtk.enabled',
-          value: true,
-          definition: { path: 'rtk.enabled', type: 'boolean', scope: 'user' },
-        };
-      }
-      throw new Error(`Unexpected method: ${method}`);
-    });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
-
-    render(RtkSettings);
-
-    await waitFor(() => {
-      expect(mocks.mockBackendRequest).toHaveBeenCalledWith('settings.get', {
-        path: 'rtk.enabled',
-      });
-    });
-  });
-
-  it('issues settings.update with PROTOCOL-shaped { changes: [...] } when toggle changes', async () => {
-    mocks.mockBackendRequest.mockImplementation(async (method: string, params: unknown) => {
-      if (method === 'settings.get') {
-        // Return complete PROTOCOL §5.12 settings.get response
         return {
           path: 'rtk.enabled',
           value: false,
@@ -89,32 +57,41 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
         };
       }
       if (method === 'settings.update') {
-        // Assert PROTOCOL §5.12 settings.update shape: { changes: [ { path, value }, ... ] }
-        expect(params).toEqual({
-          changes: [{ path: 'rtk.enabled', value: true }],
-        });
-        // Return complete PROTOCOL §5.12 settings.update response
-        return { applied: [{ path: 'rtk.enabled', value: true }] };
+        return { applied: [{ path: 'rtk.enabled', value: true }], revision: 2 };
       }
+      if (method === 'terminal.create') return { terminalId: 'term-rtk' };
       throw new Error(`Unexpected method: ${method}`);
     });
-    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
+    const channel = stdChannel();
+    const dispatched: unknown[] = [];
+    const task = runSaga(
+      { channel, dispatch: (action) => dispatched.push(action) },
+      hostRequirementsSaga,
+    );
 
-    render(RtkSettings);
+    channel.put(initializeRtkSettings());
+    await settle();
+    channel.put(updateRtkEnabledRequested(true));
+    await settle();
+    channel.put(installRtkRequested());
+    await settle();
 
-    await waitFor(() => screen.getByRole('switch'));
-    const toggle = screen.getByRole('switch');
-
-    await fireEvent.click(toggle);
-
-    await waitFor(() => {
-      const updateCall = vi
-        .mocked(mocks.mockBackendRequest)
-        .mock.calls.find((call) => call[0] === 'settings.update');
-      expect(updateCall).toBeDefined();
-      expect(updateCall![1]).toEqual({
-        changes: [{ path: 'rtk.enabled', value: true }],
-      });
-    });
+    expect(mocks.backendRequest.mock.calls).toEqual([
+      ['settings.get', { path: 'rtk.enabled' }],
+      ['settings.update', { changes: [{ path: 'rtk.enabled', value: true }] }],
+      [
+        'terminal.create',
+        {
+          workspaceId: ROOT_WORKSPACE_ID,
+          cols: 80,
+          rows: 24,
+          command: 'brew install rtk',
+        },
+      ],
+    ]);
+    expect(dispatched).toContainEqual(rtkSettingLoaded(false));
+    expect(dispatched).toContainEqual(rtkUpdateSucceeded(true));
+    task.cancel();
+    await task.toPromise();
   });
 });

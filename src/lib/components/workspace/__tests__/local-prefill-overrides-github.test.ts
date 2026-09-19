@@ -33,17 +33,29 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
+  return createAppStoreMockModule({
+    state: () => ({}),
+    dispatch: mocks.dispatch,
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
+  });
 });
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.readable(() => true),
-  selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.formState),
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.readable(() => true),
+    selectCompactWorkspaceInitializerFormState: () => mocks.readable(() => mocks.formState),
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.readable(() => null),
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+  }),
+);
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable(() => []),
@@ -209,6 +221,28 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 describe('local repoPath prefill overrides a restored github selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      (action: {
+        type?: string;
+        success?: (value: unknown) => unknown;
+        failure?: (error: Error) => unknown;
+      }) => {
+        if (action.type === 'workspaceInitializer/readPrefillRequested') {
+          return {
+            promise: Promise.resolve().then(() => {
+              const raw = sessionStorage.getItem(PREFILL_KEY);
+              sessionStorage.removeItem(PREFILL_KEY);
+              return raw ? JSON.parse(raw) : null;
+            }),
+          };
+        } else if (action.type === 'workspaceInitializer/readGitAvailabilityRequested') {
+          return { promise: Promise.resolve({ available: true, version: '2.44.0' }) };
+        } else if (action.type === 'workspaceInitializer/restoreNewWorkspaceDraftRequested') {
+          return { promise: Promise.resolve({ status: 'empty' }) };
+        }
+        return action;
+      },
+    );
     sessionStorage.clear();
     mocks.formState = githubFormState();
   });

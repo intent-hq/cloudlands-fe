@@ -2,7 +2,9 @@ import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { appClient } from '$lib/client';
+import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
 import { gitClient } from '$features/git/git.client';
+import * as diffIpcBatcher from '$features/file-tracking/components/diff/diff-ipc-batcher';
 import type { CommitInfo, GitStatus } from '$shared/types';
 import { refreshRequested } from '../../changes/changes-slice';
 import {
@@ -11,9 +13,26 @@ import {
 } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   loadGitStatus,
+  loadGitBranches,
+  readGitStatusRequested,
+  loadCommitDetails,
+  loadGitDiffs,
+  loadGitEnrichment,
   loadSecondaryRootCommitFiles,
   loadSecondaryRootGit,
+  executeAcceptChangesRequested,
+  stageGitHunkRequested,
+  readCommitDetailsRequested,
+  readGitBranchesRequested,
+  readGitBranchStatusRequested,
+  readGitDiffsRequested,
+  setCommitDetails,
+  setGitBranches,
+  setGitBranchStatus,
+  setGitDiffs,
+  setGitEnrichment,
   setGitStatus,
+  setGitStatusReadResult,
   setSecondaryRootGit,
   setSecondaryRootGitError,
   setSecondaryRootCommitFiles,
@@ -25,6 +44,16 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('gitReadSaga', () => {
   beforeEach(() => {
     vi.spyOn(appClient.git, 'diffs').mockResolvedValue([]);
@@ -32,6 +61,212 @@ describe('gitReadSaga', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('publishes only the latest reverse-ordered Git-status result', async () => {
+    const stale = deferred<GitStatus>();
+    const fresh = deferred<GitStatus>();
+    vi.spyOn(appClient.git, 'status')
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(fresh.promise);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const first = readGitStatusRequested('ws-1', true, 'request-1');
+    const second = readGitStatusRequested('ws-1', true, 'request-2');
+    const staleStatus: GitStatus = {
+      branch: 'stale',
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [{ path: 'stale.swift', status: 'M', staged: false }],
+      hasUncommittedChanges: true,
+      hasUntrackedFiles: false,
+    };
+    const freshStatus: GitStatus = {
+      ...staleStatus,
+      branch: 'fresh',
+      files: [{ path: 'fresh.swift', status: 'M', staged: false }],
+    };
+
+    channel.put(first);
+    await vi.waitFor(() => expect(appClient.git.status).toHaveBeenCalledTimes(1));
+    channel.put(second);
+    await vi.waitFor(() => expect(appClient.git.status).toHaveBeenCalledTimes(2));
+
+    fresh.resolve(freshStatus);
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(setGitStatusReadResult('ws-1', 'request-2', freshStatus)),
+    );
+    stale.resolve(staleStatus);
+    await settle();
+
+    expect(appClient.git.status).toHaveBeenNthCalledWith(1, 'ws-1', { forceRefresh: true });
+    expect(appClient.git.status).toHaveBeenNthCalledWith(2, 'ws-1', { forceRefresh: true });
+    expect(actions).not.toContainEqual(setGitStatusReadResult('ws-1', 'request-1', staleStatus));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('resolves a correlated enrichment request through the exact Git adapter calls', async () => {
+    const localDiff = { file: 'src/local.ts', chunks: [], oldContent: 'old', newContent: 'new' };
+    const branchDiff = {
+      file: 'src/branch.ts',
+      chunks: [],
+      oldContent: 'base',
+      newContent: 'head',
+    };
+    const numstat = [{ filePath: 'src/local.ts', additions: 2, deletions: 1 }];
+    const showFile = { success: true, data: 'committed content' };
+    const diff = vi.spyOn(diffIpcBatcher, 'batchedGitDiff').mockResolvedValue(localDiff);
+    const branch = vi
+      .spyOn(diffIpcBatcher, 'batchedGitBranchBaseDiff')
+      .mockResolvedValue(branchDiff);
+    const stats = vi.spyOn(diffIpcBatcher, 'dedupedGitNumstat').mockResolvedValue(numstat);
+    const show = vi.spyOn(diffIpcBatcher, 'dedupedShowFile').mockResolvedValue(showFile);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const request = {
+      diffs: [
+        {
+          key: 'local',
+          path: 'src/local.ts',
+          staged: true,
+          gitlink: { oldSha: 'old-sha', newSha: 'new-sha' },
+          gitRootId: 'root-1',
+          gitRootPath: '/repo/root',
+        },
+      ],
+      branchDiffs: [
+        {
+          key: 'branch',
+          path: 'src/branch.ts',
+          baseRef: 'main',
+          baseCommitSha: 'abc123',
+        },
+      ],
+      numstats: [
+        {
+          key: 'stats',
+          staged: false,
+          baseRef: 'main',
+          baseCommitSha: 'abc123',
+          targetRef: 'HEAD',
+        },
+      ],
+      showFiles: [{ key: 'show', path: 'src/committed.ts', ref: 'def456', gitRootId: 'root-1' }],
+    };
+
+    channel.put(loadGitEnrichment('ws-1', 'panel', 'request-1', request));
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(
+        setGitEnrichment('ws-1', 'panel', 'request-1', {
+          diffs: { local: localDiff },
+          branchDiffs: { branch: branchDiff },
+          numstats: { stats: numstat },
+          showFiles: { show: showFile },
+        }),
+      ),
+    );
+    expect(diff).toHaveBeenCalledWith('ws-1', true, 'src/local.ts', {
+      gitlink: { oldSha: 'old-sha', newSha: 'new-sha' },
+      gitRootId: 'root-1',
+      gitRootPath: '/repo/root',
+    });
+    expect(branch).toHaveBeenCalledWith(
+      'ws-1',
+      { baseRef: 'main', baseCommitSha: 'abc123' },
+      'src/branch.ts',
+    );
+    expect(stats).toHaveBeenCalledWith('ws-1', {
+      staged: false,
+      baseRef: 'main',
+      baseCommitSha: 'abc123',
+      targetRef: 'HEAD',
+    });
+    expect(show).toHaveBeenCalledWith('ws-1', 'def456', 'src/committed.ts', {
+      gitRootId: 'root-1',
+    });
+
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('does not publish an enrichment result after its workspace unmounts', async () => {
+    let resolveDiff!: (value: { file: string; chunks: [] }) => void;
+    const diff = vi.spyOn(diffIpcBatcher, 'batchedGitDiff').mockReturnValue(
+      new Promise((resolve) => {
+        resolveDiff = resolve;
+      }),
+    );
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(
+      loadGitEnrichment('ws-1', 'panel', 'request-1', {
+        diffs: [{ key: 'local', path: 'src/local.ts', staged: false }],
+        branchDiffs: [],
+        numstats: [],
+        showFiles: [],
+      }),
+    );
+    await vi.waitFor(() => expect(diff).toHaveBeenCalledOnce());
+    channel.put(workspaceUnmounted('ws-1'));
+    await settle();
+    resolveDiff({ file: 'src/local.ts', chunks: [] });
+    await settle();
+
+    expect(actions).not.toContainEqual(expect.objectContaining({ type: setGitEnrichment.type }));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('refreshes selector-backed Git reads after an exact successful hunk mutation', async () => {
+    const stage = vi.spyOn(gitClient, 'stageHunk').mockResolvedValue({ ok: true, data: undefined });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const request = stageGitHunkRequested('ws-1', 'src/x.ts', 'patch-@@');
+
+    channel.put(request);
+    await vi.waitFor(() => expect(actions).toContainEqual(request.success({ success: true })));
+
+    expect(stage).toHaveBeenCalledWith('ws-1', 'src/x.ts', 'patch-@@');
+    expect(actions).toEqual([
+      { type: 'git/loadStatus', payload: ['ws-1', true] },
+      { type: 'changes/refreshRequested', payload: ['ws-1', true] },
+      request.success({ success: true }),
+    ]);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('executes accept-changes mutations with the exact workspace and options', async () => {
+    const execute = vi.spyOn(AcceptChangesClient, 'execute').mockResolvedValue({
+      success: true,
+      steps: [],
+    });
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+    const request = executeAcceptChangesRequested('ws-1', 'push', {
+      targetBranch: 'feature',
+      upToCommitHash: 'abc123',
+    });
+
+    channel.put(request);
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(request.success({ success: true, steps: [] })),
+    );
+    expect(execute).toHaveBeenCalledWith('ws-1', 'push', {
+      targetBranch: 'feature',
+      upToCommitHash: 'abc123',
+    });
+
+    task.cancel();
+    await task.toPromise();
   });
 
   it('does not paginate history when the registration boundary is unknown', async () => {
@@ -294,6 +529,217 @@ describe('gitReadSaga', () => {
     await task.toPromise();
   });
 
+  it('reads branches and branch status with exact path-based wire parameters', async () => {
+    const branches = {
+      branches: ['feature', 'main'],
+      remoteBranches: ['origin/release'],
+      currentBranch: 'feature',
+      defaultBranch: 'main',
+    };
+    const branchStatus = {
+      branch: 'feature',
+      currentBranch: 'feature',
+      isCurrentBranch: true,
+      ahead: 2,
+      behind: 1,
+      hasUncommittedChanges: true,
+    };
+    vi.spyOn(appClient.git, 'getBranches').mockResolvedValue(branches);
+    vi.spyOn(appClient.git, 'branchStatus').mockResolvedValue(branchStatus);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(readGitBranchesRequested('/repo', true));
+    channel.put(readGitBranchStatusRequested('/repo', 'feature'));
+
+    await vi.waitFor(() => {
+      expect(actions).toContainEqual(setGitBranches('/repo', branches));
+      expect(actions).toContainEqual(setGitBranchStatus('/repo', 'feature', branchStatus));
+    });
+    expect(appClient.git.getBranches).toHaveBeenCalledWith('/repo', true);
+    expect(appClient.git.branchStatus).toHaveBeenCalledWith('/repo', 'feature');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('debounces branch loads and suppresses a superseded same-repository result', async () => {
+    vi.useFakeTimers();
+    const stale = deferred<{
+      branches: string[];
+      remoteBranches: string[];
+      currentBranch: string;
+      defaultBranch: string;
+    }>();
+    const fresh = {
+      branches: ['fresh'],
+      remoteBranches: [],
+      currentBranch: 'fresh',
+      defaultBranch: 'fresh',
+    };
+    const getBranches = vi
+      .spyOn(appClient.git, 'getBranches')
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce(fresh);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    try {
+      channel.put(loadGitBranches('/race-repo', true));
+      await settle();
+      await vi.advanceTimersByTimeAsync(149);
+      expect(getBranches).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(getBranches).toHaveBeenCalledTimes(1);
+
+      channel.put(loadGitBranches('/race-repo', true, true));
+      await settle();
+      await vi.advanceTimersByTimeAsync(150);
+      await settle();
+      expect(getBranches).toHaveBeenCalledTimes(2);
+
+      stale.resolve({
+        branches: ['stale'],
+        remoteBranches: [],
+        currentBranch: 'stale',
+        defaultBranch: 'stale',
+      });
+      await settle();
+
+      expect(actions).toContainEqual(setGitBranches('/race-repo', fresh));
+      expect(actions).not.toContainEqual(
+        setGitBranches('/race-repo', {
+          branches: ['stale'],
+          remoteBranches: [],
+          currentBranch: 'stale',
+          defaultBranch: 'stale',
+        }),
+      );
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      vi.useRealTimers();
+    }
+  });
+
+  it('reuses the branch cache until a force refresh invalidates it', async () => {
+    vi.useFakeTimers();
+    const cached = {
+      branches: ['cached'],
+      remoteBranches: [],
+      currentBranch: 'cached',
+      defaultBranch: 'cached',
+    };
+    const refreshed = { ...cached, branches: ['refreshed'], currentBranch: 'refreshed' };
+    const getBranches = vi
+      .spyOn(appClient.git, 'getBranches')
+      .mockResolvedValueOnce(cached)
+      .mockResolvedValueOnce(refreshed);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    try {
+      channel.put(loadGitBranches('/cache-repo', true, false, true));
+      await settle();
+      await vi.advanceTimersByTimeAsync(150);
+      await settle();
+      channel.put(loadGitBranches('/cache-repo', true, false, true));
+      await settle();
+      await vi.advanceTimersByTimeAsync(150);
+      await settle();
+      expect(getBranches).toHaveBeenCalledTimes(1);
+
+      channel.put(loadGitBranches('/cache-repo', true, true, true));
+      await settle();
+      await vi.advanceTimersByTimeAsync(150);
+      await settle();
+      expect(getBranches).toHaveBeenCalledTimes(2);
+      expect(actions).toContainEqual(setGitBranches('/cache-repo', refreshed));
+    } finally {
+      task.cancel();
+      await task.toPromise();
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads commit details and diffs with exact secondary-root wire parameters', async () => {
+    const wireDetails = {
+      commitHash: 'abc123',
+      author: 'Agent',
+      authorEmail: 'agent@example.com',
+      date: '2026-09-08T00:00:00.000Z',
+      message: 'Scoped change',
+      files: ['src/a.ts'],
+      fileDetails: [{ path: 'src/a.ts', additions: 2, deletions: 1 }],
+    };
+    const diffs = [
+      {
+        file: 'src/a.ts',
+        content: '',
+        chunks: [
+          {
+            oldStart: 1,
+            oldLines: 1,
+            newStart: 1,
+            newLines: 1,
+            lines: [{ type: 'Addition' as const, content: 'added' }],
+          },
+        ],
+      },
+    ];
+    vi.spyOn(appClient.git, 'commitDetails').mockResolvedValue(wireDetails);
+    vi.mocked(appClient.git.diffs).mockResolvedValue(diffs);
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(readCommitDetailsRequested('ws-1', 'abc123', 'root-1'));
+    channel.put(
+      readGitDiffsRequested('ws-1', {
+        path: 'src/a.ts',
+        staged: true,
+        commitHash: 'abc123',
+        gitRootId: 'root-1',
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(actions).toContainEqual(
+        setCommitDetails(
+          'ws-1',
+          'abc123',
+          { ...wireDetails, files: wireDetails.fileDetails },
+          'root-1',
+        ),
+      );
+      expect(actions).toContainEqual(
+        setGitDiffs(
+          'ws-1',
+          {
+            path: 'src/a.ts',
+            staged: true,
+            commitHash: 'abc123',
+            gitRootId: 'root-1',
+          },
+          diffs,
+        ),
+      );
+    });
+    expect(appClient.git.commitDetails).toHaveBeenCalledWith('ws-1', 'abc123', {
+      gitRootId: 'root-1',
+    });
+    expect(appClient.git.diffs).toHaveBeenCalledWith('ws-1', {
+      path: 'src/a.ts',
+      staged: true,
+      commitHash: 'abc123',
+      gitRootId: 'root-1',
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('keeps a null commit-detail read recoverable and accepts a later retry', async () => {
     vi.spyOn(appClient.git, 'commitDetails')
       .mockResolvedValueOnce(null)
@@ -468,7 +914,7 @@ describe('gitReadSaga', () => {
 
     expect(appClient.git.status).toHaveBeenCalledTimes(2);
     expect(appClient.git.status).toHaveBeenNthCalledWith(1, 'ws-1');
-    expect(appClient.git.status).toHaveBeenNthCalledWith(2, 'ws-1');
+    expect(appClient.git.status).toHaveBeenNthCalledWith(2, 'ws-1', { forceRefresh: true });
     expect(actions).toHaveLength(2);
     task.cancel();
     await task.toPromise();
@@ -545,6 +991,51 @@ describe('gitReadSaga', () => {
     expect(appClient.git.status).toHaveBeenCalledTimes(2);
     expect(actions).toHaveLength(1);
     expect((actions[0] as { payload: { wsId: string } }).payload.wsId).toBe('ws-2');
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('cancels every keyed commit and diff read for an unmounted workspace only', async () => {
+    const commitResolvers = new Map<string, (value: any) => void>();
+    const diffResolvers = new Map<string, (value: any[]) => void>();
+    vi.spyOn(appClient.git, 'commitDetails').mockImplementation(
+      (workspaceId, hash) =>
+        new Promise((resolve) => commitResolvers.set(`${workspaceId}:${hash}`, resolve)),
+    );
+    vi.mocked(appClient.git.diffs).mockImplementation(
+      (workspaceId, options) =>
+        new Promise((resolve) => diffResolvers.set(`${workspaceId}:${options?.path}`, resolve)),
+    );
+    const channel = stdChannel();
+    const actions: unknown[] = [];
+    const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
+
+    channel.put(loadCommitDetails('ws-1', 'a'));
+    channel.put(loadCommitDetails('ws-1', 'b'));
+    channel.put(loadGitDiffs('ws-1', { path: 'a.ts' }));
+    channel.put(loadGitDiffs('ws-1', { path: 'b.ts' }));
+    channel.put(loadCommitDetails('ws-2', 'c'));
+    channel.put(loadGitDiffs('ws-2', { path: 'c.ts' }));
+    await settle();
+    channel.put(workspaceUnmounted('ws-1'));
+    await settle();
+
+    commitResolvers.get('ws-1:a')?.({ files: ['a.ts'], fileDetails: [] });
+    commitResolvers.get('ws-1:b')?.({ files: ['b.ts'], fileDetails: [] });
+    diffResolvers.get('ws-1:a.ts')?.([]);
+    diffResolvers.get('ws-1:b.ts')?.([]);
+    commitResolvers.get('ws-2:c')?.({ files: ['c.ts'], fileDetails: [] });
+    diffResolvers.get('ws-2:c.ts')?.([]);
+    await settle();
+
+    expect(
+      actions.filter((action) =>
+        [setCommitDetails.type, setGitDiffs.type].includes((action as { type: string }).type),
+      ),
+    ).toEqual([
+      expect.objectContaining({ type: setCommitDetails.type }),
+      expect.objectContaining({ type: setGitDiffs.type }),
+    ]);
     task.cancel();
     await task.toPromise();
   });

@@ -19,6 +19,7 @@ import {
   setAvailableModels,
   setLoadingStateForProvider,
   setSelectedModel,
+  setAgentModelRequested,
 } from './model-slice';
 import { selectAllProviderStaleFlags, selectAllProviderWarnings } from './model-selectors';
 
@@ -44,6 +45,29 @@ const mockModels: AuggieModel[] = [
 describe('modelReducer', () => {
   it('returns the initial state', () => {
     expect(modelReducer(undefined, { type: '@@INIT' })).toEqual(bareInitialState);
+  });
+
+  it('tracks correlated agent model updates and ignores stale completion', () => {
+    const first = setAgentModelRequested(1, 'agent-1', 'ws-1', 'model-a');
+    const second = setAgentModelRequested(2, 'agent-1', 'ws-1', 'model-b');
+    first.promise.catch(() => {});
+    second.promise.catch(() => {});
+    let state = modelReducer(bareInitialState, first);
+    state = modelReducer(state, second);
+    state = modelReducer(state, first.failure(new Error('stale')));
+    expect(state.agentModelUpdates['agent-1']).toEqual({
+      status: 'loading',
+      requestId: 2,
+      model: 'model-b',
+      error: null,
+    });
+    state = modelReducer(state, second.success(undefined));
+    expect(state.agentModelUpdates['agent-1']).toEqual({
+      status: 'success',
+      requestId: 2,
+      model: 'model-b',
+      error: null,
+    });
   });
 
   it('stores and clears the default reasoning effort', () => {

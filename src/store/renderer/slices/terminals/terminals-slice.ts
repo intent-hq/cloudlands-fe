@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
@@ -80,6 +80,20 @@ export interface WorkspaceTerminalState {
   placements: Record<string, TerminalPlacement>;
 }
 
+export type OverlayTerminalCreateOperation = {
+  version: number;
+  status: 'idle' | 'loading' | 'success' | 'error';
+  terminalId: string | null;
+  error: string | null;
+};
+
+export const emptyOverlayTerminalCreateOperation: OverlayTerminalCreateOperation = {
+  version: 0,
+  status: 'idle',
+  terminalId: null,
+  error: null,
+};
+
 /** Persisted subset of workspace state (terminals are loaded from terminalManager) */
 export interface PersistedWorkspaceState {
   isOpen: boolean;
@@ -108,6 +122,7 @@ export type TerminalOverlayState = {
    */
   workspacePlacements: Record<string, Record<string, TerminalPlacement>>;
   workspaces: Record<string, WorkspaceTerminalState>;
+  overlayCreateOperations: Record<string, OverlayTerminalCreateOperation>;
 };
 
 // ============================================================================
@@ -131,6 +146,7 @@ const initialState: TerminalOverlayState = {
   workspaceHeights: {},
   workspacePlacements: {},
   workspaces: {},
+  overlayCreateOperations: {},
 };
 
 // ============================================================================
@@ -222,6 +238,19 @@ export const hydratePlacements = createAction<
 export const createTerminalRequested = createAction<[wsId: string]>(
   'terminals/createTerminalRequested',
 );
+export const createTerminalFromOverlayRequested = createAction<[wsId: string]>(
+  'terminals/createTerminalFromOverlayRequested',
+);
+export const createTerminalFromOverlaySucceeded = createAction<[wsId: string, terminalId: string]>(
+  'terminals/createTerminalFromOverlaySucceeded',
+);
+export const createTerminalFromOverlayFailed = createAction<[wsId: string, error: string]>(
+  'terminals/createTerminalFromOverlayFailed',
+);
+export const createTerminalWithCommandRequested = createAsyncAction<
+  [wsId: string, command: string, cwd: string, title: string],
+  string
+>('terminals/createWithCommand', 'terminals/createWithCommandRequested');
 
 export const createPanelTerminalRequested = createAction<[wsId: string, panelId?: string]>(
   'terminals/createPanelTerminalRequested',
@@ -330,6 +359,46 @@ function consumeHydratedPlacements(
 // ============================================================================
 
 export const terminalsReducer = createReducer<TerminalOverlayState>(initialState);
+terminalsReducer.with(createTerminalFromOverlayRequested, (state, { payload: [wsId] }) => {
+  const previous = state.overlayCreateOperations[wsId];
+  return {
+    ...state,
+    overlayCreateOperations: {
+      ...state.overlayCreateOperations,
+      [wsId]: {
+        version: (previous?.version ?? 0) + 1,
+        status: 'loading',
+        terminalId: null,
+        error: null,
+      },
+    },
+  };
+});
+terminalsReducer.with(
+  createTerminalFromOverlaySucceeded,
+  (state, { payload: [wsId, terminalId] }) => {
+    const previous = state.overlayCreateOperations[wsId];
+    if (!previous) return state;
+    return {
+      ...state,
+      overlayCreateOperations: {
+        ...state.overlayCreateOperations,
+        [wsId]: { ...previous, status: 'success', terminalId },
+      },
+    };
+  },
+);
+terminalsReducer.with(createTerminalFromOverlayFailed, (state, { payload: [wsId, error] }) => {
+  const previous = state.overlayCreateOperations[wsId];
+  if (!previous) return state;
+  return {
+    ...state,
+    overlayCreateOperations: {
+      ...state.overlayCreateOperations,
+      [wsId]: { ...previous, status: 'error', error },
+    },
+  };
+});
 terminalsReducer.with(openTerminalOverlay, (state, { payload: [wsId, termId] }) => {
   const ws = getWs(state, wsId);
   const newWs = { ...ws };

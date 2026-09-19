@@ -1,28 +1,30 @@
 <script lang="ts">
-  import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
   /**
    * BranchDisplay - Branch display/edit with trunk branch picker
    * Shows working branch (editable) and trunk branch (selectable).
    */
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import {
+    selectWorkspaceById,
+    selectWorkspaceMutation,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    renameWorkspaceBranchRequested,
+    updateWorkspaceRequested,
+  } from '$store/renderer/slices/workspace/workspace-slice';
 
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { notify } from '$lib/components/patterns/notify';
+  import { toast } from '$lib/components/ui/toast';
   import { m } from '$shared/paraglide/messages.js';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { getBranchNameValidationError } from './sidebar-changes-utils';
   import { logger } from '$lib/utils/client-logger';
-  import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
-  import { invoke } from '$shared/generated/ipc-client';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { readable, writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -42,6 +44,8 @@
   });
 
   const workspace = selectWorkspaceById(workspaceIdStore);
+  const branchMutation$ = selectWorkspaceMutation(workspaceIdStore, readable('rename-branch'));
+  const baseRefMutation$ = selectWorkspaceMutation(workspaceIdStore, readable('base-ref'));
 
   // Branch rename state
   let branchRename = $state<{
@@ -66,15 +70,40 @@
     branchRename.active = false;
     branchRename.value = '';
     branchRename.saving = false;
+    pendingBranchRequestId = null;
+    pendingBaseRefRequestId = null;
+    handledBranchVersion = 0;
+    handledBaseRefVersion = 0;
   });
 
-  async function persistWorkspaceChanges(changes: Record<string, unknown>) {
-    const result = await workspaceClient.update({ id: workspaceId as WorkspaceId, ...changes });
-    if (result.ok) {
-      appStore.dispatch(setWorkspaceEntity(result.data));
+  let handledBranchVersion = 0;
+  let handledBaseRefVersion = 0;
+  let pendingBranchRequestId: string | null = null;
+  let pendingBaseRefRequestId: string | null = null;
+
+  $effect(() => {
+    const mutation = $branchMutation$;
+    branchRename.saving = mutation.loading;
+    if (mutation.loading || mutation.version <= handledBranchVersion) return;
+    if (pendingBranchRequestId === null || mutation.requestId !== pendingBranchRequestId) return;
+    handledBranchVersion = mutation.version;
+    pendingBranchRequestId = null;
+    branchRename.active = false;
+    if (mutation.error) {
+      logger.error('Failed to rename branch', { error: mutation.error });
+      toast.error(mutation.error || m.workspace_sidebarHeader_renameBranchFailed_error());
+      branchRename.value = $workspace?.branch || '';
     }
-    return result;
-  }
+  });
+
+  $effect(() => {
+    const mutation = $baseRefMutation$;
+    if (mutation.loading || mutation.version <= handledBaseRefVersion) return;
+    if (pendingBaseRefRequestId === null || mutation.requestId !== pendingBaseRefRequestId) return;
+    handledBaseRefVersion = mutation.version;
+    pendingBaseRefRequestId = null;
+    if (mutation.error) toast.error(m.workspace_client_updateFailed_error());
+  });
 
   function startEditingBranch() {
     if (!$workspace) return;
@@ -88,7 +117,7 @@
     });
   }
 
-  async function saveBranch() {
+  function saveBranch() {
     if (branchRename.saving) return;
 
     if (!$workspace || !branchRename.value.trim()) {
@@ -105,34 +134,15 @@
     const validationError = getBranchNameValidationError(newBranch);
     if (validationError) {
       logger.error('Invalid branch name format', { branchName: newBranch, error: validationError });
-      notify.error(validationError);
+      toast.error(validationError);
       branchRename.value = $workspace.branch || '';
       branchRename.active = false;
       return;
     }
 
-    branchRename.saving = true;
-    try {
-      const result = await invoke<any>(WORKSPACE_CHANNELS.RENAME_BRANCH, {
-        id: $workspace.id,
-        newBranchName: newBranch,
-      });
-
-      if (result.success) {
-        await persistWorkspaceChanges({ branch: newBranch });
-      } else {
-        logger.error('Failed to rename branch', { error: result.error });
-        notify.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
-        branchRename.value = $workspace.branch || '';
-      }
-    } catch (error) {
-      logger.error('Error renaming branch:', error);
-      notify.error(m.workspace_sidebarHeader_renameBranchFailed_error());
-      branchRename.value = $workspace.branch || '';
-    } finally {
-      branchRename.active = false;
-      branchRename.saving = false;
-    }
+    const action = renameWorkspaceBranchRequested(workspaceId, newBranch);
+    pendingBranchRequestId = action.payload[2];
+    appStore.dispatch(action);
   }
 
   function handleBranchKeydown(e: KeyboardEvent) {
@@ -291,18 +301,14 @@
             portal={true}
             triggerClass="h-(--control-height-small) text-ui font-normal text-foreground"
             hasTriggerIcon={false}
-            onchange={async (e) => {
-              try {
-                const result = await persistWorkspaceChanges({
-                  baseRef: e.detail.branch,
-                });
-                if (!result.ok) {
-                  notify.error('Failed to update base branch');
-                }
-              } catch (err) {
-                console.error('[BranchDisplay] Update error:', err);
-                notify.error('Failed to update base branch');
-              }
+            onchange={(e) => {
+              const action = updateWorkspaceRequested(
+                workspaceId,
+                { baseRef: e.detail.branch },
+                'base-ref',
+              );
+              pendingBaseRefRequestId = action.payload[3];
+              appStore.dispatch(action);
             }}
           />
         {:else}

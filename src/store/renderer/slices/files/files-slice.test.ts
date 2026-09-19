@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  clearLegacyFileDeleteOperation,
+  deleteLegacyFileRequested,
   emptyFilesWorkspaceState,
   filesReducer,
   initialState,
@@ -9,12 +11,22 @@ import {
   loadFileContentRequested,
   loadFileContentSucceeded,
   removeFileContentEntry,
+  resolveWorkspaceMediaRequested,
+  resolveWorkspaceMediaSucceeded,
   saveFileContentFailed,
   saveFileContentRequested,
   saveFileContentSucceeded,
+  searchFileNamesFailed,
+  searchFileNamesRequested,
+  searchFileNamesSucceeded,
   updateFileContent,
 } from './files-slice';
-import { selectFileContent, selectFileIsDirty, selectOriginalFileContent } from './files-selectors';
+import {
+  selectFileContent,
+  selectFileIsDirty,
+  selectLegacyFileDeleteOperation,
+  selectOriginalFileContent,
+} from './files-selectors';
 
 const WS_ID = 'ws-1';
 const PATH = 'src/app.ts';
@@ -26,6 +38,110 @@ const OTHER_ABS_PATH = '/repo/src/other.ts';
 describe('filesReducer', () => {
   it('returns the initial state', () => {
     expect(filesReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
+  });
+
+  it('tracks keyed file searches and ignores stale completion', () => {
+    const requested = filesReducer(
+      initialState,
+      searchFileNamesRequested(WS_ID, 'palette', 'app', 50, 150),
+    );
+    const stale = filesReducer(
+      requested,
+      searchFileNamesSucceeded(WS_ID, 'palette', 'old', ['old.ts']),
+    );
+    expect(stale).toBe(requested);
+
+    const succeeded = filesReducer(
+      requested,
+      searchFileNamesSucceeded(WS_ID, 'palette', 'app', ['src/app.ts']),
+    );
+    expect(succeeded.byWorkspaceId[WS_ID].fileNameSearches.palette).toEqual({
+      pattern: 'app',
+      files: ['src/app.ts'],
+      loading: false,
+      error: null,
+    });
+
+    const failed = filesReducer(
+      requested,
+      searchFileNamesFailed(WS_ID, 'palette', 'app', 'offline'),
+    );
+    expect(failed.byWorkspaceId[WS_ID].fileNameSearches.palette).toEqual({
+      pattern: 'app',
+      files: [],
+      loading: false,
+      error: 'offline',
+    });
+  });
+
+  it('tracks correlated file deletion settlement and ignores stale results', () => {
+    const first = deleteLegacyFileRequested(WS_ID, PATH, 'tab-1', 'request-1');
+    const latest = deleteLegacyFileRequested(WS_ID, PATH, 'tab-1', 'request-2');
+    first.promise.catch(() => undefined);
+    latest.promise.catch(() => undefined);
+    let state = filesReducer(initialState, first);
+    state = filesReducer(state, latest);
+
+    const stale = filesReducer(state, first.success(undefined));
+    expect(stale).toBe(state);
+    expect(selectLegacyFileDeleteOperation.select({ files: state } as any, WS_ID, 'tab-1')).toEqual(
+      {
+        requestId: 'request-2',
+        path: PATH,
+        status: 'loading',
+        error: null,
+      },
+    );
+
+    const succeeded = filesReducer(state, latest.success(undefined));
+    expect(
+      selectLegacyFileDeleteOperation.select({ files: succeeded } as any, WS_ID, 'tab-1'),
+    ).toEqual({
+      requestId: 'request-2',
+      path: PATH,
+      status: 'success',
+      error: null,
+    });
+
+    state = filesReducer(state, latest.failure(new Error('permission denied')));
+    expect(selectLegacyFileDeleteOperation.select({ files: state } as any, WS_ID, 'tab-1')).toEqual(
+      {
+        requestId: 'request-2',
+        path: PATH,
+        status: 'error',
+        error: 'permission denied',
+      },
+    );
+    expect(filesReducer(state, clearLegacyFileDeleteOperation(WS_ID, 'tab-1', 'request-1'))).toBe(
+      state,
+    );
+    state = filesReducer(state, clearLegacyFileDeleteOperation(WS_ID, 'tab-1', 'request-2'));
+    expect(
+      selectLegacyFileDeleteOperation.select({ files: state } as any, WS_ID, 'tab-1'),
+    ).toBeUndefined();
+  });
+
+  it('tracks media resolution without accepting stale paths', () => {
+    const requested = filesReducer(
+      initialState,
+      resolveWorkspaceMediaRequested(WS_ID, 'tab-1', 'preview.png', 'preview.png', 'tab-1'),
+    );
+    const stale = filesReducer(
+      requested,
+      resolveWorkspaceMediaSucceeded(WS_ID, 'tab-1', 'old.png', 'old.png'),
+    );
+    expect(stale).toBe(requested);
+
+    const succeeded = filesReducer(
+      requested,
+      resolveWorkspaceMediaSucceeded(WS_ID, 'tab-1', 'preview.png', 'preview.png'),
+    );
+    expect(succeeded.byWorkspaceId[WS_ID].mediaResolutions['tab-1']).toEqual({
+      requestedPath: 'preview.png',
+      resolvedPath: 'preview.png',
+      loading: false,
+      error: null,
+    });
   });
 
   it('tracks file loading state and loaded content', () => {

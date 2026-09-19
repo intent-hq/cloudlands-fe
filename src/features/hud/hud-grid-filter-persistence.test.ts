@@ -29,8 +29,8 @@ import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '$shared/types/connec
 import {
   HUD_GRID_FILTER_STORAGE_KEY,
   sanitizePersistedHudGridFilter,
-  startHudGridFilterPersistence,
 } from './hud-grid-filter-persistence';
+import { gridFilterPersistenceWorker } from '$store/renderer/slices/hud/sagas/hud-saga';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -63,6 +63,10 @@ function receiveConnections(backendId: string): void {
 
 const remoteKey = (id: string) => `backend:${id}:${HUD_GRID_FILTER_STORAGE_KEY}`;
 const gridFilter = () => appStore.state.hud.gridFilter;
+
+function startHudGridFilterPersistence(): () => void {
+  return appStore.runSaga(gridFilterPersistenceWorker);
+}
 
 describe('hud-grid-filter-persistence (real store)', () => {
   let stop: (() => void) | undefined;

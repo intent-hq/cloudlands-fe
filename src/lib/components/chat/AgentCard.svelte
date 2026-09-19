@@ -9,7 +9,6 @@
   import { tick, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
   import { notify } from '$lib/components/patterns/notify';
-  import { createLogger } from '$lib/utils/client-logger';
   import LineChangeStats from '$lib/components/shared/LineChangeStats.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Input } from '$lib/components/ui/input';
@@ -37,9 +36,9 @@
   import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
-  import { safeDisclosureTransition } from './disclosure-motion';
   import { selectHudAgentHasPendingQuestion } from '$store/renderer/slices/hud/hud-selectors';
   import { deriveAgentHasPendingQuestion } from './questions/wizard-gate';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { findSourcePanelId } from '$lib/utils/workspace-navigation';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import {
@@ -157,7 +156,6 @@
     readOnly = false,
   }: Props = $props();
 
-  const logger = createLogger('AgentCard');
   const INLINE_PEEK_TYPOGRAPHY_CLASS = 'font-normal! text-muted-foreground';
   const hasTaskProgress = $derived(taskProgress.length > 0);
 
@@ -241,18 +239,12 @@
             nameExplicitlySet: true,
           } as any),
         );
-        const action = renameAgentSessionRequested(wsId, agentId, nextName);
-        appStore.dispatch(action);
-        action.promise.catch(() => {
-          // Revert the optimistic dispatch so Redux matches disk, then notify.
-          appStore.dispatch(
-            updateAgentSessionFields(agentId, {
-              name: previousName,
-              nameExplicitlySet: previousNameExplicitlySet,
-            } as any),
-          );
-          notify.error(m.chat_agentCard_renameFailed_error());
-        });
+        appStore.dispatch(
+          renameAgentSessionRequested(wsId, agentId, nextName, {
+            previousName,
+            previousNameExplicitlySet,
+          }),
+        );
       }
     }
   }
@@ -426,17 +418,8 @@
           // The stop trigger settles for real now (agent-mutation-service
           // forwards agent.stop) — guard so a daemon-side failure cannot
           // become an unhandled rejection that skips closing the menu.
-          try {
-            if (wsId) {
-              const action = stopAgentSessionRequested(wsId, agentId);
-              appStore.dispatch(action);
-              await action.promise;
-            }
-          } catch (error) {
-            logger.error('Failed to stop agent', { agentId, error });
-          } finally {
-            closeContextMenu();
-          }
+          if (wsId) appStore.dispatch(stopAgentSessionRequested(wsId, agentId));
+          closeContextMenu();
         },
       });
     }
@@ -478,13 +461,9 @@
         closeContextMenu();
 
         if (sessionWorkspaceId) {
-          const action = deleteAgentWithUndoRequested(
-            sessionWorkspaceId,
-            agentId,
-            agentName || undefined,
+          appStore.dispatch(
+            deleteAgentWithUndoRequested(sessionWorkspaceId, agentId, agentName || undefined),
           );
-          appStore.dispatch(action);
-          await action.promise;
         }
       },
     });
@@ -648,10 +627,10 @@
     if (!showStateBorder) return '';
     if (avatarState === 'running' || avatarState === 'responding') return 'agent-glow-active';
     if (avatarState === 'failed') return 'shadow shadow-red-500 shadow-sm';
-    if (avatarState === 'needs-permission') return 'shadow shadow-warning shadow-sm';
-    if (avatarState === 'attention-discussion') return 'shadow shadow-warning shadow-sm';
+    if (avatarState === 'needs-permission') return 'shadow shadow-amber-500 shadow-sm';
+    if (avatarState === 'attention-discussion') return 'shadow shadow-amber-500 shadow-sm';
     if (avatarState === 'attention-blocker') return 'shadow shadow-red-500 shadow-sm';
-    if (avatarState === 'waiting') return 'shadow shadow-warning shadow-sm';
+    if (avatarState === 'waiting') return 'shadow shadow-amber-500 shadow-sm';
     return 'glow-transparent';
   });
 
@@ -833,7 +812,7 @@
                     : inline
                       ? typographyClass
                         ? 'shrink-0 type-body font-normal text-muted-foreground!'
-                        : 'shrink-0 type-body font-normal text-muted-foreground'
+                        : 'shrink-0 type-body font-normal text-foreground'
                       : 'shrink-0 text-sm font-normal text-foreground'}"
                   data-testid="agent-card-name"
                   data-agent-row-name={panelRow ? '' : undefined}
@@ -955,8 +934,8 @@
               <p
                 class="block w-full min-w-0 max-w-full truncate whitespace-nowrap text-sm {$preview$
                   .attention.kind === 'blocker'
-                  ? 'text-red-500'
-                  : 'text-warning-ink'}"
+                  ? 'text-danger'
+                  : 'text-warning-foreground'}"
                 data-testid="agent-card-attention"
               >
                 {$preview$.attention.kind === 'blocker'
@@ -1105,7 +1084,7 @@
   :global(.agent-glow-active) {
     position: relative;
     box-shadow: 0 0 12px 2px rgba(16, 185, 129, 0.1);
-    animation: agent-glow-pulse calc(var(--spring-slow) * 8) var(--spring-slow-ease) infinite;
+    animation: agent-glow-pulse 2s ease-in-out infinite;
   }
 
   :global(.agent-glow-active)::before {

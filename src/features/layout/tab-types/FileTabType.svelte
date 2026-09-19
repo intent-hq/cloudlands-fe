@@ -18,23 +18,26 @@
     selectFileIsBinary,
     selectFileIsDirty,
     selectFileLastUpdated,
+    selectLegacyFileDeleteOperation,
     selectFileLoading,
     selectFileNotFoundCandidates,
     selectFileSaving,
+    selectWorkspaceMediaResolution,
   } from '$store/renderer/slices/files/files-selectors';
   import {
+    clearLegacyFileDeleteOperation,
     loadFileContentRequested,
+    deleteLegacyFileRequested,
     removeFileContentEntry,
+    resolveWorkspaceMediaRequested,
     saveFileContentRequested,
     updateFileContent,
   } from '$store/renderer/slices/files/files-slice';
   import { selectFileTrackingChanges } from '$store/renderer/slices/changes/changes-selectors';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { invoke } from '$lib/electron-bridge';
-  import { appClient } from '$lib/client';
-  import { backendRequest } from '$lib/client/live/backend-transport';
-  import { resolveFileBySuffix } from '$lib/services/files/resolve-file-by-suffix';
+  import { loadGitDiffs } from '$store/renderer/slices/git/git-slice';
+  import { selectGitDiffRead } from '$store/renderer/slices/git/git-selectors';
   import { LineType } from '$shared/types';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import { isAbsolutePath, isAbsolutePathOutsideRoot, isTildePath } from '$lib/utils/path-utils';
@@ -55,7 +58,6 @@
     toggleDiffIndicators,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { openWorkspaceDiff } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { untrack } from 'svelte';
   import { faFloppyDisk, faPencil, faTrash } from '@fortawesome/free-solid-svg-icons';
@@ -92,6 +94,13 @@
   const isFileDirtyStore = selectFileIsDirty(workspaceId, filePathStore);
   // svelte-ignore state_referenced_locally
   const fileLastUpdatedStore = selectFileLastUpdated(workspaceId, filePathStore);
+  // svelte-ignore state_referenced_locally
+  const workspaceMediaResolution$ = selectWorkspaceMediaResolution(workspaceId, tab.id);
+  // svelte-ignore state_referenced_locally
+  const fileDeleteOperation$ = selectLegacyFileDeleteOperation(workspaceId, tab.id);
+  const fileDiffOptionsStore = writable<{ path: string; staged: boolean } | undefined>(undefined);
+  // svelte-ignore state_referenced_locally
+  const fileDiffRead$ = selectGitDiffRead(workspaceId, fileDiffOptionsStore);
 
   // svelte-ignore state_referenced_locally
   const ftChanges$ = selectFileTrackingChanges(workspaceId);
@@ -129,9 +138,8 @@
     focus: () => boolean;
     runShortcut: (action: Exclude<EditorShortcutAction, 'toggle-task-list'>) => boolean;
   } | null>(null);
-  let isMounted = $state(true);
   let fileLineChanges = $state<LineChange[]>([]);
-  let resolvedWorkspaceMediaPath = $state<string | null>(null);
+  const resolvedWorkspaceMediaPath = $derived($workspaceMediaResolution$?.resolvedPath ?? null);
 
   // Jump to line from tab data (e.g., when opening from reference block)
   let jumpToLine = $state<{ line?: number; column?: number } | undefined>(undefined);
@@ -139,6 +147,39 @@
   // Track the last processed timestamp to detect new navigation requests
   let lastJumpTimestamp = $state<number | undefined>(undefined);
   let markdownPreview = $state(true); // default to rich text for markdown files
+  let pendingFileDelete = $state.raw<{
+    requestId: string;
+    workspaceId: string;
+    tabId: string;
+    path: string;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null>(null);
+
+  $effect(() => {
+    const pending = pendingFileDelete;
+    const operation = $fileDeleteOperation$;
+    if (
+      !pending ||
+      !operation ||
+      operation.requestId !== pending.requestId ||
+      operation.path !== pending.path ||
+      operation.status === 'loading'
+    ) {
+      return;
+    }
+
+    pendingFileDelete = null;
+    appStore.dispatch(
+      clearLegacyFileDeleteOperation(pending.workspaceId, pending.tabId, pending.requestId),
+    );
+    if (operation.status === 'error') {
+      pending.reject(new Error(operation.error ?? m.ui_workspaceActions_deleteFileFailed_error()));
+      return;
+    }
+    appStore.dispatch(closeTab(pending.workspaceId, pending.tabId));
+    pending.resolve();
+  });
 
   // Extract line from tab.data when tab changes
   // Uses jumpTimestamp to detect changes even when navigating to the same line
@@ -150,13 +191,6 @@
     lastJumpTimestamp = timestamp;
     jumpToLine = { line };
     markdownPreview = false;
-  });
-
-  $effect(() => {
-    isMounted = true;
-    return () => {
-      isMounted = false;
-    };
   });
 
   // Computed values
@@ -231,59 +265,16 @@
   const fileLanguage = $derived(tab.filePath ? getLanguageFromPath(tab.filePath) : 'plaintext');
   const isMarkdownFile = $derived(fileLanguage === 'markdown');
 
-  // Media cannot use the UTF-8 file.read fallback. Confirm the exact contained
-  // path first, then use the existing bounded ignored-artifact resolver. Hold
-  // rendering until this completes so an incorrect workspace-file URL is not
-  // committed before a unique candidate can retarget the owning tab.
+  // The files saga owns exact stat, bounded suffix recovery, cancellation, and
+  // tab retargeting. This effect only declares the active media path to resolve.
   $effect(() => {
     if (!isActive) return;
     const requestedPath = workspaceMediaPath;
     const sourceFilePath = tab.filePath;
-    const wsId = workspaceId;
-    const tabId = tab.id;
-    resolvedWorkspaceMediaPath = null;
-    if (!requestedPath || !sourceFilePath || !wsId) return;
-
-    let cancelled = false;
-    const isCurrent = () =>
-      !cancelled && workspaceId === wsId && tab.id === tabId && tab.filePath === sourceFilePath;
-
-    void (async () => {
-      let exactFile = false;
-      try {
-        const stat = await backendRequest<{ isFile?: boolean }>('file.stat', {
-          workspaceId: wsId,
-          path: requestedPath,
-        });
-        exactFile = stat?.isFile === true;
-      } catch {
-        // A missing exact path is the expected entry into suffix recovery.
-      }
-      if (!isCurrent()) return;
-      if (exactFile) {
-        resolvedWorkspaceMediaPath = requestedPath;
-        return;
-      }
-      if (!/\.(?:png|jpe?g|gif|webp|mp4|webm)$/i.test(requestedPath)) {
-        resolvedWorkspaceMediaPath = requestedPath;
-        return;
-      }
-
-      const { candidates, truncated } = await resolveFileBySuffix(wsId, requestedPath);
-      if (!isCurrent()) return;
-      if (!truncated && candidates.length === 1) {
-        appStore.dispatch(updateFileTabPath(wsId, sourceFilePath, candidates[0], tabId));
-        return;
-      }
-
-      // Missing, ambiguous, and truncated results remain on the requested path;
-      // the binary protocol will report absence without falling back to file.read.
-      resolvedWorkspaceMediaPath = requestedPath;
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    if (!requestedPath || !sourceFilePath || !workspaceId) return;
+    appStore.dispatch(
+      resolveWorkspaceMediaRequested(workspaceId, tab.id, requestedPath, sourceFilePath, tab.id),
+    );
   });
 
   // Find tracked changes for the file
@@ -380,38 +371,40 @@
     const filePath = tab.filePath;
     const change = fileChange;
     if (!filePath || !change) {
+      fileDiffOptionsStore.set(undefined);
       fileLineChanges = [];
       return;
     }
-    (async () => {
-      try {
-        // Daemon-backed per-file hunks (`git.diffs`, PROTOCOL §5.6) via the
-        // appClient seam — this consumer only needs hunk line data, replacing
-        // the retired local `git:diff` read.
-        const chunks = await appClient.git.diffs(workspaceId, {
-          path: filePath,
-          staged: change.stage === 'staged',
-        });
-        if (!isMounted) return;
-        const fileChunk = chunks.find((c) => c.file === filePath) ?? chunks[0];
-        if (fileChunk?.chunks && fileChunk.chunks.length > 0) {
-          const hunks = fileChunk.chunks.map((chunk) => ({
-            oldStart: chunk.oldStart,
-            oldLines: chunk.oldLines,
-            newStart: chunk.newStart,
-            newLines: chunk.newLines,
-            lines: chunk.lines.map((line) => {
-              if (line.type === LineType.Addition) return '+' + line.content;
-              if (line.type === LineType.Deletion) return '-' + line.content;
-              return ' ' + line.content;
-            }),
-          }));
-          fileLineChanges = parseHunksToLineChanges(hunks);
-        }
-      } catch {
-        if (isMounted) fileLineChanges = [];
-      }
-    })();
+    const options = { path: filePath, staged: change.stage === 'staged' };
+    fileDiffOptionsStore.set(options);
+    appStore.dispatch(loadGitDiffs(workspaceId, options));
+  });
+
+  $effect(() => {
+    const read = $fileDiffRead$;
+    const filePath = tab.filePath;
+    if (!filePath || !read || read.loading) return;
+    if (read.error) {
+      fileLineChanges = [];
+      return;
+    }
+    const fileChunk = read.data.find((chunk) => chunk.file === filePath) ?? read.data[0];
+    if (!fileChunk?.chunks?.length) {
+      fileLineChanges = [];
+      return;
+    }
+    const hunks = fileChunk.chunks.map((chunk) => ({
+      oldStart: chunk.oldStart,
+      oldLines: chunk.oldLines,
+      newStart: chunk.newStart,
+      newLines: chunk.newLines,
+      lines: chunk.lines.map((line) => {
+        if (line.type === LineType.Addition) return '+' + line.content;
+        if (line.type === LineType.Deletion) return '-' + line.content;
+        return ' ' + line.content;
+      }),
+    }));
+    fileLineChanges = parseHunksToLineChanges(hunks);
   });
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -453,34 +446,36 @@
     );
   }
 
-  async function handleDeleteFile() {
+  function handleDeleteFile() {
     const absolutePath = fileAbsolutePath;
-    if (!tab.filePath || !workspaceId || !absolutePath) return;
+    if (!tab.filePath || !workspaceId || !absolutePath || pendingFileDelete) return;
 
     const filePath = tab.filePath;
+    const tabId = tab.id;
+    const workspaceIdToDelete = workspaceId;
     const fileName = filePath.split('/').pop() || m.layout_fileTab_file_fallback();
     // Capture current content so we can restore on undo
     const savedContent = selectFileContent.select(appStore.state, workspaceId, filePath) ?? '';
 
-    await deleteWithUndo(
+    void deleteWithUndo(
       `"${fileName}"`,
-      async () => {
-        // Delete action
-        const result = await invoke<{ success: boolean; error?: string }>('file:delete', {
-          path: filePath,
-          workspaceId,
-        });
-        if (!result?.success) {
-          throw new Error(result?.error || m.ui_workspaceActions_deleteFileFailed_error());
-        }
-        // Close the tab
-        appStore.dispatch(closeTab(workspaceId, tab.id));
-        dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
-      },
-      async () => {
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const request = deleteLegacyFileRequested(workspaceIdToDelete, filePath, tabId);
+          pendingFileDelete = {
+            requestId: request.payload[3],
+            workspaceId: workspaceIdToDelete,
+            tabId,
+            path: filePath,
+            resolve,
+            reject,
+          };
+          appStore.dispatch(request);
+        }),
+      () => {
         // Undo action — re-create the file with saved content (immediate write).
         appStore.dispatch(
-          saveFileContentRequested(workspaceId, filePath, absolutePath, savedContent),
+          saveFileContentRequested(workspaceIdToDelete, filePath, absolutePath, savedContent),
         );
       },
     );

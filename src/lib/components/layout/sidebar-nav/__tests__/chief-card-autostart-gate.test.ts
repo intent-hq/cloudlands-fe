@@ -12,7 +12,12 @@ import { tick } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
 import { store as appStore } from '$store/renderer/store';
 import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import {
+  activeProviderPersistRejected,
+  setActiveProvider,
+} from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { AgentSession } from '$shared/types';
@@ -28,8 +33,16 @@ describe('ChiefCard auto-start provider gate', () => {
   let dispatchSpy: ReturnType<typeof vi.spyOn>;
   let launchActions: unknown[];
 
+  function resetProviderSelection() {
+    const pendingProviderId = appStore.state.model.pendingDefaultProviderId;
+    if (pendingProviderId) appStore.dispatch(activeProviderPersistRejected(pendingProviderId));
+    appStore.dispatch(providerCatalogLoaded({ providers: [] }));
+    appStore.dispatch(hydrateDefaultProvider(''));
+  }
+
   beforeEach(() => {
     appStore.init();
+    resetProviderSelection();
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
 
     launchActions = [];
@@ -49,7 +62,7 @@ describe('ChiefCard auto-start provider gate', () => {
   afterEach(() => {
     cleanup();
     dispatchSpy.mockRestore();
-    appStore.dispatch(setActiveProvider(''));
+    resetProviderSelection();
   });
 
   it('skips the launch while provider-less, then fires exactly once when configured', async () => {

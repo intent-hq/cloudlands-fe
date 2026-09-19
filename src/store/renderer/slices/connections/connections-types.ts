@@ -10,12 +10,21 @@
  */
 
 import type {
+  AddConnectionParams,
+  CaptureFingerprintResult,
   ConnectionRecord,
   ConnectionAuthRejectedEvent,
   ConnectionCertMismatchEvent,
   ConnectionHostCertWarning,
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
+  OpenConnectionResult,
+  RotateConnectionSecretParams,
+  RotateConnectionSecretResult,
+  SelfPublishedStateResult,
+  TestConnectionResult,
+  UpdateConnectionParams,
+  UpdateConnectionResult,
 } from '$shared/types/connections';
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -42,6 +51,10 @@ export type {
   ConnectionProtocolMismatchEvent,
   KeychainSyncStateResult,
   KeychainSyncUiStatus,
+  PublishSelfResult,
+  RefreshSelfResult,
+  SelfPublishedStateResult,
+  UnpublishSelfResult,
 } from '$shared/types/connections';
 
 /**
@@ -51,6 +64,31 @@ export type {
  *   - `error`      → the last operation failed (see `error`).
  */
 type ConnectionOpStatus = 'idle' | 'connecting' | 'error';
+
+type ConnectionResultStatus = 'idle' | 'loading' | 'success' | 'error';
+
+export interface ConnectionResultState<T> {
+  /** Correlates completions to the exact request that produced this state. */
+  requestId: string | null;
+  version: number;
+  status: ConnectionResultStatus;
+  result: T | null;
+  error: string | null;
+}
+
+export type SaveConnectionResult =
+  | { stage: 'secret'; result: RotateConnectionSecretResult }
+  | { stage: 'update'; result: UpdateConnectionResult };
+
+export interface SaveConnectionParams {
+  update: UpdateConnectionParams;
+  secret?: RotateConnectionSecretParams;
+}
+
+export interface ConnectBackendParams {
+  connection: AddConnectionParams;
+  enableSyncAfterAdd: boolean;
+}
 
 /**
  * Connections slice state.
@@ -143,4 +181,21 @@ export interface ConnectionsState {
    * refreshed live by the `connections:sync-status-changed` push.
    */
   keychainSync: KeychainSyncStateResult | null;
+  keychainSyncLoadStatus: 'idle' | 'loading' | 'success' | 'error';
+  keychainSyncWriteOperation: ConnectionResultState<KeychainSyncStateResult>;
+  selfPublishedState: SelfPublishedStateResult | null;
+  selfPublishedStateStatus: 'idle' | 'loading' | 'success' | 'error';
+  selfPublishStatus: 'idle' | 'loading' | 'success' | 'error';
+  selfPublishError: string | null;
+  selfPublishVersion: number;
+  selfUnpublishStatus: 'idle' | 'loading' | 'success' | 'error';
+  selfUnpublishError: string | null;
+  selfUnpublishVersion: number;
+  selfUnpublishRemoved: boolean;
+  captureFingerprintOperation: ConnectionResultState<CaptureFingerprintResult>;
+  connectBackendOperation: ConnectionResultState<OpenConnectionResult>;
+  openOperations: Record<string, ConnectionResultState<OpenConnectionResult>>;
+  saveOperations: Record<string, ConnectionResultState<SaveConnectionResult>>;
+  testOperations: Record<string, ConnectionResultState<TestConnectionResult>>;
+  forgetOperations: Record<string, ConnectionResultState<boolean>>;
 }

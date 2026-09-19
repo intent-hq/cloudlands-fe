@@ -9,10 +9,16 @@ import { createAgentTypeId } from '$shared/types/agent.types';
 import { createLogger } from '$lib/utils/client-logger';
 import { openTerminalOverlay } from '$store/renderer/slices/terminals/terminals-slice';
 import { agentSessionLaunchAgentRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
+import {
+  clearAgentCreationRequest,
+  type AgentCreationRequestEntry,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 import type { Workspace } from '$shared/types';
 import type { WorkspacePageState, WorkspacePageStateManager } from './workspace-page-state.svelte';
 import { store as appStore } from '$store/renderer/store';
+import { onDestroy } from 'svelte';
+import { fromStore, type Readable } from 'svelte/store';
 
 const logger = createLogger('panel-actions');
 
@@ -27,9 +33,53 @@ export interface UsePanelActionsOptions {
    */
   markAgentRecentlyCreated: (agentId: string) => void;
   onDraftPromptSet: (prompt: string | null) => void;
+  agentCreationRequest: Readable<AgentCreationRequestEntry | undefined>;
+  setAgentCreationRequestContext: (workspaceId: string, requestId: string) => void;
 }
 
 export function usePanelActions(options: UsePanelActionsOptions) {
+  let pendingLaunch = $state<{
+    workspaceId: string;
+    requestId: string;
+    prompt: string;
+    name: string;
+  } | null>(null);
+  const launchRequest = fromStore(options.agentCreationRequest);
+
+  $effect(() => {
+    const pending = pendingLaunch;
+    const request = launchRequest.current;
+    if (!pending || !request || request.loading || request.requestId !== pending.requestId) return;
+
+    if (request.error || !request.agentId) {
+      logger.error('[handleCreateAgentWithPrompt] Error creating agent with draft prompt', {
+        error: request.error,
+        name: pending.name,
+      });
+    } else {
+      options.markAgentRecentlyCreated(request.agentId);
+      options.onDraftPromptSet(pending.prompt);
+      openAgent(request.agentId);
+      setTimeout(() => options.onDraftPromptSet(null), 500);
+      logger.info('[handleCreateAgentWithPrompt] Agent created with draft prompt successfully', {
+        agentId: request.agentId,
+        name: pending.name,
+        draftPromptLength: pending.prompt.length,
+      });
+    }
+
+    appStore.dispatch(clearAgentCreationRequest(pending.workspaceId, pending.requestId));
+    pendingLaunch = null;
+  });
+
+  onDestroy(() => {
+    if (pendingLaunch) {
+      appStore.dispatch(
+        clearAgentCreationRequest(pendingLaunch.workspaceId, pendingLaunch.requestId),
+      );
+    }
+  });
+
   async function openFile(filePath: string) {
     await options.workspaceState()?.openFile(filePath);
   }
@@ -115,9 +165,8 @@ export function usePanelActions(options: UsePanelActionsOptions) {
    * Create an agent and pre-fill the input with a prompt (without sending)
    * Used for contextual actions like "Generate tasks from spec" and "Delegate tasks"
    */
-  async function handleCreateAgentWithPrompt(prompt: string, name: string) {
+  function handleCreateAgentWithPrompt(prompt: string, name: string) {
     const workspace = options.workspace();
-    const { markAgentRecentlyCreated, onDraftPromptSet } = options;
 
     if (!workspace) {
       logger.error(
@@ -126,50 +175,34 @@ export function usePanelActions(options: UsePanelActionsOptions) {
       return;
     }
 
-    try {
-      logger.info('[handleCreateAgentWithPrompt] Creating agent with draft prompt', {
-        name,
-        promptLength: prompt.length,
-        workspaceId: workspace.id,
-      });
-
-      // Create agent WITHOUT initial message - we'll pre-fill the input instead
-      const launchAction = agentSessionLaunchAgentRequested(workspace.id, {
-        name,
-        // Name comes from contextual-action callers (generated, not user-typed) —
-        // keep the session self-renameable.
-        nameExplicitlySet: false,
-        agentType: createAgentTypeId('chat'),
-        source: 'progress-card-action',
-        metadata: {
-          source: 'progress-card-action',
-        },
-      });
-      appStore.dispatch(launchAction);
-      const agent = await launchAction.promise;
-
-      // Add to recently created agents to prevent drawer from auto-closing
-      markAgentRecentlyCreated(agent.id);
-
-      // Set the draft prompt BEFORE opening the drawer so it's available when ChatPanel mounts
-      onDraftPromptSet(prompt);
-
-      // Open the agent drawer
-      openAgent(agent.id);
-
-      // Clear draft prompt after a delay to allow ChatPanel to read it
-      setTimeout(() => {
-        onDraftPromptSet(null);
-      }, 500);
-
-      logger.info('[handleCreateAgentWithPrompt] Agent created with draft prompt successfully', {
-        agentId: agent.id,
-        name,
-        draftPromptLength: prompt.length,
-      });
-    } catch (error) {
-      logger.error('[handleCreateAgentWithPrompt] Error creating agent with draft prompt', error);
+    if (pendingLaunch) {
+      appStore.dispatch(
+        clearAgentCreationRequest(pendingLaunch.workspaceId, pendingLaunch.requestId),
+      );
     }
+
+    logger.info('[handleCreateAgentWithPrompt] Creating agent with draft prompt', {
+      name,
+      promptLength: prompt.length,
+      workspaceId: workspace.id,
+    });
+
+    const requestId = globalThis.crypto.randomUUID();
+    pendingLaunch = { workspaceId: workspace.id, requestId, prompt, name };
+    options.setAgentCreationRequestContext(workspace.id, requestId);
+    appStore.dispatch(
+      agentSessionLaunchAgentRequested(
+        workspace.id,
+        {
+          name,
+          nameExplicitlySet: false,
+          agentType: createAgentTypeId('chat'),
+          source: 'progress-card-action',
+          metadata: { source: 'progress-card-action' },
+        },
+        { requestId },
+      ),
+    );
   }
 
   return {

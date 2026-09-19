@@ -50,6 +50,7 @@ const mocks = vi.hoisted(() => {
     update: vi.fn(),
     pull: vi.fn(async () => ({ success: true })),
     setReasoningEffort: vi.fn(),
+    resetStore: () => {},
     hydrated$: writable(false),
     compactFormState$: writable<{
       selectedSpecialist?: string | null;
@@ -80,21 +81,32 @@ vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({
+  const { workspaceInitializerReducer } =
+    await import('$store/renderer/slices/workspace-initializer/workspace-initializer-slice');
+  const module = createAppStoreMockModule({
     state: () => ({ workspaceCreateProgress: { byProgressId: {} } }),
     dispatch: mocks.dispatch,
+    reducers: { workspaceInitializer: workspaceInitializerReducer },
   });
+  mocks.resetStore = module.store.resetReducers;
+  return module;
 });
 
-vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
-  selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
-  selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
-  selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
-  selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
-  selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
-  selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
-  selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
-}));
+vi.mock(
+  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors')
+    >()),
+    selectWorkspaceInitializerHydrated: () => mocks.hydrated$,
+    selectCompactWorkspaceInitializerFormState: () => mocks.compactFormState$,
+    selectWorkspaceInitializerLastSelectedRepo: () => mocks.readable(() => null),
+    selectWorkspaceInitializerLastSubmittedAgent: () => mocks.lastSubmittedAgent$,
+    selectWorkspaceInitializerRecentRepos: () => mocks.readable(() => []),
+    selectWorkspaceInitializerPendingGitHubPrefill: () => mocks.readable(() => null),
+    selectWorkspaceInitializerDefaultParentPath: () => mocks.readable(() => ''),
+  }),
+);
 
 vi.mock('$store/renderer/slices/model/model-selectors', () => ({
   selectAvailableModels: () => mocks.readable(() => []),
@@ -253,7 +265,47 @@ warmImport(() => import('../initializer/__tests__/mocks/MockComponent.svelte'));
 
 describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
   beforeEach(() => {
+    mocks.resetStore();
     vi.clearAllMocks();
+    mocks.dispatch.mockImplementation(
+      (action: {
+        type?: string;
+        payload?: unknown[];
+        success?: (value: unknown) => unknown;
+        failure?: (error: Error) => unknown;
+      }) => {
+        if (action?.type === 'workspaceInitializer/pullRepositoryRequested' && action.payload) {
+          return {
+            promise: Promise.resolve(mocks.pull(...(action.payload.slice(1) as [string, string]))),
+          };
+        } else if (action.type === 'workspaceInitializer/readPrefillRequested') {
+          return {
+            promise: Promise.resolve().then(() => {
+              const raw = sessionStorage.getItem(PREFILL_KEY);
+              sessionStorage.removeItem(PREFILL_KEY);
+              return raw ? JSON.parse(raw) : null;
+            }),
+          };
+        } else if (action.type === 'workspaceInitializer/readGitAvailabilityRequested') {
+          return { promise: Promise.resolve({ available: true, version: '2.44.0' }) };
+        } else if (action.type === 'workspaceInitializer/restoreNewWorkspaceDraftRequested') {
+          return { promise: Promise.resolve({ status: 'empty' }) };
+        } else if (action.type === 'workspaceInitializer/createWorkspaceRequested') {
+          return { promise: Promise.resolve(mocks.create(action.payload?.[0])) };
+        } else if (action.type === 'workspaceInitializer/setInitialAgentReasoningEffortRequested') {
+          return {
+            promise: Promise.resolve(
+              mocks.setReasoningEffort({
+                agentId: action.payload?.[0],
+                workspaceId: action.payload?.[1],
+                reasoningEffort: action.payload?.[2],
+              }),
+            ).then(() => undefined),
+          };
+        }
+        return action;
+      },
+    );
     sessionStorage.clear();
     mocks.hydrated$.set(false);
     mocks.compactFormState$.set(null);
@@ -457,8 +509,12 @@ describe('CompactWorkspaceInitializer omits client agent ID on create', () => {
     await screen.findByText('daemon rejected create');
 
     // Retry after failure via the same auto-create path.
+    cleanup();
     seedAutoCreatePrefill();
-    await component.applyPrefill();
+    const retry = render(CompactWorkspaceInitializer, {
+      props: { isExpanded: false },
+    });
+    await retry.component.applyPrefill();
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
 
     for (const call of mocks.create.mock.calls) {

@@ -1,4 +1,10 @@
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
+import type {
+  DraftAttachment,
+  DraftsClient,
+  MutationResult,
+  UserMessageIndexResult,
+} from '$lib/client/app-client';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   ChatAgentState,
@@ -71,6 +77,8 @@ export const emptyChatAgentState: ChatAgentState = {
 
 export const initialState: ChatStateSlice = {
   byAgentId: {},
+  draftOperations: { loads: {}, writes: {} },
+  queuedMessageEditOperations: {},
 };
 
 // ============================================================================
@@ -584,6 +592,57 @@ export const chatQueuedRetryRecordUpdated = createAction<
   [agentId: string, messageId: string, text: string]
 >('chatState/queuedRetryRecordUpdated');
 
+export const editQueuedMessageRequested = createAsyncAction<
+  [agentId: string, messageId: string, content: string, editing?: boolean],
+  MutationResult
+>('chatState/editQueuedMessage', 'chatState/editQueuedMessageRequested');
+
+export const clearChatDraftRequested = createAsyncAction<
+  [workspaceId: string, agentId: string],
+  void
+>('chatState/clearChatDraft', 'chatState/clearChatDraftRequested');
+
+export const loadChatDraftRequested = createAsyncAction<
+  [workspaceId: string, agentId: string, requestId?: number],
+  Awaited<ReturnType<DraftsClient['get']>>
+>('chatState/loadChatDraft', 'chatState/loadChatDraftRequested');
+
+export const saveChatDraftRequested = createAsyncAction<
+  [
+    workspaceId: string,
+    agentId: string,
+    text: string,
+    attachments?: DraftAttachment[],
+    requestId?: number,
+  ],
+  Awaited<ReturnType<DraftsClient['set']>>
+>('chatState/saveChatDraft', 'chatState/saveChatDraftRequested');
+
+export const flushChatDraftRequested = createAsyncAction<
+  [
+    workspaceId: string,
+    agentId: string,
+    text: string,
+    attachments?: DraftAttachment[],
+    requestId?: number,
+  ],
+  Awaited<ReturnType<DraftsClient['set']>>
+>('chatState/flushChatDraft', 'chatState/flushChatDraftRequested');
+
+export const retryAgentRequested = createAction<[agentId: string, workspaceId: string]>(
+  'chatState/retryAgentRequested',
+);
+
+export const listUserMessagesRequested = createAction<[agentId: string]>(
+  'chatState/listUserMessagesRequested',
+);
+export const userMessageIndexLoaded = createAction<
+  [agentId: string, result: UserMessageIndexResult]
+>('chatState/userMessageIndexLoaded');
+export const userMessageIndexFailed = createAction<[agentId: string, error: string]>(
+  'chatState/userMessageIndexFailed',
+);
+
 /**
  * Drop ALL parked retry records without promotion (#999). Dispatched by the
  * flow site that KNOWS the daemon discarded the whole queue —
@@ -967,6 +1026,200 @@ export const sendQueuedMessageNowRequested = createAsyncAction<
 // ============================================================================
 
 export const chatStateReducer = createReducer<ChatStateSlice>(initialState);
+chatStateReducer.with(
+  editQueuedMessageRequested,
+  (state, { payload: [agentId, messageId, content, editing = false] }) => ({
+    ...state,
+    queuedMessageEditOperations: {
+      ...state.queuedMessageEditOperations,
+      [agentId]: {
+        ...state.queuedMessageEditOperations[agentId],
+        [messageId]: {
+          status: 'loading',
+          content,
+          editing,
+          result: null,
+          error: null,
+        },
+      },
+    },
+  }),
+);
+chatStateReducer.with(editQueuedMessageRequested.success, (state, { payload }) => {
+  const [agentId, messageId, content, editing = false] = payload.request;
+  const current = state.queuedMessageEditOperations[agentId]?.[messageId];
+  if (!current || current.content !== content || current.editing !== editing) return state;
+  return {
+    ...state,
+    queuedMessageEditOperations: {
+      ...state.queuedMessageEditOperations,
+      [agentId]: {
+        ...state.queuedMessageEditOperations[agentId],
+        [messageId]: {
+          status: 'success',
+          content,
+          editing,
+          result: payload.response,
+          error: null,
+        },
+      },
+    },
+  };
+});
+chatStateReducer.with(editQueuedMessageRequested.failure, (state, { payload }) => {
+  const [agentId, messageId, content, editing = false] = payload.request;
+  const current = state.queuedMessageEditOperations[agentId]?.[messageId];
+  if (!current || current.content !== content || current.editing !== editing) return state;
+  return {
+    ...state,
+    queuedMessageEditOperations: {
+      ...state.queuedMessageEditOperations,
+      [agentId]: {
+        ...state.queuedMessageEditOperations[agentId],
+        [messageId]: {
+          status: 'error',
+          content,
+          editing,
+          result: null,
+          error: payload.error.message,
+        },
+      },
+    },
+  };
+});
+const draftOperationKey = (workspaceId: string, agentId: string) =>
+  `${workspaceId}\u0000${agentId}`;
+chatStateReducer.with(
+  loadChatDraftRequested,
+  (state, { payload: [workspaceId, agentId, requestId] }) => {
+    const key = draftOperationKey(workspaceId, agentId);
+    return {
+      ...state,
+      draftOperations: {
+        ...state.draftOperations,
+        loads: {
+          ...state.draftOperations.loads,
+          [key]: { status: 'loading', requestId: requestId ?? null, data: null, error: null },
+        },
+      },
+    };
+  },
+);
+chatStateReducer.with(loadChatDraftRequested.success, (state, { payload }) => {
+  const [workspaceId, agentId, requestId] = payload.request;
+  const key = draftOperationKey(workspaceId, agentId);
+  if (state.draftOperations.loads[key]?.requestId !== (requestId ?? null)) return state;
+  return {
+    ...state,
+    draftOperations: {
+      ...state.draftOperations,
+      loads: {
+        ...state.draftOperations.loads,
+        [key]: {
+          status: 'success',
+          requestId: requestId ?? null,
+          data: payload.response,
+          error: null,
+        },
+      },
+    },
+  };
+});
+chatStateReducer.with(loadChatDraftRequested.failure, (state, { payload }) => {
+  const [workspaceId, agentId, requestId] = payload.request;
+  const key = draftOperationKey(workspaceId, agentId);
+  if (state.draftOperations.loads[key]?.requestId !== (requestId ?? null)) return state;
+  return {
+    ...state,
+    draftOperations: {
+      ...state.draftOperations,
+      loads: {
+        ...state.draftOperations.loads,
+        [key]: {
+          status: 'error',
+          requestId: requestId ?? null,
+          data: null,
+          error: payload.error.message,
+        },
+      },
+    },
+  };
+});
+for (const action of [saveChatDraftRequested, flushChatDraftRequested] as const) {
+  chatStateReducer.with(action, (state, { payload: [workspaceId, agentId, , , requestId] }) => {
+    const key = draftOperationKey(workspaceId, agentId);
+    return {
+      ...state,
+      draftOperations: {
+        ...state.draftOperations,
+        writes: {
+          ...state.draftOperations.writes,
+          [key]: { status: 'loading', requestId: requestId ?? null, data: null, error: null },
+        },
+      },
+    };
+  });
+  chatStateReducer.with(action.success, (state, { payload }) => {
+    const [workspaceId, agentId, , , requestId] = payload.request;
+    const key = draftOperationKey(workspaceId, agentId);
+    if (state.draftOperations.writes[key]?.requestId !== (requestId ?? null)) return state;
+    return {
+      ...state,
+      draftOperations: {
+        ...state.draftOperations,
+        writes: {
+          ...state.draftOperations.writes,
+          [key]: {
+            status: 'success',
+            requestId: requestId ?? null,
+            data: payload.response,
+            error: null,
+          },
+        },
+      },
+    };
+  });
+  chatStateReducer.with(action.failure, (state, { payload }) => {
+    const [workspaceId, agentId, , , requestId] = payload.request;
+    const key = draftOperationKey(workspaceId, agentId);
+    if (state.draftOperations.writes[key]?.requestId !== (requestId ?? null)) return state;
+    return {
+      ...state,
+      draftOperations: {
+        ...state.draftOperations,
+        writes: {
+          ...state.draftOperations.writes,
+          [key]: {
+            status: 'error',
+            requestId: requestId ?? null,
+            data: null,
+            error: payload.error.message,
+          },
+        },
+      },
+    };
+  });
+}
+chatStateReducer.with(listUserMessagesRequested, (state, { payload: [agentId] }) => {
+  const current = getAgent(state, agentId).userMessageIndex;
+  return updateAgent(state, agentId, {
+    agentId,
+    userMessageIndex: { data: current?.data ?? null, loading: true, error: null },
+  });
+});
+chatStateReducer.with(userMessageIndexLoaded, (state, { payload: [agentId, data] }) =>
+  updateAgent(state, agentId, {
+    agentId,
+    userMessageIndex: { data, loading: false, error: null },
+  }),
+);
+chatStateReducer.with(userMessageIndexFailed, (state, { payload: [agentId, error] }) => {
+  const current = getAgent(state, agentId).userMessageIndex;
+  return updateAgent(state, agentId, {
+    agentId,
+    userMessageIndex: { data: current?.data ?? null, loading: false, error },
+  });
+});
 chatStateReducer.with(chatInitialized, (state, { payload: [agentId, data] }) =>
   updateAgent(state, agentId, {
     agentId,

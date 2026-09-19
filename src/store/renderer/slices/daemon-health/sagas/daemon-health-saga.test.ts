@@ -26,6 +26,7 @@ import {
   openLocalAndSpawnRequested,
   openLocalAndSpawnSucceeded,
   pollUnslothStatus,
+  setDetailsPollingActive,
   spawnSidecarFailed,
   spawnSidecarRequested,
   stopUnslothFailed,
@@ -658,6 +659,31 @@ describe('daemonHealthSaga', () => {
     expect(offById).toHaveBeenCalledWith(BACKEND.STATUS, 'listener-status');
     await vi.advanceTimersByTimeAsync(20_000);
     expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('polls details while the menu is active and cancels the loop when it closes', async () => {
+    const { input, task } = startHealthSaga();
+    await settle();
+    mocks.backendRequest.mockClear();
+
+    input.put(setDetailsPollingActive(true));
+    await settle();
+    expect(mocks.backendRequest).toHaveBeenCalledWith('unsloth.status');
+
+    mocks.backendRequest.mockClear();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle();
+    expect(mocks.backendRequest).toHaveBeenCalledWith('unsloth.status');
+
+    input.put(setDetailsPollingActive(false));
+    await settle();
+    mocks.backendRequest.mockClear();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await settle();
+    expect(mocks.backendRequest).not.toHaveBeenCalled();
+
+    task.cancel();
+    await task.toPromise();
   });
 
   it('coalesces unsloth polls and settles stop failure state', async () => {

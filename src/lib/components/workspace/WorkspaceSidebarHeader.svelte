@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { Input } from '$lib/components/ui/input';
-  import { Textarea } from '$lib/components/ui/textarea';
   import { logger } from '$lib/utils/client-logger';
-  import { invoke } from '$shared/generated/ipc-client';
 
   import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { notify } from '$lib/components/patterns/notify';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import {
     faBars,
@@ -21,9 +21,7 @@
   import WorkspaceActionsMenu, {
     type MenuAction,
   } from '$features/workspace/components/WorkspaceActionsMenu.svelte';
-  import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, type Workspace } from '$shared/types';
-  import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import {
     toggleSidebar,
@@ -32,7 +30,10 @@
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
-  import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import {
+    renameWorkspaceBranchRequested,
+    updateWorkspaceRequested,
+  } from '$store/renderer/slices/workspace/workspace-slice';
   import {
     markKeySlotUnassigned,
     pinWorkspaceToKey,
@@ -46,7 +47,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { renameWorkspaceTitle } from '$features/workspace/rename-workspace-title';
+  import { selectWorkspaceMutation } from '$store/renderer/slices/workspace/workspace-selectors';
 
   interface Props {
     workspace: Workspace | null;
@@ -56,6 +57,12 @@
   let { workspace, workspaceId }: Props = $props();
 
   const sidebarSide$ = selectSidebarSide();
+  const workspaceId$ = writable(workspaceId);
+  const statusMutation$ = selectWorkspaceMutation(workspaceId$, writable('status-message'));
+  const titleMutation$ = selectWorkspaceMutation(workspaceId$, writable('title'));
+  const branchMutation$ = selectWorkspaceMutation(workspaceId$, writable('rename-branch'));
+
+  $effect(() => workspaceId$.set(workspaceId));
 
   let isDeleting = $state(false);
   let isEditingTitle = $state(false);
@@ -74,6 +81,42 @@
   let editedBranch = $state('');
   let branchInputRef: HTMLInputElement | null = $state(null);
   let isSavingBranch = $state(false);
+  let handledStatusVersion = 0;
+  let handledTitleVersion = 0;
+  let handledBranchVersion = 0;
+
+  $effect(() => {
+    const mutation = $statusMutation$;
+    isSavingStatusMessage = mutation.loading;
+    if (mutation.loading || mutation.version <= handledStatusVersion) return;
+    handledStatusVersion = mutation.version;
+    isEditingStatusMessage = false;
+    if (mutation.error) {
+      logger.error('Failed to update workspace status', { error: mutation.error });
+      editedStatusMessage = workspace?.statusMessage || '';
+    }
+  });
+
+  $effect(() => {
+    const mutation = $titleMutation$;
+    isSavingTitle = mutation.loading;
+    if (mutation.loading || mutation.version <= handledTitleVersion) return;
+    handledTitleVersion = mutation.version;
+    isEditingTitle = false;
+    if (mutation.error) editedTitle = workspace?.title || m.workspace_links_untitled_label();
+  });
+
+  $effect(() => {
+    const mutation = $branchMutation$;
+    isSavingBranch = mutation.loading;
+    if (mutation.loading || mutation.version <= handledBranchVersion) return;
+    handledBranchVersion = mutation.version;
+    isEditingBranch = false;
+    if (mutation.error) {
+      editedBranch = workspace?.branch || '';
+      notify.error(mutation.error || m.workspace_sidebarHeader_renameBranchFailed_error());
+    }
+  });
 
   const currentStatusMessage = $derived(workspace?.statusMessage?.trim() ?? '');
   const repositoryLabel = $derived(
@@ -107,7 +150,7 @@
     });
   }
 
-  async function saveTitle() {
+  function saveTitle() {
     if (isSavingTitle || !workspace || !editedTitle.trim()) {
       isEditingTitle = false;
       return;
@@ -115,13 +158,7 @@
 
     const newTitle = editedTitle.trim();
     if (newTitle !== workspace.title) {
-      isSavingTitle = true;
-      isEditingTitle = false;
-      try {
-        await renameWorkspaceTitle(workspace, newTitle);
-      } finally {
-        isSavingTitle = false;
-      }
+      appStore.dispatch(updateWorkspaceRequested(workspace.id, { title: newTitle }, 'title'));
     }
     isEditingTitle = false;
   }
@@ -149,7 +186,7 @@
     });
   }
 
-  async function saveStatusMessage() {
+  function saveStatusMessage() {
     if (skipNextStatusBlurSave) {
       skipNextStatusBlurSave = false;
       return;
@@ -170,25 +207,9 @@
       return;
     }
 
-    isSavingStatusMessage = true;
-    try {
-      const result = await workspaceClient.update({
-        id: workspace.id,
-        statusMessage: newStatusMessage,
-      });
-      if (result.ok) {
-        appStore.dispatch(setWorkspaceEntity(result.data));
-      } else {
-        logger.error('Failed to update workspace status', { error: result.error });
-        editedStatusMessage = workspace.statusMessage || '';
-      }
-    } catch (error) {
-      logger.error('Failed to update workspace status:', error);
-      editedStatusMessage = workspace.statusMessage || '';
-    } finally {
-      isEditingStatusMessage = false;
-      isSavingStatusMessage = false;
-    }
+    appStore.dispatch(
+      updateWorkspaceRequested(workspace.id, { statusMessage: newStatusMessage }, 'status-message'),
+    );
   }
 
   function handleStatusMessageKeydown(e: KeyboardEvent) {
@@ -222,7 +243,6 @@
       return;
     }
 
-    const { notify } = await import('$lib/components/patterns/notify');
     try {
       await navigator.clipboard.writeText(workspace.branch);
       notify.success(m.workspace_sidebarHeader_branchCopied_toast());
@@ -237,8 +257,6 @@
     if (isSavingBranch) {
       return;
     }
-
-    const { notify } = await import('$lib/components/patterns/notify');
 
     if (!workspace || !editedBranch.trim()) {
       isEditingBranch = false;
@@ -261,32 +279,7 @@
       return;
     }
 
-    isSavingBranch = true;
-    try {
-      const result = await invoke<any>(WORKSPACE_CHANNELS.RENAME_BRANCH, {
-        id: workspace.id,
-        newBranchName: newBranch,
-      });
-
-      if (result.success) {
-        // Update workspace store with new branch
-        const updateResult = await workspaceClient.update({ id: workspace.id, branch: newBranch });
-        if (updateResult.ok) {
-          appStore.dispatch(setWorkspaceEntity(updateResult.data));
-        }
-      } else {
-        logger.error('Failed to rename branch', { error: result.error });
-        notify.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
-        editedBranch = workspace.branch || '';
-      }
-    } catch (error) {
-      logger.error('Error renaming branch:', error);
-      notify.error(m.workspace_sidebarHeader_renameBranchFailed_error());
-      editedBranch = workspace.branch || '';
-    } finally {
-      isEditingBranch = false;
-      isSavingBranch = false;
-    }
+    appStore.dispatch(renameWorkspaceBranchRequested(workspace.id, newBranch));
   }
 
   function handleBranchKeydown(e: KeyboardEvent) {
@@ -516,20 +509,20 @@
       ></Textarea>
     {:else if workspace}
       <Button
-        variant="ghost"
-        truncateLabel={false}
-        labelClass="line-clamp-3"
-        class="type-body h-auto cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground {!currentStatusMessage
-          ? 'italic text-ghost'
-          : ''}
-               max-w-full break-words whitespace-pre-wrap
+        variant="plain"
+        class="type-body cursor-text rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+               max-w-full overflow-hidden line-clamp-2 break-words whitespace-normal
                transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug
                hover:text-foreground hover:opacity-80
                focus-visible:outline focus-visible:outline-1
                focus-visible:outline-ring focus-visible:outline-offset-[-1px]
-               disabled:cursor-default disabled:opacity-50"
+               disabled:cursor-default disabled:opacity-50 {!currentStatusMessage
+          ? 'italic text-ghost'
+          : ''}"
         onclick={startEditingStatusMessage}
-        title={currentStatusMessage || m.workspace_sidebarHeader_addStatus_tooltip()}
+        title={currentStatusMessage
+          ? m.workspace_sidebarHeader_editStatus_tooltip()
+          : m.workspace_sidebarHeader_addStatus_tooltip()}
         aria-label={currentStatusMessage
           ? m.workspace_sidebarHeader_editStatus_ariaLabel()
           : m.workspace_sidebarHeader_addStatus_ariaLabel()}
