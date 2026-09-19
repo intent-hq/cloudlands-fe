@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import FormDialog from './FormDialog.svelte';
+import DestructiveConfirm from './DestructiveConfirm.svelte';
 
 for (const enterKey of ['submit', 'ignore'] as const) {
   test(`Enter activates Cancel without submitting with enterKey=${enterKey}`, async ({
@@ -125,3 +126,42 @@ for (const enterKey of ['submit', 'ignore'] as const) {
     expect(submitted).toBe(0);
   });
 }
+
+test('destructive confirmation keeps preflight cancellable and requires explicit submit focus', async ({
+  mount,
+  page,
+}) => {
+  let submitted = 0;
+  const component = await mount(DestructiveConfirm, {
+    props: {
+      open: true,
+      title: 'Delete workspaces',
+      confirmLabel: 'Delete all',
+      focusSubmit: false,
+      focusCancel: true,
+      canSubmit: false,
+      submitBusy: true,
+      enterKey: 'ignore',
+      modEnter: 'ignore',
+      onConfirm: () => {
+        submitted++;
+      },
+    },
+  });
+  const cancel = page.getByRole('button', { name: 'Cancel', exact: true });
+  const confirm = page.getByRole('button', { name: 'Delete all', exact: true });
+  await expect(cancel).toBeFocused();
+  await expect(cancel).toBeEnabled();
+  await expect(confirm).toBeDisabled();
+  await component.update({ props: { canSubmit: true, submitBusy: false } });
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(submitted).toBe(0);
+
+  await component.update({ props: { open: true } });
+  await expect(cancel).toBeFocused();
+  await confirm.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => submitted).toBe(1);
+});

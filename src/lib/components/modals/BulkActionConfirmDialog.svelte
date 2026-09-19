@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import type { ButtonVariant } from '$lib/components/ui/button';
   import { DestructiveConfirm } from '$lib/components/patterns/confirm';
   import { m } from '$shared/paraglide/messages.js';
@@ -11,10 +12,16 @@
     description?: string;
     confirmText?: string;
     variant?: ButtonVariant;
+    initialFocus?: 'confirm' | 'cancel';
+    body?: Snippet;
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
     activeHookCount?: number;
+    /** Open pull requests across the targeted workspaces. */
+    openPrCount?: number;
+    /** Whether active-work preflight has resolved for the current target snapshot. */
+    preflightReady?: boolean;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
@@ -26,13 +33,17 @@
     description = '',
     confirmText = m.modals_bulkActionConfirm_confirm_label(),
     variant = 'default',
+    initialFocus = 'confirm',
+    body,
     activeAgentCount = 0,
     activeHookCount = 0,
+    openPrCount = 0,
+    preflightReady = true,
     onConfirm,
     onCancel,
   }: Props = $props();
 
-  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0);
+  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0 || openPrCount > 0);
 
   function close() {
     open = false;
@@ -54,6 +65,12 @@
   static={staticPosition}
   {title}
   confirmLabel={confirmText}
+  submitBusy={!preflightReady}
+  canSubmit={preflightReady}
+  focusSubmit={preflightReady && initialFocus === 'confirm'}
+  focusCancel={!preflightReady || initialFocus === 'cancel'}
+  enterKey={initialFocus === 'cancel' ? 'ignore' : 'submit'}
+  modEnter={initialFocus === 'cancel' ? 'ignore' : 'submit'}
   destructive={variant === 'destructive'}
   onConfirm={handleConfirm}
   onCancel={close}
@@ -85,8 +102,17 @@
                   })}
             </p>
           {/if}
+          {#if openPrCount > 0}
+            <p class="type-body text-muted-foreground font-normal">
+              {openPrCount === 1
+                ? m.modals_deleteWarning_openPrs_one({ count: formatInteger(openPrCount) })
+                : m.modals_deleteWarning_openPrs_many({ count: formatInteger(openPrCount) })}
+            </p>
+          {/if}
         </div>
       {/if}
+
+      {@render body?.()}
     </div>
   {/snippet}
 </DestructiveConfirm>
