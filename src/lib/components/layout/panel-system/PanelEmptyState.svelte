@@ -151,16 +151,20 @@
   const newTerminalShortcut$ = effectiveShortcutReadable('workspace.new-terminal');
   const newBrowserShortcut$ = effectiveShortcutReadable('workspace.new-browser');
 
-  // Terminal and browser are capability/role-gated by PanelLayout, so their
-  // cards only appear when the host provides a working handler.
+  // Agent, terminal and browser are capability/role-gated by the host, so
+  // their cards only appear when it provides a working handler.
   const creationActions = $derived<CreationAction[]>([
-    {
-      id: 'agent',
-      label: m.layout_panelEmptyState_agent_label(),
-      icon: faRobot,
-      key: $newAgentShortcut$,
-      action: handleCreateAgent,
-    },
+    ...(onCreateAgent || onCreateAgentWithSpecialist
+      ? [
+          {
+            id: 'agent',
+            label: m.layout_panelEmptyState_agent_label(),
+            icon: faRobot,
+            key: $newAgentShortcut$,
+            action: handleCreateAgent,
+          },
+        ]
+      : []),
     {
       id: 'note',
       label: m.layout_panelEmptyState_note_label(),
