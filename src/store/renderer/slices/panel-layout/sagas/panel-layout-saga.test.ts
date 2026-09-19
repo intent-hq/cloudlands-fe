@@ -9,6 +9,7 @@ import {
 const mocks = vi.hoisted(() => ({
   clearAdapter: vi.fn(),
   getJSON: vi.fn(),
+  getWorkspace: vi.fn(),
   listTabs: vi.fn(),
   loadHistory: vi.fn(),
   removeItem: vi.fn(),
@@ -30,6 +31,9 @@ vi.mock('$lib/client', () => ({
       upsertTab: mocks.upsertTab,
       removeTab: mocks.removeTab,
       syncTabs: mocks.syncTabs,
+    },
+    workspaces: {
+      get: mocks.getWorkspace,
     },
   },
 }));
@@ -70,7 +74,11 @@ import {
 } from '../../browser-tab-registry/browser-tab-registry-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
-import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import {
+  markWorkspaceDetailHydrated,
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '../../workspace/workspace-slice';
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -221,7 +229,7 @@ function storeState(
     tabState: { currentTabId: activeWorkspaceId },
     connections: { activeId: activeBackendId, windowBackendId: activeBackendId },
     workspaceAgents: { byWorkspaceId: {} },
-    workspace: { workspaces: createCollection('id') },
+    workspace: { workspaces: createCollection('id'), detailHydrated: {} },
   };
 }
 
@@ -289,7 +297,7 @@ function startRestoreSaga(
   agents: AgentSession[],
   initialLayout = emptyWorkspaceState,
   contextLinks?: ContextLink[],
-  opts: { workspaceListLoaded?: boolean } = {},
+  opts: { workspaceListLoaded?: boolean; slimRow?: boolean } = {},
 ) {
   mocks.getJSON.mockReturnValue(stored);
   let backendId = LOCAL_CONNECTION_ID;
@@ -311,9 +319,14 @@ function startRestoreSaga(
     workspace: {
       workspaces: createCollection(
         'id',
-        contextLinks ? [{ id: WS_1, contextLinks } as unknown as Workspace] : [],
+        contextLinks
+          ? [{ id: WS_1, contextLinks } as unknown as Workspace]
+          : opts.slimRow
+            ? [{ id: WS_1 } as unknown as Workspace]
+            : [],
       ),
       hasLoaded: opts.workspaceListLoaded ?? true,
+      detailHydrated: {},
     },
   };
   const channel = stdChannel();
@@ -325,6 +338,15 @@ function startRestoreSaga(
         workspace: {
           ...state.workspace,
           workspaces: createCollection('id', [action.payload[0]]),
+        },
+      };
+    }
+    if (action.type === markWorkspaceDetailHydrated.type) {
+      state = {
+        ...state,
+        workspace: {
+          ...state.workspace,
+          detailHydrated: { ...state.workspace.detailHydrated, [action.payload[0]]: true },
         },
       };
     }
@@ -1084,6 +1106,7 @@ describe('panelLayoutSaga', () => {
           workspaces: createCollection('id', [{ id: WS_1 } as unknown as Workspace]),
           hasLoaded: true,
           loadedBackendId: LOCAL_CONNECTION_ID,
+          detailHydrated: {},
         },
       };
       const channel = stdChannel();
@@ -1699,6 +1722,8 @@ describe('panelLayoutSaga', () => {
     });
 
     describe('first-open context-link seeding (workspaces created elsewhere)', () => {
+      afterEach(() => mocks.getWorkspace.mockReset());
+
       const contextLinks: ContextLink[] = [
         {
           kind: 'issue',
@@ -1812,6 +1837,45 @@ describe('panelLayoutSaga', () => {
         await settle();
 
         expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial');
+        await cancelSaga(run.task);
+      });
+
+      it('pulls detail via workspace.get when the slim list row omits contextLinks, then seeds once', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        mocks.getWorkspace.mockResolvedValue({ id: WS_1, contextLinks } as unknown as Workspace);
+        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
+          slimRow: true,
+        });
+
+        await vi.waitFor(() =>
+          expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial'),
+        );
+        expect(mocks.getWorkspace).toHaveBeenCalledTimes(1);
+        expect(mocks.getWorkspace).toHaveBeenCalledWith(WS_1);
+        expect(run.getState().workspace.detailHydrated[WS_1]).toBe(true);
+        expect(
+          run.dispatch.mock.calls.filter(
+            ([action]) => action.type === openTabInAdjacentOrSplit.type,
+          ),
+        ).toHaveLength(1);
+        await cancelSaga(run.task);
+      });
+
+      it('opens the plain agent tab when the slim row detail read yields nothing', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        mocks.getWorkspace.mockResolvedValue(null);
+        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
+          slimRow: true,
+        });
+
+        await vi.waitFor(() => {
+          const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+          expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([
+            expect.objectContaining({ type: 'agent', agentId: 'agent-initial' }),
+          ]);
+        });
+        expect(run.getState().panelLayout.byWorkspaceId[WS_1].root.type).toBe('panel');
+        expect(run.getState().workspace.detailHydrated[WS_1]).toBeUndefined();
         await cancelSaga(run.task);
       });
 

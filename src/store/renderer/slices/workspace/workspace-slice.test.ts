@@ -17,6 +17,7 @@ import {
   clearPendingCreation,
   clearWorkspacePendingDeletion,
   initialState,
+  markWorkspaceDetailHydrated,
   markWorkspacePendingDeletion,
   loadRecencyData,
   replaceWorkspaceList,
@@ -33,8 +34,10 @@ import {
   workspaceReducer,
 } from './workspace-slice';
 import {
+  isWorkspacePullRequestPoolTruncated,
   selectWorkspacesSortedByRecency,
   selectWorkspaceById,
+  selectWorkspaceDetailHydrated,
   selectWorkspaceHasLoaded,
   selectWorkspaceIsCreating,
   selectWorkspaceIsEmpty,
@@ -237,6 +240,173 @@ describe('workspaceReducer', () => {
       );
 
       expect(getItem(state.workspaces, 'ws-1')?.pullRequests).toEqual([pr]);
+    });
+
+    describe('slim workspace.list rows (detail-only fields absent, PROTOCOL §5.1)', () => {
+      const contextLinks = [
+        {
+          kind: 'issue' as const,
+          url: 'https://github.com/acme/widgets/issues/7',
+          owner: 'acme',
+          repo: 'widgets',
+          number: 7,
+        },
+      ];
+      const diskUsage = {
+        bytes: 4096,
+        fileCount: 3,
+        computedAt: '2026-01-01T00:00:00Z',
+        breakdown: [],
+      };
+      const diffSummary = {
+        schemaVersion: 1,
+        updatedAt: '2026-01-02T00:00:00Z',
+        totalFiles: 1,
+        totalAdditions: 2,
+        totalDeletions: 1,
+        files: [{ path: 'src/a.ts', action: 'modify' as const, additions: 2, deletions: 1 }],
+      };
+      const detail = makeWorkspace({
+        id: 'ws-1',
+        setupScript: 'pnpm install',
+        contextLinks,
+        diskUsage,
+        diffSummary,
+      });
+      /** New-shape list row: detail fields omitted, `diffSummary.files` emptied. */
+      const slimRow = makeWorkspace({
+        id: 'ws-1',
+        title: 'Renamed',
+        diffSummary: { ...diffSummary, files: [] },
+      });
+
+      it('carries hydrated detail fields forward when a list refresh omits them', () => {
+        let state = workspaceReducer(initialState, setWorkspaceEntity(detail));
+        state = workspaceReducer(state, replaceWorkspaceList([slimRow]));
+
+        const merged = getItem(state.workspaces, 'ws-1');
+        expect(merged?.title).toBe('Renamed');
+        expect(merged?.setupScript).toBe('pnpm install');
+        expect(merged?.contextLinks).toEqual(contextLinks);
+        expect(merged?.diskUsage).toEqual(diskUsage);
+        expect(merged?.diffSummary).toEqual(diffSummary);
+      });
+
+      it('lets an old-shape list row (detail fields present) overwrite the stored values', () => {
+        let state = workspaceReducer(initialState, setWorkspaceEntity(detail));
+        const newerSummary = {
+          ...diffSummary,
+          updatedAt: '2026-01-03T00:00:00Z',
+          files: [{ path: 'src/b.ts', action: 'create' as const, additions: 5, deletions: 0 }],
+        };
+        state = workspaceReducer(
+          state,
+          replaceWorkspaceList([
+            makeWorkspace({
+              id: 'ws-1',
+              setupScript: 'make setup',
+              contextLinks: [],
+              diffSummary: newerSummary,
+            }),
+          ]),
+        );
+
+        const merged = getItem(state.workspaces, 'ws-1');
+        expect(merged?.setupScript).toBe('make setup');
+        expect(merged?.contextLinks).toEqual([]);
+        expect(merged?.diffSummary).toEqual(newerSummary);
+      });
+
+      it('does not resurrect stale diffSummary files onto a newer file-less snapshot', () => {
+        let state = workspaceReducer(initialState, setWorkspaceEntity(detail));
+        const newer = { ...diffSummary, updatedAt: '2026-01-03T00:00:00Z', files: [] };
+        state = workspaceReducer(
+          state,
+          replaceWorkspaceList([makeWorkspace({ id: 'ws-1', diffSummary: newer })]),
+        );
+
+        expect(getItem(state.workspaces, 'ws-1')?.diffSummary).toEqual(newer);
+      });
+
+      it('stores a slim row as-is when nothing was hydrated before', () => {
+        const state = workspaceReducer(initialState, replaceWorkspaceList([slimRow]));
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.setupScript).toBeUndefined();
+        expect(stored?.contextLinks).toBeUndefined();
+        expect(stored?.diffSummary?.files).toEqual([]);
+      });
+    });
+
+    describe('capped pullRequests pool (pullRequestsTotal, PROTOCOL §5.1)', () => {
+      const pool = Array.from({ length: 5 }, (_, i) =>
+        makePullRequest({
+          id: `pr-${i + 1}`,
+          number: i + 1,
+          url: `https://github.com/example/repo/pull/${i + 1}`,
+        }),
+      );
+      const truncatedRow = makeWorkspace({ id: 'ws-1', pullRequests: pool, pullRequestsTotal: 7 });
+
+      it('keeps pullRequestsTotal from a truncated list row', () => {
+        const state = workspaceReducer(initialState, replaceWorkspaceList([truncatedRow]));
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.pullRequests).toHaveLength(5);
+        expect(stored?.pullRequestsTotal).toBe(7);
+      });
+
+      it('drops pullRequestsTotal once a workspace.get projection completes the pool', () => {
+        let state = workspaceReducer(initialState, replaceWorkspaceList([truncatedRow]));
+        const fullPool = [
+          ...pool,
+          makePullRequest({ id: 'pr-6', number: 6, url: 'https://github.com/example/repo/pull/6' }),
+          makePullRequest({ id: 'pr-7', number: 7, url: 'https://github.com/example/repo/pull/7' }),
+        ];
+        state = workspaceReducer(
+          state,
+          setWorkspaceEntity(makeWorkspace({ id: 'ws-1', pullRequests: fullPool })),
+        );
+
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.pullRequests).toHaveLength(7);
+        expect(stored?.pullRequestsTotal).toBeUndefined();
+      });
+
+      it('re-caps the pool and restores pullRequestsTotal on the next authoritative list refresh', () => {
+        let state = workspaceReducer(initialState, replaceWorkspaceList([truncatedRow]));
+        state = workspaceReducer(
+          state,
+          setWorkspaceEntity(
+            makeWorkspace({
+              id: 'ws-1',
+              pullRequests: [
+                ...pool,
+                makePullRequest({
+                  id: 'pr-6',
+                  number: 6,
+                  url: 'https://github.com/example/repo/pull/6',
+                }),
+              ],
+            }),
+          ),
+        );
+        state = workspaceReducer(state, replaceWorkspaceList([truncatedRow]));
+
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.pullRequests).toHaveLength(5);
+        expect(stored?.pullRequestsTotal).toBe(7);
+      });
+
+      it('keeps a stored total when a list row omits the pool entirely', () => {
+        let state = workspaceReducer(initialState, replaceWorkspaceList([truncatedRow]));
+        state = workspaceReducer(
+          state,
+          replaceWorkspaceList([makeWorkspace({ id: 'ws-1', pullRequests: undefined })]),
+        );
+
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.pullRequests).toHaveLength(5);
+        expect(stored?.pullRequestsTotal).toBe(7);
+      });
     });
 
     it('hides rows carrying pendingDeleteAt from the list', () => {
@@ -663,6 +833,47 @@ describe('workspaceReducer', () => {
       expect(state.workspaces.ids).toEqual([]);
     });
   });
+
+  describe('markWorkspaceDetailHydrated', () => {
+    it('marks a workspace and is idempotent', () => {
+      let state = workspaceReducer(initialState, markWorkspaceDetailHydrated('ws-1'));
+      expect(state.detailHydrated).toEqual({ 'ws-1': true });
+      const again = workspaceReducer(state, markWorkspaceDetailHydrated('ws-1'));
+      expect(again).toBe(state);
+      state = again;
+      expect(selectWorkspaceDetailHydrated.select({ workspace: state } as never, 'ws-1')).toBe(
+        true,
+      );
+      expect(selectWorkspaceDetailHydrated.select({ workspace: state } as never, 'ws-2')).toBe(
+        false,
+      );
+    });
+
+    it('survives a list refresh that still carries the workspace', () => {
+      let state = workspaceReducer(initialState, setWorkspaceEntity(makeWorkspace({ id: 'ws-1' })));
+      state = workspaceReducer(state, markWorkspaceDetailHydrated('ws-1'));
+      state = workspaceReducer(state, replaceWorkspaceList([makeWorkspace({ id: 'ws-1' })]));
+      expect(state.detailHydrated).toEqual({ 'ws-1': true });
+    });
+
+    it('is dropped when the workspace leaves the list, is removed, or is deleted', () => {
+      const seeded = workspaceReducer(
+        workspaceReducer(
+          workspaceReducer(initialState, setWorkspaceEntity(makeWorkspace({ id: 'ws-1' }))),
+          setWorkspaceEntity(makeWorkspace({ id: 'ws-2' })),
+        ),
+        markWorkspaceDetailHydrated('ws-1'),
+      );
+      const afterList = workspaceReducer(
+        seeded,
+        replaceWorkspaceList([makeWorkspace({ id: 'ws-2' })]),
+      );
+      expect(afterList.detailHydrated).toEqual({});
+      expect(workspaceReducer(seeded, removeWorkspaceEntity('ws-1')).detailHydrated).toEqual({});
+      expect(workspaceReducer(seeded, workspaceDeleted('ws-1')).detailHydrated).toEqual({});
+      expect(workspaceReducer(seeded, resetWorkspaceState()).detailHydrated).toEqual({});
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -672,6 +883,25 @@ describe('workspaceReducer', () => {
 describe('workspace selectors', () => {
   const stateWith = (ws: Partial<typeof initialState>) => ({
     workspace: { ...initialState, ...ws },
+  });
+
+  it('isWorkspacePullRequestPoolTruncated reads the capped-pool signal', () => {
+    const pr = makePullRequest();
+    expect(isWorkspacePullRequestPoolTruncated(undefined)).toBe(false);
+    expect(isWorkspacePullRequestPoolTruncated(makeWorkspace({ id: 'ws-1' }))).toBe(false);
+    expect(
+      isWorkspacePullRequestPoolTruncated(makeWorkspace({ id: 'ws-1', pullRequests: [pr] })),
+    ).toBe(false);
+    expect(
+      isWorkspacePullRequestPoolTruncated(
+        makeWorkspace({ id: 'ws-1', pullRequests: [pr], pullRequestsTotal: 1 }),
+      ),
+    ).toBe(false);
+    expect(
+      isWorkspacePullRequestPoolTruncated(
+        makeWorkspace({ id: 'ws-1', pullRequests: [pr], pullRequestsTotal: 3 }),
+      ),
+    ).toBe(true);
   });
 
   it('exposes workspace request-state selectors', () => {

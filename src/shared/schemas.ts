@@ -156,6 +156,8 @@ export const WorkspaceSchema = z.object({
   prNumber: z.number().nullable().optional(),
   prStatus: z.string().nullable().optional(),
   pullRequests: z.array(z.any()).optional(),
+  /** Full pool size when a list row's `pullRequests` was capped (PROTOCOL §5.1); omitted when not truncated. */
+  pullRequestsTotal: z.number().int().nonnegative().optional(),
   activePullRequest: z.any().optional(),
   /** Issue/PR context links persisted at create (PROTOCOL §5.1); write-once, omitted when there are none. */
   contextLinks: z.array(ContextLinkSchema).max(20).optional(),

@@ -95,6 +95,27 @@ export const selectWorkspaceById = store.createSelector<[wsId: string], Workspac
   },
 );
 
+/**
+ * Whether the stored row has been hydrated from `workspace.get` (slim
+ * `workspace.list` rows omit the detail-only fields — see
+ * `WorkspaceState.detailHydrated`).
+ */
+export const selectWorkspaceDetailHydrated = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => state.workspace.detailHydrated[wsId] === true,
+);
+
+/**
+ * Whether the stored `pullRequests` pool is the capped `workspace.list`
+ * projection (PROTOCOL §5.1 `pullRequestsTotal`); readers needing every PR
+ * hydrate the full pool via `workspace.get`.
+ */
+export function isWorkspacePullRequestPoolTruncated(workspace: Workspace | undefined): boolean {
+  return (
+    workspace?.pullRequestsTotal !== undefined &&
+    workspace.pullRequestsTotal > (workspace.pullRequests?.length ?? 0)
+  );
+}
+
 export const selectWorkspaceEnvironmentConfig = store.createSelector<
   [wsId: string],
   EnvironmentConfig | undefined

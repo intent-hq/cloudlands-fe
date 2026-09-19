@@ -47,9 +47,15 @@ import {
 import { setAgents, setInitialAgentId } from '../../workspace-agents/workspace-agents-slice';
 import {
   selectWorkspaceById,
+  selectWorkspaceDetailHydrated,
   selectWorkspaceListLoadedForBackend,
 } from '../../workspace/workspace-selectors';
-import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import {
+  markWorkspaceDetailHydrated,
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '../../workspace/workspace-slice';
+import { fetchWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
 import { selectSpec } from '../../workspace-notes/workspace-notes-selectors';
 import {
   applyNoteCreated,
@@ -516,6 +522,23 @@ function* reconcileEmptyRestoredLayout(wsId: string, agents?: AgentSession[]): S
       const backendId = yield* selectActiveBackendId();
       const listLoaded = yield* selectWorkspaceListLoadedForBackend.effect(backendId);
       if (!listLoaded) return;
+    } else if (workspace.contextLinks === undefined) {
+      // Slim `workspace.list` rows omit `contextLinks` (detail-only, PROTOCOL
+      // §5.1), so an absent field on a row never hydrated from `workspace.get`
+      // does not mean "no links". Pull the detail once (single-flighted with
+      // every other reader) and let the `setWorkspaceEntity` retrigger re-run
+      // this reconcile against the hydrated row — returning here keeps the
+      // seed + agent-tab open to exactly one pass. A failed read falls
+      // through and proceeds with no links, as before.
+      const detailHydrated = yield* selectWorkspaceDetailHydrated.effect(wsId);
+      if (!detailHydrated) {
+        const detail = yield* call(fetchWorkspaceDetail, wsId);
+        if (detail) {
+          yield* put(markWorkspaceDetailHydrated(wsId));
+          yield* put(setWorkspaceEntity(detail));
+          return;
+        }
+      }
     }
     const contextLinks = workspace?.contextLinks ?? [];
     if (contextLinks.length > 0) {

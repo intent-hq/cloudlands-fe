@@ -79,6 +79,7 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+  import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
   import {
     acquireChatInterestLease,
     releaseChatInterestLease,
@@ -3745,6 +3746,17 @@
           setupScript: workspace.setupScript,
           skipWorktree: workspace.skipWorktree,
         };
+        // `setupScript` is detail-only (absent from slim `workspace.list`
+        // rows), so an undefined value on the list-backed prop does not mean
+        // "no script". Pull the detail once (single-flighted per workspace)
+        // and patch the setup card when it arrives.
+        if (isInitialWorkspaceAgent && workspace.setupScript === undefined) {
+          const wsId = workspace.id;
+          void ensureWorkspaceDetail(wsId).then((detail) => {
+            if (!detail?.setupScript || !onboardingContext || workspace?.id !== wsId) return;
+            onboardingContext = { ...onboardingContext, setupScript: detail.setupScript };
+          });
+        }
       }
     }
 

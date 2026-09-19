@@ -93,6 +93,12 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => testState.panelManager,
 }));
+// The on-demand `workspace.get` detail pull reads the real workspace slice,
+// which the store mock above does not carry; the setup card here is driven by
+// the `workspace` prop alone.
+vi.mock('$features/workspace/workspace-detail-hydration', () => ({
+  ensureWorkspaceDetail: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('$lib/client', () => ({
   appClient: {
     drafts: {

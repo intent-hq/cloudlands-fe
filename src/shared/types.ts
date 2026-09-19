@@ -361,6 +361,10 @@ export interface Workspace {
   prNumber?: number;
   prStatus?: PullRequestStatus;
   pullRequests?: PullRequestInfo[];
+  /** Size of the full `pullRequests` pool when a `workspace.list` row was
+   *  truncated to its cap (PROTOCOL §5.1); omitted when nothing was dropped.
+   *  `workspace.get` serves the full pool and never carries it. */
+  pullRequestsTotal?: number;
   activePullRequest?: PullRequestInfo | null;
   /** Issue/PR context links persisted at create (PROTOCOL §5.1). Write-once —
    *  supplied on `workspace.create`, never mutated after insert — and omitted

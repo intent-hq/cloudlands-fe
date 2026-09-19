@@ -5,6 +5,7 @@
   import * as Menu from '$lib/components/ui/menu';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { handleLink } from '$features/navigation/link-handler';
+  import { ensureWorkspacePullRequestPool } from '$features/workspace/workspace-detail-hydration';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
@@ -56,6 +57,13 @@
     open = false;
   }
 
+  // `workspace.list` rows cap `pullRequests` (most recent, active PR kept);
+  // the parent derives `rows` from the store row, so completing the pool via
+  // `workspace.get` on open re-renders the full list. No-op when complete.
+  function onOpenChange(next: boolean) {
+    if (next) void ensureWorkspacePullRequestPool(workspaceId);
+  }
+
   function openPr(pr: WorkspacePRPresentationRow, close: () => void) {
     close();
     if (!pr.url) return;
@@ -65,7 +73,7 @@
 
 {#if leadRow}
   <span class="pointer-events-auto relative z-20 inline-flex {className}" data-sidebar-pr-dropdown>
-    <Menu.Root bind:open>
+    <Menu.Root bind:open {onOpenChange}>
       <Menu.Trigger>
         {#snippet child({ props })}
           <Button

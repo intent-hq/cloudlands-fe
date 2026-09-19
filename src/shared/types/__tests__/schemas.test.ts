@@ -445,6 +445,34 @@ describe('Zod Schemas', () => {
       const strippedKeys = Object.keys(workspace).filter((key) => !(key in parsed));
       expect(strippedKeys).toEqual([]);
     });
+
+    it('accepts a slim workspace.list row with a capped pullRequests pool and pullRequestsTotal', () => {
+      // PROTOCOL §5.1: list rows omit detail-only fields and cap
+      // `pullRequests` at 5 entries, announcing the full size via
+      // `pullRequestsTotal`; `workspace.get` rows omit the counter.
+      const pr = (number: number) => ({
+        id: `pr-${number}`,
+        number,
+        url: `https://github.com/o/r/pull/${number}`,
+        title: `PR ${number}`,
+        status: 'Open',
+        createdAt: '2026-07-26T00:00:00.000Z',
+        updatedAt: '2026-07-26T00:00:00.000Z',
+      });
+      const truncated = WorkspaceSchema.parse({
+        ...baseWorkspace,
+        pullRequests: [1, 2, 3, 4, 5].map(pr),
+        pullRequestsTotal: 7,
+      });
+      expect(truncated.pullRequests).toHaveLength(5);
+      expect(truncated.pullRequestsTotal).toBe(7);
+      expect(truncated.setupScript).toBeUndefined();
+      expect(truncated.contextLinks).toBeUndefined();
+
+      const detail = WorkspaceSchema.parse({ ...baseWorkspace, pullRequests: [1, 2].map(pr) });
+      expect(detail.pullRequestsTotal).toBeUndefined();
+      expect(() => WorkspaceSchema.parse({ ...baseWorkspace, pullRequestsTotal: -1 })).toThrow();
+    });
   });
 
   describe('Safe Validation Functions', () => {
