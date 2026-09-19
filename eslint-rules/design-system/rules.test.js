@@ -138,6 +138,10 @@ const buttonImport = 'import { Button } from "$lib/components/ui/button";';
 const faImport = 'import Fa from "svelte-fa";';
 const withScript = (...imports) => `<script>${imports.join('')}</script>`;
 const iconButton = withScript(buttonImport, faImport);
+const settingsIconButton = withScript(
+  'import { Button, Input } from "$lib/components/patterns/settings/custom-controls";',
+  faImport,
+);
 const iconSizeError = {
   message:
     'Use `size="icon"` or another icon size such as `size="icon-compact"` instead — /sandbox/button',
@@ -154,6 +158,7 @@ const buttonSizeKeys = (() => {
 svelteTester.run('icon-only-button-size', iconOnlyButtonSize, {
   valid: [
     `${iconButton}<Button size="icon-compact" aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+    `${settingsIconButton}<Button size="icon-compact" aria-label="More"><Fa icon={faEllipsis} /></Button>`,
     `${iconButton}<Button size={size} aria-label="More"><Fa icon={faEllipsis} /></Button>`,
     `${iconButton}<Button size="sm"><Fa icon={faPlus} /> Add</Button>`,
     `${iconButton}<Button size="sm">{label}<Fa icon={faPlus} /></Button>`,
@@ -196,6 +201,10 @@ svelteTester.run('icon-only-button-size', iconOnlyButtonSize, {
     },
     {
       code: `${iconButton}<Button size aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${settingsIconButton}<Button aria-label="More"><Fa icon={faEllipsis} /></Button>`,
       errors: [iconSizeError],
     },
     {

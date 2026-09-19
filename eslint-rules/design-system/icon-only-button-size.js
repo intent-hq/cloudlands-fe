@@ -14,12 +14,16 @@ const iconDirectories = [
 // vite.config.mjs aliases `svelte-fa` to `$lib/components/shared/icons/fa-proxy.ts`.
 const iconPackages = new Set(['svelte-fa']);
 
+// `patterns/settings/custom-controls.ts` re-exports `Button` from
+// `$lib/components/ui/button` for controls registered through `SettingsForm.custom`.
+const buttonSources = new Set([
+  '$lib/components/ui/button',
+  '$lib/components/ui/button/index.js',
+  '$lib/components/patterns/settings/custom-controls',
+]);
+
 function isButtonSource(source) {
-  return (
-    source === '$lib/components/ui/button' ||
-    source === '$lib/components/ui/button/index.js' ||
-    source.endsWith('/ui/button/button.svelte')
-  );
+  return buttonSources.has(source) || source.endsWith('/ui/button/button.svelte');
 }
 
 function isIconSource(source, filename) {
