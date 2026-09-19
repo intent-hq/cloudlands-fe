@@ -567,6 +567,9 @@
     // queued (unconsumed) until the selection returns to primary; reading
     // the flag here re-runs the effect on that switch (monorepo#2053).
     const browsingSecondaryRoot = isBrowsingSecondaryRoot;
+    // Every auto-action routes through an owner-only RPC (accept-changes.*):
+    // a collaborator consumes the action without firing it.
+    const owner = isOwner;
     untrack(() => {
       if (ac.commitMessage && ac.commitMessage !== commitMessage) {
         commitMessage = ac.commitMessage;
@@ -575,6 +578,7 @@
       // Handle pending auto-actions
       if (pending && !browsingSecondaryRoot) {
         appStore.dispatch(setPendingAutoAction(workspaceId, null));
+        if (!owner) return;
         if (pending.action === 'commit') {
           isCommitting = true;
           handleCommit(pending.workspaceId);
