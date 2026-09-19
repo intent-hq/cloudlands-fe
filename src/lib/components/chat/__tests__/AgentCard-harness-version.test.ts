@@ -195,6 +195,30 @@ describe('AgentCard harness version context-menu item', () => {
     expect(state.dataset.enabled).toBe('true');
   });
 
+  // Sidebar call site (WorkspaceAgentsList → LazyAgentCard) renders the card
+  // without a `workspace` prop; the menu-open read resolves the workspace
+  // from the stored row instead.
+  it('without a workspace prop: no agent.get on mount, one on menu open resolved from the row', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ harnessVersion: '1.0' })], { listProjection: true }),
+    );
+    const get = stubAgentGet(
+      makeSession({ harnessVersion: '1.0', harnessFeatures: { structuredQuestions: false } }),
+    );
+
+    render(AgentCard, { props: { agentId } });
+    await screen.findByTestId('agent-list-item');
+    await flushMicrotasks();
+    expect(get).not.toHaveBeenCalled();
+
+    await openContextMenu();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith(agentId);
+    await waitFor(() => {
+      expect(screen.getByText('Harness v1.0').closest('button')!.disabled).toBe(false);
+    });
+  });
+
   it('still restores a session the store has no row for on mount', async () => {
     const get = stubAgentGet(makeSession({ harnessVersion: '1.0' }));
 

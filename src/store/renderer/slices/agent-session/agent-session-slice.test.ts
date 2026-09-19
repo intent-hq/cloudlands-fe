@@ -3382,6 +3382,18 @@ describe('agent-session-slice reducer', () => {
       expect(again).toBe(state);
     });
 
+    it('is never set by a list-projection upsert, even one carrying detail fields', () => {
+      const state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions(
+          [makeSession('a1', 'ws-1', { harnessFeatures: { structuredQuestions: true } })],
+          { listProjection: true },
+        ),
+      );
+      expect(state.byAgentId.a1).toBeDefined();
+      expect(state.detailHydrated).toBeUndefined();
+    });
+
     it('survives later list-projection upserts of the same agent', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
       state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
