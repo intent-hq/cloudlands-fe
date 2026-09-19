@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.169.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.168.1...v2.169.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* **lint:** require an icon size on icon-only Buttons ([#2675](https://github.com/intent-hq/cloudlands-fe/issues/2675)) ([fa0bb02](https://github.com/intent-hq/cloudlands-fe/commit/fa0bb029c9fcb766ee8c9c4f85a1d2ffc11e8156))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.83 ([#2681](https://github.com/intent-hq/cloudlands-fe/issues/2681)) ([bbbadbe](https://github.com/intent-hq/cloudlands-fe/commit/bbbadbe215ce07fdb59f8eaa4f6731a1989f1070))
+
 ## [2.168.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.168.0...v2.168.1) (2026-09-19)
 
 
