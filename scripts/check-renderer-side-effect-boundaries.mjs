@@ -10,20 +10,20 @@ import ts from 'typescript';
 // classification, intended owner, and retained-UI rationale). Update this reviewed
 // snapshot only after inspecting that report; the default command fails closed.
 const REVIEWED_INVENTORY_DIGEST =
-  '6b85612139cb2f4973261ffd9d35810014d7f99e6d713a97137b0dfac5f99b8e';
+  '0066fac76c765ed818d7952d7827d189bc135303ab8548464507ba68b1c45ac7';
 const REVIEWED_INVENTORY_COUNTS = {
   'approved lifecycle seam :: async-subscription': 2,
   'approved lifecycle seam :: client-ipc': 3,
   'approved lifecycle seam :: dom-subscription': 8,
-  'approved lifecycle seam :: ipc': 4,
+  'approved lifecycle seam :: ipc': 5,
   'approved lifecycle seam :: timer': 6,
   'component-local UI behavior :: dom-subscription': 326,
   'component-local UI behavior :: timer': 300,
   'infrastructure adapter :: async-subscription': 16,
   'infrastructure adapter :: client-ipc': 337,
   'infrastructure adapter :: dom-subscription': 5,
-  'infrastructure adapter :: ipc': 86,
-  'infrastructure adapter :: ipc-registration': 141,
+  'infrastructure adapter :: ipc': 87,
+  'infrastructure adapter :: ipc-registration': 142,
   'infrastructure adapter :: service-factory': 5,
   'infrastructure adapter :: timer': 52,
   'saga-owned business logic :: async-subscription': 54,
@@ -34,7 +34,7 @@ const REVIEWED_INVENTORY_COUNTS = {
   'saga-owned business logic :: ipc-registration': 1,
   'saga-owned business logic :: network': 4,
   'saga-owned business logic :: storage': 85,
-  'saga-owned business logic :: timer': 340,
+  'saga-owned business logic :: timer': 341,
 };
 
 const INVENTORY_EXCLUDED_PATH_PARTS = [
