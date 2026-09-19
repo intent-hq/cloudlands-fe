@@ -7,8 +7,10 @@
    * tile (image or coloured initials) is drawn greyscale whatever their ring,
    * and this window's own principal is marked. The ring is a box-shadow on the
    * outer element and a CSS filter greys everything its element paints, so the
-   * filter lives on an inner tile and the ring keeps its colour. With `action`
-   * every visible avatar is a button. Renders nothing when nobody is there.
+   * filter lives on an inner tile and the ring keeps its colour. The group's
+   * accessible name counts only the people present (never offline members).
+   * With `action` every visible avatar is a button. Renders nothing when
+   * nobody is there.
    */
   import { Button } from '$lib/components/ui/button';
   import { Tooltip } from '$lib/components/ui/tooltip';
@@ -50,13 +52,25 @@
 
   const visible = $derived(people.slice(0, maxVisible));
   const overflow = $derived(Math.max(0, people.length - maxVisible));
-  const others = $derived(people.filter((person) => !person.self).length);
+  // The group label announces who is HERE: only the other people not known
+  // to be offline count as present; a stack of offline members alone says so
+  // instead of announcing them as here.
+  const onlineOthers = $derived(
+    people.filter((person) => !person.self && person.online !== false).length,
+  );
+  const offlineOthers = $derived(
+    people.filter((person) => !person.self && person.online === false).length,
+  );
   const label = $derived(
-    others === 0
-      ? m.presence_avatarStack_onlyYou_label()
-      : others === 1
-        ? m.presence_avatarStack_people_one()
-        : m.presence_avatarStack_people_many({ count: formatInteger(others) }),
+    onlineOthers === 1
+      ? m.presence_avatarStack_people_one()
+      : onlineOthers > 1
+        ? m.presence_avatarStack_people_many({ count: formatInteger(onlineOthers) })
+        : offlineOthers === 0
+          ? m.presence_avatarStack_onlyYou_label()
+          : offlineOthers === 1
+            ? m.presence_avatarStack_offline_one()
+            : m.presence_avatarStack_offline_many({ count: formatInteger(offlineOthers) }),
   );
   const fontSize = $derived(`${Math.max(8, Math.round(size * 0.55))}px`);
 

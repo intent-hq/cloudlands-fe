@@ -277,6 +277,31 @@ describe('WorkspaceProgressCard presence row', () => {
       expectGreyscaleBelowRing(avatar);
     }
     expect(personButton('cy').getAttribute('aria-label')).toMatch(/offline/i);
+    // The group name must not announce the offline members as present.
+    const group = row.querySelector('[data-presence-avatar-stack]')!;
+    expect(group.getAttribute('aria-label')).not.toMatch(/here$/);
+    expect(group.getAttribute('aria-label')).toMatch(/not here|none here/i);
+  });
+
+  it('names the group by the people present, leaving the listed offline members out of the count', async () => {
+    await renderProgressCard({
+      presence: presenceState(
+        membership,
+        presenceRosterReceived({
+          workspaceId: 'ws-1',
+          members: [
+            rosterMember('me', [{ workspaceId: 'ws-1' }]),
+            rosterMember('ada', [{ workspaceId: 'ws-1' }]),
+          ],
+        }),
+        presenceOwnPrincipalReceived('me'),
+      ),
+    });
+    const row = presenceRow()!;
+    expect(row.querySelectorAll('[data-presence-avatar]')).toHaveLength(3);
+    expect(row.querySelector('[data-presence-avatar-stack]')!.getAttribute('aria-label')).toBe(
+      '1 other person here',
+    );
   });
 
   it('keeps the owner ring on an offline owner and greys only online-less members, never an online one', async () => {
