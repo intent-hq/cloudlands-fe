@@ -18,6 +18,7 @@ import {
   selectIsCollaboratorOnlyClient,
   selectIsWorkspaceCollaborator,
   selectIsWorkspaceHostLocal,
+  selectIsWorkspaceOwner,
   selectWorkflowStage,
   selectWorkspaceActivePrSummary,
   selectWorkspaceIsWaiting,
@@ -424,6 +425,51 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
       expect(selectIsWorkspaceCollaborator.select(guestAware(ownerRow, 'local'), WS_ID)).toBe(
         false,
       );
+    });
+  });
+
+  describe('selectIsWorkspaceOwner', () => {
+    it('is true only for a row reporting myRole owner in a settled owner window', () => {
+      expect(
+        selectIsWorkspaceOwner.select(loadedState([makeWorkspace({ myRole: 'owner' })]), WS_ID),
+      ).toBe(true);
+      expect(
+        selectIsWorkspaceOwner.select(
+          loadedState([makeWorkspace({ myRole: 'collaborator' })]),
+          WS_ID,
+        ),
+      ).toBe(false);
+      // A missing role never grants the owner-only sharing surfaces.
+      expect(selectIsWorkspaceOwner.select(loadedState([makeWorkspace()]), WS_ID)).toBe(false);
+      expect(selectIsWorkspaceOwner.select(loadedState([]), WS_ID)).toBe(false);
+    });
+
+    it('is false in a guest window even when the daemon reports myRole owner (host owner joined its own invite)', () => {
+      const guestOwnerRole = guestAware(
+        loadedState([makeWorkspace({ myRole: 'owner' })]),
+        GUEST_SESSION.id,
+      );
+      expect(selectIsWorkspaceOwner.select(guestOwnerRole, WS_ID)).toBe(false);
+    });
+
+    it('is false until the window identity settles, even when the row reports myRole owner', () => {
+      const ownerRow = loadedState([makeWorkspace({ myRole: 'owner' })]);
+      const boot = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsInitialState,
+      } as StoreState;
+      expect(selectIsWorkspaceOwner.select(boot, WS_ID)).toBe(false);
+      const preBind = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsReducer(
+          guestSessionsInitialState,
+          guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+        ),
+      } as StoreState;
+      expect(selectIsWorkspaceOwner.select(preBind, WS_ID)).toBe(false);
+      expect(selectIsWorkspaceOwner.select(guestAware(ownerRow, 'local'), WS_ID)).toBe(true);
     });
   });
 });

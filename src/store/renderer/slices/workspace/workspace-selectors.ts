@@ -206,6 +206,22 @@ export const selectHidesOwnerWorkspaceActions = store.createSelector<[wsId: stri
 );
 
 /**
+ * True when the connected principal owns the workspace: the daemon reports
+ * `myRole: 'owner'` (PROTOCOL §5.1) in a settled owner window. Gates the
+ * surfaces the daemon's `require_owner` check protects and that a missing role
+ * must never offer (sharing, the roster). Fails closed like
+ * `selectHidesOwnerWorkspaceActions`: false in a guest window whatever
+ * `myRole` the row carries (the host owner's own account joining its own
+ * invite reports `owner`), and until the window's identity has settled.
+ */
+export const selectIsWorkspaceOwner = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) =>
+    selectWindowIdentitySettled.select(state) &&
+    !selectIsGuestWindow.select(state) &&
+    selectWorkspaceById.select(state, wsId)?.myRole === 'owner',
+);
+
+/**
  * True when the connected principal is a collaborator everywhere: the list
  * has loaded and every workspace it can see reports `myRole: 'collaborator'`.
  * Gates app-wide administrator-only surfaces (workspace creation / repo

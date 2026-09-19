@@ -49,6 +49,7 @@
   } from '$store/renderer/slices/terminals/terminals-slice';
 
   import {
+    selectIsWorkspaceCollaborator,
     selectWorkspaceById,
     selectWorkspaceActivePullRequest,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -142,9 +143,13 @@
   // reset-to-trunk), `github.*`, `workspace.setAutoCommit`, `workspace.archive`
   // and the protected `workspace.update` fields (`branch`, `baseRef`,
   // `baseCommitSha`) is owner-only, so those controls are not rendered for a
-  // collaborator. A missing `myRole` is treated as owner, like the rest of the
-  // sidebar (`guest-sessions-selectors.ts`). Threaded to children as a prop.
-  const isOwner = $derived($workspace?.myRole !== 'collaborator');
+  // collaborator. `selectIsWorkspaceCollaborator` fails closed — a guest window
+  // (multiplayer w4) reads as collaborator whatever `myRole` the row carries,
+  // as does every window until its identity has settled — while a missing
+  // `myRole` in a settled owner window is treated as owner, like the rest of
+  // the sidebar. Threaded to children as a prop.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isOwner = $derived(!$isCollaborator$);
 
   const acceptChangesState$ = selectAcceptChangesState(workspaceIdStore);
   const pendingAutoAction$ = selectPendingAutoAction(workspaceIdStore);
