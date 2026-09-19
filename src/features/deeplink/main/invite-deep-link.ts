@@ -291,7 +291,8 @@ type ProveOutcome =
   | { kind: 'joined' }
   | { kind: 'cancelled' }
   | { kind: 'sign-in-required'; reason: InviteSignInReason }
-  | { kind: 'proof-refused'; code: ProofRefusalCode };
+  | { kind: 'proof-refused'; code: ProofRefusalCode }
+  | { kind: 'account-changed'; login: string };
 
 /** Host refusals of the proof that a fresh challenge can cure. */
 type ProofRefusalCode = 'proof-invalid' | 'proof-expired';
@@ -303,7 +304,9 @@ type ProofRefusalCode = 'proof-invalid' | 'proof-expired';
  * second refusal after a completed sign-in is surfaced as a failure rather
  * than prompting again — and re-challenges once on `proof-expired` /
  * `proof-invalid` when the user asks to retry (consent already given: no
- * second prompt).
+ * second prompt). Consent is bound to a login: when the proof comes back
+ * under a different account than the one consented to, the loop prompts
+ * again naming that account before anything is proven to the host.
  */
 async function joinWithIdentityProof(
   connection: InviteConnection,
@@ -359,7 +362,15 @@ async function joinWithIdentityProof(
       }
       consented = true;
     }
-    const outcome = await proveIdentity(connection, client, envelope, challenge, labels, consent);
+    const outcome = await proveIdentity(
+      connection,
+      client,
+      envelope,
+      challenge,
+      labels,
+      login as string,
+      consent,
+    );
     switch (outcome.kind) {
       case 'joined':
       case 'cancelled':
@@ -367,6 +378,11 @@ async function joinWithIdentityProof(
       case 'sign-in-required':
         // The joining prompt stays up until the sign-in prompt supersedes it.
         signInReason = outcome.reason;
+        break;
+      case 'account-changed':
+        login = outcome.login;
+        consent = null;
+        consented = false;
         break;
       case 'proof-refused':
         consent?.dismiss('failed');
@@ -389,7 +405,10 @@ async function joinWithIdentityProof(
  * One proof attempt against the current challenge. `consent` is the prompt
  * in its waiting state (or `null` on a retry, when nothing is up): a Cancel
  * that lands before `invite.prove` is sent aborts the attempt — the gist is
- * deleted — while the prove answer is the point of no return. The gist is
+ * deleted — while the prove answer is the point of no return. `login` is the
+ * account the user consented to: a proof the guest daemon creates under any
+ * other account is deleted, unproven, and reported as `account-changed` so
+ * the host never learns an account the user did not approve. The gist is
  * deleted best-effort on every path but `sign-in-required` (where none was
  * created).
  */
@@ -399,6 +418,7 @@ async function proveIdentity(
   envelope: InviteEnvelope,
   challenge: InviteChallenge,
   labels: PromptLabels,
+  login: string,
   consent: InviteConsentPrompt | null,
 ): Promise<ProveOutcome> {
   let cancelled = false;
@@ -427,6 +447,12 @@ async function proveIdentity(
     consent?.dismiss('cancelled');
     logger.info('User cancelled the invite while the identity proof was being made');
     return { kind: 'cancelled' };
+  }
+  if (proof.login !== login) {
+    void deleteProof(client, proof.gistId);
+    consent?.dismiss('superseded');
+    logger.info('Identity proof named a different GitHub account than consented; asking again');
+    return { kind: 'account-changed', login: proof.login };
   }
 
   let credential: Awaited<ReturnType<InviteConnection['prove']>>;
