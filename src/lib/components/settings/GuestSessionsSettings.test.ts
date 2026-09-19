@@ -986,5 +986,25 @@ describe('GuestSessionsSettings', () => {
       await fireEvent.click(within(report).getByRole('button', { name: 'Retry' }));
       await waitFor(() => expect(mocks.removeAll).toHaveBeenCalledTimes(2));
     });
+
+    it('names an untitled hosted workspace Untitled when its sweep fails', async () => {
+      mocks.hosted = [{ ...hostedWorkspace, title: '' } as Workspace];
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+      mocks.removeAll.mockImplementationOnce((workspaceId) => ({
+        type: 'guestSessions/removeAllHostedGuestsRequested',
+        payload: [workspaceId],
+        promise: Promise.reject(new Error('forbidden')),
+      }));
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+
+      await fireEvent.click(within(roster).getByTestId('hosted-roster-remove-all'));
+      const confirmButtons = screen.getAllByRole('button', { name: 'Remove all guests' });
+      await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+      const report = await screen.findByTestId('hosted-roster-remove-all-error');
+      expect(report.textContent).toContain('Untitled');
+      expect(mocks.removeAll).toHaveBeenCalledWith('ws-1');
+    });
   });
 });
