@@ -491,6 +491,37 @@ describe('openInviteConnection', () => {
       expect((err as Error).message).not.toContain('tc-bad');
     });
 
+    it('keeps host-refused when the pin-verified daemon behind the tunnel rejects the upgrade', async () => {
+      // A daemon presenting the pinned cert that answers `/invite` with a
+      // non-101 status: the tunnel carried the request, so the refusal is the
+      // daemon's, not the forwarder's.
+      const refusing = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+      refusing.on('upgrade', (_req, socket) => {
+        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      });
+      await new Promise<void>((res) => refusing.listen(0, '127.0.0.1', () => res()));
+      const refusingPort = (refusing.address() as AddressInfo).port;
+      const children: RelayChild[] = [];
+      try {
+        const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+        const err = await openInviteConnection(
+          { hosts: [], port: refusingPort, fingerprint: daemon.fingerprint, tcAddress: 'tc-key' },
+          { timeoutMs: 3_000, tailcatSpawn: relaySpawn(refusingPort, children, []) },
+        ).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(InviteTransportError);
+        expect(err).toMatchObject({ transportCode: 'host-refused' });
+        await vi.waitFor(
+          () => {
+            expect(children.length).toBeGreaterThan(0);
+            expect(children.every((c) => c.killed)).toBe(true);
+          },
+          { timeout: 3_000 },
+        );
+      } finally {
+        await new Promise<void>((res) => refusing.close(() => res()));
+      }
+    });
+
     it('rejects with tailcat-unavailable when no tailcat binary can be resolved', async ({
       skip,
     }) => {
