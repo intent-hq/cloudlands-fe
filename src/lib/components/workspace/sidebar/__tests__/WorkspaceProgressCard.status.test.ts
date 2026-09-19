@@ -97,7 +97,9 @@ const mocks = vi.hoisted(() => {
       { select: getter },
     );
   const notifySelectors = () => selectorSubscribers.forEach((notify) => notify());
+  const role = { hidesOwnerActions: false };
   return {
+    role,
     dispatch,
     update,
     archive,
@@ -135,6 +137,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => mocks.progressActions),
+  selectHidesOwnerWorkspaceActions: mocks.selector(() => mocks.role.hidesOwnerActions),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -350,6 +353,7 @@ describe('WorkspaceProgressCard status message', () => {
     mocks.progressActions.length = 0;
     mocks.storeState.workspace.pendingTitleMutations = {};
     mocks.storeState.browserClients = browserClientsInitialState;
+    mocks.role.hidesOwnerActions = false;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -451,6 +455,29 @@ describe('WorkspaceProgressCard status message', () => {
 
     expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+  });
+
+  it('offers Transfer, Archive and Delete to the workspace owner', async () => {
+    const { container } = await renderProgressCard({ myRole: 'owner' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Archive Workspace' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete Workspace…' })).toBeTruthy();
+  });
+
+  it('hides Transfer, Archive and Delete from a collaborator while keeping the rest of the menu', async () => {
+    mocks.role.hidesOwnerActions = true;
+    const { container } = await renderProgressCard({ myRole: 'collaborator' });
+    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
+
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Archive Workspace' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete Workspace…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Toggle Sidebar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move sidebar to right' })).toBeTruthy();
   });
 
   it('omits the transfer action when workspace data becomes unavailable', async () => {

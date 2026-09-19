@@ -17,6 +17,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
+  closeWindowRequested,
   connectionStatusChanged,
   daemonHealthReducer,
   fetchSidecarRunLogRequested,
@@ -778,6 +779,35 @@ describe('daemonHealthSaga', () => {
     // The initiating window keeps its own (dead) backend, so no 'connected'
     // status event ever clears the pending flag — the success action must.
     expect(dispatched).toContainEqual(openLocalAndSpawnSucceeded());
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('asks main to close this window over window:close and keeps running when the bridge fails', async () => {
+    let closeCalls = 0;
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected' };
+      if (channel === IPC_CHANNELS.WINDOW.CLOSE) {
+        closeCalls += 1;
+        if (closeCalls === 1) throw new Error('bridge down');
+        return { success: true };
+      }
+      return undefined;
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+    const dispatchedBefore = dispatched.length;
+
+    input.put(closeWindowRequested());
+    await settle();
+    input.put(closeWindowRequested());
+    await settle();
+
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW.CLOSE);
+    expect(closeCalls).toBe(2);
+    // Main owns the close: nothing to reflect in state, and a failed first
+    // attempt does not surface a spawn error or stop later requests.
+    expect(dispatched.slice(dispatchedBefore)).toEqual([]);
     task.cancel();
     await task.toPromise();
   });
