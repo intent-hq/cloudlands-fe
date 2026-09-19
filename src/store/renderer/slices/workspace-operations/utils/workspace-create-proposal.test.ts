@@ -306,6 +306,29 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
     expect(resolve).toHaveBeenCalledWith(undefined);
   });
 
+  it('treats an empty-string payload specialist as absent and resolves the name', () => {
+    // `specialist: ""` names no specialist, so a payload name written for one
+    // must not survive — neither with no edit nor with an unchanged "" edit.
+    const resolve = vi.fn(resolveAgentName);
+    const noEdit = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Coordinator', prompt: 'Go', specialist: '' } }),
+      undefined,
+      { resolveAgentName: resolve },
+    );
+    const sameEmptyEdit = buildCreateWorkspaceRequestFromProposal(
+      makeProposal({ initialAgent: { name: 'Coordinator', prompt: 'Go', specialist: '' } }),
+      { specialist: '' },
+      { resolveAgentName: resolve },
+    );
+
+    expect(noEdit.initialAgent?.name).toBe('Agent');
+    expect(noEdit.initialAgent?.specialist).toBeUndefined();
+    expect(noEdit.initialAgent?.metadata).not.toHaveProperty('specialist');
+    expect(sameEmptyEdit.initialAgent?.name).toBe('Agent');
+    expect(sameEmptyEdit.initialAgent?.metadata).not.toHaveProperty('specialist');
+    expect(resolve).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves existing specialist metadata when specialist edit is absent', () => {
     const request = buildCreateWorkspaceRequestFromProposal(
       makeProposal({

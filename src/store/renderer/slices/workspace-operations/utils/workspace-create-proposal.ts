@@ -34,10 +34,10 @@ export interface BuildCreateWorkspaceRequestOptions {
   /**
    * Resolves the initial agent's display name from the specialist the request
    * carries (`undefined` = General). Consulted unless the proposal payload
-   * carries an explicit `initialAgent.name` AND names a specialist that equals
-   * the effective one. A payload name describes the payload's specialist, so
-   * an edited/defaulted specialist — and any payload that named no specialist —
-   * is renamed after what is actually applied.
+   * carries an explicit `initialAgent.name` AND names a non-empty specialist
+   * that equals the effective one. A payload name describes the payload's
+   * specialist, so an edited/defaulted specialist — and any payload that named
+   * no specialist (absent or `""`) — is renamed after what is actually applied.
    */
   resolveAgentName: (specialistId: string | undefined) => string;
 }
@@ -50,8 +50,11 @@ export function buildCreateWorkspaceRequestFromProposal(
   const params = (proposal.payload.params ?? {}) as Partial<CreateWorkspaceRequest>;
   const siblingScoped = proposal.preview.workspaceCreate?.mode === 'sibling';
   const initialAgent = recordValue(params.initialAgent) as Partial<InitialAgentRequest> | undefined;
+  // An empty-string payload specialist names nothing: treat it as absent.
   const payloadSpecialist =
-    typeof initialAgent?.specialist === 'string' ? initialAgent.specialist : undefined;
+    typeof initialAgent?.specialist === 'string' && initialAgent.specialist !== ''
+      ? initialAgent.specialist
+      : undefined;
   const specialist = specialistOverride(editedFields?.specialist, payloadSpecialist);
   const hasSpecialistEdit =
     typeof editedFields?.specialist === 'string' || editedFields?.specialist === null;

@@ -49,7 +49,11 @@
   } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice';
   import { selectPrBranchLookupEntries } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors';
   import type { PrBranchLookupRequest } from '$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-types';
-  import { selectNewWorkspaceDefaultSpecialist } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import {
+    selectNewWorkspaceDefaultSpecialist,
+    selectWorkspaceInitializerHydrated,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
@@ -140,10 +144,15 @@
   const prBranchLookupInFlightKeys = new Set<string>();
 
   const prBranchLookupEntries = selectPrBranchLookupEntries();
-  // The New Workspace modal's effective initial agent at mount: the fallback
-  // when a workspace-create proposal does not name a specialist. Read once so
-  // later modal edits never rewrite a card's selection.
-  const newWorkspaceDefaultSpecialist = selectNewWorkspaceDefaultSpecialist.select(appStore.state);
+  // The New Workspace modal's effective initial agent is the fallback when a
+  // workspace-create proposal does not name a specialist. It is read (not
+  // subscribed) so later modal edits never rewrite a card's selection; the
+  // only re-reads are the late-hydration ones below.
+  const workspaceInitializerHydrated = selectWorkspaceInitializerHydrated();
+  const specialists = selectSpecialists();
+  // True while the card's specialist is still that fallback: never edited by
+  // the user, restored from a draft, or named by the proposal.
+  let specialistIsModalDefault = false;
 
   const fields = $derived(proposal.preview.fields ?? []);
   const bulkItems = $derived(proposal.preview.bulkItems ?? []);
@@ -317,10 +326,10 @@
     workspaceIsNewRepo = workspaceCreate.isNewRepo ?? false;
     workspaceIsValidPath = workspaceCreate.isValidPath ?? false;
     workspaceScope = workspaceCreate.scope ?? '';
-    workspaceSpecialist =
-      workspaceCreate.specialist === undefined
-        ? newWorkspaceDefaultSpecialist
-        : workspaceCreate.specialist;
+    specialistIsModalDefault = workspaceCreate.specialist === undefined;
+    workspaceSpecialist = specialistIsModalDefault
+      ? selectNewWorkspaceDefaultSpecialist.select(appStore.state)
+      : (workspaceCreate.specialist ?? null);
     prBranchUserEdited = false;
     prBranchLookupKey = '';
     prBranchLookupRequest = undefined;
@@ -332,12 +341,26 @@
       workspaceTitle = draft.title;
       workspaceInitialPrompt = draft.initialPrompt;
       workspaceSpecialist = draft.specialist;
+      specialistIsModalDefault = false;
       if (draft.branch && draft.branch !== workspaceBranch) {
         // Restored user-chosen branch: suppress the PR-head lookup override.
         workspaceBranch = draft.branch;
         prBranchUserEdited = true;
       }
     }
+  });
+
+  // The initializer's remembered settings and the specialist catalog hydrate
+  // asynchronously, so a card mounted before they settle resolved the
+  // first-launch default. Re-resolve once hydrated (and as the catalog loads)
+  // while the selection is still that fallback — never over an explicit
+  // specialist, a restored draft, or a user edit. Ordinary later modal edits
+  // do not re-run this: the default itself is read untracked.
+  $effect(() => {
+    if (!$workspaceInitializerHydrated) return;
+    void $specialists;
+    if (!isWorkspaceCreate || !specialistIsModalDefault) return;
+    workspaceSpecialist = untrack(() => selectNewWorkspaceDefaultSpecialist.select(appStore.state));
   });
 
   $effect(() => {
@@ -1110,6 +1133,7 @@
                 class="w-full"
                 onchange={(id) => {
                   workspaceSpecialist = id;
+                  specialistIsModalDefault = false;
                 }}
               />
             </div>
