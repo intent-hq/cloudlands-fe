@@ -93,12 +93,23 @@ interface RegisterWorkspaceTabShortcutsOptions {
   resolveBinding?: (id: ShortcutId) => string;
 }
 
+/**
+ * The current tab id only while it is in the tab strip. `loadWorkspaceTabsState`
+ * keeps a persisted `currentTabId` the normalized stacks omit, so a non-null id
+ * is not enough to prove a reachable tab.
+ */
+function selectReachableWorkspaceTabId(state: StoreState): string | null {
+  const workspaceId = selectCurrentWorkspaceTabId.select(state);
+  if (!workspaceId) return null;
+  return selectWorkspaceTabOrder.select(state).includes(workspaceId) ? workspaceId : null;
+}
+
 function navigateToSelectedWorkspace(
   store: WorkspaceTabNavigationStore,
   currentPath: string,
   navigate: (path: string) => unknown,
 ): string | null {
-  const workspaceId = selectCurrentWorkspaceTabId.select(store.state);
+  const workspaceId = selectReachableWorkspaceTabId(store.state);
   const nextPath = workspaceId
     ? `/workspace/${workspaceId}`
     : resolveEmptyWindowDestination(selectWorkspaceItems.select(store.state));
@@ -200,16 +211,17 @@ function isWorkspaceLayoutEmpty(store: WorkspaceTabNavigationStore, workspaceId:
 }
 
 /**
- * Workspace level: route to the current tab. The reducer allows a null
- * current id while tabs remain (restored tabs never become current), so
- * select the first surviving tab first rather than treating that as empty.
+ * Workspace level: route to the current tab. The reducer allows a null or
+ * unreachable current id while tabs remain (restored tabs never become
+ * current; a persisted id may be absent from the loaded stacks), so select
+ * the first surviving tab first rather than treating that as empty.
  */
 function navigateToRemainingWorkspace(
   store: WorkspaceTabNavigationStore,
   currentPath: string,
   navigate: (path: string) => unknown,
 ): void {
-  if (!selectCurrentWorkspaceTabId.select(store.state)) {
+  if (!selectReachableWorkspaceTabId(store.state)) {
     store.dispatch(switchToWorkspaceTabByIndex(0));
   }
   navigateToSelectedWorkspace(store, currentPath, navigate);
