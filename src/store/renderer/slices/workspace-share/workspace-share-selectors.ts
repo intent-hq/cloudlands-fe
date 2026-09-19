@@ -2,9 +2,9 @@
  * Workspace Share Selectors
  */
 
-import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { Workspace } from '$shared/types';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
+import { selectIsWorkspaceOwner } from '../workspace/workspace-selectors';
 import { getRosterState, type WorkspaceShareTarget } from './workspace-share-slice';
 
 export const selectShareDialogOpen = store.createSelector((state) => state.workspaceShare.open);
@@ -21,13 +21,14 @@ export const selectShareTarget = store.createSelector<[], WorkspaceShareTarget |
 
 /**
  * True when the connected principal owns the dialog's workspace
- * (`workspace.myRole === 'owner'`, PROTOCOL §5.1) and the daemon has not
- * refused an owner-only sharing method. Gates every mutating control and RPC.
+ * (`selectIsWorkspaceOwner`: `workspace.myRole === 'owner'` in a settled owner
+ * window, PROTOCOL §5.1) and the daemon has not refused an owner-only sharing
+ * method. Gates every mutating control and RPC.
  */
 export const selectShareCanManage = store.createSelector((state) => {
   const { open, workspaceId, withheld } = state.workspaceShare;
   if (!open || !workspaceId || withheld) return false;
-  return getItem(state.workspace.workspaces, workspaceId as Workspace['id'])?.myRole === 'owner';
+  return selectIsWorkspaceOwner.select(state, workspaceId);
 });
 
 export const selectShareCreateRequest = store.createSelector(
@@ -102,14 +103,15 @@ export const selectWorkspaceRosterMembers = store.createSelector((state, workspa
 
 /**
  * Hover card: the owner may manage sharing for `workspaceId`
- * (`workspace.myRole === 'owner'`) and the daemon has not refused an owner-only
- * method for it. Gates the Share entry and every Remove control.
+ * (`selectIsWorkspaceOwner`: `workspace.myRole === 'owner'` in a settled owner
+ * window) and the daemon has not refused an owner-only method for it. Gates the
+ * Share entry and every Remove control.
  */
 export const selectWorkspaceRosterCanManage = store.createSelector(
   (state, workspaceId?: string) =>
     !!workspaceId &&
     !getRosterState(state.workspaceShare, workspaceId).withheld &&
-    getItem(state.workspace.workspaces, workspaceId as Workspace['id'])?.myRole === 'owner',
+    selectIsWorkspaceOwner.select(state, workspaceId),
 );
 
 /** Hover card: the daemon refused an owner-only method for `workspaceId`. */

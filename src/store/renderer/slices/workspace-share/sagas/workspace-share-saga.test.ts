@@ -23,6 +23,12 @@ import {
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
+import { initialState as connectionsInitialState } from '../../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../../guest-sessions/guest-sessions-slice';
 import {
   closeShareDialog,
   getRosterState,
@@ -70,12 +76,24 @@ const settle = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 };
 
-/** Minimal root state: the share slice plus the workspace entity carrying `myRole`. */
+/**
+ * Minimal root state: the share slice, the workspace entity carrying `myRole`,
+ * and a settled owner window (guest list received, no host joined) so the
+ * owner gate follows `myRole` alone.
+ */
 function rootState(share: WorkspaceShareState, roles: Record<string, WorkspaceRole | undefined>) {
   const workspaces = Object.entries(roles).map(
     ([id, myRole]) => ({ id, title: id, myRole }) as unknown as Workspace,
   );
-  return { workspaceShare: share, workspace: { workspaces: createCollection('id', workspaces) } };
+  return {
+    workspaceShare: share,
+    workspace: { workspaces: createCollection('id', workspaces) },
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+    ),
+  };
 }
 
 function harness(
