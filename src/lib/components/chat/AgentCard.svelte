@@ -70,7 +70,10 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import { invoke } from '$lib/electron-bridge';
-  import { selectIsWorkspaceHostLocal } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectIsWorkspaceHostLocal,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import TaskProgressControl from './TaskProgressControl.svelte';
@@ -459,35 +462,43 @@
       });
     }
 
-    items.push({
-      id: 'delete',
-      label: m.chat_agentCard_menu_delete_label(),
-      icon: faTrash,
-      destructive: true,
-      onClick: async () => {
-        // Close related panel tabs before deleting
-        const sessionWorkspaceId = $agent$?.workspaceId
-          ? String($agent$.workspaceId)
-          : workspace?.id
-            ? String(workspace.id)
-            : undefined;
-        if (sessionWorkspaceId && hasPanelLayoutManager(sessionWorkspaceId)) {
-          const layoutManager = getPanelLayoutManager(sessionWorkspaceId);
-          layoutManager.closeTabsByType('agent', 'agentId', agentId);
-        }
-        closeContextMenu();
+    // `agent.delete` is refused (-32003) for a collaborator connection, so the
+    // item is withheld (never merely disabled) in a guest / collaborator window.
+    const deleteWorkspaceId = $agent$?.workspaceId
+      ? String($agent$.workspaceId)
+      : workspace?.id
+        ? String(workspace.id)
+        : undefined;
+    const hidesDelete =
+      !!deleteWorkspaceId &&
+      selectHidesAgentLifecycleActions.select(appStore.state, deleteWorkspaceId);
+    if (!hidesDelete) {
+      items.push({
+        id: 'delete',
+        label: m.chat_agentCard_menu_delete_label(),
+        icon: faTrash,
+        destructive: true,
+        onClick: async () => {
+          // Close related panel tabs before deleting
+          const sessionWorkspaceId = deleteWorkspaceId;
+          if (sessionWorkspaceId && hasPanelLayoutManager(sessionWorkspaceId)) {
+            const layoutManager = getPanelLayoutManager(sessionWorkspaceId);
+            layoutManager.closeTabsByType('agent', 'agentId', agentId);
+          }
+          closeContextMenu();
 
-        if (sessionWorkspaceId) {
-          const action = deleteAgentWithUndoRequested(
-            sessionWorkspaceId,
-            agentId,
-            agentName || undefined,
-          );
-          appStore.dispatch(action);
-          await action.promise;
-        }
-      },
-    });
+          if (sessionWorkspaceId) {
+            const action = deleteAgentWithUndoRequested(
+              sessionWorkspaceId,
+              agentId,
+              agentName || undefined,
+            );
+            appStore.dispatch(action);
+            await action.promise;
+          }
+        },
+      });
+    }
 
     // Read-only info stamps. Specialist (monorepo#3498): resolved display
     // name when the id is known, raw id fallback otherwise; omitted for

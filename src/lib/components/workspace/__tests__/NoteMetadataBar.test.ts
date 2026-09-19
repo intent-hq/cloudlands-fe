@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => {
     navigateToNote,
     activeWorkspace,
     readable,
+    hidesAgentLifecycleActions: false,
   };
 });
 
@@ -56,6 +57,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     (_workspaceId: string | { subscribe: unknown }) => mocks.readable(mocks.activeWorkspace),
     { select: () => mocks.activeWorkspace },
   ),
+  selectHidesAgentLifecycleActions: () => mocks.readable(mocks.hidesAgentLifecycleActions),
 }));
 
 vi.mock('$lib/utils/workspace-route-context', () => ({
@@ -192,6 +194,7 @@ describe('NoteMetadataBar smoke coverage', () => {
     mocks.agentsById.clear();
     mocks.activeWorkspace.id = 'ws-1' as Workspace['id'];
     mocks.activeWorkspace.status = WorkspaceStatusEnum.Active;
+    mocks.hidesAgentLifecycleActions = false;
   });
 
   it('renders assigned task agents using selector-backed workspace state', async () => {
@@ -223,6 +226,30 @@ describe('NoteMetadataBar smoke coverage', () => {
       type: 'workspaceAgents/runAgentForNoteRequested',
       payload: ['ws-1', 'note-1', 'Task Note'],
     });
+  });
+
+  it('withholds the run-agent affordance in a guest / collaborator window', async () => {
+    mocks.hidesAgentLifecycleActions = true;
+    const assigned = makeAgent('agent-1', 'Assigned Agent', '2026-01-01T00:00:00.000Z');
+    mocks.workspaceAgents.push(assigned);
+    mocks.agentsById.set(assigned.id, assigned);
+
+    const NoteMetadataBar = (await import('../NoteMetadataBar.svelte')).default;
+    const { unmount } = render(NoteMetadataBar, {
+      props: { workspaceId: 'ws-1' as Workspace['id'], note: makeTaskNote([]) },
+    });
+    expect(screen.getByText('Assignee')).toBeTruthy();
+    expect(screen.queryByTitle('Run agent')).toBeNull();
+    unmount();
+
+    render(NoteMetadataBar, {
+      props: { workspaceId: 'ws-1' as Workspace['id'], note: makeTaskNote([assigned.id]) },
+    });
+    expect(screen.getByText('Assigned Agent')).toBeTruthy();
+    expect(screen.queryByTitle('Run agent')).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceAgents/runAgentForNoteRequested' }),
+    );
   });
 });
 
