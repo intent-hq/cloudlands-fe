@@ -50,6 +50,20 @@ function findAttribute(node, name) {
   );
 }
 
+// True for a bare attribute (`iconOnly`) or a static true literal (`iconOnly={true}`).
+// `iconOnly={false}` and dynamic expressions never force the icon-only path.
+function isStaticTrueAttribute(attribute) {
+  if (!attribute || attribute.type !== 'SvelteAttribute') return false;
+  if (attribute.boolean) return true;
+  if (!Array.isArray(attribute.value) || attribute.value.length !== 1) return false;
+  const [part] = attribute.value;
+  return (
+    part.type === 'SvelteMustacheTag' &&
+    part.expression.type === 'Literal' &&
+    part.expression.value === true
+  );
+}
+
 function isIconOnlyChildren(children, iconNames) {
   const meaningful = children.filter(
     (child) =>
@@ -124,7 +138,10 @@ export default {
       },
       SvelteElement(node) {
         if (!buttonNames.has(svelteElementName(node))) return;
-        if (!findAttribute(node, 'iconOnly') && !isIconOnlyChildren(node.children, iconNames)) {
+        if (
+          !isStaticTrueAttribute(findAttribute(node, 'iconOnly')) &&
+          !isIconOnlyChildren(node.children, iconNames)
+        ) {
           return;
         }
         const size = findAttribute(node, 'size');

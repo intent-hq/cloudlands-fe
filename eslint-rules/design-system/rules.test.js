@@ -165,6 +165,8 @@ svelteTester.run('icon-only-button-size', iconOnlyButtonSize, {
     `${iconButton}<Button size="sm"><Fa icon={faPlus} />{@render children()}</Button>`,
     `${iconButton}<Button size="sm">{#snippet leadingIcon()}<Fa icon={faPlus} />{/snippet}</Button>`,
     `${withScript(buttonImport)}<Button size="sm" aria-label="Save" />`,
+    `${withScript(buttonImport)}<Button iconOnly={false} size="sm">Save</Button>`,
+    `${withScript(buttonImport)}<Button iconOnly={dynamic} size="sm">Save</Button>`,
     `${iconButton}<Button size="sm">{#if busy}<Fa icon={faSpinner} />{:else}Save{/if}</Button>`,
     `${withScript(buttonImport, 'import Badge from "$lib/components/ui/badge/badge.svelte";')}<Button size="sm"><Badge /></Button>`,
     `${withScript(faImport)}<Button aria-label="More"><Fa icon={faEllipsis} /></Button>`,
@@ -193,6 +195,18 @@ svelteTester.run('icon-only-button-size', iconOnlyButtonSize, {
     },
     {
       code: `${withScript(buttonImport)}<Button iconOnly aria-label="Save" />`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${iconButton}<Button iconOnly={true} aria-label="More"><Fa icon={faEllipsis} /></Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${withScript(buttonImport)}<Button iconOnly={true} size="sm" aria-label="Save">Save</Button>`,
+      errors: [iconSizeError],
+    },
+    {
+      code: `${iconButton}<Button iconOnly={false} aria-label="More"><Fa icon={faEllipsis} /></Button>`,
       errors: [iconSizeError],
     },
     {
