@@ -853,5 +853,49 @@ describe('agentCreationSaga', () => {
       task.cancel();
       await task.toPromise();
     });
+
+    const forbiddenFactoryResult = () => ({
+      success: false,
+      error: 'forbidden: agent.create',
+      cause: Object.assign(new Error('forbidden: agent.create'), { rpcCode: -32003 }),
+    });
+
+    it.each([
+      ['createAgentRequested', () => createAgentRequested(WS)],
+      ['createAgentWithSpecialistRequested', () => createAgentWithSpecialistRequested(WS, null)],
+      ['runAgentForNoteRequested', () => runAgentForNoteRequested(WS, NOTE, 'Task note')],
+    ])(
+      'renders the not-permitted sentence when agent.create answers -32003 through the factory (%s)',
+      async (_name, trigger) => {
+        mocks.createAgent.mockResolvedValue(forbiddenFactoryResult());
+        const { channel, task } = start();
+        channel.put(trigger());
+        await settle();
+
+        expect(mocks.createAgent).toHaveBeenCalledOnce();
+        expect(mocks.toastError).toHaveBeenCalledOnce();
+        expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+        task.cancel();
+        await task.toPromise();
+      },
+    );
+
+    it('rejects the promise-bearing create with the not-permitted sentence when agent.create answers -32003', async () => {
+      mocks.createAgent.mockResolvedValue(forbiddenFactoryResult());
+      const { channel, task } = start();
+      const action = createAgentFromConfigRequested(WS, {
+        name: 'Refused',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      });
+      channel.put(action);
+
+      await expect(action.promise).rejects.toThrow("You can't create agents in this workspace");
+      expect(mocks.toastError).toHaveBeenCalledOnce();
+      expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+      task.cancel();
+      await task.toPromise();
+    });
   });
 });

@@ -59,9 +59,27 @@ function hasUsableSession(session: AgentSession | undefined): boolean {
   return !!session?.backendSessionId && session.status !== AgentStatus.Pending;
 }
 
+/**
+ * Normalises a creation failure into the `Error` handed to `action.failure`.
+ * A daemon `-32003` refusal keeps its `rpcCode` (so `showCreationError` still
+ * routes it to the refusal toast) but carries the localized not-permitted
+ * sentence instead of the raw daemon text, so promise-bearing callers render
+ * the same message the toast does.
+ */
 function creationError(error: unknown, fallback = m.agent_creation_createFailed_error()): Error {
+  if (isForbiddenErrorResponse(error)) {
+    return Object.assign(new Error(m.agent_creation_notPermitted_error()), {
+      rpcCode: (error as { rpcCode: number }).rpcCode,
+      cause: error,
+    });
+  }
   if (error instanceof Error) return error;
   return new Error(error ? String(error) : fallback);
+}
+
+/** The typed transport error when the factory captured one, else its flattened text. */
+function factoryFailure(result: { error?: string; cause?: unknown }): unknown {
+  return result.cause ?? result.error;
 }
 
 function isProviderModelMismatch(error: unknown): boolean {
@@ -178,7 +196,7 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create agent', { workspaceId: wsId, error: result.error });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -248,7 +266,7 @@ function* createSpecialistAgent(
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create specialist agent', { workspaceId: wsId, error: result.error });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -346,7 +364,7 @@ function* runAgentForNote(
         noteId,
         error: result.error,
       });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* put(openAgentTabRequested(wsId, { agentId: result.agentId }));
@@ -404,7 +422,7 @@ function* createFromConfig(
       ...config,
       workspaceId: WorkspaceId(wsId),
     });
-    if (!result.success || !result.agent) throw creationError(result.error);
+    if (!result.success || !result.agent) throw creationError(factoryFailure(result));
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
     yield* put(setActiveAgentId(wsId, result.agent.id));
     yield* call(openCreatedAgent, wsId, result.agent, options);

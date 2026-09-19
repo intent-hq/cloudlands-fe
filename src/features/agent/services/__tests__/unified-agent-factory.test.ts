@@ -289,6 +289,23 @@ describe('UnifiedAgentFactory', () => {
       expect(String(result.agentId)).toBe('agent-daemon-assigned-123');
     });
 
+    it('preserves the daemon Forbidden (-32003) error as the failure cause', async () => {
+      agentsApi.create.mockClear();
+      const forbidden = Object.assign(new Error('forbidden: agent.create'), { rpcCode: -32003 });
+      agentsApi.create.mockRejectedValueOnce(forbidden);
+
+      const result = await factory.createAgent(mockWorkspace, {
+        name: 'Refused Agent',
+        workspaceId: mockWorkspace.id as any,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('forbidden: agent.create');
+      expect(result.cause).toBe(forbidden);
+      expect((result.cause as { rpcCode?: number }).rpcCode).toBe(-32003);
+      expect(result.agent).toBeUndefined();
+    });
+
     it('fails creation when the daemon response carries no agent id', async () => {
       agentsApi.create.mockClear();
       // Daemon returns a session without an id (wire divergence): the factory

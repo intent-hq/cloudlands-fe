@@ -215,6 +215,12 @@ export interface CreateAgentResult {
   success: boolean;
   agent?: AgentSession;
   error?: string;
+  /**
+   * The error the daemon transport threw, when creation failed on the wire.
+   * Kept typed (e.g. a `BackendError` carrying the JSON-RPC `rpcCode`) so
+   * callers can tell a `-32003` refusal apart from `error`'s flattened text.
+   */
+  cause?: unknown;
   agentId?: AgentId;
   sessionId?: AgentId;
 }
