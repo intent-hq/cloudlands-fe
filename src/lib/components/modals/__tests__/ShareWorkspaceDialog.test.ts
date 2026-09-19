@@ -53,9 +53,13 @@ const openInvite: WorkspaceInvite = {
   createdAt: '2026-09-14T00:00:00Z',
   expiresAt: '2026-09-21T00:00:00Z',
 };
+const openInviteUrl = 'intent://invite?v=1&h=example.test&p=5181&f=fp&t=tok-inv-1';
 
 const createdUrl = 'intent://invite?v=1&h=example.test&p=5181&f=fp&t=tok';
-const createdLink = { inviteId: 'inv-2', linkHandle: 'invite-link-1', pinLogin: 'dave' };
+const createdLink = { inviteId: 'inv-2', pinLogin: 'dave' };
+
+/** What the host resolves from the invite-link vault: id → url, no entry when the daemon sent none. */
+const inviteLinks = { [openInvite.id]: openInviteUrl, [createdLink.inviteId]: createdUrl };
 
 const baseProps = {
   open: true,
@@ -65,6 +69,7 @@ const baseProps = {
   canManage: true,
   members: [owner, collaborator],
   invites: [openInvite],
+  inviteLinks,
 };
 
 function renderDialog(props: Record<string, unknown> = {}) {
@@ -91,7 +96,6 @@ describe('ShareWorkspaceDialog — owner gate', () => {
       canManage: false,
       onCreateInvite,
       createdLink,
-      createdLinkUrl: createdUrl,
       members: [owner, collaborator],
       invites: [openInvite],
     });
@@ -168,7 +172,7 @@ describe('ShareWorkspaceDialog — create and copy', () => {
     expect(onCreateInvite).toHaveBeenCalledWith('dave');
     expect(pin.value).toBe(' dave ');
 
-    await rerender({ ...baseProps, createdLink, createdLinkUrl: createdUrl, onCreateInvite });
+    await rerender({ ...baseProps, createdLink, onCreateInvite });
     await waitFor(() => expect(screen.getByTestId('share-created-link')).toBeTruthy());
     expect(screen.getByTestId('share-created-link-url').textContent).toBe(createdUrl);
     expect(screen.getByTestId('share-created-link').textContent).toContain('@dave');
@@ -180,7 +184,6 @@ describe('ShareWorkspaceDialog — create and copy', () => {
     renderDialog({
       onCreateInvite,
       createdLink: { ...createdLink, pinLogin: undefined },
-      createdLinkUrl: createdUrl,
     });
 
     await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
@@ -189,12 +192,19 @@ describe('ShareWorkspaceDialog — create and copy', () => {
     expect(screen.getByTestId('share-created-link').textContent).toContain('Anyone with the link');
   });
 
-  // Regression (fe#2440 review P2): once the link's vault entry is gone (revoked,
-  // dialog reopened) the copy affordance disappears with it.
-  it('hides the created link block when the url can no longer be resolved', () => {
-    renderDialog({ createdLink, createdLinkUrl: null });
+  it('hides the created link block once the store has retired the link', () => {
+    renderDialog({ createdLink: null });
     expect(screen.queryByTestId('share-created-link')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Copy link/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Copy link$/ })).toBeNull();
+  });
+
+  // Regression (fe#2440 review P2 / fe#2483 verifier): once the link's vault
+  // entry is gone (dialog reopened) the copy affordance disappears with it —
+  // the store never held the url to fall back on.
+  it('hides the created link block when the url can no longer be resolved', () => {
+    renderDialog({ createdLink, inviteLinks: { [openInvite.id]: openInviteUrl } });
+    expect(screen.queryByTestId('share-created-link')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Copy link$/ })).toBeNull();
   });
 
   it('does not submit while a create is already in flight', async () => {
@@ -208,12 +218,45 @@ describe('ShareWorkspaceDialog — create and copy', () => {
   });
 
   it('copies the created link to the clipboard and toasts', async () => {
-    renderDialog({ createdLink, createdLinkUrl: createdUrl });
+    renderDialog({ createdLink });
 
-    await fireEvent.click(screen.getByRole('button', { name: /Copy link/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /^Copy link$/ }));
 
     await waitFor(() => expect(toastMocks.success).toHaveBeenCalledTimes(1));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(createdUrl);
+  });
+
+  it('copies an open invite row link again from the list', async () => {
+    renderDialog({ invites: [openInvite, { ...openInvite, id: 'inv-3', pinLogin: undefined }] });
+
+    await fireEvent.click(screen.getByRole('button', { name: /Copy invite link: Only @carol/ }));
+
+    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledTimes(1));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(openInviteUrl);
+    expect(screen.getAllByTestId('share-invite-copy')).toHaveLength(2);
+  });
+
+  it('toasts the failure when the clipboard write is rejected', async () => {
+    (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('denied'),
+    );
+    renderDialog();
+
+    await fireEvent.click(screen.getByRole('button', { name: /Copy invite link/ }));
+
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledTimes(1));
+    expect(toastMocks.success).not.toHaveBeenCalled();
+  });
+
+  it('disables the row copy with the Remote Access hint when the daemon sent no url', async () => {
+    renderDialog({ invites: [openInvite], inviteLinks: {} });
+
+    const copy = screen.getByTestId('share-invite-copy') as HTMLButtonElement;
+    expect(copy.disabled).toBe(true);
+    expect(copy.getAttribute('title')).toMatch(/Remote Access/);
+    await fireEvent.click(copy);
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
+    expect(toastMocks.success).not.toHaveBeenCalled();
   });
 
   it('surfaces the create error inline and keeps the field value', async () => {
@@ -444,7 +487,7 @@ describe('ShareWorkspaceDialog — pin typeahead', () => {
 
     await fireEvent.input(pinField(), { target: { value: 'octo' } });
     onSearchUsers.mockClear();
-    await rerender({ ...baseProps, onSearchUsers, createdLink, createdLinkUrl: createdUrl });
+    await rerender({ ...baseProps, onSearchUsers, createdLink });
     expect(onSearchUsers).toHaveBeenLastCalledWith('');
     expect(pinField().value).toBe('');
   });

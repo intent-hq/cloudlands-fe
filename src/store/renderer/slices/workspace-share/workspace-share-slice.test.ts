@@ -67,7 +67,7 @@ const target = (state: WorkspaceShareState): WorkspaceShareTarget => ({
   session: state.session,
 });
 
-const link = { inviteId: 'inv-2', linkHandle: 'invite-link-1', pinLogin: 'erin' };
+const link = { inviteId: 'inv-2', pinLogin: 'erin' };
 
 describe('workspaceShareReducer', () => {
   it('starts closed with no target and no rows', () => {
@@ -258,7 +258,7 @@ describe('workspaceShareReducer', () => {
       shareInviteCreated({ target: target(failed), request: 2, link }),
     );
     expect(created).toMatchObject({ creating: false, createError: null, createdLink: link });
-    // The store holds a handle only — never the url / secret.
+    // The store holds the invite id only — never the url / secret.
     expect(JSON.stringify(created)).not.toContain('intent://');
   });
 

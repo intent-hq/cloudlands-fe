@@ -3,8 +3,8 @@
    * ShareWorkspaceDialog — the owner-side sharing surface (multiplayer w4).
    *
    * Creates one-shot `intent://invite` links (optionally pinned to a GitHub
-   * login), lists the open invites with Revoke, and lists the member roster
-   * with Remove. Gated on the GitHub connection: members are identified by
+   * login), lists the open invites with Copy link + Revoke, and lists the
+   * member roster with Remove. Gated on the GitHub connection: members are identified by
    * their GitHub account, so a daemon without a configured login cannot mint
    * invites and the dialog shows a connect-first state instead.
    *
@@ -22,7 +22,9 @@
    * workspace-share slice through the Redux host, and user intent (create /
    * revoke / remove) goes back as callbacks the host dispatches. Only the pin
    * input draft, the pending Remove confirmation, and the clipboard copy live
-   * here; the invite url arrives as a plain prop and is never echoed.
+   * here. Invite links never ride the store: the host resolves them from the
+   * invite-link vault into `inviteLinks` (by invite id), and a row with no
+   * link (the daemon's Remote Access listener is down) has its Copy disabled.
    */
 
   import { tick, untrack } from 'svelte';
@@ -59,13 +61,16 @@
     canManage?: boolean;
     members?: WorkspaceMember[];
     invites?: WorkspaceInvite[];
+    /**
+     * `intent://invite` link per invite id (open rows + `createdLink`), resolved
+     * by the host from the invite-link vault; a missing entry disables Copy.
+     */
+    inviteLinks?: Readonly<Record<string, string>>;
     loading?: boolean;
     loadError?: string | null;
     creating?: boolean;
     createError?: string | null;
     createdLink?: WorkspaceShareCreatedLink | null;
-    /** The one-time url behind `createdLink`, resolved by the host. */
-    createdLinkUrl?: string | null;
     revokingInviteId?: string | null;
     removingPrincipalId?: string | null;
     actionError?: string | null;
@@ -92,12 +97,12 @@
     canManage = false,
     members = [],
     invites = [],
+    inviteLinks = {},
     loading = false,
     loadError = null,
     creating = false,
     createError = null,
     createdLink = null,
-    createdLinkUrl = null,
     revokingInviteId = null,
     removingPrincipalId = null,
     actionError = null,
@@ -212,14 +217,22 @@
     onCreateInvite?.(selectedUser ? selectedUser.login : pinLogin.trim());
   }
 
-  async function copyLink() {
-    if (!createdLinkUrl) return;
+  async function copyLink(url: string) {
     try {
-      await navigator.clipboard.writeText(createdLinkUrl);
+      await navigator.clipboard.writeText(url);
       notify.success(m.workspace_share_linkCopied_toast());
     } catch {
       notify.error(m.workspace_share_linkCopyFailed_error());
     }
+  }
+
+  function inviteLink(inviteId: string): string | null {
+    return inviteLinks[inviteId] ?? null;
+  }
+
+  function copyInvite(invite: Pick<WorkspaceInvite, 'id'>) {
+    const url = inviteLink(invite.id);
+    if (url) void copyLink(url);
   }
 
   function revokeInvite(inviteId: string) {
@@ -455,7 +468,8 @@
             {/if}
           </form>
 
-          {#if createdLink && createdLinkUrl}
+          {#if createdLink && inviteLink(createdLink.inviteId)}
+            {@const createdUrl = inviteLink(createdLink.inviteId) ?? ''}
             <div
               class="space-y-2 rounded border border-border bg-muted/50 p-3"
               data-testid="share-created-link"
@@ -467,14 +481,13 @@
               <div class="flex items-center gap-2">
                 <code
                   class="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 text-xs"
-                  data-testid="share-created-link-url">{createdLinkUrl}</code
+                  data-testid="share-created-link-url">{createdUrl}</code
                 >
-                <Button variant="secondary" size="sm" onclick={() => void copyLink()}>
+                <Button variant="secondary" size="sm" onclick={() => void copyLink(createdUrl)}>
                   <Fa icon={faCopy} />
                   {m.workspace_share_copyLink_label()}
                 </Button>
               </div>
-              <p class="text-xs text-subtle">{m.workspace_share_newLink_description()}</p>
             </div>
           {/if}
 
@@ -514,17 +527,35 @@
                         })}
                       </div>
                     </div>
-                    <Button
-                      variant="ghost-light"
-                      size="sm"
-                      disabled={busy}
-                      onclick={() => revokeInvite(invite.id)}
-                      aria-label={m.workspace_share_revoke_ariaLabel({
-                        audience: inviteAudience(invite),
-                      })}
-                    >
-                      {m.workspace_share_revoke_label()}
-                    </Button>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost-light"
+                        size="sm"
+                        disabled={!inviteLink(invite.id)}
+                        title={inviteLink(invite.id)
+                          ? undefined
+                          : m.workspace_share_listenerDown_error()}
+                        onclick={() => copyInvite(invite)}
+                        aria-label={m.workspace_share_copyInvite_ariaLabel({
+                          audience: inviteAudience(invite),
+                        })}
+                        data-testid="share-invite-copy"
+                      >
+                        <Fa icon={faCopy} />
+                        {m.workspace_share_copyLink_label()}
+                      </Button>
+                      <Button
+                        variant="ghost-light"
+                        size="sm"
+                        disabled={busy}
+                        onclick={() => revokeInvite(invite.id)}
+                        aria-label={m.workspace_share_revoke_ariaLabel({
+                          audience: inviteAudience(invite),
+                        })}
+                      >
+                        {m.workspace_share_revoke_label()}
+                      </Button>
+                    </div>
                   </div>
                 {/snippet}
               </ListView>

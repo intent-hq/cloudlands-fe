@@ -11,8 +11,8 @@ import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-typ
 import {
   INVITE_ERROR_CODES,
   type InviteErrorCode,
-  type WorkspaceInvite,
   type WorkspaceInviteCreateResult,
+  type WorkspaceInviteRow,
   type WorkspaceMember,
 } from './types';
 
@@ -110,7 +110,8 @@ export const workspaceSharingClient = {
   /**
    * `workspace.invite.create` — owner only. `pinLogin` restricts redemption to
    * one GitHub account; the daemon resolves it to a user id and echoes the
-   * canonical login on `invite.pinLogin`. The `secret` / `url` come back once.
+   * canonical login on `invite.pinLogin`. The raw `secret` comes back once;
+   * the `url` is also listed on the open invite row afterwards.
    */
   async createInvite(
     workspaceId: string,
@@ -130,11 +131,15 @@ export const workspaceSharingClient = {
     }
   },
 
-  /** `workspace.invite.list` — open (unredeemed, unrevoked, unexpired) invites; never the secret. */
-  async listInvites(workspaceId: string): Promise<WorkspaceInvite[]> {
-    const result = await backendRequest<{ invites?: WorkspaceInvite[] }>('workspace.invite.list', {
-      workspaceId,
-    });
+  /**
+   * `workspace.invite.list` — open (unredeemed, unrevoked, unexpired) invites
+   * with their `url`. The caller vaults the links before any row enters the store.
+   */
+  async listInvites(workspaceId: string): Promise<WorkspaceInviteRow[]> {
+    const result = await backendRequest<{ invites?: WorkspaceInviteRow[] }>(
+      'workspace.invite.list',
+      { workspaceId },
+    );
     return Array.isArray(result?.invites) ? result.invites : [];
   },
 

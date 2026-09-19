@@ -22,19 +22,25 @@
  * the `WorkspaceShareTarget` it was issued for and every roster settlement its
  * workspace id, so the reducer can drop a reply that outlived its surface.
  *
- * Secrets: the one-time invite url never enters an action, the store, or a
- * log line — it is parked in `invite-link-vault` and only its handle rides
- * `shareInviteCreated`. Failures are logged as bounded codes only.
+ * Secrets: an invite url (a capability) never enters an action, the store, or
+ * a log line — every `url` the daemon returns (`invite.create`, each open
+ * `invite.list` row) is parked in `invite-link-vault` under its invite id
+ * before the row is dispatched, and the dialog host resolves ids back to
+ * links at render time. Failures are logged as bounded codes only.
  */
 
 import { all, call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 
-import { clearInviteLinks, storeInviteLink } from '$features/workspace-sharing/invite-link-vault';
+import {
+  clearInviteLinks,
+  storeInviteLink,
+  vaultInviteLinks,
+} from '$features/workspace-sharing/invite-link-vault';
 import {
   workspaceSharingClient,
   type ShareFailure,
 } from '$features/workspace-sharing/workspace-sharing.client';
-import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+import type { WorkspaceInviteRow, WorkspaceMember } from '$features/workspace-sharing/types';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
@@ -114,7 +120,7 @@ function coalescedByKey<A>(
  * sibling RPC is still outstanding.
  */
 function readShareData(workspaceId: string): {
-  result: Promise<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>;
+  result: Promise<{ members: WorkspaceMember[]; invites: WorkspaceInviteRow[] }>;
   settled: Promise<void>;
 } {
   const reads = [
@@ -122,7 +128,7 @@ function readShareData(workspaceId: string): {
     workspaceSharingClient.listInvites(workspaceId),
   ] as const;
   const outcomes = Promise.allSettled(reads);
-  const result = new Promise<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>(
+  const result = new Promise<{ members: WorkspaceMember[]; invites: WorkspaceInviteRow[] }>(
     (resolve, reject) => {
       for (const read of reads) {
         read.catch((error: unknown) => {
@@ -156,7 +162,7 @@ function* manageableTarget(): SagaGenerator<WorkspaceShareTarget | null> {
 /**
  * False once the dialog closed or retargeted while an RPC was in flight: the
  * reply is dropped here (the reducer would drop it too, but a stale create
- * must not park its url in the vault or trigger a re-read for the new target).
+ * must not trigger a re-read for the new target).
  */
 function* stillTargets(target: WorkspaceShareTarget): SagaGenerator<boolean> {
   const current = yield* selectShareTarget.effect();
@@ -177,7 +183,8 @@ function* loadShareData(): SagaGenerator<void> {
   const generation = yield* selectShareMutationGeneration.effect();
   const read = readShareData(target.workspaceId);
   try {
-    const { members, invites } = yield* call(() => read.result);
+    const { members, invites: rows } = yield* call(() => read.result);
+    const invites = yield* call(vaultInviteLinks, rows);
     yield* put(shareDataLoaded({ target, generation, members, invites }));
   } catch (error) {
     if (yield* stillTargets(target)) {
@@ -234,16 +241,13 @@ function* createInvite(action: ReturnType<typeof shareInviteCreateRequested>): S
     );
     return;
   }
-  const linkHandle = yield* call(storeInviteLink, outcome.result.url);
+  const inviteId = outcome.result.invite.id;
+  yield* call(storeInviteLink, inviteId, outcome.result.url);
   yield* put(
     shareInviteCreated({
       target,
       request,
-      link: {
-        inviteId: outcome.result.invite.id,
-        linkHandle,
-        pinLogin: outcome.result.invite.pinLogin,
-      },
+      link: { inviteId, pinLogin: outcome.result.invite.pinLogin },
     }),
   );
   yield* put(shareDataRequested());
