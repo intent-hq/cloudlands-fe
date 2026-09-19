@@ -269,7 +269,7 @@ describe('WorkspaceProgressCard presence row', () => {
 
     expect(personButton('bob').getAttribute('aria-label')).toContain('Design');
     await fireEvent.click(personButton('bob'));
-    expect(mocks.navigateToNote).toHaveBeenCalledWith('note-1');
+    expect(mocks.navigateToNote).toHaveBeenCalledWith('note-1', { workspaceId: 'ws-1' });
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: openShareDialog.type }),
     );
