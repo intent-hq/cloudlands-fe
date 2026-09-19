@@ -55,6 +55,8 @@ describe('Chief card migration contract', () => {
     // exactly one launch after a provider is configured (skip does not latch
     // hasAutoStartedRef) — is pinned by chief-card-autostart-gate.test.ts.
     expect(source).toContain('const hasResolvableProvider$ = selectHasResolvableProvider()');
-    expect(source).toContain('if (!$hasResolvableProvider$) return;');
+    expect(source).toContain(
+      'if (!$hasResolvableProvider$ || $hidesAgentLifecycleActions$) return;',
+    );
   });
 });
