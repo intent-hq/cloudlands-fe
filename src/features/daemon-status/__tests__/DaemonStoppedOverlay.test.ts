@@ -1040,15 +1040,18 @@ describe('DaemonStoppedOverlay', () => {
   });
 
   describe('revoked-guest posture (multiplayer w4: auth rejected by a host joined as a guest)', () => {
+    // The stored `label` is the join-time address; `hostname` is the pretty
+    // name captured from the host after joining. The two differ so a raw
+    // `.label` render is distinguishable from the hostname-first label.
     const GUEST: GuestSessionRecord = {
       id: 'guest-1',
-      label: 'studio.local',
+      label: 'tc.example.ts.net',
       host: '10.0.0.9',
       hosts: ['10.0.0.9'],
       port: 8443,
       fingerprint: 'AB:CD',
-      tcAddress: null,
-      hostname: 'studio.local',
+      tcAddress: 'tc.example.ts.net',
+      hostname: 'Clement’s Mac Studio',
       principalId: 'principal-1',
       login: 'octocat',
       tokenEncrypted: true,
@@ -1102,7 +1105,11 @@ describe('DaemonStoppedOverlay', () => {
       rejectAuth();
 
       expect(overlay()!.textContent).toContain('You no longer have access');
-      expect(overlay()!.textContent).toContain('studio.local');
+      // Hostname-first: the revoked copy names the captured machine, not the
+      // dialled address the session was stored under.
+      const description = document.getElementById('daemon-stopped-description')!.textContent!;
+      expect(description).toContain('Clement’s Mac Studio');
+      expect(description).not.toContain('tc.example.ts.net');
       // A guest credential cannot be re-paired: no token re-entry, no
       // sidecar spawn, no misleading retry indicator.
       expect(screen.queryByTestId('daemon-stopped-repair')).toBeNull();
@@ -1110,6 +1117,30 @@ describe('DaemonStoppedOverlay', () => {
       expect(screen.queryByTestId('daemon-stopped-retrying')).toBeNull();
       expect(screen.queryByTestId('daemon-stopped-known-backends')).toBeNull();
       expect(screen.getByTestId('daemon-stopped-guest-leave')).toBeTruthy();
+    });
+
+    it('falls back to the stored address when no hostname has been captured yet', async () => {
+      render(DaemonStoppedOverlay);
+      await showOverlay(wsTransport);
+      dispatchAndFlush(
+        connectionsListReceived({
+          connections: [LOCAL, GUEST_CONNECTION],
+          activeId: GUEST.id,
+          windowBackendId: GUEST.id,
+        }),
+      );
+      dispatchAndFlush(
+        guestSessionsListReceived({
+          sessions: [{ ...GUEST, hostname: null }],
+          openIds: [],
+          connectedIds: [],
+        }),
+      );
+      rejectAuth();
+
+      const description = document.getElementById('daemon-stopped-description')!.textContent!;
+      expect(description).toContain('tc.example.ts.net');
+      expect(description).not.toContain('Clement’s Mac Studio');
     });
 
     it('keeps the re-pair state for a rejected owner backend that is not a guest session', async () => {
@@ -1148,7 +1179,7 @@ describe('DaemonStoppedOverlay', () => {
       leave!.failure(new Error('ipc failed'));
       await vi.waitFor(() => {
         expect(screen.getByTestId('daemon-stopped-guest-leave-error').textContent).toContain(
-          'studio.local',
+          'Clement’s Mac Studio',
         );
       });
       expect(screen.getByTestId('daemon-stopped-guest-leave').textContent).toContain('Leave host');
