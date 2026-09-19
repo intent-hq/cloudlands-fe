@@ -208,11 +208,16 @@ export const selectIsWorkspaceOwner = store.createSelector<[wsId: string], boole
  * disabled) and the creation / deletion sagas refuse before sending anything.
  * Same fail-closed shape as `selectIsWorkspaceCollaborator`: a guest window
  * whatever `myRole` it reports, a `collaborator` row in an owner window, and
- * any window whose guest/owner identity is still the boot-time default. Rename
- * and model switching are not lifecycle actions and stay available.
+ * any window whose guest/owner identity is still the boot-time default. A
+ * collaborator-only client (`selectIsCollaboratorOnlyClient`) hides them for
+ * every `wsId`, so a lookup that misses the row (missing, stale, or not yet
+ * listed id) cannot fall open. Rename and model switching are not lifecycle
+ * actions and stay available.
  */
 export const selectHidesAgentLifecycleActions = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => selectIsWorkspaceCollaborator.select(state, wsId),
+  (state, wsId) =>
+    selectIsWorkspaceCollaborator.select(state, wsId) ||
+    selectIsCollaboratorOnlyClient.select(state),
 );
 
 /**
