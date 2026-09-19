@@ -14,6 +14,7 @@ import {
 } from './workspace-slice';
 import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
 import {
+  selectHidesAgentLifecycleActions,
   selectHidesOwnerWorkspaceActions,
   selectIsCollaboratorOnlyClient,
   selectIsWorkspaceCollaborator,
@@ -424,6 +425,79 @@ describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
       expect(selectIsWorkspaceCollaborator.select(guestAware(ownerRow, 'local'), WS_ID)).toBe(
         false,
       );
+    });
+  });
+
+  describe('selectHidesAgentLifecycleActions', () => {
+    it('keeps create / delegate / delete in a settled owner window', () => {
+      expect(
+        selectHidesAgentLifecycleActions.select(
+          loadedState([makeWorkspace({ myRole: 'owner' })]),
+          WS_ID,
+        ),
+      ).toBe(false);
+      expect(selectHidesAgentLifecycleActions.select(loadedState([makeWorkspace()]), WS_ID)).toBe(
+        false,
+      );
+      expect(
+        selectHidesAgentLifecycleActions.select(
+          guestAware(loadedState([makeWorkspace()]), 'local'),
+          WS_ID,
+        ),
+      ).toBe(false);
+      expect(selectHidesAgentLifecycleActions.select(loadedState([]), 'ws-missing')).toBe(false);
+    });
+
+    it('hides them for a collaborator row', () => {
+      expect(
+        selectHidesAgentLifecycleActions.select(
+          loadedState([makeWorkspace({ myRole: 'collaborator' })]),
+          WS_ID,
+        ),
+      ).toBe(true);
+    });
+
+    it('hides them in a guest window whatever myRole the row carries, or before the row arrives', () => {
+      expect(
+        selectHidesAgentLifecycleActions.select(
+          guestAware(loadedState([makeWorkspace({ myRole: 'owner' })]), GUEST_SESSION.id),
+          WS_ID,
+        ),
+      ).toBe(true);
+      expect(
+        selectHidesAgentLifecycleActions.select(
+          guestAware(loadedState([], false), GUEST_SESSION.id),
+          WS_ID,
+        ),
+      ).toBe(true);
+    });
+
+    it('hides them until the window identity settles', () => {
+      const ownerRow = loadedState([makeWorkspace({ myRole: 'owner' })]);
+      const boot = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsInitialState,
+      } as StoreState;
+      expect(selectHidesAgentLifecycleActions.select(boot, WS_ID)).toBe(true);
+      const preBind = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsReducer(
+          guestSessionsInitialState,
+          guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+        ),
+      } as StoreState;
+      expect(selectHidesAgentLifecycleActions.select(preBind, WS_ID)).toBe(true);
+      const unavailable = {
+        ...ownerRow,
+        connections: connectionsInitialState,
+        guestSessions: guestSessionsReducer(
+          guestSessionsInitialState,
+          guestSessionsListUnavailable(),
+        ),
+      } as StoreState;
+      expect(selectHidesAgentLifecycleActions.select(unavailable, WS_ID)).toBe(false);
     });
   });
 });

@@ -62,6 +62,7 @@ import {
 } from '../agent-session-slice';
 import type { StoredAgentSession, WireAgentSession } from '../agent-session-types';
 import { selectAgentSession } from '../agent-session-selectors';
+import { selectHidesAgentLifecycleActions } from '../../workspace/workspace-selectors';
 
 const logger = createLogger('AgentMutationSaga');
 const UNDO_DURATION_MS = 15_000;
@@ -570,6 +571,17 @@ function* deleteWithUndo(
   let entry: PendingAgentDeletion | null = null;
   let clearerSpawned = false;
   try {
+    // `agent.delete` is refused with -32003 for a collaborator connection: the
+    // delete affordances are withheld, and a request that still arrives is
+    // refused here before the session is hidden or anything is sent.
+    if (yield* selectHidesAgentLifecycleActions.effect(wsId)) {
+      logger.warn('Agent deletion refused for a collaborator connection', { workspaceId: wsId });
+      const failure = new Error(m.agent_mutation_deleteNotPermitted_error());
+      yield* call(showError, failure.message);
+      yield* put(action.failure(failure));
+      settled = true;
+      return;
+    }
     const snapshot = yield* selectAgentSession.effect(agentId);
     if (!snapshot) {
       yield* put(action.success(null));
@@ -594,7 +606,11 @@ function* deleteWithUndo(
       removePendingAgentDeletion(agentId);
       entry = null;
       yield* call(restoreHiddenSession, wsId, snapshot);
-      const failure = new Error(result.error || m.agent_mutation_deleteFailed_error());
+      const failure = new Error(
+        result.forbidden
+          ? m.agent_mutation_deleteNotPermitted_error()
+          : result.error || m.agent_mutation_deleteFailed_error(),
+      );
       yield* call(showError, failure.message);
       yield* put(action.failure(failure));
       settled = true;
