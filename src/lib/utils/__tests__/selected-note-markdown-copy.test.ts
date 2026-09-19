@@ -199,14 +199,11 @@ describe('selected note markdown copy', () => {
     editor.destroy();
   });
 
-  it('keeps the quote wrapper when a selection spans two blockquote paragraphs', () => {
+  it('copies a selection spanning two paragraphs inside one blockquote as plain text', () => {
     const editor = createEditor('<blockquote><p>First quote</p><p>Second quote</p></blockquote>');
     selectText(editor, 'First quote', 'Second');
 
-    const markdown = serializeSelectionToMarkdown(editor.view);
-    expect(markdown.startsWith('> First quote')).toBe(true);
-    expect(markdown.split('\n').every((line) => line.startsWith('>'))).toBe(true);
-    expect(markdown).toContain('Second');
+    expect(serializeSelectionToMarkdown(editor.view)).toBe('First quote\n\nSecond');
 
     editor.destroy();
   });

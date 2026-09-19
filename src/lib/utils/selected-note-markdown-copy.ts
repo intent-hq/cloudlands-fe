@@ -10,12 +10,11 @@ function isAllowedAtTopLevel(node: Node, schema: Schema): boolean {
  * A selection inside a single container (table cell, list item, blockquote) yields a
  * slice whose fragment still carries the open ancestor nodes around the selected text.
  * Serializing those wrappers would emit table/list/quote syntax the user never selected,
- * so descend through single-child wrappers until the first textblock or the first node
- * with more than one child. A wrapper that can stand at the document level (list,
- * blockquote) is only unwrapped while it is open and single-branch, so a selection that
- * spans sibling list items or quote paragraphs keeps its list type / quote marker. A
- * wrapper that cannot stand alone (table row or cell, list item) is unwrapped regardless
- * of how many blocks it holds, because it has no standalone meaning.
+ * so descend through single-child wrappers that are either open or cannot stand at the
+ * document level (a lone table row or cell), until the first textblock or the first node
+ * with more than one child. Never descend into a wrapper whose multi-child content cannot
+ * stand at the document level on its own (a list holding several items): stripping it
+ * would force a schema-first re-wrap that loses the original node type and attributes.
  */
 function unwrapOpenWrappers(slice: Slice, schema: Schema): Fragment {
   let fragment = slice.content;
@@ -28,7 +27,11 @@ function unwrapOpenWrappers(slice: Slice, schema: Schema): Fragment {
       break;
     }
     const isOpen = openStart > 0 && openEnd > 0;
-    if (isAllowedAtTopLevel(child, schema) && (!isOpen || child.childCount !== 1)) {
+    if (!isOpen && isAllowedAtTopLevel(child, schema)) {
+      break;
+    }
+    const firstGrandchild = child.firstChild;
+    if (child.childCount > 1 && firstGrandchild && !isAllowedAtTopLevel(firstGrandchild, schema)) {
       break;
     }
     fragment = child.content;
