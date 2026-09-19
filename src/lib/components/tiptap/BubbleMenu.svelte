@@ -27,6 +27,8 @@
   // import { getAgentTypes } from '$features/agent/instruction-registry';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { store as appStore } from '$store/renderer/store';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { writable } from 'svelte/store';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -53,6 +55,14 @@
   let bubbleMenuVisible = $state(false);
   let bubbleMenuPosition = $state({ x: 0, y: 0 });
   let menuRef: HTMLDivElement | null = $state(null);
+
+  const wsIdStore = writable<string>('');
+  $effect(() => {
+    wsIdStore.set(workspace?.id ?? '');
+  });
+  // "Send to Agent" creates an agent (`agent.create`), refused (-32003) for a
+  // collaborator connection: the affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(wsIdStore);
 
   // Menu dimensions for edge detection (estimated, updated on mount)
   const MENU_HEIGHT = 40;
@@ -512,22 +522,24 @@
             </Button>
           </TooltipShortcut>
 
-          <TooltipShortcut
-            label={m.tiptap_bubbleMenu_sendToAgent_label()}
-            side="top"
-            delayDuration={200}
-          >
-            <Button
-              variant="ghost"
-              size="icon-compact"
-              iconOnly
-              class="bubble-menu-btn"
-              onclick={handleLaunchAgentClick}
-              aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
+          {#if !$hidesAgentLifecycleActions$}
+            <TooltipShortcut
+              label={m.tiptap_bubbleMenu_sendToAgent_label()}
+              side="top"
+              delayDuration={200}
             >
-              <Fa icon={faPaperPlane} size="xs" />
-            </Button>
-          </TooltipShortcut>
+              <Button
+                variant="ghost"
+                size="icon-compact"
+                iconOnly
+                class="bubble-menu-btn"
+                onclick={handleLaunchAgentClick}
+                aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
+              >
+                <Fa icon={faPaperPlane} size="xs" />
+              </Button>
+            </TooltipShortcut>
+          {/if}
         {/if}
       </div>
 
