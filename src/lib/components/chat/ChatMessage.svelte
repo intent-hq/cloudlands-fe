@@ -56,7 +56,10 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import { getCollaboratorSenderAttribution } from '$lib/utils/collaborator-sender-attribution';
+  import {
+    getCollaboratorSenderAttribution,
+    singleLineName,
+  } from '$lib/utils/collaborator-sender-attribution';
   import { getHumanMessageAuthor, getMessageAuthorLabel } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -424,9 +427,11 @@
   // shows the sender chip with the guest role — the preamble itself is
   // display-stripped by the presentation boundary, so the chip is the only
   // place the sender and their role remain visible, for owner and guest alike.
+  // The workspace owner's own rows never qualify (the daemon prepends the
+  // preamble for collaborators only), so an owner-typed lookalike line stays.
   let collaboratorSender = $derived(
     role === 'user' && !agentAttribution && !automatedWakePresentation
-      ? getCollaboratorSenderAttribution(message)
+      ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
       : null,
   );
   let humanAuthor = $derived(
@@ -442,10 +447,12 @@
   let humanAuthorLabel = $derived.by(() => {
     if (!humanAuthor) return null;
     if (!collaboratorSender) return getMessageAuthorLabel(humanAuthor);
-    // Same shape as the stripped preamble: `@login (Display Name)`, then
-    // `@login`, then the display name alone.
-    const login = humanAuthor.login?.trim() ? `@${humanAuthor.login.trim()}` : null;
-    const name = humanAuthor.displayName?.trim() || null;
+    // Same shape and sanitizer as the stripped preamble: `@login (Display
+    // Name)`, then `@login`, then the display name alone — control characters
+    // and whitespace runs collapse exactly as the daemon's `single_line_name`.
+    const cleanLogin = singleLineName(humanAuthor.login);
+    const login = cleanLogin ? `@${cleanLogin}` : null;
+    const name = singleLineName(humanAuthor.displayName);
     // i18n-ignore (handle + name composition, mirrors the daemon preamble)
     return login && name ? `${login} (${name})` : (login ?? name);
   });
@@ -1074,7 +1081,7 @@
     const rawText =
       automatedWakePresentation?.bodyText ??
       (role === 'user' && message
-        ? getPresentedUserMessageText(message)
+        ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
         : extractTextFromMessage());
     if (role === 'user') {
       const parsed = parseContextFromMessage(rawText);
@@ -1160,7 +1167,7 @@
 
     // Extract text and tool blocks from contentBlocks
     if (role === 'user' && message) {
-      const presentedText = getPresentedUserMessageText(message);
+      const presentedText = getPresentedUserMessageText(message, workspace?.ownerPrincipalId);
       if (presentedText.trim()) parts.push(presentedText);
     }
     if (message?.contentBlocks && Array.isArray(message.contentBlocks)) {
@@ -1239,7 +1246,9 @@
   function handleStartEdit() {
     // Presentation-only delivery notes stay out of edit/retry text while the
     // canonical stored content remains unchanged.
-    const rawText = message ? getPresentedUserMessageText(message) : getMessageText();
+    const rawText = message
+      ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
+      : getMessageText();
     const parsed = parseStoredMessage(rawText);
     editValue = parsed.userMessage;
 
