@@ -49,6 +49,7 @@ vi.mock('../../../backend/main/backend-connection', () => ({
 }));
 vi.mock('../../../backend/main/invite-connection', () => ({
   InviteRpcError: class extends Error {},
+  InviteTransportError: class extends Error {},
   openInviteConnection: vi.fn(async () => ({
     host: '127.0.0.1',
     via: 'direct',
