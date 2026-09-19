@@ -190,6 +190,27 @@ describe('selected note markdown copy', () => {
     editor.destroy();
   });
 
+  it('keeps the list type when a selection spans two sibling list items', () => {
+    const editor = createEditor('<ol><li><p>First item</p></li><li><p>Second item</p></li></ol>');
+    selectText(editor, 'First item', 'Second');
+
+    expect(serializeSelectionToMarkdown(editor.view)).toBe('1. First item\n2. Second');
+
+    editor.destroy();
+  });
+
+  it('keeps the quote wrapper when a selection spans two blockquote paragraphs', () => {
+    const editor = createEditor('<blockquote><p>First quote</p><p>Second quote</p></blockquote>');
+    selectText(editor, 'First quote', 'Second');
+
+    const markdown = serializeSelectionToMarkdown(editor.view);
+    expect(markdown.startsWith('> First quote')).toBe(true);
+    expect(markdown.split('\n').every((line) => line.startsWith('>'))).toBe(true);
+    expect(markdown).toContain('Second');
+
+    editor.destroy();
+  });
+
   it('keeps block syntax when a whole single-item list or table is selected', () => {
     const editor = createEditor('<ul><li><p>Only item</p></li></ul>');
     editor.commands.selectAll();
