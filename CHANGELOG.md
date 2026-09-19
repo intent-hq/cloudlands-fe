@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.167.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.166.0...v2.167.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* **proposals:** default the card specialist to the New Workspace modal selection ([#2662](https://github.com/intent-hq/cloudlands-fe/issues/2662)) ([6edbe0a](https://github.com/intent-hq/cloudlands-fe/commit/6edbe0a6d55df9981b6271bf1f920c78e3df3a65))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.80 ([#2672](https://github.com/intent-hq/cloudlands-fe/issues/2672)) ([0e8bbdd](https://github.com/intent-hq/cloudlands-fe/commit/0e8bbdd35a8d439010a32504908987b06c6f8595))
+* **chat:** clear the proposal draft when a resolution converges from the daemon ([#2665](https://github.com/intent-hq/cloudlands-fe/issues/2665)) ([fd160f3](https://github.com/intent-hq/cloudlands-fe/commit/fd160f355842970a6a9359e59f8bd59ea10da578))
+* **notes:** restore bubble menu icons clipped by default Button padding ([#2668](https://github.com/intent-hq/cloudlands-fe/issues/2668)) ([f0abb5e](https://github.com/intent-hq/cloudlands-fe/commit/f0abb5ec36b1e0daaa98f8370e965eaf6d44c058))
+
 ## [2.166.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.3...v2.166.0) (2026-09-19)
 
 
