@@ -447,7 +447,7 @@ describe('global workspace tab navigation', () => {
       expect(closeWindow).not.toHaveBeenCalled();
     });
 
-    it('closes the window with three presses in a one-column, one-tab sole workspace', () => {
+    it('closes the window with three presses in a two-column, one-tab-each sole workspace', () => {
       const store = makeStore(
         'ws-2',
         layoutWith([makePanel('p1', ['t1']), makePanel('p2', ['t2'])], 'p2'),
