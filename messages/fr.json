@@ -6410,6 +6410,8 @@
   "presence_person_unknown_label": "Quelqu’un",
   "presence_avatarStack_people_one": "1 autre personne ici",
   "presence_avatarStack_people_many": "{count} autres personnes ici",
+  "presence_avatarStack_offline_one": "1 autre membre, absent pour le moment",
+  "presence_avatarStack_offline_many": "{count} autres membres, aucun ici pour le moment",
   "presence_avatarStack_more_label": "+{count}",
   "presence_typing_one": "{name} est en train d’écrire…",
   "presence_typing_two_label": "{first} et {second} sont en train d’écrire…",
