@@ -469,7 +469,7 @@
                 {...props}
                 type="button"
                 variant="ghost"
-                size="icon-compact"
+                size="icon"
                 iconOnly
                 class="flex-none rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
                 aria-label={m.notes_diagramBlock_copyDiagram_tooltip()}
