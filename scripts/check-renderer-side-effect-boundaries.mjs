@@ -10,7 +10,7 @@ import ts from 'typescript';
 // classification, intended owner, and retained-UI rationale). Update this reviewed
 // snapshot only after inspecting that report; the default command fails closed.
 const REVIEWED_INVENTORY_DIGEST =
-  'f3935146121106659c6b841375144de0401a994dd0a1e369e5ee54ec7ac763f1';
+  '6b85612139cb2f4973261ffd9d35810014d7f99e6d713a97137b0dfac5f99b8e';
 const REVIEWED_INVENTORY_COUNTS = {
   'approved lifecycle seam :: async-subscription': 2,
   'approved lifecycle seam :: client-ipc': 3,
@@ -27,7 +27,7 @@ const REVIEWED_INVENTORY_COUNTS = {
   'infrastructure adapter :: service-factory': 5,
   'infrastructure adapter :: timer': 52,
   'saga-owned business logic :: async-subscription': 54,
-  'saga-owned business logic :: client-ipc': 344,
+  'saga-owned business logic :: client-ipc': 345,
   'saga-owned business logic :: debounce-retry-poll': 18,
   'saga-owned business logic :: dom-subscription': 162,
   'saga-owned business logic :: ipc': 129,
