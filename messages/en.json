@@ -6421,6 +6421,8 @@
   "presence_person_unknown_label": "Someone",
   "presence_avatarStack_people_one": "1 other person here",
   "presence_avatarStack_people_many": "{count} other people here",
+  "presence_avatarStack_offline_one": "1 other member, not here right now",
+  "presence_avatarStack_offline_many": "{count} other members, none here right now",
   "presence_avatarStack_more_label": "+{count}",
   "presence_typing_one": "{name} is typing…",
   "presence_typing_two_label": "{first} and {second} are typing…",
