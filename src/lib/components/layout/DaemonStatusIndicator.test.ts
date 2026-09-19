@@ -720,6 +720,69 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('collaborator projection (intentd #1934)', () => {
+    async function openStatusWith(stats: Record<string, unknown>) {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats,
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+    }
+
+    it('hides the count and telemetry rows when the daemon omits them (guest window)', async () => {
+      // What the slice stores for the guest-safe projection: no clients /
+      // agents / maxAgents, no uptime / CPU / memory / disk.
+      await openStatusWith({
+        listenMode: 'wss',
+        port: 7777,
+        version: '0.1.0',
+        protocolVersion: '2.0',
+        hostname: 'studio.local',
+        os: 'macos',
+        arch: 'aarch64',
+      });
+
+      expect(screen.queryByText('Agent slots')).toBeNull();
+      expect(screen.queryByText('WSS clients')).toBeNull();
+      expect(screen.queryByText('Uptime')).toBeNull();
+      expect(screen.queryByText('CPU')).toBeNull();
+      expect(screen.queryByText('Memory')).toBeNull();
+      expect(screen.queryByText('Workspace disk')).toBeNull();
+      // Nothing rendered "undefined" or "NaN" in place of a missing count.
+      expect(screen.queryByText(/undefined|NaN/)).toBeNull();
+      // The projected rows still render.
+      expect(screen.getByText('Transport')).toBeTruthy();
+      expect(screen.getByText('wss:7777')).toBeTruthy();
+      expect(screen.getByText('Version')).toBeTruthy();
+      expect(screen.getByText('0.1.0')).toBeTruthy();
+    });
+
+    it('renders the count rows when the daemon reports them (administrator window)', async () => {
+      await openStatusWith({
+        clients: 2,
+        agents: 1,
+        maxAgents: 8,
+        listenMode: 'uds',
+        port: null,
+        version: '0.1.0',
+        os: 'macos',
+        arch: 'aarch64',
+      });
+
+      expect(screen.getByText('Agent slots')).toBeTruthy();
+      expect(screen.getByText('1/8')).toBeTruthy();
+      expect(screen.getByText('WSS clients')).toBeTruthy();
+      expect(screen.getByText('2')).toBeTruthy();
+    });
+  });
+
   describe('workspace disk rendering', () => {
     function withDisk(opts: {
       health?: 'healthy' | 'degraded' | 'down';
@@ -1845,6 +1908,42 @@ describe('DaemonStatusIndicator', () => {
         // Not yet captured: the address remains the primary label, nothing repeated.
         const pending = within(block).getByText('tc2.example.ts.net').closest('[role="menuitem"]')!;
         expect(pending.querySelector('[data-guest-address]')).toBeNull();
+      });
+
+      it('hides the daemon-global count rows on a guest window fed the collaborator projection (intentd #1934)', async () => {
+        // End to end: the exact guest-safe `system.status` projection (typed
+        // literal in daemon-health.test-fixtures.ts, covered by `pnpm run check`)
+        // goes through the real reducer chain and renders in a guest window
+        // (windowBackendId matches a guest session). Before the presence guards
+        // this showed "Agent slots /?" and an empty "WSS clients" row.
+        const s = await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+        const { collaboratorSystemStatusProjection: projected } =
+          await import('$store/renderer/slices/daemon-health/daemon-health.test-fixtures');
+        const connected = s.daemonHealthReducer(
+          s.initialState,
+          s.connectionStatusChanged('connected', { mode: 'external-ws' }),
+        );
+        const state = s.daemonHealthReducer(
+          connected,
+          s.systemStatusSuccess(
+            projected,
+            '2026-09-16T13:00:00.000Z',
+            connected.connectionGeneration,
+          ),
+        );
+        mockStoreState = {
+          daemonHealth: state,
+          connections: withConnections('guest-1'),
+          guestSessions: withGuestSessions(['guest-1']),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: /^intentd: healthy/ }));
+        await fireEvent.click(screen.getByText(/^Status - /));
+
+        expect(screen.queryByText('Agent slots')).toBeNull();
+        expect(screen.queryByText('WSS clients')).toBeNull();
+        expect(screen.queryByText(/undefined|NaN/)).toBeNull();
+        expect(screen.getByText(projected.version!)).toBeTruthy();
       });
 
       it('names the host by its captured hostname in the secret-unavailable toast', async () => {

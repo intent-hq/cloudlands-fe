@@ -27,6 +27,7 @@ import {
   stopUnslothSucceeded,
   stopUnslothFailed,
 } from './daemon-health-slice';
+import { collaboratorSystemStatusProjection } from './daemon-health.test-fixtures';
 import type {
   BackendTransportInfo,
   SidecarRunLog,
@@ -678,6 +679,67 @@ describe('daemonHealthReducer', () => {
       });
       expect(next.lastUpdated).toBe(receivedAt);
       expect(next.hostLocality).toBe('local');
+    });
+
+    it('keeps counts and telemetry absent for the collaborator projection (intentd #1934)', () => {
+      // Exactly the guest-safe key set a Collaborator caller receives — the
+      // typed literal lives in a check-covered module so a re-required wire
+      // field fails `pnpm run check`, not only this runtime test.
+      const payload = collaboratorSystemStatusProjection;
+      // COLLABORATOR_STATUS_FIELDS / COLLABORATOR_STATUS_HOST_FIELDS @ 60de0618.
+      expect(Object.keys(payload).sort()).toEqual(
+        [
+          'running',
+          'listenMode',
+          'port',
+          'version',
+          'buildCommit',
+          'protocolVersion',
+          'fingerprint',
+          'localIps',
+          'tcAddress',
+          'hostname',
+          'prettyHostname',
+          'host',
+        ].sort(),
+      );
+      expect(Object.keys(payload.host).sort()).toEqual(
+        ['os', 'arch', 'locality', 'deviceKind', 'hardwareModel'].sort(),
+      );
+      expect(payload).not.toHaveProperty('transports');
+      expect(payload).not.toHaveProperty('clients');
+      expect(payload).not.toHaveProperty('agents');
+      expect(payload).not.toHaveProperty('maxAgents');
+      expect(payload.host).not.toHaveProperty('hasDisplay');
+      const state = { ...initialState, polling: true };
+      const receivedAt = '2026-09-16T13:00:00.000Z';
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt, 0));
+
+      expect(next.polling).toBe(false);
+      expect(next.stats).toEqual({
+        listenMode: payload.listenMode,
+        port: payload.port,
+        version: payload.version,
+        buildCommit: payload.buildCommit,
+        protocolVersion: payload.protocolVersion,
+        hostname: payload.hostname,
+        os: payload.host.os,
+        arch: payload.host.arch,
+      });
+      expect(next.stats?.clients).toBeUndefined();
+      expect(next.stats?.agents).toBeUndefined();
+      expect(next.stats?.maxAgents).toBeUndefined();
+      expect(next.stats?.uptimeSeconds).toBeUndefined();
+      expect(next.stats?.cpuPercent).toBeUndefined();
+      expect(next.stats?.memoryBytes).toBeUndefined();
+      expect(next.stats?.workspacesDiskAvailableBytes).toBeUndefined();
+      expect(next.stats?.workspacesDiskTotalBytes).toBeUndefined();
+      // Nothing numeric was coerced from a missing field.
+      for (const value of Object.values(next.stats ?? {})) {
+        expect(Number.isNaN(value)).toBe(false);
+      }
+      expect(next.lastUpdated).toBe(receivedAt);
+      expect(next.hostLocality).toBe('remote');
     });
 
     it('treats new fields as optional (graceful degradation)', () => {
