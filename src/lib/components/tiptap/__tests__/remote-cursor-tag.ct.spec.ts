@@ -166,6 +166,29 @@ test('clamps to the left edge of the editor when both orientations would overflo
   expect(Math.abs(g.tag.left - g.editor.left)).toBeLessThanOrEqual(1);
 });
 
+test('a name wider than the editor clamps to the editor width and ellipsizes', async ({
+  mount,
+  page,
+}) => {
+  const oversize = `${LONG_NAME} `.repeat(6).trim();
+  const g = await mountHarness(mount, page, SECOND_START + 15, {
+    label: oversize,
+    hostWidth: 400,
+  });
+  expect(g.label).toBe(oversize);
+  expect(g.tag.left).toBeGreaterThanOrEqual(g.editor.left - 0.5);
+  expect(g.tag.right).toBeLessThanOrEqual(g.editor.right + 0.5);
+  expect(tagWidth(g)).toBeGreaterThan(g.editor.right - g.editor.left - 1);
+  const nameOverflow = await page
+    .getByTestId('note-host')
+    .locator('.remote-cursor__name')
+    .evaluate((el) => ({
+      clipped: el.scrollWidth > el.clientWidth,
+      ellipsis: getComputedStyle(el).textOverflow,
+    }));
+  expect(nameOverflow).toEqual({ clipped: true, ellipsis: 'ellipsis' });
+});
+
 test('drops below the first line of the document instead of being clipped', async ({
   mount,
   page,
