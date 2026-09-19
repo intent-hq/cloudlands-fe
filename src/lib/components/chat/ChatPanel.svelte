@@ -80,6 +80,7 @@
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
   import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
+  import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
   import {
     acquireChatInterestLease,
     releaseChatInterestLease,
@@ -3743,7 +3744,9 @@
           repoPath: workspace.repositoryPath || '',
           specialistName: session?.name,
           specialistId: (session?.metadata as any)?.specialist,
-          setupScript: workspace.setupScript,
+          // The wire serves `setupScript` as a `{ script, ... }` record
+          // (PROTOCOL §5.25); the card renders the script text.
+          setupScript: workspaceSetupScriptText(workspace.setupScript),
           skipWorktree: workspace.skipWorktree,
         };
         // `setupScript` is detail-only (absent from slim `workspace.list`
@@ -3753,8 +3756,9 @@
         if (isInitialWorkspaceAgent && workspace.setupScript === undefined) {
           const wsId = workspace.id;
           void ensureWorkspaceDetail(wsId).then((detail) => {
-            if (!detail?.setupScript || !onboardingContext || workspace?.id !== wsId) return;
-            onboardingContext = { ...onboardingContext, setupScript: detail.setupScript };
+            const setupScript = workspaceSetupScriptText(detail?.setupScript);
+            if (!setupScript || !onboardingContext || workspace?.id !== wsId) return;
+            onboardingContext = { ...onboardingContext, setupScript };
           });
         }
       }

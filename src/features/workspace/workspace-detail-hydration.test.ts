@@ -37,6 +37,7 @@ import {
   ensureWorkspacePullRequestPool,
   fetchWorkspaceDetail,
 } from './workspace-detail-hydration';
+import { workspaceSetupScriptText } from './utils/workspace-setup-script';
 
 const getMock = appClient.workspaces.get as unknown as ReturnType<typeof vi.fn>;
 const WS = 'ws-detail-hydration-1';
@@ -70,6 +71,15 @@ function pr(number: number): PullRequestInfo {
 
 const stored = () => selectWorkspaceById.select(appStore.state, WS);
 const hydrated = () => selectWorkspaceDetailHydrated.select(appStore.state, WS);
+
+// `workspace.get` serves `setupScript` as a SetupScript record (PROTOCOL
+// §5.25); the FE `Workspace` type still declares the bare string, so the
+// fixture is cast to the wire shape the store actually receives.
+const setupScript = {
+  script: 'pnpm install',
+  updatedAt: 1_700_000_000_000,
+  generatedBy: 'user',
+} as unknown as string;
 
 beforeAll(() => appStore.init());
 
@@ -105,12 +115,13 @@ describe('ensureWorkspaceDetail', () => {
   it('merges the workspace.get projection into a slim list row and marks it hydrated once', async () => {
     appStore.dispatch(replaceWorkspaceList([makeWorkspace()]));
     expect(stored()?.setupScript).toBeUndefined();
-    getMock.mockResolvedValueOnce(makeWorkspace({ setupScript: 'pnpm install' }));
+    getMock.mockResolvedValueOnce(makeWorkspace({ setupScript }));
 
     const result = await ensureWorkspaceDetail(WS);
 
-    expect(result?.setupScript).toBe('pnpm install');
-    expect(stored()?.setupScript).toBe('pnpm install');
+    expect(result?.setupScript).toEqual(setupScript);
+    expect(workspaceSetupScriptText(result?.setupScript)).toBe('pnpm install');
+    expect(stored()?.setupScript).toEqual(setupScript);
     expect(hydrated()).toBe(true);
 
     await ensureWorkspaceDetail(WS);
@@ -119,14 +130,14 @@ describe('ensureWorkspaceDetail', () => {
 
   it('keeps the hydrated detail across a later slim list refresh without refetching', async () => {
     appStore.dispatch(replaceWorkspaceList([makeWorkspace()]));
-    getMock.mockResolvedValueOnce(makeWorkspace({ setupScript: 'pnpm install' }));
+    getMock.mockResolvedValueOnce(makeWorkspace({ setupScript }));
     await ensureWorkspaceDetail(WS);
 
     appStore.dispatch(replaceWorkspaceList([makeWorkspace({ title: 'Refreshed' })]));
     const result = await ensureWorkspaceDetail(WS);
 
     expect(result?.title).toBe('Refreshed');
-    expect(result?.setupScript).toBe('pnpm install');
+    expect(result?.setupScript).toEqual(setupScript);
     expect(getMock).toHaveBeenCalledTimes(1);
   });
 
@@ -141,14 +152,14 @@ describe('ensureWorkspaceDetail', () => {
     // old detail → slim list refresh → pool-driven detail read that omits the
     // script (workspace.get never slims, so absent means removed).
     appStore.dispatch(replaceWorkspaceList([makeWorkspace()]));
-    getMock.mockResolvedValueOnce(makeWorkspace({ setupScript: 'pnpm install' }));
+    getMock.mockResolvedValueOnce(makeWorkspace({ setupScript }));
     await ensureWorkspaceDetail(WS);
     appStore.dispatch(
       replaceWorkspaceList([
         makeWorkspace({ pullRequests: [pr(1), pr(2), pr(3), pr(4), pr(5)], pullRequestsTotal: 6 }),
       ]),
     );
-    expect(stored()?.setupScript).toBe('pnpm install');
+    expect(stored()?.setupScript).toEqual(setupScript);
     getMock.mockResolvedValueOnce(makeWorkspace({ pullRequests: [pr(1), pr(2)] }));
 
     await ensureWorkspacePullRequestPool(WS);
