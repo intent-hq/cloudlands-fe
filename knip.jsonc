@@ -27,6 +27,9 @@
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
     // is not followed by knip); playwright/index.ts is listed under "playwright-ct" below
     "playwright/app-stubs/*.ts",
+    // TEMPORARY: the shared CT `test` module lands before its consumers; remove this
+    // entry in the change that routes `src/**/*.ct.spec.ts` through it.
+    "src/test/ct-test.ts",
     // Loaded via <script src> in operate-patterns.visual.html (visual test harness)
     "src/lib/components/ui/card/operate-patterns.visual.ts",
     // Dynamically imported as import('$lib/dev-tools') in src/routes/(app)/+layout.svelte
