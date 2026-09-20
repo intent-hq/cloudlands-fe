@@ -28,6 +28,10 @@ const semanticColorBaseline = Object.assign(
   {},
   ...designSystemBaseline['no-arbitrary-motion-or-color'].map((entry) => entry.counts ?? {}),
 );
+const iconOnlyButtonSizeBaseline = Object.assign(
+  {},
+  ...(designSystemBaseline['icon-only-button-size'] ?? []).map((entry) => entry.counts ?? {}),
+);
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
@@ -718,6 +722,7 @@ export default [
         { allowlist: namedColorAllowlist, baseline: semanticColorBaseline },
       ],
       'intent/no-button-compatibility-aliases': 'warn',
+      'intent/icon-only-button-size': ['error', { baseline: iconOnlyButtonSizeBaseline }],
       'intent/no-dialog-root-outside-patterns': 'error',
       'intent/no-direct-toast': 'error',
       'intent/no-legacy-spinner': 'error',

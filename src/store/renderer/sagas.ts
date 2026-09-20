@@ -32,6 +32,7 @@ import { chatSendSaga } from './slices/chat-state/sagas/chat-send-saga';
 import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga';
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
+import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
@@ -111,6 +112,7 @@ import { workspaceNotesSaga } from './slices/workspace-notes/sagas/workspace-not
 import { workspaceOperationsSaga } from './slices/workspace-operations/sagas/workspace-operations-saga';
 import { workspaceSettingsSaga } from './slices/workspace-settings/sagas/workspace-settings-saga';
 import { workspaceTransferSaga } from './slices/workspace-transfer/sagas/workspace-transfer-saga';
+import { workspaceShareSaga } from './slices/workspace-share/sagas/workspace-share-saga';
 import { workspaceImportSaga } from './slices/workspace-import/sagas/workspace-import-saga';
 
 export type AppSaga = Parameters<Store<any, any>['runSaga']>[0];
@@ -132,6 +134,7 @@ export const sagas = [
   daemonEventsSaga,
   daemonHealthSaga,
   connectionsSaga,
+  guestSessionsSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,
@@ -163,6 +166,7 @@ export const sagas = [
   workspaceNavigationLayoutSaga,
   workspaceOperationsSaga,
   workspaceTransferSaga,
+  workspaceShareSaga,
   workspaceImportSaga,
   scriptsOperationSaga,
   lifecycleReadSaga,

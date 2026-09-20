@@ -502,11 +502,15 @@ jobs:
       - name: Generate i18n messages
         run: pnpm run generate:i18n
       - name: Svelte check
-        # svelte-check holds the whole renderer program in one process and
-        # already needs 3.6–4 GB of heap at the shared-controls base (it OOMs
-        # locally at 3584 MB and passes at 4096), so the job-wide 4 GB cap left
-        # no headroom and cloudlands-fe#2533 tipped it over. Both runner
-        # classes (tinybox, gh-linux-8x) have ample RAM for this cap.
+        # svelte-check holds the whole renderer program in one process. Measured
+        # with --trace-gc (intent-hq/intent#5211, 8.1k files): ~3.85 GB live after a
+        # full GC, ~4.06 GB committed, peak RSS ~4.3 GiB — identical within 20 MB on
+        # main and on the cloudlands-fe#2533 merge tree that OOMed. At the job-wide
+        # 4 GB cap V8 sits in its near-limit "reduce" mark-compact loop and aborts on
+        # timing, so this step alone gets ~2x the measured need; other steps keep
+        # the job cap (intent-hq/intent#3352). Both runner classes (tinybox,
+        # gh-linux-8x) have ample RAM. run-svelte-check.mjs prints the peak RSS of
+        # every run so the margin stays visible before it is exhausted again.
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check

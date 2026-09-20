@@ -754,8 +754,9 @@ export function setupSystemIPC() {
     WINDOW_CHANNELS.CLOSE,
     createSafeValidatedHandler(
       EmptySchema,
-      async () => {
-        const window = BrowserWindow.getFocusedWindow();
+      async (event) => {
+        const window =
+          BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
         if (window) {
           window.close();
         }

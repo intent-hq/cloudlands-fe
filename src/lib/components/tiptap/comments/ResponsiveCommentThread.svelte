@@ -310,7 +310,13 @@
               <Fa icon={faCheck} size="xs" />
               {m.tiptap_responsiveThread_resolve_label()}
             </Button>
-            <Button size="xs" variant="ghost" onclick={() => onClose?.()}>
+            <Button
+              size="icon-compact"
+              iconOnly
+              variant="ghost"
+              aria-label={m.tiptap_responsiveThread_close_ariaLabel()}
+              onclick={() => onClose?.()}
+            >
               <Fa icon={faTimes} size="xs" />
             </Button>
           </div>

@@ -4,6 +4,76 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.170.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.169.1...v2.170.0) (2026-09-20)
+
+
+### 🚀 Features
+
+* **agents:** tolerate slim agent.list/workspace.list rows and load detail on demand ([#2687](https://github.com/intent-hq/cloudlands-fe/issues/2687)) ([116d654](https://github.com/intent-hq/cloudlands-fe/commit/116d6544224c13db58698b9120ea38a3ebf2ae63))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.85 ([#2689](https://github.com/intent-hq/cloudlands-fe/issues/2689)) ([46d3085](https://github.com/intent-hq/cloudlands-fe/commit/46d308539e3cb9f10e55efd5fc8ba414239ea21e))
+* **ci:** print svelte-check peak RSS and ground the step heap cap in measurements ([#2682](https://github.com/intent-hq/cloudlands-fe/issues/2682)) ([bc18618](https://github.com/intent-hq/cloudlands-fe/commit/bc18618f1a114778ca5c21a00c5763bde9cc845d))
+* **design-system:** size icon-only Buttons in layout, settings, terminal and browser components ([#2683](https://github.com/intent-hq/cloudlands-fe/issues/2683)) ([84d87f6](https://github.com/intent-hq/cloudlands-fe/commit/84d87f68512e35196ff36c876e143b5b687cb76f))
+* **design-system:** size icon-only Buttons in tiptap, markdown and workspace components ([#2680](https://github.com/intent-hq/cloudlands-fe/issues/2680)) ([1fb0077](https://github.com/intent-hq/cloudlands-fe/commit/1fb0077546d483d19a4c2a8c1f11e96e696a1000))
+* **notes:** quote every paragraph when copying a multi-paragraph blockquote ([#2679](https://github.com/intent-hq/cloudlands-fe/issues/2679)) ([abf25c2](https://github.com/intent-hq/cloudlands-fe/commit/abf25c2bbc5ef78c5f3a1e780537936f97582d63))
+
+## [2.169.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.169.0...v2.169.1) (2026-09-19)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.84 ([#2685](https://github.com/intent-hq/cloudlands-fe/issues/2685)) ([868c653](https://github.com/intent-hq/cloudlands-fe/commit/868c65370dab5bd13ab13f5a52cf3df725ce306a))
+
+## [2.169.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.168.1...v2.169.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* **lint:** require an icon size on icon-only Buttons ([#2675](https://github.com/intent-hq/cloudlands-fe/issues/2675)) ([fa0bb02](https://github.com/intent-hq/cloudlands-fe/commit/fa0bb029c9fcb766ee8c9c4f85a1d2ffc11e8156))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.83 ([#2681](https://github.com/intent-hq/cloudlands-fe/issues/2681)) ([bbbadbe](https://github.com/intent-hq/cloudlands-fe/commit/bbbadbe215ce07fdb59f8eaa4f6731a1989f1070))
+
+## [2.168.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.168.0...v2.168.1) (2026-09-19)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.82 ([#2676](https://github.com/intent-hq/cloudlands-fe/issues/2676)) ([9e186e7](https://github.com/intent-hq/cloudlands-fe/commit/9e186e78d8cb499a8d6f1f1c828f52e6d17ce902))
+
+## [2.168.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.167.0...v2.168.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* cascade Cmd+W from panel to workspace tab to window close ([#2670](https://github.com/intent-hq/cloudlands-fe/issues/2670)) ([34dd2e9](https://github.com/intent-hq/cloudlands-fe/commit/34dd2e99b873e996e2b69820c0694c1ca0bc0bdd))
+* update remote daemons to the bundled version ([#2524](https://github.com/intent-hq/cloudlands-fe/issues/2524)) ([832b1df](https://github.com/intent-hq/cloudlands-fe/commit/832b1df2bb9fb93818a565204bf0d14611a413d7))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.81 ([#2674](https://github.com/intent-hq/cloudlands-fe/issues/2674)) ([6b593ab](https://github.com/intent-hq/cloudlands-fe/commit/6b593abe51d944cfc0b9f867171b9063dde32404))
+* **notes:** copy only the selected text from inside table cells, list items and blockquotes ([#2669](https://github.com/intent-hq/cloudlands-fe/issues/2669)) ([be01da0](https://github.com/intent-hq/cloudlands-fe/commit/be01da077016cd963d72874c808a15f3c2e37658))
+
+## [2.167.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.166.0...v2.167.0) (2026-09-19)
+
+
+### 🚀 Features
+
+* **proposals:** default the card specialist to the New Workspace modal selection ([#2662](https://github.com/intent-hq/cloudlands-fe/issues/2662)) ([6edbe0a](https://github.com/intent-hq/cloudlands-fe/commit/6edbe0a6d55df9981b6271bf1f920c78e3df3a65))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.80 ([#2672](https://github.com/intent-hq/cloudlands-fe/issues/2672)) ([0e8bbdd](https://github.com/intent-hq/cloudlands-fe/commit/0e8bbdd35a8d439010a32504908987b06c6f8595))
+* **chat:** clear the proposal draft when a resolution converges from the daemon ([#2665](https://github.com/intent-hq/cloudlands-fe/issues/2665)) ([fd160f3](https://github.com/intent-hq/cloudlands-fe/commit/fd160f355842970a6a9359e59f8bd59ea10da578))
+* **notes:** restore bubble menu icons clipped by default Button padding ([#2668](https://github.com/intent-hq/cloudlands-fe/issues/2668)) ([f0abb5e](https://github.com/intent-hq/cloudlands-fe/commit/f0abb5ec36b1e0daaa98f8370e965eaf6d44c058))
+
 ## [2.166.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.165.3...v2.166.0) (2026-09-19)
 
 

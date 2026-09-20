@@ -1368,6 +1368,54 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(fallback.retiredCount).toBe(0);
   });
 
+  it('list sends scope only when it names a bin — "all" and absent stay off the wire (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const client = new LiveAgentsClient();
+
+    await client.list('ws-1', { scope: 'topLevel' });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1', scope: 'topLevel' },
+    });
+
+    await client.list('ws-1', { scope: 'delegated' });
+    expect(backend.requests[1].params).toEqual({ workspaceId: 'ws-1', scope: 'delegated' });
+
+    await client.list('ws-1', { scope: 'background' });
+    expect(backend.requests[2].params).toEqual({ workspaceId: 'ws-1', scope: 'background' });
+
+    // `all` IS the default read, so it carries no flag.
+    await client.list('ws-1', { scope: 'all' });
+    expect(backend.requests[3].params).toEqual({ workspaceId: 'ws-1' });
+  });
+
+  it('listWithMeta surfaces scopeCounts verbatim and leaves it absent for an older daemon (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 5, background: 1 },
+    }));
+    const client = new LiveAgentsClient();
+
+    const served = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(served.scopeCounts).toEqual({ topLevel: 2, delegated: 5, background: 1 });
+
+    // Old daemon: no `scopeCounts` key at all — the field must be ABSENT (not
+    // zeroed) so the hydration saga can tell the two daemons apart.
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const legacy = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect('scopeCounts' in legacy).toBe(false);
+
+    // A malformed triple is not healed into zeros either.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: '5' },
+    }));
+    const malformed = await client.listWithMeta('ws-1');
+    expect(malformed.scopeCounts).toBeUndefined();
+  });
+
   it('list carries retiredAt verbatim on the retired-only read (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({
       agents: [
@@ -1385,6 +1433,27 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     const agents = await client.list('ws-1', { retiredOnly: true });
     expect(agents[0]).toMatchObject({ id: 'agent-retired', retiredAt: '2026-08-20T00:00:00.000Z' });
+  });
+
+  it('list carries the wire parentAgentId on delegated rows and leaves it absent on top-level ones (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-child',
+          workspaceId: 'ws-1',
+          name: 'Child',
+          status: 'idle',
+          parentAgentId: 'agent-parent',
+        },
+        { id: 'agent-parent', workspaceId: 'ws-1', name: 'Parent', status: 'idle' },
+      ],
+      retiredCount: 0,
+    }));
+    const client = new LiveAgentsClient();
+
+    const agents = await client.list('ws-1', { scope: 'delegated' });
+    expect(agents[0]).toMatchObject({ id: 'agent-child', parentAgentId: 'agent-parent' });
+    expect(agents[1].parentAgentId).toBeUndefined();
   });
 
   it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {

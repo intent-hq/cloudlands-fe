@@ -88,7 +88,10 @@
           <Button
             variant="ghost"
             type="button"
-            class="p-1.5 rounded hover:bg-muted transition-colors cursor-pointer"
+            size="icon-compact"
+            iconOnly
+            aria-label={m.workspace_contextPicker_close_ariaLabel()}
+            class="rounded hover:bg-muted transition-colors cursor-pointer"
             onclick={onClose}
           >
             <Fa icon={faTimes} size="sm" class="text-ghost" />

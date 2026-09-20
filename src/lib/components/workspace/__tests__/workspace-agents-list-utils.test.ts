@@ -44,6 +44,22 @@ describe('getFlatWorkspaceAgentRows', () => {
     ]);
   });
 
+  it('nests a child keyed only by the wire parentAgentId under its parent (no createdByAgentId, §5.5)', () => {
+    const agents = [
+      makeAgent('coordinator'),
+      makeAgent('slim-child', { parentAgentId: 'coordinator' as AgentSession['id'] }),
+      makeAgent('legacy-child', { metadata: { createdByAgentId: 'coordinator' } as any }),
+      makeAgent('standalone'),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent, depth }) => [agent.id, depth])).toEqual([
+      ['coordinator', 0],
+      ['legacy-child', 1],
+      ['slim-child', 1],
+      ['standalone', 0],
+    ]);
+  });
+
   it('dedupes repeated sessions by id', () => {
     const duplicate = makeAgent('agent-1');
 
@@ -361,8 +377,17 @@ describe('getVisibleWorkspaceAgentRows', () => {
   it('defaults parent groups to collapsed until explicitly expanded', () => {
     const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
 
-    expect(list).toContain('let expandedAgentIds = $state(new Set<string>())');
-    expect(list).toContain('const isExpanded = hasActiveSearch || expandedAgentIds.has(agent.id)');
+    // Per-parent groups start collapsed (default expanded only while the
+    // workspace-level Delegated bin is open); an active search shows every group.
+    expect(list).toContain('let toggledDelegationIds = $state(new Set<string>())');
+    expect(list).toContain(
+      'const delegatedGroupsDefaultExpanded = $derived(hasLazyBins && showDelegatedAgents)',
+    );
+    expect(list).toContain('if (hasActiveSearch) return true;');
+    expect(list).toContain(
+      'return toggledDelegationIds.has(agentId) !== delegatedGroupsDefaultExpanded;',
+    );
+    expect(list).toContain('const isExpanded = isDelegationExpanded(agent.id)');
     expect(list).toContain('children.filter((child) => isAgentRunning(child.id))');
   });
 });

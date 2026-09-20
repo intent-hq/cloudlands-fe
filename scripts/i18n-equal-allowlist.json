@@ -74,6 +74,7 @@
   "codeWalkthrough_section_annotationCount_one": ["fr"],
   "codeWalkthrough_section_sectionNumber_label": ["fr"],
   "dialog_about_version": ["de"],
+  "deeplink_inviteFailed_ok_button": ["de", "fr", "ja"],
   "deviceIcons_kind_macMini_label": "*",
   "deviceIcons_kind_macStudio_label": "*",
   "deviceIcons_kind_planet_label": ["de"],
@@ -180,6 +181,7 @@
   "notes_cliBlock_exit_label": ["de"],
   "notes_fontStyleButton_specimen_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "notes_panel_title": ["fr"],
+  "notes_presenceStack_overflow_label": "*",
   "notification_assistant_title": ["fr"],
   "notification_assistant_titled": ["fr"],
   "notification_specialist_agent": ["de", "fr"],
@@ -312,5 +314,6 @@
   "workspace_transfer_tableName_label": ["fr"],
   "settings_section_git": "*",
   "settings_sidebar_appBehavior_label": ["es"],
-  "settings_sidebar_agents_label": ["fr"]
+  "settings_sidebar_agents_label": ["fr"],
+  "workspace_hoverCard_member_ariaLabel": ["fr", "ko"]
 }
