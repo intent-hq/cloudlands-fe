@@ -35,6 +35,7 @@
     type AllSpacesViewMode,
     type SidebarNavItem,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
+  import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -52,6 +53,11 @@
   // Chief workspace (`workspaceUnmounted`).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const chiefHidden = $derived($isCollaboratorOnlyClient$ || $isChiefCollapsed$);
+  // A guest window (bound to a joined host, multiplayer w4) lists only the
+  // workspaces shared with it, so its list is titled accordingly. Keyed off
+  // the guest-window identity rather than the fail-closed collaborator-only
+  // flag, which reads true on every owner window until identity settles.
+  const isGuestWindow$ = selectIsGuestWindow();
 
   const allSpacesViewModes = [
     { value: 'recent', label: m.layout_allCard_recent_label() },
@@ -310,7 +316,9 @@
             <div class="panel-header shrink-0">
               <div class="min-w-0 flex-1">
                 <h2 class="panel-title text-ui font-medium text-foreground truncate">
-                  {m.layout_sidebarNav_allWorkspaces_title()}
+                  {$isGuestWindow$
+                    ? m.layout_sidebarNav_allSharedWorkspaces_title()
+                    : m.layout_sidebarNav_allWorkspaces_title()}
                 </h2>
               </div>
               <div class="flex items-center gap-0.5 shrink-0">
