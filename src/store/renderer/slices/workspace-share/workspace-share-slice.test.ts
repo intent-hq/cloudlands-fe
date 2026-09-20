@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+import type {
+  HostPrincipal,
+  WorkspaceInvite,
+  WorkspaceMember,
+} from '$features/workspace-sharing/types';
 import {
   closeShareDialog,
   getRosterState,
@@ -17,7 +21,9 @@ import {
   shareInviteCreateFailed,
   shareInviteCreateRequested,
   shareInviteRevokeRequested,
+  shareMemberAddRequested,
   shareMemberRemoveRequested,
+  sharePrincipalsLoaded,
   shareRosterActionSettled,
   shareRosterFailed,
   shareRosterLoaded,
@@ -46,6 +52,14 @@ const invite: WorkspaceInvite = {
   pinGithubUserId: 3,
   createdAt: '2026-09-14T00:00:00Z',
   expiresAt: '2026-09-21T00:00:00Z',
+};
+
+const hostGuest: HostPrincipal = {
+  principalId: 'p-erin',
+  login: 'erin',
+  displayName: 'Erin',
+  avatarUrl: null,
+  githubUserId: 5,
 };
 
 function opened(): WorkspaceShareState {
@@ -83,8 +97,43 @@ describe('workspaceShareReducer', () => {
     });
     expect(getItems(initialState.members)).toEqual([]);
     expect(getItems(initialState.invites)).toEqual([]);
+    expect(getItems(initialState.principals)).toEqual([]);
+    expect(initialState.addingPrincipalId).toBeNull();
     expect(initialState.guestCount).toBeNull();
     expect(initialState.guestLimit).toBeNull();
+  });
+
+  it('records the host principals for the targeted session only, and drops them on close', () => {
+    const loaded = reduce(
+      opened(),
+      sharePrincipalsLoaded({ target: target(opened()), principals: [hostGuest] }),
+    );
+    expect(getItems(loaded.principals)).toEqual([hostGuest]);
+
+    // A stale settlement (previous session, other workspace) is ignored.
+    expect(
+      reduce(
+        loaded,
+        sharePrincipalsLoaded({ target: { workspaceId: 'ws-1', session: 0 }, principals: [] }),
+      ),
+    ).toBe(loaded);
+    expect(
+      reduce(
+        loaded,
+        sharePrincipalsLoaded({
+          target: { workspaceId: 'ws-2', session: loaded.session },
+          principals: [],
+        }),
+      ),
+    ).toBe(loaded);
+
+    expect(getItems(reduce(loaded, closeShareDialog()).principals)).toEqual([]);
+    expect(
+      getItems(
+        reduce(loaded, openShareDialog({ workspaceId: 'ws-2', workspaceTitle: 'Other' }))
+          .principals,
+      ),
+    ).toEqual([]);
   });
 
   it('records the guest cap from a loaded read, and drops it on close or retarget', () => {
@@ -434,11 +483,19 @@ describe('workspaceShareReducer', () => {
     });
     expect(getItems(withheld.members)).toEqual([]);
     expect(getItems(withheld.invites)).toEqual([]);
+    expect(getItems(withheld.principals)).toEqual([]);
 
     expect(reduce(withheld, shareDataRequested())).toBe(withheld);
     expect(reduce(withheld, shareInviteCreateRequested({ pinLogin: '' }))).toBe(withheld);
     expect(reduce(withheld, shareInviteRevokeRequested('inv-1'))).toBe(withheld);
     expect(reduce(withheld, shareMemberRemoveRequested('p-bob'))).toBe(withheld);
+    expect(reduce(withheld, shareMemberAddRequested('p-erin'))).toBe(withheld);
+    expect(
+      reduce(
+        withheld,
+        sharePrincipalsLoaded({ target: target(withheld), principals: [hostGuest] }),
+      ),
+    ).toBe(withheld);
     expect(
       reduce(
         withheld,
@@ -463,12 +520,41 @@ describe('workspaceShareReducer', () => {
     ).toBe(loaded);
   });
 
-  it('tracks one revoke or remove at a time and settles with the localized error', () => {
+  it('tracks one revoke, remove, or add at a time and settles with the localized error', () => {
     const revoking = reduce(opened(), shareInviteRevokeRequested('inv-1'));
     expect(revoking).toMatchObject({ revokingInviteId: 'inv-1', actionError: null });
 
     // A second mutation while one is in flight is ignored.
     expect(reduce(revoking, shareMemberRemoveRequested('p-bob'))).toBe(revoking);
+    expect(reduce(revoking, shareMemberAddRequested('p-erin'))).toBe(revoking);
+
+    const adding = reduce(opened(), shareMemberAddRequested('p-erin'));
+    expect(adding).toMatchObject({ addingPrincipalId: 'p-erin', actionError: null });
+    expect(reduce(adding, shareInviteRevokeRequested('inv-1'))).toBe(adding);
+    expect(reduce(adding, shareMemberRemoveRequested('p-bob'))).toBe(adding);
+    const added = reduce(adding, shareActionSettled({ target: target(adding), error: null }));
+    expect(added).toMatchObject({ addingPrincipalId: null, actionError: null });
+    expect(reduce(adding, shareMemberAddRequested('p-erin'))).toBe(adding);
+
+    // A successful add leaves the generation alone: the roster is reconciled
+    // by the `workspace:updated` members event, whose read may have started
+    // (echoing this generation) before the add reply landed.
+    expect(added.mutationGeneration).toBe(adding.mutationGeneration);
+    const reconciled = reduce(
+      added,
+      shareDataLoaded({
+        target: target(added),
+        generation: adding.mutationGeneration,
+        members: [owner, { ...owner, principalId: 'p-erin', role: 'collaborator' }],
+        invites: [],
+        guestCount: null,
+        guestLimit: null,
+      }),
+    );
+    expect(getItems(reconciled.members).map((row) => row.principalId)).toEqual([
+      'p-alice',
+      'p-erin',
+    ]);
 
     const failed = reduce(
       revoking,

@@ -1,7 +1,8 @@
 /**
  * Renderer client for the owner-side sharing RPCs (PROTOCOL §5.1 membership,
- * intent-hq/intentd#1868 / #1872): `workspace.members.list` / `.remove` and
- * `workspace.invite.create` / `.list` / `.revoke`. Reads return the daemon
+ * intent-hq/intentd#1868 / #1872): `workspace.members.list` / `.add` /
+ * `.remove`, `workspace.invite.create` / `.list` / `.revoke`, and the
+ * host-wide `principal.list` behind direct member add. Reads return the daemon
  * payload verbatim; mutations fold transport/daemon errors into a bounded
  * `ShareFailure` (code + numeric rpc code, never the raw message — a transport
  * or daemon string may echo invite material) so callers never catch.
@@ -10,10 +11,12 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import {
   INVITE_ERROR_CODES,
+  type HostPrincipal,
   type InviteErrorCode,
   type WorkspaceInviteCreateResult,
   type WorkspaceInviteRow,
   type WorkspaceMember,
+  type WorkspaceMembersAddResult,
   type WorkspaceMembersList,
 } from './types';
 
@@ -68,6 +71,8 @@ export type ShareMutationOutcome = { success: true } | ShareFailure;
 export type InviteCreateOutcome =
   { success: true; result: WorkspaceInviteCreateResult } | ShareFailure;
 
+export type MemberAddOutcome = { success: true; result: WorkspaceMembersAddResult } | ShareFailure;
+
 /**
  * Fold any thrown error into a `ShareFailure`. Only bounded fields leave here —
  * this is also what log lines carry, so no raw error ever reaches a sink.
@@ -106,6 +111,33 @@ export const workspaceSharingClient = {
       guestCount: typeof result?.guestCount === 'number' ? result.guestCount : null,
       guestLimit: typeof result?.guestLimit === 'number' ? result.guestLimit : null,
     };
+  },
+
+  /**
+   * `principal.list` — owner only (`-32003` for a collaborator connection):
+   * every guest already authed on this host with an active credential, in
+   * creation order. No params.
+   */
+  async listPrincipals(): Promise<HostPrincipal[]> {
+    const result = await backendRequest<{ principals?: HostPrincipal[] }>('principal.list', {});
+    return Array.isArray(result?.principals) ? result.principals : [];
+  },
+
+  /**
+   * `workspace.members.add` — owner only. Attaches a `principal.list` guest as
+   * a collaborator; `added: false` when already a member. `-32602` for an
+   * unknown / primary / uncredentialed principal, `guest-limit` at the cap.
+   */
+  async addMember(workspaceId: string, principalId: string): Promise<MemberAddOutcome> {
+    try {
+      const result = await backendRequest<WorkspaceMembersAddResult>('workspace.members.add', {
+        workspaceId,
+        principalId,
+      });
+      return { success: true, result };
+    } catch (error) {
+      return shareFailure(error);
+    }
   },
 
   /** `workspace.members.remove` — owner only; the owner row itself is `-32602`. */

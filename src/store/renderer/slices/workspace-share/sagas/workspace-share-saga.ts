@@ -2,10 +2,13 @@
  * Workspace Share Saga
  *
  * Drives the owner-side sharing RPCs (PROTOCOL §5.1 membership) for the Share
- * dialog: reads `workspace.members.list` + `workspace.invite.list` when the
- * dialog opens, after every local mutation, and on a `workspace:updated`
- * membership delta from any client; settles `workspace.invite.create` /
- * `.revoke` / `workspace.members.remove` into slice actions. The workspace
+ * dialog: reads `workspace.members.list` + `workspace.invite.list` (and the
+ * host-wide `principal.list` behind direct member add) when the dialog opens,
+ * after a local invite create / revoke / member remove, and on a
+ * `workspace:updated` membership delta from any client — a successful
+ * `workspace.members.add` relies on that delta alone; settles
+ * `workspace.invite.create` / `.revoke` / `workspace.members.add` / `.remove`
+ * into slice actions. The workspace
  * hover card's roster (`workspace.members.list` per hovered workspace, plus
  * its Remove) rides the same saga, keyed by workspace id.
  *
@@ -16,8 +19,8 @@
  * but not the RPC already on the wire.)
  *
  * Every owner-only RPC is gated on the owner role BEFORE it is issued (a
- * collaborator connection never calls `workspace.invite.*` or
- * `workspace.members.remove`), and a daemon `-32003` refusal withholds the
+ * collaborator connection never calls `workspace.invite.*`, `principal.list`,
+ * or `workspace.members.add` / `.remove`), and a daemon `-32003` refusal withholds the
  * dialog / the hover controls the same way. Every dialog settlement carries
  * the `WorkspaceShareTarget` it was issued for and every roster settlement its
  * workspace id, so the reducer can drop a reply that outlived its surface.
@@ -40,13 +43,19 @@ import {
   workspaceSharingClient,
   type ShareFailure,
 } from '$features/workspace-sharing/workspace-sharing.client';
-import type { WorkspaceInviteRow, WorkspaceMembersList } from '$features/workspace-sharing/types';
+import type {
+  HostPrincipal,
+  WorkspaceInviteRow,
+  WorkspaceMembersList,
+} from '$features/workspace-sharing/types';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  selectShareAddingPrincipalId,
   selectShareCanManage,
   selectShareCreateRequest,
+  selectShareHasMember,
   selectShareMutationGeneration,
   selectShareRemovingPrincipalId,
   selectShareRevokingInviteId,
@@ -67,8 +76,10 @@ import {
   shareInviteCreateFailed,
   shareInviteCreateRequested,
   shareInviteRevokeRequested,
+  shareMemberAddRequested,
   shareMemberRemoveRequested,
   shareMembershipChanged,
+  sharePrincipalsLoaded,
   shareRosterActionSettled,
   shareRosterFailed,
   shareRosterLoaded,
@@ -111,42 +122,57 @@ function coalescedByKey<A>(
   };
 }
 
+type ShareData = WorkspaceMembersList & {
+  invites: WorkspaceInviteRow[];
+  /** `null` when `principal.list` failed for a reason other than `-32003`. */
+  principals: HostPrincipal[] | null;
+};
+
 /**
- * Both reads are issued together. `result` rejects the moment either read is
- * refused with `-32003` (a terminal denial must withhold immediately, not
- * once the sibling RPC times out) and otherwise settles once both have;
- * `settled` resolves only when both have, so the caller can keep the
- * `coalescedByKey` guard held and no second concurrent read starts while a
- * sibling RPC is still outstanding.
+ * All three reads are issued together. `result` rejects the moment any read
+ * is refused with `-32003` (a terminal denial must withhold immediately, not
+ * once a sibling RPC times out) and otherwise settles once the roster and
+ * invite reads have — a `principal.list` failure only leaves `principals`
+ * `null` (the existing-guest section keeps its previous rows) so a daemon
+ * that cannot list its guests still serves the rest of the dialog. `settled`
+ * resolves only when all have, so the caller can keep the `coalescedByKey`
+ * guard held and no second concurrent read starts while a sibling RPC is
+ * still outstanding.
  */
 function readShareData(workspaceId: string): {
-  result: Promise<WorkspaceMembersList & { invites: WorkspaceInviteRow[] }>;
+  result: Promise<ShareData>;
   settled: Promise<void>;
 } {
   const reads = [
     workspaceSharingClient.listMembers(workspaceId),
     workspaceSharingClient.listInvites(workspaceId),
+    workspaceSharingClient.listPrincipals(),
   ] as const;
   const outcomes = Promise.allSettled(reads);
-  const result = new Promise<WorkspaceMembersList & { invites: WorkspaceInviteRow[] }>(
-    (resolve, reject) => {
-      for (const read of reads) {
-        read.catch((error: unknown) => {
-          if (isForbiddenErrorResponse(error)) reject(error);
-        });
-      }
-      void outcomes.then(([members, invites]) => {
-        if (members.status === 'fulfilled' && invites.status === 'fulfilled') {
-          resolve({ ...members.value, invites: invites.value });
-          return;
-        }
-        const reasons = [members, invites].flatMap((outcome) =>
-          outcome.status === 'rejected' ? [outcome.reason as unknown] : [],
-        );
-        reject(reasons.find(isForbiddenErrorResponse) ?? reasons[0]);
+  const result = new Promise<ShareData>((resolve, reject) => {
+    for (const read of reads) {
+      read.catch((error: unknown) => {
+        if (isForbiddenErrorResponse(error)) reject(error);
       });
-    },
-  );
+    }
+    void outcomes.then(([members, invites, principals]) => {
+      if (members.status === 'fulfilled' && invites.status === 'fulfilled') {
+        if (principals.status === 'rejected') {
+          logger.warn('Listing the host principals failed', { workspaceId });
+        }
+        resolve({
+          ...members.value,
+          invites: invites.value,
+          principals: principals.status === 'fulfilled' ? principals.value : null,
+        });
+        return;
+      }
+      const reasons = [members, invites, principals].flatMap((outcome) =>
+        outcome.status === 'rejected' ? [outcome.reason as unknown] : [],
+      );
+      reject(reasons.find(isForbiddenErrorResponse) ?? reasons[0]);
+    });
+  });
   return { result, settled: outcomes.then(() => undefined) };
 }
 
@@ -183,9 +209,16 @@ function* loadShareData(): SagaGenerator<void> {
   const generation = yield* selectShareMutationGeneration.effect();
   const read = readShareData(target.workspaceId);
   try {
-    const { members, invites: rows, guestCount, guestLimit } = yield* call(() => read.result);
+    const {
+      members,
+      invites: rows,
+      principals,
+      guestCount,
+      guestLimit,
+    } = yield* call(() => read.result);
     const invites = yield* call(vaultInviteLinks, rows);
     yield* put(shareDataLoaded({ target, generation, members, invites, guestCount, guestLimit }));
+    if (principals) yield* put(sharePrincipalsLoaded({ target, principals }));
   } catch (error) {
     if (yield* stillTargets(target)) {
       if (isForbiddenErrorResponse(error)) {
@@ -303,6 +336,45 @@ function* removeMember(action: ReturnType<typeof shareMemberRemoveRequested>): S
   yield* put(shareDataRequested());
 }
 
+/**
+ * Inline error for a failed `workspace.members.add`: `guest-limit` (the cap
+ * was spent between the dialog's read and the add) names the cap; anything
+ * else stays generic.
+ */
+function addMemberErrorMessage(code: ShareFailure['code']): string {
+  return code === 'guest-limit'
+    ? m.workspace_share_guestLimit_error()
+    : m.workspace_share_addMemberFailed_error();
+}
+
+function* addMember(action: ReturnType<typeof shareMemberAddRequested>): SagaGenerator<void> {
+  const target = yield* manageableTarget();
+  if (!target) return;
+  const [principalId] = action.payload;
+  if ((yield* selectShareAddingPrincipalId.effect()) !== principalId) return;
+  const result = yield* call(workspaceSharingClient.addMember, target.workspaceId, principalId);
+  if (!(yield* stillTargets(target))) return;
+  if (!result.success) {
+    if (result.code === 'forbidden') {
+      yield* put(shareAccessWithheld({ target }));
+      return;
+    }
+    logFailure('Adding a member', target.workspaceId, result);
+    yield* put(shareActionSettled({ target, error: addMemberErrorMessage(result.code) }));
+    return;
+  }
+  yield* put(shareActionSettled({ target, error: null }));
+  // `added: true` — the daemon commits, then emits `workspace:updated`
+  // (`members`) to every client including this one, so
+  // `refreshOnMembershipChange` re-reads the roster: no read is issued here.
+  // `added: false` (already a member) emits no event; only when the loaded
+  // roster does not carry the row yet — it was added by another client and
+  // that client's event has not been reconciled — is a read still owed.
+  if (!result.result.added && !(yield* selectShareHasMember.effect(principalId))) {
+    yield* put(shareDataRequested());
+  }
+}
+
 function* requestDataOnOpen(): SagaGenerator<void> {
   yield* call(clearInviteLinks);
   yield* put(shareDataRequested());
@@ -394,5 +466,6 @@ export function* workspaceShareSaga(): SagaGenerator<void> {
     // worker mid-RPC (the reducer, not the watcher, serializes these).
     takeEvery(shareInviteRevokeRequested, revokeInvite),
     takeEvery(shareMemberRemoveRequested, removeMember),
+    takeEvery(shareMemberAddRequested, addMember),
   ]);
 }

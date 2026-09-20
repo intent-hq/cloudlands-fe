@@ -2,7 +2,10 @@
   /**
    * ShareWorkspaceDialog — the owner-side sharing surface (multiplayer w4).
    *
-   * Creates `intent://invite` links (optionally pinned to a GitHub login;
+   * Offers the guests already authed on this host (`principal.list`, minus
+   * the current roster) in an "Invite an existing GitHub user" dropdown whose
+   * Invite attaches the pick directly (`workspace.members.add`, no link);
+   * creates `intent://invite` links (optionally pinned to a GitHub login;
    * an unpinned link is reusable until it expires or is revoked, a pinned
    * one is single-use), lists the open invites with Copy link + Revoke, and
    * lists the member roster with Remove. A reusable row is labelled
@@ -29,8 +32,9 @@
    *
    * Fully presentational: every row and in-flight flag arrives from the
    * workspace-share slice through the Redux host, and user intent (create /
-   * revoke / remove) goes back as callbacks the host dispatches. Only the pin
-   * input draft, the pending Remove confirmation, and the clipboard copy live
+   * revoke / remove / add) goes back as callbacks the host dispatches. Only
+   * the pin input draft, the existing-guest pick, the pending Remove
+   * confirmation, and the clipboard copy live
    * here. Invite links never ride the store: the host resolves them from the
    * invite-link vault into `inviteLinks` (by invite id), and a row with no
    * link (the daemon's Remote Access listener is down) has its Copy disabled.
@@ -38,18 +42,23 @@
 
   import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faCopy, faLink, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faCopy, faLink, faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { menuItem } from '$lib/components/ui/menu';
+  import { Select } from '$lib/components/ui/select';
   import { ListView } from '$lib/components/patterns/collection';
   import { notify } from '$lib/components/patterns/notify';
   import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceRole } from '$shared/types';
-  import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+  import type {
+    HostPrincipal,
+    WorkspaceInvite,
+    WorkspaceMember,
+  } from '$features/workspace-sharing/types';
   import {
     GITHUB_USER_QUERY_MIN_LENGTH,
     normalizeGithubUserQuery,
@@ -71,6 +80,12 @@
     members?: WorkspaceMember[];
     invites?: WorkspaceInvite[];
     /**
+     * Guests already authed on this host and not yet on the roster (the host
+     * filters `principal.list` against `members`); the section is hidden
+     * when empty.
+     */
+    principals?: HostPrincipal[];
+    /**
      * `intent://invite` link per invite id (open rows + `createdLink`), resolved
      * by the host from the invite-link vault; a missing entry disables Copy.
      */
@@ -86,6 +101,8 @@
     createdLink?: WorkspaceShareCreatedLink | null;
     revokingInviteId?: string | null;
     removingPrincipalId?: string | null;
+    /** `workspace.members.add` in flight for this host principal. */
+    addingPrincipalId?: string | null;
     actionError?: string | null;
     /** github-user-search slice: results for `userSearchQuery`. */
     userSuggestions?: GithubUserSearchItem[];
@@ -98,6 +115,8 @@
     onCreateInvite?: (pinLogin: string) => void;
     onRevokeInvite?: (inviteId: string) => void;
     onRemoveMember?: (principalId: string) => void;
+    /** Attach a `principals` row as a collaborator (`workspace.members.add`). */
+    onAddMember?: (principalId: string) => void;
     /** Debounced by the saga; `''` clears the cached results. */
     onSearchUsers?: (query: string) => void;
   }
@@ -110,6 +129,7 @@
     canManage = false,
     members = [],
     invites = [],
+    principals = [],
     inviteLinks = {},
     guestCount = null,
     guestLimit = null,
@@ -120,6 +140,7 @@
     createdLink = null,
     revokingInviteId = null,
     removingPrincipalId = null,
+    addingPrincipalId = null,
     actionError = null,
     userSuggestions = [],
     userSearchLoading = false,
@@ -130,10 +151,13 @@
     onCreateInvite,
     onRevokeInvite,
     onRemoveMember,
+    onAddMember,
     onSearchUsers,
   }: Props = $props();
 
-  const busy = $derived(revokingInviteId !== null || removingPrincipalId !== null);
+  const busy = $derived(
+    revokingInviteId !== null || removingPrincipalId !== null || addingPrincipalId !== null,
+  );
   /** The cap is known and spent: no further invite can be minted. */
   const atGuestCap = $derived(
     guestCount !== null && guestLimit !== null && guestCount >= guestLimit,
@@ -149,6 +173,23 @@
   let pinInput = $state<ReturnType<typeof Input> | null>(null);
   /** Member row awaiting Remove confirmation. */
   let confirmRemovePrincipalId = $state<string | null>(null);
+  /** The existing-guest dropdown pick (`principalId`); `''` for none. */
+  let selectedPrincipalId = $state('');
+
+  const principalItems = $derived(
+    principals.map((principal) => ({
+      value: principal.principalId,
+      label: principalLabel(principal),
+    })),
+  );
+  const selectedPrincipal = $derived(
+    principals.find((principal) => principal.principalId === selectedPrincipalId) ?? null,
+  );
+
+  // A pick that left the list (added to the roster, or revoked itself) is cleared.
+  $effect(() => {
+    if (selectedPrincipalId && !selectedPrincipal) selectedPrincipalId = '';
+  });
 
   const pinQuery = $derived(normalizeGithubUserQuery(pinLogin));
   const pinSearchable = $derived(
@@ -175,6 +216,7 @@
     void workspaceId;
     untrack(resetPinDraft);
     confirmRemovePrincipalId = null;
+    selectedPrincipalId = '';
   });
   $effect(() => {
     if (createdLink) untrack(resetPinDraft);
@@ -234,6 +276,15 @@
   function createInvite() {
     if (!workspaceId || !canManage || creating || atGuestCap) return;
     onCreateInvite?.(selectedUser ? selectedUser.login : pinLogin.trim());
+  }
+
+  function inviteExistingGuest() {
+    if (!workspaceId || !canManage || busy || atGuestCap || !selectedPrincipal) return;
+    onAddMember?.(selectedPrincipal.principalId);
+  }
+
+  function principalLabel(principal: HostPrincipal): string {
+    return principal.login ? `@${principal.login}` : principal.displayName || principal.principalId;
   }
 
   async function copyLink(url: string) {
@@ -379,6 +430,68 @@
           <p class="text-sm text-subtle">
             {m.workspace_share_dialog_description({ title: workspaceTitle })}
           </p>
+
+          {#if principals.length > 0}
+            <section
+              class="space-y-2"
+              aria-labelledby="share-existing-guest-label"
+              data-testid="share-existing-guest"
+            >
+              <Label id="share-existing-guest-label" for="share-existing-guest">
+                {m.workspace_share_existingGuest_label()}
+              </Label>
+              <div class="flex items-center gap-2">
+                <div class="min-w-0 flex-1">
+                  <Select.Root
+                    bind:value={selectedPrincipalId}
+                    items={principalItems}
+                    disabled={busy}
+                  >
+                    <Select.Trigger
+                      id="share-existing-guest"
+                      data-testid="share-existing-guest-trigger"
+                    >
+                      <Select.Value placeholder={m.workspace_share_existingGuest_placeholder()} />
+                    </Select.Trigger>
+                    <Select.Content portal>
+                      {#each principals as principal (principal.principalId)}
+                        <Select.Item
+                          value={principal.principalId}
+                          label={principalLabel(principal)}
+                        >
+                          <span class="flex min-w-0 items-center gap-2">
+                            {#if principal.avatarUrl}
+                              <img
+                                src={principal.avatarUrl}
+                                alt=""
+                                class="h-5 w-5 shrink-0 rounded-full"
+                                loading="lazy"
+                              />
+                            {/if}
+                            <span class="truncate">{principalLabel(principal)}</span>
+                          </span>
+                        </Select.Item>
+                      {/each}
+                    </Select.Content>
+                  </Select.Root>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!selectedPrincipal || busy || atGuestCap}
+                  title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
+                  onclick={inviteExistingGuest}
+                  data-testid="share-existing-guest-invite"
+                >
+                  <Fa icon={faUserPlus} />
+                  {addingPrincipalId !== null
+                    ? m.workspace_share_existingGuest_inviting_label()
+                    : m.workspace_share_existingGuest_invite_label()}
+                </Button>
+              </div>
+              <p class="text-xs text-subtle">{m.workspace_share_existingGuest_description()}</p>
+            </section>
+          {/if}
 
           <form
             class="space-y-2"

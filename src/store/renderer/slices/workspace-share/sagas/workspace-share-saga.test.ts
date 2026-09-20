@@ -21,8 +21,13 @@ vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.req
 
 import { createCollection, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { clearInviteLinks, readInviteLink } from '$features/workspace-sharing/invite-link-vault';
-import type { WorkspaceInviteRow, WorkspaceMember } from '$features/workspace-sharing/types';
+import type {
+  HostPrincipal,
+  WorkspaceInviteRow,
+  WorkspaceMember,
+} from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
+import type { StoreState } from '../../../types';
 import { initialState as connectionsInitialState } from '../../connections/connections-slice';
 import {
   guestSessionsListReceived,
@@ -39,14 +44,17 @@ import {
   shareInviteCreated,
   shareInviteCreateRequested,
   shareInviteRevokeRequested,
+  shareMemberAddRequested,
   shareMemberRemoveRequested,
   shareMembershipChanged,
+  sharePrincipalsLoaded,
   shareRosterLoaded,
   shareRosterMemberRemoveRequested,
   shareRosterRequested,
   workspaceShareReducer,
   type WorkspaceShareState,
 } from '../workspace-share-slice';
+import { selectShareInvitablePrincipals } from '../workspace-share-selectors';
 import { workspaceShareSaga } from './workspace-share-saga';
 
 /** Rides inside every mocked invite url (the capability); must never reach a sink. */
@@ -63,6 +71,25 @@ const owner: WorkspaceMember = {
   avatarUrl: null,
   role: 'owner',
   addedAt: '2026-09-01T00:00:00Z',
+};
+
+/** One `principal.list` row: a guest authed on this host, not yet a member. */
+const guest: HostPrincipal = {
+  principalId: 'p-erin',
+  login: 'erin',
+  displayName: 'Erin',
+  avatarUrl: null,
+  githubUserId: 5,
+};
+
+/** The same guest as `workspace.members.list` rows it once added. */
+const guestAsMember: WorkspaceMember = {
+  principalId: 'p-erin',
+  login: 'erin',
+  displayName: 'Erin',
+  avatarUrl: null,
+  role: 'collaborator',
+  addedAt: '2026-09-20T00:00:00Z',
 };
 
 /** One open row as the daemon lists it — `url` included. */
@@ -121,7 +148,17 @@ function harness(
     { channel, dispatch, getState: () => rootState(state, roles) },
     workspaceShareSaga,
   );
-  return { channel, dispatch, dispatched, logged, task, state: () => state };
+  return {
+    channel,
+    dispatch,
+    dispatched,
+    logged,
+    task,
+    state: () => state,
+    /** What the dialog host renders in the existing-guest dropdown. */
+    invitable: () =>
+      selectShareInvitablePrincipals.select(rootState(state, roles) as unknown as StoreState),
+  };
 }
 
 function opened(workspaceId = 'ws-1'): WorkspaceShareState {
@@ -129,6 +166,23 @@ function opened(workspaceId = 'ws-1'): WorkspaceShareState {
     initialState,
     openShareDialog({ workspaceId, workspaceTitle: 'My Space' }),
   );
+}
+
+/** The dialog open on `ws-1` with its first read landed: `members` + the host guest. */
+function loaded(members: WorkspaceMember[] = [owner]): WorkspaceShareState {
+  const state = opened();
+  const target = { workspaceId: 'ws-1', session: state.session };
+  return [
+    shareDataLoaded({
+      target,
+      generation: state.mutationGeneration,
+      members,
+      invites: [],
+      guestCount: null,
+      guestLimit: null,
+    }),
+    sharePrincipalsLoaded({ target, principals: [guest] }),
+  ].reduce(workspaceShareReducer, state);
 }
 
 function forbidden(): Error {
@@ -146,6 +200,7 @@ function replyByMethod(overrides: Record<string, unknown> = {}) {
     }
     if (method === 'workspace.members.list') return { members: [owner] };
     if (method === 'workspace.invite.list') return { invites: [invite] };
+    if (method === 'principal.list') return { principals: [guest] };
     return {};
   });
 }
@@ -186,13 +241,217 @@ describe('workspaceShareSaga', () => {
 
     expect(mocks.request).toHaveBeenCalledWith('workspace.members.list', { workspaceId: 'ws-1' });
     expect(mocks.request).toHaveBeenCalledWith('workspace.invite.list', { workspaceId: 'ws-1' });
-    expect(mocks.request).toHaveBeenCalledTimes(2);
+    expect(mocks.request).toHaveBeenCalledWith('principal.list', {});
+    expect(mocks.request).toHaveBeenCalledTimes(3);
     expect(h.state().loadStatus).toBe('loaded');
     expect(getItems(h.state().members)).toEqual([owner]);
+    expect(getItems(h.state().principals)).toEqual([guest]);
     // The row lands secret-free; its link is only readable from the vault.
     const { url, ...storedInvite } = invite;
     expect(getItems(h.state().invites)).toEqual([storedInvite]);
     expect(readInviteLink(invite.id)).toBe(url);
+    h.task.cancel();
+  });
+
+  // Direct member add: a daemon that cannot list its guests (anything but a
+  // -32003) still serves the roster and invites; the existing-guest rows
+  // keep their previous value instead of failing the dialog.
+  it('keeps the dialog loaded when only principal.list fails, and withholds on its -32003', async () => {
+    replyByMethod({ 'principal.list': new Error('method not found') });
+    const h = harness();
+
+    h.dispatch(openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }));
+    await settle();
+
+    expect(h.state()).toMatchObject({ loadStatus: 'loaded', withheld: false, loadError: null });
+    expect(getItems(h.state().members)).toEqual([owner]);
+    expect(getItems(h.state().principals)).toEqual([]);
+    h.task.cancel();
+
+    replyByMethod({ 'principal.list': forbidden() });
+    const refused = harness();
+    refused.dispatch(openShareDialog({ workspaceId: 'ws-2', workspaceTitle: 'Other' }));
+    await settle();
+
+    expect(refused.state()).toMatchObject({ withheld: true, loadStatus: 'loaded' });
+    expect(getItems(refused.state().members)).toEqual([]);
+    refused.task.cancel();
+  });
+
+  // Direct member add is reconciled by the daemon's `workspace:updated`
+  // (`members`) event, which it emits to every client — this one included —
+  // after committing, not by an action-side re-read: the dialog row appears
+  // and the dropdown entry disappears once that event's read lands.
+  it('adds an existing guest as a collaborator and lets the members event drive the roster', async () => {
+    replyByMethod({ 'workspace.members.add': { added: true, memberCount: 2 } });
+    const h = harness(loaded());
+    expect(h.invitable()).toEqual([guest]);
+
+    h.dispatch(shareMemberAddRequested('p-erin'));
+    expect(h.state().addingPrincipalId).toBe('p-erin');
+    await settle();
+
+    expect(mocks.request).toHaveBeenCalledWith('workspace.members.add', {
+      workspaceId: 'ws-1',
+      principalId: 'p-erin',
+    });
+    expect(h.state()).toMatchObject({ addingPrincipalId: null, actionError: null });
+    // No read of its own: the reply alone leaves the rows as they were.
+    expect(calls('workspace.members.list')).toHaveLength(0);
+    expect(calls('principal.list')).toHaveLength(0);
+    expect(h.invitable()).toEqual([guest]);
+
+    replyByMethod({ 'workspace.members.list': { members: [owner, guestAsMember] } });
+    h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+    await settle();
+
+    expect(calls('workspace.members.list')).toHaveLength(1);
+    expect(getItems(h.state().members)).toEqual([owner, guestAsMember]);
+    expect(h.invitable()).toEqual([]);
+    h.task.cancel();
+  });
+
+  // The daemon commits before it emits, so the event's read can start before
+  // the add reply lands. That read is authoritative: settling the add must
+  // not retire it as a pre-mutation snapshot.
+  it('applies a members-event read that started before the add reply landed', async () => {
+    let resolveAdd!: () => void;
+    let resolveMembers!: () => void;
+    mocks.request.mockImplementation((method: string) => {
+      if (method === 'workspace.members.add') {
+        return new Promise((resolve) => {
+          resolveAdd = () => resolve({ added: true, memberCount: 2 });
+        });
+      }
+      if (method === 'workspace.members.list') {
+        return new Promise((resolve) => {
+          resolveMembers = () => resolve({ members: [owner, guestAsMember] });
+        });
+      }
+      if (method === 'workspace.invite.list') return Promise.resolve({ invites: [] });
+      if (method === 'principal.list') return Promise.resolve({ principals: [guest] });
+      return Promise.resolve({});
+    });
+    const h = harness(loaded());
+
+    h.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+    h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
+    await settle();
+    expect(calls('workspace.members.list')).toHaveLength(1);
+    expect(h.state().addingPrincipalId).toBe('p-erin');
+
+    resolveAdd();
+    await settle();
+    expect(h.state()).toMatchObject({ addingPrincipalId: null, actionError: null });
+
+    resolveMembers();
+    await settle();
+    expect(getItems(h.state().members)).toEqual([owner, guestAsMember]);
+    expect(h.invitable()).toEqual([]);
+    expect(h.state().loadStatus).toBe('loaded');
+    expect(calls('workspace.members.list')).toHaveLength(1);
+    h.task.cancel();
+  });
+
+  // `added: false` (already a member) emits no event. The roster the dialog
+  // holds normally carries the row already (the earlier add's event landed);
+  // only when it does not is the one read the event would have driven owed.
+  it('re-reads after an idempotent add only when the loaded roster lacks the row', async () => {
+    replyByMethod({ 'workspace.members.add': { added: false, memberCount: 2 } });
+    const h = harness(loaded());
+
+    h.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+
+    expect(h.state()).toMatchObject({ addingPrincipalId: null, actionError: null });
+    expect(calls('workspace.members.list')).toHaveLength(1);
+    h.task.cancel();
+
+    mocks.request.mockClear();
+    replyByMethod({ 'workspace.members.add': { added: false, memberCount: 2 } });
+    const already = harness(loaded([owner, guestAsMember]));
+    already.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+
+    expect(already.state()).toMatchObject({ addingPrincipalId: null, actionError: null });
+    expect(calls('workspace.members.list')).toHaveLength(0);
+    already.task.cancel();
+  });
+
+  it('localizes a failed add without a re-read or a daemon-message leak', async () => {
+    replyByMethod({
+      'workspace.members.add': Object.assign(new Error(`invalid ${LEAK_MARKER}`), {
+        rpcCode: -32602,
+      }),
+    });
+    const failed = harness(opened());
+    failed.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+
+    expect(failed.state().addingPrincipalId).toBeNull();
+    expect(failed.state().actionError).toEqual(expect.any(String));
+    expect(JSON.stringify(failed.dispatched)).not.toContain(LEAK_MARKER);
+    expect(calls('workspace.members.list')).toHaveLength(0);
+    failed.task.cancel();
+  });
+
+  it('maps the guest-limit code of a failed add onto the cap error, and withholds on -32003', async () => {
+    replyByMethod({
+      'workspace.members.add': Object.assign(new Error('guest limit'), {
+        rpcCode: -32602,
+        data: { code: 'guest-limit' },
+      }),
+    });
+    const capped = harness(opened());
+    capped.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+    const capError = capped.state().actionError;
+    expect(capError).toEqual(expect.any(String));
+    capped.task.cancel();
+
+    replyByMethod({
+      'workspace.members.add': Object.assign(new Error('nope'), { rpcCode: -32602 }),
+    });
+    const generic = harness(opened());
+    generic.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+    expect(generic.state().actionError).toEqual(expect.any(String));
+    expect(generic.state().actionError).not.toBe(capError);
+    generic.task.cancel();
+
+    replyByMethod({ 'workspace.members.add': forbidden() });
+    const refused = harness(opened());
+    refused.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+    expect(refused.state()).toMatchObject({ withheld: true, addingPrincipalId: null });
+    refused.task.cancel();
+  });
+
+  it('issues no add for a request the reducer declined while another mutation is in flight', async () => {
+    let releaseRemove!: () => void;
+    replyByMethod({
+      'workspace.members.remove': () =>
+        new Promise((resolve) => {
+          releaseRemove = () => resolve({ removed: true });
+        }),
+      'workspace.members.add': { added: true, memberCount: 2 },
+    });
+    const h = harness(opened());
+
+    h.dispatch(shareMemberRemoveRequested('p-bob'));
+    await settle();
+    h.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+
+    expect(calls('workspace.members.add')).toHaveLength(0);
+    expect(h.state()).toMatchObject({ removingPrincipalId: 'p-bob', addingPrincipalId: null });
+
+    releaseRemove();
+    await settle();
+    h.dispatch(shareMemberAddRequested('p-erin'));
+    await settle();
+    expect(calls('workspace.members.add')).toHaveLength(1);
     h.task.cancel();
   });
 
@@ -252,6 +511,7 @@ describe('workspaceShareSaga', () => {
     h.dispatch(shareInviteCreateRequested({ pinLogin: '' }));
     h.dispatch(shareInviteRevokeRequested('inv-1'));
     h.dispatch(shareMemberRemoveRequested('p-bob'));
+    h.dispatch(shareMemberAddRequested('p-erin'));
     h.dispatch(shareMembershipChanged({ workspaceId: 'ws-1' }));
     await settle();
     expect(mocks.request).not.toHaveBeenCalled();
