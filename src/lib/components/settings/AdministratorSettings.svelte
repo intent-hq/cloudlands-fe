@@ -19,14 +19,14 @@
 </script>
 
 {#if tab === 'providers'}
-  <div id="providers" data-highlight-id="providers" use:highlightTarget class="mb-6 scroll-mt-20">
+  <div id="providers" data-highlight-id="providers" use:highlightTarget class="scroll-mt-20">
     <ProviderSelector />
   </div>
   <div
     id="utility-default-model"
     data-highlight-id="utility-default-model"
     use:highlightTarget
-    class="mt-10 mb-6"
+    class="mt-10"
   >
     <h2 class="type-title mb-3 text-foreground">
       {m.settings_section_defaults()}
@@ -44,12 +44,7 @@
     </div>
   </div>
 {:else}
-  <div
-    id="integrations"
-    data-highlight-id="integrations"
-    use:highlightTarget
-    class="mb-6 scroll-mt-20"
-  >
+  <div id="integrations" data-highlight-id="integrations" use:highlightTarget class="scroll-mt-20">
     <h2 class="type-title mb-3 text-foreground">
       {m.settings_tab_accounts()}
     </h2>
@@ -60,7 +55,7 @@
     </div>
   </div>
 
-  <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-6">
+  <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget>
     <h2 class="type-title mb-3 text-foreground">
       {m.settings_section_mcpServers()}
     </h2>

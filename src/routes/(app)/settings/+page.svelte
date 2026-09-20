@@ -554,7 +554,7 @@
       <main
         class="mx-auto flex min-h-full {activeTab === 'specialists'
           ? 'max-w-6xl xl:h-full xl:min-h-0 xl:py-8'
-          : 'max-w-4xl'} flex-col pr-8 pl-6 py-6 [&>*:last-child]:mb-0"
+          : 'max-w-4xl'} flex-col gap-6 pr-8 pl-6 py-6"
         aria-labelledby="settings-page-title"
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
@@ -565,14 +565,14 @@
 
         <!-- Devices -->
         {#if activeTab === 'devices'}
-          <div id="devices" class="mb-6 scroll-mt-20">
+          <div id="devices" class="scroll-mt-20">
             <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
               <DevicesSettings bind:localSettingsRequested />
             </div>
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
-          <div id="backend-sync" class="mb-6 scroll-mt-20">
+          <div id="backend-sync" class="scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_backendSync()}
             </h2>
@@ -586,7 +586,7 @@
 
         <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
         {#if activeTab === 'guest-sessions'}
-          <div id="guest-sessions" class="mb-6 scroll-mt-20">
+          <div id="guest-sessions" class="scroll-mt-20">
             <GuestSessionsSettings />
           </div>
         {/if}
@@ -623,7 +623,7 @@
         <!-- Display -->
         {#if activeTab === 'display'}
           <!-- Theme -->
-          <div id="theme" data-highlight-id="appearance" use:highlightTarget class="mb-6">
+          <div id="theme" data-highlight-id="appearance" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_appearance()}
             </h2>
@@ -712,7 +712,7 @@
             </div>
           </div>
 
-          <div id="font-style" data-highlight-id="font-style" use:highlightTarget class="mb-6">
+          <div id="font-style" data-highlight-id="font-style" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_fontStyle()}
             </h2>
@@ -819,7 +819,7 @@
           </div>
 
           <!-- Language -->
-          <div id="language" data-highlight-id="language" use:highlightTarget class="mb-6">
+          <div id="language" data-highlight-id="language" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_language_section_title()}
             </h2>
@@ -834,7 +834,7 @@
         <!-- App Behavior -->
         {#if activeTab === 'app-behavior'}
           <!-- Updates -->
-          <div id="updates" data-highlight-id="updates" use:highlightTarget class="mb-6">
+          <div id="updates" data-highlight-id="updates" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_updates()}
             </h2>
@@ -864,7 +864,7 @@
             </div>
           </div>
 
-          <div id="open-in" data-highlight-id="open-in" use:highlightTarget class="mb-6">
+          <div id="open-in" data-highlight-id="open-in" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_openIn()}
             </h2>
@@ -874,12 +874,7 @@
               </section>
             </div>
           </div>
-          <div
-            id="github-link-action"
-            data-highlight-id="github-link-action"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="github-link-action" data-highlight-id="github-link-action" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_githubLinks_section_title()}
             </h2>
@@ -889,11 +884,9 @@
               </section>
             </div>
           </div>
-          <div class="mb-6">
-            <NotificationSettings />
-          </div>
+          <NotificationSettings />
 
-          <SettingsSection id="licenses" title={m.settings_licenses_title_label()} class="mb-6">
+          <SettingsSection id="licenses" title={m.settings_licenses_title_label()}>
             <div class="px-6 py-4">
               <a
                 href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
@@ -912,7 +905,7 @@
             id="global-instructions"
             data-highlight-id="global-instructions"
             use:highlightTarget
-            class="mb-6 min-w-0"
+            class="min-w-0"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_globalInstructions()}
@@ -928,12 +921,7 @@
 
         <!-- Input -->
         {#if activeTab === 'input'}
-          <div
-            id="keyboard-shortcuts"
-            data-highlight-id="keyboard-shortcuts"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_keyboardShortcuts()}
             </h2>
@@ -942,7 +930,7 @@
             </div>
           </div>
 
-          <div id="voice" data-highlight-id="voice" use:highlightTarget class="mb-6 scroll-mt-20">
+          <div id="voice" data-highlight-id="voice" use:highlightTarget class="scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_voice()}
             </h2>
@@ -957,12 +945,7 @@
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
           <!-- Agent Backend -->
-          <div
-            id="agent-backend"
-            data-highlight-id="agent-backend"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="agent-backend" data-highlight-id="agent-backend" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_agentBackend()}
             </h2>
@@ -974,12 +957,7 @@
           </div>
 
           <!-- Tool Output & Retention (anchor id kept as workspace-api for deep links) -->
-          <div
-            id="workspace-api"
-            data-highlight-id="workspace-api"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="workspace-api" data-highlight-id="workspace-api" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_workspaceApi()}
             </h2>
@@ -988,7 +966,7 @@
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}
-            <div id="connection" data-highlight-id="connection" use:highlightTarget class="mb-6">
+            <div id="connection" data-highlight-id="connection" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_connection()}
               </h2>
@@ -1012,7 +990,7 @@
 
           <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
           {#if showHardwareSection}
-            <div id="hardware" data-highlight-id="hardware" use:highlightTarget class="mb-6">
+            <div id="hardware" data-highlight-id="hardware" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_hardware()}
               </h2>
@@ -1021,7 +999,7 @@
           {/if}
 
           <!-- Data -->
-          <div id="data" data-highlight-id="data" use:highlightTarget class="mb-6">
+          <div id="data" data-highlight-id="data" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_data()}
             </h2>
@@ -1029,7 +1007,7 @@
           </div>
 
           <!-- Reset -->
-          <div id="reset" data-highlight-id="general" use:highlightTarget class="mb-6">
+          <div id="reset" data-highlight-id="general" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_reset()}
             </h2>
@@ -1054,7 +1032,7 @@
 
           <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
           {#if isDevMode}
-            <div id="developer" data-highlight-id="developer" use:highlightTarget class="mb-6">
+            <div id="developer" data-highlight-id="developer" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 <!-- i18n-ignore (dev-only) -->
                 Developer

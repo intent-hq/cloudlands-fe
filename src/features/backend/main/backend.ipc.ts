@@ -163,6 +163,32 @@ const GUEST_SESSIONS = IPC_CHANNELS.GUEST_SESSIONS;
 // instead of once per reconnect (a daemon upgrade logs again).
 const lastLoggedDaemonBuildKeys = new Map<string, string>();
 const connectedDaemonVersions = new Map<string, string>();
+// Each connected daemon's `client.hello` `protocolVersion`, keyed by
+// connection id and cleared whenever that connection leaves `connected`, so
+// feature gates (e.g. the `/tunnel` CREDIT frame) read the live daemon's
+// version rather than a stale one after a reconnect or daemon upgrade.
+const connectedProtocolVersions = new Map<string, string>();
+// Whether the local client's hello has answered at least once this session:
+// until then the sidecar's startup probe may seed the local version, after
+// that the hello result is the only source (a null/absent hello stays null).
+let localHelloObserved = false;
+
+/**
+ * The `client.hello` `protocolVersion` of the daemon currently connected
+ * under `connectionId`, or `null` when unknown — not connected, disconnected
+ * since, or the hello carried no version. The connected daemon's hello is the
+ * only source for local and remote alike; the sidecar's startup probe
+ * ({@link getLocalDaemonProtocolVersion}) only seeds the local id BEFORE the
+ * first local hello of the session, never after a hello answered without one.
+ */
+export function getConnectedDaemonProtocolVersion(connectionId: string): string | null {
+  const captured = connectedProtocolVersions.get(connectionId);
+  if (captured) return captured;
+  if (connectionId === LOCAL_CONNECTION_ID && !localHelloObserved) {
+    return getLocalDaemonProtocolVersion();
+  }
+  return null;
+}
 
 /**
  * #3649: log the connected daemon's build identity once at INFO so the log
@@ -274,6 +300,8 @@ export function __resetPendingDaemonUpdatesForTesting(): void {
 export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
   connectedDaemonVersions.clear();
+  connectedProtocolVersions.clear();
+  localHelloObserved = false;
 }
 
 /**
@@ -867,6 +895,7 @@ export function disconnectBackendClient(id: string): void {
   if (!instance) return;
   backendClients.delete(id);
   connectedDaemonVersions.delete(id);
+  connectedProtocolVersions.delete(id);
   // A user-driven dispose ends any update-caused outage as far as the UI is
   // concerned: the rebuilt client's first status must not carry the marker.
   clearPendingDaemonUpdate(id);
@@ -994,10 +1023,12 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
       // T15: `protocolVersion` from the handshake feeds the protocol-compat
       // check — record it for local, compare it against local for a remote,
       // latched per connection id and broadcast to this backend's windows only.
-      handleHelloProtocolVersion(
-        typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null,
-        meta,
-      );
+      const helloProtocolVersion =
+        typeof obj?.protocolVersion === 'string' ? obj.protocolVersion : null;
+      if (helloProtocolVersion) connectedProtocolVersions.set(id, helloProtocolVersion);
+      else connectedProtocolVersions.delete(id);
+      if (id === LOCAL_CONNECTION_ID) localHelloObserved = true;
+      handleHelloProtocolVersion(helloProtocolVersion, meta);
       // #3649: log each connected daemon's build identity once at INFO, keyed
       // by connection id so multi-backend setups record every daemon build.
       logDaemonHelloBuild(result, id);
@@ -1065,7 +1096,10 @@ function createAdditionalBackendClient(id: string, config: BackendConnectionConf
     backendNotificationForwarder.emit('notification', id, notification);
   });
   instance.on('status', (status: ConnectionStatus) => {
-    if (status !== 'connected') connectedDaemonVersions.delete(id);
+    if (status !== 'connected') {
+      connectedDaemonVersions.delete(id);
+      connectedProtocolVersions.delete(id);
+    }
     notePendingDaemonUpdateStatus(id, status);
     broadcast(
       BACKEND.STATUS,
@@ -3671,6 +3705,7 @@ async function getSelfPublishedState(): Promise<SelfPublishedStateResult> {
 export function disposeAllBackendClients(): void {
   for (const [id, instance] of backendClients) {
     backendClients.delete(id);
+    connectedProtocolVersions.delete(id);
     clearBackendFailureState(id);
     disposeTransferConnectionsForBackend(id);
     instance.dispose();
