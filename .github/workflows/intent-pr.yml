@@ -1192,10 +1192,37 @@ jobs:
             test-results/
           retention-days: 7
 
+  # Monorepo consumer checks (intent-hq/intent#4558, #5479, #5489, #5497):
+  # the monorepo's docs-check job compares the pinned submodules against
+  # docs/protocol/ (method catalog, event catalog, protocol→FE field parity,
+  # docs-check, check-makefile-targets), so a cloudlands-fe change that
+  # breaks one of those turned monorepo main red — or stalled the rolling
+  # auto/submodule-bump PR — only after it had merged here. This calls the
+  # monorepo's reusable workflow, which runs the same runner
+  # (scripts/consumer-checks.sh) with THIS PR head in place of the
+  # packages/cloudlands-fe pin, so the breakage is red on the PR first. Fix
+  # order when red: the checks compare against monorepo main and tolerate
+  # docs that lead the pin, so land the monorepo docs PR its step summary
+  # names, then re-run this job. check-mcp-bindings is advisory in the
+  # called workflow, and a failed monorepo checkout is fail-soft there
+  # (warning, job green), so a monorepo outage never blocks this repo.
+  # Runs on pull_request AND merge_group; the caller's own `if:` carries
+  # the same-repo guard (fork-PR hardening note). No secrets are passed and
+  # `contents: read` is all the called workflow needs. Not routed: it runs
+  # on GH-hosted ubuntu-latest inside the called workflow.
+  monorepo-consumer-checks:
+    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      contents: read
+    uses: intent-hq/intent/.github/workflows/consumer-checks.yml@copies-validate
+    with:
+      component: cloudlands-fe
+      head-sha: ${{ github.event.pull_request.head.sha || github.sha }}
+
   # Single required status check for branch protection: fans in pr-title,
-  # conflict-markers, and the heavy jobs (checks / build-web / test /
-  # test-integration / test-ct). pr-title / conflict-markers must succeed
-  # outright on every PR;
+  # conflict-markers, the heavy jobs (checks / build-web / test /
+  # test-integration / test-ct), and monorepo-consumer-checks. pr-title /
+  # conflict-markers must succeed outright on every PR;
   # on merge_group they are job-skipped (PR-metadata checks, already
   # validated on the PR) and the gate accepts the skip — event-aware, so PR
   # semantics stay unweakened. The every-event heavy jobs (checks /
@@ -1228,6 +1255,12 @@ jobs:
   # 'skipped' for the whole matrix, same as before). test-electron is
   # deliberately absent from needs: it is advisory until it meets the
   # promotion criterion in its job comment.
+  # monorepo-consumer-checks must succeed outright on BOTH events: it is
+  # not fast-path-gated (minutes-long, and a release-shaped diff still has
+  # to satisfy the monorepo consumers), so its only skip cause is the
+  # same-repo guard on a fork PR, where the gate must be red anyway. A
+  # monorepo outage is fail-soft inside the called workflow (green with a
+  # warning), so it never surfaces here as a failure.
   # route is a DIRECT gate input, checked first: a route failure skips every
   # heavy job, and when fast_path == 'true' those skips are exactly what the
   # fast-path acceptance above expects — so without this check a broken
@@ -1261,6 +1294,7 @@ jobs:
         test,
         test-integration,
         test-ct,
+        monorepo-consumer-checks,
       ]
     steps:
       - name: Check results
@@ -1378,3 +1412,9 @@ jobs:
             }
           fi
           check_ct "test-ct" "${{ needs.test-ct.result }}"
+          # monorepo-consumer-checks: success outright on both events (see
+          # the gate comment) — no fast-path or event-based skip acceptance.
+          if [ "${{ needs.monorepo-consumer-checks.result }}" != "success" ]; then
+            echo "monorepo-consumer-checks result '${{ needs.monorepo-consumer-checks.result }}' not acceptable"
+            exit 1
+          fi
