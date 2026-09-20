@@ -70,8 +70,8 @@ function runKnip() {
 function main() {
   const rules = parseKnipRules(readFileSync(path.join(REPO_ROOT, 'knip.jsonc'), 'utf8'));
   let result;
-  writeCanary();
   try {
+    writeCanary();
     result = runKnip();
   } finally {
     removeCanary();

@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   CANARY_DIR,
@@ -128,5 +133,53 @@ describe('stripCanaryIssues + exit decision', () => {
     const report = renderIssues(rows, RULES);
     expect(report).toContain('Unused exports (1)');
     expect(report).toContain('src/a.ts  foo:3:14');
+  });
+});
+
+describe('check-dead-code CLI cleanup', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const canaryDir = path.join(repoRoot, CANARY_DIR);
+
+  // Makes the second canary write fail (ENOSPC) before knip is ever spawned. The patch is
+  // applied through `--import` and `syncBuiltinESMExports` so the CLI's named
+  // `writeFileSync` import observes it.
+  function writeFailingPreload(dir: string): string {
+    const preload = path.join(dir, 'fail-second-canary-write.mjs');
+    writeFileSync(
+      preload,
+      [
+        "import fs from 'node:fs';",
+        "import { syncBuiltinESMExports } from 'node:module';",
+        'const original = fs.writeFileSync;',
+        'fs.writeFileSync = function (file, ...rest) {',
+        `  if (String(file).endsWith(${JSON.stringify(path.basename(CANARY_TS))})) {`,
+        "    const error = new Error('ENOSPC: no space left on device, write');",
+        "    error.code = 'ENOSPC';",
+        '    throw error;',
+        '  }',
+        '  return original.call(this, file, ...rest);',
+        '};',
+        'syncBuiltinESMExports();',
+        '',
+      ].join('\n'),
+    );
+    return preload;
+  }
+
+  it('removes the canary directory and exits nonzero when a canary write fails', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'check-dead-code-'));
+    try {
+      const preload = writeFailingPreload(tmp);
+      const result = spawnSync(
+        process.execPath,
+        ['--import', preload, path.join(repoRoot, 'scripts/check-dead-code.mjs')],
+        { cwd: repoRoot, encoding: 'utf8' },
+      );
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('ENOSPC');
+      expect(existsSync(canaryDir)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
