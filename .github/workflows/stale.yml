@@ -7,8 +7,14 @@
 #     is NOT deleted.
 #   - Draft PRs are never touched. PRs labelled `dependencies`,
 #     `github_actions`, `autorelease: pending` or `hold-release` are exempt.
-#   - Any comment, push, or label change removes the `stale` label and
-#     restarts the clock.
+#   - A comment or a push removes the `stale` label and restarts the clock.
+#     Adding an exemption label to an already-stale PR does NOT clear the
+#     label by itself — comment or push as well.
+#
+# Permissions: `actions: write` is required in addition to the PR/issue
+# scopes because actions/stale keeps its pagination cursor in the Actions
+# cache and must be able to reset that cache; without it, a run that hits
+# `operations-per-run` can leave a stale cursor behind for the next run.
 #
 # Dry-run gate: scheduled runs currently pass `debug-only: true`, so the cron
 # only logs what it WOULD do — nothing is labelled, commented on, or closed.
@@ -28,6 +34,7 @@ on:
         default: true
 
 permissions:
+  actions: write
   contents: read
   issues: write
   pull-requests: write
@@ -57,12 +64,14 @@ jobs:
           stale-pr-message: >-
             This pull request has had no activity for 14 days and has been
             marked `stale`. It will be closed in 7 days unless there is
-            further activity. To keep it open: leave a comment, push a
-            commit, or add the `hold-release` label. Converting it to a draft
-            also exempts it. The `stale` label is removed automatically on
-            any activity.
+            further activity. To keep it open, leave a comment or push a
+            commit — either clears the `stale` label automatically. Adding
+            the `hold-release` label or converting the PR to a draft exempts
+            it from future stale checks, but does not clear the `stale` label
+            on its own: comment or push as well.
           close-pr-message: >-
             Closing this pull request because it has been stale for 7 days
-            with no further activity. The branch has not been deleted — reopen
-            the PR or open a new one from the same branch whenever the work
-            resumes.
+            with no further activity. The branch has not been deleted. A push
+            or comment does not reopen a closed PR — to resume the work,
+            reopen the PR first and then push or comment, or open a new PR
+            from the same branch.
