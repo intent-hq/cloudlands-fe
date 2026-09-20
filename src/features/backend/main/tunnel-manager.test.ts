@@ -1706,6 +1706,9 @@ class FakeTunnelWssDaemon {
       this.lastAuthHeader = req.headers.authorization;
       this.lastUpgradeUrl = req.url;
       this.clients.push(socket);
+      socket.on('close', () => {
+        this.clients = this.clients.filter((c) => c !== socket);
+      });
       socket.on('message', (data, isBinary) => {
         if (!isBinary) return;
         const frame = decodeFrame(rawDataToBuffer(data));
@@ -1720,6 +1723,23 @@ class FakeTunnelWssDaemon {
     });
     await new Promise<void>((res) => this.server.listen(0, '127.0.0.1', () => res()));
     this.port = (this.server.address() as AddressInfo).port;
+  }
+
+  /**
+   * Resolves once every accepted tunnel WebSocket has closed on this side.
+   * Bytes a tunnel wrote (e.g. a trailing flush-driven CREDIT) precede its
+   * close on the same TLS stream, so after this the byte counter is quiescent.
+   */
+  async whenClientsClosed(): Promise<void> {
+    await Promise.all(
+      this.clients.map(
+        (c) =>
+          new Promise<void>((res) => {
+            if (c.readyState === c.CLOSED) res();
+            else c.once('close', () => res());
+          }),
+      ),
+    );
   }
 
   async stop(): Promise<void> {
@@ -1820,6 +1840,10 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     // enforced at the TLS handshake, so the upgrade request — carrying the
     // bearer token in the Authorization header and the `?token=` query — is
     // never written to a host presenting the wrong certificate.
+    // The previous test's pinned tunnel may still be draining (its last echo
+    // grants a CREDIT on flush); wait for its daemon-side close so the byte
+    // baseline below is attributable to this test alone.
+    await daemon.whenClientsClosed();
     daemon.lastAuthHeader = 'sentinel-not-overwritten';
     daemon.lastUpgradeUrl = 'sentinel-not-overwritten';
     const before = daemon.decryptedBytes;
