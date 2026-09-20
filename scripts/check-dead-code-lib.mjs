@@ -51,6 +51,15 @@ export const ISSUE_TYPE_TITLE = Object.freeze({
   cycles: 'Circular dependencies',
 });
 
+// Mirrors knip's `defaultRules` (knip 6.33, dist/util/issue-initializers.js): every issue
+// type is "error" except `cycles`, which knip defaults to "warn". Replicated rather than
+// imported because knip's package exports do not expose that module.
+export const DEFAULT_RULES = Object.freeze(
+  Object.fromEntries(
+    Object.keys(ISSUE_TYPE_TITLE).map((type) => [type, type === 'cycles' ? 'warn' : 'error']),
+  ),
+);
+
 // Strip line and block comments and trailing commas from JSONC so JSON.parse accepts it.
 // String literals are preserved verbatim.
 export function stripJsonc(text) {
@@ -80,15 +89,16 @@ export function stripJsonc(text) {
   return out.replace(/,(\s*[}\]])/g, '$1');
 }
 
-/** The `rules` map from knip.jsonc text; unlisted types default to "error" in knip. */
+/** The `rules` map from knip.jsonc text; unlisted types take knip's defaults (DEFAULT_RULES). */
 export function parseKnipRules(jsoncText) {
   const config = JSON.parse(stripJsonc(jsoncText));
   const rules = config?.rules;
   return rules && typeof rules === 'object' ? { ...rules } : {};
 }
 
+/** knip's effective severity: `{ ...defaultRules, ...config.rules }[type]`. */
 export function severityOf(type, rules) {
-  return rules[type] ?? 'error';
+  return rules[type] ?? DEFAULT_RULES[type] ?? 'error';
 }
 
 /**

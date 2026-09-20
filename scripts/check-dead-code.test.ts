@@ -33,6 +33,10 @@ function duplicateRow(file: string, names: string[]) {
   };
 }
 
+function cycleRow(file: string, names: string[]) {
+  return { file, owners: [], cycles: [names.map((name) => ({ name, line: 1, col: 1, pos: 0 }))] };
+}
+
 const canaryRows = [unusedFile(CANARY_SVELTE), unusedFile(CANARY_TS)];
 
 describe('stripJsonc / parseKnipRules', () => {
@@ -124,6 +128,19 @@ describe('stripCanaryIssues + exit decision', () => {
   it('treats duplicates as errors when knip.jsonc does not downgrade them', () => {
     const remaining = [duplicateRow('src/lib/icons.ts', ['a', 'b'])];
     expect(decideExitCode(remaining, {})).toBe(1);
+  });
+
+  it('follows knip and treats unconfigured cycles as warnings', () => {
+    const remaining = [cycleRow('src/a.ts', ['src/a.ts', 'src/b.ts'])];
+    expect(decideExitCode(remaining, {})).toBe(0);
+    const report = renderIssues(remaining, {});
+    expect(report).toContain('Circular dependencies (1) [warn]');
+    expect(report).toMatch(/no error-level issues \(1 warning/);
+  });
+
+  it('lets knip.jsonc promote cycles to errors', () => {
+    const remaining = [cycleRow('src/a.ts', ['src/a.ts', 'src/b.ts'])];
+    expect(decideExitCode(remaining, { cycles: 'error' })).toBe(1);
   });
 
   it('renders export issues with file, symbol and position', () => {
