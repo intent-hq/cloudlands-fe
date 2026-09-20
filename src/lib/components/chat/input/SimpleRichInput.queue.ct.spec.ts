@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import SimpleRichInputQueueHost from './SimpleRichInputQueueHost.svelte';
 
 // With no queue the prompt text sits directly below the composer padding-top

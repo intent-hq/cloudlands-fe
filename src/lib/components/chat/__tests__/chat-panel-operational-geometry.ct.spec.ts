@@ -1,15 +1,7 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
-import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
-
-// The zoom-200% cells here leave a heavy document behind, and the next spec's
-// first mount() on the reused per-worker page intermittently failed with
-// "Execution context was destroyed" on the merge queue (intent-hq/intent#4373).
-// Run this spec in its own worker without context reuse so its teardown never
-// races another spec's mount.
-isolateBrowserContextPerTest(test, 'intent-hq/intent#4373');
 
 for (const zoom of [1, 2]) {
   test(`aligns terminal status columns with tool rows at ${zoom * 100}%`, async ({ mount }) => {

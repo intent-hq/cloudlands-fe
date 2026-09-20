@@ -1,10 +1,8 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
-import { recordCdpLifecycle } from '../../../../test/ct-cdp-lifecycle-recorder';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
-recordCdpLifecycle(test);
 
 /**
  * Explicit settle gate before a geometry read: web fonts applied, every finite

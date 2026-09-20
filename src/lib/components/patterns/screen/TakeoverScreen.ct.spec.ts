@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import InterruptedAgentsModal from '../../modals/InterruptedAgentsModal.svelte';
 
 test('a bounded takeover scrolls to its last row while its body height is animating', async ({

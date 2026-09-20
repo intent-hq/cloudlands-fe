@@ -601,6 +601,34 @@ export default [
       ],
     },
   },
+  // Every Playwright CT spec and CT helper takes `test` / `expect` from the shared
+  // module, which turns off ct-core's per-worker browser-context reuse (the
+  // reuse reset raced `mount()` on the merge queue: intent-hq/intent#4373, #4783,
+  // #5236, #5249, #5279, #5481). A spec that imports them from the package
+  // directly runs without that override, so forbid the two named imports; type
+  // imports (`Locator`, `Page`, `ComponentFixtures`, ...) still come from the
+  // package. The shared module itself is the one sanctioned importer. Main-process
+  // files are excluded so this block does not replace their child_process ban above.
+  {
+    files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
+    ignores: ['src/test/ct-test.ts', ...mainProcessFiles],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@playwright/experimental-ct-svelte',
+              importNames: ['test', 'expect'],
+              allowTypeImports: true,
+              message:
+                "Import `test` / `expect` from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec; only type imports may come from '@playwright/experimental-ct-svelte'.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Type-aware lint for Electron main-process + preload code. An unawaited
   // promise inside a try/catch silently succeeds: the Electron 42→44 bump made
   // `clipboard.writeText()` async and the WRITE_CLIPBOARD handler kept

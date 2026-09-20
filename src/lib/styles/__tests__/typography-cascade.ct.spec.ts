@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import TypographyCascadeHost from './TypographyCascadeHost.svelte';
 
 test('type roles preserve token defaults and allow weight utility overrides', async ({ mount }) => {

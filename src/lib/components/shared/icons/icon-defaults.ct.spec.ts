@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Preview from './icon-defaults.preview.svelte';
 
 test('workspace actions use unscaled regular glyphs and preserve menu targets', async ({

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Harness from './mocks/BrowserTabTypeHeaderHarness.svelte';
 
 test('browser header owns the agent chip and address hover paints its own surface', async ({

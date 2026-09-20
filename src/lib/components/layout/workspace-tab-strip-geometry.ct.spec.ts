@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import sharp from 'sharp';
 import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
 import { WORKSPACE_TAB_MAX_SCROLL_STEP_PX } from './workspace-tab-lifecycle-motion';

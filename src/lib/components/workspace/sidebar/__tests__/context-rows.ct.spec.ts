@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import ContextRowsPreview from '../context-rows.preview.svelte';
 
 test('unread indicators remain inside clipped rows and disappear when notes are opened', async ({
