@@ -33,7 +33,6 @@ export const selectMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/settings/LinearAuthConnection.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',
-    'src/lib/components/workspace/initializer/RemoteSetupSelector.svelte',
     'src/lib/components/workspace/initializer/RepoSelector.svelte',
     'src/routes/(app)/settings/+page.svelte',
   ],

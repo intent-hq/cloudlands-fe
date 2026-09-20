@@ -127,10 +127,4 @@ export const namedColorAllowlist = [
       'text-gray-500',
     ],
   },
-  {
-    name: 'change-visualization-diff-palette',
-    files: ['src/lib/components/file-tracking/change-set-visualization/FileColumn.svelte'],
-    colors: ['#0B2916', '#220B09', '#331513', '#7CE2A1', '#F79697'],
-    utilities: [],
-  },
 ];

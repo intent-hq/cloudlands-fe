@@ -263,10 +263,6 @@ vi.mock('$lib/components/editor/FileViewer.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockFileViewer.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/SaveIndicator.svelte', async () => ({
-  default: (await import('./__tests__/mocks/MockSaveIndicator.svelte')).default,
-}));
-
 vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockOpenComboButton.svelte')).default,
 }));

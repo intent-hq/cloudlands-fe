@@ -144,7 +144,7 @@ describe('UI component inventory gate', () => {
       'src/lib/components/patterns/settings/custom-controls.ts',
       'src/routes/(app)/settings/+page.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(16);
+    expect(dropdownMenu?.callers).toHaveLength(15);
     expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(buildUiComponentInventory().components).toEqual(components);
   });

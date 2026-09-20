@@ -66,7 +66,7 @@ const DISPLAY_STATUS_TAKEOVER_KINDS: Readonly<Record<string, HudTakeoverKind>> =
 /** Event types that can open a takeover (keys of the trigger-kind const). */
 export const HUD_TAKEOVER_EVENT_TYPES = Object.keys(HUD_TAKEOVER_TRIGGER_KINDS);
 
-/** Store-backed agent-id → display-name lookup (see `friendly-labels.ts`). */
+/** Store-backed agent-id → display-name lookup. */
 export type HudAgentNameResolver = (agentId: string) => string | undefined;
 
 /** Store-backed agent-id → `notificationsMuted` lookup (§5.5 AgentLite). */

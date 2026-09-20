@@ -1,7 +1,6 @@
 // @verify-changed-triggers: ../MultiSelectTabbedSidebar.svelte, ../sidebar/FilesPanel.svelte,
 //   ../sidebar/ExpandableFileSearch.svelte, ../sidebar/SidebarExpandableSearch.svelte,
 //   ../../file-explorer/file-tree-view.svelte, ../../file-explorer/VirtualizedFileTree.svelte,
-//   ../../file-explorer/VSCodeFileExplorer.svelte, ../../ui/VSCodeScrollablePanel.svelte,
 //   ../../ui/list/ListItem.svelte
 
 import { readFileSync } from 'node:fs';
@@ -28,16 +27,6 @@ describe('Files panel scroll ownership', () => {
     expect(virtualizedTree).toContain('class="h-full overflow-y-auto overflow-x-hidden"');
     expect(fileTreeView).toContain('virtualizedTreeRef?.scrollToPath(targetFile)');
     expect(fileTreeView).not.toContain('document.querySelector(');
-  });
-
-  it('disables the generic outer ScrollArea for the expanded Code panel', () => {
-    const explorer = source('../../file-explorer/VSCodeFileExplorer.svelte');
-    const scrollablePanel = source('../../ui/VSCodeScrollablePanel.svelte');
-
-    expect(explorer).toContain('scrollContent={false}');
-    expect(scrollablePanel).toContain('scrollContent?: boolean;');
-    expect(scrollablePanel).toContain('{#if scrollContent}');
-    expect(scrollablePanel).toContain('overflow-hidden pb-1 {contentClass}');
   });
 
   it('keeps file search collapsed until requested or populated', () => {
