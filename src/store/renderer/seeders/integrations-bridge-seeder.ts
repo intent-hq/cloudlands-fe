@@ -236,6 +236,18 @@ function asProvider(value: unknown): ForgeProvider | null {
   return value === 'github' || value === 'gitlab' ? value : null;
 }
 
+/**
+ * Narrow the renderer's `{ provider, host? }` argument for the host-bound
+ * `sourceControl.*` methods. `host` is forwarded verbatim when present so an
+ * operation on instance B is never resolved against the persisted instance A.
+ */
+function forgeHostParams(arg: unknown): { provider: ForgeProvider; host?: string } | null {
+  const { provider, host } = asRecord(arg);
+  const forge = asProvider(provider);
+  if (!forge) return null;
+  return { provider: forge, ...(typeof host === 'string' && host ? { host } : {}) };
+}
+
 /** Narrow the renderer's connect argument to the daemon's `sourceControl.connect` params. */
 function forgeConnectParams(arg: unknown): ForgeConnectParams | null {
   const { provider, host, method, token } = asRecord(arg);
@@ -266,14 +278,10 @@ function invalidateForgeCaches(provider: ForgeProvider): void {
 registerMockIpcHandler(
   FORGE_AUTH_CHANNELS.GET_STATUS,
   async (arg): Promise<ForgeAuthStatus | null> => {
-    const { provider, host } = asRecord(arg);
-    const forge = asProvider(provider);
-    if (!forge) return null;
+    const params = forgeHostParams(arg);
+    if (!params) return null;
     try {
-      return await backendRequest<ForgeAuthStatus>('sourceControl.authStatus', {
-        provider: forge,
-        ...(typeof host === 'string' && host ? { host } : {}),
-      });
+      return await backendRequest<ForgeAuthStatus>('sourceControl.authStatus', params);
     } catch {
       return null;
     }
@@ -281,12 +289,13 @@ registerMockIpcHandler(
 );
 
 registerMockIpcHandler(FORGE_AUTH_CHANNELS.GET_USER, async (arg): Promise<ForgeUser | null> => {
-  const forge = asProvider(asRecord(arg).provider);
-  if (!forge) return null;
+  const params = forgeHostParams(arg);
+  if (!params) return null;
   try {
-    const result = await backendRequest<{ user?: ForgeUser | null }>('sourceControl.getUser', {
-      provider: forge,
-    });
+    const result = await backendRequest<{ user?: ForgeUser | null }>(
+      'sourceControl.getUser',
+      params,
+    );
     const user = result?.user;
     return user && typeof user.login === 'string' && user.login.length > 0 ? user : null;
   } catch {
@@ -339,16 +348,14 @@ registerMockIpcHandler(FORGE_AUTH_CHANNELS.CONNECT, async (arg): Promise<ForgeCo
 });
 
 registerMockIpcHandler(FORGE_AUTH_CHANNELS.CANCEL_AUTH, async (arg): Promise<ForgeAuthResult> => {
-  const forge = asProvider(asRecord(arg).provider);
-  if (!forge) return { success: false, error: 'provider is required' };
+  const params = forgeHostParams(arg);
+  if (!params) return { success: false, error: 'provider is required' };
   try {
-    const result = await backendRequest<{ ok?: boolean }>('sourceControl.cancelAuth', {
-      provider: forge,
-    });
+    const result = await backendRequest<{ ok?: boolean }>('sourceControl.cancelAuth', params);
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the cancel.' };
     }
-    invalidateForgeCaches(forge);
+    invalidateForgeCaches(params.provider);
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -356,16 +363,14 @@ registerMockIpcHandler(FORGE_AUTH_CHANNELS.CANCEL_AUTH, async (arg): Promise<For
 });
 
 registerMockIpcHandler(FORGE_AUTH_CHANNELS.REVOKE, async (arg): Promise<ForgeAuthResult> => {
-  const forge = asProvider(asRecord(arg).provider);
-  if (!forge) return { success: false, error: 'provider is required' };
+  const params = forgeHostParams(arg);
+  if (!params) return { success: false, error: 'provider is required' };
   try {
-    const result = await backendRequest<{ ok?: boolean }>('sourceControl.revoke', {
-      provider: forge,
-    });
+    const result = await backendRequest<{ ok?: boolean }>('sourceControl.revoke', params);
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the revoke.' };
     }
-    invalidateForgeCaches(forge);
+    invalidateForgeCaches(params.provider);
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };

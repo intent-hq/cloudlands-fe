@@ -32,7 +32,12 @@ const flow = {
   expiresIn: 600,
   interval: 5,
 };
-const user = { id: 42, login: 'octo', displayName: 'Octo', avatarUrl: 'https://gitlab.com/a.png' };
+const user = {
+  id: '42',
+  login: 'octo',
+  displayName: 'Octo',
+  avatarUrl: 'https://gitlab.com/a.png',
+};
 
 describe('gitlabAuthReducer', () => {
   it('starts unconfigured on gitlab.com with the PAT path as default', () => {

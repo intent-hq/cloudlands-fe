@@ -15,9 +15,12 @@ export type ForgeDeviceFlow = GitHubDeviceFlow;
 /** In-flight device-grant codes held by the slice (status modelled separately). */
 export type ForgeDeviceFlowInfo = Omit<ForgeDeviceFlow, 'status'>;
 
-/** Derived forge identity (`sourceControl.authStatus.user` / `sourceControl.getUser`). */
+/**
+ * Derived forge identity (`sourceControl.authStatus.user` / `sourceControl.getUser`).
+ * `id` is the forge user id rendered as a string on the wire.
+ */
 export interface ForgeUser {
-  id: string | number;
+  id: string;
   login: string;
   displayName?: string;
   avatarUrl?: string;

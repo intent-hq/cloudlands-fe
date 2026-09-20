@@ -77,16 +77,35 @@ function statusPayload(status: ForgeAuthStatus, fallbackHost: string) {
   };
 }
 
+/** Host names compare case-insensitively (`host[:port]`, no scheme). */
+function sameHost(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Whether an auth-changed event concerns `host`. The daemon always sends the
+ * host; an event without one is treated as ours rather than dropped.
+ */
+function eventForHost(eventHost: string | undefined, host: string): boolean {
+  return eventHost === undefined || sameHost(eventHost, host);
+}
+
 function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
   return yield* call([forgeAuthClient, forgeAuthClient.getStatus], PROVIDER, host);
 }
 
-/** Completes the flow when the daemon reports a configured credential and an empty flow slot. */
-function* checkAuthComplete(): SagaGenerator<boolean> {
+/**
+ * Completes the flow when the daemon reports a configured credential and an
+ * empty flow slot for `host`. The status is always read for the host the flow
+ * targets: the daemon's default is its *persisted* host, which only follows a
+ * successful connect, so an unscoped read during a grant against instance B
+ * would report instance A's connection and complete the wrong flow.
+ */
+function* checkAuthComplete(host: string): SagaGenerator<boolean> {
   try {
-    const status = yield* call(readStatus);
+    const status = yield* call(readStatus, host);
     if (status?.isConfigured === true && !status.deviceFlow) {
-      const payload = statusPayload(status, yield* selectGitLabAuthHost.effect());
+      const payload = statusPayload(status, host);
       yield* put(gitlabAuthCompleted({ user: payload.user, method: payload.method }));
       return true;
     }
@@ -96,16 +115,29 @@ function* checkAuthComplete(): SagaGenerator<boolean> {
   return false;
 }
 
-function* pollForCompletion(intervalMs: number): SagaGenerator<void> {
+function* pollForCompletion(intervalMs: number, host: string): SagaGenerator<void> {
   const startedAt = Date.now();
-  if (yield* call(checkAuthComplete)) return;
+  if (yield* call(checkAuthComplete, host)) return;
   while (true) {
     yield* delay(intervalMs);
     if (Date.now() - startedAt > AUTH_POLL_TIMEOUT_MS) {
       yield* put(setGitLabAuthError(m.gitlabAuth_service_timedOut_error()));
       return;
     }
-    if (yield* call(checkAuthComplete)) return;
+    if (yield* call(checkAuthComplete, host)) return;
+  }
+}
+
+/**
+ * Resolves on cancel/logout, or on a daemon transition for `host` only —
+ * another instance's event must not tear down an in-flight grant.
+ */
+function* waitForPollEnd(host: string): SagaGenerator<void> {
+  while (true) {
+    const action = yield* take([cancelGitLabAuth, logoutGitLab, gitlabAuthChanged]);
+    if (action.type !== gitlabAuthChanged.type) return;
+    const [, eventHost] = action.payload as ReturnType<typeof gitlabAuthChanged>['payload'];
+    if (eventForHost(eventHost, host)) return;
   }
 }
 
@@ -114,9 +146,14 @@ function* pollDeviceFlowWorker(
 ): SagaGenerator<void> {
   const [flow] = action.payload;
   if (flow === null) return;
+  const host = yield* selectGitLabAuthHost.effect();
   yield* race({
-    completed: call(pollForCompletion, Math.max(flow.interval * 1_000, AUTH_POLL_INTERVAL_MS)),
-    cancelled: take([cancelGitLabAuth, logoutGitLab, gitlabAuthChanged]),
+    completed: call(
+      pollForCompletion,
+      Math.max(flow.interval * 1_000, AUTH_POLL_INTERVAL_MS),
+      host,
+    ),
+    cancelled: call(waitForPollEnd, host),
   });
 }
 
@@ -217,7 +254,8 @@ function* connectWithToken(host: string, token: string): SagaGenerator<void> {
 
 function* cancelAuth(): SagaGenerator<void> {
   try {
-    const result = yield* call([forgeAuthClient, forgeAuthClient.cancelAuth], PROVIDER);
+    const host = yield* selectGitLabAuthHost.effect();
+    const result = yield* call([forgeAuthClient, forgeAuthClient.cancelAuth], PROVIDER, host);
     if (result.success) yield* put(gitlabAuthCancelled());
     else yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_cancelFailed_error()));
   } catch (error) {
@@ -228,7 +266,8 @@ function* cancelAuth(): SagaGenerator<void> {
 
 function* logout(): SagaGenerator<void> {
   try {
-    const result = yield* call([forgeAuthClient, forgeAuthClient.revoke], PROVIDER);
+    const host = yield* selectGitLabAuthHost.effect();
+    const result = yield* call([forgeAuthClient, forgeAuthClient.revoke], PROVIDER, host);
     if (result.success) yield* put(gitlabLogoutCompleted());
     else yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_logoutFailed_error()));
   } catch (error) {
@@ -239,11 +278,14 @@ function* logout(): SagaGenerator<void> {
 
 function* authChanged(
   status: ReturnType<typeof gitlabAuthChanged>['payload'][0],
-  host: string | undefined,
+  eventHost: string | undefined,
 ): SagaGenerator<void> {
+  const host = yield* selectGitLabAuthHost.effect();
+  // The daemon emits for every instance; only the selected one is reflected here.
+  if (!eventForHost(eventHost, host)) return;
   if (status === 'authorized') {
     yield* put(clearGitLabAuthError());
-    if (!(yield* call(checkAuthComplete))) {
+    if (!(yield* call(checkAuthComplete, host))) {
       // The status probe failed or lags the event: report completion without an
       // identity and let the next initialize reconcile.
       yield* put(gitlabAuthCompleted({ user: null, method: null }));
@@ -281,7 +323,7 @@ function* connectGitLabWithTokenWorker(
 function* checkGitLabAuthStatusWorker(
   _action: ReturnType<typeof checkGitLabAuthStatus>,
 ): SagaGenerator<void> {
-  yield* call(checkAuthComplete);
+  yield* call(checkAuthComplete, yield* selectGitLabAuthHost.effect());
 }
 
 function* cancelGitLabAuthWorker(

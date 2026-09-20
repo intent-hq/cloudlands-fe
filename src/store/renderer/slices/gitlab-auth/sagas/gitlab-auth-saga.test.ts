@@ -34,14 +34,18 @@ const settle = async () => {
 };
 
 const HOST = 'gitlab.example.com';
-const WIRE_USER = { id: 7, login: 'octo', displayName: 'Octo', avatarUrl: 'https://a/b.png' };
-const PENDING_FLOW = {
-  status: 'pending',
+/** A second, already-connected instance (the daemon's persisted default host). */
+const OTHER_HOST = 'gitlab.com';
+const WIRE_USER = { id: '7', login: 'octo', displayName: 'Octo', avatarUrl: 'https://a/b.png' };
+/** The device codes the slice holds (`sourceControl.connect` result minus `ok`). */
+const PENDING_INFO = {
   userCode: 'ABCD-1234',
   verificationUri: 'https://gitlab.example.com/oauth/device',
   expiresIn: 600,
   interval: 5,
 };
+/** `sourceControl.authStatus.deviceFlow` while that grant is pending. */
+const PENDING_FLOW = { status: 'pending', ...PENDING_INFO };
 /** `sourceControl.authStatus` for a configured PAT connection. */
 const CONFIGURED_STATUS = {
   provider: 'gitlab',
@@ -115,9 +119,11 @@ describe('gitlabAuthSaga', () => {
     run.channel.put(initializeGitLabAuth());
     await settle();
 
+    // The first read lets the daemon resolve its configured instance; the
+    // resumed poll is then bound to the host that read reported.
     expect(mocks.getStatus.mock.calls).toEqual([
       ['gitlab', undefined],
-      ['gitlab', undefined],
+      ['gitlab', HOST],
     ]);
     expect(run.dispatched.map((action) => (action as { type: string }).type)).toEqual([
       'gitlabAuth/setAuthStatus',
@@ -267,7 +273,7 @@ describe('gitlabAuthSaga', () => {
     resolveStatus({ ...CONFIGURED_STATUS, method: 'device' });
     await settle();
 
-    expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab']]);
+    expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
     expect(run.dispatched.map((action) => (action as { type: string }).type)).toEqual([
       'gitlabAuth/setHost',
       'gitlabAuth/setAuthenticating',
@@ -279,10 +285,16 @@ describe('gitlabAuthSaga', () => {
     await run.task.toPromise();
   });
 
-  it('settles logout only after the daemon confirms the revoke', async () => {
+  it('settles logout only after the daemon confirms the revoke for the selected host', async () => {
     mocks.revoke.mockResolvedValueOnce({ success: false, error: 'still held' });
     mocks.revoke.mockResolvedValueOnce({ success: true });
-    const run = harness({ ...initialState, isConfigured: true, user: WIRE_USER, method: 'pat' });
+    const run = harness({
+      ...initialState,
+      host: HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'pat',
+    });
     run.channel.put(logoutGitLab());
     await settle();
     expect(run.state().isConfigured).toBe(true);
@@ -290,18 +302,98 @@ describe('gitlabAuthSaga', () => {
 
     run.channel.put(logoutGitLab());
     await settle();
-    expect(mocks.revoke.mock.calls).toEqual([['gitlab'], ['gitlab']]);
+    expect(mocks.revoke.mock.calls).toEqual([
+      ['gitlab', HOST],
+      ['gitlab', HOST],
+    ]);
     expect(run.state()).toMatchObject({ isConfigured: false, user: null, method: null });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a grant against instance B bound to B while instance A is the connected default', async () => {
+    // Daemon default host = A (persisted after A's connect). Every read, cancel
+    // and event during B's grant must name B, or A's connection completes B's UI.
+    const statusFor = (host: string) =>
+      host === OTHER_HOST
+        ? { ...CONFIGURED_STATUS, host: OTHER_HOST, method: 'device' }
+        : { ...UNCONFIGURED_STATUS, host: HOST, deviceFlow: PENDING_FLOW };
+    mocks.getStatus.mockImplementation(async (_provider: string, host?: string) =>
+      statusFor(host ?? OTHER_HOST),
+    );
+    mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness({
+      ...initialState,
+      host: OTHER_HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'device',
+    });
+    const pendingOnB = { host: HOST, isAuthenticating: true, deviceFlow: PENDING_INFO };
+
+    run.channel.put(startGitLabDeviceAuth(HOST));
+    await settle();
+    expect(mocks.getStatus.mock.calls).toEqual([['gitlab', HOST]]);
+    expect(run.state()).toMatchObject(pendingOnB);
+    expect(run.dispatched.map((action) => (action as { type: string }).type)).not.toContain(
+      'gitlabAuth/authCompleted',
+    );
+
+    // A transition on A neither completes nor tears down B's pending grant.
+    run.channel.put(gitlabAuthChanged('revoked', OTHER_HOST));
+    await settle();
+    expect(run.state()).toMatchObject({ ...pendingOnB, isConfigured: true });
+    run.channel.put(gitlabAuthChanged('authorized', OTHER_HOST));
+    await settle();
+    expect(run.state()).toMatchObject(pendingOnB);
+    expect(mocks.getStatus.mock.calls).toEqual([['gitlab', HOST]]);
+
+    run.channel.put(cancelGitLabAuth());
+    await settle();
+    expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
+    expect(run.state()).toMatchObject({ host: HOST, isAuthenticating: false, deviceFlow: null });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('completes a grant against instance B from B’s own authorized event', async () => {
+    mocks.getStatus
+      .mockResolvedValueOnce({ ...UNCONFIGURED_STATUS, host: HOST, deviceFlow: PENDING_FLOW })
+      .mockResolvedValueOnce({ ...CONFIGURED_STATUS, host: HOST, method: 'device' });
+    mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
+    const run = harness({ ...initialState, host: OTHER_HOST, isConfigured: true });
+
+    run.channel.put(startGitLabDeviceAuth(HOST));
+    await settle();
+    run.channel.put(gitlabAuthChanged('authorized', HOST.toUpperCase()));
+    await settle();
+
+    expect(mocks.getStatus.mock.calls).toEqual([
+      ['gitlab', HOST],
+      ['gitlab', HOST],
+    ]);
+    expect(run.dispatched.at(-1)).toEqual({
+      type: 'gitlabAuth/authCompleted',
+      payload: { user: WIRE_USER, method: 'device' },
+    });
+    expect(run.state()).toMatchObject({ host: HOST, isConfigured: true, deviceFlow: null });
     run.task.cancel();
     await run.task.toPromise();
   });
 
   it('maps the daemon auth-changed transitions onto the slice', async () => {
     mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, method: 'device' });
-    const run = harness({ ...initialState, isAuthenticating: true, deviceFlow: PENDING_FLOW });
+    const run = harness({
+      ...initialState,
+      host: HOST,
+      isAuthenticating: true,
+      deviceFlow: PENDING_FLOW,
+    });
 
     run.channel.put(gitlabAuthChanged('authorized', HOST));
     await settle();
+    expect(mocks.getStatus.mock.calls).toEqual([['gitlab', HOST]]);
     expect(run.state()).toMatchObject({
       isConfigured: true,
       isAuthenticating: false,
