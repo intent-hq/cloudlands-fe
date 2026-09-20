@@ -8,7 +8,8 @@
  * dispatches is observed as the reducer-owned in-flight marker rather than a
  * wire call. Share… is not on the card (it lives in the workspace ⋯ menu).
  */
-import { expect, test, type MountResult } from '@playwright/experimental-ct-svelte';
+import type { MountResult } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import WorkspaceCardShareHoverHarness from './mocks/WorkspaceCardShareHoverHarness.svelte';
 
