@@ -242,7 +242,7 @@ test('renders every vector and state without provider or status overlays', async
     agentAvatarCatalogIdentities.length * agentAvatarCatalogStates.length;
   expect(agentAvatarCatalogIdentities).toHaveLength(13);
   expect(agentAvatarCatalogStates).toHaveLength(11);
-  expect(expectedCatalogStateCount).toBe(144);
+  expect(expectedCatalogStateCount).toBe(143);
   await expect(page.locator('[data-catalog-avatar-design]')).toHaveCount(13);
   await expect(
     catalog.locator('.agent-avatar-catalog-states [data-agent-avatar-with-state]'),
