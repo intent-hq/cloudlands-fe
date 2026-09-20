@@ -1,5 +1,5 @@
 // @verify-changed-triggers: ../NoteTabType.svelte, ../NoteContentSurface.svelte,
-//   src/lib/components/layout/panel-system/PanelEmptyState.svelte, src/lib/components/notes/NotesPanel.svelte,
+//   src/lib/components/layout/panel-system/PanelEmptyState.svelte,
 //   src/lib/components/notes/primitives/ReferenceBlock.svelte, src/lib/components/notes/primitives/CliBlock.svelte,
 //   src/lib/components/notes/primitives/AgentActionBlock.svelte
 
@@ -31,7 +31,6 @@ describe('note content background contract', () => {
   it('keeps the owner full-size and leaves adjacent panel and widget surfaces alone', () => {
     const owner = source('features/layout/tab-types/NoteContentSurface.svelte');
     const emptyPanel = source('lib/components/layout/panel-system/PanelEmptyState.svelte');
-    const notesSidebar = source('lib/components/notes/NotesPanel.svelte');
     const reference = source('lib/components/notes/primitives/ReferenceBlock.svelte');
     const cli = source('lib/components/notes/primitives/CliBlock.svelte');
     const action = source('lib/components/notes/primitives/AgentActionBlock.svelte');
@@ -39,7 +38,6 @@ describe('note content background contract', () => {
     expect(owner.match(/bg-background/g)).toHaveLength(1);
     expect(owner).toContain('h-full min-h-0 w-full min-w-0 bg-background');
     expect(emptyPanel).toContain('bg-sidebar');
-    expect(notesSidebar).not.toContain('data-note-content-surface');
     for (const widget of [reference, cli, action]) expect(widget).toContain('bg-card');
   });
 });

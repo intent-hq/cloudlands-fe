@@ -20,7 +20,6 @@ const {
   mockLogger,
   constantReadable,
   currentNoteReadable,
-  notesVersionReadable,
   resetNotes,
   replaceNotes,
   selectCurrentNote,
@@ -333,7 +332,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectSelectedNoteId: Object.assign(() => constantReadable('spec'), {
     select: () => 'spec',
   }),
-  selectNotesVersion: () => notesVersionReadable,
   selectWorkspaceNotesState: () => constantReadable({ initialized: true }),
 }));
 

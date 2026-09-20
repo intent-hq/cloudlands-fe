@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ConversationTurnGap from '../ConversationTurnGap.svelte';
 import EventSubscriptionsCard from '../EventSubscriptionsCard.svelte';
 

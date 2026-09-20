@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import MentionResultsPreview from '../mention-results.preview.svelte';
 
 // Normal composer width and minimum supported narrow preview width.

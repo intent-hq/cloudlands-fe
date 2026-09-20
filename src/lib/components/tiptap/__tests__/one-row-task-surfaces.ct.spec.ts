@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import OneRowTaskSurfaceHarness from './OneRowTaskSurfaceHarness.svelte';
 
 for (const zoom of [1, 2]) {

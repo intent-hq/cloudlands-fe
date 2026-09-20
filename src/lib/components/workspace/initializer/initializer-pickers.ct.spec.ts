@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import Pickers from './initializer-pickers.preview.svelte';
 import InitialAgentPicker from './initial-agent-picker.preview.svelte';

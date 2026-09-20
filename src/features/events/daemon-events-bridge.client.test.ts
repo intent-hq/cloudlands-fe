@@ -6448,29 +6448,82 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
 
   afterEach(() => vi.clearAllMocks());
 
-  it('fires navigateAwayIfViewing for the deleted workspace (#766 live-mode navigation path)', async () => {
+  async function resetTabStrip(): Promise<void> {
+    const { loadWorkspaceTabsState } =
+      await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
+  }
+
+  function readTabStrip(): { openTabs: Record<string, boolean>; currentTabId: string | null } {
+    return (
+      appStore.state as {
+        tabState: { openTabs: Record<string, boolean>; currentTabId: string | null };
+      }
+    ).tabState;
+  }
+
+  function deletedNotification(workspaceId: string): { method: string; params?: unknown } {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-workspace-deleted-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId },
+        },
+      },
+    };
+  }
+
+  it('closes the deleted workspace tab while it is the current tab (#766 live-mode navigation path)', async () => {
     // Unlike the workspace-list snapshot diff (legacy-mode only — the
     // delta-subscription layer suppresses legacy refetches under live-state,
     // monorepo#775), this events.event route fires in BOTH modes, so it is the
     // path that actually covers "deleted by another client" in production.
+    await resetTabStrip();
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(WS));
+    expect(readTabStrip().currentTabId).toBe(WS);
     await primeBridge();
-    const handler = capturedHandlers[0]!;
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-workspace-deleted-nav',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'workspace:deleted',
-          actor: { type: 'user', id: 'u1' },
-          data: { workspaceId: WS },
-        },
-      },
-    });
+    capturedHandlers[0]!(deletedNotification(WS));
+    await flush();
 
-    expect(navigateAwayIfViewingSpy).toHaveBeenCalledWith(WS);
+    expect(readTabStrip().openTabs[WS]).toBeUndefined();
+    expect(readTabStrip().currentTabId).not.toBe(WS);
+  });
+
+  it('closes the deleted workspace tab while it sits in the background behind another tab', async () => {
+    // A guest's last shared workspace deleted by its owner while the guest is
+    // looking at another tab: the closure must not depend on the route being
+    // the deleted workspace (the on-screen-only helper would leave it open).
+    await resetTabStrip();
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(WS));
+    appStore.dispatch(openWorkspaceTab(OTHER_WS));
+    expect(readTabStrip().currentTabId).toBe(OTHER_WS);
+    expect(readTabStrip().openTabs[WS]).toBe(true);
+    await primeBridge();
+
+    capturedHandlers[0]!(deletedNotification(WS));
+    await flush();
+
+    expect(readTabStrip().openTabs[WS]).toBeUndefined();
+    expect(readTabStrip().openTabs[OTHER_WS]).toBe(true);
+    expect(readTabStrip().currentTabId).toBe(OTHER_WS);
+    expect(navigateAwayIfViewingSpy).not.toHaveBeenCalled();
   });
 
   it('purges agent-session, workspace-agents, and chat-state for the deleted workspace', async () => {
@@ -8430,6 +8483,22 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     // The wire null must drop the stale asset reference rather than retain it.
     expect(ws.statusImageAssetId).toBeUndefined();
   });
+
+  it('merges the memberCount carried by a membership-changing delta (multiplayer w4)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §5.1: invite redeem / member remove publish `workspace:updated`
+    // with `{ members: true, memberCount }` — the non-column flags are dropped,
+    // the post-change count lands on the entity.
+    handler(updatedNotification({ members: true, addedPrincipalId: 'p-bob', memberCount: 2 }));
+
+    const ws = await readWorkspace();
+    expect(ws.memberCount).toBe(2);
+    expect(ws.branch).toBe('main');
+    expect((ws as Record<string, unknown>).members).toBeUndefined();
+  });
 });
 
 describe('daemonEventsBridge (workspace:updated → tab bar archive sync)', () => {
@@ -10369,6 +10438,61 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
     // With no active workspace, the refresh path exits early — no chat load.
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression (fe#2440 verifier): invites/members changed while the
+  // connection was down never re-emit, so the open Share dialog and tracked
+  // hover rosters are invalidated on reconnect — once per workspace, and
+  // only for workspaces actually holding sharing state.
+  describe('sharing invalidation on reconnect (fe#2440)', () => {
+    // Runs first: tracked rosters outlive the dialog, so the seeded case below
+    // would otherwise leave sharing state behind for this one to find.
+    it('issues no sharing invalidation when nothing holds sharing state', async () => {
+      const { shareMembershipChanged } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(WS);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+      expect(
+        dispatchSpy.mock.calls.some(
+          ([action]) => (action as { type: string }).type === shareMembershipChanged.type,
+        ),
+      ).toBe(false);
+    });
+
+    it('invalidates the open Share dialog target and each tracked hover roster once', async () => {
+      const { openShareDialog, shareMembershipChanged, shareRosterRequested, closeShareDialog } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      appStore.dispatch(openShareDialog({ workspaceId: 'ws-share-dialog', workspaceTitle: 'D' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-hover' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-dialog' }));
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(null);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+
+      const invalidations = dispatchSpy.mock.calls
+        .map(([action]) => action as { type: string; payload: unknown })
+        .filter((action) => action.type === shareMembershipChanged.type)
+        .map((action) => action.payload);
+      expect(invalidations).toEqual(
+        expect.arrayContaining([
+          [{ workspaceId: 'ws-share-dialog' }],
+          [{ workspaceId: 'ws-share-hover' }],
+        ]),
+      );
+      expect(invalidations).toHaveLength(2);
+      appStore.dispatch(closeShareDialog());
+    });
   });
 
   describe('failure-registry reconciliation on reconnect (#2806)', () => {

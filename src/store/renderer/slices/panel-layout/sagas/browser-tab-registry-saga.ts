@@ -87,6 +87,7 @@ import {
 } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
+import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import type { ResolvedBrowserLink } from '$lib/utils/browser-url-resolution';
 import { createLogger } from '$lib/utils/client-logger';
 import type { BrowserTab, BrowserTabInput } from '$shared/types/browser-clients';
@@ -142,6 +143,7 @@ import {
   applyBrowserTabRegistryRow,
   browserTabRegistryReportRequested,
   closeTab,
+  destroyTabsByType,
   openHiddenTab,
   openTabInRightmostColumn,
   openTabInRightmostColumnRequested,
@@ -201,6 +203,25 @@ class FenceMoved extends Error {
 /** Connect-time sync guards: one sync per connection generation, reset on backend change. */
 let syncedBackendId: string | null = null;
 let syncedConnectionGeneration: number | null = null;
+/**
+ * The daemon refused a `browser.*` call with `-32003` on the current
+ * connection (multiplayer w3: browser tabs are owner-only). The refusal is a
+ * property of the connection, not of the workspace named in the call: the
+ * daemon gates every `browser.*` method on the caller's administrator flag
+ * (`is_non_administrator_caller() && !collaborator_may_call(method)` in
+ * intent-transport's frame dispatch), so one refusal is the answer for every
+ * workspace this connection can see. The connect-time sync therefore stops
+ * retrying instead of burning its attempts on the same refusal, later loads
+ * answer from the latch without re-dialing, and `listTabs` reads as an
+ * authoritative empty listing so the workspace settles (`applied`, nothing
+ * reported); the next connection starts clean.
+ */
+let registryForbidden = false;
+
+/** What a refused `browser.*` call reads as: no rows to apply, no reply to act on. */
+function forbiddenReply(method: WireMethod): BrowserTab[] | null {
+  return method === 'listTabs' ? [] : null;
+}
 /** Removals being sent, so two workspaces' reporters do not send the same one. */
 const removalsInFlight = new Set<string>();
 /**
@@ -273,14 +294,21 @@ function* wire<M extends WireMethod>(
   ...args: Parameters<BrowserWire[M]>
 ): SagaGenerator<Awaited<ReturnType<BrowserWire[M]>> | null> {
   yield* check(fences);
+  if (registryForbidden) return forbiddenReply(method) as Awaited<ReturnType<BrowserWire[M]>>;
   const fn = appClient.browser[method] as (...a: unknown[]) => Promise<unknown>;
   let result: unknown = null;
   try {
     result = yield* call([appClient.browser, fn], ...args);
   } catch (error) {
-    logger.warn(`browser.${method} failed`, {
-      error: error instanceof Error ? error.message : error,
-    });
+    if (isForbiddenErrorResponse(error)) {
+      registryForbidden = true;
+      logger.debug(`browser.${method} is owner-only on this connection; treating as empty`);
+      result = forbiddenReply(method);
+    } else {
+      logger.warn(`browser.${method} failed`, {
+        error: error instanceof Error ? error.message : error,
+      });
+    }
   }
   yield* check(fences);
   return result as Awaited<ReturnType<BrowserWire[M]>> | null;
@@ -562,11 +590,22 @@ function* applyRows(
     }
   }
   for (const [tabId, { tab }] of local) {
-    if (known.has(tabId) || tab.hostClientId === undefined) continue;
+    if (known.has(tabId)) continue;
+    // A refused listing is authoritative for every local browser tab: a
+    // collaborator cannot host one either, so tabs this client would
+    // otherwise keep to report later go too.
+    if (registryForbidden) {
+      yield* effect(fence, registryTabForgotten(wsId, tabId));
+      continue;
+    }
+    if (tab.hostClientId === undefined) continue;
     if (tab.hostClientId === ownClientId && hasReportableUrl(tab)) continue;
     yield* effect(fence, registryTabForgotten(wsId, tabId));
     yield* effect(fence, closeTab(wsId, tabId, undefined, undefined, { destroy: true }));
   }
+  // Destroyed, not closed: a per-tab destroy still parks unowned tabs in
+  // recentlyClosed, and a collaborator must not be able to reopen one.
+  if (registryForbidden) yield* effect(fence, destroyTabsByType(wsId, 'browser'));
   yield* check(fence);
   const placed = new Set(
     collectBrowserTabs(yield* selectPanelLayoutWorkspace.effect(wsId)).map((h) => h.tab.id),
@@ -1118,6 +1157,7 @@ function* syncOnConnect(): SagaGenerator<void> {
   const generation = yield* selectDaemonConnectionGeneration.effect();
   if (syncedConnectionGeneration === generation) return;
   syncedConnectionGeneration = generation;
+  registryForbidden = false;
 
   const ownClientId = yield* waitForOwnClientId();
   for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt++) {
@@ -1127,6 +1167,9 @@ function* syncOnConnect(): SagaGenerator<void> {
     }
     if (syncedBackendId !== backendId || syncedConnectionGeneration !== generation) return;
     if (yield* call(syncTabsOnce, backendId, generation, ownClientId)) return;
+    // A forbidden reply is this connection's final answer: keep the
+    // generation marked synced so nothing re-runs until the next connect.
+    if (registryForbidden) return;
   }
   if (syncedConnectionGeneration === generation) syncedConnectionGeneration = null;
 }
@@ -1141,6 +1184,7 @@ function* onConnectionStatus(
 export function* browserTabRegistrySaga(): SagaGenerator<void> {
   syncedBackendId = null;
   syncedConnectionGeneration = null;
+  registryForbidden = false;
   removalsInFlight.clear();
   seenLayouts = yield* selectPanelLayoutWorkspaces.effect();
   const reports = createChannel<string>(buffers.expanding());

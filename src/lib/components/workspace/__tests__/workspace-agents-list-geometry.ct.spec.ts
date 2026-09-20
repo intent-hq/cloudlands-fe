@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import WorkspaceAgentsListGeometryHarness from './mocks/WorkspaceAgentsListGeometryHarness.svelte';
 
 const platformModifier = process.platform === 'darwin' ? 'Meta' : 'Control';

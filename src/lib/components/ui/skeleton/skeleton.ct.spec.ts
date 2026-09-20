@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import SkeletonMotionHost from './SkeletonMotionHost.svelte';
 
 for (const theme of ['light', 'dark']) {

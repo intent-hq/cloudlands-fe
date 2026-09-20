@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Preview from './select-focus.preview.svelte';
 
 for (const { mode, ...props } of [

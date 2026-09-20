@@ -64,7 +64,6 @@ vi.mock('$lib/utils/workspace-route-context', () => ({
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectAllNotes: () => mocks.readable(mocks.allNotes),
-  selectNotesVersion: () => mocks.readable(0),
   selectNoteById: Object.assign(
     (_workspaceId: unknown, noteIdStore: any) => {
       let noteId = '';

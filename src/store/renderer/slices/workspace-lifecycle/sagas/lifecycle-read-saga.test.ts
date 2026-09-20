@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   terminals: { list: vi.fn() },
   getAgentLineStats: vi.fn(),
   isAgentDeletionPending: vi.fn(),
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('$lib/client', () => ({
@@ -43,7 +44,7 @@ vi.mock('$features/agent/utils/pending-agent-deletions', () => ({
   isAgentDeletionPending: mocks.isAgentDeletionPending,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
-  createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
+  createLogger: () => mocks.logger,
 }));
 
 import { AgentStatus, GitFileStatus, type AgentSession } from '$shared/types';
@@ -59,7 +60,14 @@ import { refreshScripts } from '../../scripts/scripts-slice';
 import { loadGitStatus } from '../../git/git-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
 import { hydrateTaskAgentAssociationsRequested } from '../../task-agent-associations/task-agent-associations-slice';
-import { hydrateTerminalsRequested } from '../../terminals/terminals-slice';
+import { scriptsReducer, setScriptsData } from '../../scripts/scripts-slice';
+import { selectScriptEntries, selectScriptsInitialized } from '../../scripts/scripts-selectors';
+import {
+  addTerminal,
+  hydrateTerminalsRequested,
+  terminalsReducer,
+} from '../../terminals/terminals-slice';
+import { selectTerminalsForWorkspace } from '../../terminals/terminals-selectors';
 import { fetchWorkspaceTokenUsage } from '../../token-usage/token-usage-slice';
 import {
   fetchBackgroundAgentsRequested,
@@ -114,6 +122,8 @@ function state(currentTabId: string | null = null, eventsNextToken: string | nul
       byWorkspaceId: eventsNextToken ? { [WS]: { nextToken: eventsNextToken } } : {},
     },
     prStatus: { byWorkspaceId: {} },
+    terminals: terminalsReducer(undefined, { type: '@@init' } as never),
+    scripts: scriptsReducer(undefined, { type: '@@init' } as never),
   };
 }
 
@@ -667,6 +677,86 @@ describe('lifecycleReadSaga', () => {
       { type: 'terminals/loadWorkspaceTerminals', payload: [WS, [terminal]] },
     ]);
     await stop(run.task);
+  });
+
+  describe('owner-only script and terminal reads for collaborators (multiplayer w3)', () => {
+    const script = { id: 'script-1', name: 'test', command: 'pnpm test' };
+    const forbidden = () => Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+
+    /** Prepopulated store whose dispatch folds saga output through the real reducers. */
+    function startWithReducers() {
+      let current = {
+        ...state(),
+        terminals: terminalsReducer(state().terminals, addTerminal(WS, 'term-1', 'Shell')),
+        scripts: scriptsReducer(state().scripts, setScriptsData(WS, [script] as never)),
+      };
+      const channel = stdChannel();
+      const actions: unknown[] = [];
+      const task = runSaga(
+        {
+          channel,
+          dispatch: (action) => {
+            actions.push(action);
+            current = {
+              ...current,
+              terminals: terminalsReducer(current.terminals, action as never),
+              scripts: scriptsReducer(current.scripts, action as never),
+            };
+          },
+          getState: () => current,
+        },
+        lifecycleReadSaga,
+      );
+      return { channel, actions, task, getState: () => current as never };
+    }
+
+    it('settles a -32003 refusal to empty, initialized stores without logging an error', async () => {
+      mocks.scripts.list.mockRejectedValue(forbidden());
+      mocks.terminals.list.mockRejectedValue(forbidden());
+      const run = startWithReducers();
+      expect(selectTerminalsForWorkspace.select(run.getState(), WS)).toHaveLength(1);
+      expect(selectScriptEntries.select(run.getState(), WS)).toHaveLength(1);
+
+      run.channel.put(refreshScripts(WS));
+      await settle();
+      run.channel.put(hydrateTerminalsRequested(WS));
+      await settle();
+
+      expect(run.actions).toEqual([
+        { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: [] } },
+        { type: 'scripts/setInitialized', payload: [WS, true] },
+        { type: 'terminals/removeTerminal', payload: [WS, 'term-1'] },
+        { type: 'terminals/loadWorkspaceTerminals', payload: [WS, [], null, undefined] },
+      ]);
+      expect(selectScriptEntries.select(run.getState(), WS)).toEqual([]);
+      expect(selectScriptsInitialized.select(run.getState(), WS)).toBe(true);
+      expect(selectTerminalsForWorkspace.select(run.getState(), WS)).toEqual([]);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    });
+
+    it('keeps other read failures as logged errors that leave the stores untouched', async () => {
+      const internal = Object.assign(new Error('boom'), { rpcCode: -32603 });
+      mocks.scripts.list.mockRejectedValue(internal);
+      mocks.terminals.list.mockRejectedValue(new Error('socket closed'));
+      const run = startWithReducers();
+
+      run.channel.put(refreshScripts(WS));
+      await settle();
+      run.channel.put(hydrateTerminalsRequested(WS));
+      await settle();
+
+      expect(run.actions).toEqual([]);
+      expect(selectScriptEntries.select(run.getState(), WS)).toHaveLength(1);
+      expect(selectScriptsInitialized.select(run.getState(), WS)).toBe(false);
+      expect(selectTerminalsForWorkspace.select(run.getState(), WS)).toHaveLength(1);
+      expect(mocks.logger.error).toHaveBeenCalledWith(`Refresh failed for scripts:${WS}`, internal);
+      expect(mocks.logger.error).toHaveBeenCalledWith(
+        `Refresh failed for terminals:${WS}`,
+        expect.any(Error),
+      );
+      await stop(run.task);
+    });
   });
 
   it('loads the next older events page from the stored cursor', async () => {

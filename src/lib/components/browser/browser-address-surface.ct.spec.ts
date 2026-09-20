@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import EmbeddedPreview from './embedded-browser.preview.svelte';
 import ViewerPreview from './browser-viewer-tab.preview.svelte';

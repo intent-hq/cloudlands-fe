@@ -92,6 +92,8 @@
   import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
+  import { bindRemoteCursors } from './note-with-comments/remote-cursors-binding';
+  import { joinNotePresence } from '$features/notes/note-presence/note-presence-service';
   import { pruneTaskAgentAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { selectAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -1756,6 +1758,38 @@
     if (reduxRev === undefined || reduxContent !== lastKnownContent) return;
     if (lastKnownRev !== undefined && reduxRev <= lastKnownRev) return;
     lastKnownRev = reduxRev;
+  });
+
+  // Remote cursors (multiplayer w5): only a shared workspace has peers to
+  // show, and only the rich editor can render decorations. The presence
+  // lease is held for as long as this editor instance is bound.
+  $effect(() => {
+    const boundEditor = editor;
+    const wsId = workspace?.id;
+    const memberCount = workspace?.memberCount ?? 0;
+    if (
+      !boundEditor ||
+      !wsId ||
+      !noteId ||
+      memberCount < 2 ||
+      !isInitialized ||
+      isRawNoteViewEnabled ||
+      isTooLargeForRichEditor
+    ) {
+      return;
+    }
+    if (boundEditor.isDestroyed) return;
+    const session = joinNotePresence(wsId, noteId);
+    const unbind = bindRemoteCursors({
+      editor: boundEditor,
+      session,
+      getBaseText: () => lastKnownContent,
+      getBaseRev: () => lastKnownRev,
+    });
+    return () => {
+      unbind();
+      session.release();
+    };
   });
 
   // // Watch for editable prop changes and update editor

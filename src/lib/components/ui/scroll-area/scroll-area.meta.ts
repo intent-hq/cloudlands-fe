@@ -23,8 +23,6 @@ export const scrollAreaMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
     'src/lib/components/file-explorer/file-explorer-sidebar.svelte',
     'src/lib/components/file-explorer/file-tree-view.svelte',
-    'src/lib/components/ui/ScrollableSection.svelte',
-    'src/lib/components/ui/VSCodeScrollablePanel.svelte',
   ],
   replacement: null,
   characterizationTest: 'src/lib/components/ui/scroll-area/scroll-area.test.ts',

@@ -1,4 +1,4 @@
-import { test } from '@playwright/experimental-ct-svelte';
+import { test } from '../../test/ct-test';
 import type { Component } from 'svelte';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- This helper executes in Playwright's Node test process.
 import { closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';

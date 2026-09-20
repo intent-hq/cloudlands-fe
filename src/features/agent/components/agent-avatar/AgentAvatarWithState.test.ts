@@ -27,10 +27,6 @@ const catalogSource = readFileSync(
   resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte'),
   'utf8',
 );
-const tabSource = readFileSync(
-  resolve(process.cwd(), 'src/features/layout/components/panel-tabs/Tab.svelte'),
-  'utf8',
-);
 const settingsSidebarSource = readFileSync(
   resolve(process.cwd(), 'src/lib/components/settings/AIBehaviorSidebar.svelte'),
   'utf8',
@@ -284,11 +280,7 @@ describe('AgentAvatarWithState', () => {
       expect(geometry.radius).toBeLessThan(geometry.surface / 2);
     }
     expect(catalogSource).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
-    expect(tabSource).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
     expect(catalogSource).toContain('<AgentAvatarStack');
-    expect(tabSource).toContain('<AgentAvatarStack');
-    expect(tabSource).toContain('variant="emphasized"');
-    expect(tabSource).toContain('overflowId=');
   });
 
   it('keeps visible product consumers off zero-clear-space canonical numeric sizes', () => {

@@ -303,6 +303,7 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     RESULT_test: 'success',
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
+    RESULT_monorepo_consumer_checks: 'success',
   });
 
   // What a route failure (or fork-PR skip) leaves behind: every job that
@@ -424,6 +425,26 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     [
       'merge_group, release fast path, CT failed',
       { ...results('failure', 'merge_group'), FAST_PATH: 'true', CT_REQUIRED: 'true' },
+      1,
+    ],
+    [
+      'PR, release fast path, monorepo consumer checks failed',
+      {
+        ...results('skipped'),
+        RESULT_monorepo_consumer_checks: 'failure',
+        FAST_PATH: 'true',
+        CT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'merge_group, monorepo consumer checks skipped',
+      {
+        ...results('success', 'merge_group'),
+        RESULT_monorepo_consumer_checks: 'skipped',
+        FAST_PATH: '',
+        CT_REQUIRED: '',
+      },
       1,
     ],
   ])('%s → exit %i', (_name, env, expected) => {

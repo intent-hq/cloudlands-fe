@@ -71,6 +71,7 @@ describe('isCtContractPath', () => {
     'playwright/index.ts',
     'playwright/app-stubs/stores.ts',
     'scripts/run-ct-tests.mjs',
+    'src/test/ct-test.ts',
     'src/lib/component-catalog/capture-stability.ts',
     'src/lib/component-catalog/geometry-probe.ts',
     'src/lib/component-catalog/preview-definition.ts',
@@ -89,6 +90,7 @@ describe('isCtContractPath', () => {
     'src/lib/component-catalog/catalog.ts',
     'src/lib/component-catalog/geometry-probe.test.ts',
     'src/lib/component-catalog/nested/preview-definition.ts',
+    'src/test/ct-console-errors.ts',
     'playwright.config.ts',
     'scripts/verify-changed.mjs',
     'scripts/ct-contract-paths.mjs',
@@ -101,7 +103,7 @@ describe('isCtContractPath', () => {
     expect(isCtContractPath(file)).toBe(false);
   });
 
-  it('exports exactly the ten paths the CT harness depends on', () => {
+  it('exports exactly the eleven paths the CT harness depends on', () => {
     expect([...CT_CONTRACT_PATHS].sort()).toEqual([
       'package.json',
       'playwright-ct.config.ts',
@@ -113,6 +115,7 @@ describe('isCtContractPath', () => {
       'src/lib/component-catalog/geometry-probe.ts',
       'src/lib/component-catalog/preview-definition.ts',
       'src/lib/styles/**',
+      'src/test/ct-test.ts',
     ]);
   });
 });

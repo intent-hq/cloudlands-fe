@@ -27,6 +27,7 @@ export const CT_CONTRACT_FILES = Object.freeze([
   'src/app.css',
   'playwright-ct.config.ts',
   'scripts/run-ct-tests.mjs',
+  'src/test/ct-test.ts',
   'src/lib/component-catalog/capture-stability.ts',
   'src/lib/component-catalog/geometry-probe.ts',
   'src/lib/component-catalog/preview-definition.ts',
