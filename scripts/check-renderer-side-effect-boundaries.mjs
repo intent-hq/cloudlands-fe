@@ -29,7 +29,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/file-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   ['src/store/renderer/seeders/git-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
   ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 16 }],
-  ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 27 }],
+  ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 32 }],
   [
     'src/store/renderer/seeders/language-preference-bridge-seeder.ts',
     { registerMockIpcHandler: 1 },
