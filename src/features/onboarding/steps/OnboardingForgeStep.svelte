@@ -73,15 +73,18 @@
   // A flow in progress opens its panel even before the user re-picks it (e.g.
   // a pending device grant resumed by the initialize hydration) and the panel
   // stays open once the flow ends, so cancelling into the PAT fallback does not
-  // bounce back to the chooser.
+  // bounce back to the chooser. The GitLab panel is never resumed or kept open
+  // on a daemon that does not serve its auth methods.
   $effect(() => {
     if (choice !== null) return;
     if ($githubIsAuthenticating$) choice = 'github';
-    else if ($gitlabIsAuthenticating$) choice = 'gitlab';
+    else if ($gitlabIsAuthenticating$ && $gitlabSupported$) choice = 'gitlab';
   });
-  const activeChoice = $derived<ForgeChoice | null>(
-    choice ?? ($githubIsAuthenticating$ ? 'github' : $gitlabIsAuthenticating$ ? 'gitlab' : null),
-  );
+  const activeChoice = $derived.by<ForgeChoice | null>(() => {
+    const resolved =
+      choice ?? ($githubIsAuthenticating$ ? 'github' : $gitlabIsAuthenticating$ ? 'gitlab' : null);
+    return resolved === 'gitlab' && !$gitlabSupported$ ? null : resolved;
+  });
 
   onMount(() => {
     // Hydrate both forges so an already-resolved credential renders as

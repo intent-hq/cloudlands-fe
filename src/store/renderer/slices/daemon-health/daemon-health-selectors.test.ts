@@ -238,6 +238,16 @@ describe('supportsSourceControlAuthProtocol / selectDaemonSupportsSourceControlA
     expect(supportsSourceControlAuthProtocol('dev-build')).toBe(false);
   });
 
+  it('rejects a malformed version even when it starts with a supporting numeric prefix', () => {
+    expect(supportsSourceControlAuthProtocol('10.5garbage')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('10.5.2broken')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('11x')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('10.')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('10.5.')).toBe(false);
+    expect(supportsSourceControlAuthProtocol('v10.5')).toBe(false); // protocol-version-ok: malformed-shape fixture under test
+    expect(supportsSourceControlAuthProtocol('10.5-rc1')).toBe(false);
+  });
+
   it('reads stats.protocolVersion from the last system.status poll', () => {
     expect(selectDaemonSupportsSourceControlAuth.select(protocolState('10.5'))).toBe(true);
     expect(selectDaemonSupportsSourceControlAuth.select(protocolState('10.4'))).toBe(false);

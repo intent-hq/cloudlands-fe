@@ -161,6 +161,45 @@ describe('OnboardingForgeStep', () => {
     await waitFor(() => expect(findButton(container, 'Connect GitLab')).toBeTruthy());
   });
 
+  it('does not resume a pending GitLab grant into the connect panel when the daemon protocol is too old or unknown', async () => {
+    for (const stats of [{ ...supportingDaemonStats(), protocolVersion: '10.4' }, null]) {
+      mocks.daemonHealthStats.value = stats;
+      mocks.gitlabAuth.value = {
+        ...idleGitLab(),
+        isAuthenticating: true,
+        deviceFlow: {
+          userCode: 'ABCD-1234',
+          verificationUri: 'https://gitlab.com/oauth/device',
+          expiresIn: 300,
+          interval: 5,
+        },
+      };
+      const { container, unmount } = render(OnboardingForgeStep, { props: baseProps() });
+
+      expect(container.querySelector('[data-testid="forge-step-choices"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="forge-step-gitlab"]')).toBeNull();
+      expect(findButton(container, 'Connect GitLab')).toBeUndefined();
+      unmount();
+    }
+  });
+
+  it('closes an already-open GitLab panel when a later poll reports a protocol that no longer supports it', async () => {
+    const { container } = render(OnboardingForgeStep, { props: baseProps() });
+    await fireEvent.click(findButton(container, 'Connect GitLab')!);
+    expect(container.querySelector('[data-testid="forge-step-gitlab"]')).toBeTruthy();
+
+    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' };
+    const { appStore } = (await import('$store/renderer/store')) as unknown as {
+      appStore: { emitState: () => void };
+    };
+    appStore.emitState();
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="forge-step-gitlab"]')).toBeNull();
+      expect(container.querySelector('[data-testid="forge-step-choices"]')).toBeTruthy();
+    });
+    expect(findButton(container, 'Connect GitLab')).toBeUndefined();
+  });
+
   it('GitHub pending device flow: renders the code card and cancel dispatches cancelAuth', async () => {
     mocks.githubAuth.value = {
       ...idleGitHub(),
