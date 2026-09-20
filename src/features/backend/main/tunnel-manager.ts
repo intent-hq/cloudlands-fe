@@ -262,7 +262,8 @@ export interface TunnelManagerOptions {
   /**
    * The connected daemon's `client.hello` `protocolVersion` (`null` when
    * unknown). Read on every tunnel (re)connect; `CREDIT` is sent only when it
-   * is ≥ 10.4, so a backend switch or daemon upgrade is picked up lazily.
+   * advertises CREDIT support, so a backend switch or daemon upgrade is picked
+   * up lazily.
    */
   getProtocolVersion: () => string | null;
   /** Socket factory seam for tests; defaults to [[createTunnelSocket]]. */

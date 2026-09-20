@@ -68,7 +68,7 @@ describe('protocolVersionAtLeast', () => {
     expect(protocolVersionAtLeast(null, 10, 4)).toBe(false);
     expect(protocolVersionAtLeast(undefined, 10, 4)).toBe(false);
     expect(protocolVersionAtLeast('', 10, 4)).toBe(false);
-    expect(protocolVersionAtLeast('v10.4', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('v10.4', 10, 4)).toBe(false); // protocol-version-ok: malformed-input fixture
     expect(protocolVersionAtLeast('10.x', 10, 4)).toBe(false);
   });
 });

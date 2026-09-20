@@ -190,7 +190,7 @@ function makeManager(
     config?: BackendConnectionConfig | null;
     /** Remote ports whose OPENs get a scripted refused OPEN_ERR (see [[refuseOpens]]). */
     refusedPorts?: Set<number>;
-    /** Daemon hello protocolVersion; defaults to a CREDIT-capable 10.4. */
+    /** Daemon hello protocolVersion; defaults to the first CREDIT-capable version. */
     protocolVersion?: string | null;
   } = {},
 ): { manager: TunnelManager; created: FakeTunnelSocket[] } {
@@ -1415,7 +1415,7 @@ describe('TunnelManager', () => {
       expect(manager.getDiagnostics().streams.some((s) => s.streamId === streamId)).toBe(true);
     });
 
-    describe('is gated on the daemon hello protocolVersion ≥ 10.4', () => {
+    describe('is gated on the daemon hello protocolVersion advertising CREDIT support', () => {
       /** Flush > 64 KiB through one stream and return the CREDIT grants it produced. */
       async function flushAndCollectCredits(protocolVersion: string | null): Promise<{
         grants: number[];
@@ -1436,10 +1436,13 @@ describe('TunnelManager', () => {
         return { grants: credits(ws, streamId), ws };
       }
 
-      it.each(['10.4', '10.10', '11.0'])('sends CREDIT to a %s daemon', async (version) => {
-        const { grants } = await flushAndCollectCredits(version);
-        expect(grants.reduce((a, b) => a + b, 0)).toBe(80 * 1024);
-      });
+      it.each(['10.4', '10.10', '11.0'])(
+        'sends CREDIT when the hello reports %s',
+        async (version) => {
+          const { grants } = await flushAndCollectCredits(version);
+          expect(grants.reduce((a, b) => a + b, 0)).toBe(80 * 1024);
+        },
+      );
 
       it.each([null, '10.3', '9.9', 'unknown'])(
         'sends no CREDIT to a %s daemon even after > 64 KiB flushed (byte-identical to a pre-credit client)',

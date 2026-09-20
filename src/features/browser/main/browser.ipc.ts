@@ -277,7 +277,7 @@ function getBrowserTunnelProvider(
         }
       },
       // Read per tunnel (re)connect: CREDIT is sent only to a daemon whose
-      // hello advertised protocol ≥ 10.4 (intent-hq/intent#5482).
+      // hello protocolVersion advertises CREDIT support (intent-hq/intent#5482).
       getProtocolVersion: () => getConnectedDaemonProtocolVersion(backendContext.backendId),
     });
     tunnelManagers.set(backendContext.client, tunnelManager);
