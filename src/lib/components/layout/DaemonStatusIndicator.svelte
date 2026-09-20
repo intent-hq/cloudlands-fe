@@ -91,6 +91,7 @@
   import {
     faPlus,
     faCheck,
+    faChevronRight,
     faTriangleExclamation,
     faUsers,
   } from '@fortawesome/free-solid-svg-icons';
@@ -99,11 +100,22 @@
   import Header from '$lib/components/ui/Header.svelte';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import {
+    Accordion,
+    AccordionContent,
+    AccordionHeader,
+    AccordionItem,
+    AccordionTrigger,
+  } from '$lib/components/ui/accordion';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
+  import { FormDialog } from '$lib/components/patterns/confirm';
+  import { ListView } from '$lib/components/patterns/collection';
   import Portal from '$lib/components/ui/Portal.svelte';
   import CertMismatchModal from './CertMismatchModal.svelte';
   import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
   import {
+    selectAgentMemoryUsage,
+    selectAgentMemoryUsageError,
     selectDaemonHealth,
     selectDaemonHealthStats,
     selectDaemonHealthLastUpdated,
@@ -113,6 +125,8 @@
     selectUnslothStopping,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
+    agentMemoryBreakdownClosed,
+    agentMemoryBreakdownOpened,
     pollSystemStatus,
     pollUnslothStatus,
     stopUnslothRequested,
@@ -156,6 +170,8 @@
   const versionComparison$ = selectDaemonVersionComparison();
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
+  const agentMemoryUsage$ = selectAgentMemoryUsage();
+  const agentMemoryUsageError$ = selectAgentMemoryUsageError();
   const connections$ = selectConnections();
   const currentConnectionId$ = selectCurrentConnectionId();
   const currentConnection$ = selectCurrentConnection();
@@ -170,6 +186,9 @@
   const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
+  let agentMemoryDialogOpen = $state(false);
+  // Agent ids whose process list is expanded in the breakdown dialog.
+  let expandedAgentIds = $state<string[]>([]);
 
   const healthIconColors: Record<DaemonHealth, string> = {
     healthy: 'text-subtle',
@@ -398,6 +417,34 @@
 
   function confirmStopUnsloth() {
     appStore.dispatch(stopUnslothRequested());
+  }
+
+  // --- Agent memory breakdown ---------------------------------------------
+
+  // Agent-attributed memory from the last system.status poll. Null hides the
+  // row: older daemons omit the field, and a new daemon reports null until
+  // its first process-tree sample.
+  const agentMemoryBytes = $derived($stats$?.agentMemoryBytes ?? null);
+
+  function openAgentMemoryBreakdown() {
+    dropdownOpen = false;
+    expandedAgentIds = [];
+    agentMemoryDialogOpen = true;
+    appStore.dispatch(agentMemoryBreakdownOpened());
+  }
+
+  // FormDialog routes every dismissal (Escape, X, backdrop) through onCancel
+  // and the single Close button through onSubmit; both stop the refresh
+  // cadence and drop the stored usage.
+  function closeAgentMemoryBreakdown() {
+    agentMemoryDialogOpen = false;
+    appStore.dispatch(agentMemoryBreakdownClosed());
+  }
+
+  function formatProcessCount(count: number): string {
+    return count === 1
+      ? m.layout_agentMemoryBreakdown_processes_one({ count: formatNumber(count) })
+      : m.layout_agentMemoryBreakdown_processes_many({ count: formatNumber(count) });
   }
 
   // --- Multi-backend connect: menu actions -------------------------------
@@ -696,6 +743,37 @@
                     <span class="tabular-nums text-xs" aria-live="off"
                       >{formatMemory($stats$.memoryBytes)}</span
                     >
+                  </div>
+                {/if}
+
+                <!--
+                  Agent memory (only once the daemon has sampled it). Clickable:
+                  opens the per-agent breakdown dialog. Same in-menu Button
+                  pattern as the Stop server action below; the wrapping div
+                  gives the row a box for the parent's vertical rhythm, which
+                  the Button's own display:contents wrapper would otherwise skip.
+                -->
+                {#if agentMemoryBytes !== null}
+                  <div>
+                    <Button
+                      variant="ghost"
+                      wrapContent={false}
+                      class="w-full flex justify-between gap-2 text-xs whitespace-nowrap hover:bg-muted/50 rounded px-1 -mx-1 py-0 h-auto min-h-0 font-normal cursor-pointer"
+                      aria-label={m.layout_daemonStatus_agentMemory_ariaLabel({
+                        memory: formatMemory(agentMemoryBytes),
+                      })}
+                      onclick={openAgentMemoryBreakdown}
+                    >
+                      <span class="text-subtle">{m.layout_daemonStatus_agentMemory_label()}</span>
+                      <span class="flex items-center gap-1.5">
+                        <span class="tabular-nums text-xs" aria-live="off"
+                          >{formatMemory(agentMemoryBytes)}</span
+                        >
+                        <span class="text-subtle" aria-hidden="true">
+                          <Fa icon={faChevronRight} size="xs" />
+                        </span>
+                      </span>
+                    </Button>
                   </div>
                 {/if}
 
@@ -1038,6 +1116,126 @@
     variant="destructive"
     onConfirm={confirmStopUnsloth}
   />
+{/if}
+
+<!--
+  Agent memory breakdown — one row per spawned agent adapter (wire order:
+  the daemon sorts by memory descending), each expandable to its process
+  list. Read-only: the single Close button is the form's submit.
+-->
+{#if agentMemoryDialogOpen}
+  <FormDialog
+    bind:open={agentMemoryDialogOpen}
+    title={m.layout_agentMemoryBreakdown_title()}
+    description={m.layout_agentMemoryBreakdown_description()}
+    submitLabel={m.layout_agentMemoryBreakdown_close_label()}
+    submitVariant="outline"
+    showCancel={false}
+    class="max-w-2xl"
+    onSubmit={closeAgentMemoryBreakdown}
+    onCancel={closeAgentMemoryBreakdown}
+  >
+    {#if $agentMemoryUsage$}
+      {@const usage = $agentMemoryUsage$}
+      <div class="flex justify-between gap-2 type-caption text-muted-foreground">
+        <span>
+          {m.layout_agentMemoryBreakdown_total_label()}
+          <span class="tabular-nums text-foreground"
+            >{usage.totalBytes === null ? '—' : formatMemory(usage.totalBytes)}</span
+          >
+        </span>
+        {#if usage.sampledAt}
+          <span
+            >{m.layout_agentMemoryBreakdown_sampledAt_label({
+              time: formatDateTime(usage.sampledAt),
+            })}</span
+          >
+        {/if}
+      </div>
+      {#if usage.agents.length === 0}
+        <p class="type-body text-muted-foreground py-4 text-center">
+          {m.layout_agentMemoryBreakdown_empty_label()}
+        </p>
+      {:else}
+        <Accordion
+          type="multiple"
+          bind:value={expandedAgentIds}
+          class="max-h-[60vh] overflow-y-auto"
+        >
+          {#each usage.agents as agent (agent.agentId)}
+            <AccordionItem value={agent.agentId} class="border-b border-border last:border-b-0">
+              <AccordionHeader>
+                <AccordionTrigger>
+                  <span class="flex items-center justify-between gap-3 min-w-0">
+                    <span class="flex min-w-0 flex-col">
+                      <span class="truncate text-foreground">{agent.agentName}</span>
+                      <span class="truncate">
+                        {m.layout_agentMemoryBreakdown_workspace_label({
+                          workspace: agent.workspaceId,
+                        })}
+                        · {agent.provider}{agent.model ? `/${agent.model}` : ''}
+                      </span>
+                    </span>
+                    <span class="flex shrink-0 flex-col items-end tabular-nums">
+                      <span class="text-foreground">{formatMemory(agent.memoryBytes)}</span>
+                      <span>{formatProcessCount(agent.processCount)}</span>
+                    </span>
+                  </span>
+                </AccordionTrigger>
+              </AccordionHeader>
+              <AccordionContent>
+                <ListView
+                  items={agent.processes}
+                  getKey={(proc) => proc.pid}
+                  getText={(proc) => proc.name}
+                  virtualize={false}
+                  ariaLabel={m.layout_agentMemoryBreakdown_processList_ariaLabel({
+                    agent: agent.agentName,
+                  })}
+                >
+                  {#snippet row({ item: proc })}
+                    <div class="flex items-baseline gap-2 min-w-0 px-1 py-0.5">
+                      <span class="shrink-0 tabular-nums"
+                        >{m.layout_agentMemoryBreakdown_pid_label({ pid: String(proc.pid) })}</span
+                      >
+                      <span class="shrink-0 text-foreground">{proc.name}</span>
+                      <!--
+                        The full command line stays in the DOM (CSS-truncated,
+                        selectable) and is also exposed in full via tooltip.
+                      -->
+                      <Tooltip
+                        side="top"
+                        class="min-w-0 flex-1"
+                        contentClass="z-[10001] max-w-xl break-all"
+                      >
+                        {#snippet content()}
+                          <span class="select-text font-mono">{proc.cmdline}</span>
+                        {/snippet}
+                        <span class="block min-w-0 w-full truncate select-text font-mono"
+                          >{proc.cmdline}</span
+                        >
+                      </Tooltip>
+                      <span class="ml-auto shrink-0 tabular-nums text-foreground"
+                        >{formatMemory(proc.memoryBytes)}</span
+                      >
+                    </div>
+                  {/snippet}
+                </ListView>
+              </AccordionContent>
+            </AccordionItem>
+          {/each}
+        </Accordion>
+      {/if}
+    {:else if $agentMemoryUsageError$}
+      <p class="type-body text-danger py-4 text-center">
+        {m.layout_agentMemoryBreakdown_error_label()}
+      </p>
+    {:else}
+      <p class="type-body text-muted-foreground py-4 text-center" aria-live="polite">
+        {m.layout_agentMemoryBreakdown_loading_label()}
+      </p>
+    {/if}
+  </FormDialog>
 {/if}
 
 <!-- Cert-mismatch failure modal — driven by the connections:cert-mismatch push. -->

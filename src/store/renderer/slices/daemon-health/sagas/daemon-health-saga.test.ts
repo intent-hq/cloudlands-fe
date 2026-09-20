@@ -17,6 +17,10 @@ vi.mock('$lib/components/patterns/notify', () => ({
 import { BackendError } from '$lib/client/live/backend-transport-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
+  agentMemoryBreakdownClosed,
+  agentMemoryBreakdownOpened,
+  agentMemoryUsageFailed,
+  agentMemoryUsageSucceeded,
   connectionStatusChanged,
   daemonHealthReducer,
   fetchSidecarRunLogRequested,
@@ -34,6 +38,7 @@ import {
   systemStatusSuccess,
 } from '../daemon-health-slice';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
   DaemonHealthState,
   SystemStatusWirePayload,
@@ -688,6 +693,76 @@ describe('daemonHealthSaga', () => {
     input.put(stopUnslothRequested());
     await settle();
     expect(dispatched).toContainEqual(stopUnslothFailed('stop failed'));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('fetches agent.memoryUsage only while the breakdown is open, on a coalesced cadence', async () => {
+    const usage: AgentMemoryUsageWirePayload = {
+      sampledAt: '2026-09-20T06:00:00.000Z',
+      totalBytes: 1024,
+      agents: [],
+    };
+    const resolvers: Array<(value: unknown) => void> = [];
+    const memoryCalls = () =>
+      mocks.backendRequest.mock.calls.filter(([method]) => method === 'agent.memoryUsage');
+    mocks.backendRequest.mockImplementation((method: string) => {
+      if (method === 'system.status') return Promise.resolve(statusPayload);
+      if (method === 'unsloth.status') return Promise.resolve({ running: false });
+      if (method === 'agent.memoryUsage') {
+        return new Promise((resolve) => resolvers.push(resolve));
+      }
+      return Promise.reject(new Error('unexpected'));
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+    // No background polling before the breakdown opens.
+    expect(memoryCalls()).toHaveLength(0);
+
+    input.put(agentMemoryBreakdownOpened());
+    await settle();
+    expect(mocks.backendRequest).toHaveBeenCalledWith('agent.memoryUsage');
+    expect(memoryCalls()).toHaveLength(1);
+
+    // A refresh tick landing while the first fetch is in flight is dropped.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(memoryCalls()).toHaveLength(1);
+
+    resolvers[0](usage);
+    await settle();
+    expect(dispatched).toContainEqual(agentMemoryUsageSucceeded(usage));
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(memoryCalls()).toHaveLength(2);
+
+    // Closing stops the cadence; a late resolve still reports but no new
+    // request is issued.
+    input.put(agentMemoryBreakdownClosed());
+    resolvers[1]({ ...usage, totalBytes: 2048 });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(memoryCalls()).toHaveLength(2);
+
+    // Reopening restarts the cadence with an immediate fetch.
+    input.put(agentMemoryBreakdownOpened());
+    await settle();
+    expect(memoryCalls()).toHaveLength(3);
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('reports a failed agent.memoryUsage fetch without leaking the error', async () => {
+    mocks.backendRequest.mockImplementation((method: string) => {
+      if (method === 'system.status') return Promise.resolve(statusPayload);
+      if (method === 'unsloth.status') return Promise.resolve({ running: false });
+      if (method === 'agent.memoryUsage') return Promise.reject(new Error('sampler unavailable'));
+      return Promise.reject(new Error('unexpected'));
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+    input.put(agentMemoryBreakdownOpened());
+    await settle();
+    expect(dispatched).toContainEqual(agentMemoryUsageFailed());
+    expect(JSON.stringify(dispatched)).not.toContain('sampler unavailable');
     task.cancel();
     await task.toPromise();
   });

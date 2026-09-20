@@ -720,6 +720,223 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('agent memory row and breakdown', () => {
+    const baseStats = {
+      clients: 1,
+      agents: 2,
+      listenMode: 'uds' as const,
+      port: null,
+      os: 'macos',
+      arch: 'aarch64',
+      memoryBytes: 52428800,
+    };
+
+    const usage = {
+      sampledAt: '2026-09-20T06:00:00.000Z',
+      totalBytes: 3221225472,
+      agents: [
+        {
+          agentId: 'agent-1',
+          agentName: 'Implement dark mode',
+          workspaceId: 'ws-dark-mode',
+          provider: 'claude',
+          model: 'claude-sonnet-4',
+          rootPid: 48213,
+          processCount: 2,
+          memoryBytes: 2147483648,
+          processes: [
+            {
+              pid: 48213,
+              parentPid: 4120,
+              name: 'claude-code-acp',
+              cmdline: '/usr/local/lib/node_modules/claude-code-acp/dist/index.js --stdio',
+              memoryBytes: 1610612736,
+            },
+            {
+              pid: 48250,
+              parentPid: 48213,
+              name: 'node',
+              cmdline: 'node server.js --workspace ws-dark-mode',
+              memoryBytes: 536870912,
+            },
+          ],
+        },
+        {
+          agentId: 'agent-2',
+          agentName: 'Fix flaky CT spec',
+          workspaceId: 'ws-flaky-ct',
+          provider: 'codex',
+          rootPid: 48902,
+          processCount: 1,
+          memoryBytes: 1073741824,
+          processes: [
+            {
+              pid: 48902,
+              parentPid: 4120,
+              name: 'codex',
+              cmdline: '/usr/local/bin/codex --acp',
+              memoryBytes: 1073741824,
+            },
+          ],
+        },
+      ],
+    };
+
+    function withAgentMemory(
+      agentMemoryBytes: number | null | undefined,
+      extra: Record<string, unknown> = {},
+    ) {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: { ...baseStats, agentMemoryBytes },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+          agentMemoryUsage: null,
+          agentMemoryUsageFetching: false,
+          agentMemoryUsageError: false,
+          ...extra,
+        },
+      };
+    }
+
+    async function openStatusMenu() {
+      render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+    }
+
+    const breakdownActions = (type: string) =>
+      mockDispatch.mock.calls.filter(([action]) => action?.type === type).length;
+
+    it('renders the agent memory row as a button once the daemon has sampled it', async () => {
+      withAgentMemory(3221225472);
+      await openStatusMenu();
+
+      const row = screen.getByRole('button', { name: /^Agent memory 3\.00 GB/ });
+      expect(row).toBeTruthy();
+      expect(within(row).getByText('3.00 GB')).toBeTruthy();
+      // The daemon's own Memory row is unaffected.
+      expect(screen.getByText('50.0 MB')).toBeTruthy();
+    });
+
+    it('hides the row when the field is null (not yet sampled) or absent (older daemon)', async () => {
+      withAgentMemory(null);
+      const first = render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+      expect(screen.queryByText('Agent memory')).toBeNull();
+      expect(screen.getByText('Memory')).toBeTruthy();
+      first.unmount();
+
+      withAgentMemory(undefined);
+      await openStatusMenu();
+      expect(screen.queryByText('Agent memory')).toBeNull();
+    });
+
+    it('opens the breakdown dialog, closes the menu, and starts the usage fetch', async () => {
+      withAgentMemory(3221225472);
+      await openStatusMenu();
+
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownOpened')).toBe(0);
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toBeTruthy();
+      expect(dialog.parentElement).toBe(document.body);
+      expect(screen.queryByText('WSS clients')).toBeNull();
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownOpened')).toBe(1);
+      // Loading state until the saga stores a usage sample.
+      expect(within(dialog).getByText(/Loading agent memory usage/)).toBeTruthy();
+    });
+
+    it('lists every agent memory-descending with an expandable process list', async () => {
+      withAgentMemory(3221225472, { agentMemoryUsage: usage });
+      await openStatusMenu();
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText('Implement dark mode')).toBeTruthy();
+      expect(within(dialog).getByText('Fix flaky CT spec')).toBeTruthy();
+      expect(within(dialog).getByText('2.00 GB')).toBeTruthy();
+      expect(within(dialog).getAllByText('1.00 GB').length).toBeGreaterThan(0);
+      expect(within(dialog).getByText('2 processes')).toBeTruthy();
+      expect(within(dialog).getByText('1 process')).toBeTruthy();
+      expect(within(dialog).getByText(/Workspace ws-dark-mode/)).toBeTruthy();
+
+      // Rows render in wire order (the daemon sorts memory-descending).
+      const triggers = within(dialog).getAllByRole('button', { expanded: false });
+      const names = triggers.map((t) => t.textContent ?? '');
+      expect(names.findIndex((n) => n.includes('Implement dark mode'))).toBeLessThan(
+        names.findIndex((n) => n.includes('Fix flaky CT spec')),
+      );
+
+      // Processes stay collapsed (inert, hidden from AT) until the agent row
+      // is expanded.
+      const trigger = within(dialog).getByRole('button', { name: /Implement dark mode/ });
+      const collapsedList = within(dialog).getByRole('list', {
+        name: 'Processes of Implement dark mode',
+        hidden: true,
+      });
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(collapsedList.closest('[data-accordion-content]')?.getAttribute('data-state')).toBe(
+        'closed',
+      );
+      await fireEvent.click(trigger);
+      await tick();
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      const list = within(dialog).getByRole('list', { name: 'Processes of Implement dark mode' });
+      expect(list.closest('[data-accordion-content]')?.getAttribute('data-state')).toBe('open');
+      expect(within(list).getByText('PID 48213')).toBeTruthy();
+      expect(within(list).getByText('PID 48250')).toBeTruthy();
+      expect(within(list).getByText('claude-code-acp')).toBeTruthy();
+      expect(within(list).getByText('1.50 GB')).toBeTruthy();
+      expect(within(list).getByText('512.0 MB')).toBeTruthy();
+      expect(within(list).getAllByText(/--stdio/).length).toBeGreaterThan(0);
+    });
+
+    it('shows the empty and error states', async () => {
+      withAgentMemory(0, { agentMemoryUsage: { ...usage, agents: [], totalBytes: 0 } });
+      const first = render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      expect(
+        within(screen.getByRole('dialog')).getByText(/No agent processes have been sampled/),
+      ).toBeTruthy();
+      first.unmount();
+
+      withAgentMemory(3221225472, { agentMemoryUsageError: true });
+      await openStatusMenu();
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      expect(within(screen.getByRole('dialog')).getByText(/could not be loaded/)).toBeTruthy();
+    });
+
+    it('dispatches agentMemoryBreakdownClosed on Close and on Escape', async () => {
+      withAgentMemory(3221225472, { agentMemoryUsage: usage });
+      await openStatusMenu();
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownClosed')).toBe(0);
+
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }),
+      );
+      await tick();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownClosed')).toBe(1);
+
+      // Reopen and dismiss with Escape.
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownOpened')).toBe(2);
+      await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+      await tick();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownClosed')).toBe(2);
+    });
+  });
+
   describe('workspace disk rendering', () => {
     function withDisk(opts: {
       health?: 'healthy' | 'degraded' | 'down';

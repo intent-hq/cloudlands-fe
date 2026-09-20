@@ -21,6 +21,11 @@ import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
 import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
 import {
+  agentMemoryBreakdownClosed,
+  agentMemoryBreakdownOpened,
+  agentMemoryUsageFailed,
+  agentMemoryUsageRequested,
+  agentMemoryUsageSucceeded,
   connectionStatusChanged,
   fetchSidecarRunLogFailed,
   fetchSidecarRunLogRequested,
@@ -40,6 +45,7 @@ import {
   unslothStatusSuccess,
 } from '../daemon-health-slice';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
   DaemonStatusCheckFailureKind,
   SidecarRunLog,
@@ -49,6 +55,7 @@ import type {
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 const POLL_INTERVAL_MS = 10_000;
+const AGENT_MEMORY_REFRESH_INTERVAL_MS = 5_000;
 const INITIAL_DISCONNECTED_BACKOFF_MS = 1_000;
 const MAX_DISCONNECTED_BACKOFF_MS = 5_000;
 
@@ -433,11 +440,47 @@ function* fetchSidecarRunLogSaga() {
   }
 }
 
+function* fetchAgentMemoryUsageSaga() {
+  try {
+    const usage = yield* call(backendRequest<AgentMemoryUsageWirePayload>, 'agent.memoryUsage');
+    yield* put(agentMemoryUsageSucceeded(usage));
+  } catch {
+    yield* put(agentMemoryUsageFailed());
+  }
+}
+
+/**
+ * Refresh cadence for the open agent memory breakdown: request now, then on
+ * a fixed interval. The request watcher is `takeLeading`, so a tick landing
+ * while a fetch is still in flight is dropped rather than fanned out.
+ */
+function* agentMemoryRefreshLoop() {
+  while (true) {
+    yield* put(agentMemoryUsageRequested());
+    yield* delay(AGENT_MEMORY_REFRESH_INTERVAL_MS);
+  }
+}
+
+/**
+ * The refresh loop runs only between an `agentMemoryBreakdownOpened` and the
+ * next `agentMemoryBreakdownClosed`; there is no background polling.
+ */
+function* watchAgentMemoryBreakdown() {
+  while (true) {
+    yield* take(agentMemoryBreakdownOpened);
+    yield* race({
+      refresh: call(agentMemoryRefreshLoop),
+      closed: take(agentMemoryBreakdownClosed),
+    });
+  }
+}
+
 function* watchDaemonControls() {
   yield* takeEvery(spawnSidecarRequested, spawnSidecarSaga);
   yield* takeEvery(openLocalAndSpawnRequested, openLocalAndSpawnSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
+  yield* takeLeading(agentMemoryUsageRequested, fetchAgentMemoryUsageSaga);
 }
 
 export function* daemonHealthSaga() {
@@ -447,5 +490,6 @@ export function* daemonHealthSaga() {
   yield* fork(watchSystemStatusPolls);
   yield* fork(daemonStatusSaga);
   yield* fork(watchUnslothStatusPolls);
+  yield* fork(watchAgentMemoryBreakdown);
   yield* fork(watchDaemonControls);
 }
