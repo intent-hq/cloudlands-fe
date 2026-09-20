@@ -33,7 +33,8 @@ export function setupDebugIPC(): void {
       try {
         // Route through the daemon (PROTOCOL §5.5): agent.list returns the
         // AgentLite projection with messageCount already, so we no longer need
-        // to list ids and load each session individually.
+        // to list ids and load each session individually. Deliberately
+        // unscoped (§5.5 row scope): a debug dump lists every bin.
         const result = (await getBackendClient().request('agent.list', { workspaceId })) as {
           agents?: Array<{
             id: string;

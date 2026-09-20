@@ -277,8 +277,12 @@ import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/sl
 import {
   setAgents,
   setRetiredCount,
+  setScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { selectRetiredCount } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import {
+  selectRetiredCount,
+  selectScopeCounts,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -338,6 +342,8 @@ function readAssistantMessages(): AgentMessage[] {
 
 const WS = 'ws-bridge-1';
 const AGENT = 'agent-bridge-1';
+/** The hydration read's wire params (§5.5 row scope: the top-level bin). */
+const TOP_LEVEL_LIST = { workspaceId: WS, scope: 'topLevel' };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const stopRouterDependencies: Array<() => void> = [];
 
@@ -2762,6 +2768,42 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     });
   });
 
+  it('startup-window preemption (§7.2 interrupt stream:end WITHOUT messageId): the un-named accumulator finalizes clean — no Stopped indicator on a turn the daemon never marked (intent-hq/intent#5380)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // The accumulator holds the previous turn's blocks under MESSAGE_ID.
+    streamPartialTurn(handler);
+    expectPartialBlocksIntact(readAssistantMessages()[0]);
+
+    // An interrupt-priority send lands while the daemon has NO live-turn slot
+    // to flush (turn startup after a process eviction, §7.2 "pre-first-token
+    // stop"): the emit carries `stopReason` + `interruptReason` but no
+    // `messageId`, because no interrupted row was persisted. Nothing in the
+    // daemon's transcript names MESSAGE_ID as interrupted. Documented §7.2
+    // payload only — the daemon never emits `streamId`.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].metadata?.interrupted).toBeUndefined();
+    expect(assistantMessages[0].metadata?.stopReason).toBeUndefined();
+    expect(assistantMessages[0].metadata?.interruptReason).toBeUndefined();
+    expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
+      false,
+    );
+  });
+
   it('agent preemption mid-stream (§7.2 interruptedBy agent): the reason-specific label resolves LIVE without a reload', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -4999,6 +5041,28 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     );
   });
 
+  it('forwards the §5.5 notificationsMuted stamp verbatim (present only when true)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Sandbox is broken',
+        notificationsMuted: true,
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationsMuted: true }),
+    );
+  });
+
   it('falls back to the envelope workspaceId/timestamp when the payload omits them', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5728,9 +5792,9 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     handler(notification('agent:deleted', { agentId: 'agent-unknown-retired' }));
     await flush();
 
-    // The re-baseline rides the canonical default read (`agent.list`, which
-    // serves `retiredCount` on every read) — not a local guess.
-    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: WS });
+    // The re-baseline rides the canonical hydration read (`agent.list`, which
+    // serves `retiredCount` + `scopeCounts` on every read) — not a local guess.
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
   });
 
   it('agent:deleted on a known NON-retired row leaves the retired count alone without a refetch', async () => {
@@ -5743,7 +5807,268 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     await flush();
 
     expect(retiredCountOf(WS)).toBe(2);
-    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', { workspaceId: WS });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+});
+
+describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 scopeCounts)', () => {
+  const COUNTS = { topLevel: 2, delegated: 3, background: 1 };
+  const PARENT = 'agent-bridge-parent';
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    refreshAgentSessionAfterEventSpy.mockReset();
+    refreshAgentSessionAfterEventSpy.mockImplementation(() => Promise.resolve());
+    ensureAgentSessionSpy.mockReset();
+    ensureAgentSessionSpy.mockImplementation(() => Promise.resolve());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    await primeBridge();
+    appStore.dispatch(setScopeCounts(WS, COUNTS));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  const scopeCountsOf = () => selectScopeCounts.select(appStore.state, WS);
+
+  it('agent:created nudges the fetched row into its bin — delegated for a parented row, background for an unparented background one', async () => {
+    const handler = capturedHandlers[0]!;
+    // The event payload carries only the id; the bin is read off the row the
+    // read-service seam hydrates (simulate the successful `agent.get`).
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({ id: 'agent-child' as never, metadata: { createdByAgentId: PARENT } as never });
+    });
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({ id: 'agent-bg' as never, isBackground: true });
+    });
+    handler(notification('agent:created', { agentId: 'agent-bg' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4, background: 2 });
+
+    // A background CHILD is delegated, not background (§5.5 partition).
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({
+        id: 'agent-bg-child' as never,
+        isBackground: true,
+        metadata: { createdByAgentId: PARENT } as never,
+      });
+    });
+    handler(notification('agent:created', { agentId: 'agent-bg-child' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ topLevel: 2, delegated: 5, background: 2 });
+  });
+
+  it('agent:created counts an id this client already holds exactly once (own create upserts the row before the event; duplicates are neutral)', async () => {
+    // The `agent.create` response upserted the row before the event landed:
+    // the row is uncounted in the daemon-served baseline, so the first event
+    // still nudges its bin; the re-delivery does not.
+    seedSession({ isBackground: true });
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:created', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 2 });
+
+    handler(notification('agent:created', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 2 });
+  });
+
+  it('two agent:created deliveries in flight at once for the same id nudge the bin once', async () => {
+    const handler = capturedHandlers[0]!;
+    // Both deliveries share the read-service's single-flight fetch, which
+    // settles only after both handlers have run.
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementation(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(2);
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+  });
+
+  it('agent:created does not nudge a bin an authoritative agent.list baseline re-counted while the detail read was in flight', async () => {
+    const handler = capturedHandlers[0]!;
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementationOnce(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    // A hydration read settles meanwhile and already counts the new child.
+    appStore.dispatch(setScopeCounts(WS, { ...COUNTS, delegated: 4 }));
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+
+    // A later create with no intervening baseline still nudges.
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({
+        id: 'agent-child-2' as never,
+        metadata: { createdByAgentId: PARENT } as never,
+      });
+    });
+    handler(notification('agent:created', { agentId: 'agent-child-2' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 5 });
+  });
+
+  it('agent:created does not nudge a bin when an equal-valued authoritative baseline landed while the detail read was in flight', async () => {
+    const handler = capturedHandlers[0]!;
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementationOnce(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    // A hydration read settles meanwhile with the delegated bin numerically
+    // unchanged (the new child replaced a retired row in the same bin). It is
+    // still the fresh baseline that already counts the row.
+    appStore.dispatch(setScopeCounts(WS, { ...COUNTS }));
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:created whose fetch yields no row (deleted meanwhile) leaves the counts alone', async () => {
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:created', { agentId: 'agent-vanished' }));
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-vanished');
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:deleted on a known non-retired row nudges its bin down in lockstep with its removal', async () => {
+    seedSession({ metadata: { createdByAgentId: PARENT } as never });
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('agent:deleted on a known retired row leaves the bin counts alone (retired rows are their own bin)', async () => {
+    seedSession({ retiredAt: '2026-01-01T12:00:00.000Z' });
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+    await flush();
+
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:retired moves a known row out of its bin and agent:restored moves it back', async () => {
+    seedSession({ isBackground: true });
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+
+    // The bin does not depend on `retiredAt`, so the restored row re-enters
+    // the same bin it left.
+    seedSession({ isBackground: true, retiredAt: '2026-01-01T12:00:00.000Z' });
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual(COUNTS);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('a re-delivered agent:retired / agent:restored is count-neutral for both bins; the next real transition still applies', async () => {
+    seedSession({ isBackground: true });
+    appStore.dispatch(setRetiredCount(WS, 0));
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+    // The metadata refresh still runs for every delivery.
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(2);
+
+    // A restore this client issued clears `retiredAt` locally before the
+    // event lands (agent-mutation saga); the counts still owe the transition.
+    seedSession({ isBackground: true });
+    handler(notification('agent:restored', { agentId: AGENT }));
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual(COUNTS);
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(0);
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+  });
+
+  it('agent:retired / agent:restored for an id with no local session re-baselines via a hydrate (collapsed-bin row)', async () => {
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: 'agent-never-loaded' }));
+    await flush();
+
+    // No local guess at the bin — the counts re-baseline from the daemon read.
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('never refetches for an unknown retire on a workspace holding no scopeCounts (older daemon)', async () => {
+    appStore.dispatch(setScopeCounts(WS, null));
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: 'agent-never-loaded' }));
+    await flush();
+
+    expect(scopeCountsOf()).toBeNull();
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+    // The retired-count nudge is unchanged on that path.
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
   });
 });
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {
@@ -6388,9 +6713,11 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     expect(after.agentSessions.agentIdsByWorkspace[RECYCLED_WS]).toBeUndefined();
     expect(after.chatState.byAgentId[STALE_AGENT]).toBeUndefined();
     expect(after.workspaceAgents.byWorkspaceId[RECYCLED_WS]?.agentIds ?? []).toEqual([]);
-    // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5).
+    // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5);
+    // default hydration reads the top-level scope.
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: RECYCLED_WS,
+      scope: 'topLevel',
     });
   });
 
@@ -6415,9 +6742,10 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     });
     await flush();
 
-    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', {
-      workspaceId: FRESH_WS,
-    });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith(
+      'agent.list',
+      expect.objectContaining({ workspaceId: FRESH_WS }),
+    );
   });
 
   // intent-hq/monorepo#3558: a workspace created/imported by ANOTHER client on
@@ -7001,6 +7329,7 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     // Reconcile refetch also runs — covers a window that never held a snapshot.
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
+      scope: 'topLevel',
     });
   });
 
@@ -7106,6 +7435,7 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
 
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
+      scope: 'topLevel',
     });
   });
 
@@ -8099,6 +8429,22 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     const ws = await readWorkspace();
     // The wire null must drop the stale asset reference rather than retain it.
     expect(ws.statusImageAssetId).toBeUndefined();
+  });
+
+  it('merges the memberCount carried by a membership-changing delta (multiplayer w4)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §5.1: invite redeem / member remove publish `workspace:updated`
+    // with `{ members: true, memberCount }` — the non-column flags are dropped,
+    // the post-change count lands on the entity.
+    handler(updatedNotification({ members: true, addedPrincipalId: 'p-bob', memberCount: 2 }));
+
+    const ws = await readWorkspace();
+    expect(ws.memberCount).toBe(2);
+    expect(ws.branch).toBe('main');
+    expect((ws as Record<string, unknown>).members).toBeUndefined();
   });
 });
 
@@ -9596,6 +9942,50 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(false);
   });
 
+  it('keeps hasUnread=false for a muted foreground agent (notificationsMuted, PROTOCOL §5.5) on an assistant echo', async () => {
+    seedSession({ notificationsMuted: true, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'muted work done',
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.hasUnread).toBe(false);
+    // The preview projections still apply — only the unread dot is suppressed.
+    expect(session.lastAgentResponse).toBe('muted work done');
+    expect(session.lastMessageId).toBe('msg-a6');
+  });
+
+  it('derives hasUnread=true for the same assistant echo when the agent is not muted (control)', async () => {
+    seedSession({ notificationsMuted: false, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'unmuted work done',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(true);
+  });
+
   it('keeps hasUnread=false for a delegated child agent on an assistant echo', async () => {
     seedSession({
       metadata: { createdByAgentId: 'agent-parent' },
@@ -9995,6 +10385,61 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
     // With no active workspace, the refresh path exits early — no chat load.
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression (fe#2440 verifier): invites/members changed while the
+  // connection was down never re-emit, so the open Share dialog and tracked
+  // hover rosters are invalidated on reconnect — once per workspace, and
+  // only for workspaces actually holding sharing state.
+  describe('sharing invalidation on reconnect (fe#2440)', () => {
+    // Runs first: tracked rosters outlive the dialog, so the seeded case below
+    // would otherwise leave sharing state behind for this one to find.
+    it('issues no sharing invalidation when nothing holds sharing state', async () => {
+      const { shareMembershipChanged } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(WS);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+      expect(
+        dispatchSpy.mock.calls.some(
+          ([action]) => (action as { type: string }).type === shareMembershipChanged.type,
+        ),
+      ).toBe(false);
+    });
+
+    it('invalidates the open Share dialog target and each tracked hover roster once', async () => {
+      const { openShareDialog, shareMembershipChanged, shareRosterRequested, closeShareDialog } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      appStore.dispatch(openShareDialog({ workspaceId: 'ws-share-dialog', workspaceTitle: 'D' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-hover' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-dialog' }));
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(null);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+
+      const invalidations = dispatchSpy.mock.calls
+        .map(([action]) => action as { type: string; payload: unknown })
+        .filter((action) => action.type === shareMembershipChanged.type)
+        .map((action) => action.payload);
+      expect(invalidations).toEqual(
+        expect.arrayContaining([
+          [{ workspaceId: 'ws-share-dialog' }],
+          [{ workspaceId: 'ws-share-hover' }],
+        ]),
+      );
+      expect(invalidations).toHaveLength(2);
+      appStore.dispatch(closeShareDialog());
+    });
   });
 
   describe('failure-registry reconciliation on reconnect (#2806)', () => {

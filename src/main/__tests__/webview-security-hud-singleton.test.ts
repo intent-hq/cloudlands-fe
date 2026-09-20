@@ -67,11 +67,7 @@ function makeHudPopupWindow(opts: { minimized?: boolean; backendId?: string } = 
     focus: vi.fn(),
     show: vi.fn(),
     on: vi.fn(),
-    webContents: {
-      isDestroyed: () => false,
-      getURL: () => 'app://workspaces/hud',
-      setBackgroundThrottling: vi.fn(),
-    },
+    webContents: { isDestroyed: () => false, getURL: () => 'app://workspaces/hud' },
   };
 }
 
@@ -130,15 +126,6 @@ describe('setWindowOpenHandler HUD singleton (window.open bridge path)', () => {
     expect(hudWindow.show).toHaveBeenCalled();
   });
 
-  it('disables background throttling on an allowed /hud popup', () => {
-    const { openHandler, didCreateWindow } = attachAppWindowContents();
-    openHandler({ url: 'app://workspaces/hud' });
-    const hudWindow = makeHudPopupWindow();
-    didCreateWindow(hudWindow, { url: 'app://workspaces/hud' });
-
-    expect(hudWindow.webContents.setBackgroundThrottling).toHaveBeenCalledWith(false);
-  });
-
   it('restores a minimized HUD window before focusing', () => {
     const { openHandler, didCreateWindow } = attachAppWindowContents();
     openHandler({ url: 'app://workspaces/hud' });
@@ -172,7 +159,6 @@ describe('setWindowOpenHandler HUD singleton (window.open bridge path)', () => {
       action: 'allow',
     });
     expect(plainWindow.focus).not.toHaveBeenCalled();
-    expect(plainWindow.webContents.setBackgroundThrottling).not.toHaveBeenCalled();
   });
 
   it('stamps an allowed /hud popup with the opener backend before registering it', () => {

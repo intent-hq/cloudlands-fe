@@ -744,6 +744,101 @@ describe('HUD subscription (mock backend, real store)', () => {
     }
   });
 
+  it('holds an unknown agent takeover until its workspace agent.list lands, then honors the mute (§5.5)', async () => {
+    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const received: Array<{ kind: string; detail?: string }> = [];
+    const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
+    const WS_RACE_ID = '44444444-4444-4444-8444-444444444444';
+    const MUTED_ID = 'agent-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const LOUD_ID = 'agent-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    // agent.list resolves only when the test says so — the subscribe wins the
+    // race, exactly the window the bot finding describes.
+    let releaseList: (() => void) | undefined;
+    const listGate = new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+    scriptHappyBackend(backend);
+    backend.onRequest('agent.list', async (params) => {
+      const { workspaceId } = params as { workspaceId: string };
+      if (workspaceId !== WS_RACE_ID) return { agents: [] };
+      await listGate;
+      return {
+        agents: [
+          {
+            id: MUTED_ID,
+            workspaceId: WS_RACE_ID,
+            name: 'Muted worker',
+            status: 'running',
+            messageCount: 1,
+            notificationsMuted: true,
+            lastActivity: '2026-07-30T11:59:00Z',
+            createdAt: '2026-07-30T10:00:00Z',
+            updatedAt: '2026-07-30T11:59:00Z',
+            metadata: { isBackground: false },
+          },
+          {
+            id: LOUD_ID,
+            workspaceId: WS_RACE_ID,
+            name: 'Loud worker',
+            status: 'running',
+            messageCount: 1,
+            lastActivity: '2026-07-30T11:59:00Z',
+            createdAt: '2026-07-30T10:00:00Z',
+            updatedAt: '2026-07-30T11:59:00Z',
+            metadata: { isBackground: false },
+          },
+        ],
+      };
+    });
+    appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_RACE_ID)));
+    try {
+      stop = startHudSubscription();
+      await flush();
+      expect(appStore.state.agentSessions?.byAgentId[MUTED_ID]).toBeUndefined();
+
+      // Both agents' first `agent:started` arrive BEFORE the list response.
+      for (const [agentId, id] of [
+        [MUTED_ID, 'evt-race-1'],
+        [LOUD_ID, 'evt-race-2'],
+      ]) {
+        backend.pushEvent({
+          type: 'agent:started',
+          workspaceId: WS_RACE_ID,
+          id,
+          subscriptionId: SUB_ID,
+          timestamp: '2026-07-30T12:00:00.000Z',
+          data: { agentId },
+        });
+      }
+      await flush();
+      // Nothing may take over while the mute state is still unknown.
+      expect(received).toEqual([]);
+
+      releaseList?.();
+      await flush();
+      await flush();
+
+      // The hydrated list decides: the unmuted agent's takeover fires, the
+      // muted agent's is dropped for good.
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ kind: 'agent_started', detail: 'Loud worker' });
+
+      // With the list landed, a later event is gated synchronously.
+      backend.pushEvent({
+        type: 'agent:failed',
+        workspaceId: WS_RACE_ID,
+        id: 'evt-race-3',
+        subscriptionId: SUB_ID,
+        data: { agentId: MUTED_ID, error: 'boom' },
+      });
+      await flush();
+      expect(received).toHaveLength(1);
+    } finally {
+      unsubscribe();
+      appStore.dispatch(removeWorkspaceEntity(WS_RACE_ID));
+    }
+  });
+
   it('fires the STATUS UPDATE takeover only on statusMessage text changes, never on displayStatus', async () => {
     const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
     const received: Array<{ kind?: string; detail?: string }> = [];

@@ -9,6 +9,10 @@ vi.mock('$lib/utils/history-navigation', () => ({
   attachMouseHistoryNavigation: () => () => {},
   handleHistoryNavigateIpc: () => {},
 }));
+// Native animation behavior is covered in window-blur-animations.ct.spec.ts.
+vi.mock('$lib/actions/pause-window-animations', () => ({
+  pauseWindowAnimations: () => ({ destroy() {} }),
+}));
 import { store as appStore } from '$store/renderer/store';
 import RootLayout from '../+layout.svelte';
 

@@ -22,6 +22,10 @@ export const selectMountedBrowserTabLeases = store.createSelector((state) => {
   return state.tabState.mountedBrowserTabLeases;
 });
 
+export const selectBrowserTabRecoveryRequests = store.createSelector((state) => {
+  return state.tabState.browserTabRecoveryRequests;
+});
+
 /**
  * True once the tab saga has (re)hydrated the persisted tab strip for the
  * ACTIVE backend. Until then `currentTabId` may still be the previous

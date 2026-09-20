@@ -419,7 +419,11 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
       // opts out of native anchoring (`overflow-anchor: none`) has no such
       // carrier — any rAF callback ordered after the transition tick would
       // read the grown content against the previous frame's scrollTop until
-      // resize delivery — so there request() pins synchronously instead.
+      // resize delivery — so there request() pins synchronously instead. The
+      // same holds for settle(): the terminal tick restores the natural box
+      // in the step that releases the lease, and releasing also ends the
+      // element's resize observation, so nothing else pins before the next
+      // frame.
       if (destroyed || !enabled || !isFollowing) return inertFollowBottomMutation;
       const lease: MutationLease = {
         element,
@@ -441,8 +445,13 @@ export function followBottom(container: HTMLElement, options: FollowBottomOption
           else requestBottomSettle();
         },
         settle() {
-          if (destroyed) return;
-          releaseLease(lease);
+          if (destroyed || !activeLeases.has(lease)) return;
+          if (canNativeAnchorCarryPin()) {
+            releaseLease(lease);
+            return;
+          }
+          releaseLease(lease, false);
+          requestBottomSettle();
         },
       };
     },

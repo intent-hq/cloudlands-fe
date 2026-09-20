@@ -43,7 +43,7 @@
 <Button
   variant="ghost"
   type="button"
-  class="note-node-card flex items-center gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-200 cursor-pointer
+  class="note-node-card flex items-center gap-2 px-2.5 py-2 rounded-md border border-border shadow-xs transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer
     bg-muted/30 hover:bg-muted/50
     {isActive ? 'ring-1 ring-primary-ink/30' : ''} {glowClass}"
   {onclick}

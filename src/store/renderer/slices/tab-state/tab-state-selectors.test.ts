@@ -4,12 +4,15 @@ import type { StoreState } from '../../types';
 import {
   acquireBrowserTabMount,
   releaseBrowserTabMount,
+  requestBrowserTabRecovery,
+  consumeBrowserTabRecovery,
   tabStateReducer,
   type TabState,
 } from './tab-state-slice';
 import {
   selectActiveWorkspaceIds,
   selectMountedBrowserTabLeases,
+  selectBrowserTabRecoveryRequests,
   selectPersistedWorkspaceTabsState,
   selectWorkspaceTabOrder,
   selectWorkspaceTabsHydrated,
@@ -30,11 +33,21 @@ const tabState: TabState = {
   version: 1,
   hydratedBackendId: null,
   mountedBrowserTabLeases: {},
+  browserTabRecoveryRequests: {},
 };
 
 const state = { tabState } as unknown as StoreState;
 
 describe('tab state selectors', () => {
+  it('exposes pending recovery until its matching request is consumed', () => {
+    const pending = tabStateReducer(tabState, requestBrowserTabRecovery('tab-a', 'req-1'));
+    expect(selectBrowserTabRecoveryRequests.select({ ...state, tabState: pending })).toEqual({
+      'tab-a': 'req-1',
+    });
+    const consumed = tabStateReducer(pending, consumeBrowserTabRecovery('tab-a', 'req-1'));
+    expect(selectBrowserTabRecoveryRequests.select({ ...state, tabState: consumed })).toEqual({});
+  });
+
   it('selects only currently leased browser mounts', () => {
     const mounted = tabStateReducer(tabState, acquireBrowserTabMount('browser-a', 'mount-1'));
     expect(selectMountedBrowserTabLeases.select({ ...state, tabState: mounted })).toEqual({

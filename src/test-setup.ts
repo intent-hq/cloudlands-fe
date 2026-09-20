@@ -7,6 +7,22 @@ import { vi, afterEach } from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
 import { scrubHostNodeInjection } from './scrub-host-node-injection';
+import { stripForkExecArgv } from '../scripts/vitest-fork-exec-argv.mjs';
+
+// vitest.config.ts starts each fork with V8 flags (`--no-sparkplug`) that Node
+// rejects with ERR_WORKER_INVALID_EXEC_ARGV when a worker_threads.Worker is
+// given them explicitly — the shape `@lix-js/sdk` (via @inlang/paraglide-js)
+// uses: `new Worker(url, { execArgv: process.execArgv })`. V8 flags are
+// process-wide, so the fork keeps running without Sparkplug; only what
+// children and workers inherit changes. The stripped list is recorded once per
+// fork so tests/unit/vitest-fork-exec-argv.test.ts can assert the workaround
+// still reached the fork (a later test file in the same fork sees nothing left
+// to strip and must not overwrite the record).
+const { kept: execArgvKept, removed: execArgvRemoved } = stripForkExecArgv(process.execArgv);
+process.execArgv = execArgvKept;
+if (execArgvRemoved.length > 0) {
+  process.env.INTENT_VITEST_STRIPPED_EXEC_ARGV = JSON.stringify(execArgvRemoved);
+}
 
 // Children spawned by tests must not inherit host-level Node injection: on a
 // Datadog-instrumented host, `NODE_OPTIONS=--require dd-trace/init` wrote tracer

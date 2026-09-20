@@ -80,13 +80,14 @@
   {/each}
 
   {#key store.sessionId}
-    {#if activeRect}
+    <!-- Retain the last rectangle through outro without remounting on geometry changes. -->
+    {#each activeRect ? [activeRect] : [] as rect (0)}
       <div
         class={cn('absolute', hoverClass)}
         style="border-radius: var(--radius-row)"
-        use:springRect={{ rect: activeRect, tier: 'fast' }}
+        use:springRect={{ rect, tier: 'fast' }}
         out:fade={{ tier: 'fast' }}
       ></div>
-    {/if}
+    {/each}
   {/key}
 </div>

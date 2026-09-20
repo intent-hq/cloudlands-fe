@@ -15,6 +15,7 @@
   import { Input } from '$lib/components/ui/input';
   import {
     selectAgentIsResponding,
+    selectAgentDetailHydrated,
     selectAgentSession,
     selectAgentPreview,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -23,6 +24,7 @@
     deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
     renameAgentSessionRequested,
+    setAgentNotificationsMutedRequested,
     stopAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
@@ -54,6 +56,8 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
+    faBell,
+    faBellSlash,
     faCircleInfo,
     faFolderOpen,
     faPen,
@@ -62,6 +66,7 @@
     faTrash,
     faUserTie,
   } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -168,11 +173,17 @@
   const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
 
+  // Restore a session the store has no row for (e.g. a card rendered before
+  // its workspace's `agent.list` hydration). A row already present — even a
+  // slim `agent.list` projection row (PROTOCOL §5.5) — must NOT trigger a
+  // per-card `agent.get` on mount: N mounted cards would fan out into N
+  // detail reads on every list hydration. Detail-only fields are pulled on
+  // demand from `handleContextMenu` instead.
   $effect(() => {
     const wsId = workspace?.id;
-    if (wsId && !readOnly) {
-      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
-    }
+    if (!wsId || readOnly) return;
+    if (selectAgentSession.select(appStore.state, agentId)) return;
+    appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
   });
 
   // Inline editing state
@@ -308,6 +319,15 @@
     e.preventDefault();
     e.stopPropagation();
     contextMenu = { x: e.clientX, y: e.clientY };
+    // The `agent.list` row this card renders from omits the detail-only
+    // fields (§5.5 list projection) the menu gates on — `harnessFeatures`
+    // drives both "Replace agent" and the harness modal. Pull the detail
+    // read on open (single-flight per agent in the read seam); the menu
+    // items recompute reactively once it lands.
+    const wsId = $agent$?.workspaceId ?? workspace?.id;
+    if (wsId) {
+      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
+    }
   }
 
   function closeContextMenu() {
@@ -344,6 +364,34 @@
         },
       },
     ];
+
+    // Per-agent notification mute (daemon-owned `notificationsMuted`, §5.5):
+    // one toggle whose label reflects the current flag. Only offered once the
+    // session is in the store — the workspace id is needed for agent.update.
+    if ($agent$) {
+      const muted = isNotificationsMuted;
+      items.push({
+        id: 'toggle-notifications-muted',
+        label: muted
+          ? m.chat_agentCard_menu_unmuteNotifications_label()
+          : m.chat_agentCard_menu_muteNotifications_label(),
+        icon: muted ? faBell : faBellSlash,
+        onClick: async () => {
+          const wsId = $agent$?.workspaceId
+            ? String($agent$.workspaceId)
+            : workspace?.id
+              ? String(workspace.id)
+              : undefined;
+          closeContextMenu();
+          if (!wsId) return;
+          const action = setAgentNotificationsMutedRequested(wsId, agentId, !muted);
+          appStore.dispatch(action);
+          // The saga surfaces the failure toast and rolls back; swallow here so
+          // a daemon rejection never becomes an unhandled rejection.
+          await action.promise.catch(() => {});
+        },
+      });
+    }
 
     // Reveal the agent's CoW sandbox directory. Sandboxes are cloned from the
     // workspace checkout, so they live on the workspace's host — only offered
@@ -463,9 +511,14 @@
     // the item opens the harness-features modal (monorepo#2459) — legacy
     // sessions without a harnessFeatures snapshot open it too (every catalog
     // feature renders OFF); sessions from daemons that predate the field omit
-    // the item entirely.
+    // the item entirely. The snapshot is detail-only (stripped from list
+    // rows), so an absent snapshot is ambiguous until the detail read
+    // `handleContextMenu` dispatches has landed (`detailHydrated`): the item
+    // stays disabled until then, and enables once the snapshot arrives or the
+    // detail read confirms a never-activated session has none (all-OFF modal).
     const specialistId = specialist;
     const harnessVersion = $agent$?.harnessVersion;
+    const harnessSnapshotResolved = $agent$?.harnessFeatures !== undefined || $agentDetailHydrated$;
     if (specialistId || harnessVersion) {
       items.push({ type: 'separator' });
     }
@@ -485,6 +538,7 @@
         id: 'harness-version',
         label: m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
         icon: faCircleInfo,
+        disabled: !harnessSnapshotResolved,
         onClick: () => {
           harnessModalOpen = true;
           closeContextMenu();
@@ -498,6 +552,7 @@
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
+  const agentDetailHydrated$ = selectAgentDetailHydrated(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)
@@ -544,6 +599,11 @@
   const isTurnRunning = $derived(
     $agent$ ? isAgentRunningState(toAgentRuntimeStateInput($agent$)) : false,
   );
+
+  // Daemon-owned per-agent notification mute (served on AgentLite, converged
+  // through agent:updated). Drives the context-menu toggle label and the
+  // bell-slash indicator beside the name.
+  const isNotificationsMuted = $derived($agent$?.notificationsMuted === true);
 
   // Use the canonical session state derivation for every agent surface.
   const avatarState = $derived(
@@ -812,6 +872,17 @@
                   : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
               ></span>
             </div>
+            {#if isNotificationsMuted && (!inline || panelRow)}
+              <span
+                class="inline-flex shrink-0 items-center text-subtle"
+                role="img"
+                aria-label={m.chat_agentCard_notificationsMuted_tooltip()}
+                title={m.chat_agentCard_notificationsMuted_tooltip()}
+                data-testid="agent-card-muted-indicator"
+              >
+                <Fa icon={faBellSlash} class="h-3! w-3!" />
+              </span>
+            {/if}
             {#if statusLabel}
               <span
                 class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"

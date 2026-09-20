@@ -95,6 +95,27 @@ export const selectWorkspaceById = store.createSelector<[wsId: string], Workspac
   },
 );
 
+/**
+ * Whether the stored row has been hydrated from `workspace.get` (slim
+ * `workspace.list` rows omit the detail-only fields — see
+ * `WorkspaceState.detailHydrated`).
+ */
+export const selectWorkspaceDetailHydrated = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => state.workspace.detailHydrated[wsId] === true,
+);
+
+/**
+ * Whether the stored `pullRequests` pool is the capped `workspace.list`
+ * projection (PROTOCOL §5.1 `pullRequestsTotal`); readers needing every PR
+ * hydrate the full pool via `workspace.get`.
+ */
+export function isWorkspacePullRequestPoolTruncated(workspace: Workspace | undefined): boolean {
+  return (
+    workspace?.pullRequestsTotal !== undefined &&
+    workspace.pullRequestsTotal > (workspace.pullRequests?.length ?? 0)
+  );
+}
+
 export const selectWorkspaceEnvironmentConfig = store.createSelector<
   [wsId: string],
   EnvironmentConfig | undefined
@@ -136,6 +157,32 @@ export const selectIsWorkspaceHostLocal = store.createSelector<[wsId: string], b
 export const selectWorkspaceIsWaiting = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => selectWorkspaceById.select(state, wsId)?.waiting === true,
 );
+
+/**
+ * True when the daemon reports the caller as a `collaborator` in the workspace
+ * (`workspace.myRole`, PROTOCOL §5.1 — multiplayer w3). Collaborator
+ * connections are refused (-32003) on every owner-only method (terminals,
+ * browser tabs, port forwarding, host exec), so the workspace UI hides those
+ * surfaces up front. Absent (older daemon, non-member, unknown workspace)
+ * reads as owner-equivalent.
+ */
+export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => selectWorkspaceById.select(state, wsId)?.myRole === 'collaborator',
+);
+
+/**
+ * True when the connected principal is a collaborator everywhere: the list
+ * has loaded and every workspace it can see reports `myRole: 'collaborator'`.
+ * Gates app-wide administrator-only surfaces (workspace creation / repo
+ * picker, provider + connection settings, voice dictation) that are not tied
+ * to a single workspace. An empty list reads as owner: an owner with no
+ * workspaces must still be able to create one.
+ */
+export const selectIsCollaboratorOnlyClient = store.createSelector((state) => {
+  if (!state.workspace.hasLoaded) return false;
+  const workspaces = getItems(state.workspace.workspaces);
+  return workspaces.length > 0 && workspaces.every((ws) => ws.myRole === 'collaborator');
+});
 
 export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state) => {
   return getItems(state.workspace.workspaces).filter(

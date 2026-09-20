@@ -93,6 +93,7 @@
     <ModelPicker
       selectedModel={model}
       providerId="codex"
+      size={placement === 'composer' ? 'xs' : 'sm'}
       showReasoning
       reasoningEffort={effort}
       reasoningDisabled={disabled}

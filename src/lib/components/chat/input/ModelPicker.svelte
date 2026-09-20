@@ -1389,9 +1389,7 @@
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
   );
   const showTriggerReasoningGauge = $derived(
-    currentReasoningEffort !== null &&
-      currentReasoningEffort !== 'none' &&
-      currentReasoningLevelIndex >= 0,
+    showReasoningFooter && currentReasoningEffort !== 'none',
   );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
@@ -1814,14 +1812,11 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if showReasoningFooter && currentReasoningEffort === null}
-        <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-          >· {currentReasoningLabel}</span
-        >
-      {:else if showTriggerReasoningGauge}
+      {#if showTriggerReasoningGauge}
         <EffortGauge
           value={currentReasoningLevelIndex}
           max={Math.max(1, reasoningLevels.length - 1)}
+          centered={currentReasoningEffort === null}
           testId="model-reasoning-effort-gauge"
           class="[&_line]:transition-none!"
         />
@@ -1835,14 +1830,11 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if showReasoningFooter && currentReasoningEffort === null}
-          <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-            >· {currentReasoningLabel}</span
-          >
-        {:else if showTriggerReasoningGauge}
+        {#if showTriggerReasoningGauge}
           <EffortGauge
             value={currentReasoningLevelIndex}
             max={Math.max(1, reasoningLevels.length - 1)}
+            centered={currentReasoningEffort === null}
             testId="model-reasoning-effort-gauge"
             class="[&_line]:transition-none!"
           />
@@ -1978,14 +1970,11 @@
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
-          {#if showReasoningFooter && currentReasoningEffort === null}
-            <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-              >· {currentReasoningLabel}</span
-            >
-          {:else if showTriggerReasoningGauge}
+          {#if showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
               max={Math.max(1, reasoningLevels.length - 1)}
+              centered={currentReasoningEffort === null}
               testId="model-reasoning-effort-gauge"
               class="[&_line]:transition-none!"
             />

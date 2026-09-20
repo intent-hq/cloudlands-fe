@@ -21,6 +21,7 @@
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -99,10 +100,12 @@ function toProviderError(providerId: string, message: string): Error {
  * (`window.electronAPI`) so the request reaches the live main-process handler.
  * Falls back to the mock-routed invoke when no real bridge is present
  * (daemon/web builds, unit tests) — there the channel is served by
- * `model-catalog-bridge-seeder.ts`.
+ * `model-catalog-bridge-seeder.ts`. The dev browser mock also installs a
+ * `window.electronAPI` (answering `*:get-models` with an empty catalog), so
+ * the platform detector — not bridge presence — decides the transport.
  */
 async function invokeModelChannel<T>(channel: string, data?: unknown): Promise<T> {
-  if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
+  if (isElectronPlatform() && window.electronAPI?.invoke) {
     return (await window.electronAPI.invoke(channel, data)) as T;
   }
   return await invoke<T>(channel, data);

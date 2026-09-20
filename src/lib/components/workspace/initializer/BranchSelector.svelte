@@ -34,7 +34,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { slide } from '$lib/motion';
   import { store as appStore } from '$store/renderer/store';
 
@@ -159,6 +159,7 @@
   let isOpen = $state(false); // Track dropdown open state
   let isDropdownMounting = $state(false); // Show skeleton while dropdown content mounts
   let containerEl: HTMLDivElement | undefined = $state(); // Container for positioning
+  let triggerEl: HTMLButtonElement | null = $state(null); // Focus target after a selection closes the content
 
   // GitHub auth state for private repos
   type GitHubAuthNeeded = 'none' | 'not-authenticated' | 'no-access';
@@ -417,6 +418,7 @@
         githubSearchBranches = []; // Drop prefix-search results from the previous repo
         error = null;
         resetBranchStatus(); // Reset stale branch status from previous repo
+        clearSearch(); // A typed filter belongs to the previous repo's branch list
 
         // Use debounced fetch to prevent rapid repeated calls
         debouncedFetchBranches();
@@ -988,7 +990,9 @@
    */
   function setInternalBranch(branchName: string) {
     internalSelectedBranch = branchName;
-    clearSearch();
+    // Never reset the search here: this runs when a background fetch settles,
+    // which can be while the user is typing a filter they are about to commit
+    // with Enter. Only an explicit selection or a repo change clears it.
     // Notify parent so form validation knows about the auto-selected default
     logger.debug('setInternalBranch called', {
       branchName,
@@ -1044,8 +1048,28 @@
     // Fetch branch status for the newly selected branch
     fetchBranchStatus(branch);
 
-    // Close the dropdown
+    closeMenu();
+  }
+
+  /**
+   * Close the dropdown and hand keyboard focus back to the trigger when it
+   * was actually open. Every programmatic close goes through here so the
+   * search input / toggle unmount never strands focus on <body>.
+   */
+  function closeMenu() {
+    const wasOpen = isOpen;
     isOpen = false;
+    if (wasOpen) void restoreTriggerFocus();
+  }
+
+  /**
+   * Closing the content unmounts whatever held focus inside it (the search
+   * input on the Enter path), which would otherwise drop focus to <body>.
+   * Mirrors the Escape handling in select-content.svelte.
+   */
+  async function restoreTriggerFocus() {
+    await tick();
+    if (!isOpen && triggerEl?.isConnected) triggerEl.focus({ preventScroll: true });
   }
 
   function handleManualInput(value: string) {
@@ -1438,6 +1462,7 @@
   <div class="relative min-w-0" bind:this={containerEl}>
     <Select.Root bind:value={internalSelectedBranch} bind:open={isOpen}>
       <Select.Trigger
+        bind:ref={triggerEl}
         {variant}
         class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary-ink rounded-sm' : ''}`}
       >
@@ -1855,7 +1880,7 @@
                   // When enabling skip isolation, select current branch (keep skipIsolation on)
                   selectBranch(currentBranch, true);
                 }
-                isOpen = false;
+                closeMenu();
               }}
               wrapContent={false}
               class="w-full h-auto flex items-start gap-3 px-2 py-1 rounded-md text-left whitespace-normal cursor-pointer"
@@ -1873,7 +1898,7 @@
                   if (enabling) {
                     selectBranch(currentBranch, true);
                   }
-                  isOpen = false;
+                  closeMenu();
                 }}
               />
               <div class="items-start flex-1 min-w-0 text-sm font-normal -mt-0.25">

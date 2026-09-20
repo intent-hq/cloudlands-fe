@@ -1,4 +1,14 @@
+import type { Workspace, WorkspaceId } from '$shared/types';
+import { WorkspaceStatusEnum } from '$shared/types';
 import { describe, expect, it } from 'vitest';
+import type { StoreState } from '../../types';
+import {
+  initialState as workspaceInitialState,
+  replaceWorkspaceList,
+  setWorkspaceHasLoaded,
+  workspaceReducer,
+} from '../workspace/workspace-slice';
+import { selectEffectiveVoiceEngine } from './voice-settings-selectors';
 import {
   addVoiceVocabularyTerm,
   initialState,
@@ -227,5 +237,46 @@ describe('voiceSettingsReducer', () => {
       const rolledBack = voiceSettingsReducer(hydrated, setVoiceVocabularyValue(null));
       expect(rolledBack.vocabulary).toBeNull();
     });
+  });
+});
+
+describe('selectEffectiveVoiceEngine (multiplayer w3 role gate)', () => {
+  function makeWorkspace(id: string, myRole: Workspace['myRole']): Workspace {
+    return {
+      id: id as WorkspaceId,
+      title: id,
+      branch: 'main',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      status: WorkspaceStatusEnum.Active,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      myRole,
+    } as Workspace;
+  }
+
+  function stateWith(workspaces: Workspace[]): StoreState {
+    const listed = workspaceReducer(workspaceInitialState, replaceWorkspaceList(workspaces));
+    const voiceSettings = voiceSettingsReducer(
+      voiceSettingsReducer(initialState, setVoiceEngineValue('os')),
+      setVoiceOsEngineAvailable(true),
+    );
+    return {
+      workspace: workspaceReducer(listed, setWorkspaceHasLoaded(true)),
+      voiceSettings,
+    } as StoreState;
+  }
+
+  it('keeps the configured engine for an owner', () => {
+    expect(selectEffectiveVoiceEngine.select(stateWith([makeWorkspace('ws-a', 'owner')]))).toBe(
+      'os',
+    );
+  });
+
+  it('resolves to unavailable for a collaborator-only client even with a working OS engine', () => {
+    expect(
+      selectEffectiveVoiceEngine.select(stateWith([makeWorkspace('ws-a', 'collaborator')])),
+    ).toBe('unavailable');
   });
 });

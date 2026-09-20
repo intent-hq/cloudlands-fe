@@ -117,7 +117,7 @@
 >
   <div
     class={cn(
-      'px-3 h-8 pt-0.5 rounded-lg flex items-center gap-1.5 focus/tab-button:outline-none focus-visible/tab-button:ring-2 focus-visible/tab-button:ring-primary-ink focus-visible/tab-button:ring-offset-2 transition-[background-color,color,border-color,box-shadow] duration-200',
+      'px-3 h-8 pt-0.5 rounded-lg flex items-center gap-1.5 focus/tab-button:outline-none focus-visible/tab-button:ring-2 focus-visible/tab-button:ring-primary-ink focus-visible/tab-button:ring-offset-2 transition-[background-color,color,border-color,box-shadow] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none',
       active
         ? ''
         : isPinned
@@ -179,7 +179,7 @@
         {#if closeButton || onclose}
           <div
             class={cn(
-              'transition-opacity duration-200 close-button-container',
+              'transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none close-button-container',
               active || isHovered ? 'opacity-100' : 'opacity-0 pointer-events-none',
             )}
           >
@@ -188,7 +188,9 @@
             {:else}
               <Button
                 type="button"
-                class="close-button flex items-center justify-center w-5 h-5 rounded hover:bg-foreground/10 active:bg-foreground/20 transition-[background-color,color,border-color,box-shadow,transform] duration-150 shrink-0 -mr-2 opacity-50"
+                size="icon-compact"
+                iconOnly
+                class="close-button size-5 rounded hover:bg-foreground/10 active:bg-foreground/20 transition-[background-color,color,border-color,box-shadow,transform] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none shrink-0 -mr-2 opacity-50"
                 onclick={(e) => {
                   e.stopPropagation();
                   onclose?.(e);

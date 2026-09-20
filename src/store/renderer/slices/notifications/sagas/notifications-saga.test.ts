@@ -304,6 +304,77 @@ describe('notification sagas', () => {
     await task.toPromise();
   });
 
+  it('suppresses muted agents (payload stamp and agent.list fallback) without letting a muted sibling hold the active gate', async () => {
+    const { task } = startWebSaga();
+    await flush();
+
+    // §5.5 `notificationsMuted` payload stamp: no banner, no sound, and no
+    // `agent.list` read at all (fast path before the wire-read gate).
+    mocks.backend.mockClear();
+    mocks.backend.mockImplementation(async (method, params) => {
+      if (method === 'settings.get')
+        return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
+      throw new Error(`unexpected ${method}`);
+    });
+    emitMockIpcEvent('agent:idle', idle({ notificationsMuted: true }));
+    await flush();
+    expect(MockNotification.instances).toEqual([]);
+    expect(mocks.sound).not.toHaveBeenCalled();
+    expect(mocks.backend.mock.calls.some(([method]) => method === 'agent.list')).toBe(false);
+
+    // Older daemons omit the stamp on the event; the `agent.list` row is the
+    // fallback source of truth for the idle agent's mute state.
+    mocks.backend.mockClear();
+    mocks.backend.mockImplementation(async (method, params) => {
+      if (method === 'settings.get')
+        return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
+      if (method === 'agent.list')
+        return {
+          agents: [
+            { id: 'agent-1', isStreaming: false, isResponding: false, notificationsMuted: true },
+          ],
+        };
+      throw new Error(`unexpected ${method}`);
+    });
+    emitMockIpcEvent('agent:idle', idle());
+    await flush();
+    expect(MockNotification.instances).toEqual([]);
+    expect(mocks.sound).not.toHaveBeenCalled();
+    expect(mocks.backend.mock.calls).toContainEqual(['agent.list', { workspaceId: 'ws-1' }]);
+    expect(mocks.backend.mock.calls.some(([method]) => method === 'workspace.get')).toBe(false);
+
+    // A muted sibling that is still responding must not suppress an unmuted
+    // agent's idle alert: its own idle is muted, so counting it would leave
+    // the workspace silent.
+    mocks.backend.mockClear();
+    mocks.backend.mockImplementation(async (method, params) => {
+      if (method === 'settings.get')
+        return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
+      if (method === 'agent.list')
+        return {
+          agents: [
+            { id: 'agent-1', isStreaming: false, isResponding: false },
+            {
+              id: 'muted-sibling',
+              isStreaming: true,
+              isResponding: true,
+              notificationsMuted: true,
+            },
+          ],
+        };
+      if (method === 'workspace.get')
+        return { workspace: { id: params.workspaceId, title: 'My Space' } };
+      throw new Error(`unexpected ${method}`);
+    });
+    emitMockIpcEvent('agent:idle', idle());
+    await flush();
+    expect(MockNotification.instances).toHaveLength(1);
+    expect(mocks.sound).toHaveBeenCalledTimes(1);
+
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('falls back after settings failure, coalesces permission prompts, and silently skips denial', async () => {
     let resolvePermission!: (permission: NotificationPermission) => void;
     MockNotification.permission = 'default';

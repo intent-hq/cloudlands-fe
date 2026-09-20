@@ -4,8 +4,10 @@
   import RetainedWorkspaceSurfaces from '../../../src/routes/(app)/workspace/[id]/RetainedWorkspaceSurfaces.svelte';
   import Panel from '$lib/components/layout/panel-system/Panel.svelte';
   import OffscreenWebviewHost from '$lib/components/browser/OffscreenWebviewHost.svelte';
+  import { errorHandler } from '$lib/utils/error-handler.svelte';
   import { store } from '$store/renderer/store';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
+  import { browserIpcSaga } from '$store/renderer/slices/app-layout/sagas/browser-ipc-saga';
   import { selectPanelLayoutWorkspaces } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
     initializeLayout,
@@ -15,7 +17,9 @@
     destroyOwnedTabsForWorkspace,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 
-  const dispose = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const dispose = startRootStoreLifecycle(store, {
+    startSagas: () => [store.runSaga(browserIpcSaga)],
+  });
   onDestroy(dispose);
   const ownerAgentId =
     new URLSearchParams(location.search).get('owned') === 'true' ? 'fixture-agent' : undefined;
@@ -48,6 +52,17 @@
   const layouts = selectPanelLayoutWorkspaces();
   Object.assign(window, {
     lifetimeFixture: {
+      errors: () => errorHandler.errors,
+      urls() {
+        return Object.fromEntries(
+          Object.values(store.state.panelLayout.byWorkspaceId).flatMap((layout) =>
+            [
+              ...Object.values(layout.panels).flatMap((panel) => panel.tabs),
+              ...layout.hiddenTabs.ids.map((id) => layout.hiddenTabs.map[id]),
+            ].map((tab) => [tab.id, tab.browserUrl]),
+          ),
+        );
+      },
       async switchWorkspace(id: string) {
         activeWorkspaceId = id;
         await tick();
@@ -69,18 +84,28 @@
         await tick();
       },
       records() {
-        return Object.fromEntries(
-          Object.entries(store.state.panelLayout.byWorkspaceId).map(([id, layout]) => [
-            id,
-            {
-              activeTab: layout.panels[id]?.activeTabId,
-              visible: Object.values(layout.panels).flatMap((panel) =>
-                panel.tabs.map((tab) => tab.id),
-              ),
-              hidden: layout.hiddenTabs.ids,
-            },
-          ]),
-        );
+        return {
+          activeWorkspaceId,
+          ...Object.fromEntries(
+            Object.entries(store.state.panelLayout.byWorkspaceId).map(([id, layout]) => [
+              id,
+              {
+                activeTab: layout.panels[id]?.activeTabId,
+                focusedPanel: layout.focusedPanelId,
+                owners: Object.fromEntries(
+                  [
+                    ...Object.values(layout.panels).flatMap((panel) => panel.tabs),
+                    ...layout.hiddenTabs.ids.map((id) => layout.hiddenTabs.map[id]),
+                  ].map((tab) => [tab.id, tab.ownerAgentId]),
+                ),
+                visible: Object.values(layout.panels).flatMap((panel) =>
+                  panel.tabs.map((tab) => tab.id),
+                ),
+                hidden: layout.hiddenTabs.ids,
+              },
+            ]),
+          ),
+        };
       },
     },
   });

@@ -490,8 +490,10 @@ Only respond with the <layout> tag and valid JSON inside it.`;
     >
       <Button
         variant="ghost-light"
+        size="icon-compact"
+        iconOnly
         class={cn(
-          'p-1.5 rounded hover:bg-muted transition-colors',
+          'hover:bg-muted transition-colors',
           canGoBack ? 'text-foreground' : 'text-ghost cursor-not-allowed',
         )}
         onclick={onGoBack}
@@ -510,8 +512,10 @@ Only respond with the <layout> tag and valid JSON inside it.`;
     >
       <Button
         variant="ghost-light"
+        size="icon-compact"
+        iconOnly
         class={cn(
-          'p-1.5 rounded hover:bg-muted transition-colors',
+          'hover:bg-muted transition-colors',
           canGoForward ? 'text-foreground' : 'text-ghost cursor-not-allowed',
         )}
         onclick={onGoForward}
@@ -540,8 +544,10 @@ Only respond with the <layout> tag and valid JSON inside it.`;
       >
         <Button
           variant="ghost-light"
+          size="icon-compact"
+          iconOnly
           class={cn(
-            'p-1.5 rounded transition-colors',
+            'transition-colors',
             currentPreset === preset.id
               ? 'bg-muted text-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted',
@@ -566,8 +572,10 @@ Only respond with the <layout> tag and valid JSON inside it.`;
     >
       <Button
         variant="ghost-light"
+        size="icon-compact"
+        iconOnly
         class={cn(
-          'p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted',
+          'transition-colors text-muted-foreground hover:text-foreground hover:bg-muted',
           showPresetDropdown && 'bg-muted text-foreground',
         )}
         onclick={() => (showPresetDropdown = !showPresetDropdown)}
@@ -612,8 +620,10 @@ Only respond with the <layout> tag and valid JSON inside it.`;
     >
       <Button
         variant="ghost-light"
+        size="icon-compact"
+        iconOnly
         class={cn(
-          'p-1.5 rounded transition-colors',
+          'transition-colors',
           showPrompt
             ? 'bg-primary/10 text-primary'
             : 'text-muted-foreground hover:text-foreground hover:bg-muted',

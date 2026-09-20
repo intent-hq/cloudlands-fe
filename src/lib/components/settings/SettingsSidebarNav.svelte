@@ -18,9 +18,11 @@
     activeTab: SettingsTab;
     onSelect: (tab: SettingsTab) => void;
     agentsNavigation: Snippet;
+    /** Tabs withheld from this client (e.g. administrator-only sections for a collaborator). */
+    hiddenTabs?: readonly SettingsTab[];
   }
 
-  let { activeTab, onSelect, agentsNavigation }: Props = $props();
+  let { activeTab, onSelect, agentsNavigation, hiddenTabs = [] }: Props = $props();
 
   const primaryItems = [
     {
@@ -118,46 +120,49 @@
   aria-label={m.settings_page_title()}
 >
   {#each groups as group (group.id)}
-    <section aria-labelledby={`settings-group-${group.id}`}>
-      <h2
-        id={`settings-group-${group.id}`}
-        class="px-3 type-caption font-normal text-muted-foreground"
-      >
-        {group.label}
-      </h2>
-      <div class="mt-2 flex flex-col">
-        {#each group.items as item (item.id)}
-          <Button
-            variant="plain"
-            type="button"
-            onclick={() => onSelect(item.id as SettingsTab)}
-            active={activeTab === item.id}
-            aria-current={activeTab === item.id ? 'page' : undefined}
-            data-settings-tab={item.id}
-            class="h-auto w-full justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active {activeTab ===
-            item.id
-              ? 'bg-foreground/5 text-foreground'
-              : 'text-muted-foreground'}"
-          >
-            <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
-              {#snippet leading()}
-                <span
-                  data-slot="settings-sidebar-icon"
-                  class="flex size-4 shrink-0 items-center justify-center"
-                >
-                  <item.icon size={16} weight="regular" aria-hidden="true" />
-                </span>
-              {/snippet}
-              {#snippet title()}
-                <span data-settings-sidebar-label class="block truncate type-body font-normal">
-                  {item.label}
-                </span>
-              {/snippet}
-            </ListRow>
-          </Button>
-        {/each}
-      </div>
-    </section>
+    {@const groupItems = group.items.filter((item) => !hiddenTabs.includes(item.id as SettingsTab))}
+    {#if groupItems.length > 0}
+      <section aria-labelledby={`settings-group-${group.id}`}>
+        <h2
+          id={`settings-group-${group.id}`}
+          class="px-3 type-caption font-normal text-muted-foreground"
+        >
+          {group.label}
+        </h2>
+        <div class="mt-2 flex flex-col">
+          {#each groupItems as item (item.id)}
+            <Button
+              variant="plain"
+              type="button"
+              onclick={() => onSelect(item.id as SettingsTab)}
+              active={activeTab === item.id}
+              aria-current={activeTab === item.id ? 'page' : undefined}
+              data-settings-tab={item.id}
+              class="h-auto w-full justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active {activeTab ===
+              item.id
+                ? 'bg-foreground/5 text-foreground'
+                : 'text-muted-foreground'}"
+            >
+              <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
+                {#snippet leading()}
+                  <span
+                    data-slot="settings-sidebar-icon"
+                    class="flex size-4 shrink-0 items-center justify-center"
+                  >
+                    <item.icon size={16} weight="regular" aria-hidden="true" />
+                  </span>
+                {/snippet}
+                {#snippet title()}
+                  <span data-settings-sidebar-label class="block truncate type-body font-normal">
+                    {item.label}
+                  </span>
+                {/snippet}
+              </ListRow>
+            </Button>
+          {/each}
+        </div>
+      </section>
+    {/if}
   {/each}
   <section
     data-settings-agents-section

@@ -34,6 +34,8 @@
     queued = false,
     suggestions = false,
     questions = false,
+    transcript = false,
+    responseDelivered = false,
     initializeStore = true,
   }: {
     theme?: 'light' | 'dark';
@@ -47,10 +49,12 @@
     queued?: boolean;
     suggestions?: boolean;
     questions?: boolean;
+    transcript?: boolean;
+    responseDelivered?: boolean;
     initializeStore?: boolean;
   } = $props();
 
-  const fixture = untrack(() => ({ chief, streaming, draft, suggestions, questions }));
+  const fixture = untrack(() => ({ chief, streaming, draft, suggestions, questions, transcript }));
   let appliedStreaming = fixture.streaming;
   const workspaceId = fixture.chief ? CHIEF_WORKSPACE_ID : 'chat-panel-composer-geometry';
   const agentId = fixture.chief ? 'chief-composer-agent' : 'regular-composer-agent';
@@ -126,6 +130,32 @@
     updatedAt: timestamp,
   } as unknown as AgentSession;
 
+  if (fixture.transcript) {
+    const history = Array.from({ length: 12 }, (_, index) => {
+      const time = Date.parse(timestamp) - (12 - index) * 60_000;
+      return [
+        {
+          id: 'attention-user-' + index,
+          role: 'user' as const,
+          timestamp: new Date(time).toISOString(),
+          contentBlocks: [{ type: 'text' as const, text: 'Review step ' + (index + 1) + '.' }],
+        },
+        {
+          id: 'attention-assistant-' + index,
+          role: 'assistant' as const,
+          timestamp: new Date(time + 1_000).toISOString(),
+          contentBlocks: [
+            {
+              type: 'text' as const,
+              text: 'The implementation preserves the current behavior. We will verify the transcript layout and review the result before continuing.',
+            },
+          ],
+        },
+      ];
+    }).flat();
+    session.messages = [...history, ...session.messages];
+  }
+
   tabTypeRegistry.register({
     type: 'agent',
     component: AgentTabType,
@@ -167,6 +197,24 @@
         isStreaming: nextStreaming,
         isProcessing: nextStreaming,
         isResponding: nextStreaming,
+      }),
+    );
+  });
+  // Drive the projected delivered user message separately from the daemon's
+  // attention-field update below. This fixture does not emulate a native send.
+  $effect(() => {
+    if (!responseDelivered) return;
+    store.dispatch(
+      updateSession(agentId, {
+        messages: [
+          ...session.messages,
+          {
+            id: 'attention-user-response',
+            role: 'user',
+            timestamp: '2026-08-23T12:01:00.000Z',
+            contentBlocks: [{ type: 'text', text: 'Proceed with the reviewed plan.' }],
+          },
+        ],
       }),
     );
   });

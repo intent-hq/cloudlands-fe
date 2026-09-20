@@ -1,5 +1,21 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
 import SetupScriptModalPreview from '../setup-script-modal.preview.svelte';
+
+/**
+ * Focus the editor only after the dialog's open auto-focus has landed. bits-ui's
+ * focus scope moves focus to the first tabbable in a requestAnimationFrame after
+ * Dialog.Content mounts; under CI load that frame can run after Monaco is already
+ * visible, so focusing the editor earlier lets the deferred auto-focus steal it back.
+ */
+async function focusEditor(dialog: Locator): Promise<Locator> {
+  await expect
+    .poll(() => dialog.evaluate((node) => node.contains(document.activeElement)))
+    .toBe(true);
+  const input = dialog.getByRole('textbox', { name: 'Editor content' });
+  await input.focus();
+  await expect(input).toBeFocused();
+  return input;
+}
 
 for (const width of [420, 1100]) {
   test(`keeps the script editor and source rows contained at ${width}px`, async ({
@@ -91,7 +107,7 @@ test('keeps editor and footer usable in a short compact window', async ({ mount,
   const footer = (await done.boundingBox())!;
   expect(editor.height).toBeGreaterThanOrEqual(100);
   expect(footer.y + footer.height).toBeLessThanOrEqual(600);
-  await input.focus();
+  await focusEditor(dialog);
   await page.keyboard.type('# edited ');
   await done.click();
   await expect(dialog).toHaveCount(0);
@@ -111,9 +127,7 @@ test('keeps editor Escape local, discards cancelled edits, and applies Done', as
   );
   let dialog = page.getByRole('dialog');
   await expect(dialog.locator('.monaco-editor')).toBeVisible();
-  const input = dialog.getByRole('textbox', { name: 'Editor content' });
-  await input.focus();
-  await expect(input).toBeFocused();
+  const input = await focusEditor(dialog);
   await input.press(selectAll);
   await page.keyboard.type('echo fixture-edited');
   await input.press('Escape');
@@ -123,8 +137,7 @@ test('keeps editor Escape local, discards cancelled edits, and applies Done', as
   await page.getByRole('button', { name: 'Open setup script' }).click();
   dialog = page.getByRole('dialog');
   await expect(dialog.locator('.monaco-editor')).toBeVisible();
-  await dialog.getByRole('textbox', { name: 'Editor content' }).focus();
-  await expect(dialog.getByRole('textbox', { name: 'Editor content' })).toBeFocused();
+  await focusEditor(dialog);
   await page.keyboard.press(selectAll);
   await page.keyboard.type('echo fixture-saved');
   await dialog.getByRole('button', { name: /Save.*Done/i }).click();

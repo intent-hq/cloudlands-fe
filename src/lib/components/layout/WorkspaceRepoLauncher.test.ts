@@ -2,15 +2,28 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { readable } from 'svelte/store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), isCollaboratorOnlyClient: { value: false } }));
 
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectIsCollaboratorOnlyClient: () => readable(mocks.isCollaboratorOnlyClient.value),
+}));
 import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
 
 describe('WorkspaceRepoLauncher', () => {
-  beforeEach(() => mocks.dispatch.mockClear());
+  beforeEach(() => {
+    mocks.dispatch.mockClear();
+    mocks.isCollaboratorOnlyClient.value = false;
+  });
+
+  it('withholds the launcher for a collaborator-only client (multiplayer w3)', () => {
+    mocks.isCollaboratorOnlyClient.value = true;
+    render(WorkspaceRepoLauncher);
+    expect(screen.queryByRole('button', { name: 'New Workspace' })).toBeNull();
+  });
 
   it.each([
     ['pointer', async (launcher: HTMLElement) => fireEvent.click(launcher)],

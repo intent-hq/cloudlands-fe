@@ -1,6 +1,18 @@
 import { expect, test } from '@playwright/experimental-ct-svelte';
 import type { Locator } from '@playwright/test';
+import { recordCdpLifecycle } from '../../../../../test/ct-cdp-lifecycle-recorder';
+import { isolateBrowserContextPerTest } from '../../../../../test/ct-isolated-browser-context';
 import PanelDragRetainedNoteHarness from './mocks/PanelDragRetainedNoteHarness.svelte';
+
+// The right-source cell's mount() intermittently failed with "Execution context
+// was destroyed" on the merge queue (intent-hq/intent#5249) when it ran right
+// after the left-source cell on the same reused per-worker page — the reuse
+// reset racing the next mount, the signature fe#2158 / fe#2401 / fe#2553 fixed
+// for the chat geometry specs. Give every test its own browser context so no
+// prior teardown races the next mount, and record the CDP lifecycle so a
+// recurrence reports the real event ordering.
+isolateBrowserContextPerTest(test, 'intent-hq/intent#5249');
+recordCdpLifecycle(test);
 
 function measureNote(locator: Locator) {
   return locator.evaluate((note) => {

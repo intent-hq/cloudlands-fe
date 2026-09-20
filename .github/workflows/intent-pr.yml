@@ -10,18 +10,28 @@ on:
   # merge-queue-only — it skips on pull_request (the gate accepts that
   # skip) and runs only on merge_group, where the gate requires its
   # success. test-ct always runs on merge_group and ALSO on pull_request
-  # when the PR diff touches a CT-contract path (the token/stylesheet
+  # when the PR diff is CT-relevant: a CT-contract path (the token/stylesheet
   # contract, the CT harness, the dependency manifests — the one list in
-  # scripts/ct-contract-paths.mjs, evaluated by release-fast-path as
-  # ct_required); otherwise it skips on pull_request and the gate accepts
+  # scripts/ct-contract-paths.mjs) or a CT spec / geometry golden, both
+  # classified by that module and evaluated by release-fast-path as
+  # ct_required; otherwise it skips on pull_request and the gate accepts
   # that skip only because ct_required says so (cloudlands-fe#2441 rewrote
   # tokens.css with green PR CI and was ejected from the queue with 40 CT
-  # failures). Merge groups are created by the repo's own ruleset from
-  # already-filed PRs, so they need no same-repo fork guard.
-  # pr-title / conflict-markers / release-fast-path are PR-metadata /
-  # PR-diff checks that stay pull_request-only — the gate accepts their
-  # skip on merge_group (release PRs therefore run full CI in the queue,
-  # including the merge-queue-only suites).
+  # failures; cloudlands-fe#2533 changed 22 specs and 1 golden with CT
+  # skipped on the PR and was ejected three times). Merge groups are created
+  # by the repo's own ruleset from already-filed PRs, so they need no
+  # same-repo fork guard.
+  # pr-title / conflict-markers are PR-metadata checks that stay
+  # pull_request-only — the gate accepts their skip on merge_group.
+  # release-fast-path runs on BOTH events: a queue entry's diff
+  # (merge_group.base_sha..head_sha) is exactly the PR's own change, so a
+  # release-shaped entry skips the heavy jobs in the queue too (the gate
+  # accepts those skips only via the fast_path output). Safe under the
+  # queue's ALLGREEN grouping: the entry's tree is the previous entry's
+  # (or main's) tree plus the version flip, and that tree was already
+  # validated by the previous entry's own run (release PR fe#2549 was
+  # ejected three times by unrelated CT flakes while the fast path was
+  # pull_request-only; intent-hq/intent#5279).
   merge_group:
 
 # Cancel in progress workflows on pull_requests.
@@ -353,19 +363,27 @@ jobs:
   # exist).
   # The same checkout + base fetch also computes CT relevance: ct_required
   # is 'true' when the PR diff touches a CT-contract path (the one list in
-  # scripts/ct-contract-paths.mjs, shared with verify:changed), which makes
-  # test-ct run on pull_request (see test-ct / gate). Fail-safe the other
+  # scripts/ct-contract-paths.mjs, shared with verify:changed) or a CT spec /
+  # geometry golden (same module), which makes test-ct run on pull_request
+  # (see test-ct / gate). Fail-safe the other
   # way round from fast_path: the script prints ct_required=true on any
   # internal error, and the step writes 'true' if the script exits non-zero
   # or prints nothing — a broken relevance check runs CT, never skips it.
-  # The job is pull_request-only, so on merge_group both outputs are empty;
-  # test-ct's `if:` runs it on merge_group unconditionally regardless.
+  # The job runs on pull_request AND merge_group (see the trigger comment).
+  # On merge_group the diff base is merge_group.base_sha: head_sha is the
+  # merge of the PR onto the previous entry (or main), so base_sha..head_sha
+  # is exactly the entry's own change — the same shape as the pull_request
+  # merge ref, so the script needs no event-specific handling (its
+  # merge-base fallback covers the shallow checkout either way). ct_required
+  # is computed in the queue too but is informational there: test-ct's `if:`
+  # runs it on every merge_group entry regardless, unless fast_path is 'true'.
   release-fast-path:
     name: Release PR Fast Path
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
     runs-on: ubuntu-latest
-    # Same-repo PRs only (see fork-PR hardening note above).
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # Same-repo PRs only (see fork-PR hardening note above); merge groups
+    # come from the repo's own ruleset, so no same-repo guard applies there.
+    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     timeout-minutes: 5
     permissions:
       contents: read
@@ -374,12 +392,14 @@ jobs:
       ct_required: ${{ steps.ct.outputs.ct_required }}
     steps:
       - uses: actions/checkout@v7
-      - name: Fetch PR base commit
-        run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha }}
+      - name: Fetch diff base commit
+        # PR base on pull_request; the queue entry's base on merge_group
+        # (same fallback as DESIGN_SYSTEM_BASELINE_BASE_REF in test).
+        run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
       - name: Evaluate diff shape
         id: decide
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           # Script contract: prints fast_path=true|false; non-zero exit means
@@ -395,7 +415,7 @@ jobs:
       - name: Evaluate CT relevance
         id: ct
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
           # Script contract: prints exactly one ct_required=true|false line and
@@ -469,7 +489,10 @@ jobs:
       # ignores the generated paths via .gitignore + eslint.config.js, knip via
       # gitignore + its `project` excludes; the i18n checks read only
       # messages/*.json and ENFORCED_DIRS), so a post-generation rerun would
-      # add wall time without coverage.
+      # add wall time without coverage. The Prettier check (`format:check`) is
+      # part of this gate too, and the generated paths are Prettier-ignored
+      # (.prettierignore plus Prettier's default .gitignore handling), so
+      # running it before generation loses no coverage.
       - name: Cold-checkout gates
         run: pnpm run lint
       - name: Generate build config
@@ -478,14 +501,16 @@ jobs:
         run: pnpm run generate:ipc-channels
       - name: Generate i18n messages
         run: pnpm run generate:i18n
-      - name: Prettier check
-        run: pnpm run format:check
       - name: Svelte check
-        # svelte-check holds the whole renderer program in one process and
-        # already needs 3.6–4 GB of heap at the shared-controls base (it OOMs
-        # locally at 3584 MB and passes at 4096), so the job-wide 4 GB cap left
-        # no headroom and cloudlands-fe#2533 tipped it over. Both runner
-        # classes (tinybox, gh-linux-8x) have ample RAM for this cap.
+        # svelte-check holds the whole renderer program in one process. Measured
+        # with --trace-gc (intent-hq/intent#5211, 8.1k files): ~3.85 GB live after a
+        # full GC, ~4.06 GB committed, peak RSS ~4.3 GiB — identical within 20 MB on
+        # main and on the cloudlands-fe#2533 merge tree that OOMed. At the job-wide
+        # 4 GB cap V8 sits in its near-limit "reduce" mark-compact loop and aborts on
+        # timing, so this step alone gets ~2x the measured need; other steps keep
+        # the job cap (intent-hq/intent#3352). Both runner classes (tinybox,
+        # gh-linux-8x) have ample RAM. run-svelte-check.mjs prints the peak RSS of
+        # every run so the margin stays visible before it is exhausted again.
         env:
           NODE_OPTIONS: '--max-old-space-size=8192'
         run: pnpm run check
@@ -681,12 +706,11 @@ jobs:
     # results. The suite itself is short (~1 min); setup dominates.
     # MERGE-QUEUE-ONLY (see the trigger comment): skipped on pull_request
     # — the gate accepts that skip unconditionally — and run only on
-    # merge_group, where the gate requires success. The route.result guard
-    # is kept so a route failure still skips the job (and fails the gate in
-    # the queue: fail-safe). release-fast-path is pull_request-only, so on
-    # merge_group its fast_path output is always empty and the `!= 'true'`
-    # term is vacuous there; it stays for symmetry with the other heavy
-    # jobs (a job skipped by its own `if:` never blocks on `needs`).
+    # merge_group, where the gate requires success EXCEPT on a
+    # release-shaped entry (fast_path == 'true'), whose job-level skip the
+    # gate accepts via that output. The route.result guard is kept so a
+    # route failure still skips the job (and fails the gate in the queue:
+    # fail-safe).
     name: Integration Tests
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
@@ -743,27 +767,31 @@ jobs:
   # installed via the run-ct-tests.mjs launcher so their version matches the
   # CT-aligned playwright runner (1.58.x, NOT the repo's top-level playwright
   # — see monorepo#1586), and the binary cache is keyed on that same version.
-  # MERGE-QUEUE ALWAYS, PLUS CT-CONTRACT PRs (see the trigger comment): the
+  # MERGE-QUEUE ALWAYS, PLUS CT-RELEVANT PRs (see the trigger comment): the
   # ~20 min of shard wall time stays off ordinary PR pushes — the suite runs
   # once per queue entry against the merged tree, where the gate requires
-  # it — but a PR whose diff touches a CT-contract path (release-fast-path's
-  # ct_required output, computed from scripts/ct-contract-paths.mjs) runs
-  # the full matrix on pull_request too, so a token/stylesheet/harness change
-  # gets CT signal before it can be ejected from the queue (cloudlands-fe#2441).
+  # it — but a PR whose diff touches a CT-contract path or a CT spec /
+  # geometry golden (release-fast-path's ct_required output, computed from
+  # scripts/ct-contract-paths.mjs) runs the full matrix on pull_request too,
+  # so a token/stylesheet/harness/spec/golden change gets CT signal before it
+  # can be ejected from the queue (cloudlands-fe#2441, cloudlands-fe#2533).
   # On every other pull_request the whole matrix reports 'skipped' and the
   # gate accepts that skip only when ct_required is exactly 'false'.
+  # Release-shaped diffs (fast_path == 'true') skip the matrix on both
+  # events; the gate accepts that skip via the fast_path output.
   test-ct:
     name: Component Tests (shard ${{ matrix.shard }}/4)
     # The event term runs this matrix on every merge_group; the ct_required
-    # term adds CT-contract pull_requests (release-fast-path is
-    # pull_request-only, so the output is empty in the queue and the term is
-    # vacuous there). The route.result guard is kept for the same reasons as
+    # term adds CT-relevant pull_requests (in the queue the event term
+    # already holds, so ct_required is not consulted there). The
+    # route.result guard is kept for the same reasons as
     # test-integration: it subsumes the old explicit same-repo `if:` guard
     # (fork-PR hardening note — fork PRs skip the guarded route job, and
     # release-fast-path too, so ct_required is empty on them), and a route
     # failure skips this matrix and fails the gate (fail-safe). The
-    # fast_path term keeps release-shaped PRs skipping CT even though they
-    # touch package.json (the gate accepts that skip via fast_path).
+    # fast_path term keeps release-shaped diffs skipping CT on both events
+    # even though they touch package.json (the gate accepts that skip via
+    # fast_path).
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.release-fast-path.outputs.ct_required == 'true') && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
     runs-on: ${{ fromJSON(needs.route.outputs.linux_labels) }}
@@ -989,7 +1017,10 @@ jobs:
         run: pnpm run test:ct --only-changed=HEAD --pass-with-no-tests --reporter=list
       - name: Component tests
         # list for readable logs; html feeds the failure artifact below (it
-        # never auto-opens when CI is set).
+        # never auto-opens when CI is set); json writes
+        # playwright-report/results.json into that same artifact so
+        # `pnpm ct:failures <run-id>` can list failed/flaky cases per shard
+        # with their spec file and status instead of scraping the log.
         # The 4 GB heap cap covers the runner + accumulated per-test state
         # for a quarter-shard; the memory-hungry Vite build already ran
         # above. The sampler streams `free -m` + top-RSS processes into
@@ -999,6 +1030,7 @@ jobs:
         # (monorepo#3352).
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
         run: |
           set -euo pipefail
           (
@@ -1021,7 +1053,7 @@ jobs:
           # instead of silent 3x runtime. This job is merge-queue-only, so
           # a red shard ejects the queue entry: a flaky test must be fixed
           # or explicitly parked under the @quarantine tag below.
-          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html
+          pnpm run test:ct --shard=${{ matrix.shard }}/4 --grep-invert '@quarantine\b' --fail-on-flaky-tests --reporter=list,html,json
       - name: Upload playwright report
         # Also on cancellation, so a timeout overrun still leaves the report
         # and traces behind for diagnosis (monorepo#2887).
@@ -1168,32 +1200,41 @@ jobs:
   # validated on the PR) and the gate accepts the skip — event-aware, so PR
   # semantics stay unweakened. The every-event heavy jobs (checks /
   # build-web / test) must succeed outright too, EXCEPT on
-  # release-fast-path PRs (fast_path == 'true'), where their job-level skip
-  # is the expected outcome (see release-fast-path). The acceptance keys on
-  # the fast-path OUTPUT — never on the skipped status itself — so a skip
-  # from any other cause (a route failure, or a failed release-fast-path
-  # job leaving the output empty) still fails the gate: fail-safe, not
-  # fail-open (mirrors intentd's event/shape-aware gate reasoning). The
-  # merge-queue-only job (test-integration) is event-aware the other way
-  # round: on pull_request its skip is BY DESIGN and accepted
-  # unconditionally (any other non-success result still fails); on
-  # merge_group it must succeed outright — release-fast-path never runs
-  # in the queue, so no fast-path skip exists there and a skip can only
-  # mean a route failure. test-ct has its own check: on merge_group it must
-  # succeed outright like test-integration; on pull_request its skip is
-  # accepted only via an OUTPUT, never the skipped status itself — either
-  # fast_path == 'true' (release-shaped PR) or ct_required == 'false' (the
-  # diff touches no CT-contract path). ct_required == 'true' means the
-  # matrix had to run and must have succeeded, and an EMPTY ct_required (a
-  # failed release-fast-path job, a fork PR) rejects the skip too —
-  # fail-safe, symmetric with check_heavy. Fork PRs stay red regardless:
-  # checks / build-web / test skip on them with fast_path empty, which
-  # check_heavy rejects.
+  # release-shaped diffs (fast_path == 'true', on either event), where
+  # their job-level skip is the expected outcome (see release-fast-path).
+  # The acceptance keys on the fast-path OUTPUT — never on the skipped
+  # status itself — so a skip from any other cause (a route failure, or a
+  # failed release-fast-path job leaving the output empty) still fails the
+  # gate: fail-safe, not fail-open (mirrors intentd's event/shape-aware
+  # gate reasoning). The merge-queue-only job (test-integration) is
+  # event-aware the other way round: on pull_request its skip is BY DESIGN
+  # and accepted unconditionally (any other non-success result still
+  # fails); on merge_group it must succeed outright, except that a skip is
+  # accepted via fast_path == 'true' (release-shaped queue entry) — any
+  # other skip in the queue can only mean a route failure and fails.
+  # test-ct has its own check: on merge_group it must succeed outright like
+  # test-integration, with the same fast_path skip acceptance; on
+  # pull_request its skip is accepted only via an OUTPUT, never the skipped
+  # status itself — either fast_path == 'true' (release-shaped PR) or
+  # ct_required == 'false' (the diff touches no CT-contract path, CT spec,
+  # or geometry golden). ct_required == 'true' means the matrix had to run
+  # and must have succeeded, and an EMPTY ct_required (a failed
+  # release-fast-path job, a fork PR) rejects the skip too — fail-safe,
+  # symmetric with check_heavy. Fork PRs stay red regardless: checks /
+  # build-web / test skip on them with fast_path empty, which check_heavy
+  # rejects.
   # test and test-ct are shard matrices: their needs.result aggregates the
   # legs (success only when every shard passes; a job-level skip reports
   # 'skipped' for the whole matrix, same as before). test-electron is
   # deliberately absent from needs: it is advisory until it meets the
   # promotion criterion in its job comment.
+  # route is a DIRECT gate input, checked first: a route failure skips every
+  # heavy job, and when fast_path == 'true' those skips are exactly what the
+  # fast-path acceptance above expects — so without this check a broken
+  # probe on a release-shaped run was indistinguishable from a legitimate
+  # fast-path skip and passed the gate (cloudlands-fe#2573 review). The
+  # check is unconditional: route's only skip cause is a fork PR (its `if:`
+  # is merge_group-or-same-repo), where the gate must be red anyway.
   gate:
     name: CI Gate
     # Seconds-long job: pinned to ubuntu-latest (see pr-title).
@@ -1211,6 +1252,7 @@ jobs:
     if: always()
     needs:
       [
+        route,
         release-fast-path,
         pr-title,
         conflict-markers,
@@ -1226,6 +1268,14 @@ jobs:
           FAST_PATH: ${{ needs.release-fast-path.outputs.fast_path }}
           CT_REQUIRED: ${{ needs.release-fast-path.outputs.ct_required }}
         run: |
+          # route must have succeeded on every run (see the gate comment): a
+          # route failure skips the heavy jobs, and a fast-path skip
+          # acceptance must never stand in for that. Fork PRs skip route and
+          # fail here — still red, as required.
+          if [ "${{ needs.route.result }}" != "success" ]; then
+            echo "route result '${{ needs.route.result }}' not acceptable — the heavy jobs cannot have run (fast_path='$FAST_PATH')"
+            exit 1
+          fi
           # pr-title / conflict-markers are PR-metadata checks that only run
           # on pull_request; on merge_group they skip (already validated on
           # the PR) and the gate accepts that.
@@ -1264,15 +1314,19 @@ jobs:
           check_heavy "test" "${{ needs.test.result }}"
           # Merge-queue-only job (test-integration): skipped by design on
           # pull_request (its `if:` is event-gated) — accepted unconditionally
-          # there; on merge_group it must succeed (release-fast-path is
-          # pull_request-only, so FAST_PATH is always empty in the queue and
-          # no fast-path skip acceptance applies).
+          # there; on merge_group it must succeed, or be skipped ONLY via the
+          # release-PR fast path (the output, never the skipped status).
           if [ "${{ github.event_name }}" = "merge_group" ]; then
             check_queue_only() {
-              if [ "$2" != "success" ]; then
-                echo "$1 result '$2' not acceptable on merge_group (merge-queue-only job must run and pass)"
-                exit 1
+              if [ "$2" = "success" ]; then
+                return 0
               fi
+              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
+                echo "$1 skipped on merge_group via release-PR fast path — accepted"
+                return 0
+              fi
+              echo "$1 result '$2' not acceptable on merge_group (merge-queue-only job must run and pass; fast_path='$FAST_PATH')"
+              exit 1
             }
           else
             check_queue_only() {
@@ -1287,17 +1341,24 @@ jobs:
             }
           fi
           check_queue_only "test-integration" "${{ needs.test-integration.result }}"
-          # test-ct: must succeed on merge_group; on pull_request a skip is
-          # accepted only via an output — fast_path == 'true' (release-shaped
-          # PR) or ct_required == 'false' (no CT-contract path in the diff).
+          # test-ct: must succeed on merge_group, or be skipped ONLY via the
+          # release-PR fast path; on pull_request a skip is accepted only via
+          # an output — fast_path == 'true' (release-shaped PR) or
+          # ct_required == 'false' (no CT-contract path, CT spec, or geometry
+          # golden in the diff).
           # ct_required == 'true' or EMPTY (failed release-fast-path job, fork
           # PR) rejects the skip: fail-safe, never fail-open.
           if [ "${{ github.event_name }}" = "merge_group" ]; then
             check_ct() {
-              if [ "$2" != "success" ]; then
-                echo "$1 result '$2' not acceptable on merge_group (component tests must run and pass in the queue)"
-                exit 1
+              if [ "$2" = "success" ]; then
+                return 0
               fi
+              if [ "$2" = "skipped" ] && [ "$FAST_PATH" = "true" ]; then
+                echo "$1 skipped on merge_group via release-PR fast path — accepted"
+                return 0
+              fi
+              echo "$1 result '$2' not acceptable on merge_group (component tests must run and pass in the queue; fast_path='$FAST_PATH')"
+              exit 1
             }
           else
             check_ct() {
@@ -1309,7 +1370,7 @@ jobs:
                 return 0
               fi
               if [ "$2" = "skipped" ] && [ "$CT_REQUIRED" = "false" ]; then
-                echo "$1 skipped — the diff touches no CT-contract path (ct_required=false), accepted"
+                echo "$1 skipped — the diff touches no CT-contract path, CT spec, or geometry golden (ct_required=false), accepted"
                 return 0
               fi
               echo "$1 result '$2' not acceptable (ct_required='$CT_REQUIRED', fast_path='$FAST_PATH')"

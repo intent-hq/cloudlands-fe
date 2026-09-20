@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '../../types';
 import {
   initialState,
   setNoteViewMode,
   setChatDraft,
+  setComposerContextItems,
   setSidebarActiveTab,
   transientUiReducer,
 } from './transient-ui-slice';
@@ -53,6 +55,66 @@ describe('transientUiReducer', () => {
       stateWithDraft,
     );
     expect(transientUiReducer(initialState, setChatDraft(WS_1, 'agent-1', ''))).toBe(initialState);
+  });
+
+  describe('composer attachments', () => {
+    const first = {
+      id: 'first',
+      type: 'file' as const,
+      label: 'first.png',
+      imageData: 'YQ==',
+      imageMimeType: 'image/png',
+    };
+    const second = { ...first, id: 'second', label: 'second.png', imageData: 'Yg==' };
+
+    it('stores and replaces one agent collection without changing other agents or workspaces', () => {
+      let state = transientUiReducer(
+        initialState,
+        setComposerContextItems(WS_1, 'agent-1', [first]),
+      );
+      state = transientUiReducer(state, setComposerContextItems(WS_1, 'agent-2', [second]));
+      state = transientUiReducer(state, setComposerContextItems(WS_2, 'agent-1', [first]));
+      const next = transientUiReducer(state, setComposerContextItems(WS_1, 'agent-1', [second]));
+      expect(getItems(next.byWorkspaceId[WS_1].composerContextByAgentId['agent-1'])).toEqual([
+        second,
+      ]);
+      expect(getItems(state.byWorkspaceId[WS_1].composerContextByAgentId['agent-1'])).toEqual([
+        first,
+      ]);
+      expect(next.byWorkspaceId[WS_1].composerContextByAgentId['agent-2']).toBe(
+        state.byWorkspaceId[WS_1].composerContextByAgentId['agent-2'],
+      );
+      expect(next.byWorkspaceId[WS_2]).toBe(state.byWorkspaceId[WS_2]);
+      expect(structuredClone(next)).toEqual(next);
+    });
+
+    it('removes an empty collection and treats clearing an absent collection as a no-op', () => {
+      const state = transientUiReducer(
+        initialState,
+        setComposerContextItems(WS_1, 'agent-1', [first]),
+      );
+      const cleared = transientUiReducer(state, setComposerContextItems(WS_1, 'agent-1', []));
+      expect(cleared.byWorkspaceId[WS_1].composerContextByAgentId).toEqual({});
+      expect(transientUiReducer(cleared, setComposerContextItems(WS_1, 'agent-1', []))).toBe(
+        cleared,
+      );
+      expect(transientUiReducer(initialState, setComposerContextItems(WS_1, 'agent-1', []))).toBe(
+        initialState,
+      );
+    });
+
+    it('clears all workspace composer collections on unmount while retaining other workspaces', () => {
+      let state = transientUiReducer(
+        initialState,
+        setComposerContextItems(WS_1, 'agent-1', [first]),
+      );
+      state = transientUiReducer(state, setComposerContextItems(WS_1, 'agent-2', [second]));
+      state = transientUiReducer(state, setComposerContextItems(WS_2, 'agent-1', [second]));
+      const next = transientUiReducer(state, workspaceUnmounted(WS_1));
+      expect(next.byWorkspaceId[WS_1]).toBeUndefined();
+      expect(next.byWorkspaceId[WS_2]).toBe(state.byWorkspaceId[WS_2]);
+      expect(transientUiReducer(next, workspaceUnmounted(WS_1))).toBe(next);
+    });
   });
 
   it('keeps note view modes mutually exclusive and stores only non-default modes', () => {

@@ -258,13 +258,16 @@
                 <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
               {/if}
               <Button
-                class="ml-1 hover:bg-accent rounded p-0.5"
+                size="icon-compact"
+                iconOnly
+                class="ml-1 size-5 hover:bg-accent"
                 onclick={(e) => {
                   e.stopPropagation();
                   closeFile(filePath);
                 }}
+                aria-label={m.fileExplorer_layout_closeFile_ariaLabel({ fileName })}
               >
-                <Fa icon={faXmark} size="xs" class="w-3 h-3" />
+                <Fa icon={faXmark} />
               </Button>
             </Button>
           {/each}

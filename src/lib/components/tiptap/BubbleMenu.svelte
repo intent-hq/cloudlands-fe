@@ -375,6 +375,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleBold}
             aria-label={m.tiptap_bubbleMenu_bold_label()}
@@ -394,6 +396,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleItalic}
             aria-label={m.tiptap_bubbleMenu_italic_label()}
@@ -413,6 +417,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleUnderline}
             aria-label={m.tiptap_bubbleMenu_underline_label()}
@@ -432,6 +438,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleStrike}
             aria-label={m.tiptap_bubbleMenu_strikethrough_label()}
@@ -451,6 +459,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={toggleCode}
             aria-label={m.tiptap_bubbleMenu_code_label()}
@@ -470,6 +480,8 @@
         >
           <Button
             variant="ghost"
+            size="icon-compact"
+            iconOnly
             class="bubble-menu-btn"
             onclick={handleLinkClick}
             aria-label={m.tiptap_bubbleMenu_addLink_label()}
@@ -490,6 +502,8 @@
           >
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn"
               onclick={handleAddComment}
               aria-label={m.tiptap_bubbleMenu_addComment_label()}
@@ -505,6 +519,8 @@
           >
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn"
               onclick={handleLaunchAgentClick}
               aria-label={m.tiptap_bubbleMenu_sendToAgent_label()}
@@ -529,6 +545,8 @@
           <div class="link-input-actions">
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn small"
               onclick={handleSetLink}
               aria-label={m.tiptap_bubbleMenu_setLink_ariaLabel()}
@@ -537,6 +555,8 @@
             </Button>
             <Button
               variant="ghost"
+              size="icon-compact"
+              iconOnly
               class="bubble-menu-btn small"
               onclick={handleCancelLink}
               aria-label={m.tiptap_bubbleMenu_cancel_ariaLabel()}
@@ -582,17 +602,10 @@
     gap: 1px;
   }
 
+  /* Sizing comes from the Button `icon-compact` size (square, zero padding). */
   :global(.bubble-menu-btn) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border: none;
-    background: transparent;
     color: hsl(var(--muted-foreground));
     border-radius: 4px;
-    cursor: pointer;
     transition: all 0.1s ease;
   }
 

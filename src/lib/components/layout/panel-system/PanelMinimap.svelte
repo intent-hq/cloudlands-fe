@@ -102,7 +102,7 @@
 <div
   {...triggerProps}
   class={cn(
-    'panel-minimap relative pr-0.75 cursor-pointer rounded transition-all duration-150 text-subtle opacity-50 z-10',
+    'panel-minimap relative pr-0.75 cursor-pointer rounded transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none text-subtle opacity-50 z-10',
     className,
   )}
   role="button"

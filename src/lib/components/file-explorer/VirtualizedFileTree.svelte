@@ -1092,7 +1092,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   bind:this={treeContainer}
-  class="relative h-full overflow-hidden outline-none transition-colors duration-150"
+  class="relative h-full overflow-hidden outline-none transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
   class:file-drop-root={isExternalFileDragOver && dropTargetPath === null}
   style="contain: layout style;"
   tabindex="0"
@@ -1174,7 +1174,7 @@
 
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="group/file-row relative isolate flex items-center [&>[data-slot=list-item-row]]:min-w-0 [&>[data-slot=list-item-row]]:flex-1 transition-colors duration-150 {isIgnored
+              class="group/file-row relative isolate flex items-center [&>[data-slot=list-item-row]]:min-w-0 [&>[data-slot=list-item-row]]:flex-1 transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isIgnored
                 ? 'text-muted-foreground'
                 : ''}"
               class:folder-drop-target={isDropTarget}

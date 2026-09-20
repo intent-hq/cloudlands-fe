@@ -15,34 +15,36 @@ const agentFlags = vi.hoisted(() => ({
   isWaitingOnTool: false,
 }));
 
-vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: () =>
-    makeReadable(
-      agentFlags.isResponding || agentFlags.isBlockedWaiting
-        ? {
-            id: 'agent-1',
-            backendSessionId: null,
-            workspaceId: 'workspace-1',
-            name: 'Agent',
-            status: agentFlags.isBlockedWaiting ? 'waiting' : 'active',
-            messages: [],
-            isResponding: agentFlags.isResponding,
-            isWaitingOnTool: agentFlags.isWaitingOnTool,
-            isWaitingForOtherAgents: agentFlags.isBlockedWaiting,
-          }
-        : null,
-    ),
-  selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
-  selectAgentPreview: Object.assign(() => makeReadable(null), { select: () => null }),
-  // Mirrors the stored-session predicate: the raw waiting reason includes an
-  // unresolved tool_use on the in-flight turn.
-  selectAgentIsWaiting: () =>
-    makeReadable(agentFlags.isBlockedWaiting || agentFlags.isWaitingOnTool),
-  selectAgentIsBlockedWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
-  selectAgentSessionStreamingContent: () => makeReadable(''),
-  selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
-  selectAgentProvider: () => makeReadable(undefined),
-}));
+vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => {
+  const session = () =>
+    agentFlags.isResponding || agentFlags.isBlockedWaiting
+      ? {
+          id: 'agent-1',
+          backendSessionId: null,
+          workspaceId: 'workspace-1',
+          name: 'Agent',
+          status: agentFlags.isBlockedWaiting ? 'waiting' : 'active',
+          messages: [],
+          isResponding: agentFlags.isResponding,
+          isWaitingOnTool: agentFlags.isWaitingOnTool,
+          isWaitingForOtherAgents: agentFlags.isBlockedWaiting,
+        }
+      : null;
+  return {
+    selectAgentSession: Object.assign(() => makeReadable(session()), { select: () => session() }),
+    selectAgentIsResponding: () => makeReadable(agentFlags.isResponding),
+    selectAgentDetailHydrated: () => makeReadable(false),
+    selectAgentPreview: Object.assign(() => makeReadable(null), { select: () => null }),
+    // Mirrors the stored-session predicate: the raw waiting reason includes an
+    // unresolved tool_use on the in-flight turn.
+    selectAgentIsWaiting: () =>
+      makeReadable(agentFlags.isBlockedWaiting || agentFlags.isWaitingOnTool),
+    selectAgentIsBlockedWaiting: () => makeReadable(agentFlags.isBlockedWaiting),
+    selectAgentSessionStreamingContent: () => makeReadable(''),
+    selectAgentSessionHasStreamOwnedMessage: () => makeReadable(false),
+    selectAgentProvider: () => makeReadable(undefined),
+  };
+});
 
 vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatReceivedFirstChunk: () => makeReadable(false),

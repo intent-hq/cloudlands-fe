@@ -164,6 +164,15 @@ describe('PanelEmptyState', () => {
     expect(withRecents.reopenLastClosed).toHaveBeenCalledOnce();
   });
 
+  it('withholds the terminal and browser cards when the host offers no handler (collaborator)', () => {
+    renderEmptyState({ onCreateAgent: vi.fn(), onCreateNote: vi.fn() });
+
+    expect(screen.getByRole('button', { name: /^New Agent/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^New Note/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^New Terminal/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^New Browser/ })).toBeNull();
+  });
+
   it('reopens the clicked recent entry into this panel (monorepo#4553)', async () => {
     const now = Date.now();
     mocks.recentlyClosed = [

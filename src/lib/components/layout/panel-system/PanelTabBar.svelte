@@ -1701,8 +1701,10 @@
                      kept alive for the agent, monorepo#2857) — say so. -->
                 <Button
                   variant="ghost-light"
+                  size="icon-compact"
+                  iconOnly
                   class={cn(
-                    'tab-close ml-1 p-0.5 rounded transition-opacity cursor-pointer',
+                    'tab-close ml-1 transition-opacity cursor-pointer',
                     isActive
                       ? 'opacity-60 hover:opacity-100 focus-visible:opacity-100'
                       : 'opacity-0 group-hover:opacity-60 group-focus-within:opacity-60',
@@ -1893,11 +1895,15 @@
   <!-- Compact header bar (breadcrumb style) -->
   {#if activeTab}
     {@const activeTabPath = getTabPath(activeTab)}
-    {@const activeTabTitle = getTabTitle(activeTab)}
+    {@const activeTabTitle =
+      activeTab.type === 'file' && activeTab.filePath
+        ? activeTab.filePath.split(/[/\\]/).pop() || getTabTitle(activeTab)
+        : getTabTitle(activeTab)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class={cn(
         'panel-header group/header relative flex h-[var(--panel-header-height)] cursor-grab items-center bg-card pr-2.5 active:cursor-grabbing',
+        activeTab.type === 'agent' && 'panel-agent-header',
         isFocused && 'focused',
       )}
       data-column-focused={isFocused ? '' : undefined}
@@ -1941,6 +1947,7 @@
           <div class="panel-header-title min-w-0 shrink" data-panel-header-title>
             {#if onTabRename}
               <EditableName
+                class="agent-header-editable max-w-full"
                 value={activeTabTitle}
                 onSave={(newName) => handleTabRename(activeTab, newName)}
                 textClass="text-sm shrink font-medium {isFocused
@@ -2011,7 +2018,10 @@
             {/if}
             <!-- Path (for file-based tabs) -->
             {#if activeTabPath}
-              {@const lastSlash = activeTabPath.lastIndexOf('/')}
+              {@const lastSlash = Math.max(
+                activeTabPath.lastIndexOf('/'),
+                activeTabPath.lastIndexOf('\\'),
+              )}
               {@const dirPath = lastSlash > 0 ? activeTabPath.substring(0, lastSlash) : null}
               {#if dirPath}
                 <span class="text-xs truncate {isFocused ? 'text-subtle' : 'text-ghost'}">
@@ -2033,7 +2043,9 @@
         </div>
       {/if}
 
-      <div class="min-w-0 flex-1" aria-hidden="true"></div>
+      {#if activeTab.type !== 'agent'}
+        <div class="min-w-0 flex-1" aria-hidden="true"></div>
+      {/if}
 
       <!-- Right: all actions at the far edge in stable order. -->
       <div class="flex shrink-0 items-center gap-0" data-panel-header-actions>
@@ -2502,6 +2514,30 @@
   .panel-header-leading-surface {
     position: relative;
     top: 0.5px;
+  }
+
+  .panel-agent-header {
+    height: auto;
+    flex-wrap: wrap;
+  }
+
+  .panel-agent-header [data-panel-agent-header-identity] {
+    /* Reserve the avatar, both title insets and EditableName's 60px editing minimum.
+       Flex wraps only when this minimum and the unchanged action cluster cannot fit. */
+    flex: 1 1 calc(var(--agent-avatar-emphasized-surface-size) + 60px + 1.25rem);
+    min-width: calc(var(--agent-avatar-emphasized-surface-size) + 60px + 1.25rem);
+    min-height: var(--panel-header-height);
+    padding-inline-end: 0.5rem;
+  }
+
+  .panel-agent-header [data-panel-header-actions] {
+    min-height: var(--panel-header-height);
+    margin-inline-start: auto;
+  }
+
+  .panel-agent-header :global(.agent-header-editable :is(button, input)) {
+    /* Override the pixel-only inline cap without changing other EditableName consumers. */
+    max-width: min(100%, 240px) !important;
   }
 
   .pane-stack-glyph {

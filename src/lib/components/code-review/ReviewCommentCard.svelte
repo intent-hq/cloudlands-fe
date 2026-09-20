@@ -143,11 +143,13 @@
       </Button>
       <Button
         variant="ghost"
-        class="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
+        size="icon-compact"
+        iconOnly
+        class="text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
         onclick={() => onViewInDiff?.(comment)}
         title={m.codeReview_commentCard_viewInDiff_tooltip()}
       >
-        <Fa icon={faArrowUpRightFromSquare} class="h-3 w-3" />
+        <Fa icon={faArrowUpRightFromSquare} />
       </Button>
     </div>
 

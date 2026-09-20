@@ -77,7 +77,7 @@
         variant="ghost"
         class={cn(
           'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium',
-          'transition-colors duration-150 cursor-pointer',
+          'transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer',
           'border border-transparent',
           variantStyles[variant],
           onClick && 'hover:border-border',

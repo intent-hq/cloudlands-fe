@@ -13,14 +13,35 @@
  * When a lock holder spawns a nested runner it exports `HELD_LOCK_ENV=<key>`;
  * the nested runner skips acquisition for that key instead of waiting on its
  * own parent.
+ *
+ * A lock is a directory holding one owner record named after the holder's
+ * token (`owner-<token>.json`). It is created by renaming a pre-populated
+ * sibling directory into place, so a held lock is never observed empty, and a
+ * stale lock is reclaimed by unlinking the dead owner's record by name and
+ * then `rmdir`-ing the directory: a contender that re-created the lock in the
+ * meantime holds a differently named record, so the unlink misses it and the
+ * non-recursive rmdir refuses its non-empty directory.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export const HELD_LOCK_ENV = 'INTENT_VERIFICATION_LOCK_HELD';
 export const DEFAULT_CT_PORT = 3100;
+
+const OWNER_RECORD = /^owner(-[^/]+)?\.json$/;
+const LOCK_HELD_CODES = new Set(['EEXIST', 'ENOTEMPTY', 'EPERM']);
 
 /**
  * Blank (empty or whitespace-only) CT_PORT is unset: playwright-ct.config.ts
@@ -60,57 +81,97 @@ export function lockTimeout(lockKey, envValue) {
   return Number.isFinite(value) && value >= 0 ? Math.min(value, 300_000) : defaultMs;
 }
 
+function ownerRecordName(lockPath) {
+  return readdirSync(lockPath).find((name) => OWNER_RECORD.test(name));
+}
+
+/** The owner record of the lock at `lockPath`, or `undefined` when it has none. */
+export function lockOwner(lockPath) {
+  const record = ownerRecordName(lockPath);
+  return record ? JSON.parse(readFileSync(join(lockPath, record), 'utf8')) : undefined;
+}
+
+/**
+ * Remove a stale lock without touching a lock re-created by another contender:
+ * only the dead owner's record (`record`) is unlinked, and the directory goes
+ * only while empty. Either step failing means someone else got there first.
+ */
+function reclaimStaleLock(lockPath, record) {
+  if (record) {
+    try {
+      unlinkSync(join(lockPath, record));
+    } catch (error) {
+      if (error?.code === 'ENOENT') return;
+      throw error;
+    }
+  }
+  try {
+    rmdirSync(lockPath);
+  } catch (error) {
+    if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error?.code)) throw error;
+  }
+}
+
 export async function acquireVerificationLock(options = {}) {
   const lockPath = options.lockPath ?? defaultLockPath();
   const timeoutMs = options.timeoutMs ?? 30_000;
   const pollMs = options.pollMs ?? 250;
   const statLock = options.statLock ?? statSync;
   const token = randomUUID();
+  const ownerRecord = `owner-${token}.json`;
   const started = Date.now();
-  while (true) {
-    try {
-      mkdirSync(lockPath);
-      writeFileSync(
-        join(lockPath, 'owner.json'),
-        JSON.stringify({ pid: process.pid, cwd: options.cwd ?? process.cwd(), token }),
-      );
-      return () => {
-        try {
-          const owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
-          if (owner.token === token) rmSync(lockPath, { recursive: true, force: true });
-        } catch {
-          // A missing or replaced lock is not ours to remove.
-        }
-      };
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-      let stale;
-      let owner;
+  const staging = mkdtempSync(`${lockPath}.acquire-`);
+  writeFileSync(
+    join(staging, ownerRecord),
+    JSON.stringify({ pid: process.pid, cwd: options.cwd ?? process.cwd(), token }),
+  );
+  try {
+    while (true) {
       try {
-        owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
-        stale = !processIsAlive(owner.pid);
-      } catch {
+        renameSync(staging, lockPath);
+        return () => {
+          try {
+            unlinkSync(join(lockPath, ownerRecord));
+            rmdirSync(lockPath);
+          } catch {
+            // A missing or replaced lock is not ours to remove.
+          }
+        };
+      } catch (error) {
+        if (!LOCK_HELD_CODES.has(error?.code)) throw error;
+        let stale;
+        let owner;
+        let record;
         try {
-          stale = Date.now() - statLock(lockPath).mtimeMs > 4 * 60 * 60 * 1000;
-        } catch (statError) {
-          if (statError?.code === 'ENOENT') continue;
-          throw statError;
+          record = ownerRecordName(lockPath);
+          if (!record) throw new Error('lock has no owner record');
+          owner = JSON.parse(readFileSync(join(lockPath, record), 'utf8'));
+          stale = !processIsAlive(owner.pid);
+        } catch {
+          try {
+            stale = Date.now() - statLock(lockPath).mtimeMs > 4 * 60 * 60 * 1000;
+          } catch (statError) {
+            if (statError?.code === 'ENOENT') continue;
+            throw statError;
+          }
         }
+        if (stale) {
+          reclaimStaleLock(lockPath, record);
+          continue;
+        }
+        if (Date.now() - started >= timeoutMs) {
+          const waitedMs = Date.now() - started;
+          const ownerDetails = owner
+            ? `owner pid ${owner.pid} cwd ${owner.cwd ?? '<unknown>'}`
+            : 'owner metadata unavailable';
+          throw new Error(`verification lock ${lockPath}: ${ownerDetails}; waited ${waitedMs}ms`, {
+            cause: error,
+          });
+        }
+        await new Promise((done) => setTimeout(done, pollMs));
       }
-      if (stale) {
-        rmSync(lockPath, { recursive: true, force: true });
-        continue;
-      }
-      if (Date.now() - started >= timeoutMs) {
-        const waitedMs = Date.now() - started;
-        const ownerDetails = owner
-          ? `owner pid ${owner.pid} cwd ${owner.cwd ?? '<unknown>'}`
-          : 'owner metadata unavailable';
-        throw new Error(`verification lock ${lockPath}: ${ownerDetails}; waited ${waitedMs}ms`, {
-          cause: error,
-        });
-      }
-      await new Promise((done) => setTimeout(done, pollMs));
     }
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
   }
 }

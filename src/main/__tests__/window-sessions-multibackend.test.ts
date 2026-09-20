@@ -36,7 +36,6 @@ const { FakeBrowserWindow, mockRegisterWindowTitleListener } = vi.hoisted(() => 
       on: vi.fn(),
       getURL: () => this.url,
       session: { clearCache: () => Promise.resolve() },
-      setBackgroundThrottling: vi.fn(),
     };
 
     constructor(opts?: { x: number; y: number; width: number; height: number }) {
@@ -759,29 +758,6 @@ describe('multi-backend window sessions', () => {
       const plain = live.find((w) => !w.webContents.getURL().includes('/hud'));
       expect(isTrackedHudWindow(hud as never)).toBe(true);
       expect(isTrackedHudWindow(plain as never)).toBe(false);
-    });
-
-    it('disables background throttling on a restored /hud session only', async () => {
-      const bounds = { x: 100, y: 100, width: 1024, height: 768 };
-      fs.writeFileSync(
-        getWindowSessionsPath(),
-        JSON.stringify({
-          'remote-a': [
-            { route: '/hud', bounds },
-            { route: '/work/remote', bounds },
-          ],
-        }),
-        'utf-8',
-      );
-
-      await restoreWindowsForBackend('remote-a');
-
-      const live = FakeBrowserWindow.getAllWindows();
-      expect(live).toHaveLength(2);
-      const hud = live.find((w) => w.webContents.getURL().includes('/hud'));
-      const plain = live.find((w) => !w.webContents.getURL().includes('/hud'));
-      expect(hud?.webContents.setBackgroundThrottling).toHaveBeenCalledWith(false);
-      expect(plain?.webContents.setBackgroundThrottling).not.toHaveBeenCalled();
     });
 
     it('restores the incoming backend layout', async () => {

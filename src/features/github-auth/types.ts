@@ -51,6 +51,17 @@ export interface GithubRepo {
 }
 
 /**
+ * Options for starting GitHub authentication
+ */
+export interface StartAuthOptions {
+  /**
+   * Start a fresh device flow even when a token is already configured, so an
+   * existing connection can be re-authorized (e.g. to pick up new scopes).
+   */
+  reconnect?: boolean;
+}
+
+/**
  * Result from starting GitHub authentication
  */
 export interface StartAuthResult {

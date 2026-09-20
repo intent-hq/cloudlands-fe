@@ -3,6 +3,8 @@ import path from 'path';
 import os from 'os';
 import { readFileSync } from 'fs';
 import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
+import { PARAGLIDE_STALE_MESSAGE, ensureRepoParaglide } from './scripts/paraglide-inputs-hash.mjs';
+import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
 // recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
@@ -20,24 +22,34 @@ const isCI = !!process.env.CI && process.env.CI !== 'false';
 // so on any core count the CI path differs from '50%' only via the 16 cap.
 const ciMaxWorkers = Math.max(1, Math.min(16, Math.round(os.availableParallelism() / 2)));
 
+/**
+ * Produces src/shared/paraglide through the locked, staged publisher when it is
+ * missing or stale, so tests can import m.* functions without a separate
+ * generate:i18n run. Upstream's paraglideVitePlugin is deliberately not used:
+ * it writes into the outdir on its own and races the publisher when several
+ * Vitest/Vite processes start together (intent-hq/intent#4565).
+ */
+export function generatedParaglidePlugin({ ensure = ensureRepoParaglide } = {}) {
+  return {
+    name: 'ensure-generated-paraglide',
+    enforce: 'pre' as const,
+    async buildStart() {
+      if (!(await ensure({ rootDir: __dirname, ifStale: true }))) {
+        throw new Error(`[generate:i18n] ${PARAGLIDE_STALE_MESSAGE}`);
+      }
+    },
+  };
+}
+
 export default defineConfig(async () => {
   const { svelte } = await import('@sveltejs/vite-plugin-svelte');
-  const { paraglideVitePlugin } = await import('@inlang/paraglide-js');
 
   // Mirror vite.config.mjs's __APP_VERSION__ define so components that render
   // the app version (e.g. HudFooter) resolve it under vitest.
   const packageJson = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 
   return {
-    plugins: [
-      // Compiles messages/{locale}.json into src/shared/paraglide so tests can
-      // import m.* functions without a separate generate:i18n run.
-      paraglideVitePlugin({
-        project: path.resolve(__dirname, 'project.inlang'),
-        outdir: path.resolve(__dirname, 'src/shared/paraglide'),
-      }),
-      svelte(),
-    ],
+    plugins: [generatedParaglidePlugin(), svelte()],
     test: {
       globals: true,
       environment: 'jsdom',
@@ -45,9 +57,12 @@ export default defineConfig(async () => {
       // Node 24's V8 Sparkplug/GC regression (nodejs/node#62393) SIGSEGVs long
       // test runs: forks surface it as dropped files, while threads crash the
       // controller directly. Keep process isolation and disable only Sparkplug
-      // in workers until the pinned runtime contains the upstream fix.
+      // in workers until the pinned runtime contains the upstream fix. The
+      // setup file strips these flags from process.execArgv again inside each
+      // fork so worker_threads constructed with an explicit execArgv (e.g. by
+      // @lix-js/sdk) are not rejected with ERR_WORKER_INVALID_EXEC_ARGV.
       pool: 'forks',
-      execArgv: ['--no-sparkplug'],
+      execArgv: [...FORK_EXEC_ARGV],
       // Redirects every worker's os.tmpdir() into a private root and fails the
       // run if a test leaves a temp entry behind (see src/test-global-setup.ts).
       globalSetup: ['./src/test-global-setup.ts'],

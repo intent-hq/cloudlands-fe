@@ -33,6 +33,7 @@ const lifecycle = vi.hoisted(() => ({ events: [] as Array<{ type: string; seq: n
 const rpc = vi.hoisted(() => ({
   handler: (async () => ({})) as (method: string) => Promise<unknown>,
   calls: [] as string[],
+  payloads: [] as Array<[string, unknown]>,
 }));
 
 vi.mock('../json-rpc-client', () => {
@@ -70,8 +71,9 @@ vi.mock('../json-rpc-client', () => {
     dispose(): void {
       lifecycle.events.push({ type: 'dispose', seq: this.id });
     }
-    request = vi.fn(async (method: string) => {
+    request = vi.fn(async (method: string, params?: unknown) => {
       rpc.calls.push(method);
+      rpc.payloads.push([method, params]);
       return rpc.handler(method);
     });
     registerMethod(): () => void {
@@ -171,6 +173,37 @@ vi.mock('../connections-store', () => ({
   onConnectionsMutated: () => () => {},
 }));
 
+// Guest sessions store: an in-test double with the credential-replaced and
+// removed-by-sync seams captured so a re-join / remote forget can be
+// simulated against the pool.
+const guestStore = vi.hoisted(() => ({
+  findById: vi.fn(),
+  getDecryptedToken: vi.fn(),
+  setTcAddress: vi.fn(),
+  setHosts: vi.fn(),
+  replacedListeners: [] as Array<(id: string) => void>,
+  removedListeners: [] as Array<(id: string) => void>,
+}));
+vi.mock('../guest-sessions-store', () => ({
+  list: vi.fn(async () => []),
+  findById: guestStore.findById,
+  getDecryptedToken: guestStore.getDecryptedToken,
+  setHostname: vi.fn(async () => false),
+  setTcAddress: guestStore.setTcAddress,
+  setHosts: guestStore.setHosts,
+  listSyncRecords: vi.fn(async () => []),
+  applyRemoteSyncRecord: vi.fn(async () => false),
+  onGuestSessionsMutated: () => () => {},
+  onGuestCredentialReplaced: (listener: (id: string) => void) => {
+    guestStore.replacedListeners.push(listener);
+    return () => {};
+  },
+  onGuestSessionRemovedBySync: (listener: (id: string) => void) => {
+    guestStore.removedListeners.push(listener);
+    return () => {};
+  },
+}));
+
 // Keychain-sync lifecycle: controllable double for the T4 settings IPC. The
 // registered handle is captured so tests can drive getStatus/requestReconcile
 // and the onStatusChanged broadcast seam directly.
@@ -237,6 +270,20 @@ const LOCAL = {
   port: null,
   fingerprint: null,
   isLocal: true,
+};
+const GUEST = {
+  id: 'guest-1',
+  label: 'studio.local',
+  host: '10.0.0.9',
+  hosts: ['10.0.0.9'],
+  port: 8443,
+  fingerprint: 'EE:FF:00:11',
+  tcAddress: null,
+  hostname: null,
+  principalId: 'prn_7',
+  login: 'octocat',
+  tokenEncrypted: true,
+  updatedAt: 1,
 };
 
 /** Import a fresh backend.ipc module and inject window hook spies. */
@@ -316,6 +363,7 @@ beforeEach(() => {
   lifecycle.events = [];
   rpc.handler = async () => ({});
   rpc.calls = [];
+  rpc.payloads = [];
   // Sensible defaults; individual tests override.
   store.getActiveId.mockResolvedValue('local');
   store.list.mockResolvedValue([LOCAL, REMOTE]);
@@ -325,6 +373,12 @@ beforeEach(() => {
   store.setDaemonVersion.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
   store.getDetectHosts.mockResolvedValue(true);
+  guestStore.findById.mockResolvedValue(null);
+  guestStore.getDecryptedToken.mockResolvedValue(null);
+  guestStore.setTcAddress.mockResolvedValue(false);
+  guestStore.setHosts.mockResolvedValue(false);
+  guestStore.replacedListeners = [];
+  guestStore.removedListeners = [];
   keychainSync.enabled = false;
   keychainSync.status = null;
   keychainSync.initOptions = null;
@@ -446,6 +500,205 @@ describe('openBackendWindow connect-before-open', () => {
     await expect(mod.openBackendWindow('remote-1')).rejects.toThrow(/no stored token/i);
     expect(lifecycle.events).toEqual([]);
     expect(openOrFocus).not.toHaveBeenCalled();
+  });
+
+  it('a guest re-join evicts the pooled client built on the superseded credential', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const { mod } = await loadModule();
+    mod.getBackendClient(); // client #1 (local)
+    lifecycle.events = [];
+
+    await mod.openBackendWindow(GUEST.id);
+    const stale = mod.getBackendClientForConnection(GUEST.id);
+    expect(stale).toBeDefined();
+    expect((stale?.getConfig() as { token?: string }).token).toBe('guest-token-v1');
+    expect(lifecycle.events.map((e) => e.type)).toEqual(['construct', 'start', 'open']);
+    const staleSeq = lifecycle.events[0].seq;
+
+    // The store replaces the credential under the same id (a second invite
+    // to the same daemon) and notifies; the stale pool member must go.
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v2');
+    expect(guestStore.replacedListeners).toHaveLength(1);
+    for (const listener of guestStore.replacedListeners) listener(GUEST.id);
+    expect(lifecycle.events.at(-1)).toEqual({ type: 'dispose', seq: staleSeq });
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    // The local pool member is untouched.
+    expect(mod.getBackendClientForConnection('local')).toBeDefined();
+
+    // The next open rebuilds the member from the store: fresh credential.
+    await mod.openBackendWindow(GUEST.id);
+    const fresh = mod.getBackendClientForConnection(GUEST.id);
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(stale);
+    expect((fresh?.getConfig() as { token?: string }).token).toBe('guest-token-v2');
+
+    // A replacement for an id with no pooled client is a no-op.
+    lifecycle.events = [];
+    for (const listener of guestStore.replacedListeners) listener('guest-unknown');
+    expect(lifecycle.events).toEqual([]);
+  });
+
+  it('a guest re-join during client construction lands the fresh credential, never the superseded one', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    let release!: (token: string) => void;
+    guestStore.getDecryptedToken.mockImplementationOnce(
+      () => new Promise<string>((resolve) => (release = resolve)),
+    );
+    const { mod } = await loadModule();
+
+    // Construction #1 is blocked reading the (old) credential from the store.
+    const pending = mod.connectBackendClient(GUEST.id);
+    await vi.waitFor(() => expect(guestStore.getDecryptedToken).toHaveBeenCalledOnce());
+
+    // The credential is replaced while that read is in flight, then the old
+    // read completes: its config is superseded and must not be pooled.
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v2');
+    for (const listener of guestStore.replacedListeners) listener(GUEST.id);
+    release('guest-token-v1');
+
+    const client = await pending;
+    expect((client.getConfig() as { token?: string }).token).toBe('guest-token-v2');
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBe(client);
+    expect(guestStore.getDecryptedToken).toHaveBeenCalledTimes(2);
+  });
+
+  it('a guest re-join with windows open rebuilds the client and replays the reconnect marker', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const send = installWindow(GUEST.id);
+    const { mod } = await loadModule();
+    const reconnected = vi.fn();
+    mod.onAnyBackendReconnected(reconnected);
+
+    await mod.openBackendWindow(GUEST.id);
+    const stale = mod.getBackendClientForConnection(GUEST.id);
+    send.mockClear();
+
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v2');
+    for (const listener of guestStore.replacedListeners) listener(GUEST.id);
+
+    // No further open: the live window's client is rebuilt on the fresh
+    // credential and told to re-subscribe, exactly like an owner re-pair.
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(
+        'backend:status',
+        expect.objectContaining({ status: 'connected', reconnected: true }),
+      );
+    });
+    const fresh = mod.getBackendClientForConnection(GUEST.id);
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(stale);
+    expect((fresh?.getConfig() as { token?: string }).token).toBe('guest-token-v2');
+    expect(reconnected).toHaveBeenCalledWith(GUEST.id);
+  });
+
+  it('a guest forgotten on another device (sync tombstone) evicts the pooled client and closes its windows', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    const { mod, ensureLocalWindowBeforeClose, closeForBackend } = await loadModule();
+    mod.getBackendClient(); // client #1 (local)
+    lifecycle.events = [];
+
+    await mod.openBackendWindow(GUEST.id);
+    const stale = mod.getBackendClientForConnection(GUEST.id);
+    expect(stale).toBeDefined();
+    expect(lifecycle.events.map((e) => e.type)).toEqual(['construct', 'start', 'open']);
+    const staleSeq = lifecycle.events[0].seq;
+    lifecycle.events = [];
+
+    // The keychain pull applies the tombstone: the store deletes the record
+    // and notifies. Nothing may keep serving the forgotten credential.
+    guestStore.findById.mockResolvedValue(null);
+    guestStore.getDecryptedToken.mockResolvedValue(null);
+    expect(guestStore.removedListeners).toHaveLength(1);
+    for (const listener of guestStore.removedListeners) listener(GUEST.id);
+    expect(lifecycle.events).toEqual([{ type: 'dispose', seq: staleSeq }]);
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    expect(mod.getBackendClientForConnection('local')).toBeDefined();
+
+    // Window teardown mirrors an owner forget: local fallback first, then
+    // the guest's windows.
+    await vi.waitFor(() => expect(closeForBackend).toHaveBeenCalledWith(GUEST.id));
+    expect(ensureLocalWindowBeforeClose).toHaveBeenCalledWith(GUEST.id);
+    expect(ensureLocalWindowBeforeClose.mock.invocationCallOrder[0]).toBeLessThan(
+      closeForBackend.mock.invocationCallOrder[0],
+    );
+    // No rebuild: the record is gone, so a connect for the id fails closed.
+    await expect(mod.connectBackendClient(GUEST.id)).rejects.toThrow(/unknown or incomplete/i);
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toEqual([]);
+
+    // A tombstone for an id with no pooled client touches nothing.
+    lifecycle.events = [];
+    closeForBackend.mockClear();
+    for (const listener of guestStore.removedListeners) listener('guest-unknown');
+    await Promise.resolve();
+    expect(lifecycle.events).toEqual([]);
+    expect(closeForBackend).not.toHaveBeenCalled();
+  });
+
+  it('a sync tombstone racing a guest client construction never pools the deleted credential', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    let release!: (token: string) => void;
+    guestStore.getDecryptedToken.mockImplementationOnce(
+      () => new Promise<string>((resolve) => (release = resolve)),
+    );
+    const { mod } = await loadModule();
+
+    const pending = mod.connectBackendClient(GUEST.id);
+    await vi.waitFor(() => expect(guestStore.getDecryptedToken).toHaveBeenCalledOnce());
+
+    // The record is deleted while the credential read is in flight.
+    guestStore.findById.mockResolvedValue(null);
+    for (const listener of guestStore.removedListeners) listener(GUEST.id);
+    release('guest-token-v1');
+
+    await expect(pending).rejects.toThrow(/unknown or incomplete/i);
+    expect(mod.getBackendClientForConnection(GUEST.id)).toBeUndefined();
+    expect(lifecycle.events.filter((e) => e.type === 'construct')).toEqual([]);
+  });
+
+  it('a connected guest persists the routes its daemon advertises in the guest registry', async () => {
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token-v1');
+    guestStore.setTcAddress.mockResolvedValue(true);
+    guestStore.setHosts.mockResolvedValue(true);
+    rpc.handler = async (method) => {
+      if (method === 'system.status') {
+        return {
+          updateSupported: true,
+          tcAddress: 'tc7f2a91.tailcat.net',
+          localIps: ['10.0.0.9', '10.0.0.42', '127.0.0.1'],
+        };
+      }
+      if (method === 'server.pairingInfo') {
+        return { localIps: ['10.0.0.9', '10.0.0.42'], tcAddress: 'tc7f2a91.tailcat.net' };
+      }
+      return {};
+    };
+    const send = installWindow(GUEST.id);
+    const { mod } = await loadModule();
+
+    await mod.openBackendWindow(GUEST.id);
+    const client = mod.getBackendClientForId(GUEST.id) as unknown as {
+      hello(result: unknown): void;
+    };
+    client.hello({ server: { version: '6.8.0' } });
+
+    await vi.waitFor(() => {
+      expect(guestStore.setTcAddress).toHaveBeenCalledWith(GUEST.id, 'tc7f2a91.tailcat.net');
+      // Loopback never becomes a dial candidate.
+      expect(guestStore.setHosts).toHaveBeenCalledWith(GUEST.id, ['10.0.0.9', '10.0.0.42']);
+    });
+    // The owner registry is never asked to persist a guest's routes (an
+    // unknown id there would silently drop them).
+    expect(store.setHosts).not.toHaveBeenCalledWith(GUEST.id, expect.anything());
+    expect(store.setTcAddress).not.toHaveBeenCalledWith(GUEST.id, expect.anything());
+    expect(store.setUpdateSupported).not.toHaveBeenCalledWith(GUEST.id, expect.anything());
+    // Renderers learn the refreshed record through the guest list push.
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith('guest-sessions:changed', expect.anything()),
+    );
   });
 });
 
@@ -980,6 +1233,16 @@ describe('connections:* IPC handlers', () => {
   });
 
   it('connections:update-backend routes system.requestUpdate to the pooled client', async () => {
+    let accepted = false;
+    rpc.handler = async (method) => {
+      if (method === 'system.status')
+        return { version: accepted ? '0.1.0' : '0.0.1', exactUpdateSupported: true };
+      if (method === 'system.requestUpdate') {
+        accepted = true;
+        return { ok: true, targetVersion: '0.1.0' };
+      }
+      return {};
+    };
     const { mod } = await loadModule();
     const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
     remote.status = 'connected';
@@ -987,8 +1250,41 @@ describe('connections:* IPC handlers', () => {
     const handler = findHandler('connections:update-backend');
     expect(handler).toBeDefined();
 
-    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({ ok: true });
-    expect(rpc.calls).toContain('system.requestUpdate');
+    await expect(
+      handler!({}, { id: 'remote-1', targetVersion: '99.0.0', url: 'https://attacker/asset' }),
+    ).resolves.toEqual({ ok: true });
+    expect(rpc.payloads.filter(([method]) => method === 'system.requestUpdate')).toEqual([
+      ['system.requestUpdate', { targetVersion: '0.1.0' }],
+    ]);
+  });
+
+  it('coalesces simultaneous update requests for one device', async () => {
+    let finish: (value: unknown) => void = () => {};
+    const current = new Promise((resolve) => {
+      finish = resolve;
+    });
+    let accepted = false;
+    rpc.handler = async (method) => {
+      if (method === 'system.status')
+        return accepted ? current : { version: '0.0.1', exactUpdateSupported: true };
+      if (method === 'system.requestUpdate') {
+        accepted = true;
+        return { ok: true, targetVersion: '0.1.0' };
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    const remote = (await mod.connectBackendClient('remote-1')) as unknown as { status: string };
+    remote.status = 'connected';
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:update-backend')!;
+    const first = handler({}, { id: 'remote-1' });
+    const second = handler({}, { id: 'remote-1' });
+    await vi.waitFor(() =>
+      expect(rpc.calls.filter((method) => method === 'system.requestUpdate')).toHaveLength(1),
+    );
+    finish({ version: '0.1.0' });
+    await expect(Promise.all([first, second])).resolves.toEqual([{ ok: true }, { ok: true }]);
   });
 
   it('connections:update-backend rejects the local id as unsupported in sidecar/unknown mode', async () => {
@@ -1096,6 +1392,7 @@ describe('connections:* IPC handlers', () => {
       if (method === 'system.requestUpdate') {
         throw new JsonRpcError({ code: -32601, message: 'Method not found' });
       }
+      if (method === 'system.status') return { version: '0.0.1', exactUpdateSupported: true };
       return {};
     };
     const { mod } = await loadModule();
@@ -1114,6 +1411,7 @@ describe('connections:* IPC handlers', () => {
       if (method === 'system.requestUpdate') {
         throw new JsonRpcError({ code: -32000, message: 'daemon is not sitter-supervised' });
       }
+      if (method === 'system.status') return { version: '0.0.1', exactUpdateSupported: true };
       return {};
     };
     const { mod } = await loadModule();
@@ -1133,6 +1431,8 @@ describe('connections:* IPC handlers', () => {
   describe('daemonUpdateDisconnectedAt marker on backend:status', () => {
     type FakeClient = { status: string; emit(event: string, arg?: unknown): void };
     const MARKER = 'daemonUpdateDisconnectedAt';
+    const pendingOperations: Promise<unknown>[] = [];
+    const testClients: FakeClient[] = [];
     const T0 = new Date('2026-01-01T00:00:00Z').getTime();
 
     /** Remote-1 window + connected pooled client + handlers, ready to update. */
@@ -1143,7 +1443,34 @@ describe('connections:* IPC handlers', () => {
       const remote = (await mod.connectBackendClient('remote-1')) as unknown as FakeClient;
       remote.status = 'connected';
       mod.registerBackendHandlers();
-      const update = findHandler('connections:update-backend')!;
+      const handler = findHandler('connections:update-backend')!;
+      const previous = rpc.handler;
+      let onAccepted: (() => void) | undefined;
+      rpc.handler = async (method) => {
+        if (method === 'system.status')
+          return {
+            version: '0.0.1',
+            exactUpdateSupported: true,
+            targetUpdate: { targetVersion: '0.1.0', state: 'installing' },
+          };
+        const result = await previous(method);
+        if (method === 'system.requestUpdate') {
+          onAccepted?.();
+          return { ok: true, targetVersion: '0.1.0' };
+        }
+        return result;
+      };
+      // Observe acceptance separately: the production IPC now remains pending
+      // through restart. Each test drives drops while that operation is live.
+      const update = async (event: unknown, params: unknown) => {
+        const accepted = new Promise<{ ok: true }>((resolve) => {
+          onAccepted = () => resolve({ ok: true });
+        });
+        const result = handler(event, params);
+        pendingOperations.push(result);
+        return Promise.race([accepted, result]);
+      };
+      testClients.push(remote);
       const getStatus = findHandler('backend:get-status')!;
       const payloadsOf = (send: ReturnType<typeof vi.fn>) => () =>
         send.mock.calls
@@ -1163,11 +1490,15 @@ describe('connections:* IPC handlers', () => {
     }
 
     beforeEach(() => {
-      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
       vi.setSystemTime(T0);
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+      rpc.handler = async () => ({ version: '0.1.0', exactUpdateSupported: true });
+      for (const client of testClients.splice(0)) client.status = 'connected';
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.all(pendingOperations.splice(0));
       vi.useRealTimers();
     });
 

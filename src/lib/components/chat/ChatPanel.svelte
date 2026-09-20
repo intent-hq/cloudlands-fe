@@ -36,6 +36,8 @@
    * - onChatUpdate: Callback for chat state updates
    */
 
+  import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { setComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { onMount, onDestroy, untrack, tick } from 'svelte';
   import { deepEqual } from 'fast-equals';
   import { writable } from 'svelte/store';
@@ -77,6 +79,8 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+  import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
+  import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
   import {
     acquireChatInterestLease,
     releaseChatInterestLease,
@@ -95,6 +99,7 @@
     updatePanels as updateMultiPanels,
     setSelection as setMultiPanelSelection,
     clearSelection as clearMultiPanelSelection,
+    clearChecked as clearMultiPanelChecked,
     type PanelContextItem,
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
   import {
@@ -274,7 +279,11 @@
     eventCardAssistantMarginClass,
     isAttentionQuestionAnswerSeam,
   } from './attention-flow-spacing';
-  import { getSubscriptionCardSeam, isChatCardMessage } from './subscription-card-spacing';
+  import {
+    getSubscriptionCardSeam,
+    hasVisibleTurnBody,
+    isChatCardMessage,
+  } from './subscription-card-spacing';
   import {
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
@@ -1699,8 +1708,35 @@
     armPendingSearch(work);
   });
 
-  // Context items for the input
-  let contextItems = $state<ContextItem[]>([]);
+  // The composer and Context sidebar share one canonical attachment collection.
+  const composerContext$ = selectComposerContextItems(workspaceIdStore, agentIdStore);
+  let contextFiles = $state.raw<Record<string, File>>({});
+  const contextItems = $derived(
+    $composerContext$.map((item) => ({ ...item, file: contextFiles[item.id] })),
+  );
+
+  // Track readable emissions for rendering, but read Redux synchronously so consecutive
+  // input edits and send/restore see changes before the next coalesced emission.
+  function getContextItems(): ContextItem[] {
+    void $composerContext$;
+    return selectComposerContextItems
+      .select(appStore.state, workspace?.id ?? '', agentId ?? '')
+      .map((item) => ({ ...item, file: contextFiles[item.id] }));
+  }
+
+  function setContextItems(items: ContextItem[]) {
+    contextFiles = Object.fromEntries(
+      items.flatMap((item) => (item.file ? [[item.id, item.file]] : [])),
+    );
+    if (!workspace?.id || !agentId) return;
+    appStore.dispatch(
+      setComposerContextItems(
+        workspace.id,
+        agentId,
+        items.map(({ file: _file, ...item }) => item),
+      ),
+    );
+  }
 
   // Input value
   let inputValue = $state(
@@ -1804,8 +1840,9 @@
     agentId: () => agentId,
     inputValue: () => inputValue,
     setInputValue: (text) => (inputValue = text),
-    contextItems: () => contextItems,
-    setContextItems: (items) => (contextItems = items),
+    contextItems: getContextItems,
+    setContextItems,
+    contextItemsAreScoped: true,
     applyEditorContent: (text) => inputComponent?.setContent?.(text),
     onSaveError: (err) => {
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
@@ -1821,11 +1858,12 @@
     if (targeted.length === 0) return;
 
     untrack(() => {
-      const existingIds = new Set(contextItems.map((item) => item.id));
+      const currentItems = getContextItems();
+      const existingIds = new Set(currentItems.map((item) => item.id));
       const additions = targeted
         .flatMap(browserCaptureToContextItems)
         .filter((item) => !existingIds.has(item.id));
-      if (additions.length > 0) contextItems = [...contextItems, ...additions];
+      if (additions.length > 0) setContextItems([...currentItems, ...additions]);
     });
     for (const capture of targeted) {
       appStore.dispatch(clearBrowserElementCapture(workspaceId, capture.id));
@@ -3706,9 +3744,23 @@
           repoPath: workspace.repositoryPath || '',
           specialistName: session?.name,
           specialistId: (session?.metadata as any)?.specialist,
-          setupScript: workspace.setupScript,
+          // The wire serves `setupScript` as a `{ script, ... }` record
+          // (PROTOCOL §5.25); the card renders the script text.
+          setupScript: workspaceSetupScriptText(workspace.setupScript),
           skipWorktree: workspace.skipWorktree,
         };
+        // `setupScript` is detail-only (absent from slim `workspace.list`
+        // rows), so an undefined value on the list-backed prop does not mean
+        // "no script". Pull the detail once (single-flighted per workspace)
+        // and patch the setup card when it arrives.
+        if (isInitialWorkspaceAgent && workspace.setupScript === undefined) {
+          const wsId = workspace.id;
+          void ensureWorkspaceDetail(wsId).then((detail) => {
+            const setupScript = workspaceSetupScriptText(detail?.setupScript);
+            if (!setupScript || !onboardingContext || workspace?.id !== wsId) return;
+            onboardingContext = { ...onboardingContext, setupScript };
+          });
+        }
       }
     }
 
@@ -4838,7 +4890,13 @@
       // Once this send owns the empty state, that stale response must not
       // restore the just-sent prompt into the editor.
       draftManager.invalidatePendingRestore();
-      contextItems = [];
+      setContextItems([]);
+      // Checked panels/selections were folded into this send; uncheck them so
+      // they do not ride along with the next message. A selection write still
+      // deferred to the next frame must land first, or it would re-check
+      // itself after the cleanup.
+      flushPendingSelectionWrites();
+      appStore.dispatch(clearMultiPanelChecked());
       inputValue = '';
       inputComponent?.clear();
       commitDraftWrite('');
@@ -4903,7 +4961,7 @@
     }
     flushPendingDraftWrite();
 
-    const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
+    const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString(allContextItems);
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
@@ -5142,7 +5200,7 @@
 
     logger.info('Force submit triggered', { agentId });
 
-    const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
+    const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
     const workspaceContextStr = buildWorkspaceContextString(allContextItems);
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
@@ -6132,12 +6190,6 @@
                   )}
                   {@const currentIsChatCard = isChatCardMessage(turn.userMessage)}
                   {@const nextIsChatCard = isChatCardMessage(nextTurn?.userMessage)}
-                  {@const subscriptionCardSeam = getSubscriptionCardSeam(
-                    currentIsChatCard &&
-                      turn.assistantMessages.length === 0 &&
-                      turn.noticeMessages.length === 0,
-                    nextIsChatCard,
-                  )}
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
                   {@const showPendingAssistantStatus =
@@ -6150,10 +6202,27 @@
                       error: effectiveError,
                       modelUnavailable: $chatModelUnavailable$,
                     })}
-                  {@const hasTurnBody =
-                    turn.assistantMessages.length > 0 ||
-                    turn.noticeMessages.length > 0 ||
-                    showPendingAssistantStatus}
+                  {@const hasTurnBody = hasVisibleTurnBody({
+                    assistantMessages: turn.assistantMessages,
+                    hasVisibleNotice: turn.noticeMessages.some((notice) =>
+                      Boolean(getModelChangeNotice(notice)),
+                    ),
+                    hasPendingStatus:
+                      showPendingAssistantStatus ||
+                      (groupIndex === groupedMessages.length - 1 &&
+                        turnIndex === turns.length - 1 &&
+                        turn.assistantMessages.length > 0 &&
+                        Boolean(
+                          $agentSessionIsStreaming$ || effectiveError || $chatModelUnavailable$,
+                        )),
+                    suppressCoordinationStoppedIndicator: turn.userMessage
+                      ? isAutomatedMessage(turn.userMessage)
+                      : false,
+                  })}
+                  {@const subscriptionCardSeam = getSubscriptionCardSeam(
+                    currentIsChatCard && !hasTurnBody,
+                    nextIsChatCard,
+                  )}
                   {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
                     turn,
                     nextTurn,
@@ -6214,7 +6283,7 @@
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
                           message,
-                          turn.assistantMessages.length > 0 || showPendingAssistantStatus,
+                          hasTurnBody,
                         )}"
                         use:attachPinnedPromptMessage={message}
                         transition:safeDisclosureTransition={{ tier: 'moderate' }}
@@ -6551,6 +6620,10 @@
           </div>
         {/if}
 
+        {#if workspace?.id && agentId}
+          <AttentionRequestBanner {agentId} />
+        {/if}
+
         <!-- The utility stack owns short-chat surplus through its auto margin.
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
@@ -6632,9 +6705,6 @@
           data-testid="chat-composer-controls-inner"
           onfocusout={flushPendingDraftWrite}
         >
-          {#if workspace?.id && agentId}
-            <AttentionRequestBanner {agentId} />
-          {/if}
           {#if isRetiredSession}
             <div
               class="flex w-full items-center justify-between gap-3 px-4 py-3 text-sm text-muted-foreground sm:px-6"
@@ -6727,7 +6797,7 @@
                 {/if}
                 <SimpleRichInput
                   bind:this={inputComponent}
-                  bind:contextItems
+                  bind:contextItems={getContextItems, setContextItems}
                   bind:value={inputValue}
                   onvaluechange={(value) => {
                     scheduleDraftWrite(value);

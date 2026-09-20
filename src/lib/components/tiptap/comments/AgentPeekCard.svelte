@@ -164,7 +164,7 @@
 {:else}
   <!-- Full mode (used for both compact and full display modes) -->
   <div
-    class="flex flex-col bg-background rounded w-full min-w-[180px] transition-all duration-200"
+    class="flex flex-col bg-background rounded w-full min-w-[180px] transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
     class:max-w-[380px]={!isCollapsed}
     class:cursor-pointer={isCollapsed}
     class:border={!isCollapsed}
@@ -205,8 +205,9 @@
         <!-- Navigate to agent button -->
         <Button
           variant="ghost"
-          size="sm"
-          class="h-7 w-7 p-0"
+          size="icon-sm"
+          iconOnly
+          aria-label={m.tiptap_agentPeek_openAgent_ariaLabel()}
           onclick={(e) => {
             e.stopPropagation();
             const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');

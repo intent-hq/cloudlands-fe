@@ -1,5 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { compile, paraglideVitePlugin } from '@inlang/paraglide-js';
+import { compile } from '@inlang/paraglide-js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -8,9 +8,11 @@ import { execSync } from 'child_process';
 import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
 import { compactParaglideDevPlugin } from './scripts/vite-plugin-paraglide-dev.mjs';
 import {
+  PARAGLIDE_IS_SERVER,
   PARAGLIDE_OUTPUT_STRUCTURE,
-  canReuseGeneratedParaglide as hasCurrentGeneratedParaglide,
+  PARAGLIDE_STALE_MESSAGE,
   compileWithInputsHash,
+  ensureRepoParaglide,
 } from './scripts/paraglide-inputs-hash.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,19 +32,21 @@ const paraglidePaths = {
   outdir: paraglideOutdir,
 };
 
-// Content-based: `generate:i18n` records a hash of the inputs next to the
-// outputs, and paraglide-js leaves unchanged outputs untouched so mtimes are
-// not a reliable freshness signal (intent-hq/intent#4621).
-function canReuseGeneratedParaglide() {
-  return hasCurrentGeneratedParaglide(paraglidePaths);
-}
-
-const reuseGeneratedParaglide = () => ({
+// The only Paraglide writer in the Vite path: `buildStart` produces a missing
+// or stale outdir through the locked, staged publisher (content-based — the
+// sidecar hash, not mtimes, decides freshness, intent-hq/intent#4621), and
+// `watchChange` recompiles on catalog edits for HMR. Upstream's
+// `paraglideVitePlugin` is not used: it writes into the outdir on its own,
+// racing the publisher (intent-hq/intent#4565).
+const reuseGeneratedParaglide = ({ ensure = ensureRepoParaglide } = {}) => ({
   name: 'reuse-generated-paraglide',
   enforce: 'pre',
-  buildStart() {
+  async buildStart() {
     this.addWatchFile(messagesDir);
     this.addWatchFile(join(paraglideProject, 'settings.json'));
+    if (!(await ensure({ rootDir: __dirname, ifStale: true }))) {
+      throw new Error(`[generate:i18n] ${PARAGLIDE_STALE_MESSAGE}`);
+    }
   },
   async watchChange(file) {
     const normalizedFile = normalizeWatcherPath(file);
@@ -54,16 +58,18 @@ const reuseGeneratedParaglide = () => ({
     if (!isMessage && !isProjectSettings) return;
 
     // An edit that lands mid-compile leaves no sidecar; it also fires its own
-    // watchChange, which recompiles, so no retry is needed here.
+    // watchChange, which recompiles, so no retry is needed here. The compiler
+    // writes into the staging directory it is handed; the outputs are then
+    // published into paraglideOutdir atomically.
     await compileWithInputsHash({
       ...paraglidePaths,
-      compile: () =>
+      compile: ({ outdir }) =>
         compile({
           project: paraglideProject,
-          outdir: paraglideOutdir,
+          outdir,
           outputStructure: PARAGLIDE_OUTPUT_STRUCTURE,
           cleanOutdir: false,
-          isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
+          isServer: PARAGLIDE_IS_SERVER,
         }),
     });
   },
@@ -307,14 +313,12 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
   // credentials never enter immutable application chunks. VITE_INTENTD_WS_URL
   // remains a dev:web convenience; without either URL the app uses the mock.
   const isWebBuild = process.env.INTENT_BUILD_TARGET === 'web';
-  const isUiPreview = command === 'serve' && process.env.INTENT_UI_PREVIEW === '1';
   const intentdBridgeRequested =
     command === 'serve' && !isPreview && isWebBuild && process.env.INTENT_DEV_DAEMON_BRIDGE === '1';
   const useIntentdBridge = intentdBridgeRequested && process.platform !== 'win32';
   const useBundledMessages = mode === 'production';
   const i18nVirtualMessages = '\0intent-paraglide-messages';
   const i18nVirtualRuntime = '\0intent-paraglide-runtime';
-  const canReuse = testOverrides.canReuseGeneratedParaglide ?? canReuseGeneratedParaglide;
   const env = loadEnv(mode, __dirname, '');
 
   const webDefines = {};
@@ -373,16 +377,7 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
           return null;
         },
       },
-      isUiPreview && canReuse()
-        ? reuseGeneratedParaglide()
-        : paraglideVitePlugin({
-            project: paraglideProject,
-            outdir: paraglideOutdir,
-            // The app-wide `m` namespace uses nearly the complete catalog. Emitting one
-            // module per message creates 5k+ Rollup nodes without useful tree-shaking;
-            // locale modules keep the same runtime contract with a bounded build graph.
-            outputStructure: 'locale-modules',
-          }),
+      reuseGeneratedParaglide({ ensure: testOverrides.ensureRepoParaglide }),
       compactParaglideDevPlugin(paraglideOutdir),
       devHealthProbeSilencer(),
       intentdBridgeRequested && intentdBridgePlugin(),
@@ -403,6 +398,8 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
     },
 
     build: {
+      // Preserve logical assignment in xterm's mode queries (xtermjs/xterm.js#5800).
+      target: 'es2021',
       // Generate sourcemaps: 'hidden' in production (not exposed publicly),
       // true in development for debugging. INTENT_DISABLE_SOURCEMAPS=1
       // (exactly '1') skips them entirely — sourcemap generation multiplies

@@ -46,6 +46,11 @@ for (const scenario of ['local', 'clone'] as const) {
         )
         .toBe(true);
     }
+    if (scenario === 'local') {
+      // The uncommitted-changes dot mounts once the async branch status resolves and widens
+      // the branch trigger; wait for it so hover/focus is the only variable measured below.
+      await expect(triggers.last().getByRole('button')).toBeVisible();
+    }
     await page.evaluate(() => document.fonts.ready);
     const textBounds = await fixture.evaluate((element) => {
       const walker = document.createTreeWalker(element.firstElementChild!, NodeFilter.SHOW_TEXT);
@@ -180,6 +185,13 @@ for (const scenario of ['clone', 'long', 'remote'] as const) {
       '"branch":"feature/task-29"',
     );
     await expect(menu).toHaveCount(0);
+    // Committing through the search input must hand keyboard focus back to the trigger.
+    await expect(branch).toBeFocused();
+    await branch.press('Enter');
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(branch).toBeFocused();
   });
 }
 
@@ -266,9 +278,16 @@ for (const { name, width, height, position } of [
     const warning = menu.getByText(/Uncommitted changes/);
     await expect(warning).toBeVisible();
     await expectViewportBounded(menu);
-    expect(
-      (await warning.boundingBox())!.y + (await warning.boundingBox())!.height,
-    ).toBeLessThanOrEqual((await search.boundingBox())!.y);
+    // Read both rects in one frame: the warning mounts asynchronously and the menu
+    // repositions when it grows, so separate boundingBox() reads can straddle that move.
+    const { warningBottom, searchTop } = await warning.evaluate(
+      (element, input) => ({
+        warningBottom: element.getBoundingClientRect().bottom,
+        searchTop: input!.getBoundingClientRect().top,
+      }),
+      await search.elementHandle(),
+    );
+    expect(warningBottom).toBeLessThanOrEqual(searchTop);
     const results = page.getByTestId('branch-results');
     expect(await results.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
     await results.hover();

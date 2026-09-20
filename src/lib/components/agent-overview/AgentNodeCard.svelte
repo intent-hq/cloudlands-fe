@@ -71,7 +71,7 @@
 <Button
   variant="ghost"
   type="button"
-  class="agent-node-card flex flex-col items-center gap-1 p-2 rounded-lg border transition-all duration-200 cursor-pointer
+  class="agent-node-card flex flex-col items-center gap-1 p-2 rounded-lg border transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer
     {node.isCoordinator
     ? 'bg-primary/5 border-primary/30 shadow-sm'
     : 'bg-background/95 border-border hover:border-border'}

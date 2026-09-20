@@ -20,6 +20,7 @@ import ArrowsOutLineVerticalIcon from 'phosphor-svelte/lib/ArrowsOutLineVertical
 import AsteriskIcon from 'phosphor-svelte/lib/AsteriskIcon';
 import AtIcon from 'phosphor-svelte/lib/AtIcon';
 import BellIcon from 'phosphor-svelte/lib/BellIcon';
+import BellSlashIcon from 'phosphor-svelte/lib/BellSlashIcon';
 import BookIcon from 'phosphor-svelte/lib/BookIcon';
 import BookOpenIcon from 'phosphor-svelte/lib/BookOpenIcon';
 import BrainIcon from 'phosphor-svelte/lib/BrainIcon';
@@ -173,6 +174,7 @@ import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
 import TreeStructureIcon from 'phosphor-svelte/lib/TreeStructureIcon';
 import UploadSimpleIcon from 'phosphor-svelte/lib/UploadSimpleIcon';
 import UserIcon from 'phosphor-svelte/lib/UserIcon';
+import UserPlusIcon from 'phosphor-svelte/lib/UserPlusIcon';
 import UsersIcon from 'phosphor-svelte/lib/UsersIcon';
 import WarningCircleIcon from 'phosphor-svelte/lib/WarningCircleIcon';
 import WarningIcon from 'phosphor-svelte/lib/WarningIcon';
@@ -228,6 +230,7 @@ const iconComponents: Record<string, Component<any>> = {
   ban: ProhibitIcon,
   bars: ListIcon,
   bell: BellIcon,
+  'bell-slash': BellSlashIcon,
   bold: TextBIcon,
   bolt: LightningIcon,
   book: BookIcon,
@@ -392,6 +395,7 @@ const iconComponents: Record<string, Component<any>> = {
   'up-right-from-square': ArrowSquareOutIcon,
   user: UserIcon,
   'user-graduate': StudentIcon,
+  'user-plus': UserPlusIcon,
   'user-tie': UserIcon,
   users: UsersIcon,
   vial: TestTubeIcon,
@@ -436,6 +440,7 @@ export const faAt = icon('at');
 export const faBan = icon('ban');
 export const faBars = icon('bars');
 export const faBell = icon('bell');
+export const faBellSlash = icon('bell-slash');
 export const faBold = icon('bold');
 export const faBolt = icon('bolt');
 export const faBook = icon('book');
@@ -616,6 +621,7 @@ export const faUnderline = icon('underline');
 export const faUpRightFromSquare = icon('up-right-from-square');
 export const faUser = icon('user');
 export const faUserGraduate = icon('user-graduate');
+export const faUserPlus = icon('user-plus');
 export const faUserTie = icon('user-tie');
 export const faUsers = icon('users');
 export const faVial = icon('vial');

@@ -254,6 +254,15 @@
   let hoverCardDismissalActive = $state(false);
   let hoverCardFocusOpenSuppressed = false;
   let hoverCardFocusSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
+  // The card is portaled beside the row with a small gap, and it carries
+  // controls (Share, Remove). Crossing that gap fires the row's mouseleave, so
+  // closing is deferred by a short grace period the card's own pointerenter
+  // cancels; pointer or focus inside the card keeps it open like the row does.
+  let hoverCardEl: HTMLElement | null = $state(null);
+  let hoverCardContent: { blockDismissal: (event?: KeyboardEvent) => boolean } | undefined =
+    $state();
+  let undeferHoverCardClose: (() => void) | null = null;
+  let hoverCardFocusRelocationTimer: ReturnType<typeof setTimeout> | undefined;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -267,9 +276,12 @@
       clearTimeout(hoverCardCloseTimer);
       hoverCardCloseTimer = null;
     }
+    undeferHoverCardClose?.();
+    undeferHoverCardClose = null;
   }
 
   function openHoverCardFromPointer() {
+    clearHoverCardCloseTimer();
     hoverCardDismissalActive = true;
     hoverCardVisible = true;
     if (hoverCardOpenedFromPointer) return;
@@ -277,25 +289,75 @@
     workspaceHoverCardIntentSession.notifyOpened();
   }
 
-  function closeHoverCard() {
+  function closeHoverCard(force = false) {
+    if (!force && hoverCardContent?.blockDismissal?.()) return;
     clearHoverCardCloseTimer();
-    pointerWithinCard = false;
-    focusWithinCard = false;
+    clearTimeout(hoverCardFocusRelocationTimer);
     hoverCardDismissalActive = false;
     hoverCardVisible = false;
+    pointerWithinCard = false;
+    focusWithinCard = false;
     if (!hoverCardOpenedFromPointer) return;
     hoverCardOpenedFromPointer = false;
     workspaceHoverCardIntentSession.notifyClosed();
   }
 
-  function scheduleHoverCardClose() {
+  function hoverCardEngaged() {
+    return pointerWithinRow || pointerWithinCard || focusWithinRow || focusWithinCard;
+  }
+
+  function closeHoverCardUnlessEngaged() {
+    if (!hoverCardVisible) {
+      closeHoverCard();
+      return;
+    }
     clearHoverCardCloseTimer();
-    if (!hoverCardVisible) return;
     hoverCardCloseTimer = setTimeout(() => {
       hoverCardCloseTimer = null;
-      if (!pointerWithinRow && !pointerWithinCard && !focusWithinRow && !focusWithinCard)
-        closeHoverCard();
+      if (!hoverCardEngaged()) closeHoverCard();
     }, WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS);
+    undeferHoverCardClose = workspaceHoverCardIntentSession.deferClose(closeHoverCard);
+  }
+
+  function handleHoverCardPointerEnter() {
+    pointerWithinCard = true;
+    clearHoverCardCloseTimer();
+  }
+
+  function handleHoverCardPointerLeave() {
+    pointerWithinCard = false;
+    if (!focusWithinRow && !focusWithinCard) closeHoverCardUnlessEngaged();
+  }
+
+  function handleHoverCardFocusIn() {
+    focusWithinCard = true;
+    clearTimeout(hoverCardFocusRelocationTimer);
+    clearHoverCardCloseTimer();
+  }
+
+  // Focus flags describe where focus actually is: a cross-surface move clears
+  // the departing surface's flag, so a later close cannot mistake stale row
+  // focus for engagement (or suppress the pointer reopening the card).
+  function handleHoverCardFocusOut(event: FocusEvent) {
+    const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (related && getHoverCardElement()?.contains(related)) return;
+    focusWithinCard = false;
+    if (related && rowElement?.contains(related)) return;
+    if (related) {
+      if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+      return;
+    }
+    // A null relatedTarget is also what unmounting the focused control
+    // (Remove → confirm / cancel) reports; the card re-homes focus after the
+    // DOM settles, so judge that loss then. Genuine departures still close.
+    const departed = event.target;
+    clearTimeout(hoverCardFocusRelocationTimer);
+    hoverCardFocusRelocationTimer = setTimeout(() => {
+      const active = document.activeElement;
+      const inside = getHoverCardElement()?.contains(active) || rowElement?.contains(active);
+      if (active && active !== departed && inside) return;
+      if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+    }, 0);
   }
 
   function suppressHoverCardFocusOpenForPointerSequence() {
@@ -345,6 +407,7 @@
     if (target instanceof Node && getHoverCardElement()?.contains(target)) return;
     event.preventDefault();
     event.stopPropagation();
+    if (hoverCardContent?.blockDismissal?.(event)) return;
     preventFocusOpenUntilRowExit = focusWithinRow;
     clearHoverCardOpenTimer();
     closeHoverCard();
@@ -455,6 +518,11 @@
   }
 
   function handleHoverCardKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && hoverCardContent?.blockDismissal?.(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const controls = getHoverCardControls();
     const returningFromFirstControl =
       event.key === 'Tab' && event.shiftKey && event.currentTarget === controls[0];
@@ -471,6 +539,7 @@
   function handleMouseEnter() {
     pointerWithinRow = true;
     clearHoverCardCloseTimer();
+    workspaceHoverCardIntentSession.settleDeferredCloses();
     measureTitleOverflow();
     onHover?.();
     if (workspace && !suppressHover && !focusWithinRow) {
@@ -486,17 +555,7 @@
   function handleMouseLeave() {
     pointerWithinRow = false;
     clearHoverCardOpenTimer();
-    if (!focusWithinRow) scheduleHoverCardClose();
-  }
-
-  function handleHoverCardMouseEnter() {
-    pointerWithinCard = true;
-    clearHoverCardCloseTimer();
-  }
-
-  function handleHoverCardMouseLeave() {
-    pointerWithinCard = false;
-    if (!pointerWithinRow && !focusWithinRow) scheduleHoverCardClose();
+    if (!focusWithinRow && !focusWithinCard) closeHoverCardUnlessEngaged();
   }
 
   function handleFocusIn() {
@@ -512,33 +571,12 @@
   }
 
   function handleFocusOut(event: FocusEvent) {
-    if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
+    const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (related && rowElement?.contains(related)) return;
     preventFocusOpenUntilRowExit = false;
     focusWithinRow = false;
-    const cardElement = hoverCardId ? document.getElementById(hoverCardId) : null;
-    if (event.relatedTarget instanceof Node && cardElement?.contains(event.relatedTarget)) {
-      focusWithinCard = true;
-      clearHoverCardCloseTimer();
-      return;
-    }
+    if (related && getHoverCardElement()?.contains(related)) return;
     if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
-  }
-
-  function handleHoverCardFocusIn() {
-    focusWithinCard = true;
-    clearHoverCardCloseTimer();
-  }
-
-  function handleHoverCardFocusOut(event: FocusEvent) {
-    const cardElement = hoverCardId ? document.getElementById(hoverCardId) : null;
-    if (event.relatedTarget instanceof Node && cardElement?.contains(event.relatedTarget)) return;
-    focusWithinCard = false;
-    if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) {
-      focusWithinRow = true;
-      clearHoverCardCloseTimer();
-      return;
-    }
-    if (!pointerWithinRow && !pointerWithinCard && !focusWithinRow) scheduleHoverCardClose();
   }
 
   $effect(() => {
@@ -585,7 +623,7 @@
       clearTimeout(hoverCardFocusSuppressionTimer);
       hoverCardFocusSuppressionTimer = null;
     }
-    closeHoverCard();
+    closeHoverCard(true);
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
@@ -874,7 +912,9 @@
             {#if pr.url}
               <Button
                 variant="plain"
-                class="size-5 shrink-0 rounded-sm !p-0 {pr.foregroundClass}"
+                size="icon-compact"
+                iconOnly
+                class="size-5 shrink-0 rounded-sm {pr.foregroundClass}"
                 aria-label={getWorkspacePrLabel(pr)}
                 data-workspace-card-pr-item
                 data-pr-identity={pr.identity}
@@ -998,16 +1038,27 @@
       position="right"
       anchorElement={rowElement}
       class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
-      onmouseenter={handleHoverCardMouseEnter}
-      onmouseleave={handleHoverCardMouseLeave}
+      onmouseenter={handleHoverCardPointerEnter}
+      onmouseleave={handleHoverCardPointerLeave}
       onfocusin={handleHoverCardFocusIn}
       onfocusout={handleHoverCardFocusOut}
     >
-      <WorkspaceHoverCard
-        {workspace}
-        activeAgentIds={streamingAgentIds}
-        onkeydown={handleHoverCardKeydown}
-      />
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        bind:this={hoverCardEl}
+        data-workspace-card-hover-surface
+        onpointerenter={handleHoverCardPointerEnter}
+        onpointerleave={handleHoverCardPointerLeave}
+        onfocusin={handleHoverCardFocusIn}
+        onfocusout={handleHoverCardFocusOut}
+      >
+        <WorkspaceHoverCard
+          bind:this={hoverCardContent}
+          {workspace}
+          activeAgentIds={streamingAgentIds}
+          onkeydown={handleHoverCardKeydown}
+        />
+      </div>
     </HoverCard>
   {/if}
 

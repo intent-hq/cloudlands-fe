@@ -16,14 +16,14 @@ Quick routing guide for AI agents. Start here, then open the smallest relevant d
 ## UI rules
 
 - Start with the [“I need to…” decision tree](docs/DESIGN_SYSTEM.md#i-need-to), not raw markup.
-- Use the generated [pattern cheatsheet](../../docs/fe/DESIGN_SYSTEM_CHEATSHEET.md) for imports and API summaries.
+- Use the generated [pattern cheatsheet](docs/DESIGN_SYSTEM_CHEATSHEET.md) for imports and API summaries.
 - Inspect live fixtures and copyable compositions at `/sandbox` and `/sandbox/recipes` via `pnpm run dev:ui`.
 - Use public `$lib/components/patterns/*` or `$lib/components/ui/*` subpaths; do not deep-import implementations.
 - Follow the [Never list](docs/DESIGN_SYSTEM.md#never), enforced by `eslint-rules/design-system/`.
 - Never hand-write motion durations or physical colors; use `$lib/motion` and semantic tokens.
 - Never add a raw control, direct toast/native dialog, bespoke settings row, or feature-owned dialog root.
 - Ratchets only shrink: do not raise `scripts/ui-component-guardrails.ts` ceilings or expand lint baselines.
-- Run `pnpm exec tsx scripts/generate-design-cheatsheet.ts --check` with the focused lint/tests.
+- Run `pnpm run lint:design-cheatsheet` (part of `pnpm run lint`) with the focused lint/tests; regenerate the cheatsheet with `pnpm exec tsx scripts/generate-design-cheatsheet.ts`.
 
 ## Project layout
 
@@ -62,6 +62,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | motion perf traces                                                      | `pnpm perf:chat-motion` — ../../docs/fe/DEVELOPER_GUIDE.md#chat-motion-performance-traces                                                                                                                                                                                                                                                                                                                                                                                          |
 | debugging                                                               | ../../docs/fe/TROUBLESHOOTING_GUIDE.md, ../../docs/fe/IPC_DEBUG_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                           |
 | prod stack traces                                                       | `pnpm resolve-stack <tag> < stack.txt` — rebuilds the tag with sourcemaps, maps frames                                                                                                                                                                                                                                                                                                                                                                                             |
+| CT run failures (queue ejection triage)                                 | `pnpm ct:failures <run-id \| run-url>` — every failed/flaky CT case of an `Intent PR Checks` run, per shard, from the shard's JSON report artifact (list-log summary fallback); `--attempt N`, `--json`                                                                                                                                                                                                                                                                            |
 | error handling                                                          | ../../docs/fe/ERROR_HANDLING_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | TypeScript/types                                                        | ../../docs/fe/TYPE_SYSTEM_GUIDE.md                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | events/IPC                                                              | ../../docs/fe/EVENT_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -104,9 +105,9 @@ corepack pnpm run dev           # Standard Electron launcher
 corepack pnpm run dev:cdp       # Electron launcher with CDP support
 corepack pnpm run build         # Production build
 corepack pnpm run check         # Svelte + TypeScript checks
-corepack pnpm run lint          # ESLint + i18n string/completeness + package-script pnpm nesting + knip dead code
+corepack pnpm run lint          # ESLint + i18n string/completeness + package-script pnpm nesting + knip dead code + Prettier check
 corepack pnpm run format        # Prettier write pass
-corepack pnpm run format:check  # Prettier check (enforced in PR CI)
+corepack pnpm run format:check  # Prettier check (also runs inside `lint`)
 corepack pnpm run test:unit     # Vitest suite
 corepack pnpm run test:playwright
 ```
@@ -183,20 +184,22 @@ git-ignored; never commit these visual-review artifacts.
 Registered scenes also have co-located `*.geometry.ct.spec.ts` suites and checked-in
 `__geometry__/<scene>.geometry.json` baselines. A missing key, an extra key, or a numeric
 field that moves by more than 1px fails with `state/width/key.field expected→actual`.
-Regenerate baselines only for an intentional geometry change:
+Regenerate baselines only for an intentional geometry change, with either equivalent command:
 
 ```bash
 SANDBOX_GEOMETRY_UPDATE=1 pnpm run test:ct -- --grep 'geometry snapshot'
 pnpm sandbox:geometry:update
 ```
 
-The two commands are equivalent; the package script sets
-`SANDBOX_GEOMETRY_UPDATE=1`. Inspect the JSON diff and justify every regenerated
-snapshot in the PR description. To register a scene, add a co-located
-`<scene>.geometry.ct.spec.ts` that statically imports the preview's default component, then
-passes it to `defineGeometrySnapshotSuite` with the scene, named states, contract widths, and
-`__geometry__/<scene>.geometry.json` path. The shared CT hook lazily resolves the matching
-preview definition in the browser, so no per-scene bootstrap registration is needed. Run the
+Linux CI is the only verifier and Inter shapes text differently elsewhere, so run the update
+on a Linux host only: it refuses to write off Linux, every baseline records
+`"$meta": { "generatedOn": "<platform>" }` (the geometry spec rejects any value but `linux`),
+and `SANDBOX_GEOMETRY_UPDATE_ALLOW_NON_LINUX=1` is for uncommitted local experiments only.
+Inspect the JSON diff and justify every regenerated snapshot in the PR description. To
+register a scene, add a co-located `<scene>.geometry.ct.spec.ts` that statically imports the
+preview's default component and passes it to `defineGeometrySnapshotSuite` with the scene,
+named states, contract widths, and `__geometry__/<scene>.geometry.json` path; the shared CT
+hook resolves the preview in the browser, so no per-scene registration is needed. Run the
 update command once to create the baseline. See
 `../../docs/fe/DEVELOPER_GUIDE.md#fast-ui-preview-workflow` for the manual preview loop.
 
@@ -334,8 +337,10 @@ staged, unstaged, deleted, and untracked frontend files, plus the commits since
 `git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given; an
 empty change set exits 2 instead of passing silently. Add `--dry-run` to inspect the
 selected commands without running them. The command runs scoped Prettier and ESLint,
-related Vitest tests, directly imported colocated component tests, and only the
-renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
+related Vitest tests, colocated component tests that import the changed file directly or
+through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
+module the host imports, or to a component two hops deep, does not select the spec), and
+only the renderer/main/preload TypeScript boundaries that changed. Ambiguous or high-risk files
 select a conservative suite instead of silently skipping coverage. Any code change (or a
 `knip.jsonc` / `package.json` / `tsconfig*.json` change) also runs knip repo-wide (~3 s,
 also chained into `pnpm run lint`): dead-code detection is a whole-program check, so it
@@ -549,14 +554,56 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
 - **A pass-on-retry fails the required CT lane** (`--fail-on-flaky-tests`). Fix the flake
   or, if it needs more time, tag the individual test
   `{ tag: '@quarantine' }` — never a whole file. The CT job runs on every merge-queue
-  entry, and on `pull_request` only when the diff touches a CT-contract path (the one
-  list in `scripts/ct-contract-paths.mjs`, shared with `verify:changed`), so on most PRs
-  a pass-on-retry ejects the PR from the queue rather than reddening a PR check.
+  entry, and on `pull_request` only when the diff touches a CT-contract path, a CT spec,
+  or a geometry golden (classified by `scripts/ct-contract-paths.mjs`, shared with
+  `verify:changed`), so on other PRs a pass-on-retry ejects the PR from the queue rather
+  than reddening a PR check. To see which cases ejected a run without opening four shard
+  logs, run `pnpm ct:failures <run-id>` (see Where to look).
   Quarantined tests still run on every queue entry as an advisory (non-blocking) step on
   shard 1 and must carry an open tracking issue and an owner; quarantine is temporary,
   not a parking lot — remove the tag in the PR that fixes the flake.
 - Motion specs that sample animation progress mid-flight are the historical flake source;
   prefer asserting start/end states and `getAnimations()` counts over timed midpoints.
+- **A known cause of `mount()` failing with "Execution context was destroyed, most likely
+  because of a navigation" is the context-reuse race.** The message is Playwright's
+  rewrite of any CDP error on the mount evaluate, so it does not name a cause by itself;
+  every recorded incident so far (intent-hq/intent#4373, #5236, #5249) has been the reuse
+  reset, not a component bug. ct-core reuses one browser context + page per worker; between
+  tests it resets that page (navigate to `about:blank`, clear the origin, navigate back to
+  the CT host), and the reset can race the next `mount()`'s `Runtime.callFunctionOn` —
+  whether the previous test was another spec's last cell or the same spec's previous
+  cell. The signature is a pass-on-retry at the `mount(` line with no assertion involved.
+  Fix it by calling, at file level after any `test.setTimeout` / `test.use`:
+  `isolateBrowserContextPerTest(test, 'intent-hq/intent#<issue>')` from
+  `src/test/ct-isolated-browser-context.ts` and `recordCdpLifecycle(test)` from
+  `src/test/ct-cdp-lifecycle-recorder.ts`, with a comment naming the incident. Do not
+  quarantine the test, add retries, or widen timeouts for this signature.
+  - _What it costs_: the isolated spec runs in its own worker (one extra browser launch and
+    CT bundle load per shard) and every test pays a fresh browser context (~1–2 s each
+    locally), so only adopt it on a spec with a recorded destroyed-context incident.
+  - _Guard_: `isolateBrowserContextPerTest` sets the private `_optionContextReuseMode`
+    option and asserts via CDP that each test's `browserContextId` is new to the worker.
+    A failure `browser context <id> was already used by an earlier test in this worker …`
+    means context reuse is back for that spec — typically a Playwright upgrade no longer
+    honoring the private option — so fix the helper, not the spec.
+  - _Reading the CDP lifecycle log_: on a failure the recorder attaches `cdp-lifecycle.json`
+    as an in-memory body attachment — open it from the failed test's attachments in the
+    HTML report (`playwright-report/`); there is no standalone file under `test-results/`.
+    Recording starts in the spec's `beforeEach`, once the `page` fixture is ready, so
+    `sinceStartMs` counts from that attach — not from the start of the test — and anything
+    the harness did to the page before it (fixture setup, an already-finished reuse reset)
+    is not in the log; the leading `Runtime.executionContextCreated` entries are the
+    replay of contexts that already existed at attach. A `Page.frameRequestedNavigation` /
+    `Runtime.executionContextsCleared` / `Page.frameNavigated` (to `about:blank` or the CT
+    host URL) sequence in the milliseconds before the failing mount confirms the reuse
+    reset; `Inspector.targetCrashed` is a renderer crash and a different investigation.
+    Only the replayed entries with no navigation or clear is inconclusive: it means no
+    recorded evidence of navigation or context clearing after attach — the recorded
+    methods are a selection and a CDP error need not emit one — not that the page was
+    healthy or that the test's own code is at fault; inspect a `DEBUG=pw:protocol` run or
+    a trace, which also cover the setup window, before drawing a conclusion. The recorder
+    never fails a test — a `cdp-lifecycle-recorder` annotation reports when it could not
+    start or attach.
 
 ### Testing — every feature/fix against a mock BE
 

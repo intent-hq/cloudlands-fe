@@ -1,4 +1,5 @@
-// @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-contract-paths.mjs
+// @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-contract-paths.mjs,
+//   playwright/ct-spec-pattern.mjs
 // @vitest-environment node
 
 /**
@@ -7,7 +8,9 @@
  * `verify:changed` consumes the list locally; the PR workflow must consume the
  * same module so `test-ct` runs on `pull_request` when the diff touches a
  * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
- * CT failures after green PR CI). The step script and the gate script are
+ * CT failures after green PR CI) or a CT spec / geometry golden
+ * (cloudlands-fe#2533 changed 22 specs and 1 golden with CT skipped on the PR and
+ * was ejected three times). The step script and the gate script are
  * extracted from the workflow and executed under bash across a scenario table,
  * and the `test-ct` `if:` expression is evaluated the same way, so the
  * assertions hold against runtime behaviour rather than source spelling.
@@ -21,6 +24,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const WORKFLOW_PATH = '.github/workflows/intent-pr.yml';
 const MODULE_PATH = 'scripts/ct-contract-paths.mjs';
+// The module's one local import; the workflow runs in a full checkout.
+const SPEC_PATTERN_PATH = 'playwright/ct-spec-pattern.mjs';
 const CLI_INVOCATION = `${MODULE_PATH} --diff`;
 const CT_OUTPUT = 'needs.release-fast-path.outputs.ct_required';
 const FAST_PATH_OUTPUT = 'needs.release-fast-path.outputs.fast_path';
@@ -96,7 +101,8 @@ function commitFile(root: string, file: string, content: string) {
 }
 
 // A checkout shaped like the release-fast-path job: the real module under
-// scripts/, one base commit and one head commit on top of it.
+// scripts/ (plus the shared spec-pattern module it imports), one base commit
+// and one head commit on top of it.
 function checkoutWith(headFile: string, moduleSource?: string) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
@@ -104,6 +110,8 @@ function checkoutWith(headFile: string, moduleSource?: string) {
   git(root, 'config', 'user.email', 'ct-contract-paths-ci@example.invalid');
   git(root, 'config', 'commit.gpgsign', 'false');
   mkdirSync(join(root, 'scripts'), { recursive: true });
+  mkdirSync(join(root, 'playwright'), { recursive: true });
+  copyFileSync(resolve(SPEC_PATTERN_PATH), join(root, SPEC_PATTERN_PATH));
   if (moduleSource === undefined) copyFileSync(resolve(MODULE_PATH), join(root, MODULE_PATH));
   else writeFileSync(join(root, MODULE_PATH), moduleSource);
   commitFile(root, 'src/base.ts', '');
@@ -151,15 +159,25 @@ describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
       return { ...result, output: readFileSync(output, 'utf8').trim() };
     };
 
-    it('writes ct_required=true when the diff touches a CT-contract path', () => {
-      const { root, base } = checkoutWith('src/lib/styles/tokens.css');
+    it.each([
+      ['a CT-contract path', 'src/lib/styles/tokens.css'],
+      ['a CT spec', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
+      [
+        'a geometry golden',
+        'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
+      ],
+    ])('writes ct_required=true when the diff touches %s', (_name, file) => {
+      const { root, base } = checkoutWith(file);
       const result = runStep(root, base);
       expect(result.status, result.stderr).toBe(0);
       expect(result.output).toBe('ct_required=true');
     });
 
-    it('writes ct_required=false when the diff touches no CT-contract path', () => {
-      const { root, base } = checkoutWith('src/features/agent/view.svelte');
+    it.each([
+      ['a .svelte component only', 'src/features/agent/view.svelte'],
+      ['a CT spec outside src/', 'test/added.ct.spec.ts'],
+    ])('writes ct_required=false when the diff touches %s', (_name, file) => {
+      const { root, base } = checkoutWith(file);
       const result = runStep(root, base);
       expect(result.status, result.stderr).toBe(0);
       expect(result.output).toBe('ct_required=false');
@@ -220,7 +238,7 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
     route: 'success',
   };
   it.each<[string, Partial<Context>, boolean]>([
-    ['CT-contract PR', {}, true],
+    ['CT-relevant PR (contract path, spec, or golden)', {}, true],
     ['ordinary PR', { ctRequired: 'false' }, false],
     ['release-shaped PR touching package.json', { fastPath: 'true' }, false],
     ['PR whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
@@ -234,6 +252,16 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
       'merge_group whose route failed',
       { event: 'merge_group', ctRequired: '', fastPath: '', route: 'failure' },
       false,
+    ],
+    [
+      'release-shaped merge_group entry',
+      { event: 'merge_group', ctRequired: 'true', fastPath: 'true' },
+      false,
+    ],
+    [
+      'non-release merge_group entry with computed outputs',
+      { event: 'merge_group', ctRequired: 'false', fastPath: 'false' },
+      true,
     ],
   ])('%s → runs=%s', (_name, overrides, expected) => {
     expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
@@ -258,8 +286,16 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     expect(env).toBe(`          CT_REQUIRED: \${{ ${CT_OUTPUT} }}`);
   });
 
+  it('depends on route', () => {
+    const start = gate.indexOf('    needs:');
+    expect(start).toBeGreaterThan(-1);
+    const end = gate.findIndex((text, index) => index > start && text.trim() === ']');
+    expect(gate.slice(start, end).some((text) => text.trim() === 'route,')).toBe(true);
+  });
+
   const results = (ct: string, event = 'pull_request') => ({
     EVENT_NAME: event,
+    RESULT_route: 'success',
     RESULT_pr_title: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_conflict_markers: event === 'merge_group' ? 'skipped' : 'success',
     RESULT_checks: 'success',
@@ -268,6 +304,15 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
   });
+
+  // What a route failure (or fork-PR skip) leaves behind: every job that
+  // runs on route's runners is skipped, so its result is 'skipped'.
+  const heavySkipped = {
+    RESULT_checks: 'skipped',
+    RESULT_build_web: 'skipped',
+    RESULT_test: 'skipped',
+    RESULT_test_integration: 'skipped',
+  };
 
   const runGate = (env: Record<string, string>) => bash(script, env, tmpdir());
 
@@ -308,6 +353,32 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
       1,
     ],
     [
+      'PR, release fast path, route failed, heavy jobs skipped',
+      { ...results('skipped'), ...heavySkipped, RESULT_route: 'failure', FAST_PATH: 'true' },
+      1,
+    ],
+    [
+      'merge_group, release fast path, route failed, heavy jobs skipped',
+      {
+        ...results('skipped', 'merge_group'),
+        ...heavySkipped,
+        RESULT_route: 'failure',
+        FAST_PATH: 'true',
+        CT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'fork PR, route skipped, heavy jobs skipped',
+      { ...results('skipped'), ...heavySkipped, RESULT_route: 'skipped', FAST_PATH: '' },
+      1,
+    ],
+    [
+      'PR, release fast path, route cancelled, heavy jobs skipped',
+      { ...results('skipped'), ...heavySkipped, RESULT_route: 'cancelled', FAST_PATH: 'true' },
+      1,
+    ],
+    [
       'merge_group, CT passed',
       { ...results('success', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
       0,
@@ -322,8 +393,56 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
       { ...results('failure', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
       1,
     ],
+    [
+      'merge_group, release fast path, CT and heavy jobs skipped',
+      {
+        ...results('skipped', 'merge_group'),
+        RESULT_checks: 'skipped',
+        RESULT_build_web: 'skipped',
+        RESULT_test: 'skipped',
+        RESULT_test_integration: 'skipped',
+        FAST_PATH: 'true',
+        CT_REQUIRED: 'true',
+      },
+      0,
+    ],
+    [
+      'merge_group, fast path false, CT skipped',
+      { ...results('skipped', 'merge_group'), FAST_PATH: 'false', CT_REQUIRED: 'false' },
+      1,
+    ],
+    [
+      'merge_group, fast path false, integration skipped',
+      {
+        ...results('success', 'merge_group'),
+        RESULT_test_integration: 'skipped',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'false',
+      },
+      1,
+    ],
+    [
+      'merge_group, release fast path, CT failed',
+      { ...results('failure', 'merge_group'), FAST_PATH: 'true', CT_REQUIRED: 'true' },
+      1,
+    ],
   ])('%s → exit %i', (_name, env, expected) => {
     const result = runGate(env);
     expect(result.status, result.stdout + result.stderr).toBe(expected);
   });
+
+  it.each(['pull_request', 'merge_group'])(
+    'on %s a route failure is rejected by the route check, not by a heavy-job fall-through',
+    (event) => {
+      const result = runGate({
+        ...results('skipped', event),
+        ...heavySkipped,
+        RESULT_route: 'failure',
+        FAST_PATH: 'true',
+        CT_REQUIRED: 'true',
+      });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toMatch(/^route result 'failure' not acceptable/m);
+    },
+  );
 });

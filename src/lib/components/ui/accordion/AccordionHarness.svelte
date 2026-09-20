@@ -9,10 +9,10 @@
 <Accordion.Root type={multiple ? 'multiple' : 'single'} bind:value>
   <Accordion.Item value="first">
     <Accordion.Header><Accordion.Trigger>First section</Accordion.Trigger></Accordion.Header>
-    <Accordion.Content>First panel</Accordion.Content>
+    <Accordion.Content><div data-accordion-panel-content>First panel</div></Accordion.Content>
   </Accordion.Item>
   <Accordion.Item value="second">
     <Accordion.Header><Accordion.Trigger>Second section</Accordion.Trigger></Accordion.Header>
-    <Accordion.Content>Second panel</Accordion.Content>
+    <Accordion.Content><div data-accordion-panel-content>Second panel</div></Accordion.Content>
   </Accordion.Item>
 </Accordion.Root>

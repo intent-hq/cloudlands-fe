@@ -1034,7 +1034,9 @@
           <Button
             variant="ghost"
             type="button"
-            class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
+            size="icon-compact"
+            iconOnly
+            class="rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
             onclick={() => {
               if (!$githubAuthIsAuthenticated$) {
                 pendingActionAfterAuth = 'refresh-pr';

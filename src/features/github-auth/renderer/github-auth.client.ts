@@ -5,6 +5,7 @@ import type {
   GitHubAuthStatus,
   GithubRepo,
   GitHubUser,
+  StartAuthOptions,
   StartAuthResult,
 } from '../types';
 
@@ -32,10 +33,13 @@ export const githubAuthClient = {
   },
 
   /**
-   * Start GitHub authentication - opens OAuth URL in browser
+   * Start GitHub authentication - opens OAuth URL in browser.
+   * `reconnect: true` forces a fresh device flow on an existing connection.
    */
-  async startAuth(): Promise<StartAuthResult> {
-    return await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH);
+  async startAuth(options?: StartAuthOptions): Promise<StartAuthResult> {
+    return options
+      ? await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH, options)
+      : await invoke<StartAuthResult>(GITHUB_AUTH_CHANNELS.START_AUTH);
   },
 
   /**
