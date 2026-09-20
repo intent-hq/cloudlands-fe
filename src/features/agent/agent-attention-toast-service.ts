@@ -54,6 +54,12 @@ export interface AgentAttentionRequest {
   reason: string;
   /** ISO timestamp when the request was raised (event envelope timestamp). */
   timestamp?: string;
+  /**
+   * Per-agent mute stamped on the payload (§5.5 `notificationsMuted`,
+   * present only when true). A muted agent never toasts; the store session's
+   * flag is consulted as well for events that predate the stamp.
+   */
+  notificationsMuted?: boolean;
 }
 
 /** Stable toast id per agent (in-place sonner updates on re-raise). */
@@ -157,6 +163,19 @@ function isUserViewingAgent(workspaceId: string, agentId: string): boolean {
 }
 
 /**
+ * True when the raising agent is muted: the payload stamp, else the tracked
+ * session's `notificationsMuted` read straight off `appStore.state` (no
+ * selector imports — same dependency-light rule as `isUserViewingAgent`).
+ */
+function isAgentMuted(request: AgentAttentionRequest): boolean {
+  if (request.notificationsMuted === true) return true;
+  const state = appStore.state as {
+    agentSessions?: { byAgentId?: Record<string, { notificationsMuted?: unknown }> };
+  };
+  return state.agentSessions?.byAgentId?.[request.agentId]?.notificationsMuted === true;
+}
+
+/**
  * "Switch To": dismiss the toast, activate the reporting workspace, navigate
  * to it, then open/focus the agent's conversation tab. Explicit tab activation
  * keeps tab state synchronized with route navigation.
@@ -179,13 +198,18 @@ export async function switchToAttentionAgent(workspaceId: string, agentId: strin
  * Kind-flavored: title and icon differ for discussion vs blocker. Never
  * auto-dismisses (`duration: Infinity`).
  *
- * Skipped entirely when the user is already viewing the raising agent's
- * conversation (see {@link isUserViewingAgent}) — the in-conversation notice
- * is in view, so the toast is redundant. The skip does not dismiss an
- * existing toast for the agent and does not mark the request handled.
+ * Skipped entirely when the raising agent is muted (see {@link isAgentMuted})
+ * or when the user is already viewing the raising agent's conversation (see
+ * {@link isUserViewingAgent}) — the in-conversation notice is in view, so the
+ * toast is redundant. The skip does not dismiss an existing toast for the
+ * agent and does not mark the request handled.
  */
 export async function showAgentAttentionToast(request: AgentAttentionRequest): Promise<void> {
   const { workspaceId, agentId, agentName, kind, reason, timestamp } = request;
+  if (isAgentMuted(request)) {
+    logger.debug('Agent is muted — suppressing attention toast', { workspaceId, agentId });
+    return;
+  }
   if (isUserViewingAgent(workspaceId, agentId)) {
     logger.debug('User is already viewing the agent — suppressing attention toast', {
       workspaceId,

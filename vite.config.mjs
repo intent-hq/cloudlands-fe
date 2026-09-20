@@ -398,6 +398,8 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
     },
 
     build: {
+      // Preserve logical assignment in xterm's mode queries (xtermjs/xterm.js#5800).
+      target: 'es2021',
       // Generate sourcemaps: 'hidden' in production (not exposed publicly),
       // true in development for debugging. INTENT_DISABLE_SOURCEMAPS=1
       // (exactly '1') skips them entirely — sourcemap generation multiplies

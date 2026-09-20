@@ -224,6 +224,14 @@ export interface AgentSession {
   /** True if this is a background agent */
   isBackground?: boolean;
 
+  /**
+   * Daemon-owned per-agent notification mute (`notificationsMuted`, §5.5
+   * AgentLite). Set via `agent.update { changes: { notificationsMuted } }`
+   * and converged through `agent:updated`. A muted agent never derives
+   * `hasUnread` (see `deriveAgentHasUnread`).
+   */
+  notificationsMuted?: boolean;
+
   /** Current turn number for this session */
   currentTurnNumber?: number;
 
@@ -236,8 +244,9 @@ export interface AgentSession {
    * counts as unread). See `deriveAgentHasUnread` and
    * intent-hq/monorepo#1597. Always `false` for daemons that omit
    * `lastMessageId`, for background agents (`isBackground` /
-   * `metadata.isBackground`), and for delegated child agents
-   * (`metadata.createdByAgentId` set).
+   * `metadata.isBackground`), for delegated child agents
+   * (`metadata.createdByAgentId` set), and for muted agents
+   * (`notificationsMuted`).
    */
   hasUnread?: boolean;
 

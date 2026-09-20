@@ -23,6 +23,7 @@
     deleteAgentWithUndoRequested,
     ensureAgentSessionLoaded,
     renameAgentSessionRequested,
+    setAgentNotificationsMutedRequested,
     stopAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
@@ -54,6 +55,8 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import {
     faArrowUpRightFromSquare,
+    faBell,
+    faBellSlash,
     faCircleInfo,
     faFolderOpen,
     faPen,
@@ -62,6 +65,7 @@
     faTrash,
     faUserTie,
   } from '@fortawesome/free-solid-svg-icons';
+  import Fa from 'svelte-fa';
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -345,6 +349,34 @@
       },
     ];
 
+    // Per-agent notification mute (daemon-owned `notificationsMuted`, §5.5):
+    // one toggle whose label reflects the current flag. Only offered once the
+    // session is in the store — the workspace id is needed for agent.update.
+    if ($agent$) {
+      const muted = isNotificationsMuted;
+      items.push({
+        id: 'toggle-notifications-muted',
+        label: muted
+          ? m.chat_agentCard_menu_unmuteNotifications_label()
+          : m.chat_agentCard_menu_muteNotifications_label(),
+        icon: muted ? faBell : faBellSlash,
+        onClick: async () => {
+          const wsId = $agent$?.workspaceId
+            ? String($agent$.workspaceId)
+            : workspace?.id
+              ? String(workspace.id)
+              : undefined;
+          closeContextMenu();
+          if (!wsId) return;
+          const action = setAgentNotificationsMutedRequested(wsId, agentId, !muted);
+          appStore.dispatch(action);
+          // The saga surfaces the failure toast and rolls back; swallow here so
+          // a daemon rejection never becomes an unhandled rejection.
+          await action.promise.catch(() => {});
+        },
+      });
+    }
+
     // Reveal the agent's CoW sandbox directory. Sandboxes are cloned from the
     // workspace checkout, so they live on the workspace's host — only offered
     // when the agent has a sandbox, the daemon runs on this machine (PROTOCOL
@@ -544,6 +576,11 @@
   const isTurnRunning = $derived(
     $agent$ ? isAgentRunningState(toAgentRuntimeStateInput($agent$)) : false,
   );
+
+  // Daemon-owned per-agent notification mute (served on AgentLite, converged
+  // through agent:updated). Drives the context-menu toggle label and the
+  // bell-slash indicator beside the name.
+  const isNotificationsMuted = $derived($agent$?.notificationsMuted === true);
 
   // Use the canonical session state derivation for every agent surface.
   const avatarState = $derived(
@@ -812,6 +849,17 @@
                   : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
               ></span>
             </div>
+            {#if isNotificationsMuted && (!inline || panelRow)}
+              <span
+                class="inline-flex shrink-0 items-center text-subtle"
+                role="img"
+                aria-label={m.chat_agentCard_notificationsMuted_tooltip()}
+                title={m.chat_agentCard_notificationsMuted_tooltip()}
+                data-testid="agent-card-muted-indicator"
+              >
+                <Fa icon={faBellSlash} class="h-3! w-3!" />
+              </span>
+            {/if}
             {#if statusLabel}
               <span
                 class="type-body shrink-0 truncate whitespace-nowrap font-normal text-muted-foreground"

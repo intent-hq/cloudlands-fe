@@ -608,6 +608,21 @@ export class LiveAgentsClient implements AgentsClient {
       changes: { reasoningEffort: params.reasoningEffort },
     });
   }
+  async setNotificationsMuted(params: {
+    agentId: string;
+    workspaceId: string;
+    notificationsMuted: boolean;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) partial writer; `notificationsMuted` rides the
+    // `changes` object as a boolean (the daemon rejects anything else with
+    // -32602). The daemon persists the flag and emits `agent:updated`, whose
+    // AgentLite push re-derives `hasUnread` through `normalizeAgent`.
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { notificationsMuted: params.notificationsMuted },
+    });
+  }
   async updateSpecialist(params: {
     agentId: string;
     workspaceId: string;

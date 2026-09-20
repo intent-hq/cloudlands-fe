@@ -52,7 +52,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/user-activity-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/user-mcp-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/voice-local-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
-  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
+  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 7 }],
   [
     'src/store/renderer/seeders/workspace-summaries-bridge-seeder.ts',
     { registerMockIpcHandler: 2 },

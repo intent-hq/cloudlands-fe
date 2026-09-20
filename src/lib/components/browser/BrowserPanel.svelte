@@ -192,7 +192,9 @@
           <Button
             type="button"
             variant="ghost"
-            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 p-1 text-muted-foreground hover:text-danger transition-all cursor-pointer"
+            size="icon-compact"
+            iconOnly
+            class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/url:opacity-100 text-muted-foreground hover:text-danger transition-all cursor-pointer"
             onclick={(e) => handleDeleteUrl(e, entry.url)}
             title={m.browser_panel_remove_tooltip()}
           >

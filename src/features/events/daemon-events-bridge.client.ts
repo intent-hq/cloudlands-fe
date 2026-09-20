@@ -1449,6 +1449,7 @@ function handleAgentLastMessageEvent(event: WorkspaceEvent): void {
           lastMessageRole: updates.lastMessageRole ?? session.lastMessageRole,
           lastMessageId: updates.lastMessageId ?? session.lastMessageId,
           isBackground: session.isBackground,
+          notificationsMuted: session.notificationsMuted,
           metadata: session.metadata,
         }),
       }),
@@ -1833,6 +1834,9 @@ function handleAttentionRequestedEvent(event: WorkspaceEvent, workspaceId: strin
     kind,
     reason,
     timestamp,
+    // §5.5 per-agent mute stamp (present only when true) — the toast service
+    // suppresses muted agents; forwarded verbatim, absent stays absent.
+    ...(data.notificationsMuted === true ? { notificationsMuted: true } : {}),
   });
 }
 

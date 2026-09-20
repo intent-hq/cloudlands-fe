@@ -11,7 +11,7 @@
  * opens the read-only harness-features modal, and that legacy/absent
  * shapes render sensibly.
  */
-import { beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 import AgentCard from '../AgentCard.svelte';
@@ -19,7 +19,9 @@ import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
   removeSession,
+  updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { setAgentNotificationsMutedRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
@@ -151,5 +153,77 @@ describe('AgentCard harness version context-menu item', () => {
     // Menu is open (Open present) but no harness entry.
     expect(await screen.findByText('Open')).toBeTruthy();
     expect(screen.queryByText(/^Harness v/)).toBeNull();
+  });
+});
+
+describe('AgentCard notification mute (PROTOCOL §5.5 notificationsMuted)', () => {
+  const MUTE_ACTION = setAgentNotificationsMutedRequested.type;
+  let dispatched: Array<{ type: string; payload?: unknown }> = [];
+
+  beforeEach(() => {
+    appStore.init();
+    agentId = `agent-mute-${++testAgentSeq}`;
+    dispatched = [];
+    // Intercept only the mute mutation so the test observes the dispatched
+    // wire intent without driving the real saga into the daemon client.
+    const realDispatch = appStore.dispatch.bind(appStore);
+    vi.spyOn(appStore, 'dispatch').mockImplementation((action: any) => {
+      dispatched.push(action);
+      if (action?.type === MUTE_ACTION) return action;
+      return realDispatch(action);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    appStore.dispatch(removeSession(agentId));
+  });
+
+  it('offers "Mute notifications" next to Rename and dispatches the mute', async () => {
+    appStore.dispatch(bulkUpsertSessions([makeSession()]));
+
+    render(AgentCard, { props: { agentId } });
+    expect(screen.queryByTestId('agent-card-muted-indicator')).toBeNull();
+    await openContextMenu();
+
+    expect(screen.queryByText('Unmute notifications')).toBeNull();
+    const item = await screen.findByText('Mute notifications');
+    const rename = await screen.findByText('Rename');
+    expect(rename.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await fireEvent.click(item.closest('button')!);
+
+    const action = dispatched.find((a) => a.type === MUTE_ACTION);
+    expect(action).toBeDefined();
+    expect(action!.payload).toEqual(['ws-1', agentId, true]);
+    // Selecting the item closes the context menu.
+    await waitFor(() => expect(screen.queryByText('Open')).toBeNull());
+  });
+
+  it('offers "Unmute notifications" for a muted agent and dispatches the unmute', async () => {
+    appStore.dispatch(bulkUpsertSessions([makeSession({ notificationsMuted: true })]));
+
+    render(AgentCard, { props: { agentId } });
+    await openContextMenu();
+
+    expect(screen.queryByText('Mute notifications')).toBeNull();
+    const item = await screen.findByText('Unmute notifications');
+    await fireEvent.click(item.closest('button')!);
+
+    const action = dispatched.find((a) => a.type === MUTE_ACTION);
+    expect(action!.payload).toEqual(['ws-1', agentId, false]);
+  });
+
+  it('shows the bell-slash indicator only while the session is muted', async () => {
+    appStore.dispatch(bulkUpsertSessions([makeSession({ notificationsMuted: true })]));
+
+    render(AgentCard, { props: { agentId } });
+
+    const indicator = await screen.findByTestId('agent-card-muted-indicator');
+    expect(indicator.getAttribute('aria-label')).toBe('Notifications muted');
+
+    // The agent:updated push converges the flag; the indicator follows without a reload.
+    appStore.dispatch(updateSession(agentId, { notificationsMuted: false }));
+    await waitFor(() => expect(screen.queryByTestId('agent-card-muted-indicator')).toBeNull());
   });
 });

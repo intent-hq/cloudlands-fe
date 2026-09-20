@@ -288,6 +288,9 @@
             <Button
               variant="ghost"
               type="button"
+              size="icon-compact"
+              iconOnly
+              aria-label={m.workspace_codeChanges_openPr_ariaLabel()}
               class="opacity-0 group-hover:opacity-30 transition-opacity hover:opacity-100 cursor-pointer"
               onclick={(e) => {
                 e.stopPropagation();

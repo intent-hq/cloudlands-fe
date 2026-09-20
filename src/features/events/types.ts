@@ -450,6 +450,8 @@ export interface AgentIdleEvent extends WorkspaceEventBase {
     workspaceArchived?: boolean;
     /** Whether the agent is awaiting delegated sub-agents (pending completion watches); absent on older daemons */
     isWaitingForOtherAgents?: boolean;
+    /** Per-agent notification mute (§5.5 `notificationsMuted`); stamped only when true, absent on older daemons */
+    notificationsMuted?: boolean;
     /** Explicit completion report set by the agent via report_to_parent tool */
     completionReport?: string;
     /** ID of the parent agent that created this agent (for delegation) */

@@ -5035,6 +5035,28 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     );
   });
 
+  it('forwards the §5.5 notificationsMuted stamp verbatim (present only when true)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Sandbox is broken',
+        notificationsMuted: true,
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationsMuted: true }),
+    );
+  });
+
   it('falls back to the envelope workspaceId/timestamp when the payload omits them', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -9630,6 +9652,50 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     await flush();
 
     expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(false);
+  });
+
+  it('keeps hasUnread=false for a muted foreground agent (notificationsMuted, PROTOCOL §5.5) on an assistant echo', async () => {
+    seedSession({ notificationsMuted: true, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'muted work done',
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.hasUnread).toBe(false);
+    // The preview projections still apply — only the unread dot is suppressed.
+    expect(session.lastAgentResponse).toBe('muted work done');
+    expect(session.lastMessageId).toBe('msg-a6');
+  });
+
+  it('derives hasUnread=true for the same assistant echo when the agent is not muted (control)', async () => {
+    seedSession({ notificationsMuted: false, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'unmuted work done',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(true);
   });
 
   it('keeps hasUnread=false for a delegated child agent on an assistant echo', async () => {

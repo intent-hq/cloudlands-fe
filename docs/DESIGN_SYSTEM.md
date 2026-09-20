@@ -128,6 +128,7 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 - Never use raw `text-xs`, `text-sm`, `text-base`, or `text-lg` in settings surfaces; use `type-caption` for compact controls, navigation and short metadata, `type-body` for messages, documents, explanatory copy and expanded form content, and `type-title` / `type-display` for section / page headings. Pair `font-medium!` with a `type-*` role on the same element. `intent/no-raw-typography` enforces this in settings components, routes and patterns.
 
 - Never add raw `<button>`, `<input>`, `<select>`, or `<textarea>` controls; use their UI primitives.
+- Never render an icon-only `Button` (icon child only, or `iconOnly`) without an icon size (`size="icon"`, `icon-compact`, `icon-sm`, `icon-lg`); `intent/icon-only-button-size` enforces this.
 - Never hand-roll a menu or listbox row; apply the shared `menuItem()` recipe.
 - Never import `svelte-sonner` directly; route transient feedback through `notify`.
 - Never call `window.alert`, `window.confirm`, or `window.prompt`; use the Confirm pattern.

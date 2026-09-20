@@ -1584,6 +1584,31 @@ export function processHTMLToMarkdown(
       // Use the new recursive list converter
       return `${convertList(el, 0)}\n`;
     } else if (el.tagName === 'BLOCKQUOTE') {
+      // A blockquote made only of paragraphs is emitted one quoted paragraph at a time,
+      // separated by a bare `>` line, so multi-paragraph quotes stay valid markdown.
+      // Every line inside a paragraph (hard breaks emit `\n`) carries the marker too,
+      // otherwise the text after the break would leave the quote.
+      // Blockquotes with any other block children keep the legacy inline flattening.
+      const quoteLines = (text: string): string =>
+        text
+          .split('\n')
+          .map((line) => (line ? `> ${line}` : '>'))
+          .join('\n');
+      const childNodes = Array.from(el.childNodes);
+      const paragraphs = childNodes.filter(
+        (node): node is Element =>
+          node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName === 'P',
+      );
+      const onlyParagraphs =
+        paragraphs.length > 0 &&
+        childNodes.every(
+          (node) =>
+            paragraphs.includes(node as Element) ||
+            (node.nodeType === Node.TEXT_NODE && !(node.textContent || '').trim()),
+        );
+      if (onlyParagraphs) {
+        return `${paragraphs.map((p) => quoteLines(processInlineContent(p))).join('\n>\n')}\n\n`;
+      }
       return `> ${processInlineContent(el)}\n\n`;
     } else if (el.tagName === 'CODE') {
       return `\`${el.textContent}\``;

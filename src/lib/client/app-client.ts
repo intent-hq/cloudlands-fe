@@ -801,6 +801,18 @@ export interface AgentsClient {
     workspaceId: string;
     reasoningEffort: string | null;
   }): Promise<MutationResult>;
+  /**
+   * Set or clear the daemon-owned per-agent notification mute
+   * (`agent.update { changes: { notificationsMuted } }`, §5.5). The daemon
+   * persists the flag, serves it on `AgentLite.notificationsMuted`, and emits
+   * `agent:updated` so every client converges. Transport / daemon errors
+   * fold into `{ success: false, error }`.
+   */
+  setNotificationsMuted(params: {
+    agentId: string;
+    workspaceId: string;
+    notificationsMuted: boolean;
+  }): Promise<MutationResult>;
   /** Persist a specialist picker change through the `agent.update` partial writer. */
   updateSpecialist(params: {
     agentId: string;

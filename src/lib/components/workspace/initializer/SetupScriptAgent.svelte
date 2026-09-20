@@ -116,7 +116,13 @@
       {/if}
     </div>
     <div class="flex items-center gap-1">
-      <Button variant="ghost-light" size="sm" onclick={onClose} class="h-7 w-7 p-0">
+      <Button
+        variant="ghost-light"
+        size="icon-sm"
+        iconOnly
+        aria-label={m.workspace_setupScriptAgent_close_ariaLabel()}
+        onclick={onClose}
+      >
         <Fa icon={faTimes} />
       </Button>
     </div>

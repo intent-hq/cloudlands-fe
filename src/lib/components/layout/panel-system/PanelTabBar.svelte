@@ -1701,8 +1701,10 @@
                      kept alive for the agent, monorepo#2857) — say so. -->
                 <Button
                   variant="ghost-light"
+                  size="icon-compact"
+                  iconOnly
                   class={cn(
-                    'tab-close ml-1 p-0.5 rounded transition-opacity cursor-pointer',
+                    'tab-close ml-1 transition-opacity cursor-pointer',
                     isActive
                       ? 'opacity-60 hover:opacity-100 focus-visible:opacity-100'
                       : 'opacity-0 group-hover:opacity-60 group-focus-within:opacity-60',
