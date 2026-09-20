@@ -2745,6 +2745,7 @@
   "layout_agentMemoryBreakdown_sampledAt_label": "Échantillonné {time}",
   "layout_agentMemoryBreakdown_loading_label": "Chargement de l’utilisation mémoire des agents…",
   "layout_agentMemoryBreakdown_error_label": "Impossible de charger l’utilisation mémoire des agents.",
+  "layout_agentMemoryBreakdown_refreshError_label": "Échec de l’actualisation ; dernier échantillon affiché.",
   "layout_agentMemoryBreakdown_empty_label": "Aucun processus d’agent n’a été échantillonné.",
   "layout_agentMemoryBreakdown_processes_one": "{count} processus",
   "layout_agentMemoryBreakdown_processes_many": "{count} processus",

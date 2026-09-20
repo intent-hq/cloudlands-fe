@@ -1137,6 +1137,16 @@
   >
     {#if $agentMemoryUsage$}
       {@const usage = $agentMemoryUsage$}
+      <!--
+        A refresh failure after a successful sample keeps the last sample on
+        screen but must not pass it off as fresh.
+      -->
+      {#if $agentMemoryUsageError$}
+        <p class="flex items-center gap-1.5 type-caption text-warning-ink" role="status">
+          <Fa icon={faTriangleExclamation} />
+          {m.layout_agentMemoryBreakdown_refreshError_label()}
+        </p>
+      {/if}
       <div class="flex justify-between gap-2 type-caption text-muted-foreground">
         <span>
           {m.layout_agentMemoryBreakdown_total_label()}

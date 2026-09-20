@@ -2745,6 +2745,7 @@
   "layout_agentMemoryBreakdown_sampledAt_label": "{time} に取得",
   "layout_agentMemoryBreakdown_loading_label": "エージェントのメモリ使用量を読み込んでいます…",
   "layout_agentMemoryBreakdown_error_label": "エージェントのメモリ使用量を読み込めませんでした。",
+  "layout_agentMemoryBreakdown_refreshError_label": "更新に失敗しました。最後のサンプルを表示しています。",
   "layout_agentMemoryBreakdown_empty_label": "エージェントのプロセスはまだ取得されていません。",
   "layout_agentMemoryBreakdown_processes_one": "{count} 個のプロセス",
   "layout_agentMemoryBreakdown_processes_many": "{count} 個のプロセス",

@@ -2745,6 +2745,7 @@
   "layout_agentMemoryBreakdown_sampledAt_label": "Erfasst {time}",
   "layout_agentMemoryBreakdown_loading_label": "Agentenspeicher wird geladen…",
   "layout_agentMemoryBreakdown_error_label": "Der Agentenspeicher konnte nicht geladen werden.",
+  "layout_agentMemoryBreakdown_refreshError_label": "Aktualisierung fehlgeschlagen; letzte Messung wird angezeigt.",
   "layout_agentMemoryBreakdown_empty_label": "Es wurden keine Agentenprozesse erfasst.",
   "layout_agentMemoryBreakdown_processes_one": "{count} Prozess",
   "layout_agentMemoryBreakdown_processes_many": "{count} Prozesse",

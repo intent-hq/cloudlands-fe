@@ -2745,6 +2745,7 @@
   "layout_agentMemoryBreakdown_sampledAt_label": "{time}에 샘플링됨",
   "layout_agentMemoryBreakdown_loading_label": "에이전트 메모리 사용량을 불러오는 중…",
   "layout_agentMemoryBreakdown_error_label": "에이전트 메모리 사용량을 불러올 수 없습니다.",
+  "layout_agentMemoryBreakdown_refreshError_label": "새로 고침에 실패했습니다. 마지막 샘플을 표시합니다.",
   "layout_agentMemoryBreakdown_empty_label": "샘플링된 에이전트 프로세스가 없습니다.",
   "layout_agentMemoryBreakdown_processes_one": "프로세스 {count}개",
   "layout_agentMemoryBreakdown_processes_many": "프로세스 {count}개",

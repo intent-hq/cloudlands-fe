@@ -2745,6 +2745,7 @@
   "layout_agentMemoryBreakdown_sampledAt_label": "Muestreado {time}",
   "layout_agentMemoryBreakdown_loading_label": "Cargando el uso de memoria de los agentes…",
   "layout_agentMemoryBreakdown_error_label": "No se pudo cargar el uso de memoria de los agentes.",
+  "layout_agentMemoryBreakdown_refreshError_label": "La actualización falló; se muestra la última muestra.",
   "layout_agentMemoryBreakdown_empty_label": "No se han muestreado procesos de agentes.",
   "layout_agentMemoryBreakdown_processes_one": "{count} proceso",
   "layout_agentMemoryBreakdown_processes_many": "{count} procesos",

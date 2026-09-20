@@ -212,14 +212,15 @@ export const stopUnslothFailed = createAction<[error: string]>('daemonHealth/sto
 export const agentMemoryBreakdownOpened = createAction('daemonHealth/agentMemoryBreakdownOpened');
 
 /**
- * The agent memory breakdown dialog closed. Stops the refresh cadence and
- * drops the stored usage — it is stale by the next open.
+ * The agent memory breakdown dialog closed. Stops the refresh cadence,
+ * cancels any in-flight fetch, and drops the stored usage — it is stale by
+ * the next open.
  */
 export const agentMemoryBreakdownClosed = createAction('daemonHealth/agentMemoryBreakdownClosed');
 
 /**
- * Fetch agent.memoryUsage (middleware trigger, single-flight: a request while
- * one is in flight is dropped).
+ * Fetch agent.memoryUsage (saga trigger, single-flight: a request while one
+ * is in flight is dropped). Only handled while the breakdown is open.
  */
 export const agentMemoryUsageRequested = createAction('daemonHealth/agentMemoryUsageRequested');
 

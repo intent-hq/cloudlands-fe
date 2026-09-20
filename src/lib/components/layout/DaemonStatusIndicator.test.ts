@@ -912,6 +912,17 @@ describe('DaemonStatusIndicator', () => {
       expect(within(screen.getByRole('dialog')).getByText(/could not be loaded/)).toBeTruthy();
     });
 
+    it('keeps the last sample visible and flags a failed refresh alongside it', async () => {
+      withAgentMemory(3221225472, { agentMemoryUsage: usage, agentMemoryUsageError: true });
+      await openStatusMenu();
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText('Implement dark mode')).toBeTruthy();
+      expect(within(dialog).getByRole('status').textContent).toMatch(/last sample/);
+      expect(within(dialog).queryByText(/could not be loaded/)).toBeNull();
+    });
+
     it('dispatches agentMemoryBreakdownClosed on Close and on Escape', async () => {
       withAgentMemory(3221225472, { agentMemoryUsage: usage });
       await openStatusMenu();

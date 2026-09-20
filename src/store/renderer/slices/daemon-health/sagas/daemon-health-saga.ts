@@ -450,11 +450,15 @@ function* fetchAgentMemoryUsageSaga() {
 }
 
 /**
- * Refresh cadence for the open agent memory breakdown: request now, then on
- * a fixed interval. The request watcher is `takeLeading`, so a tick landing
- * while a fetch is still in flight is dropped rather than fanned out.
+ * One open-dialog session: a single-flight request watcher plus the refresh
+ * cadence (request now, then on a fixed interval). The watcher is
+ * `takeLeading`, so a tick landing while a fetch is still in flight is dropped
+ * rather than fanned out. It is forked inside the session so that cancelling
+ * the session also cancels the watcher and any in-flight fetch — a request
+ * started in one session can never complete into the next.
  */
-function* agentMemoryRefreshLoop() {
+function* agentMemoryBreakdownSession() {
+  yield* takeLeading(agentMemoryUsageRequested, fetchAgentMemoryUsageSaga);
   while (true) {
     yield* put(agentMemoryUsageRequested());
     yield* delay(AGENT_MEMORY_REFRESH_INTERVAL_MS);
@@ -462,14 +466,15 @@ function* agentMemoryRefreshLoop() {
 }
 
 /**
- * The refresh loop runs only between an `agentMemoryBreakdownOpened` and the
- * next `agentMemoryBreakdownClosed`; there is no background polling.
+ * A session runs only between an `agentMemoryBreakdownOpened` and the next
+ * `agentMemoryBreakdownClosed`; there is no background polling. Each open
+ * starts a fresh session with an immediate fetch.
  */
 function* watchAgentMemoryBreakdown() {
   while (true) {
     yield* take(agentMemoryBreakdownOpened);
     yield* race({
-      refresh: call(agentMemoryRefreshLoop),
+      session: call(agentMemoryBreakdownSession),
       closed: take(agentMemoryBreakdownClosed),
     });
   }
@@ -480,7 +485,6 @@ function* watchDaemonControls() {
   yield* takeEvery(openLocalAndSpawnRequested, openLocalAndSpawnSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
-  yield* takeLeading(agentMemoryUsageRequested, fetchAgentMemoryUsageSaga);
 }
 
 export function* daemonHealthSaga() {

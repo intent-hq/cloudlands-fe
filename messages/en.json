@@ -2745,6 +2745,7 @@
   "layout_agentMemoryBreakdown_sampledAt_label": "Sampled {time}",
   "layout_agentMemoryBreakdown_loading_label": "Loading agent memory usage…",
   "layout_agentMemoryBreakdown_error_label": "Agent memory usage could not be loaded.",
+  "layout_agentMemoryBreakdown_refreshError_label": "Refresh failed; showing the last sample.",
   "layout_agentMemoryBreakdown_empty_label": "No agent processes have been sampled.",
   "layout_agentMemoryBreakdown_processes_one": "{count} process",
   "layout_agentMemoryBreakdown_processes_many": "{count} processes",

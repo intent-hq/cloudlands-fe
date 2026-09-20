@@ -2745,6 +2745,7 @@
   "layout_agentMemoryBreakdown_sampledAt_label": "采样于 {time}",
   "layout_agentMemoryBreakdown_loading_label": "正在加载代理内存使用情况…",
   "layout_agentMemoryBreakdown_error_label": "无法加载代理内存使用情况。",
+  "layout_agentMemoryBreakdown_refreshError_label": "刷新失败；显示上一次采样。",
   "layout_agentMemoryBreakdown_empty_label": "尚未采样到任何代理进程。",
   "layout_agentMemoryBreakdown_processes_one": "{count} 个进程",
   "layout_agentMemoryBreakdown_processes_many": "{count} 个进程",

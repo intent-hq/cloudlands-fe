@@ -2745,6 +2745,7 @@
   "layout_agentMemoryBreakdown_sampledAt_label": "取樣於 {time}",
   "layout_agentMemoryBreakdown_loading_label": "正在載入代理程式記憶體使用量…",
   "layout_agentMemoryBreakdown_error_label": "無法載入代理程式記憶體使用量。",
+  "layout_agentMemoryBreakdown_refreshError_label": "重新整理失敗；顯示上一次取樣。",
   "layout_agentMemoryBreakdown_empty_label": "尚未取樣到任何代理程式處理程序。",
   "layout_agentMemoryBreakdown_processes_one": "{count} 個處理程序",
   "layout_agentMemoryBreakdown_processes_many": "{count} 個處理程序",
