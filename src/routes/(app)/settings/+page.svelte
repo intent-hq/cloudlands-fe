@@ -903,7 +903,9 @@
               </section>
             </div>
           </div>
-          <NotificationSettings />
+          <div class="mb-6">
+            <NotificationSettings />
+          </div>
 
           <SettingsSection id="licenses" title={m.settings_licenses_title_label()} class="mb-6">
             <div class="px-6 py-4">
