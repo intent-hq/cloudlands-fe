@@ -1,6 +1,18 @@
 import { expect, test } from '../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
+import { recordCdpLifecycle } from '../../../../test/ct-cdp-lifecycle-recorder';
+import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
 import MermaidBlockLaneHarness from './MermaidBlockLaneHarness.svelte';
+
+// The 1336px failed-render cell's mount() intermittently failed with "Execution
+// context was destroyed" on the merge queue (intent-hq/intent#5481) when it ran
+// as the first test of this spec on a reused per-worker page — the reuse reset
+// racing the next mount, the signature fe#2158 / fe#2401 / fe#2553 / fe#2567 /
+// fe#2583 fixed for the chat geometry and panel-drag specs. Give every test its
+// own browser context so no prior teardown races the next mount, and record the
+// CDP lifecycle so a recurrence reports the real event ordering.
+isolateBrowserContextPerTest(test, 'intent-hq/intent#5481');
+recordCdpLifecycle(test);
 
 // Lane contract (intent-hq/intent#4660): a failed Mermaid render has no
 // diagram to show, so its error card stays in the prose column at any host

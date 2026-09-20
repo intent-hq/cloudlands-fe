@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
+import { describe, expect, it, vi } from 'vitest';
+import { isSeparator } from '$lib/components/ui/sidebar-context-menu/types';
+import {
+  buildWorkspaceTabContextMenu,
+  getWorkspaceTabBulkCloseIds,
+} from './workspace-tab-context-actions';
 
 describe('workspace tab context actions', () => {
   const order = ['first', 'middle', 'last'];
@@ -17,5 +21,35 @@ describe('workspace tab context actions', () => {
   it('does nothing for a missing or sole tab', () => {
     expect(getWorkspaceTabBulkCloseIds(['only'], 'only', 'others')).toEqual([]);
     expect(getWorkspaceTabBulkCloseIds(order, 'missing', 'right')).toEqual([]);
+  });
+
+  function menu(overrides: Partial<Parameters<typeof buildWorkspaceTabContextMenu>[0]> = {}) {
+    const handlers = { onClose: vi.fn(), onCloseTabs: vi.fn() };
+    const entries = buildWorkspaceTabContextMenu({
+      order,
+      workspaceId: 'middle',
+      ...handlers,
+      ...overrides,
+    });
+    const ids = entries.map((entry) => (isSeparator(entry) ? '-' : entry.id));
+    return { entries, ids, handlers };
+  }
+
+  it('builds close, close-others, and close-right wired to the bulk ids', () => {
+    const { entries, ids, handlers } = menu();
+    expect(ids).toEqual(['close', '-', 'close-others', 'close-right']);
+
+    for (const entry of entries) if (!isSeparator(entry)) entry.onClick();
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    expect(handlers.onCloseTabs).toHaveBeenNthCalledWith(1, ['first', 'last'], 'middle');
+    expect(handlers.onCloseTabs).toHaveBeenNthCalledWith(2, ['last']);
+  });
+
+  it('disables bulk closes that would close nothing', () => {
+    const { entries } = menu({ order: ['only'], workspaceId: 'only' });
+    const disabled = entries.flatMap((entry) =>
+      !isSeparator(entry) && entry.disabled ? [entry.id] : [],
+    );
+    expect(disabled).toEqual(['close-others', 'close-right']);
   });
 });

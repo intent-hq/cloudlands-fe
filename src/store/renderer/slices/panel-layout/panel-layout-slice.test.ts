@@ -43,6 +43,7 @@ import {
   closeAllOthersEverywhere,
   closeTabsByType,
   closeTabsByAgentId,
+  destroyTabsByType,
   reopenClosedPanelColumn,
   reopenClosedTab,
   pruneRecentlyClosed,
@@ -3627,6 +3628,64 @@ describe('panelLayoutReducer', () => {
       const panel = result.byWorkspaceId[WS].panels.p1;
       expect(panel.tabs).toHaveLength(1);
       expect(panel.tabs[0].id).toBe('t2');
+    });
+  });
+
+  describe('destroyTabsByType (multiplayer w3)', () => {
+    const owned = {
+      id: 'owned',
+      type: 'browser',
+      title: 'Agent page',
+      browserUrl: 'http://a/',
+      ownerAgentId: 'agent-1',
+    };
+
+    it('removes visible, hidden, recently closed and history copies so nothing reopens', () => {
+      const state = stateWithPanel('p1', [
+        { id: 'term-1', type: 'terminal', title: 'Shell' },
+        { id: 'term-2', type: 'terminal', title: 'Shell 2' },
+        owned,
+        { id: 'plain', type: 'browser', title: 'Page' },
+        { id: 'note', type: 'note', title: 'A' },
+      ]);
+      // A user close beforehand: the terminal lands in recentlyClosed, the
+      // owned browser tab in hiddenTabs; both leave snapshots in history.
+      let seeded = panelLayoutReducer(state, closeTab(WS, 'term-2', 'p1', 1000));
+      seeded = panelLayoutReducer(seeded, closeTab(WS, 'owned', 'p1', 1001));
+      expect(seeded.byWorkspaceId[WS].recentlyClosed.map((e) => e.tab.id)).toEqual(['term-2']);
+      expect(getItems(seeded.byWorkspaceId[WS].hiddenTabs).map((t) => t.id)).toEqual(['owned']);
+
+      let result = panelLayoutReducer(seeded, destroyTabsByType(WS, 'terminal', 1002));
+      result = panelLayoutReducer(result, destroyTabsByType(WS, 'browser', 1003));
+      const ws = result.byWorkspaceId[WS];
+      expect(ws.panels.p1.tabs.map((t) => t.id)).toEqual(['note']);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed).toEqual([]);
+      for (const snapshot of ws.layoutHistory) {
+        expect(
+          Object.values(snapshot.panels)
+            .flatMap((p) => p.tabs)
+            .filter((t) => t.type === 'terminal' || t.type === 'browser'),
+        ).toEqual([]);
+      }
+
+      let after = panelLayoutReducer(result, reopenClosedTab(WS, 1004));
+      after = panelLayoutReducer(after, reopenClosedTab(WS, 1005, 'term-2'));
+      after = panelLayoutReducer(after, restoreHiddenTab(WS, 'owned'));
+      after = panelLayoutReducer(after, goBack(WS, 1006));
+      after = panelLayoutReducer(after, goBack(WS, 1007));
+      const reopened = after.byWorkspaceId[WS];
+      expect(
+        Object.values(reopened.panels)
+          .flatMap((p) => p.tabs)
+          .filter((t) => t.type === 'terminal' || t.type === 'browser'),
+      ).toEqual([]);
+      expect(getItems(reopened.hiddenTabs)).toEqual([]);
+    });
+
+    it('is a no-op when the workspace holds no tab of that type', () => {
+      const state = stateWithPanel('p1', [{ id: 'note', type: 'note', title: 'A' }]);
+      expect(panelLayoutReducer(state, destroyTabsByType(WS, 'terminal', 1000))).toBe(state);
     });
   });
 

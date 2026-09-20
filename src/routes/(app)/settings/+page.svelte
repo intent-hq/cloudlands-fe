@@ -10,14 +10,14 @@
     installUpdate,
     simulateSetState,
   } from '$store/renderer/slices/auto-update/auto-update-slice';
-  import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
+  import AdministratorSettings from '$lib/components/settings/AdministratorSettings.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
     type AIBehaviorView,
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
-  import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
+  import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
@@ -26,8 +26,6 @@
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
-  import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
-  import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
@@ -37,7 +35,6 @@
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
-  import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
   import { keepToggleSelected } from '$lib/components/settings/utils/keep-toggle-selected';
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
@@ -45,6 +42,7 @@
   import { Switch } from '$lib/components/ui/switch';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -100,6 +98,7 @@
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -118,6 +117,7 @@
     'providers',
     'connections',
     'devices',
+    'guest-sessions',
     'setup',
     'advanced',
     'input',
@@ -144,6 +144,8 @@
     'backend-sync': 'devices',
     'websocket-api': 'devices',
     'remote-access': 'devices',
+    'guest-sessions': 'guest-sessions',
+    sharing: 'guest-sessions',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -234,6 +236,16 @@
       window.history.replaceState({}, '', url.toString());
     }
   }
+
+  // Provider keys and GitHub/Linear/Sentry connections are administrator-owned
+  // daemon state (multiplayer w3): a collaborator-only client cannot read or
+  // change them, so those sections are withheld and their tabs redirect.
+  const hiddenTabs = $derived<readonly SettingsTab[]>(
+    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
+  );
+  $effect(() => {
+    if (hiddenTabs.includes(activeTab)) setActiveTab('display');
+  });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
   $effect(() => {
@@ -528,6 +540,7 @@
   {activeTab}
   onSelect={setActiveTab}
   {agentsNavigation}
+  {hiddenTabs}
   {sidebarHeader}
   {sidebarFooter}
 >
@@ -544,63 +557,9 @@
         aria-labelledby="settings-page-title"
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
-        <!-- Providers -->
-        {#if activeTab === 'providers'}
-          <div
-            id="providers"
-            data-highlight-id="providers"
-            use:highlightTarget
-            class="mb-6 scroll-mt-20"
-          >
-            <ProviderSelector />
-          </div>
-          <div
-            id="utility-default-model"
-            data-highlight-id="utility-default-model"
-            use:highlightTarget
-            class="mt-10 mb-6"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_defaults()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <DefaultAgentModelSettings workspaceId={settingsWorkspaceId} />
-              </section>
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <h3 class="type-title mb-5 text-foreground">
-                  {m.settings_section_quickActions()}
-                </h3>
-                <BackgroundAgentSettings />
-              </section>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Connections -->
-        {#if activeTab === 'connections'}
-          <div
-            id="integrations"
-            data-highlight-id="integrations"
-            use:highlightTarget
-            class="mb-6 scroll-mt-20"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_tab_accounts()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <ConnectionsSettings />
-              </section>
-            </div>
-          </div>
-
-          <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-6">
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_mcpServers()}
-            </h2>
-            <McpServersSettings />
-          </div>
+        <!-- Providers / Connections (administrator-owned; withheld from collaborator-only clients) -->
+        {#if (activeTab === 'providers' || activeTab === 'connections') && !hiddenTabs.includes(activeTab)}
+          <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
         <!-- Devices -->
@@ -636,6 +595,13 @@
                 <WebSocketApiSettings />
               </section>
             </div>
+          </div>
+        {/if}
+
+        <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
+        {#if activeTab === 'guest-sessions'}
+          <div id="guest-sessions" class="mb-6 scroll-mt-20">
+            <GuestSessionsSettings />
           </div>
         {/if}
 

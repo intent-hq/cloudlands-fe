@@ -74,7 +74,11 @@ import {
 } from '../../browser-tab-registry/browser-tab-registry-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
-import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import {
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '../../workspace/workspace-slice';
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -95,6 +99,7 @@ import {
   closeTabsToRight,
   consumePendingFocus,
   destroyHiddenTabsByOwnerAgent,
+  destroyTabsByType,
   emptyWorkspaceState,
   focusPanel,
   goBack,
@@ -124,6 +129,7 @@ import {
   reorderTabs,
   reopenClosedPanelColumn,
   reopenClosedTab,
+  restoreHiddenTab,
   revealDeferredSpecTab,
   revealHiddenTabAvoidingPanel,
   resetLayout,
@@ -163,8 +169,10 @@ import {
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
   type LayoutSnapshot,
+  type PanelLayoutSliceState,
   type PanelTab,
   type WorkspacePanelLayout,
+  type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
 import {
   displacedOrphanSliverFixture,
@@ -293,7 +301,11 @@ function startRestoreSaga(
   agents: AgentSession[],
   initialLayout = emptyWorkspaceState,
   contextLinks?: ContextLink[],
-  opts: { workspaceListLoaded?: boolean; slimRow?: boolean } = {},
+  opts: {
+    workspaceListLoaded?: boolean;
+    slimRow?: boolean;
+    myRole?: 'owner' | 'collaborator';
+  } = {},
 ) {
   mocks.getJSON.mockReturnValue(stored);
   let backendId = LOCAL_CONNECTION_ID;
@@ -315,8 +327,8 @@ function startRestoreSaga(
     workspace: {
       workspaces: createCollection(
         'id',
-        contextLinks
-          ? [{ id: WS_1, contextLinks } as unknown as Workspace]
+        contextLinks || opts.myRole
+          ? [{ id: WS_1, contextLinks, myRole: opts.myRole } as unknown as Workspace]
           : opts.slimRow
             ? [{ id: WS_1 } as unknown as Workspace]
             : [],
@@ -338,6 +350,15 @@ function startRestoreSaga(
           detailHydrated: options?.detailRead
             ? { ...state.workspace.detailHydrated, [workspace.id]: true }
             : state.workspace.detailHydrated,
+        },
+      };
+    }
+    if (action.type === replaceWorkspaceList.type) {
+      state = {
+        ...state,
+        workspace: {
+          ...state.workspace,
+          workspaces: createCollection('id', action.payload[0]),
         },
       };
     }
@@ -685,6 +706,41 @@ describe('panelLayoutSaga', () => {
       }
     },
   );
+
+  // The application menu and the global new-browser / new-terminal shortcuts
+  // dispatch openTabInRightmostColumnRequested directly, bypassing the
+  // owner-only gates in the navigation and terminal sagas; the router is the
+  // choke point that drops those for a collaborator (multiplayer w3) while
+  // ordinary content still opens.
+  it.each([
+    ['browser', { type: 'browser', title: 'Browser', browserUrl: 'about:blank', closable: true }],
+    ['terminal', { type: 'terminal', title: 'Terminal', terminalId: 'term-1', closable: true }],
+  ] as const)('drops a collaborator %s open at the rightmost-column router', async (_type, tab) => {
+    const state: any = storeState();
+    state.workspace = {
+      workspaces: createCollection('id', [{ id: WS_1, myRole: 'collaborator' } as never]),
+    };
+    const { channel, dispatch, task } = startSaga(state);
+
+    channel.put(openTabInRightmostColumnRequested(WS_1, tab as any, { newTabId: 'blocked' }));
+    await settle();
+    expect(dispatch).not.toHaveBeenCalled();
+
+    channel.put(
+      openTabInRightmostColumnRequested(
+        WS_1,
+        { type: 'note', title: 'Plan', noteId: 'plan', closable: true },
+        { newTabId: 'tab-plan' },
+      ),
+    );
+    await settle();
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'panelLayout/reconcilePanelColumnCount',
+      'panelLayout/openTabInRightmostColumn',
+    ]);
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({ payload: { newTabId: 'tab-plan' } });
+    await cancelSaga(task);
+  });
 
   it.each([true, false])(
     'preserves the production bootstrap when coordinator=%s mounts before persistence',
@@ -1332,6 +1388,270 @@ describe('panelLayoutSaga', () => {
     )?.[0].payload.layout;
     expect(restored.panels['panel-1']).not.toHaveProperty('pinned');
     await cancelSaga(task);
+  });
+
+  describe('collaborator restore (multiplayer w3)', () => {
+    const terminalTab = { id: 'term-1', type: 'terminal' as const, title: 'Shell', closable: true };
+    const ownedBrowserTab = {
+      id: 'browser-owned',
+      type: 'browser' as const,
+      title: 'Agent page',
+      closable: true,
+      ownerAgentId: 'agent-1',
+      browserUrl: 'http://a.test/',
+    };
+    const plainBrowserTab = {
+      id: 'browser-plain',
+      type: 'browser' as const,
+      title: 'Page',
+      closable: true,
+      browserUrl: 'http://b.test/',
+    };
+    const hiddenOwnedBrowserTab = { ...ownedBrowserTab, id: 'browser-hidden' };
+    const mixedLayout: WorkspacePanelLayout = {
+      ...layout,
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'panel-1' },
+          { type: 'panel', panelId: 'panel-2' },
+        ],
+        sizes: [50, 50],
+      },
+      panels: {
+        'panel-1': { id: 'panel-1', tabs: [tab, terminalTab], activeTabId: terminalTab.id },
+        'panel-2': {
+          id: 'panel-2',
+          tabs: [ownedBrowserTab, plainBrowserTab],
+          activeTabId: plainBrowserTab.id,
+        },
+      },
+      hiddenTabs: [hiddenOwnedBrowserTab],
+      columnCount: 2,
+    };
+
+    /** Fold what the saga dispatched through the real reducer, in order. */
+    function reduceDispatched(dispatch: ReturnType<typeof vi.fn>) {
+      return dispatch.mock.calls.reduce((acc, [action]) => panelLayoutReducer(acc, action), {
+        byWorkspaceId: {},
+      } as PanelLayoutSliceState);
+    }
+
+    async function restoreAs(myRole: 'owner' | 'collaborator') {
+      mocks.getJSON.mockReturnValue(mixedLayout);
+      const state = storeState(WS_1);
+      state.workspace = { workspaces: createCollection('id', [{ id: WS_1, myRole } as never]) };
+      const { dispatch, task } = startSaga(state);
+      await settle();
+      await cancelSaga(task);
+      return dispatch;
+    }
+
+    const ownerOnlyTabs = (ws: WorkspacePanelLayoutState) =>
+      Object.values(ws.panels)
+        .flatMap((panel) => panel.tabs)
+        .filter((t) => t.type === 'terminal' || t.type === 'browser')
+        .map((t) => t.id);
+
+    it('destroys restored terminal and browser tabs before settling and leaves nothing to reopen', async () => {
+      const dispatch = await restoreAs('collaborator');
+      const actions = dispatch.mock.calls.map(([action]) => action);
+      const destroys = actions.filter((action) => action.type === destroyTabsByType.type);
+      const initializedAt = actions.findIndex((action) => action.type === initializeLayout.type);
+      const restoredAt = actions.findIndex(
+        (action) => action.type === setRestoreStatus.type && action.payload[1] === 'restored',
+      );
+      expect(destroys.length).toBeGreaterThan(0);
+      for (const destroy of destroys) {
+        const at = actions.indexOf(destroy);
+        expect(at).toBeGreaterThan(initializedAt);
+        expect(at).toBeLessThan(restoredAt);
+      }
+
+      const settled = reduceDispatched(dispatch);
+      const ws = settled.byWorkspaceId[WS_1];
+      expect(ws.restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(Object.values(ws.panels).flatMap((p) => p.tabs.map((t) => t.id))).toEqual([tab.id]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('terminal');
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('browser');
+      for (const snapshot of ws.layoutHistory) {
+        expect(
+          Object.values(snapshot.panels)
+            .flatMap((p) => p.tabs)
+            .filter((t) => t.type === 'terminal' || t.type === 'browser'),
+        ).toEqual([]);
+      }
+
+      let after = panelLayoutReducer(settled, reopenClosedTab(WS_1, 1000));
+      after = panelLayoutReducer(after, reopenClosedTab(WS_1, 1001, terminalTab.id));
+      after = panelLayoutReducer(after, restoreHiddenTab(WS_1, hiddenOwnedBrowserTab.id));
+      after = panelLayoutReducer(after, goBack(WS_1));
+      const reopened = after.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(reopened)).toEqual([]);
+      expect(getItems(reopened.hiddenTabs)).toEqual([]);
+    });
+
+    it('leaves an owner restore free of role-driven tab destroys', async () => {
+      const dispatch = await restoreAs('owner');
+      expect(dispatch.mock.calls.some(([action]) => action.type === destroyTabsByType.type)).toBe(
+        false,
+      );
+      const ws = reduceDispatched(dispatch).byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(ws).sort()).toEqual(
+        [terminalTab.id, ownedBrowserTab.id, plainBrowserTab.id].sort(),
+      );
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual([hiddenOwnedBrowserTab.id]);
+    });
+
+    const ownerOnlyTabsInHistory = (ws: WorkspacePanelLayoutState) =>
+      ws.layoutHistory.flatMap((snapshot) =>
+        Object.values(snapshot.panels)
+          .flatMap((p) => p.tabs)
+          .filter((t) => t.type === 'terminal' || t.type === 'browser')
+          .map((t) => t.id),
+      );
+
+    it('keeps owner-only tabs out of disk history that lands after the restore purge', async () => {
+      let resolveHistory!: (value: unknown) => void;
+      mocks.loadHistory.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      );
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        myRole: 'collaborator',
+      });
+      await settle();
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1].restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toEqual([]);
+
+      resolveHistory({
+        history: [
+          { ...mixedLayout, timestamp: 1 },
+          { ...mixedLayout, timestamp: 2 },
+        ],
+        historyIndex: 1,
+      });
+      await settle();
+
+      const imported = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(imported.layoutHistory).toHaveLength(2);
+      expect(ownerOnlyTabsInHistory(imported)).toEqual([]);
+
+      run.dispatch(goBack(WS_1));
+      run.dispatch(goForward(WS_1));
+      const navigated = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(navigated)).toEqual([]);
+      expect(getItems(navigated.hiddenTabs)).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('withholds owner-only tabs when a backend switch re-restores a mounted workspace', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        myRole: 'collaborator',
+      });
+      await settle();
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toEqual([]);
+
+      run.dispatch.mockClear();
+      run.setBackendId(REMOTE_ID);
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
+      await settle();
+
+      const actions = run.dispatch.mock.calls.map(([action]) => action);
+      const initializedAt = actions.findIndex((action) => action.type === initializeLayout.type);
+      const restoredAt = actions.findIndex(
+        (action) => action.type === setRestoreStatus.type && action.payload[1] === 'restored',
+      );
+      const destroyAt = actions.findIndex((action) => action.type === destroyTabsByType.type);
+      expect(initializedAt).toBeGreaterThanOrEqual(0);
+      expect(destroyAt).toBeGreaterThan(initializedAt);
+      expect(destroyAt).toBeLessThan(restoredAt);
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ws.restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('terminal');
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('browser');
+      await cancelSaga(run.task);
+    });
+
+    // Layout restore can win the startup race against `workspace.list`: the
+    // role is unknown, so the persisted owner-only tabs mount. The record
+    // arriving afterwards — by itself or with the list load — must strip them.
+    it('strips owner-only tabs when the collaborator record arrives after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      const restored = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(restored.restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(restored)).toEqual([
+        terminalTab.id,
+        ownedBrowserTab.id,
+        plainBrowserTab.id,
+      ]);
+      expect(run.dispatch.mock.calls.map(([a]) => a.type)).not.toContain(destroyTabsByType.type);
+
+      run.dispatch(
+        setWorkspaceEntity({ id: WS_1, myRole: 'collaborator' } as unknown as Workspace),
+      );
+      await settle();
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(Object.values(ws.panels).flatMap((p) => p.tabs.map((t) => t.id))).toEqual([tab.id]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('strips owner-only tabs when the workspace list loads after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toHaveLength(3);
+
+      run.dispatch(
+        replaceWorkspaceList([{ id: WS_1, myRole: 'collaborator' } as unknown as Workspace]),
+      );
+      run.dispatch(setWorkspaceHasLoaded(true));
+      await settle();
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(Object.values(ws.panels).flatMap((p) => p.tabs.map((t) => t.id))).toEqual([tab.id]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('leaves an owner layout untouched when the record arrives after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      const before = run.getState().panelLayout.byWorkspaceId[WS_1];
+
+      run.dispatch(setWorkspaceEntity({ id: WS_1, myRole: 'owner' } as unknown as Workspace));
+      run.dispatch(setWorkspaceHasLoaded(true));
+      await settle();
+
+      const after = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(after)).toEqual(ownerOnlyTabs(before));
+      expect(after.panels).toBe(before.panels);
+      await cancelSaga(run.task);
+    });
   });
 
   it('removes an explicit legacy unpin during restore', async () => {
