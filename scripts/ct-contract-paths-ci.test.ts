@@ -28,6 +28,7 @@ const MODULE_PATH = 'scripts/ct-contract-paths.mjs';
 const SPEC_PATTERN_PATH = 'playwright/ct-spec-pattern.mjs';
 const CLI_INVOCATION = `${MODULE_PATH} --diff`;
 const CT_OUTPUT = 'needs.release-fast-path.outputs.ct_required';
+const ROOT_PLAYWRIGHT_OUTPUT = 'needs.release-fast-path.outputs.root_playwright_required';
 const FAST_PATH_OUTPUT = 'needs.release-fast-path.outputs.fast_path';
 
 const workflow = readFileSync(resolve(WORKFLOW_PATH), 'utf-8');
@@ -120,8 +121,32 @@ function checkoutWith(headFile: string, moduleSource?: string) {
   return { root, base };
 }
 
+// Deletes `file` (committed by the base) in a head commit on top of it.
+function checkoutDeleting(file: string) {
+  const root = temporaryDirectory('ct-contract-paths-ci-');
+  git(root, 'init', '-q');
+  git(root, 'config', 'user.name', 'ct-contract-paths-ci test');
+  git(root, 'config', 'user.email', 'ct-contract-paths-ci@example.invalid');
+  git(root, 'config', 'commit.gpgsign', 'false');
+  commitFile(root, file, '// base');
+  const base = git(root, 'rev-parse', 'HEAD');
+  git(root, 'rm', '-q', file);
+  git(root, 'commit', '-q', '-m', `delete ${file}`);
+  return { root, base };
+}
+
+// The `outputs:` block of a job, one line per output.
+function jobOutputs(lines: string[]): string[] {
+  const outputs = lines.indexOf('    outputs:');
+  expect(outputs).toBeGreaterThan(-1);
+  return lines
+    .slice(outputs + 1)
+    .filter((text, index, rest) => rest.slice(0, index + 1).every((t) => t.startsWith('      ')));
+}
+
 const releaseFastPath = jobLines('release-fast-path');
 const testCt = jobLines('test-ct');
+const testPlaywright = jobLines('test-playwright');
 const gate = jobLines('gate');
 
 describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
@@ -137,12 +162,9 @@ describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
   });
 
   it('exposes the step result as the ct_required job output', () => {
-    const outputs = releaseFastPath.indexOf('    outputs:');
-    expect(outputs).toBeGreaterThan(-1);
-    const block = releaseFastPath
-      .slice(outputs + 1)
-      .filter((text, index, rest) => rest.slice(0, index + 1).every((t) => t.startsWith('      ')));
-    const output = block.find((text) => text.trim().startsWith('ct_required:'));
+    const output = jobOutputs(releaseFastPath).find((text) =>
+      text.trim().startsWith('ct_required:'),
+    );
     expect(output).toBeDefined();
     const stepId = /steps\.([\w-]+)\.outputs\.ct_required/.exec(output!)?.[1];
     expect(stepId).toBeDefined();
@@ -199,15 +221,91 @@ describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
   });
 });
 
-type Context = { event: string; ctRequired: string; fastPath: string; route: string };
+describe(`${WORKFLOW_PATH} computes root Playwright relevance in release-fast-path`, () => {
+  const STEP_NAME = 'Evaluate root Playwright relevance';
+
+  it('exposes the step result as the root_playwright_required job output', () => {
+    const output = jobOutputs(releaseFastPath).find((text) =>
+      text.trim().startsWith('root_playwright_required:'),
+    );
+    expect(output).toBeDefined();
+    const stepId = /steps\.([\w-]+)\.outputs\.root_playwright_required/.exec(output!)?.[1];
+    expect(stepId).toBeDefined();
+    const step = releaseFastPath.indexOf(`      - name: ${STEP_NAME}`);
+    expect(step).toBeGreaterThan(-1);
+    expect(releaseFastPath[step + 1]).toBe(`        id: ${stepId}`);
+  });
+
+  describe(`${STEP_NAME} step`, () => {
+    const script = stepRunBlock(releaseFastPath, STEP_NAME);
+
+    const runStep = (root: string, base: string) => {
+      const output = join(root, 'github-output');
+      writeFileSync(output, '');
+      const result = bash(script, { BASE_SHA: base, GITHUB_OUTPUT: output }, root);
+      return { ...result, output: readFileSync(output, 'utf8').trim() };
+    };
+
+    it.each([
+      ['a root spec', 'test/agent-avatar.spec.ts'],
+      ['a root snapshot', 'test/agent-avatar.spec.ts-snapshots/stack-light-chromium-linux.png'],
+      ['a root harness helper', 'test/helpers/harness.ts'],
+      ['a nested root fixture', 'test/fixtures/nested/data.json'],
+      ['the root Playwright config', 'playwright.config.ts'],
+    ])('writes root_playwright_required=true when the diff adds %s', (_name, file) => {
+      const { root, base } = checkoutWith(file);
+      const result = runStep(root, base);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.output).toBe('root_playwright_required=true');
+    });
+
+    it('writes root_playwright_required=true when the diff deletes a root spec', () => {
+      const { root, base } = checkoutDeleting('test/removed.spec.ts');
+      const result = runStep(root, base);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.output).toBe('root_playwright_required=true');
+    });
+
+    it.each([
+      ['a .svelte component only', 'src/features/agent/view.svelte'],
+      ['a CT spec under src/', 'src/lib/components/ui/button/button.geometry.ct.spec.ts'],
+      ['a src/ path containing test/', 'src/test/helpers.ts'],
+      ['a test-prefixed sibling directory', 'test-results/last-run.json'],
+      ['the CT Playwright config', 'playwright-ct.config.ts'],
+      ['a file merely named like the config', 'playwright.config.ts.bak'],
+      ['a CT-contract path', 'src/lib/styles/tokens.css'],
+    ])('writes root_playwright_required=false when the diff touches %s', (_name, file) => {
+      const { root, base } = checkoutWith(file);
+      const result = runStep(root, base);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.output).toBe('root_playwright_required=false');
+    });
+
+    it('requires the suite when git diff fails (fail-safe)', () => {
+      const { root } = checkoutWith('src/features/agent/view.svelte');
+      const result = runStep(root, '0000000000000000000000000000000000000000');
+      expect(result.status).toBe(0);
+      expect(result.output).toBe('root_playwright_required=true');
+    });
+  });
+});
+
+type Context = {
+  event: string;
+  ctRequired: string;
+  rootPlaywrightRequired: string;
+  fastPath: string;
+  route: string;
+};
 
 // Evaluates a workflow `if:` expression built from `!cancelled()`, context
 // lookups, string literals, ==/!=, &&, ||, and parentheses — the only forms the
-// test-ct condition may use — against a substituted context.
+// test-ct / test-playwright conditions may use — against a substituted context.
 function evaluateCondition(expression: string, context: Context): boolean {
   const lookups: Record<string, string> = {
     'github.event_name': context.event,
     [CT_OUTPUT]: context.ctRequired,
+    [ROOT_PLAYWRIGHT_OUTPUT]: context.rootPlaywrightRequired,
     [FAST_PATH_OUTPUT]: context.fastPath,
     'needs.route.result': context.route,
   };
@@ -234,6 +332,7 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
   const ok: Context = {
     event: 'pull_request',
     ctRequired: 'true',
+    rootPlaywrightRequired: 'false',
     fastPath: 'false',
     route: 'success',
   };
@@ -261,6 +360,67 @@ describe('test-ct runs on pull_request when ct_required is true', () => {
     [
       'non-release merge_group entry with computed outputs',
       { event: 'merge_group', ctRequired: 'false', fastPath: 'false' },
+      true,
+    ],
+  ])('%s → runs=%s', (_name, overrides, expected) => {
+    expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
+  });
+});
+
+describe('test-playwright runs on pull_request when root_playwright_required is true', () => {
+  const condition = jobField(testPlaywright, 'if');
+
+  it('depends on release-fast-path and route', () => {
+    const needs = jobField(testPlaywright, 'needs');
+    expect(needs).toContain('release-fast-path');
+    expect(needs).toContain('route');
+  });
+
+  it('is keyed on root_playwright_required, not ct_required', () => {
+    expect(condition).toContain(ROOT_PLAYWRIGHT_OUTPUT);
+    expect(condition).not.toContain(CT_OUTPUT);
+  });
+
+  const ok: Context = {
+    event: 'pull_request',
+    ctRequired: 'false',
+    rootPlaywrightRequired: 'true',
+    fastPath: 'false',
+    route: 'success',
+  };
+  it.each<[string, Partial<Context>, boolean]>([
+    ['root-relevant PR (test/** or playwright.config.ts)', {}, true],
+    ['ordinary PR', { rootPlaywrightRequired: 'false' }, false],
+    [
+      'CT-relevant PR that touches no root path',
+      { ctRequired: 'true', rootPlaywrightRequired: 'false' },
+      false,
+    ],
+    ['release-shaped PR touching package.json', { fastPath: 'true' }, false],
+    [
+      'PR whose relevance output is empty (fork / failed job)',
+      { rootPlaywrightRequired: '' },
+      false,
+    ],
+    ['PR whose route failed', { route: 'failure' }, false],
+    [
+      'merge_group with empty outputs',
+      { event: 'merge_group', rootPlaywrightRequired: '', fastPath: '' },
+      true,
+    ],
+    [
+      'merge_group whose route failed',
+      { event: 'merge_group', rootPlaywrightRequired: '', fastPath: '', route: 'failure' },
+      false,
+    ],
+    [
+      'release-shaped merge_group entry',
+      { event: 'merge_group', rootPlaywrightRequired: 'true', fastPath: 'true' },
+      false,
+    ],
+    [
+      'non-release merge_group entry with computed outputs',
+      { event: 'merge_group', rootPlaywrightRequired: 'false', fastPath: 'false' },
       true,
     ],
   ])('%s → runs=%s', (_name, overrides, expected) => {
