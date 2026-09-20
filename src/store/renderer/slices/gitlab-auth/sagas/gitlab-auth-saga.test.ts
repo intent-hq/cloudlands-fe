@@ -467,7 +467,6 @@ describe('gitlabAuthSaga', () => {
     expect(run.state()).toMatchObject({ isConfigured: false, user: null, method: null });
 
     for (const [status, message] of [
-      ['expired', m.gitlabAuth_service_codeExpired_error()],
       ['denied', m.gitlabAuth_service_denied_error()],
       ['error', m.gitlabAuth_service_failed_error()],
     ] as const) {
@@ -475,6 +474,105 @@ describe('gitlabAuthSaga', () => {
       await settle();
       expect(run.state().error).toBe(message);
     }
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('expired for a connected host re-reads the status and drops the identity the daemon lost', async () => {
+    mocks.getStatus.mockResolvedValue(UNCONFIGURED_STATUS);
+    const run = harness({
+      ...initialState,
+      host: HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'device',
+    });
+
+    run.channel.put(gitlabAuthChanged('expired', HOST));
+    await settle();
+
+    expect(mocks.getStatus.mock.calls).toEqual([['gitlab', HOST]]);
+    expect(run.state()).toMatchObject({
+      host: HOST,
+      isConfigured: false,
+      isAuthenticating: false,
+      deviceFlow: null,
+      user: null,
+      method: null,
+      error: m.gitlabAuth_service_codeExpired_error(),
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('an expired pending grant keeps an independently valid credential for the same host', async () => {
+    mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
+    const run = harness({
+      ...initialState,
+      host: HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'pat',
+      isAuthenticating: true,
+      deviceFlow: PENDING_INFO,
+    });
+
+    run.channel.put(gitlabAuthChanged('expired', HOST));
+    await settle();
+
+    expect(mocks.getStatus.mock.calls).toEqual([['gitlab', HOST]]);
+    expect(run.state()).toMatchObject({
+      isConfigured: true,
+      isAuthenticating: false,
+      deviceFlow: null,
+      user: WIRE_USER,
+      method: 'pat',
+      error: m.gitlabAuth_service_codeExpired_error(),
+    });
+    expect(JSON.stringify(run.state())).not.toContain('must-not-leak');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('expired never clears the identity blindly when the status read fails', async () => {
+    mocks.getStatus.mockRejectedValue(new Error('daemon unreachable'));
+    const run = harness({
+      ...initialState,
+      host: HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'pat',
+    });
+
+    run.channel.put(gitlabAuthChanged('expired', HOST));
+    await settle();
+
+    expect(run.state()).toMatchObject({
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'pat',
+      error: m.gitlabAuth_service_codeExpired_error(),
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('expired for another instance leaves the selected host untouched', async () => {
+    mocks.getStatus.mockResolvedValue(UNCONFIGURED_STATUS);
+    const run = harness({
+      ...initialState,
+      host: HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'pat',
+    });
+
+    run.channel.put(gitlabAuthChanged('expired', OTHER_HOST));
+    await settle();
+
+    expect(mocks.getStatus).not.toHaveBeenCalled();
+    expect(run.dispatched).toEqual([]);
+    expect(run.state()).toMatchObject({ isConfigured: true, user: WIRE_USER, error: null });
     run.task.cancel();
     await run.task.toPromise();
   });

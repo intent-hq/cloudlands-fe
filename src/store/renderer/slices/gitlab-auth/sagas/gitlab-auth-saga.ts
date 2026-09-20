@@ -288,6 +288,21 @@ function* logout(): SagaGenerator<void> {
   }
 }
 
+/**
+ * `expired` covers both a lapsed pending device code and a credential whose
+ * refresh the daemon rejected (it then drops the token pair). Only the daemon
+ * knows which, so the configured identity is re-read rather than cleared: an
+ * expired code must not discard an independently valid credential.
+ */
+function* reconcileStatus(host: string): SagaGenerator<void> {
+  try {
+    const status = yield* call(readStatus, host);
+    if (status) yield* put(setGitLabAuthStatus(statusPayload(status, host)));
+  } catch (error) {
+    logger.error('Failed to reconcile GitLab auth status', error);
+  }
+}
+
 function* authChanged(
   status: ReturnType<typeof gitlabAuthChanged>['payload'][0],
   eventHost: string | undefined,
@@ -306,9 +321,11 @@ function* authChanged(
     return;
   }
   if (status === 'revoked') yield* put(gitlabLogoutCompleted());
-  else if (status === 'expired')
+  else if (status === 'expired') {
     yield* put(setGitLabAuthError(m.gitlabAuth_service_codeExpired_error()));
-  else if (status === 'denied') yield* put(setGitLabAuthError(m.gitlabAuth_service_denied_error()));
+    yield* call(reconcileStatus, host);
+  } else if (status === 'denied')
+    yield* put(setGitLabAuthError(m.gitlabAuth_service_denied_error()));
   else yield* put(setGitLabAuthError(m.gitlabAuth_service_failed_error()));
 }
 

@@ -11,7 +11,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 
 import type { GitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-types';
-import { takeGitLabPatToken } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+import {
+  gitlabAuthReducer,
+  setGitLabAuthError,
+  setGitLabAuthStatus,
+  takeGitLabPatToken,
+} from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
 
 const mocks = vi.hoisted(() => {
@@ -296,6 +301,39 @@ describe('OnboardingForgeStep', () => {
     expect(findButton(container, 'Skip for now')).toBeUndefined();
     await fireEvent.click(findButton(container, 'Continue')!);
     expect(props.onContinue).toHaveBeenCalledOnce();
+  });
+
+  it('a GitLab credential the daemon expired renders disconnected again, with the error and Connect', async () => {
+    const connected: GitLabAuthState = {
+      ...idleGitLab(),
+      host: 'gitlab.example.com',
+      isConfigured: true,
+      method: 'device',
+      user: { id: 7, login: 'jdoe', displayName: 'J. Doe' },
+    };
+    // What the saga dispatches for an `expired` event once the daemon reports
+    // the host unconfigured (see gitlab-auth-saga.test.ts).
+    const expired = [
+      setGitLabAuthError('The GitLab device code expired. Please try again.'),
+      setGitLabAuthStatus({
+        host: 'gitlab.example.com',
+        isConfigured: false,
+        deviceGrantSupported: true,
+        user: null,
+        method: null,
+      }),
+    ].reduce(gitlabAuthReducer, connected);
+    mocks.gitlabAuth.value = expired;
+    const { container } = render(OnboardingForgeStep, { props: baseProps() });
+
+    expect(container.querySelector('[data-testid="forge-step-connected"]')).toBeNull();
+    expect(container.textContent).not.toContain('@jdoe');
+    expect(findButton(container, 'Skip for now')).toBeTruthy();
+    await fireEvent.click(findButton(container, 'Connect GitLab')!);
+    const panel = container.querySelector('[data-testid="forge-step-gitlab"]') as HTMLElement;
+    expect(panel).toBeTruthy();
+    expect(panel.textContent).toContain('The GitLab device code expired. Please try again.');
+    expect(findButton(panel, 'Connect GitLab')).toBeTruthy();
   });
 
   it('skipping while a GitHub flow is starting cancels it before advancing', async () => {
