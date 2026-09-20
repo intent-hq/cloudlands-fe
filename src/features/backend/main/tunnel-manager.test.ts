@@ -283,7 +283,7 @@ describe('tunnel frame codec', () => {
 
   it('encodes CREDIT as opcode 0x07 + BE streamId + BE u32 credit', () => {
     const raw = encodeFrame({ type: 'credit', streamId: 0x01020304, credit: 65536 });
-    expect([...raw]).toEqual([OP_CREDIT, 1, 2, 3, 4, 0, 1, 0, 0]);
+    expect([...raw]).toEqual([0x07, 1, 2, 3, 4, 0, 1, 0, 0]);
   });
 
   it('rejects malformed frames', () => {
@@ -1305,7 +1305,7 @@ describe('TunnelManager', () => {
       // Every CREDIT is a valid client → daemon frame on the wire.
       for (const frame of ws.sent.filter((f) => f.type === 'credit')) {
         const raw = encodeFrame(frame);
-        expect(raw.readUInt8(0)).toBe(OP_CREDIT);
+        expect(raw.readUInt8(0)).toBe(0x07);
         expect(raw.readUInt32BE(1)).toBe(streamId);
         expect(raw.length).toBe(HEADER_LEN + 4);
         expect(raw.readUInt32BE(HEADER_LEN)).toBeGreaterThan(0);
