@@ -293,6 +293,9 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     expect(gate.slice(start, end).some((text) => text.trim() === 'route,')).toBe(true);
   });
 
+  // test-playwright (the root Playwright suite) mirrors test-ct's gating
+  // shape, so the CT scenarios drive both jobs with the same result and
+  // relevance output; the root-specific rows below vary them independently.
   const results = (ct: string, event = 'pull_request') => ({
     EVENT_NAME: event,
     RESULT_route: 'success',
@@ -303,6 +306,7 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     RESULT_test: 'success',
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
     RESULT_test_ct: ct,
+    RESULT_test_playwright: ct,
     RESULT_monorepo_consumer_checks: 'success',
   });
 
@@ -315,7 +319,8 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
     RESULT_test_integration: 'skipped',
   };
 
-  const runGate = (env: Record<string, string>) => bash(script, env, tmpdir());
+  const runGate = (env: Record<string, string>) =>
+    bash(script, { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ...env }, tmpdir());
 
   it.each<[string, Record<string, string>, number]>([
     [
@@ -444,6 +449,72 @@ describe('CI Gate accepts a test-ct skip only through an output', () => {
         RESULT_monorepo_consumer_checks: 'skipped',
         FAST_PATH: '',
         CT_REQUIRED: '',
+      },
+      1,
+    ],
+    [
+      'PR, CT passed, no test/ path, root Playwright skipped',
+      {
+        ...results('success'),
+        RESULT_test_playwright: 'skipped',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'false',
+      },
+      0,
+    ],
+    [
+      'PR, test/ path, root Playwright passed, CT skipped',
+      {
+        ...results('skipped'),
+        RESULT_test_playwright: 'success',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'false',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
+      },
+      0,
+    ],
+    [
+      'PR, test/ path, root Playwright failed',
+      {
+        ...results('success'),
+        RESULT_test_playwright: 'failure',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'PR, test/ path, root Playwright skipped (route failure)',
+      {
+        ...results('success'),
+        RESULT_test_playwright: 'skipped',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
+      },
+      1,
+    ],
+    [
+      'PR, root relevance output empty, root Playwright skipped',
+      {
+        ...results('success'),
+        RESULT_test_playwright: 'skipped',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: '',
+      },
+      1,
+    ],
+    [
+      'merge_group, fast path false, root Playwright skipped',
+      {
+        ...results('success', 'merge_group'),
+        RESULT_test_playwright: 'skipped',
+        FAST_PATH: 'false',
+        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'false',
       },
       1,
     ],
