@@ -5,10 +5,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
   id: 'loading-indicator',
   source: 'src/lib/components/ui/indicators/IntentMarkLoader.svelte',
   publicImport: '$lib/components/ui/indicators',
-  legacyImports: [
-    '$lib/components/ui/indicators/AgentBadge.svelte',
-    '$lib/components/ui/indicators/UnsavedIndicator.svelte',
-  ],
+  legacyImports: [],
   exports: [
     'IntentMarkLoader',
     'AgentBadge',
@@ -22,7 +19,6 @@ export const spinnerMetadata = parseUiComponentMetadata({
   owner: '007-B1',
   callers: [
     'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
-    'src/features/layout/components/panel-tabs/Tab.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',
     'src/features/onboarding/messages/ProviderCard.svelte',
     'src/features/onboarding/steps/OnboardingGitHubStep.svelte',

@@ -144,7 +144,7 @@ it.each(catalogEntries)('resolves the public component export for $slug', (entry
   expect(entry.exports).toContain(expected);
 });
 
-// Checked on disk rather than through `import.meta.glob`: knip resolves glob
+// Checked on disk rather than through a component glob: knip resolves glob
 // patterns in test entries, so a component glob here would mark every file
 // under `src/lib/components/` as referenced and hide dead components.
 function resolvesToModule(specifier: string): boolean {

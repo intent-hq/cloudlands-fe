@@ -3,8 +3,6 @@ export const uiComponentGuardrails = {
     '$lib/components/ui/button/button.svelte': 18,
     '$lib/components/ui/button/index.js': 1,
     '$lib/components/ui/checkbox/checkbox.svelte': 2,
-    '$lib/components/ui/indicators/AgentBadge.svelte': 1,
-    '$lib/components/ui/indicators/UnsavedIndicator.svelte': 1,
     '$lib/components/ui/input/index.js': 1,
     '$lib/components/ui/input/input.svelte': 5,
     '$lib/components/ui/label/label.svelte': 1,

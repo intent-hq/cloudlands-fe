@@ -7,7 +7,6 @@ const root = path.resolve(process.cwd(), 'src');
 const extensions = new Set(['.css', '.svelte', '.ts']);
 const semanticExceptions = new Map<string, string[]>([
   ['src/lib/components/chat/ToolDetails.svelte', ['border-[#a9b1d6]/10']],
-  [['border-slate-200', 'border-slate-700']],
 ]);
 const forbidden = [
   /\b(?:border|divide|bg)-border\/[0-9]+\b/g,

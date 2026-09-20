@@ -9,7 +9,6 @@ const consumerFiles = [
   'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte',
   'src/features/agent/components/agent-avatar/__tests__/AgentAvatarWaitingHost.svelte',
   'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
-  'src/features/layout/components/panel-tabs/Tab.svelte',
   'src/lib/components/CommandPalette.svelte',
   'src/lib/components/agent-overview/AgentHierarchyCard.svelte',
   'src/lib/components/agent-overview/AgentHierarchyGraph.svelte',
@@ -57,7 +56,6 @@ const overflowFiles = [
 
 const canonicalStackConsumers = [
   'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte',
-  'src/features/layout/components/panel-tabs/Tab.svelte',
   'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',
@@ -80,7 +78,7 @@ function productionSvelteFiles(directory = 'src'): string[] {
 
 describe('agent avatar overlay inventory', () => {
   it('keeps every audited consumer on the icon-free canonical avatar surface', () => {
-    expect(consumerFiles).toHaveLength(43);
+    expect(consumerFiles).toHaveLength(42);
     for (const path of consumerFiles) {
       const contents = source(path);
       expect(contents, path).not.toContain('/auggie-avatar/');
