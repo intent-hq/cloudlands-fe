@@ -269,7 +269,9 @@ function mergeDiffSummary(
  *   {@link unionPullRequests});
  * - `"detail"` — an authoritative `workspace.get` read: the pool is taken as
  *   served (full merged pool, uncapped, never `pullRequestsTotal`; an omitted
- *   pool means none) and so are the detail-only fields.
+ *   pool means none) and so are the detail-only fields and the optional PR
+ *   fields (`activePullRequest`, `prNumber`, `prStatus`, `prUrl` — omitted
+ *   when absent, PROTOCOL §5.1, so an omission clears a removed PR).
  *
  * Detail-only fields (`setupScript`, `contextLinks`, `diskUsage`,
  * `diffSummary.files` — absent from slim `workspace.list` rows, PROTOCOL
@@ -291,11 +293,7 @@ function mergeWorkspaceEnrichment(
     return {
       ...normalized,
       agentSummary: normalized.agentSummary ?? existing.agentSummary,
-      activePullRequest: normalized.activePullRequest ?? existing.activePullRequest,
       pullRequestsTotal: undefined,
-      prNumber: normalized.prNumber ?? existing.prNumber,
-      prStatus: normalized.prStatus ?? existing.prStatus,
-      prUrl: normalized.prUrl ?? existing.prUrl,
     };
   }
 

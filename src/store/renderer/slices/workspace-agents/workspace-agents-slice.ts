@@ -64,6 +64,14 @@ export interface WorkspaceAgentState {
    * the list already.
    */
   scopeCounts: AgentScopeCounts | null;
+  /**
+   * Bumped each time `setScopeCounts` installs a different authoritative
+   * baseline. Deferred event nudges (`agent:created` classifies the row only
+   * once its detail read lands) capture the generation when the event arrives
+   * and skip the nudge if a newer baseline — which already counts the row —
+   * was installed meanwhile.
+   */
+  scopeCountsGeneration: number;
   /** True once the `scope: "delegated"` read has hydrated the delegated rows. */
   delegatedAgentsLoaded: boolean;
   /** True while the on-demand delegated read is in flight. */
@@ -188,11 +196,17 @@ function isBackgroundAgent(agent: AgentSession): boolean {
  * The `agent.list` bin a non-retired session partitions into (§5.5 row scope):
  * any parented row is `delegated` (a background CHILD is delegated, not
  * background), an unparented background agent is `background`, everything
- * else is `topLevel`. Retired sessions are their own bin and never classify
- * here — callers check `retiredAt` first.
+ * else is `topLevel`. Parentage is the wire `parentAgentId` the daemon
+ * partitions by, with `metadata.createdByAgentId` (older rows) and the fork
+ * marker `parentSessionId` as fallbacks. Retired sessions are their own bin
+ * and never classify here — callers check `retiredAt` first.
  */
 export function agentListBinOf(agent: AgentSession): AgentListBin {
-  if (agent.parentSessionId || typeof agent.metadata?.createdByAgentId === 'string') {
+  if (
+    (typeof agent.parentAgentId === 'string' && agent.parentAgentId.length > 0) ||
+    agent.parentSessionId ||
+    typeof agent.metadata?.createdByAgentId === 'string'
+  ) {
     return 'delegated';
   }
   return isBackgroundAgent(agent) ? 'background' : 'topLevel';
@@ -241,6 +255,7 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   retiredAgentsLoaded: false,
   isLoadingRetiredAgents: false,
   scopeCounts: null,
+  scopeCountsGeneration: 0,
   delegatedAgentsLoaded: false,
   isLoadingDelegatedAgents: false,
   backgroundAgentsLoaded: false,
@@ -656,7 +671,11 @@ workspaceAgentsReducer.with(setScopeCounts, (state, { payload: [wsId, counts] })
   ) {
     return state;
   }
-  return setWorkspaceState(state, wsId, { ...workspaceState, scopeCounts });
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    scopeCounts,
+    scopeCountsGeneration: workspaceState.scopeCountsGeneration + 1,
+  });
 });
 workspaceAgentsReducer.with(adjustScopeCount, (state, { payload: [wsId, bin, delta] }) => {
   const workspaceState = getWorkspaceState(state, wsId);

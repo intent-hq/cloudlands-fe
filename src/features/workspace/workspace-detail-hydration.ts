@@ -7,9 +7,10 @@
  * detail-only, and the `pullRequests` pool is capped (with
  * `pullRequestsTotal` announcing the full size when truncated). Readers that
  * need one of those fields call the helpers here instead of trusting the
- * stored row: the read is single-flighted per workspace (one in-flight
- * `workspace.get` shared by every caller, including the panel-layout saga)
- * and applied through `setWorkspaceEntity(..., { detailRead: true })`, which
+ * stored row: the read is single-flighted per workspace — here across the
+ * helper's callers, and at the `LiveWorkspacesClient.get` seam across every
+ * `workspace.get` entry point (`open`, the load saga, this module) — and
+ * applied through `setWorkspaceEntity(..., { detailRead: true })`, which
  * takes the detail fields and the full PR pool as served (`workspace.get` is
  * authoritative — an omitted field means none) and marks the row
  * detail-hydrated so later callers skip the fetch. The store carries

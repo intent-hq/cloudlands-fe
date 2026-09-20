@@ -1435,6 +1435,27 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(agents[0]).toMatchObject({ id: 'agent-retired', retiredAt: '2026-08-20T00:00:00.000Z' });
   });
 
+  it('list carries the wire parentAgentId on delegated rows and leaves it absent on top-level ones (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-child',
+          workspaceId: 'ws-1',
+          name: 'Child',
+          status: 'idle',
+          parentAgentId: 'agent-parent',
+        },
+        { id: 'agent-parent', workspaceId: 'ws-1', name: 'Parent', status: 'idle' },
+      ],
+      retiredCount: 0,
+    }));
+    const client = new LiveAgentsClient();
+
+    const agents = await client.list('ws-1', { scope: 'delegated' });
+    expect(agents[0]).toMatchObject({ id: 'agent-child', parentAgentId: 'agent-parent' });
+    expect(agents[1].parentAgentId).toBeUndefined();
+  });
+
   it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {
     backend.onRequest('agent.restore', () => ({ success: true }));
     const client = new LiveAgentsClient();

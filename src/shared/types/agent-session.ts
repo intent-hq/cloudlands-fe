@@ -157,6 +157,15 @@ export interface AgentSession {
   /** Workspace this agent belongs to */
   workspaceId: WorkspaceId;
 
+  /**
+   * Daemon parent linkage (§5.5 `AgentLite.parentAgentId`): the agent that
+   * spawned this one via `agent.delegate` / `ws.agent.create`. The daemon
+   * partitions the `agent.list` bins by this field, so it is the primary
+   * delegated-row marker; `metadata.createdByAgentId` is the older fallback.
+   * Omitted (never `null`) on top-level rows.
+   */
+  parentAgentId?: AgentId;
+
   /** Optional thread ID for conversation threading */
   threadId?: string;
 

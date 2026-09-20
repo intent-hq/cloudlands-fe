@@ -258,6 +258,8 @@ describe('workspaceAgentsReducer', () => {
       delegated: 5,
       background: 0,
     });
+    // Each new authoritative baseline advances the generation.
+    expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(1);
     // Re-setting identical counts keeps the state reference.
     expect(
       workspaceAgentsReducer(
@@ -266,9 +268,11 @@ describe('workspaceAgentsReducer', () => {
       ),
     ).toBe(state);
 
-    // Event nudges move one bin's count and never below zero.
+    // Event nudges move one bin's count and never below zero — and never
+    // advance the baseline generation.
     state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'delegated', -1));
     expect(state.byWorkspaceId[WS_1].scopeCounts?.delegated).toBe(4);
+    expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(1);
     state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'background', -3));
     expect(state.byWorkspaceId[WS_1].scopeCounts?.background).toBe(0);
     state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'topLevel', 1));
@@ -284,6 +288,7 @@ describe('workspaceAgentsReducer', () => {
     expect(state.byWorkspaceId[WS_1]).toEqual({
       ...emptyWorkspaceAgentState,
       scopeCounts: { topLevel: 3, delegated: 4, background: 0 },
+      scopeCountsGeneration: 1,
       isLoadingDelegatedAgents: true,
       delegatedAgentsLoaded: false,
       isLoadingBackgroundAgents: false,
@@ -302,6 +307,7 @@ describe('workspaceAgentsReducer', () => {
     // `null` records an old daemon (all-rows read): counts are dropped.
     state = workspaceAgentsReducer(state, setScopeCounts(WS_1, null));
     expect(state.byWorkspaceId[WS_1].scopeCounts).toBeNull();
+    expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(2);
   });
 
   it('stores waiting-for-first-message per agent and clears it when false', () => {
@@ -435,6 +441,16 @@ describe('agentListBinOf (§5.5 row-scope partition)', () => {
           createdByAgentId: 'agent-parent',
         } as AgentSession['metadata'],
       }),
+    ).toBe('delegated');
+  });
+
+  it('classifies a row by the wire parentAgentId alone — no createdByAgentId, no fork marker (§5.5 partition key)', () => {
+    expect(agentListBinOf({ ...mockAgent('a'), parentAgentId: 'agent-parent' as never })).toBe(
+      'delegated',
+    );
+    // A background CHILD keyed only by parentAgentId is delegated too.
+    expect(
+      agentListBinOf({ ...mockBackgroundAgent('a'), parentAgentId: 'agent-parent' as never }),
     ).toBe('delegated');
   });
 

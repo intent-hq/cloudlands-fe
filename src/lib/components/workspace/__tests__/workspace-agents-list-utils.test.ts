@@ -44,6 +44,22 @@ describe('getFlatWorkspaceAgentRows', () => {
     ]);
   });
 
+  it('nests a child keyed only by the wire parentAgentId under its parent (no createdByAgentId, §5.5)', () => {
+    const agents = [
+      makeAgent('coordinator'),
+      makeAgent('slim-child', { parentAgentId: 'coordinator' as AgentSession['id'] }),
+      makeAgent('legacy-child', { metadata: { createdByAgentId: 'coordinator' } as any }),
+      makeAgent('standalone'),
+    ];
+
+    expect(getFlatWorkspaceAgentRows(agents).map(({ agent, depth }) => [agent.id, depth])).toEqual([
+      ['coordinator', 0],
+      ['legacy-child', 1],
+      ['slim-child', 1],
+      ['standalone', 0],
+    ]);
+  });
+
   it('dedupes repeated sessions by id', () => {
     const duplicate = makeAgent('agent-1');
 

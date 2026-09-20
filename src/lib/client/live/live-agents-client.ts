@@ -91,6 +91,12 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   if (typeof raw.retiredAt === 'string' && raw.retiredAt.length > 0) {
     session.retiredAt = raw.retiredAt;
   }
+  // `parentAgentId` (§5.5 row scope — the daemon's bin partition key) is
+  // presence-detected the same way: set on delegated rows, omitted on
+  // top-level ones. Both the list and detail projections serve it.
+  if (typeof raw.parentAgentId === 'string' && raw.parentAgentId.length > 0) {
+    session.parentAgentId = AgentId(raw.parentAgentId);
+  }
   // Per-agent unread (monorepo#1597): derived here so every AgentLite ingest
   // path — list/get reads, new-message pushes, and the agent:updated marker
   // convergence after agent.markSeen — recomputes it through one seam.

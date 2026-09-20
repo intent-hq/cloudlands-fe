@@ -458,6 +458,49 @@ describe('workspaceReducer', () => {
         expect(stored?.pullRequests).toBeUndefined();
         expect(stored?.pullRequestsTotal).toBeUndefined();
       });
+
+      it('lets an authoritative workspace.get read clear a removed active PR and its scalars (omitted when absent, §5.1)', () => {
+        const active = makePullRequest({
+          id: 'pr-42',
+          number: 42,
+          url: 'https://github.com/example/repo/pull/42',
+        });
+        let state = workspaceReducer(
+          initialState,
+          replaceWorkspaceList([
+            makeWorkspace({
+              id: 'ws-1',
+              pullRequests: [active],
+              activePullRequest: active,
+              prNumber: active.number,
+              prStatus: active.status,
+              prUrl: active.url,
+            }),
+          ]),
+        );
+        state = workspaceReducer(
+          state,
+          setWorkspaceEntity(
+            makeWorkspace({
+              id: 'ws-1',
+              pullRequests: undefined,
+              activePullRequest: undefined,
+              prNumber: undefined,
+              prStatus: undefined,
+              prUrl: undefined,
+            }),
+            { detailRead: true },
+          ),
+        );
+
+        const stored = getItem(state.workspaces, 'ws-1');
+        expect(stored?.pullRequests).toBeUndefined();
+        expect(stored?.activePullRequest).toBeUndefined();
+        expect(stored?.prNumber).toBeUndefined();
+        expect(stored?.prStatus).toBeUndefined();
+        expect(stored?.prUrl).toBeUndefined();
+        expect(state.detailHydrated).toEqual({ 'ws-1': true });
+      });
     });
 
     it('hides rows carrying pendingDeleteAt from the list', () => {

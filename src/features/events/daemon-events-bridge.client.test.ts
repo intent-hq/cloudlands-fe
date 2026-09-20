@@ -5909,6 +5909,40 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
     expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
   });
 
+  it('agent:created does not nudge a bin an authoritative agent.list baseline re-counted while the detail read was in flight', async () => {
+    const handler = capturedHandlers[0]!;
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementationOnce(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    // A hydration read settles meanwhile and already counts the new child.
+    appStore.dispatch(setScopeCounts(WS, { ...COUNTS, delegated: 4 }));
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+
+    // A later create with no intervening baseline still nudges.
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({
+        id: 'agent-child-2' as never,
+        metadata: { createdByAgentId: PARENT } as never,
+      });
+    });
+    handler(notification('agent:created', { agentId: 'agent-child-2' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 5 });
+  });
+
   it('agent:created whose fetch yields no row (deleted meanwhile) leaves the counts alone', async () => {
     const handler = capturedHandlers[0]!;
 

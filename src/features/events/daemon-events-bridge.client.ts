@@ -1321,15 +1321,23 @@ function handleAgentCreatedEvent(event: WorkspaceEvent, workspaceId: string): vo
   // whether the session is already held locally: a create this client
   // issued itself upserts the row from the `agent.create` response before
   // the event lands yet is still uncounted, while a duplicate delivery (or
-  // two in flight at once) must not count twice.
+  // two in flight at once) must not count twice. The nudge is also dropped
+  // when an authoritative `agent.list` baseline (`setScopeCounts`) landed
+  // while the read was in flight: that baseline already counts the row.
   const countThisCreate = !scopeCountedCreatedAgentIds.has(agentId);
   scopeCountedCreatedAgentIds.add(agentId);
+  const baselineGeneration = scopeCountsGenerationOf(workspaceId);
   void ensureAgentSession(agentId).then(() => {
     if (!countThisCreate) return;
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session || session.retiredAt) return;
+    if (scopeCountsGenerationOf(workspaceId) !== baselineGeneration) return;
     appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(session), 1));
   });
+}
+
+function scopeCountsGenerationOf(workspaceId: string): number {
+  return appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.scopeCountsGeneration ?? 0;
 }
 
 /**

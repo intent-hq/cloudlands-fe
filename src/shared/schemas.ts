@@ -399,6 +399,7 @@ export const AgentSessionSchema = z.object({
   acpSessionId: z.string().optional(),
   sessionId: z.string().nullable().optional(), // Legacy support
   workspaceId: workspaceIdSchema, // Accepts slug format, UUID, or optimistic IDs
+  parentAgentId: z.string().optional(), // Daemon parent linkage (§5.5 `AgentLite.parentAgentId`), omitted when top-level
   threadId: z.string().optional(),
   messages: z.array(AgentMessageSchema),
   name: z.string().optional(),
