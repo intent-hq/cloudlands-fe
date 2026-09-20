@@ -35,6 +35,7 @@ import { releaseNotesReducer } from './slices/release-notes/release-notes-slice'
 import { skillsReducer } from './slices/skills/skills-slice';
 import { workspaceReducer } from './slices/workspace/workspace-slice';
 import { githubAuthReducer } from './slices/github-auth/github-auth-slice';
+import { gitlabAuthReducer } from './slices/gitlab-auth/gitlab-auth-slice';
 import { githubReposReducer } from './slices/github-repos/github-repos-slice';
 import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
@@ -135,6 +136,7 @@ export const reducers = {
   workspace: workspaceReducer,
   skills: skillsReducer,
   githubAuth: githubAuthReducer,
+  gitlabAuth: gitlabAuthReducer,
   githubRepos: githubReposReducer,
   githubRepoSearch: githubRepoSearchReducer,
   directoryPicker: directoryPickerReducer,

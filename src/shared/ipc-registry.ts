@@ -695,6 +695,15 @@ export const IPC_CHANNELS = {
     SEARCH_REPOS: 'github-auth:search-repos',
   },
 
+  // Provider-generic forge auth (daemon `sourceControl.*`, GitHub + GitLab)
+  FORGE_AUTH: {
+    GET_STATUS: 'forge-auth:get-status',
+    CONNECT: 'forge-auth:connect',
+    CANCEL_AUTH: 'forge-auth:cancel',
+    REVOKE: 'forge-auth:revoke',
+    GET_USER: 'forge-auth:get-user',
+  },
+
   // Linear Auth (via daemon API OAuth)
   LINEAR_AUTH: {
     IS_AUTHENTICATED: 'linear-auth:is-authenticated',
