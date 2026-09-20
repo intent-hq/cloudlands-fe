@@ -103,8 +103,9 @@ function commitFile(root: string, file: string, content: string) {
 
 // A checkout shaped like the release-fast-path job: the real module under
 // scripts/ (plus the shared spec-pattern module it imports), one base commit
-// and one head commit on top of it.
-function checkoutWith(headFile: string, moduleSource?: string) {
+// and one head commit on top of it. Extra `headFiles` land in the same head
+// commit (`git diff --name-only` lists the commit's paths in sorted order).
+function checkoutWith(headFile: string, moduleSource?: string, headFiles: string[] = []) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
   git(root, 'config', 'user.name', 'ct-contract-paths-ci test');
@@ -117,9 +118,23 @@ function checkoutWith(headFile: string, moduleSource?: string) {
   else writeFileSync(join(root, MODULE_PATH), moduleSource);
   commitFile(root, 'src/base.ts', '');
   const base = git(root, 'rev-parse', 'HEAD');
+  for (const file of headFiles) {
+    const path = join(root, file);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, '// head');
+  }
+  if (headFiles.length > 0) git(root, 'add', '--all');
   commitFile(root, headFile, '// head');
   return { root, base };
 }
+
+// Enough paths that the diff listing exceeds the pipe buffer (64 KiB on
+// Linux): the relevance step pipes it through grep, and a grep that stops
+// reading at the first match leaves the writer with SIGPIPE under pipefail.
+const LARGE_DIFF_FILLER = Array.from(
+  { length: 2000 },
+  (_, i) => `src/features/example/long/component-${String(i).padStart(5, '0')}.svelte`,
+);
 
 // Deletes `file` (committed by the base) in a head commit on top of it.
 function checkoutDeleting(file: string) {
@@ -264,6 +279,32 @@ describe(`${WORKFLOW_PATH} computes root Playwright relevance in release-fast-pa
       const result = runStep(root, base);
       expect(result.status, result.stderr).toBe(0);
       expect(result.output).toBe('root_playwright_required=true');
+    });
+
+    // Regression: playwright.config.ts sorts before src/, so it is the first
+    // line grep sees; the step used to report false on this diff under
+    // pipefail whenever printf was still writing when grep -q exited.
+    it('writes root_playwright_required=true when the config leads a diff larger than the pipe buffer', () => {
+      const { root, base } = checkoutWith('playwright.config.ts', undefined, LARGE_DIFF_FILLER);
+      const listing = git(root, 'diff', '--name-only', base, 'HEAD');
+      expect(listing.split('\n')[0]).toBe('playwright.config.ts');
+      expect(Buffer.byteLength(listing)).toBeGreaterThan(65536);
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const result = runStep(root, base);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.output, `attempt ${attempt}`).toBe('root_playwright_required=true');
+      }
+    });
+
+    it('writes root_playwright_required=false on a diff larger than the pipe buffer with no root path', () => {
+      const { root, base } = checkoutWith(
+        'src/features/agent/view.svelte',
+        undefined,
+        LARGE_DIFF_FILLER,
+      );
+      const result = runStep(root, base);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.output).toBe('root_playwright_required=false');
     });
 
     it.each([

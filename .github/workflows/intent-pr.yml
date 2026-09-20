@@ -463,7 +463,10 @@ jobs:
             echo "root_playwright_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "$changed" | grep -qE '^(test/|playwright\.config\.ts$)'; then
+          # grep must drain its whole input: with `-q` it exits on the first
+          # match, printf takes SIGPIPE on a diff larger than the pipe buffer,
+          # and pipefail turns a matched diff into the false branch.
+          if printf '%s\n' "$changed" | grep -E '^(test/|playwright\.config\.ts$)' >/dev/null; then
             echo "root_playwright_required=true" | tee -a "$GITHUB_OUTPUT"
           else
             echo "root_playwright_required=false" | tee -a "$GITHUB_OUTPUT"
