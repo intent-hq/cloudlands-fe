@@ -260,19 +260,22 @@ describe('workspaceAgentsReducer', () => {
     });
     // Each new authoritative baseline advances the generation.
     expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(1);
-    // Re-setting identical counts keeps the state reference.
-    expect(
-      workspaceAgentsReducer(
-        state,
-        setScopeCounts(WS_1, { topLevel: 2, delegated: 5, background: 0 }),
-      ),
-    ).toBe(state);
+    // An equal-valued authoritative snapshot is still a fresh baseline (a
+    // created row may replace a retired one in the same bin): the generation
+    // advances while the counts object keeps its reference.
+    const heldCounts = state.byWorkspaceId[WS_1].scopeCounts;
+    state = workspaceAgentsReducer(
+      state,
+      setScopeCounts(WS_1, { topLevel: 2, delegated: 5, background: 0 }),
+    );
+    expect(state.byWorkspaceId[WS_1].scopeCounts).toBe(heldCounts);
+    expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(2);
 
     // Event nudges move one bin's count and never below zero — and never
     // advance the baseline generation.
     state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'delegated', -1));
     expect(state.byWorkspaceId[WS_1].scopeCounts?.delegated).toBe(4);
-    expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(1);
+    expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(2);
     state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'background', -3));
     expect(state.byWorkspaceId[WS_1].scopeCounts?.background).toBe(0);
     state = workspaceAgentsReducer(state, adjustScopeCount(WS_1, 'topLevel', 1));
@@ -288,7 +291,7 @@ describe('workspaceAgentsReducer', () => {
     expect(state.byWorkspaceId[WS_1]).toEqual({
       ...emptyWorkspaceAgentState,
       scopeCounts: { topLevel: 3, delegated: 4, background: 0 },
-      scopeCountsGeneration: 1,
+      scopeCountsGeneration: 2,
       isLoadingDelegatedAgents: true,
       delegatedAgentsLoaded: false,
       isLoadingBackgroundAgents: false,
@@ -307,7 +310,7 @@ describe('workspaceAgentsReducer', () => {
     // `null` records an old daemon (all-rows read): counts are dropped.
     state = workspaceAgentsReducer(state, setScopeCounts(WS_1, null));
     expect(state.byWorkspaceId[WS_1].scopeCounts).toBeNull();
-    expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(2);
+    expect(state.byWorkspaceId[WS_1].scopeCountsGeneration).toBe(3);
   });
 
   it('stores waiting-for-first-message per agent and clears it when false', () => {

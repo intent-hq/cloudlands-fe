@@ -65,11 +65,14 @@ export interface WorkspaceAgentState {
    */
   scopeCounts: AgentScopeCounts | null;
   /**
-   * Bumped each time `setScopeCounts` installs a different authoritative
-   * baseline. Deferred event nudges (`agent:created` classifies the row only
-   * once its detail read lands) capture the generation when the event arrives
-   * and skip the nudge if a newer baseline — which already counts the row —
-   * was installed meanwhile.
+   * Bumped each time `setScopeCounts` installs an authoritative baseline —
+   * including one numerically equal to the held counts (a created row may
+   * replace a retired one in the same bin, or the snapshot may correct an
+   * already-stale local count). Deferred event nudges (`agent:created`
+   * classifies the row only once its detail read lands) capture the generation
+   * when the event arrives and skip the nudge if a newer baseline — which
+   * already counts the row — was installed meanwhile. `adjustScopeCount`
+   * never advances it.
    */
   scopeCountsGeneration: number;
   /** True once the `scope: "delegated"` read has hydrated the delegated rows. */
@@ -661,19 +664,19 @@ workspaceAgentsReducer.with(setScopeCounts, (state, { payload: [wsId, counts] })
       }
     : null;
   const current = workspaceState.scopeCounts;
-  if (
+  const unchanged =
     current === scopeCounts ||
-    (current &&
-      scopeCounts &&
+    (current !== null &&
+      scopeCounts !== null &&
       current.topLevel === scopeCounts.topLevel &&
       current.delegated === scopeCounts.delegated &&
-      current.background === scopeCounts.background)
-  ) {
-    return state;
-  }
+      current.background === scopeCounts.background);
+  // An equal-valued snapshot is still a fresh baseline: the generation
+  // advances so deferred nudges captured before it are dropped, while the
+  // counts object keeps its reference.
   return setWorkspaceState(state, wsId, {
     ...workspaceState,
-    scopeCounts,
+    scopeCounts: unchanged ? current : scopeCounts,
     scopeCountsGeneration: workspaceState.scopeCountsGeneration + 1,
   });
 });
