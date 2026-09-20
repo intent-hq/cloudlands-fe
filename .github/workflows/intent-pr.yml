@@ -67,8 +67,11 @@ jobs:
   # (checks / build-web / test / test-integration / test-ct /
   # test-playwright skip when the guarded route job skips, via their
   # existing `needs.route.result == 'success'` condition; test-integration
-  # / test-ct / test-playwright additionally never run on pull_request at
-  # all — see their merge-queue-only guards)
+  # additionally never runs on pull_request at all, and test-ct /
+  # test-playwright run on pull_request only when release-fast-path's
+  # ct_required / root_playwright_required output is 'true' — the diff
+  # touches a CT-contract path / test/** or playwright.config.ts — and
+  # always on merge_group; see their job comments)
   # — EXCEPT the
   # gate, which deliberately still runs on fork PRs so the required "CI
   # Gate" context fails red there (a skipped job would SATISFY a required
