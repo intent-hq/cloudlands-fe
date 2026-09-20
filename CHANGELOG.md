@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.170.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.169.1...v2.170.0) (2026-09-20)
+
+
+### 🚀 Features
+
+* **agents:** tolerate slim agent.list/workspace.list rows and load detail on demand ([#2687](https://github.com/intent-hq/cloudlands-fe/issues/2687)) ([116d654](https://github.com/intent-hq/cloudlands-fe/commit/116d6544224c13db58698b9120ea38a3ebf2ae63))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.85 ([#2689](https://github.com/intent-hq/cloudlands-fe/issues/2689)) ([46d3085](https://github.com/intent-hq/cloudlands-fe/commit/46d308539e3cb9f10e55efd5fc8ba414239ea21e))
+* **ci:** print svelte-check peak RSS and ground the step heap cap in measurements ([#2682](https://github.com/intent-hq/cloudlands-fe/issues/2682)) ([bc18618](https://github.com/intent-hq/cloudlands-fe/commit/bc18618f1a114778ca5c21a00c5763bde9cc845d))
+* **design-system:** size icon-only Buttons in layout, settings, terminal and browser components ([#2683](https://github.com/intent-hq/cloudlands-fe/issues/2683)) ([84d87f6](https://github.com/intent-hq/cloudlands-fe/commit/84d87f68512e35196ff36c876e143b5b687cb76f))
+* **design-system:** size icon-only Buttons in tiptap, markdown and workspace components ([#2680](https://github.com/intent-hq/cloudlands-fe/issues/2680)) ([1fb0077](https://github.com/intent-hq/cloudlands-fe/commit/1fb0077546d483d19a4c2a8c1f11e96e696a1000))
+* **notes:** quote every paragraph when copying a multi-paragraph blockquote ([#2679](https://github.com/intent-hq/cloudlands-fe/issues/2679)) ([abf25c2](https://github.com/intent-hq/cloudlands-fe/commit/abf25c2bbc5ef78c5f3a1e780537936f97582d63))
+
 ## [2.169.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.169.0...v2.169.1) (2026-09-19)
 
 
