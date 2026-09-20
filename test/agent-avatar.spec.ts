@@ -301,7 +301,7 @@ test('renders repeated Coordinator message cards with canonical identity on the 
             'Coordinator',
           );
           await expect(card.getByTestId('agent-message-disclosure-toggle')).toHaveAccessibleName(
-            /sent a message: Coordinator message/,
+            'sent a message',
           );
 
           const [rowBox, identityBox, avatarBox, glyphBox] = await Promise.all([
