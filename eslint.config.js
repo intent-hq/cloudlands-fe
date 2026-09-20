@@ -605,10 +605,13 @@ export default [
   // module, which turns off ct-core's per-worker browser-context reuse (the
   // reuse reset raced `mount()` on the merge queue: intent-hq/intent#4373, #4783,
   // #5236, #5249, #5279, #5481). A spec that imports them from the package
-  // directly runs without that override, so forbid the two named imports; type
-  // imports (`Locator`, `Page`, `ComponentFixtures`, ...) still come from the
-  // package. The shared module itself is the one sanctioned importer. Main-process
-  // files are excluded so this block does not replace their child_process ban above.
+  // directly runs without that override, so forbid every value import of the
+  // package — named, namespace (`import * as ct`) and default alike; an
+  // `importNames` list would let `ct.test` / `ct.expect` through a default import.
+  // Type imports (`Locator`, `Page`, `ComponentFixtures`, ...) still come from the
+  // package. The shared module itself is the one sanctioned value importer.
+  // Main-process files are excluded so this block does not replace their
+  // child_process ban above.
   {
     files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
     ignores: ['src/test/ct-test.ts', ...mainProcessFiles],
@@ -619,10 +622,9 @@ export default [
           paths: [
             {
               name: '@playwright/experimental-ct-svelte',
-              importNames: ['test', 'expect'],
               allowTypeImports: true,
               message:
-                "Import `test` / `expect` from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec; only type imports may come from '@playwright/experimental-ct-svelte'.",
+                "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
             },
           ],
         },
