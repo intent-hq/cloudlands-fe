@@ -39,6 +39,13 @@ import {
  *   `mount()` call is covered) and attaches them as `cdp-lifecycle.json` when
  *   the test fails. It never throws; a recorder problem is reported as a
  *   `cdp-lifecycle-recorder` annotation.
+ *
+ * The guard declares the recorder as a dependency so Playwright sets the
+ * recorder up first and tears it down last: when the guard itself fails
+ * (context reuse is back), `cdp-lifecycle.json` is still attached to that
+ * failure. Playwright derives fixture dependencies from the destructured
+ * parameter names, so the `_ctCdpLifecycleRecorder` binding in the guard's
+ * signature is load-bearing even though the body never reads it.
  */
 
 // ct-svelte bundles its own playwright (1.58.x) while the top-level
@@ -169,14 +176,19 @@ function annotateRecorderProblem(testInfo: TestInfo, stage: string, error: unkno
   });
 }
 
-export const test = baseTest.extend<CtHarnessTestFixtures, CtHarnessWorkerFixtures>({
+type CtHarnessFixtures = Parameters<
+  typeof baseTest.extend<CtHarnessTestFixtures, CtHarnessWorkerFixtures>
+>[0];
+
+/** Exported so the Vitest regression suite can drive the fixture bodies directly. */
+export const ctHarnessFixtures: CtHarnessFixtures = {
   _optionContextReuseMode: [
     resolveCtContextReuseMode({ env: process.env }),
     { scope: 'worker', option: true, box: true },
   ],
 
   _ctIsolatedContextGuard: [
-    async ({ page, _optionContextReuseMode }, use) => {
+    async ({ page, _optionContextReuseMode, _ctCdpLifecycleRecorder: _recorderFirst }, use) => {
       if (_optionContextReuseMode === 'none') await assertFreshBrowserContext(page);
       await use();
     },
@@ -203,6 +215,10 @@ export const test = baseTest.extend<CtHarnessTestFixtures, CtHarnessWorkerFixtur
     },
     { auto: true, box: true },
   ],
-});
+};
+
+export const test = baseTest.extend<CtHarnessTestFixtures, CtHarnessWorkerFixtures>(
+  ctHarnessFixtures,
+);
 
 export { expect };
