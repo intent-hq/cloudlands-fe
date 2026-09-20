@@ -5,7 +5,9 @@
  * selection and project selection. Covers: the GitHub / GitLab / Skip chooser,
  * the GitHub device flow (unchanged), the GitLab branch (host-aware device
  * grant, PAT fallback, cancel-on-skip), already-connected (Continue, no Skip),
- * and the onMount hydration dispatches for both forges.
+ * the onMount hydration dispatches for both forges, and the daemon capability
+ * gate that hides the GitLab option when the connected daemon's protocol does
+ * not serve the `sourceControl.*` auth methods.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
@@ -23,15 +25,20 @@ const mocks = vi.hoisted(() => {
   const dispatch = vi.fn();
   const githubAuth: { value: unknown } = { value: null };
   const gitlabAuth: { value: unknown } = { value: null };
+  const daemonHealthStats: { value: unknown } = { value: null };
   const handleLink = vi.fn(() => Promise.resolve(true));
-  return { dispatch, githubAuth, gitlabAuth, handleLink };
+  return { dispatch, githubAuth, gitlabAuth, daemonHealthStats, handleLink };
 });
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ githubAuth: mocks.githubAuth.value, gitlabAuth: mocks.gitlabAuth.value }),
+    state: () => ({
+      githubAuth: mocks.githubAuth.value,
+      gitlabAuth: mocks.gitlabAuth.value,
+      daemonHealth: { stats: mocks.daemonHealthStats.value },
+    }),
     dispatch: mocks.dispatch,
   });
 });
@@ -68,6 +75,16 @@ const idleGitLab = (): GitLabAuthState => ({
   method: null,
 });
 
+// system.status stats of a daemon whose protocol serves sourceControl.* auth.
+const supportingDaemonStats = () => ({
+  clients: 1,
+  agents: 0,
+  listenMode: 'uds',
+  os: 'linux',
+  arch: 'x64',
+  protocolVersion: '10.5',
+});
+
 const baseProps = () => ({ onContinue: vi.fn(), onSkip: vi.fn() });
 
 const findButton = (root: HTMLElement, label: string) =>
@@ -80,6 +97,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.githubAuth.value = idleGitHub();
   mocks.gitlabAuth.value = idleGitLab();
+  mocks.daemonHealthStats.value = supportingDaemonStats();
 });
 
 describe('OnboardingForgeStep', () => {
@@ -106,6 +124,41 @@ describe('OnboardingForgeStep', () => {
     await fireEvent.click(skip!);
     expect(props.onSkip).toHaveBeenCalledOnce();
     expect(props.onContinue).not.toHaveBeenCalled();
+  });
+
+  it('hides the GitLab option when the daemon protocol predates sourceControl.* auth; GitHub and Skip remain', async () => {
+    mocks.daemonHealthStats.value = { ...supportingDaemonStats(), protocolVersion: '10.4' };
+    const props = baseProps();
+    const { container } = render(OnboardingForgeStep, { props });
+
+    expect(container.querySelector('[data-testid="forge-step-choices"]')).toBeTruthy();
+    expect(findButton(container, 'Connect GitLab')).toBeUndefined();
+    expect(findButton(container, 'Connect GitHub')).toBeTruthy();
+
+    await fireEvent.click(findButton(container, 'Skip for now')!);
+    expect(props.onSkip).toHaveBeenCalledOnce();
+  });
+
+  it('hides the GitLab option before the daemon has reported its protocol version', () => {
+    mocks.daemonHealthStats.value = null;
+    const { container } = render(OnboardingForgeStep, { props: baseProps() });
+
+    expect(container.querySelector('[data-testid="forge-step-choices"]')).toBeTruthy();
+    expect(findButton(container, 'Connect GitLab')).toBeUndefined();
+    expect(findButton(container, 'Connect GitHub')).toBeTruthy();
+  });
+
+  it('offers the GitLab option once a later system.status poll reports a supporting protocol', async () => {
+    mocks.daemonHealthStats.value = null;
+    const { container } = render(OnboardingForgeStep, { props: baseProps() });
+    expect(findButton(container, 'Connect GitLab')).toBeUndefined();
+
+    mocks.daemonHealthStats.value = supportingDaemonStats();
+    const { appStore } = (await import('$store/renderer/store')) as unknown as {
+      appStore: { emitState: () => void };
+    };
+    appStore.emitState();
+    await waitFor(() => expect(findButton(container, 'Connect GitLab')).toBeTruthy());
   });
 
   it('GitHub pending device flow: renders the code card and cancel dispatches cancelAuth', async () => {

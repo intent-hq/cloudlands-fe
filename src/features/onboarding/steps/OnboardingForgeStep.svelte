@@ -5,7 +5,8 @@
    * instance host and goes through the shared GitLabConnectForm (device grant
    * when the host supports it, personal access token otherwise). The step is
    * optional: "Skip for now" advances without connecting, and Settings remains
-   * the later entry point.
+   * the later entry point. The GitLab option is offered only once the daemon
+   * has reported a protocol that serves the `sourceControl.*` auth methods.
    */
   import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
@@ -36,6 +37,7 @@
     selectGitLabAuthIsConfigured,
     selectGitLabAuthUser,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
+  import { selectDaemonSupportsSourceControlAuth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import GitHubDeviceCodeCard from '$lib/components/GitHubDeviceCodeCard.svelte';
   import GitLabConnectForm from '$lib/components/GitLabConnectForm.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -65,6 +67,7 @@
   const gitlabIsAuthenticating$ = selectGitLabAuthIsAuthenticating();
   const gitlabUser$ = selectGitLabAuthUser();
   const gitlabHost$ = selectGitLabAuthHost();
+  const gitlabSupported$ = selectDaemonSupportsSourceControlAuth();
 
   const anyConnected = $derived($githubIsAuthenticated$ || $gitlabIsConfigured$);
   // A flow in progress opens its panel even before the user re-picks it (e.g.
@@ -246,10 +249,12 @@
           {m.onboarding_forgeStep_connectGithub_label()}
         </Button>
       {/if}
-      <Button class="group/button" size="xl" variant="outline" onclick={handleChooseGitLab}>
-        <Fa icon={faGitlab} />
-        {m.onboarding_forgeStep_connectGitlab_label()}
-      </Button>
+      {#if $gitlabSupported$}
+        <Button class="group/button" size="xl" variant="outline" onclick={handleChooseGitLab}>
+          <Fa icon={faGitlab} />
+          {m.onboarding_forgeStep_connectGitlab_label()}
+        </Button>
+      {/if}
     </div>
     {#if $githubError$}
       <p class="text-sm text-danger" role="alert">{$githubError$}</p>

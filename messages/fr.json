@@ -186,6 +186,8 @@
   "settings_connections_cancel": "Annuler",
   "settings_connections_github_waitingForAuthorization": "En attente d'autorisation...",
   "settings_connections_gitlab_waitingForAuthorization": "En attente d'autorisation...",
+  "settings_connections_gitlab_daemonTooOld_label": "Démon trop ancien",
+  "settings_connections_gitlab_daemonTooOld_description": "La connexion à GitLab nécessite un intentd plus récent que celui en cours d'exécution. Mettez à jour le démon, puis connectez-vous depuis ici.",
   "settings_connections_linear_validatingApiKey": "Validation de la clé API...",
   "settings_connections_linear_replaceKey": "Remplacer la clé",
   "settings_connections_linear_apiKeyAriaLabel": "Clé API personnelle Linear",

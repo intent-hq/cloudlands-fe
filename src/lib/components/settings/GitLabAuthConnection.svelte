@@ -13,6 +13,7 @@
     selectGitLabAuthIsConfigured,
     selectGitLabAuthUser,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
+  import { selectDaemonSupportsSourceControlAuth } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import GitLabConnectForm from '$lib/components/GitLabConnectForm.svelte';
 
   let isDisconnecting = $state(false);
@@ -23,10 +24,15 @@
   const isAuthenticating$ = selectGitLabAuthIsAuthenticating();
   const user$ = selectGitLabAuthUser();
   const error$ = selectGitLabAuthError();
+  // The connected daemon must serve the `sourceControl.*` auth methods; an
+  // older one renders a "daemon too old" note in place of the connect entry.
+  const daemonSupported$ = selectDaemonSupportsSourceControlAuth();
 
   // The form stays open while a connect is in flight (the daemon may have
   // resumed a pending device grant before the user clicked anything).
-  const formOpen = $derived(!$isConfigured$ && (showConnectForm || $isAuthenticating$));
+  const formOpen = $derived(
+    $daemonSupported$ && !$isConfigured$ && (showConnectForm || $isAuthenticating$),
+  );
 
   function handleShowConnectForm() {
     showConnectForm = true;
@@ -72,7 +78,11 @@
     </div>
 
     <div class="flex h-[22px] items-center gap-3 self-start">
-      {#if $isAuthenticating$}
+      {#if !$daemonSupported$}
+        <span class="type-body text-muted-foreground" data-testid="gitlab-connection-daemon-too-old"
+          >{m.settings_connections_gitlab_daemonTooOld_label()}</span
+        >
+      {:else if $isAuthenticating$}
         <span class="type-body text-muted-foreground"
           >{m.settings_connections_gitlab_waitingForAuthorization()}</span
         >
@@ -102,7 +112,11 @@
       {/if}
     </div>
     <p class="type-body col-start-2 text-muted-foreground">
-      {m.settings_connections_gitlab_description()}
+      {#if $daemonSupported$}
+        {m.settings_connections_gitlab_description()}
+      {:else}
+        {m.settings_connections_gitlab_daemonTooOld_description()}
+      {/if}
     </p>
     {#if $error$ && !formOpen}
       <p class="type-body col-start-2 text-danger">{$error$}</p>

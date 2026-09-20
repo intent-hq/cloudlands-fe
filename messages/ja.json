@@ -186,6 +186,8 @@
   "settings_connections_cancel": "キャンセル",
   "settings_connections_github_waitingForAuthorization": "認可を待機しています...",
   "settings_connections_gitlab_waitingForAuthorization": "認可を待機しています...",
+  "settings_connections_gitlab_daemonTooOld_label": "デーモンが古すぎます",
+  "settings_connections_gitlab_daemonTooOld_description": "GitLab に接続するには、実行中のものより新しい intentd が必要です。デーモンを更新してから、ここから接続してください。",
   "settings_connections_linear_validatingApiKey": "API キーを検証しています...",
   "settings_connections_linear_replaceKey": "キーを差し替え",
   "settings_connections_linear_apiKeyAriaLabel": "Linear パーソナル API キー",

@@ -186,6 +186,8 @@
   "settings_connections_cancel": "취소",
   "settings_connections_github_waitingForAuthorization": "승인을 기다리는 중...",
   "settings_connections_gitlab_waitingForAuthorization": "승인을 기다리는 중...",
+  "settings_connections_gitlab_daemonTooOld_label": "데몬이 너무 오래됨",
+  "settings_connections_gitlab_daemonTooOld_description": "GitLab에 연결하려면 실행 중인 것보다 최신 intentd가 필요합니다. 데몬을 업데이트한 후 여기에서 연결하세요.",
   "settings_connections_linear_validatingApiKey": "API 키 확인 중...",
   "settings_connections_linear_replaceKey": "키 교체",
   "settings_connections_linear_apiKeyAriaLabel": "Linear 개인 API 키",

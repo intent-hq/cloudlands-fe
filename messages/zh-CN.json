@@ -186,6 +186,8 @@
   "settings_connections_cancel": "取消",
   "settings_connections_github_waitingForAuthorization": "等待授权…",
   "settings_connections_gitlab_waitingForAuthorization": "等待授权…",
+  "settings_connections_gitlab_daemonTooOld_label": "守护进程版本过旧",
+  "settings_connections_gitlab_daemonTooOld_description": "连接 GitLab 需要比当前运行版本更新的 intentd。请更新守护进程，然后在此处连接。",
   "settings_connections_linear_validatingApiKey": "正在验证 API 密钥…",
   "settings_connections_linear_replaceKey": "更换密钥",
   "settings_connections_linear_apiKeyAriaLabel": "Linear 个人 API 密钥",

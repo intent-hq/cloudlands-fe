@@ -72,6 +72,39 @@ export const selectDaemonVersionComparison = store.createSelector(
 );
 
 /**
+ * First protocol version (major, minor) whose daemon serves the
+ * provider-generic `sourceControl.*` auth methods (`authStatus`, `connect`,
+ * `cancelAuth`, `revoke`, `getUser`) the GitLab connection flows call.
+ */
+const SOURCE_CONTROL_AUTH_MIN_PROTOCOL = { major: 10, minor: 5 } as const;
+
+/**
+ * True when a daemon reporting `protocolVersion` serves the `sourceControl.*`
+ * auth methods. Compares (major, minor) only — patch segments never change
+ * method availability. Missing or unparsable versions are unsupported: a
+ * daemon too old to report the field also predates the methods.
+ */
+export function supportsSourceControlAuthProtocol(protocolVersion?: string | null): boolean {
+  if (!protocolVersion) return false;
+  const match = protocolVersion.trim().match(/^([0-9]+)(?:\.([0-9]+))?/);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? 0);
+  const { major: minMajor, minor: minMinor } = SOURCE_CONTROL_AUTH_MIN_PROTOCOL;
+  return major > minMajor || (major === minMajor && minor >= minMinor);
+}
+
+/**
+ * True when the connected daemon (per the last system.status poll) serves the
+ * `sourceControl.*` auth methods behind the GitLab connection flows. False
+ * before the first poll — the GitLab surfaces stay hidden until the daemon
+ * has proven the capability rather than offering a connect that would fail.
+ */
+export const selectDaemonSupportsSourceControlAuth = store.createSelector((state): boolean =>
+  supportsSourceControlAuthProtocol(state.daemonHealth.stats?.protocolVersion),
+);
+
+/**
  * Whether a transport reaches a daemon on THIS machine (PROTOCOL §5.14
  * locality: UDS ⇒ local, WebSocket ⇒ remote). A `null` transport — no
  * backend:status/backend:get-status info yet — is treated as local: the only

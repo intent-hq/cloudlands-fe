@@ -186,6 +186,8 @@
   "settings_connections_cancel": "Abbrechen",
   "settings_connections_github_waitingForAuthorization": "Warten auf Autorisierung...",
   "settings_connections_gitlab_waitingForAuthorization": "Warten auf Autorisierung...",
+  "settings_connections_gitlab_daemonTooOld_label": "Daemon zu alt",
+  "settings_connections_gitlab_daemonTooOld_description": "Zum Verbinden von GitLab ist ein neuerer intentd als der laufende erforderlich. Aktualisiere den Daemon und verbinde dich dann hier.",
   "settings_connections_linear_validatingApiKey": "API-Schlüssel wird validiert...",
   "settings_connections_linear_replaceKey": "Schlüssel ersetzen",
   "settings_connections_linear_apiKeyAriaLabel": "Persönlicher Linear-API-Schlüssel",
