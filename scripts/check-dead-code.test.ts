@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -137,8 +137,16 @@ describe('stripCanaryIssues + exit decision', () => {
 });
 
 describe('check-dead-code CLI cleanup', () => {
-  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const canaryDir = path.join(repoRoot, CANARY_DIR);
+  const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'check-dead-code.mjs');
+
+  // The real CLI runs against a throwaway root (via CHECK_DEAD_CODE_ROOT) so the test never
+  // touches the live checkout's canary directory, which a concurrent `lint:dead-code` may own.
+  function writeFixtureRoot(dir: string): string {
+    const root = path.join(dir, 'root');
+    mkdirSync(path.join(root, path.dirname(CANARY_DIR)), { recursive: true });
+    writeFileSync(path.join(root, 'knip.jsonc'), '{ "rules": { "duplicates": "warn" } }\n');
+    return root;
+  }
 
   // Makes the second canary write fail (ENOSPC) before knip is ever spawned. The patch is
   // applied through `--import` and `syncBuiltinESMExports` so the CLI's named
@@ -169,15 +177,17 @@ describe('check-dead-code CLI cleanup', () => {
   it('removes the canary directory and exits nonzero when a canary write fails', () => {
     const tmp = mkdtempSync(path.join(tmpdir(), 'check-dead-code-'));
     try {
+      const fixtureRoot = writeFixtureRoot(tmp);
       const preload = writeFailingPreload(tmp);
-      const result = spawnSync(
-        process.execPath,
-        ['--import', preload, path.join(repoRoot, 'scripts/check-dead-code.mjs')],
-        { cwd: repoRoot, encoding: 'utf8' },
-      );
+      const result = spawnSync(process.execPath, ['--import', preload, cliPath], {
+        cwd: fixtureRoot,
+        env: { ...process.env, CHECK_DEAD_CODE_ROOT: fixtureRoot },
+        encoding: 'utf8',
+      });
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain('ENOSPC');
-      expect(existsSync(canaryDir)).toBe(false);
+      expect(existsSync(path.join(fixtureRoot, CANARY_DIR))).toBe(false);
+      expect(existsSync(path.join(fixtureRoot, path.dirname(CANARY_DIR)))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

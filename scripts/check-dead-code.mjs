@@ -25,7 +25,11 @@ import {
   stripCanaryIssues,
 } from './check-dead-code-lib.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// CHECK_DEAD_CODE_ROOT is test-only: it lets the CLI regression tests run the real script
+// against a throwaway fixture root instead of the live checkout.
+const REPO_ROOT = process.env.CHECK_DEAD_CODE_ROOT
+  ? path.resolve(process.env.CHECK_DEAD_CODE_ROOT)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const canaryDir = path.join(REPO_ROOT, CANARY_DIR);
 
 // knip's exports map does not expose package.json; walk up from its main entry
