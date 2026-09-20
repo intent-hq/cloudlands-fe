@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatActivityTypographyPreview from '../chat-activity-typography.preview.svelte';
 
 for (const monospace of [false, true]) {

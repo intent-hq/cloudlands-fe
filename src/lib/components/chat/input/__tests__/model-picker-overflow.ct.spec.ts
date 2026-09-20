@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
 import SimpleRichInputQueueHost from '../SimpleRichInputQueueHost.svelte';

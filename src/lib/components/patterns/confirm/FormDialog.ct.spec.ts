@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import FormDialog from './FormDialog.svelte';
 
 for (const enterKey of ['submit', 'ignore'] as const) {

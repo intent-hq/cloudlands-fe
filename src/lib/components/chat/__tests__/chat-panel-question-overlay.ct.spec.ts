@@ -1,10 +1,8 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
-import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 import type { Locator } from '@playwright/test';
 
 test.setTimeout(120_000);
-isolateBrowserContextPerTest(test, 'intent-hq/intent#4783');
 
 async function toggleWithMotion(button: Locator, reduced: boolean) {
   const motion = await button.evaluate(async (node: HTMLButtonElement) => {

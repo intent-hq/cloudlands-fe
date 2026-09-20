@@ -570,7 +570,8 @@ export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) =
           replacement: join(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
         },
       ],
-      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
+      // Do not list '.svelte' here: knip turns non-default extensions into `src/**/*.<ext>` entries, hiding every unused Svelte component from `pnpm lint:dead-code`.
+      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
       conditions: ['import', 'module', 'browser', 'default'],
     },
 

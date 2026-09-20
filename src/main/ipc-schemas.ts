@@ -1095,6 +1095,20 @@ export const VoiceTranscribeLocalSchema = z.object({
 
 export const ConnectionsListSchema = EmptySchema;
 
+/** `guest-sessions:list`: no params; the result never carries a token. */
+export const GuestSessionsListSchema = EmptySchema;
+
+/** `guest-sessions:leave`: the guest session id to revoke on the host and forget locally. */
+export const GuestSessionsLeaveSchema = z.object({
+  id: z.string().min(1, 'Guest session id is required'),
+});
+
+/** `guest-sessions:leave-workspace`: leave one workspace on a joined host and drop it locally. */
+export const GuestSessionsLeaveWorkspaceSchema = z.object({
+  id: z.string().min(1, 'Guest session id is required'),
+  workspaceId: z.string().min(1, 'Workspace id is required'),
+});
+
 export const ConnectionsCaptureFingerprintSchema = z.object({
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),

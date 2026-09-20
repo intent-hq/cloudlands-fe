@@ -1,4 +1,5 @@
-import { expect, type test } from '@playwright/experimental-ct-svelte';
+import type { test } from '@playwright/experimental-ct-svelte';
+import { expect } from '../../../../test/ct-test';
 
 // Derive from CT's fixture so locator types match its expect, not another Playwright version.
 type Page = Parameters<Parameters<typeof test>[2]>[0]['page'];

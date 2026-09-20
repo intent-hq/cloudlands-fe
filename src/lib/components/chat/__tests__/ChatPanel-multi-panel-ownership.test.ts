@@ -199,9 +199,6 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
 vi.mock('../ChatMessage.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
-vi.mock('../DateSeparator.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
-}));
 vi.mock('../EventWakeupBanner.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));

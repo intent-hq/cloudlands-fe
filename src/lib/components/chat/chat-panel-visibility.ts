@@ -135,6 +135,8 @@ export function hasAuthoritativeConversationEvidence(
     session.backendSessionId ||
     session.acpSessionId?.trim() ||
     session.messages.length > 0 ||
+    // `messageCount` rides list rows; `stats` is detail-only (§5.5).
+    (session.messageCount ?? 0) > 0 ||
     (session.stats?.messageCount ?? 0) > 0 ||
     snapshotTotalMessages > 0 ||
     session.lastMessageId ||

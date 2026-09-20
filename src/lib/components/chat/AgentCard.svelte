@@ -15,6 +15,7 @@
   import { Input } from '$lib/components/ui/input';
   import {
     selectAgentIsResponding,
+    selectAgentDetailHydrated,
     selectAgentSession,
     selectAgentPreview,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -172,11 +173,17 @@
   const pendingQuestionRecovery$ = selectPendingQuestionRecovery(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
 
+  // Restore a session the store has no row for (e.g. a card rendered before
+  // its workspace's `agent.list` hydration). A row already present — even a
+  // slim `agent.list` projection row (PROTOCOL §5.5) — must NOT trigger a
+  // per-card `agent.get` on mount: N mounted cards would fan out into N
+  // detail reads on every list hydration. Detail-only fields are pulled on
+  // demand from `handleContextMenu` instead.
   $effect(() => {
     const wsId = workspace?.id;
-    if (wsId && !readOnly) {
-      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
-    }
+    if (!wsId || readOnly) return;
+    if (selectAgentSession.select(appStore.state, agentId)) return;
+    appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
   });
 
   // Inline editing state
@@ -312,6 +319,15 @@
     e.preventDefault();
     e.stopPropagation();
     contextMenu = { x: e.clientX, y: e.clientY };
+    // The `agent.list` row this card renders from omits the detail-only
+    // fields (§5.5 list projection) the menu gates on — `harnessFeatures`
+    // drives both "Replace agent" and the harness modal. Pull the detail
+    // read on open (single-flight per agent in the read seam); the menu
+    // items recompute reactively once it lands.
+    const wsId = $agent$?.workspaceId ?? workspace?.id;
+    if (wsId) {
+      appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
+    }
   }
 
   function closeContextMenu() {
@@ -495,9 +511,14 @@
     // the item opens the harness-features modal (monorepo#2459) — legacy
     // sessions without a harnessFeatures snapshot open it too (every catalog
     // feature renders OFF); sessions from daemons that predate the field omit
-    // the item entirely.
+    // the item entirely. The snapshot is detail-only (stripped from list
+    // rows), so an absent snapshot is ambiguous until the detail read
+    // `handleContextMenu` dispatches has landed (`detailHydrated`): the item
+    // stays disabled until then, and enables once the snapshot arrives or the
+    // detail read confirms a never-activated session has none (all-OFF modal).
     const specialistId = specialist;
     const harnessVersion = $agent$?.harnessVersion;
+    const harnessSnapshotResolved = $agent$?.harnessFeatures !== undefined || $agentDetailHydrated$;
     if (specialistId || harnessVersion) {
       items.push({ type: 'separator' });
     }
@@ -517,6 +538,7 @@
         id: 'harness-version',
         label: m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
         icon: faCircleInfo,
+        disabled: !harnessSnapshotResolved,
         onClick: () => {
           harnessModalOpen = true;
           closeContextMenu();
@@ -530,6 +552,7 @@
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
   const agent$ = selectAgentSession(agentIdStore);
+  const agentDetailHydrated$ = selectAgentDetailHydrated(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)

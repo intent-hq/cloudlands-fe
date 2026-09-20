@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Preview from '../devices-settings.preview.svelte';
 
 test('QR dialog covers device dividers and returns focus when dismissed', async ({

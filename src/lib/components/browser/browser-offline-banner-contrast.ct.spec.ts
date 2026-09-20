@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import ViewerPreview, { OFFLINE_HOST } from './browser-viewer-tab.preview.svelte';
 
 type Rgba = [number, number, number, number];

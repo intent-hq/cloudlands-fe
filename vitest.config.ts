@@ -170,7 +170,8 @@ export default defineConfig(async () => {
         '@pierre/diffs/worker': path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
       },
       conditions: ['import', 'module', 'browser', 'default'],
-      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
+      // Do not list '.svelte' here: knip turns non-default extensions into `src/**/*.<ext>` entries, hiding every unused Svelte component from `pnpm lint:dead-code`.
+      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
     },
     define: {
       __APP_VERSION__: JSON.stringify(packageJson.version),

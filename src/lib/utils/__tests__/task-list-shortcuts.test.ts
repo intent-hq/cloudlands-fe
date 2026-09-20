@@ -19,7 +19,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectWorkspaceNotesState: () => mockReadable({ initialized: true }),
   selectNoteById: Object.assign(() => mockReadable(undefined), { select: () => undefined }),
   selectSelectedNoteId: Object.assign(() => mockReadable(null), { select: () => null }),
-  selectNotesVersion: () => mockReadable(0),
 }));
 
 vi.mock('$store/renderer/store', async () => {

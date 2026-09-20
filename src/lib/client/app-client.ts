@@ -11,7 +11,9 @@
  * stays aligned with the live store shape.
  */
 import type {
+  AgentListScope,
   AgentMessage,
+  AgentScopeCounts,
   AgentSession,
   ContentBlock,
   CreateNoteRequest,
@@ -532,24 +534,44 @@ export interface AgentCancelDeleteResult extends MutationResult {
   cancelled?: boolean;
 }
 
+/**
+ * `agent.list` read options (§5.5). `retiredOnly` and a bin `scope` are
+ * mutually exclusive daemon-side (retired sessions are their own bin).
+ */
+export interface AgentListOptions {
+  retiredOnly?: boolean;
+  /** Row scope (intent-hq/intent#5383): one bin of the non-retired sessions; `all` / absent is the default read. */
+  scope?: AgentListScope;
+}
+
+export interface AgentListResult {
+  agents: AgentSession[];
+  retiredCount: number;
+  /**
+   * Per-bin counts (`scopeCounts`, §5.5 row scope) — present only when the
+   * daemon serves them. An older daemon ignores `scope` and answers the
+   * default (all-rows) read without this field.
+   */
+  scopeCounts?: AgentScopeCounts;
+}
+
 export interface AgentsClient {
   /**
    * Agents of one workspace (`agent.list`, §5.5). Soft-retired sessions
    * (`retiredAt` set) are excluded from the default read daemon-side;
    * `options.retiredOnly: true` serves ONLY retired rows, each
-   * carrying the presence-detected `retiredAt` ISO timestamp. The flag only
-   * rides the wire when supplied so the default read carries no flags.
+   * carrying the presence-detected `retiredAt` ISO timestamp. `options.scope`
+   * narrows the read to one bin of the non-retired sessions (§5.5 row scope).
+   * Flags only ride the wire when supplied so the default read carries none.
    */
-  list(workspaceId: string, options?: { retiredOnly?: boolean }): Promise<AgentSession[]>;
+  list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]>;
   /**
    * Same read as `list` plus response metadata: `retiredCount` (§5.5 soft retire) is the
    * number of soft-retired sessions in the workspace, served on every
-   * `agent.list` variant (defaults to 0 if the field is absent).
+   * `agent.list` variant (defaults to 0 if the field is absent); `scopeCounts`
+   * is the per-bin count triple, absent on daemons predating `scope`.
    */
-  listWithMeta(
-    workspaceId: string,
-    options?: { retiredOnly?: boolean },
-  ): Promise<{ agents: AgentSession[]; retiredCount: number }>;
+  listWithMeta(workspaceId: string, options?: AgentListOptions): Promise<AgentListResult>;
   get(agentId: string): Promise<AgentSession | null>;
   /**
    * One page of an agent's retained transcript (`agent.getConversation`, §5.5).

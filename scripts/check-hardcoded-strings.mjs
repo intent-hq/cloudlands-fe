@@ -72,7 +72,6 @@ const ENFORCED_DIRS = [
   'src/lib/components/agent-overview',
   'src/lib/components/diagrams',
   'src/lib/components/code-walkthrough',
-  'src/lib/components/visualization',
   'src/lib/components/notes',
   'src/lib/components/markdown',
   'src/features/notes',

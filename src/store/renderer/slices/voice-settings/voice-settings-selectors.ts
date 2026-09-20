@@ -1,5 +1,6 @@
 import { resolveEffectiveVoiceEngine } from '$features/voice/effective-voice-engine';
 import { store } from '../../store';
+import { selectIsCollaboratorOnlyClient } from '../workspace/workspace-selectors';
 
 export const selectVoiceSettingsIsLoading = store.createSelector(
   (state) => state.voiceSettings.isLoading,
@@ -54,7 +55,14 @@ export const selectVoiceSettingsError = store.createSelector((state) => state.vo
  * engine resolved against configuration reality (provider key presence, OS
  * engine availability), including the daemon→os graceful fallback. See
  * `resolveEffectiveVoiceEngine` for the resolution rules.
+ *
+ * A collaborator-only client (multiplayer w3) resolves to `unavailable`
+ * regardless of preference: voice settings and daemon transcription are
+ * administrator-owned, so the mic affordances are withheld rather than
+ * surfacing refusals.
  */
 export const selectEffectiveVoiceEngine = store.createSelector((state) =>
-  resolveEffectiveVoiceEngine(state.voiceSettings),
+  selectIsCollaboratorOnlyClient.select(state)
+    ? 'unavailable'
+    : resolveEffectiveVoiceEngine(state.voiceSettings),
 );

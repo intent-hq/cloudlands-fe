@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import FilesOpenMenuPreview from '../files-open-menu.preview.svelte';
 import {
   measureCollapsedFilesTrigger,

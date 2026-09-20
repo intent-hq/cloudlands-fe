@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../test/ct-test';
 import Preview from './provider-default-models.preview.svelte';
 
 for (const scenario of [

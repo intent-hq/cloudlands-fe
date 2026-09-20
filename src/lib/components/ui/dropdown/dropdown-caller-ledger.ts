@@ -42,9 +42,4 @@ export const dropdownCallerLedger = [
     replacement: 'Select',
     reason: 'non-searchable single-value selection',
   },
-  {
-    caller: 'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
-    replacement: 'Combobox',
-    reason: 'shared option model for ModelPicker',
-  },
 ] as const satisfies readonly DropdownCallerLedgerEntry[];

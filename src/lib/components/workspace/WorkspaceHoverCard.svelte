@@ -12,10 +12,11 @@
   import { formatInteger } from '$lib/i18n/format';
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { onMount } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import { faChevronRight } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
   import {
     selectAgentPreview,
     type AgentPreview,
@@ -33,6 +34,18 @@
     type WorkspacePRPresentationRow,
   } from './sidebar/workspace-pr-presentation';
   import { formatWorkspaceHoverCardTimestamp } from './workspace-hover-card-time';
+  import type { WorkspaceMember } from '$features/workspace-sharing/types';
+  import {
+    shareRosterMemberRemoveRequested,
+    shareRosterRequested,
+  } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+  import {
+    selectWorkspaceRosterCanManage,
+    selectWorkspaceRosterMembers,
+    selectWorkspaceRosterRemoveError,
+    selectWorkspaceRosterRemovingPrincipalId,
+    selectWorkspaceRosterWithheld,
+  } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import {
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
@@ -310,9 +323,98 @@
   });
   let visiblePrRows = $derived(workspacePrRows.slice(0, 3));
   let hiddenPrCount = $derived(Math.max(0, workspacePrRows.length - 3));
+  // Member roster (multiplayer w4): rows shown only for a shared workspace
+  // (`memberCount > 1`, PROTOCOL §5.1). The roster is saga-owned state keyed
+  // by workspace id (workspace-share slice): the card asks for a read per
+  // hovered workspace — `memberCount` changes (member added / removed by any
+  // client — the `workspace:updated` membership delta carries it) re-key the
+  // request so the roster converges on live events — and reads the rows,
+  // in-flight removal, and error back through selectors. Remove is owner-only
+  // (`myRole === 'owner'`) and withheld once the daemon refuses an owner-only
+  // method; only the Remove confirmation step is local. Share… itself lives in
+  // the workspace ⋯ menu (WorkspaceProgressCard), not on the card.
+  const rosterMembers$ = staticData
+    ? writable<WorkspaceMember[]>([])
+    : selectWorkspaceRosterMembers(workspaceIdStore);
+  const rosterCanManage$ = staticData
+    ? writable(false)
+    : selectWorkspaceRosterCanManage(workspaceIdStore);
+  const rosterWithheld$ = staticData
+    ? writable(false)
+    : selectWorkspaceRosterWithheld(workspaceIdStore);
+  const removingPrincipalId$ = staticData
+    ? writable<string | null>(null)
+    : selectWorkspaceRosterRemovingPrincipalId(workspaceIdStore);
+  const rosterRemoveError$ = staticData
+    ? writable<string | null>(null)
+    : selectWorkspaceRosterRemoveError(workspaceIdStore);
+  const membersKey = $derived(
+    workspace && loadWorkspaceData && (workspace.memberCount ?? 0) > 1
+      ? `${workspace.id}:${workspace.memberCount}`
+      : null,
+  );
+  let members = $derived<WorkspaceMember[]>(membersKey ? $rosterMembers$ : []);
+  let canManageSharing = $derived($rosterCanManage$);
+  let confirmRemovePrincipalId = $state<string | null>(null);
+  let membersEl: HTMLElement | null = $state(null);
+  let removingPrincipalId = $derived($removingPrincipalId$);
+  let removeError = $derived(
+    $rosterWithheld$ ? m.workspace_share_ownerOnly_notice() : $rosterRemoveError$,
+  );
+  // Swapping Remove for confirm/cancel (and back) unmounts the focused
+  // control; move focus onto its replacement so a keyboard user keeps their
+  // place and the hover surface does not read the transient blur as leaving.
+  async function focusMemberControl(principalId: string, selector: string | null) {
+    await tick();
+    const row = membersEl?.querySelector<HTMLElement>(
+      `[data-workspace-hover-card-member-row][data-principal-id="${principalId}"]`,
+    );
+    const control = selector ? row?.querySelector<HTMLElement>(selector) : null;
+    if (control) control.focus();
+    else membersEl?.focus();
+  }
+  function askRemoveMember(principalId: string) {
+    confirmRemovePrincipalId = principalId;
+    void focusMemberControl(
+      principalId,
+      '[data-workspace-hover-card-member-remove-confirm] button',
+    );
+  }
+  function cancelRemoveMember(principalId: string) {
+    confirmRemovePrincipalId = null;
+    void focusMemberControl(principalId, '[data-workspace-hover-card-member-remove]');
+  }
+  function confirmRemoveMember(principalId: string) {
+    if (!workspace || !canManageSharing || removingPrincipalId) return;
+    if (confirmRemovePrincipalId !== principalId) return;
+    confirmRemovePrincipalId = null;
+    appStore.dispatch(
+      shareRosterMemberRemoveRequested({ workspaceId: String(workspace.id), principalId }),
+    );
+    // Remove is disabled while the removal is in flight; park focus on the list.
+    void focusMemberControl(principalId, null);
+  }
+  $effect(() => {
+    const key = membersKey;
+    confirmRemovePrincipalId = null;
+    if (!key) return;
+    const workspaceId = untrack(() => String(workspace?.id ?? ''));
+    if (workspaceId) appStore.dispatch(shareRosterRequested({ workspaceId }));
+  });
+  let visibleMembers = $derived(members.slice(0, 4));
+  let hiddenMemberCount = $derived(Math.max(0, members.length - 4));
+  function memberName(member: WorkspaceMember): string {
+    return member.displayName || member.login || member.principalId;
+  }
+  function memberRoleLabel(member: WorkspaceMember): string {
+    return member.role === 'owner'
+      ? m.workspace_share_role_owner_label()
+      : m.workspace_share_role_collaborator_label();
+  }
   let hasAgentRows = $derived(allRows.length > 0);
   let hasPrRows = $derived(workspacePrRows.length > 0);
-  let hasBodyContent = $derived(hasAgentRows || hasPrRows);
+  let hasMemberRows = $derived(members.length > 0);
+  let hasBodyContent = $derived(hasAgentRows || hasPrRows || hasMemberRows);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity = pr.repo
       ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
@@ -500,6 +602,115 @@
                 <span
                   >{m.workspace_hoverCard_moreItems_label({
                     count: formatInteger(hiddenPrCount),
+                  })}</span
+                >
+                <Fa icon={faChevronRight} size={10} />
+              </div>{/if}
+          </section>{/if}
+        {#if hasMemberRows}<section
+            bind:this={membersEl}
+            class="members min-w-0 outline-none"
+            aria-label={m.workspace_share_members_label()}
+            tabindex="-1"
+            data-workspace-hover-card-members
+          >
+            <div class="grid min-w-0 gap-3" role="list" data-workspace-hover-card-member-list>
+              {#each visibleMembers as member (member.principalId)}
+                <div
+                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5"
+                  aria-label={m.workspace_hoverCard_member_ariaLabel({
+                    name: memberName(member),
+                    role: memberRoleLabel(member),
+                  })}
+                  role="listitem"
+                  data-workspace-hover-card-member-row
+                  data-member-role={member.role}
+                  data-principal-id={member.principalId}
+                >
+                  {#if member.avatarUrl}
+                    <img
+                      src={member.avatarUrl}
+                      alt=""
+                      class="h-6 w-6 shrink-0 justify-self-center rounded-full"
+                      loading="lazy"
+                    />
+                  {:else}
+                    <span
+                      class="grid h-6 w-6 shrink-0 place-items-center justify-self-center rounded-full bg-muted text-xs"
+                      aria-hidden="true">{memberName(member).slice(0, 1).toUpperCase()}</span
+                    >
+                  {/if}
+                  <span
+                    class="type-body min-w-0 truncate text-foreground"
+                    data-workspace-hover-card-member-name>{memberName(member)}</span
+                  >
+                  <span
+                    class="type-caption shrink-0 text-muted-foreground"
+                    data-workspace-hover-card-member-role>{memberRoleLabel(member)}</span
+                  >
+                  {#if canManageSharing && member.role !== 'owner'}
+                    {#if confirmRemovePrincipalId === member.principalId}
+                      <span
+                        class="flex shrink-0 items-center gap-1"
+                        role="group"
+                        aria-label={m.workspace_share_removeMember_confirm_label({
+                          name: memberName(member),
+                        })}
+                        data-workspace-hover-card-member-remove-confirm
+                      >
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={removingPrincipalId !== null}
+                          onclick={() => confirmRemoveMember(member.principalId)}
+                          aria-label={m.workspace_share_removeMember_confirmAction_ariaLabel({
+                            name: memberName(member),
+                          })}
+                        >
+                          {m.workspace_share_removeMember_label()}
+                        </Button>
+                        <Button
+                          variant="ghost-light"
+                          size="sm"
+                          onclick={() => cancelRemoveMember(member.principalId)}
+                        >
+                          {m.workspace_share_cancel_label()}
+                        </Button>
+                      </span>
+                    {:else}
+                      <Button
+                        variant="ghost-light"
+                        size="sm"
+                        disabled={removingPrincipalId !== null}
+                        onclick={() => askRemoveMember(member.principalId)}
+                        aria-label={m.workspace_share_removeMember_ariaLabel({
+                          name: memberName(member),
+                        })}
+                        data-workspace-hover-card-member-remove
+                      >
+                        {m.workspace_share_removeMember_label()}
+                      </Button>
+                    {/if}
+                  {:else}
+                    <span aria-hidden="true"></span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+            {#if removeError}<p
+                class="type-caption mt-2 text-danger"
+                role="alert"
+                data-workspace-hover-card-member-error
+              >
+                {removeError}
+              </p>{/if}
+            {#if hiddenMemberCount}<div
+                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
+                data-workspace-hover-card-member-overflow
+              >
+                <span
+                  >{m.workspace_hoverCard_moreItems_label({
+                    count: formatInteger(hiddenMemberCount),
                   })}</span
                 >
                 <Fa icon={faChevronRight} size={10} />

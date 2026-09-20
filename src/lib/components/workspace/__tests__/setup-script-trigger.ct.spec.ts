@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Preview from '$features/onboarding/onboarding-layout.preview.svelte';
 
 for (const width of [420, 900]) {

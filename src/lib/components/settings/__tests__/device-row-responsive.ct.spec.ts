@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { ConnectionRecord } from '$shared/types/connections';
 import DeviceRow from '../DeviceRow.svelte';
 import Preview from '../devices-settings.preview.svelte';

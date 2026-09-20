@@ -11,6 +11,7 @@ import { initAppStore, store as appStore } from '$store/renderer/store';
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { selectGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-selectors';
+import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { setGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { selectBundledSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
 import {
@@ -161,6 +162,9 @@ beforeEach(() => {
     configurable: true,
   });
   appStore.dispatch(simulateSetState({ status: 'idle' }));
+  // No sagas run here: settle the window's guest/owner identity as an owner
+  // (multiplayer w4) so the administrator-only tabs are rendered.
+  appStore.dispatch(guestSessionsListUnavailable());
 });
 
 afterEach(() => {

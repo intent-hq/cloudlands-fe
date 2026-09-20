@@ -42,6 +42,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
       effect: function* (agentId: string) {
         return sessionState.byId.get(agentId) ?? null;
       },
+      select: (_state: unknown, agentId: string) => sessionState.byId.get(agentId) ?? null,
     },
   ),
   selectAgentSessionsByIds: (agentIds: {
@@ -62,6 +63,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   }),
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
+  selectAgentDetailHydrated: () => makeReadable(false),
   selectAgentPreview: Object.assign(
     (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
       makeDerivedReadable(agentId, (id) => {

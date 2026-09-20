@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../../test/ct-test';
 import Combobox from './combobox.svelte';
 
 test('multi-select checkmarks follow selection and deselection', async ({ mount, page }) => {
