@@ -136,9 +136,12 @@ function* pollForCompletion(intervalMs: number, host: string): SagaGenerator<voi
  */
 function* waitForPollEnd(host: string): SagaGenerator<void> {
   while (true) {
-    const action = yield* take([cancelGitLabAuth, logoutGitLab, gitlabAuthChanged]);
-    if (action.type !== gitlabAuthChanged.type) return;
-    const [, eventHost] = action.payload as ReturnType<typeof gitlabAuthChanged>['payload'];
+    const { changed } = yield* race({
+      ended: take([cancelGitLabAuth, logoutGitLab]),
+      changed: take(gitlabAuthChanged),
+    });
+    if (!changed) return;
+    const [, eventHost] = changed.payload;
     if (eventForHost(eventHost, host)) return;
   }
 }
