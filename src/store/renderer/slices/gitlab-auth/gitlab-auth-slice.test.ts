@@ -13,6 +13,7 @@ import {
 } from './gitlab-auth-selectors';
 import {
   clearGitLabAuthError,
+  connectGitLabWithToken,
   gitlabAuthCancelled,
   gitlabAuthCompleted,
   gitlabAuthReducer,
@@ -24,6 +25,7 @@ import {
   setGitLabAuthStatus,
   setGitLabDeviceFlowInfo,
   setGitLabHost,
+  takeGitLabPatToken,
 } from './gitlab-auth-slice';
 
 const flow = {
@@ -215,6 +217,26 @@ describe('gitlabAuthReducer', () => {
       host: 'gitlab.example.com',
       deviceGrantSupported: true,
     });
+  });
+});
+
+describe('connectGitLabWithToken PAT handoff', () => {
+  it('keeps the token off the action and hands it over exactly once by ref', () => {
+    const action = connectGitLabWithToken('gitlab.example.com', 'glpat-handoff');
+
+    expect(action.payload).toEqual({ host: 'gitlab.example.com', tokenRef: expect.any(Number) });
+    expect(JSON.stringify(action)).not.toContain('glpat-handoff');
+    expect(takeGitLabPatToken(action.payload.tokenRef)).toBe('glpat-handoff');
+    expect(takeGitLabPatToken(action.payload.tokenRef)).toBeNull();
+  });
+
+  it('a newer connect supersedes a token that was never taken', () => {
+    const stale = connectGitLabWithToken('gitlab.example.com', 'glpat-stale');
+    const fresh = connectGitLabWithToken('gitlab.example.com', 'glpat-fresh');
+
+    expect(fresh.payload.tokenRef).not.toBe(stale.payload.tokenRef);
+    expect(takeGitLabPatToken(stale.payload.tokenRef)).toBeNull();
+    expect(takeGitLabPatToken(fresh.payload.tokenRef)).toBe('glpat-fresh');
   });
 });
 

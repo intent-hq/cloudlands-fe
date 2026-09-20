@@ -2,6 +2,7 @@ import { forgeAuthClient } from '$features/forge-auth/renderer/forge-auth.client
 import type {
   ForgeAuthStatus,
   ForgeConnectParams,
+  ForgeConnectResult,
   ForgeDeviceFlow,
   ForgeProvider,
 } from '$features/forge-auth/types';
@@ -37,6 +38,7 @@ import {
   setGitLabDeviceFlowInfo,
   setGitLabHost,
   startGitLabDeviceAuth,
+  takeGitLabPatToken,
 } from '../gitlab-auth-slice';
 
 const logger = createLogger('GitLabAuthSaga');
@@ -229,12 +231,22 @@ function* startDeviceAuth(host: string): SagaGenerator<void> {
   }
 }
 
-function* connectWithToken(host: string, token: string): SagaGenerator<void> {
+/**
+ * Resolves the staged PAT and sends it in one plain async step so no saga
+ * effect (and hence no saga-monitor trace) ever carries the token.
+ */
+async function connectStagedToken(host: string, tokenRef: number): Promise<ForgeConnectResult> {
+  const token = takeGitLabPatToken(tokenRef);
+  if (token === null) return { success: false, error: m.gitlabAuth_service_tokenRejected_error() };
+  const params: ForgeConnectParams = { provider: PROVIDER, host, method: 'pat', token };
+  return await forgeAuthClient.connect(params);
+}
+
+function* connectWithToken(host: string, tokenRef: number): SagaGenerator<void> {
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
-    const params: ForgeConnectParams = { provider: PROVIDER, host, method: 'pat', token };
-    const result = yield* call([forgeAuthClient, forgeAuthClient.connect], params);
+    const result = yield* call(connectStagedToken, host, tokenRef);
     if (!result.success) {
       yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_tokenRejected_error()));
       return;
@@ -316,8 +328,8 @@ function* startGitLabDeviceAuthWorker(
 function* connectGitLabWithTokenWorker(
   action: ReturnType<typeof connectGitLabWithToken>,
 ): SagaGenerator<void> {
-  const [host, token] = action.payload;
-  yield* call(connectWithToken, host, token);
+  const { host, tokenRef } = action.payload;
+  yield* call(connectWithToken, host, tokenRef);
 }
 
 function* checkGitLabAuthStatusWorker(

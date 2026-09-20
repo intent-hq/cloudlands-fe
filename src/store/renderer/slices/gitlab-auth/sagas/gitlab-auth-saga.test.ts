@@ -1,3 +1,4 @@
+import { Store } from '@augmentcode/themis/svelte-store';
 import { runSaga, stdChannel } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,6 +12,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('$features/forge-auth/renderer/forge-auth.client', () => ({
   forgeAuthClient: mocks,
+}));
+// The real Themis store below is built outside a Svelte component.
+vi.mock('svelte', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('svelte')>()),
+  getContext: () => undefined,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: vi.fn() }),
@@ -471,5 +477,74 @@ describe('gitlabAuthSaga', () => {
     }
     run.task.cancel();
     await run.task.toPromise();
+  });
+});
+
+describe('gitlabAuthSaga PAT handling under Redux action logging', () => {
+  const CONSOLE_METHODS = ['log', 'info', 'debug', 'warn', 'error', 'groupCollapsed'] as const;
+
+  /** Data-only view of a log record: functions (incl. the vi.fn call ledger) are dropped. */
+  const serialize = (value: unknown): string => {
+    const seen = new WeakSet<object>();
+    return (
+      JSON.stringify(value, (_key, val: unknown) => {
+        if (typeof val === 'function') return undefined;
+        if (val && typeof val === 'object') {
+          if (seen.has(val)) return '[cycle]';
+          seen.add(val);
+        }
+        return val;
+      }) ?? ''
+    );
+  };
+
+  it('delivers the PAT to sourceControl.connect while no action log, trace or state carries it', async () => {
+    const sentinel = `glpat-${Math.random().toString(36).slice(2)}-sentinel`;
+    mocks.connect.mockResolvedValue({ success: true });
+    mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
+    const consoleSpies = CONSOLE_METHODS.map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => {}),
+    );
+    const store = new Store({ gitlabAuth: gitlabAuthReducer }, undefined, {
+      logReduxActions: true,
+      sagaMonitor: true,
+    });
+    const traced: unknown[] = [];
+    const unobserve = [
+      store.traceStreams.reduxAction.observe((event) => traced.push(event)),
+      store.traceStreams.sagaMonitor.observe((event) => traced.push(event)),
+    ];
+    store.init();
+    const stopSaga = store.runSaga(gitlabAuthSaga);
+    try {
+      const action = connectGitLabWithToken(HOST, sentinel);
+      store.dispatch(action);
+      await settle();
+
+      expect(mocks.connect.mock.calls).toEqual([
+        [{ provider: 'gitlab', host: HOST, method: 'pat', token: sentinel }],
+      ]);
+      expect(store.state.gitlabAuth).toMatchObject({ isConfigured: true, user: WIRE_USER });
+
+      const loggedArgs = consoleSpies.flatMap((spy) => spy.mock.calls.flat());
+      const reduxActionEvents = traced.filter((event) => 'prevState' in (event as object));
+      expect(reduxActionEvents.length).toBeGreaterThanOrEqual(3);
+      expect(loggedArgs.length).toBeGreaterThan(0);
+      for (const record of [...traced, ...loggedArgs, store.state]) {
+        expect(serialize(record)).not.toContain(sentinel);
+      }
+
+      // The handoff is single use: replaying the logged action cannot resend the PAT.
+      store.dispatch(action);
+      await settle();
+      expect(mocks.connect).toHaveBeenCalledTimes(1);
+      expect(store.state.gitlabAuth.error).toBe(m.gitlabAuth_service_tokenRejected_error());
+      expect(store.state.gitlabAuth.isAuthenticating).toBe(false);
+    } finally {
+      stopSaga();
+      for (const stop of unobserve) stop.unsubscribe();
+      store.dispose();
+      vi.restoreAllMocks();
+    }
   });
 });

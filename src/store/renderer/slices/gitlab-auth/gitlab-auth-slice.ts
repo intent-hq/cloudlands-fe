@@ -30,12 +30,33 @@ export const initializeGitLabAuth = createAction<[host?: string]>('gitlabAuth/in
 export const startGitLabDeviceAuth = createAction<[host: string]>('gitlabAuth/startDeviceAuth');
 
 /**
+ * Single-use handoff for the PAT. Redux action logging and the saga monitor
+ * trace action payloads verbatim, so the token never rides on the action:
+ * the creator stages it here and the saga takes it by `tokenRef`.
+ */
+let stagedGitLabPatToken: { ref: number; token: string } | null = null;
+let nextGitLabPatTokenRef = 0;
+
+/** Take (and clear) the PAT staged for `ref`; `null` when absent or already consumed. */
+export function takeGitLabPatToken(ref: number): string | null {
+  if (!stagedGitLabPatToken || stagedGitLabPatToken.ref !== ref) return null;
+  const { token } = stagedGitLabPatToken;
+  stagedGitLabPatToken = null;
+  return token;
+}
+
+/**
  * Trigger: connect with a personal access token. The token goes straight to
  * the daemon (`sourceControl.connect { method: "pat", token }`) and is never
- * stored in Redux state.
+ * stored in Redux state nor carried on this action (see `takeGitLabPatToken`).
  */
-export const connectGitLabWithToken = createAction<[host: string, token: string]>(
+export const connectGitLabWithToken = createAction(
   'gitlabAuth/connectWithToken',
+  (host: string, token: string) => {
+    const tokenRef = ++nextGitLabPatTokenRef;
+    stagedGitLabPatToken = { ref: tokenRef, token };
+    return { host, tokenRef };
+  },
 );
 
 /** Trigger: cancel the pending device grant */

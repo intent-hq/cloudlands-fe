@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 
 import type { GitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-types';
+import { takeGitLabPatToken } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
 
 const mocks = vi.hoisted(() => {
@@ -208,9 +209,17 @@ describe('OnboardingForgeStep', () => {
     expect(connect.disabled).toBe(false);
     await fireEvent.click(connect);
 
-    expect(dispatched('gitlabAuth/connectWithToken')).toEqual([
-      expect.objectContaining({ payload: ['gitlab.example.com', 'glpat-secret'] }),
+    // The PAT rides a single-use handoff, never the action (Redux action logs).
+    const connectActions = dispatched('gitlabAuth/connectWithToken');
+    expect(connectActions).toEqual([
+      expect.objectContaining({
+        payload: { host: 'gitlab.example.com', tokenRef: expect.any(Number) },
+      }),
     ]);
+    expect(JSON.stringify(connectActions)).not.toContain('glpat-secret');
+    expect(
+      takeGitLabPatToken((connectActions[0] as { payload: { tokenRef: number } }).payload.tokenRef),
+    ).toBe('glpat-secret');
     expect(dispatched('gitlabAuth/startDeviceAuth')).toHaveLength(0);
     expect(token.value).toBe('');
   });
