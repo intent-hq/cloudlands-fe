@@ -2,7 +2,7 @@
  * Workspace Share Selectors
  */
 
-import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import { store } from '../../store';
 import { selectIsWorkspaceOwner } from '../workspace/workspace-selectors';
 import { getRosterState, type WorkspaceShareTarget } from './workspace-share-slice';
@@ -48,10 +48,25 @@ export const selectShareMembers = store.createSelector((state) =>
   getItems(state.workspaceShare.members),
 );
 
+/** True when the loaded dialog roster carries `principalId`. */
+export const selectShareHasMember = store.createSelector(
+  (state, principalId: string) => getItem(state.workspaceShare.members, principalId) !== undefined,
+);
+
 /** Ordered open invites. */
 export const selectShareInvites = store.createSelector((state) =>
   getItems(state.workspaceShare.invites),
 );
+
+/**
+ * Guests already authed on this host that are not yet on the roster
+ * (`principal.list` minus `workspace.members.list`), in daemon order: the
+ * candidates of the "Invite an existing GitHub user" dropdown.
+ */
+export const selectShareInvitablePrincipals = store.createSelector((state) => {
+  const { principals, members } = state.workspaceShare;
+  return getItems(principals).filter((principal) => !getItem(members, principal.principalId));
+});
 
 /** Guests spent (collaborators + open invites); `null` until read or when unreported. */
 export const selectShareGuestCount = store.createSelector(
@@ -85,6 +100,10 @@ export const selectShareRevokingInviteId = store.createSelector(
 
 export const selectShareRemovingPrincipalId = store.createSelector(
   (state) => state.workspaceShare.removingPrincipalId,
+);
+
+export const selectShareAddingPrincipalId = store.createSelector(
+  (state) => state.workspaceShare.addingPrincipalId,
 );
 
 export const selectShareActionError = store.createSelector(

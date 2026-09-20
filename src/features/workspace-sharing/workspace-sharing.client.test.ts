@@ -59,6 +59,54 @@ describe('workspaceSharingClient wire contract (fake transport)', () => {
     });
   });
 
+  it('listPrincipals forwards principal.list with no params and returns the rows verbatim', async () => {
+    const principal = {
+      principalId: 'p-erin',
+      login: 'erin',
+      displayName: 'Erin',
+      avatarUrl: null,
+      githubUserId: 5,
+    };
+    mockedRequest.mockResolvedValueOnce({ principals: [principal] });
+    await expect(workspaceSharingClient.listPrincipals()).resolves.toEqual([principal]);
+    expect(mockedRequest).toHaveBeenCalledWith('principal.list', {});
+  });
+
+  it('addMember sends { workspaceId, principalId } and folds the result or the error', async () => {
+    mockedRequest.mockResolvedValueOnce({ added: true, memberCount: 2 });
+    await expect(workspaceSharingClient.addMember('ws-1', 'p-erin')).resolves.toEqual({
+      success: true,
+      result: { added: true, memberCount: 2 },
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.members.add', {
+      workspaceId: 'ws-1',
+      principalId: 'p-erin',
+    });
+
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'invalid_params',
+        message: 'guest limit',
+        rpcCode: -32602,
+        data: { code: 'guest-limit' },
+      }),
+    );
+    await expect(workspaceSharingClient.addMember('ws-1', 'p-erin')).resolves.toEqual({
+      success: false,
+      code: 'guest-limit',
+      rpcCode: -32602,
+    });
+
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({ code: 'forbidden', message: 'not the owner', rpcCode: -32003 }),
+    );
+    await expect(workspaceSharingClient.addMember('ws-1', 'p-erin')).resolves.toEqual({
+      success: false,
+      code: 'forbidden',
+      rpcCode: -32003,
+    });
+  });
+
   it('removeMember sends { workspaceId, principalId } and folds errors', async () => {
     mockedRequest.mockResolvedValueOnce({ removed: true });
     await expect(workspaceSharingClient.removeMember('ws-1', 'p-bob')).resolves.toEqual({

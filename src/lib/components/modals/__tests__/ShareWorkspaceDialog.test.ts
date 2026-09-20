@@ -4,7 +4,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+import type {
+  HostPrincipal,
+  WorkspaceInvite,
+  WorkspaceMember,
+} from '$features/workspace-sharing/types';
 import {
   githubUserSearchReducer,
   initialState as userSearchInitialState,
@@ -12,6 +16,15 @@ import {
   setGithubUserSearchResults,
   type GithubUserSearchState,
 } from '$store/renderer/slices/github-user-search/github-user-search-slice';
+import { selectShareInvitablePrincipals } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
+import {
+  initialState as shareInitialState,
+  openShareDialog,
+  shareDataLoaded,
+  sharePrincipalsLoaded,
+  workspaceShareReducer,
+} from '$store/renderer/slices/workspace-share/workspace-share-slice';
+import type { StoreState } from '$store/renderer/types';
 
 const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 
@@ -621,6 +634,155 @@ describe('ShareWorkspaceDialog — revoke and remove', () => {
 
     expect(screen.getByTestId('share-action-error').textContent).toContain('forbidden');
     expect(screen.getAllByTestId('share-member-row')).toHaveLength(2);
+  });
+});
+
+describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
+  const erin: HostPrincipal = {
+    principalId: 'p-erin',
+    login: 'erin',
+    displayName: 'Erin',
+    avatarUrl: 'https://avatars.githubusercontent.com/u/5',
+    githubUserId: 5,
+  };
+  const frank: HostPrincipal = {
+    principalId: 'p-frank',
+    login: null,
+    displayName: 'Frank',
+    avatarUrl: null,
+    githubUserId: null,
+  };
+
+  async function pick(name: string | RegExp) {
+    const trigger = screen.getByRole('combobox', { name: /Invite an existing GitHub user/ });
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.pointerUp(await screen.findByRole('option', { name }), {
+      pointerType: 'mouse',
+    });
+    return trigger;
+  }
+
+  it('hides the section when no host guest is invitable', () => {
+    renderDialog({ principals: [] });
+    expect(screen.queryByTestId('share-existing-guest')).toBeNull();
+    // The link form is still there.
+    expect(screen.getByLabelText(/Restrict to a GitHub user/)).toBeTruthy();
+  });
+
+  it('lists the host guests by login (display name without one), above the link form', async () => {
+    renderDialog({ principals: [erin, frank] });
+    const section = screen.getByTestId('share-existing-guest');
+    const form = screen.getByLabelText(/Restrict to a GitHub user/).closest('form')!;
+    expect(section.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const trigger = screen.getByRole('combobox', { name: /Invite an existing GitHub user/ });
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect(await screen.findAllByRole('option')).toHaveLength(2);
+    expect(screen.getByRole('option', { name: '@erin' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Frank' })).toBeTruthy();
+  });
+
+  it('keeps Invite disabled until a guest is picked, then requests the add for that principal', async () => {
+    const onAddMember = vi.fn();
+    renderDialog({ principals: [erin, frank], onAddMember });
+    const invite = screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement;
+    expect(invite.disabled).toBe(true);
+
+    await fireEvent.click(invite);
+    expect(onAddMember).not.toHaveBeenCalled();
+
+    const trigger = await pick('@erin');
+    await waitFor(() => expect(trigger.textContent).toContain('@erin'));
+    expect(invite.disabled).toBe(false);
+
+    await fireEvent.click(invite);
+    expect(onAddMember).toHaveBeenCalledWith('p-erin');
+    expect(onAddMember).toHaveBeenCalledTimes(1);
+  });
+
+  // The host forwards `selectShareInvitablePrincipals`; after the daemon's
+  // `workspace:updated` members event re-reads the roster with erin on it,
+  // that selector drops her entry and the dialog clears its pick.
+  it('clears the pick and drops the entry once the members event puts that guest on the roster', async () => {
+    const target = { workspaceId: 'ws-1', session: 1 };
+    const erinAsMember: WorkspaceMember = {
+      principalId: erin.principalId,
+      login: erin.login,
+      displayName: erin.displayName,
+      avatarUrl: erin.avatarUrl,
+      role: 'collaborator',
+      addedAt: '2026-09-20T00:00:00Z',
+    };
+    const reconciled = [
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'My Space' }),
+      sharePrincipalsLoaded({ target, principals: [erin, frank] }),
+      shareDataLoaded({
+        target,
+        generation: 0,
+        members: [owner, collaborator, erinAsMember],
+        invites: [],
+        guestCount: null,
+        guestLimit: null,
+      }),
+    ].reduce(workspaceShareReducer, shareInitialState);
+    const principalsAfterEvent = selectShareInvitablePrincipals.select({
+      workspaceShare: reconciled,
+    } as unknown as StoreState);
+    expect(principalsAfterEvent).toEqual([frank]);
+
+    const { rerender } = renderDialog({ principals: [erin, frank] });
+    const trigger = await pick('@erin');
+    await waitFor(() => expect(trigger.textContent).toContain('@erin'));
+
+    await rerender({
+      ...baseProps,
+      members: getItems(reconciled.members),
+      principals: principalsAfterEvent,
+    });
+
+    await waitFor(() => expect(trigger.textContent).not.toContain('@erin'));
+    expect((screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getAllByTestId('share-member-row')).toHaveLength(3);
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    expect(await screen.findAllByRole('option')).toHaveLength(1);
+    expect(screen.queryByRole('option', { name: '@erin' })).toBeNull();
+  });
+
+  it('disables the controls while an add or any other mutation is in flight, and at the guest cap', async () => {
+    const { rerender } = renderDialog({ principals: [erin], addingPrincipalId: 'p-erin' });
+    const invite = screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement;
+    expect(invite.disabled).toBe(true);
+    expect(
+      (
+        screen.getByRole('combobox', {
+          name: /Invite an existing GitHub user/,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect((screen.getByRole('button', { name: 'Remove bob' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    await rerender({ ...baseProps, principals: [erin], revokingInviteId: 'inv-1' });
+    expect((screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    await rerender({ ...baseProps, principals: [erin], guestCount: 3, guestLimit: 3 });
+    await pick('@erin');
+    expect((screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it('never offers the section to a caller who cannot manage sharing', () => {
+    renderDialog({ principals: [erin], canManage: false });
+    expect(screen.queryByTestId('share-existing-guest')).toBeNull();
   });
 });
 

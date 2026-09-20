@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { WorkspaceMember } from '$features/workspace-sharing/types';
+import type { HostPrincipal, WorkspaceMember } from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import type { StoreState } from '../../types';
 import {
@@ -22,6 +22,7 @@ import {
 import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 import {
   selectShareCanManage,
+  selectShareInvitablePrincipals,
   selectWorkspaceRosterCanManage,
   selectWorkspaceRosterMembers,
   selectWorkspaceRosterRemoveError,
@@ -32,6 +33,8 @@ import {
 import {
   initialState,
   openShareDialog,
+  shareDataLoaded,
+  sharePrincipalsLoaded,
   shareRosterLoaded,
   shareRosterMemberRemoveRequested,
   shareRosterRequested,
@@ -175,6 +178,35 @@ describe('selectShareCanManage', () => {
     expect(selectShareCanManage.select(unsettled(stateWith({ 'ws-1': 'owner' }, dialog)))).toBe(
       false,
     );
+  });
+});
+
+describe('selectShareInvitablePrincipals', () => {
+  it('lists the host principals not yet on the dialog roster, in daemon order', () => {
+    const erin: HostPrincipal = {
+      principalId: 'p-erin',
+      login: 'erin',
+      displayName: null,
+      avatarUrl: null,
+      githubUserId: 5,
+    };
+    const alreadyMember: HostPrincipal = { ...erin, principalId: 'p-guest', login: 'guest' };
+    const frank: HostPrincipal = { ...erin, principalId: 'p-frank', login: 'frank' };
+    const target = { workspaceId: 'ws-1', session: 1 };
+    const state = stateWith(
+      { 'ws-1': 'owner' },
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'ws-1' }),
+      shareDataLoaded({
+        target,
+        generation: 0,
+        members: [owner, guest],
+        invites: [],
+        guestCount: null,
+        guestLimit: null,
+      }),
+      sharePrincipalsLoaded({ target, principals: [erin, alreadyMember, frank] }),
+    );
+    expect(selectShareInvitablePrincipals.select(state)).toEqual([erin, frank]);
   });
 });
 

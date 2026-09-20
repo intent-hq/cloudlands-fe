@@ -30,6 +30,27 @@ export interface WorkspaceMembersList {
 }
 
 /**
+ * One `principal.list` row (direct member add): a guest already authed on
+ * this host — a non-primary principal holding an active credential. The
+ * owner attaches one to a workspace with `workspace.members.add` without
+ * minting an invite link.
+ */
+export interface HostPrincipal {
+  principalId: string;
+  /** GitHub login; null for a principal without a resolved identity. */
+  login: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  githubUserId: number | null;
+}
+
+/** `workspace.members.add` result; `added: false` when already a member. */
+export interface WorkspaceMembersAddResult {
+  added: boolean;
+  memberCount: number;
+}
+
+/**
  * One `workspace_invite` row as the store holds it: neither the raw secret
  * nor the `intent://invite` link (a capability) is on this shape. The link
  * the daemon returns beside each open row lives in `invite-link-vault`,

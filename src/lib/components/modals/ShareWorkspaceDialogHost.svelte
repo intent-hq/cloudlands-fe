@@ -20,10 +20,12 @@
     closeShareDialog,
     shareInviteCreateRequested,
     shareInviteRevokeRequested,
+    shareMemberAddRequested,
     shareMemberRemoveRequested,
   } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import {
     selectShareActionError,
+    selectShareAddingPrincipalId,
     selectShareCanManage,
     selectShareCreatedLink,
     selectShareCreateError,
@@ -31,6 +33,7 @@
     selectShareDialogOpen,
     selectShareGuestCount,
     selectShareGuestLimit,
+    selectShareInvitablePrincipals,
     selectShareInvites,
     selectShareLoadError,
     selectShareLoading,
@@ -57,6 +60,7 @@
   const canManage$ = selectShareCanManage();
   const members$ = selectShareMembers();
   const invites$ = selectShareInvites();
+  const principals$ = selectShareInvitablePrincipals();
   const guestCount$ = selectShareGuestCount();
   const guestLimit$ = selectShareGuestLimit();
   const loading$ = selectShareLoading();
@@ -66,6 +70,7 @@
   const createdLink$ = selectShareCreatedLink();
   const revokingInviteId$ = selectShareRevokingInviteId();
   const removingPrincipalId$ = selectShareRemovingPrincipalId();
+  const addingPrincipalId$ = selectShareAddingPrincipalId();
   const actionError$ = selectShareActionError();
   const userSuggestions$ = selectGithubUserSearchResults();
   const userSearchLoading$ = selectGithubUserSearchLoading();
@@ -91,6 +96,7 @@
   canManage={$canManage$}
   members={$members$}
   invites={$invites$}
+  principals={$principals$}
   {inviteLinks}
   guestCount={$guestCount$}
   guestLimit={$guestLimit$}
@@ -101,6 +107,7 @@
   createdLink={$createdLink$}
   revokingInviteId={$revokingInviteId$}
   removingPrincipalId={$removingPrincipalId$}
+  addingPrincipalId={$addingPrincipalId$}
   actionError={$actionError$}
   userSuggestions={$userSuggestions$}
   userSearchLoading={$userSearchLoading$}
@@ -111,5 +118,6 @@
   onCreateInvite={(pinLogin) => appStore.dispatch(shareInviteCreateRequested({ pinLogin }))}
   onRevokeInvite={(inviteId) => appStore.dispatch(shareInviteRevokeRequested(inviteId))}
   onRemoveMember={(principalId) => appStore.dispatch(shareMemberRemoveRequested(principalId))}
+  onAddMember={(principalId) => appStore.dispatch(shareMemberAddRequested(principalId))}
   onSearchUsers={(query) => appStore.dispatch(searchGithubUsers(query))}
 />
