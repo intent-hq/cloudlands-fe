@@ -845,7 +845,7 @@ describe('HUD subscription (mock backend, real store)', () => {
       stop = startHudSubscription();
       await flush();
       expect(backend.requests.filter((request) => request.method === 'agent.list')).toEqual([
-        { method: 'agent.list', params: { workspaceId: WS_RACE_ID } },
+        { method: 'agent.list', params: { workspaceId: WS_RACE_ID, scope: 'topLevel' } },
       ]);
       if (priorRead !== 'known') {
         expect(appStore.state.agentSessions?.byAgentId[MUTED_ID]).toBeUndefined();
@@ -886,8 +886,8 @@ describe('HUD subscription (mock backend, real store)', () => {
       appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(OTHER_WS_ID)));
       await flush();
       expect(backend.requests.filter((request) => request.method === 'agent.list')).toEqual([
-        { method: 'agent.list', params: { workspaceId: WS_RACE_ID } },
-        { method: 'agent.list', params: { workspaceId: OTHER_WS_ID } },
+        { method: 'agent.list', params: { workspaceId: WS_RACE_ID, scope: 'topLevel' } },
+        { method: 'agent.list', params: { workspaceId: OTHER_WS_ID, scope: 'topLevel' } },
       ]);
       expect(received).toEqual([]);
 
@@ -896,9 +896,9 @@ describe('HUD subscription (mock backend, real store)', () => {
         releaseLeading();
         await flush();
         expect(backend.requests.filter((request) => request.method === 'agent.list')).toEqual([
-          { method: 'agent.list', params: { workspaceId: WS_RACE_ID } },
-          { method: 'agent.list', params: { workspaceId: OTHER_WS_ID } },
-          { method: 'agent.list', params: { workspaceId: WS_RACE_ID } },
+          { method: 'agent.list', params: { workspaceId: WS_RACE_ID, scope: 'topLevel' } },
+          { method: 'agent.list', params: { workspaceId: OTHER_WS_ID, scope: 'topLevel' } },
+          { method: 'agent.list', params: { workspaceId: WS_RACE_ID, scope: 'topLevel' } },
         ]);
         expect(received).toEqual([]);
       }
@@ -1067,7 +1067,7 @@ describe('HUD subscription (mock backend, real store)', () => {
         stop = startHudSubscription();
         await flush();
         expect(backend.requests.filter((request) => request.method === 'agent.list')).toEqual([
-          { method: 'agent.list', params: { workspaceId } },
+          { method: 'agent.list', params: { workspaceId, scope: 'topLevel' } },
         ]);
         backend.pushEvent({
           type: 'agent:started',

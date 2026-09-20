@@ -2374,6 +2374,7 @@ describe('lifecycleReadSaga', () => {
       { type: 'workspaceAgents/setAgents', payload: [WS, [top]] },
       { type: 'agentSessions/bulkUpsertSessions', payload: [[top], { listProjection: true }] },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-top'] },
+      agentsHydrationSettled(WS),
     ]);
     await stop(run.task);
   });
