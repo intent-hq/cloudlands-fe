@@ -347,7 +347,12 @@ also chained into `pnpm run lint`): dead-code detection is a whole-program check
 cannot be scoped to changed files — dropping an import in one file can make an export in
 another unused. knip resolves `m.*()` imports against the gitignored i18n bundle, so
 `lint:dead-code` first runs `generate:i18n --if-stale`, which compiles only while the
-bundle is missing or its recorded input hash no longer matches `messages/*.json`.
+bundle is missing or its recorded input hash no longer matches `messages/*.json`. The gate
+runs knip through `scripts/check-dead-code.mjs`, which drops two known-unused canary files
+under `src/lib/components/__knip-canary__/` for the run and fails when knip does not
+report them — the masks fixed in cloudlands-fe#2695 (`.svelte` in vite
+`resolve.extensions`, an `import.meta.glob` over the component tree, an unanchored
+gitignore rule) had silently zeroed knip's Svelte coverage for months.
 
 Any renderer source change also runs `pnpm run test:ui-invariants` (chained into
 `validate:architecture` too): the repo-wide UI ratchets and the component-catalog
