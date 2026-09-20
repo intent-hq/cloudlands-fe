@@ -330,7 +330,9 @@ describe('gitlabAuthSaga', () => {
       user: WIRE_USER,
       method: 'device',
     });
-    const pendingOnB = { host: HOST, isAuthenticating: true, deviceFlow: PENDING_INFO };
+    // Switching to B drops A's identity: B is unconfigured until B connects.
+    const identityB = { host: HOST, isConfigured: false, user: null, method: null };
+    const pendingOnB = { ...identityB, isAuthenticating: true, deviceFlow: PENDING_INFO };
 
     run.channel.put(startGitLabDeviceAuth(HOST));
     await settle();
@@ -343,16 +345,68 @@ describe('gitlabAuthSaga', () => {
     // A transition on A neither completes nor tears down B's pending grant.
     run.channel.put(gitlabAuthChanged('revoked', OTHER_HOST));
     await settle();
-    expect(run.state()).toMatchObject({ ...pendingOnB, isConfigured: true });
+    expect(run.state()).toMatchObject(pendingOnB);
     run.channel.put(gitlabAuthChanged('authorized', OTHER_HOST));
     await settle();
     expect(run.state()).toMatchObject(pendingOnB);
     expect(mocks.getStatus.mock.calls).toEqual([['gitlab', HOST]]);
 
+    // Cancelling B leaves B unconfigured — never B carrying A's user/method.
     run.channel.put(cancelGitLabAuth());
     await settle();
     expect(mocks.cancelAuth.mock.calls).toEqual([['gitlab', HOST]]);
-    expect(run.state()).toMatchObject({ host: HOST, isAuthenticating: false, deviceFlow: null });
+    expect(run.state()).toMatchObject({ ...identityB, isAuthenticating: false, deviceFlow: null });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a rejected PAT for instance B does not leave B configured with A’s identity', async () => {
+    mocks.connect.mockResolvedValue({ success: false, error: 'bad token' });
+    const run = harness({
+      ...initialState,
+      host: OTHER_HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'pat',
+    });
+
+    run.channel.put(connectGitLabWithToken(HOST, 'glpat-x'));
+    await settle();
+    expect(mocks.getStatus).not.toHaveBeenCalled();
+    expect(run.state()).toMatchObject({
+      host: HOST,
+      isConfigured: false,
+      isAuthenticating: false,
+      user: null,
+      method: null,
+      deviceFlow: null,
+      error: 'bad token',
+    });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a same-host reconnect keeps the configured identity while the new grant is pending', async () => {
+    mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, deviceFlow: PENDING_FLOW });
+    mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
+    const run = harness({
+      ...initialState,
+      host: HOST,
+      isConfigured: true,
+      user: WIRE_USER,
+      method: 'pat',
+    });
+
+    run.channel.put(startGitLabDeviceAuth(HOST.toUpperCase()));
+    await settle();
+    expect(run.state()).toMatchObject({
+      host: HOST.toUpperCase(),
+      isConfigured: true,
+      isAuthenticating: true,
+      user: WIRE_USER,
+      method: 'pat',
+      deviceFlow: PENDING_INFO,
+    });
     run.task.cancel();
     await run.task.toPromise();
   });

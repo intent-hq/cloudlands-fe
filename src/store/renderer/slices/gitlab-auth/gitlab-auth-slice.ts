@@ -105,7 +105,12 @@ export const gitlabLogoutCompleted = createAction('gitlabAuth/logoutCompleted');
 
 export const gitlabAuthReducer = createReducer<GitLabAuthState>(initialState);
 
-gitlabAuthReducer.with(setGitLabHost, (state, { payload: [host] }) => ({ ...state, host }));
+gitlabAuthReducer.with(setGitLabHost, (state, { payload: [host] }) => {
+  if (host.toLowerCase() === state.host.toLowerCase()) return { ...state, host };
+  // The configured identity and any pending grant belong to the previous
+  // instance; a new host starts unconfigured until its own status is read.
+  return { ...state, host, isConfigured: false, user: null, method: null, deviceFlow: null };
+});
 gitlabAuthReducer.with(setGitLabAuthStatus, (state, { payload }) => ({
   ...state,
   host: payload.host,

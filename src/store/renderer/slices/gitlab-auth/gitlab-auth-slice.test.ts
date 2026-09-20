@@ -46,9 +46,75 @@ describe('gitlabAuthReducer', () => {
     expect(initialState.deviceGrantSupported).toBe(false);
   });
 
-  it('setGitLabHost only changes the host', () => {
-    const state = gitlabAuthReducer(initialState, setGitLabHost('gitlab.example.com'));
-    expect(state).toEqual({ ...initialState, host: 'gitlab.example.com' });
+  it('setGitLabHost to another instance drops the previous identity and pending grant', () => {
+    const configuredA = {
+      ...initialState,
+      host: 'gitlab.com',
+      isConfigured: true,
+      deviceGrantSupported: true,
+      user,
+      method: 'pat' as const,
+      deviceFlow: flow,
+      error: 'stale',
+    };
+    expect(gitlabAuthReducer(configuredA, setGitLabHost('gitlab.example.com'))).toEqual({
+      ...configuredA,
+      host: 'gitlab.example.com',
+      isConfigured: false,
+      user: null,
+      method: null,
+      deviceFlow: null,
+    });
+    expect(gitlabAuthReducer(initialState, setGitLabHost('gitlab.example.com'))).toEqual({
+      ...initialState,
+      host: 'gitlab.example.com',
+    });
+  });
+
+  it('setGitLabHost for the same instance (any case) keeps the configured identity', () => {
+    const configured = {
+      ...initialState,
+      host: 'gitlab.example.com',
+      isConfigured: true,
+      user,
+      method: 'device' as const,
+    };
+    expect(gitlabAuthReducer(configured, setGitLabHost('GitLab.Example.com'))).toEqual({
+      ...configured,
+      host: 'GitLab.Example.com',
+    });
+  });
+
+  it('starting B after A was configured never presents A as B once B cancels or fails', () => {
+    const configuredA = {
+      ...initialState,
+      host: 'gitlab.com',
+      isConfigured: true,
+      user,
+      method: 'pat' as const,
+    };
+    const pendingB = [setGitLabHost('gitlab.example.com'), setGitLabAuthenticating(true)].reduce(
+      gitlabAuthReducer,
+      configuredA,
+    );
+    const unconfiguredB = {
+      host: 'gitlab.example.com',
+      isConfigured: false,
+      isAuthenticating: false,
+      user: null,
+      method: null,
+      deviceFlow: null,
+    };
+    expect(gitlabAuthReducer(pendingB, gitlabAuthCancelled())).toMatchObject(unconfiguredB);
+    expect(gitlabAuthReducer(pendingB, setGitLabAuthError('rejected'))).toMatchObject({
+      ...unconfiguredB,
+      error: 'rejected',
+    });
+    expect(gitlabAuthReducer(pendingB, gitlabDeviceGrantUnsupported('no grant'))).toMatchObject({
+      ...unconfiguredB,
+      deviceGrantSupported: false,
+      error: 'no grant',
+    });
   });
 
   it('setGitLabAuthStatus hydrates the daemon-owned fields and leaves flow state alone', () => {
