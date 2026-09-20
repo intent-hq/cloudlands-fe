@@ -3,13 +3,15 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { initializeGitLabAuth } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import { initializeLinearAuth } from '$store/renderer/slices/linear-auth/linear-auth-slice';
   import { initializeSentryAuth } from '$store/renderer/slices/sentry-auth/sentry-auth-slice';
-  import { faGithub } from '@fortawesome/free-brands-svg-icons';
+  import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import Fa from 'svelte-fa';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import GitHubAuthConnection from './GitHubAuthConnection.svelte';
+  import GitLabAuthConnection from './GitLabAuthConnection.svelte';
   import LinearAuthConnection from './LinearAuthConnection.svelte';
   import SentryAuthConnection from './SentryAuthConnection.svelte';
 
@@ -24,6 +26,11 @@
       description: m.settings_connections_github_description(),
     },
     {
+      icon: 'gitlab',
+      name: 'GitLab',
+      description: m.settings_connections_gitlab_description(),
+    },
+    {
       icon: 'linear',
       name: 'Linear',
       description: m.settings_connections_linear_description(),
@@ -34,6 +41,7 @@
   onMount(() => {
     // Initialize all stores in parallel
     appStore.dispatch(initializeGitHubAuth());
+    appStore.dispatch(initializeGitLabAuth());
     appStore.dispatch(initializeLinearAuth());
     appStore.dispatch(initializeSentryAuth());
     isLoading = false;
@@ -48,6 +56,8 @@
         <div class="flex size-4 items-center justify-center text-ghost">
           {#if integration.icon === 'github'}
             <Fa icon={faGithub} class="size-4" />
+          {:else if integration.icon === 'gitlab'}
+            <Fa icon={faGitlab} class="size-4" />
           {:else if integration.icon === 'linear'}
             <LinearIcon size={16} />
           {:else if integration.icon === 'sentry'}
@@ -67,6 +77,7 @@
 {:else}
   <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
     <GitHubAuthConnection />
+    <GitLabAuthConnection />
     <LinearAuthConnection />
     <SentryAuthConnection />
   </div>

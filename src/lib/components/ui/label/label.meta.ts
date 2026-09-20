@@ -13,6 +13,7 @@ export const labelMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/FieldPreviewCell.svelte',
     'src/lib/component-catalog/renderers/ModalCatalogPreview.svelte',
+    'src/lib/components/GitLabConnectForm.svelte',
     'src/lib/components/debug/DebugPanel.svelte',
     'src/lib/components/patterns/confirm/ConfirmRequestView.svelte',
     'src/lib/components/patterns/form/FormField.svelte',

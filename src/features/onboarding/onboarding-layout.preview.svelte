@@ -11,7 +11,7 @@
     defaultState: 'prompt',
     states: {
       welcome: { props: { step: 'welcome' } },
-      github: { props: { step: 'github' } },
+      forge: { props: { step: 'forge' } },
       project: { props: { step: 'project' } },
       prompt: { props: { step: 'configuring' } },
       'new-workspace': { props: { compact: true } },

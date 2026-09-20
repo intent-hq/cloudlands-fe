@@ -95,6 +95,7 @@ import GitDiffIcon from 'phosphor-svelte/lib/GitDiffIcon';
 import GitForkIcon from 'phosphor-svelte/lib/GitForkIcon';
 import GitMergeIcon from 'phosphor-svelte/lib/GitMergeIcon';
 import GithubLogoIcon from 'phosphor-svelte/lib/GithubLogoIcon';
+import GitlabLogoIcon from 'phosphor-svelte/lib/GitlabLogoIcon';
 import GitPullRequestIcon from 'phosphor-svelte/lib/GitPullRequestIcon';
 import GlobeIcon from 'phosphor-svelte/lib/GlobeIcon';
 import GhostIcon from 'phosphor-svelte/lib/GhostIcon';
@@ -311,6 +312,7 @@ const iconComponents: Record<string, Component<any>> = {
   'gauge-high': GaugeIcon,
   gear: GearIcon,
   github: GithubLogoIcon,
+  gitlab: GitlabLogoIcon,
   globe: GlobeIcon,
   'grip-lines': DotsSixIcon,
   'grip-vertical': DotsSixIcon,
@@ -413,7 +415,9 @@ export function getPhosphorIconComponent(iconDefinition: IconDefinition): Compon
 
 /** UI actions follow Phosphor's regular default; existing brand silhouettes stay unchanged. */
 export function getPhosphorIconWeight(iconDefinition: IconDefinition): IconWeight {
-  return iconDefinition.iconName === 'apple' || iconDefinition.iconName === 'github'
+  return iconDefinition.iconName === 'apple' ||
+    iconDefinition.iconName === 'github' ||
+    iconDefinition.iconName === 'gitlab'
     ? 'bold'
     : 'regular';
 }
@@ -529,6 +533,7 @@ export const faFolderPlus = icon('folder-plus');
 export const faFolderTree = icon('folder-tree');
 export const faGear = icon('gear');
 export const faGithub = icon('github');
+export const faGitlab = icon('gitlab');
 export const faGlobe = icon('globe');
 export const faGripLines = icon('grip-lines');
 export const faHammer = icon('hammer');

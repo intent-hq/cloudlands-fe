@@ -14,12 +14,19 @@
     verificationUri: string;
     /** Compact layout for tight surfaces like the sidebar banner. */
     compact?: boolean;
+    /** Label of the open-verification-page button (defaults to the GitHub copy). */
+    openLabel?: string;
   }
 
-  let { userCode, verificationUri, compact = false }: Props = $props();
+  let {
+    userCode,
+    verificationUri,
+    compact = false,
+    openLabel = m.lib_githubDeviceCode_openGithub_label(),
+  }: Props = $props();
 
   function handleOpenGitHub() {
-    // GitHub URLs always route to the external browser via the link handler.
+    // Forge URLs always route to the external browser via the link handler.
     void handleLink(verificationUri, {});
   }
 </script>
@@ -50,7 +57,7 @@
       : 'px-6 py-3 text-base w-full'}"
     onclick={handleOpenGitHub}
   >
-    <span>{m.lib_githubDeviceCode_openGithub_label()}</span>
+    <span>{openLabel}</span>
     <Fa icon={faArrowUpRightFromSquare} size="xs" />
   </Button>
   <p class="text-xs text-subtle">
