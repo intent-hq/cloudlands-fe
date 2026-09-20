@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { protocolMajor, compareProtocolMajor } from './protocol-compat';
+import { protocolMajor, compareProtocolMajor, protocolVersionAtLeast } from './protocol-compat';
 
 describe('protocolMajor', () => {
   it('extracts the leading integer segment', () => {
@@ -44,5 +44,31 @@ describe('compareProtocolMajor', () => {
     expect(compareProtocolMajor('1', undefined)).toBe('unknown');
     expect(compareProtocolMajor('1', 'vNext')).toBe('unknown');
     expect(compareProtocolMajor('', '2')).toBe('unknown');
+  });
+});
+
+describe('protocolVersionAtLeast', () => {
+  it('compares major.minor numerically, not lexically', () => {
+    expect(protocolVersionAtLeast('10.4', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast('10.10', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast('10.4.1', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast(' 10.5 ', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast('10.3', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('10', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('10.0', 10, 0)).toBe(true);
+  });
+
+  it('passes any greater major regardless of minor', () => {
+    expect(protocolVersionAtLeast('11.0', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast('11', 10, 4)).toBe(true);
+    expect(protocolVersionAtLeast('9.99', 10, 4)).toBe(false);
+  });
+
+  it('is false for absent or unparsable versions', () => {
+    expect(protocolVersionAtLeast(null, 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast(undefined, 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('v10.4', 10, 4)).toBe(false);
+    expect(protocolVersionAtLeast('10.x', 10, 4)).toBe(false);
   });
 });

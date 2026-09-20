@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   getBackendClientForConnection: vi.fn(),
   getBackendIdForIpcSender: vi.fn(),
   getPrimaryBackendId: vi.fn(),
+  getConnectedDaemonProtocolVersion: vi.fn(),
   onBackendNotification: vi.fn(),
   onBackendReconnected: vi.fn(),
 }));
@@ -50,6 +51,7 @@ vi.mock('../../backend/main/backend.ipc', () => ({
   getLocalBackendClient: mocks.getBackendClient,
   getBackendIdForIpcSender: mocks.getBackendIdForIpcSender,
   getPrimaryBackendId: mocks.getPrimaryBackendId,
+  getConnectedDaemonProtocolVersion: mocks.getConnectedDaemonProtocolVersion,
   // Used by the workspace-forward-cleanup service behind the provider seam.
   onBackendNotification: mocks.onBackendNotification,
   onBackendReconnected: mocks.onBackendReconnected,
@@ -120,6 +122,7 @@ describe('browser:resolve-url IPC handler', () => {
       getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
     });
     mocks.getBackendClientForConnection.mockImplementation(() => mocks.getBackendClient());
+    mocks.getConnectedDaemonProtocolVersion.mockReturnValue(null);
     mocks.onBackendNotification.mockImplementation(() => () => {});
     mocks.onBackendReconnected.mockImplementation(() => () => {});
     mocks.forwardPort.mockResolvedValue(45678);
@@ -331,8 +334,20 @@ describe('browser:resolve-url IPC handler', () => {
     expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
     expect(mocks.DirectRelay).not.toHaveBeenCalled();
     expect(mocks.forwardPort).toHaveBeenCalledWith(8080);
-    const tunnelOptions = mocks.TunnelManager.mock.calls[0][0] as { getConfig: () => unknown };
+    const tunnelOptions = mocks.TunnelManager.mock.calls[0][0] as {
+      getConfig: () => unknown;
+      getProtocolVersion: () => string | null;
+    };
     expect(tunnelOptions.getConfig()).toEqual(remoteConfig);
+    // The CREDIT gate reads the ORIGINATING backend's live hello version,
+    // re-evaluated on each call so a tunnel reconnect sees an upgrade.
+    mocks.getConnectedDaemonProtocolVersion.mockImplementation((id: string) =>
+      id === 'remote-saved' ? '10.4' : null,
+    );
+    expect(tunnelOptions.getProtocolVersion()).toBe('10.4');
+    expect(mocks.getConnectedDaemonProtocolVersion).toHaveBeenLastCalledWith('remote-saved');
+    mocks.getConnectedDaemonProtocolVersion.mockReturnValue(null);
+    expect(tunnelOptions.getProtocolVersion()).toBeNull();
     expect(resolved).toEqual({
       url: 'http://127.0.0.1:54321/script-output',
       requestedUrl,

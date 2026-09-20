@@ -468,6 +468,33 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     });
   });
 
+  it('exposes the connected daemon protocolVersion per connection id for feature gates (intent-hq/intent#5482)', async () => {
+    const { getConnectedDaemonProtocolVersion, __resetBackendProtocolStateForTesting } =
+      await import('../backend.ipc');
+    __resetBackendProtocolStateForTesting();
+    const onHelloResult = await getPrimaryOnHelloResult();
+
+    // Nothing captured yet and no sidecar baseline: unknown.
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+    expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
+
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
+    expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
+
+    // A hello without a version drops the capture; the local id then falls
+    // back to the local baseline the earlier hello recorded.
+    onHelloResult({ clientId: 'cli-1', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
+    __resetBackendProtocolStateForTesting();
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+
+    // A fresh hello (reconnect after a daemon upgrade) re-captures.
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.10', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.10');
+    __resetBackendProtocolStateForTesting();
+  });
+
   it('does not log for hellos without a well-formed server.version', async () => {
     const onHelloResult = await getPrimaryOnHelloResult();
     const info = vi.spyOn(Logger.prototype, 'info');

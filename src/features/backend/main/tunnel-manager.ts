@@ -32,7 +32,12 @@
  * in Node's write buffer — coalesced to one frame per 64 KiB or per flushed
  * backlog, whichever comes first. A local socket that never drains therefore
  * grants nothing and stalls only its own stream, not its siblings or the
- * heartbeat. The client → daemon direction is bounded daemon-side.
+ * heartbeat. `CREDIT` is sent only when the connected daemon's `client.hello`
+ * `protocolVersion` is ≥ {@link CREDIT_MIN_PROTOCOL} (a pre-credit daemon
+ * rejects the unknown opcode with 1002); otherwise the client behaves exactly
+ * as before — bytes are still tracked, nothing is sent. The version is
+ * re-read on every tunnel (re)connect. The client → daemon direction is
+ * bounded daemon-side.
  *
  * Lifecycle: `ensureTunnel()` lazily opens the single `/tunnel` socket,
  * reusing the active transport's URL/token (and cert pin for `wss`). A `wss`
@@ -66,6 +71,7 @@ import {
   PinMismatchError,
   type BackendConnectionConfig,
 } from './backend-connection';
+import { protocolVersionAtLeast } from './protocol-compat';
 
 const logger = new Logger('TunnelManager');
 
@@ -100,6 +106,8 @@ export const HEADER_LEN = 5;
  * backlog sends whatever is pending regardless of size.
  */
 const CREDIT_COALESCE_BYTES = 64 * 1024;
+/** First daemon protocol version whose `/tunnel` decoder accepts `CREDIT`. */
+const CREDIT_MIN_PROTOCOL = { major: 10, minor: 4 } as const;
 
 /**
  * Largest `DATA` payload the daemon accepts per frame
@@ -251,6 +259,12 @@ export interface TunnelManagerOptions {
    * every (re)connect so a backend switch is picked up lazily.
    */
   getConfig: () => BackendConnectionConfig | null;
+  /**
+   * The connected daemon's `client.hello` `protocolVersion` (`null` when
+   * unknown). Read on every tunnel (re)connect; `CREDIT` is sent only when it
+   * is ≥ 10.4, so a backend switch or daemon upgrade is picked up lazily.
+   */
+  getProtocolVersion: () => string | null;
   /** Socket factory seam for tests; defaults to [[createTunnelSocket]]. */
   socketFactory?: (config: BackendConnectionConfig) => TunnelSocketLike;
   /** Deadline for the `/tunnel` WebSocket to reach `open`. Default 10s. */
@@ -439,6 +453,7 @@ export class TunnelManager {
   onForwardDropped: ((remotePort: number) => void) | null = null;
 
   private readonly getConfig: () => BackendConnectionConfig | null;
+  private readonly getProtocolVersion: () => string | null;
   private readonly socketFactory: (config: BackendConnectionConfig) => TunnelSocketLike;
   private readonly connectTimeoutMs: number;
   private readonly openTimeoutMs: number;
@@ -471,6 +486,8 @@ export class TunnelManager {
   private heartbeatSentAtMs: number | null = null;
   private lastPongAtMs: number | null = null;
   private tunnelGeneration = 0;
+  /** Whether the daemon behind the current tunnel socket accepts `CREDIT`. */
+  private creditEnabled = false;
   private nextStreamId = 1;
   private disposed = false;
 
@@ -496,6 +513,7 @@ export class TunnelManager {
     this.admissionTimeoutMs = positive(options.admissionTimeoutMs ?? 30_000, 'admissionTimeoutMs');
     this.admissionRetryMs = positive(options.admissionRetryMs ?? 100, 'admissionRetryMs');
     this.getConfig = options.getConfig;
+    this.getProtocolVersion = options.getProtocolVersion;
     this.socketFactory = options.socketFactory ?? createTunnelSocket;
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.openTimeoutMs = options.openTimeoutMs ?? DEFAULT_OPEN_TIMEOUT_MS;
@@ -597,11 +615,19 @@ export class TunnelManager {
           }
           this.ws = ws;
           this.tunnelGeneration += 1;
+          const protocolVersion = this.getProtocolVersion();
+          this.creditEnabled = protocolVersionAtLeast(
+            protocolVersion,
+            CREDIT_MIN_PROTOCOL.major,
+            CREDIT_MIN_PROTOCOL.minor,
+          );
           this.startHeartbeat(ws);
           logger.info('tunnel connected', {
             generation: this.tunnelGeneration,
             candidates: candidates.length,
             reconnect: this.tunnelGeneration > 1,
+            protocolVersion,
+            creditEnabled: this.creditEnabled,
           });
           resolve();
         });
@@ -1120,7 +1146,8 @@ export class TunnelManager {
    * Write callback for one daemon→client `DATA` payload: the bytes have left
    * Node's write buffer for the kernel (or the write failed — a destroyed
    * socket owes the daemon nothing). Return them as `CREDIT`, coalesced to one
-   * frame per {@link CREDIT_COALESCE_BYTES} or per fully flushed backlog.
+   * frame per {@link CREDIT_COALESCE_BYTES} or per fully flushed backlog —
+   * unless the daemon predates `CREDIT`, in which case nothing is sent.
    */
   private handleLocalFlush(stream: StreamState, length: number, error?: Error | null): void {
     if (error || this.streams.get(stream.streamId) !== stream) return;
@@ -1130,6 +1157,7 @@ export class TunnelManager {
     if (stream.ungrantedBytes < CREDIT_COALESCE_BYTES && stream.unflushedBytes > 0) return;
     const credit = stream.ungrantedBytes;
     stream.ungrantedBytes = 0;
+    if (!this.creditEnabled) return;
     this.sendFrame({ type: 'credit', streamId: stream.streamId, credit });
   }
 

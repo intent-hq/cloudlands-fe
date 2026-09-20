@@ -190,11 +190,15 @@ function makeManager(
     config?: BackendConnectionConfig | null;
     /** Remote ports whose OPENs get a scripted refused OPEN_ERR (see [[refuseOpens]]). */
     refusedPorts?: Set<number>;
+    /** Daemon hello protocolVersion; defaults to a CREDIT-capable 10.4. */
+    protocolVersion?: string | null;
   } = {},
 ): { manager: TunnelManager; created: FakeTunnelSocket[] } {
   const created: FakeTunnelSocket[] = [];
   const manager = new TunnelManager({
     getConfig: () => (options.config === undefined ? WSS_CONFIG : options.config),
+    getProtocolVersion: () =>
+      options.protocolVersion === undefined ? '10.4' : options.protocolVersion,
     socketFactory: () => {
       const ws = new FakeTunnelSocket();
       if (options.daemon !== false) attachFakeDaemon(ws);
@@ -1084,6 +1088,7 @@ describe('TunnelManager', () => {
     let holdOpen = false;
     const manager = new TunnelManager({
       getConfig: () => WSS_CONFIG,
+      getProtocolVersion: () => '10.4',
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         attachFakeDaemon(ws);
@@ -1409,6 +1414,90 @@ describe('TunnelManager', () => {
       expect((await got).toString('utf8')).toBe('still open');
       expect(manager.getDiagnostics().streams.some((s) => s.streamId === streamId)).toBe(true);
     });
+
+    describe('is gated on the daemon hello protocolVersion ≥ 10.4', () => {
+      /** Flush > 64 KiB through one stream and return the CREDIT grants it produced. */
+      async function flushAndCollectCredits(protocolVersion: string | null): Promise<{
+        grants: number[];
+        ws: FakeTunnelSocket;
+      }> {
+        const { manager, created } = makeManager({ daemon: false, protocolVersion });
+        onCleanup(() => manager.dispose());
+        const localPort = await manager.forwardPort(10001);
+        const ws = created[0];
+        const { streamId, client } = await openStream(manager, ws, localPort);
+        onCleanup(() => client.destroy());
+        const chunk = 40 * 1024;
+        const received = collectUntil(client, 2 * chunk);
+        ws.deliver({ type: 'data', streamId, payload: Buffer.alloc(chunk, 1) });
+        ws.deliver({ type: 'data', streamId, payload: Buffer.alloc(chunk, 2) });
+        expect((await received).length).toBe(2 * chunk);
+        await delay(50);
+        return { grants: credits(ws, streamId), ws };
+      }
+
+      it.each(['10.4', '10.10', '11.0'])('sends CREDIT to a %s daemon', async (version) => {
+        const { grants } = await flushAndCollectCredits(version);
+        expect(grants.reduce((a, b) => a + b, 0)).toBe(80 * 1024);
+      });
+
+      it.each([null, '10.3', '9.9', 'unknown'])(
+        'sends no CREDIT to a %s daemon even after > 64 KiB flushed (byte-identical to a pre-credit client)',
+        async (version) => {
+          const { grants, ws } = await flushAndCollectCredits(version);
+          expect(grants).toEqual([]);
+          expect(ws.sent.some((f) => f.type === 'credit')).toBe(false);
+        },
+      );
+
+      it('re-reads the protocolVersion on every tunnel (re)connect', async () => {
+        let protocolVersion: string | null = '10.3';
+        const created: FakeTunnelSocket[] = [];
+        const manager = new TunnelManager({
+          getConfig: () => WSS_CONFIG,
+          getProtocolVersion: () => protocolVersion,
+          heartbeatIntervalMs: 0,
+          socketFactory: () => {
+            const ws = new FakeTunnelSocket();
+            created.push(ws);
+            queueMicrotask(() => ws.open());
+            return ws;
+          },
+        });
+        onCleanup(() => manager.dispose());
+        const localPort = await manager.forwardPort(10001);
+        const payload = Buffer.alloc(1024, 3);
+
+        const first = await openStream(manager, created[0], localPort);
+        onCleanup(() => first.client.destroy());
+        const gotFirst = collectUntil(first.client, payload.length);
+        created[0].deliver({ type: 'data', streamId: first.streamId, payload });
+        await gotFirst;
+        await delay(50);
+        expect(credits(created[0], first.streamId)).toEqual([]);
+
+        // The daemon is upgraded and the tunnel reconnects: the next socket
+        // sees the new version and starts granting.
+        protocolVersion = '10.4';
+        created[0].drop();
+        await waitFor(() => manager.getDiagnostics().streams.length === 0);
+        const secondClient = await connectClient(localPort);
+        onCleanup(() => secondClient.destroy());
+        await waitFor(() => created.length === 2 && created[1].sent.some((f) => f.type === 'open'));
+        const secondId = created[1].sent.filter((f) => f.type === 'open').at(-1)!.streamId;
+        created[1].deliver({ type: 'openOk', streamId: secondId });
+        await waitFor(() =>
+          manager
+            .getDiagnostics()
+            .streams.some((s) => s.streamId === secondId && s.state === 'open'),
+        );
+        const gotSecond = collectUntil(secondClient, payload.length);
+        created[1].deliver({ type: 'data', streamId: secondId, payload });
+        await gotSecond;
+        await waitFor(() => credits(created[1], secondId).length === 1);
+        expect(credits(created[1], secondId)).toEqual([payload.length]);
+      });
+    });
   });
 
   it('shares one in-flight connect across concurrent forwardPort calls', async () => {
@@ -1453,6 +1542,7 @@ describe('TunnelManager', () => {
     const created: FakeTunnelSocket[] = [];
     const manager = new TunnelManager({
       getConfig: () => WSS_CONFIG,
+      getProtocolVersion: () => '10.4',
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         created.push(ws);
@@ -1472,6 +1562,7 @@ describe('TunnelManager', () => {
     const created: Array<{ host: string | undefined; ws: FakeTunnelSocket }> = [];
     const manager = new TunnelManager({
       getConfig: () => ({ ...WSS_CONFIG, host: '10.0.0.1', hosts: ['10.0.0.1', '127.0.0.1'] }),
+      getProtocolVersion: () => '10.4',
       socketFactory: (config) => {
         const ws = new FakeTunnelSocket();
         created.push({ host: config.host, ws });
@@ -1504,6 +1595,7 @@ describe('TunnelManager', () => {
     const created: FakeTunnelSocket[] = [];
     const manager = new TunnelManager({
       getConfig: () => ({ ...WSS_CONFIG, host: 'a', hosts: ['a', 'b'] }),
+      getProtocolVersion: () => '10.4',
       socketFactory: () => {
         const ws = new FakeTunnelSocket();
         created.push(ws);
@@ -1691,6 +1783,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     // No socketFactory override: the REAL createTunnelSocket dials the fake
     // daemon over TLS, so the handshake-level pin is what's under test.
     const manager = new TunnelManager({
+      getProtocolVersion: () => '10.4',
       getConfig: () => ({
         transport: 'wss',
         host: daemon.host,
@@ -1749,6 +1842,7 @@ describe('tunnel wss wire-level pinning (handshake-enforced, monorepo#4072)', ()
     await rejecting.start();
     onCleanup(() => rejecting.stop());
     const manager = new TunnelManager({
+      getProtocolVersion: () => '10.4',
       getConfig: () => ({
         transport: 'wss',
         host: rejecting.host,
