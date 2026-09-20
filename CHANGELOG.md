@@ -4,6 +4,32 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.171.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.170.0...v2.171.0) (2026-09-20)
+
+
+### 🚀 Features
+
+* **multiplayer:** guest session store, invite deep link and device-flow join ([#2439](https://github.com/intent-hq/cloudlands-fe/issues/2439)) ([491fcd0](https://github.com/intent-hq/cloudlands-fe/commit/491fcd06e1783f83b2df4abfc045f128724cd52a))
+* **multiplayer:** guest sessions navigation, settings and revoked state ([#2445](https://github.com/intent-hq/cloudlands-fe/issues/2445)) ([6427890](https://github.com/intent-hq/cloudlands-fe/commit/642789000326c102e8edfb199ab7eb8fc1b8e845))
+* **multiplayer:** owner-side share dialog with invite and member management ([#2440](https://github.com/intent-hq/cloudlands-fe/issues/2440)) ([2dfe12d](https://github.com/intent-hq/cloudlands-fe/commit/2dfe12dabfedee1ede5bc1948c23053222979ff1))
+* **multiplayer:** per-workspace Leave, Remove all guests and confirmations in Guest Sessions ([#2451](https://github.com/intent-hq/cloudlands-fe/issues/2451)) ([b3325ea](https://github.com/intent-hq/cloudlands-fe/commit/b3325ea11c37fa049266fc25440bcaebe1827603))
+* **multiplayer:** role-aware desktop for collaborators ([#2438](https://github.com/intent-hq/cloudlands-fe/issues/2438)) ([9a6c6e6](https://github.com/intent-hq/cloudlands-fe/commit/9a6c6e6ed56cdd35e141a3c895f0b1e9e800aae3))
+* **notes:** remote cursors and header avatar stack in the rich note editor ([#2453](https://github.com/intent-hq/cloudlands-fe/issues/2453)) ([2f78c51](https://github.com/intent-hq/cloudlands-fe/commit/2f78c51e3205ecd717639922341361bc4f32f005))
+* **tunnel:** send CREDIT to replenish the daemon's per-stream window on local flush ([#2703](https://github.com/intent-hq/cloudlands-fe/issues/2703)) ([3608778](https://github.com/intent-hq/cloudlands-fe/commit/36087781cce670e328ccfe6e42ae8772ec2bf81b))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.86 ([#2696](https://github.com/intent-hq/cloudlands-fe/issues/2696)) ([5cc91f3](https://github.com/intent-hq/cloudlands-fe/commit/5cc91f3c9ff3bb62e4ad9d3cb3aba1f4917a2940))
+* bump intentd sidecar to v0.9.87 ([#2710](https://github.com/intent-hq/cloudlands-fe/issues/2710)) ([71ddf19](https://github.com/intent-hq/cloudlands-fe/commit/71ddf196169136ae4af4115598b6783b6fd33bee))
+* **ct:** disable browser-context reuse in the shared CT test module ([#2701](https://github.com/intent-hq/cloudlands-fe/issues/2701)) ([58e4184](https://github.com/intent-hq/cloudlands-fe/commit/58e4184052ae98c81874b7af7de5f24ee872e9c7))
+* **ct:** isolate browser context per test in mermaid-block-lane spec ([#2693](https://github.com/intent-hq/cloudlands-fe/issues/2693)) ([2d0831a](https://github.com/intent-hq/cloudlands-fe/commit/2d0831a7991d7c009170516bd229d0c1a3ecbc9f))
+* **design-system:** size the remaining icon-only Buttons and retire the lint baseline ([#2684](https://github.com/intent-hq/cloudlands-fe/issues/2684)) ([ce71dd5](https://github.com/intent-hq/cloudlands-fe/commit/ce71dd5e1f5d377b1b6fea79c6e6de5f0345f1e1))
+* **lint:** add a canary to the knip dead-code gate ([#2705](https://github.com/intent-hq/cloudlands-fe/issues/2705)) ([0ce765e](https://github.com/intent-hq/cloudlands-fe/commit/0ce765ede39fd1bb297dfb515123f5586e77b80f))
+* **lint:** detect unused Svelte components and delete 97 unused files ([#2695](https://github.com/intent-hq/cloudlands-fe/issues/2695)) ([e632793](https://github.com/intent-hq/cloudlands-fe/commit/e63279304681746d82e3dc6569b5aee7af375477))
+* **settings:** add section gap above Licenses on App Behavior tab ([#2698](https://github.com/intent-hq/cloudlands-fe/issues/2698)) ([dc515f0](https://github.com/intent-hq/cloudlands-fe/commit/dc515f0c375290a76629c6ed64b29fe1fa21e5ed))
+* **settings:** make inter-section spacing container-owned ([#2706](https://github.com/intent-hq/cloudlands-fe/issues/2706)) ([6e2fc68](https://github.com/intent-hq/cloudlands-fe/commit/6e2fc68554e8acdf515d3108f2cdd5b82574743f)), closes [#2698](https://github.com/intent-hq/cloudlands-fe/issues/2698)
+
 ## [2.170.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.169.1...v2.170.0) (2026-09-20)
 
 
