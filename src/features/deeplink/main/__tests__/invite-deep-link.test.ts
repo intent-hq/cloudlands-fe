@@ -160,16 +160,27 @@ vi.mock('../../../../main/invite-consent', () => ({
   },
 }));
 
-function fakeConsent(decision: 'open' | 'cancel' | null) {
+/**
+ * A consent prompt whose first decision is settled (`open` / `cancel` / `null`)
+ * or, with `'pending'`, left open until the test calls `decide(...)` — the
+ * modal shown while the user has not yet clicked anything.
+ */
+function fakeConsent(decision: 'open' | 'cancel' | 'pending' | null) {
   let cancelWaiting!: () => void;
+  let decide!: (decision: 'open' | 'cancel' | null) => void;
   const prompt = {
-    decision: Promise.resolve(decision),
+    decision:
+      decision === 'pending'
+        ? new Promise<'open' | 'cancel' | null>((resolve) => {
+            decide = resolve;
+          })
+        : Promise.resolve(decision),
     cancelledWhileWaiting: new Promise<void>((resolve) => {
       cancelWaiting = resolve;
     }),
     dismiss: vi.fn(),
   };
-  return { prompt, cancelWaiting };
+  return { prompt, cancelWaiting, decide };
 }
 
 /**
@@ -1239,6 +1250,196 @@ describe('handleInviteDeepLink — sign-in required', () => {
     expect(localCalls('github.cancelAuth')).toHaveLength(1);
     expect(showMessageBox).toHaveBeenCalledTimes(1);
     expect(guestAdd).not.toHaveBeenCalled();
+  });
+
+  // The device flow is awaited from the moment the code is shown, not from
+  // "Open GitHub": a user who types the code on another device never has to
+  // click the button — the flow's end settles the prompt on its own.
+  describe('the wait starts when the code is shown', () => {
+    it('modal: authorized (event) while no button was clicked → prove prompt, browser never opened', async () => {
+      const signIn = fakeConsent('pending');
+      const prove2 = fakeConsent('open');
+      showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
+
+      const pending = handleInviteDeepLink(LINK);
+      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
+      expect(clipboardWriteText).toHaveBeenCalledWith(CONNECT.userCode);
+      emitAuthChanged('authorized');
+      await pending;
+
+      expect(openExternal).not.toHaveBeenCalled();
+      expect(showInviteConsent).toHaveBeenCalledTimes(2);
+      expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'sign-in-required' });
+      expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ mode: 'prove', login: 'octocat' });
+      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
+      expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+      expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+      expect(localCalls('github.cancelAuth')).toEqual([]);
+      expect(showMessageBox).not.toHaveBeenCalled();
+    });
+
+    it('modal: authorized via the poll (no event) while no button was clicked → same result', async () => {
+      // The daemon reports the flow's end only to the poll — no event is emitted.
+      let signedIn = false;
+      onLocal('github.authStatus', () => {
+        signedIn = true;
+        return { isConfigured: true, deviceFlow: { status: 'authorized' } };
+      });
+      onLocal('github.getUser', () => ({ user: signedIn ? { login: 'octocat' } : null }));
+      onLocal('github.identityProof.create', () => {
+        if (!signedIn) throw localRefusal('github-not-connected');
+        return PROOF;
+      });
+      const signIn = fakeConsent('pending');
+      const prove2 = fakeConsent('open');
+      showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
+
+      await handleInviteDeepLink(LINK);
+
+      expect(localCalls('github.authStatus').length).toBeGreaterThanOrEqual(1);
+      expect(openExternal).not.toHaveBeenCalled();
+      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
+      expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+      expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    }, 15_000);
+
+    it('modal: denied while no button was clicked → sign-in-denied failure, browser never opened', async () => {
+      const signIn = fakeConsent('pending');
+      showInviteConsent.mockReturnValue(signIn.prompt);
+
+      const pending = handleInviteDeepLink(LINK);
+      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
+      emitAuthChanged('denied');
+      await pending;
+
+      expect(openExternal).not.toHaveBeenCalled();
+      expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
+      expect(showMessageBox).toHaveBeenCalledTimes(1);
+      expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'error' });
+      expect(localCalls('github.identityProof.create')).toEqual([]);
+      expect(guestAdd).not.toHaveBeenCalled();
+      expect(logLines.join('\n')).toContain('"flowCode":"sign-in-denied"');
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('modal: cancel while no button was clicked → the device flow is cancelled and the listener and poll stop', async () => {
+      vi.useFakeTimers();
+      try {
+        const baselineListeners = notificationListeners.size;
+        const signIn = fakeConsent('pending');
+        let shown!: () => void;
+        const consentShown = new Promise<void>((resolve) => {
+          shown = resolve;
+        });
+        showInviteConsent.mockImplementation(() => {
+          shown();
+          return signIn.prompt;
+        });
+
+        const pending = handleInviteDeepLink(LINK);
+        await consentShown;
+        // The flow's own `github:auth-changed` listener is attached at show time.
+        expect(notificationListeners.size).toBe(baselineListeners + 1);
+
+        signIn.decide('cancel');
+        await pending;
+
+        expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+        expect(localCalls('github.cancelAuth')).toHaveLength(1);
+        expect(notificationListeners.size).toBe(baselineListeners);
+        expect(openExternal).not.toHaveBeenCalled();
+
+        // Neither a late event nor the poll revives the flow.
+        emitAuthChanged('authorized');
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(localCalls('github.authStatus')).toEqual([]);
+        expect(localCalls('github.identityProof.create')).toEqual([]);
+        expect(guestAdd).not.toHaveBeenCalled();
+        expect(showMessageBox).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('native box: authorized while the box is open closes it through its abort signal and the join proceeds', async () => {
+      showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
+      // The mock box resolves only through its abort signal. A missing
+      // abort-driven close would not hang the flow (`settled` still wins the
+      // race); the `order` assertion below is what proves the box was closed
+      // before the prove prompt and `guest.add`.
+      const order: string[] = [];
+      showMessageBox.mockImplementationOnce(
+        (options: { cancelId: number; signal?: AbortSignal }) =>
+          new Promise<{ response: number }>((resolve) => {
+            options.signal?.addEventListener('abort', () => {
+              order.push('device-code-box-closed');
+              resolve({ response: options.cancelId });
+            });
+          }),
+      );
+      showMessageBox.mockImplementationOnce(async () => {
+        order.push('prove-box');
+        return { response: 0 };
+      });
+      guestAdd.mockImplementation(async () => {
+        order.push('guest.add');
+        return { id: 'guest-id', tokenEncrypted: true };
+      });
+
+      const pending = handleInviteDeepLink(LINK);
+      await vi.waitFor(() => expect(showMessageBox).toHaveBeenCalledTimes(1));
+      expect(showMessageBox.mock.calls[0][0]).toMatchObject({
+        type: 'info',
+        message: expect.stringContaining(CONNECT.userCode),
+      });
+      expect(order).toEqual([]);
+      emitAuthChanged('authorized');
+      await pending;
+
+      expect(order).toEqual(['device-code-box-closed', 'prove-box', 'guest.add']);
+      expect(openExternal).not.toHaveBeenCalled();
+      expect(showMessageBox).toHaveBeenCalledTimes(2);
+      expect(showMessageBox.mock.calls[1][0]).toMatchObject({
+        type: 'question',
+        message: expect.stringContaining('@octocat'),
+      });
+      expect(localCalls('github.cancelAuth')).toEqual([]);
+      expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
+      expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    });
+
+    it('native box: a rejected box before the flow ends releases the listener and poll, and a failure is shown', async () => {
+      vi.useFakeTimers();
+      try {
+        const baselineListeners = notificationListeners.size;
+        showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
+        showMessageBox.mockImplementationOnce(() => Promise.reject(new Error('dialog closed')));
+
+        await handleInviteDeepLink(LINK);
+
+        expect(notificationListeners.size).toBe(baselineListeners);
+        expect(openExternal).not.toHaveBeenCalled();
+        expect(showMessageBox).toHaveBeenCalledTimes(2);
+        expect(showMessageBox.mock.calls[0][0]).toMatchObject({
+          type: 'info',
+          message: expect.stringContaining(CONNECT.userCode),
+        });
+        expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
+
+        // Neither a late event nor the poll revives the flow.
+        emitAuthChanged('authorized');
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(localCalls('github.authStatus')).toEqual([]);
+        expect(localCalls('github.identityProof.create')).toEqual([]);
+        expect(guestAdd).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('a refused verification URL never reaches the modal or the browser', async () => {
