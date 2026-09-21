@@ -346,6 +346,337 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(onLoadRetired).not.toHaveBeenCalled();
   });
 
+  it('renders collapsed Delegated / Background bins from scopeCounts and lazy-loads each on expand (§5.5 row scope)', async () => {
+    const coordinator = makeAgent('coordinator', { name: 'Coordinator' });
+    const agents = [coordinator];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const onLoadBackground = vi.fn();
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 4, background: 2 },
+      onLoadDelegated,
+      onLoadBackground,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+
+    // Count-first: both toggles render from the daemon-served counts with no
+    // row hydrated, and nothing loads eagerly.
+    const delegatedToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-delegated-toggle]',
+    );
+    const backgroundToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-background-toggle]',
+    );
+    expect(delegatedToggle?.textContent).toContain('4 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(backgroundToggle?.textContent).toContain('2 background agents');
+    expect(backgroundToggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+    expect(onLoadBackground).not.toHaveBeenCalled();
+
+    // Expanding the Delegated bin triggers its lazy load exactly once with skeleton rows.
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() => expect(onLoadDelegated).toHaveBeenCalledTimes(1));
+    expect(onLoadBackground).not.toHaveBeenCalled();
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeTruthy();
+
+    // Loaded: delegated rows nest under their parent and are revealed by the
+    // expanded bin; the loaded rows are authoritative for the label.
+    const child = makeAgent('child', {
+      name: 'Delegated child',
+      metadata: { createdByAgentId: coordinator.id } as AgentSession['metadata'],
+    });
+    appStore.dispatch(bulkUpsertSessions([child]));
+    await view.rerender({
+      ...props,
+      agents: [coordinator, child],
+      scopeCounts: { topLevel: 1, delegated: 1, background: 2 },
+      delegatedAgentsLoaded: true,
+    });
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeTruthy();
+    const groupToggle = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${coordinator.id}"]`,
+    );
+    expect(groupToggle?.getAttribute('aria-expanded')).toBe('true');
+
+    // The per-parent group still collapses independently while the bin is open.
+    await fireEvent.click(groupToggle!);
+    expect(groupToggle?.getAttribute('aria-expanded')).toBe('false');
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeNull(),
+    );
+
+    // Collapsing the workspace-level bin hides the loaded delegated rows again.
+    await fireEvent.click(groupToggle!);
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeNull(),
+    );
+    expect(
+      view.container.querySelector(`[data-agent-delegation-toggle="${coordinator.id}"]`),
+    ).toBeNull();
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+
+    // Background bin: same expand-to-load contract.
+    await fireEvent.click(backgroundToggle!);
+    await waitFor(() => expect(onLoadBackground).toHaveBeenCalledTimes(1));
+    expect(view.container.querySelector('[data-agent-background-loading]')).toBeTruthy();
+    const background = makeAgent('background', { name: 'Background worker', isBackground: true });
+    appStore.dispatch(bulkUpsertSessions([background]));
+    await view.rerender({
+      ...props,
+      agents: [coordinator, child, background],
+      scopeCounts: { topLevel: 1, delegated: 1, background: 1 },
+      delegatedAgentsLoaded: true,
+      backgroundAgentsLoaded: true,
+    });
+    expect(view.container.querySelector('[data-agent-background-loading]')).toBeNull();
+    expect(backgroundToggle?.textContent).toContain('1 background agents');
+    expect(view.container.querySelector(`[data-agent-panel-row="${background.id}"]`)).toBeTruthy();
+    expect(onLoadBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it('lazy-loads delegated and background rows when a search is active, once per transition', async () => {
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    const agents = [active];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const onLoadBackground = vi.fn();
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 2, background: 1 },
+      searchQuery: '',
+      onLoadDelegated,
+      onLoadBackground,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+    expect(onLoadBackground).not.toHaveBeenCalled();
+
+    await view.rerender({ ...props, searchQuery: 'needle' });
+    await waitFor(() => expect(onLoadDelegated).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onLoadBackground).toHaveBeenCalledTimes(1));
+
+    // Failed-load churn while the search stays active must not re-trigger.
+    await view.rerender({ ...props, searchQuery: 'needle', loadingDelegated: true });
+    await view.rerender({ ...props, searchQuery: 'needle', loadingDelegated: false });
+    await view.rerender({ ...props, searchQuery: 'needle', loadingBackground: true });
+    await view.rerender({ ...props, searchQuery: 'needle', loadingBackground: false });
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+    expect(onLoadBackground).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the lazy bins at count 0 and keeps the all-rows behavior without scopeCounts (old daemon)', async () => {
+    const parent = makeAgent('parent', { name: 'Parent' });
+    const child = makeAgent('child', {
+      name: 'Child',
+      metadata: { createdByAgentId: parent.id } as AgentSession['metadata'],
+    });
+    const background = makeAgent('background', { name: 'Background', isBackground: true });
+    const agents = [parent, child, background];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const onLoadBackground = vi.fn();
+
+    // Old daemon (no scopeCounts): no workspace-level Delegated bin; the
+    // per-parent group and the Background bin render from the rows themselves
+    // and nothing lazy-loads.
+    const legacy = render(WorkspaceAgentsList, {
+      props: { agents, workspaceId, onLoadDelegated, onLoadBackground },
+    });
+    await waitFor(() =>
+      expect(legacy.container.querySelector(`[data-agent-panel-row="${parent.id}"]`)).toBeTruthy(),
+    );
+    expect(legacy.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
+    expect(
+      legacy.container.querySelector(`[data-agent-delegation-toggle="${parent.id}"]`),
+    ).toBeTruthy();
+    const backgroundToggle = legacy.container.querySelector<HTMLElement>(
+      '[data-agent-background-toggle]',
+    );
+    expect(backgroundToggle?.textContent).toContain('1 background agents');
+    await fireEvent.click(backgroundToggle!);
+    expect(onLoadBackground).not.toHaveBeenCalled();
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+    cleanup();
+
+    // New daemon with empty bins: both toggles stay hidden.
+    const active = makeAgent('active-agent', { name: 'Active agent' });
+    appStore.dispatch(bulkUpsertSessions([active]));
+    const view = render(WorkspaceAgentsList, {
+      props: {
+        agents: [active],
+        workspaceId,
+        scopeCounts: { topLevel: 1, delegated: 0, background: 0 },
+        onLoadDelegated,
+        onLoadBackground,
+      },
+    });
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${active.id}"]`)).toBeTruthy(),
+    );
+    expect(view.container.querySelector('[data-agent-delegated-toggle]')).toBeNull();
+    expect(view.container.querySelector('[data-agent-background-toggle]')).toBeNull();
+  });
+
+  it('keeps a delegated child whose parent is not loaded inside the Delegated bin (wire-parent membership)', async () => {
+    const topLevel = makeAgent('top-level', { name: 'Top level' });
+    appStore.dispatch(bulkUpsertSessions([topLevel]));
+    const onLoadDelegated = vi.fn();
+    const onLoadBackground = vi.fn();
+    const props = {
+      agents: [topLevel],
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 1, background: 1 },
+      onLoadDelegated,
+      onLoadBackground,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    const delegatedToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-delegated-toggle]',
+    );
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() => expect(onLoadDelegated).toHaveBeenCalledTimes(1));
+
+    // The delegated read returns the child of a background parent the
+    // collapsed Background bin has not loaded: the child stays a Delegated
+    // row (the bin keeps its count and toggle) rather than becoming a
+    // top-level foreground row.
+    const child = makeAgent('child', {
+      name: 'Child of background parent',
+      metadata: { createdByAgentId: AgentId('background-parent') } as AgentSession['metadata'],
+    });
+    appStore.dispatch(bulkUpsertSessions([child]));
+    await view.rerender({ ...props, agents: [topLevel, child], delegatedAgentsLoaded: true });
+    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${child.id}"]`,
+      ),
+    ).toBeTruthy();
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+
+    // Collapsing the bin hides it like any other delegated row.
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeNull(),
+    );
+    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeTruthy(),
+    );
+
+    // A retired parent is excluded from the live tree too: its child is still
+    // a Delegated row, and the parent lists in the Retired bin.
+    const retiredParent = makeAgent('retired-parent', {
+      name: 'Retired parent',
+      retiredAt: '2026-08-16T00:02:00.000Z',
+    });
+    const orphan = makeAgent('orphan', {
+      name: 'Child of retired parent',
+      metadata: { createdByAgentId: retiredParent.id } as AgentSession['metadata'],
+    });
+    appStore.dispatch(bulkUpsertSessions([retiredParent, orphan]));
+    await view.rerender({
+      ...props,
+      agents: [topLevel, child, retiredParent, orphan],
+      scopeCounts: { topLevel: 1, delegated: 2, background: 1 },
+      delegatedAgentsLoaded: true,
+      retiredCount: 1,
+    });
+    expect(delegatedToggle?.textContent).toContain('2 delegated agents');
+    expect(
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${orphan.id}"]`,
+      ),
+    ).toBeTruthy();
+    expect(view.container.querySelector('[data-agent-retired-toggle]')?.textContent).toContain(
+      '1 retired agents',
+    );
+
+    // Once the Background bin loads the parent, the child nests under it
+    // (per-parent group inside the Background section) and the Delegated
+    // count is unchanged.
+    const backgroundToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-background-toggle]',
+    );
+    await fireEvent.click(backgroundToggle!);
+    await waitFor(() => expect(onLoadBackground).toHaveBeenCalledTimes(1));
+    const backgroundParent = makeAgent('background-parent', {
+      name: 'Background parent',
+      isBackground: true,
+    });
+    appStore.dispatch(bulkUpsertSessions([backgroundParent]));
+    await view.rerender({
+      ...props,
+      agents: [topLevel, child, retiredParent, orphan, backgroundParent],
+      scopeCounts: { topLevel: 1, delegated: 2, background: 1 },
+      delegatedAgentsLoaded: true,
+      backgroundAgentsLoaded: true,
+      retiredCount: 1,
+    });
+    expect(delegatedToggle?.textContent).toContain('2 delegated agents');
+    expect(backgroundToggle?.textContent).toContain('1 background agents');
+    const groupToggle = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${backgroundParent.id}"]`,
+    );
+    expect(groupToggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeTruthy();
+    expect(
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${child.id}"]`,
+      ),
+    ).toBeNull();
+    expect(
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${orphan.id}"]`,
+      ),
+    ).toBeTruthy();
+
+    // Collapsing only the Background bin hides the (idle) parent row; its
+    // child is still a Delegated row, so the open Delegated bin lists it
+    // directly and the visible rows keep matching the count.
+    await fireEvent.click(backgroundToggle!);
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(`[data-agent-panel-row="${backgroundParent.id}"]`),
+      ).toBeNull(),
+    );
+    expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(delegatedToggle?.textContent).toContain('2 delegated agents');
+    expect(
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${child.id}"]`,
+      ),
+    ).toBeTruthy();
+    expect(
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${orphan.id}"]`,
+      ),
+    ).toBeTruthy();
+
+    // Re-expanding Background nests the child under its parent again.
+    await fireEvent.click(backgroundToggle!);
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(`[data-agent-panel-row="${backgroundParent.id}"]`),
+      ).toBeTruthy(),
+    );
+    expect(
+      view.container.querySelector(
+        `[data-agent-delegated-section] [data-agent-panel-row="${child.id}"]`,
+      ),
+    ).toBeNull();
+    expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeTruthy();
+  });
+
   it('virtualizes the retired bin above the threshold', async () => {
     const active = makeAgent('active-agent', { name: 'Active agent' });
     const retired = Array.from({ length: 40 }, (_, index) =>

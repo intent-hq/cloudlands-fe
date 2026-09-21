@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import Preview from '../agent-header-icons.preview.svelte';
 import { probeHeaderIcons } from './agent-header-icon-probe';
 import { isPanelMenuSettled, probePanelMenuIcons } from './panel-menu-icon-probe';

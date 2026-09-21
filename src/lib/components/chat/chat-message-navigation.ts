@@ -54,12 +54,19 @@ function isAutomatedUserMessage(message: AgentMessage, text: string): boolean {
   return hasAutomatedPrefix(text);
 }
 
-export function getPlainTextMessagePreview(message: AgentMessage): string {
-  return stripMarkdownFormatting(getPresentedUserMessageText(message)).replace(/\s+/g, ' ').trim();
+/** `ownerPrincipalId` (`workspace.ownerPrincipalId`) gates the collaborator preamble strip. */
+export function getPlainTextMessagePreview(
+  message: AgentMessage,
+  ownerPrincipalId?: string | null,
+): string {
+  return stripMarkdownFormatting(getPresentedUserMessageText(message, ownerPrincipalId))
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function getUserMessageNavigationItems(
   messages: readonly AgentMessage[],
+  ownerPrincipalId?: string | null,
 ): UserMessageNavigationItem[] {
   const seenIds = new Set<string>();
   const items: UserMessageNavigationItem[] = [];
@@ -67,7 +74,7 @@ export function getUserMessageNavigationItems(
     if (message.role !== 'user' || seenIds.has(message.id)) continue;
     const sourceText = extractAllContent(message);
     if (isAutomatedUserMessage(message, sourceText)) continue;
-    const text = getPlainTextMessagePreview(message);
+    const text = getPlainTextMessagePreview(message, ownerPrincipalId);
     if (!text) continue;
     seenIds.add(message.id);
     items.push({ id: message.id, text });

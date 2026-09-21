@@ -142,7 +142,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-500 border',
+      'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-spring-slow ease-spring-slow motion-reduce:transition-none border',
       cardClickable ? 'cursor-pointer border-transparent' : 'cursor-default border-border',
       (ready || needsAction) && 'border-border',
       installed && brand.isLight && 'text-slate-800',
@@ -169,7 +169,7 @@
     <div
       data-testid="provider-card-artwork"
       class={cn(
-        'absolute inset-0 rounded-lg transition-all transform duration-700 ease-out',
+        'absolute inset-0 rounded-lg transition-all transform duration-spring-slow ease-spring-slow motion-reduce:transition-none',
         !installed && 'opacity-0 translate-y-full',
         installed && 'opacity-100',
       )}
@@ -179,7 +179,7 @@
     <!-- Icon in top-left -->
     <span
       class={cn(
-        'relative z-10 transition-all transform origin-center duration-300',
+        'relative z-10 transition-all transform origin-center duration-spring-slow ease-spring-slow motion-reduce:transition-none',
         provider.statusLoading && 'animate-pulse',
       )}
     >
@@ -219,8 +219,9 @@
           <Button
             variant="plain"
             type="button"
+            size="icon-compact"
             iconOnly
-            class="group/button h-auto shrink-0 opacity-50 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
+            class="group/button shrink-0 opacity-50 hover:opacity-100 transition-colors cursor-pointer"
             onclick={(e) => openDocs(provider.docsUrl, e)}
             title={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
             aria-label={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
@@ -279,8 +280,9 @@
             <Button
               variant="plain"
               type="button"
+              size="icon-compact"
               iconOnly
-              class="h-auto flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              class="size-5 flex-none opacity-50 hover:opacity-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={(e) => {
                 e.stopPropagation();
                 userRefreshing = true;

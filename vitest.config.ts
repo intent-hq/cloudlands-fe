@@ -4,6 +4,7 @@ import os from 'os';
 import { readFileSync } from 'fs';
 import { gitignoreDirExcludes } from './scripts/gitignore-dir-excludes.mjs';
 import { PARAGLIDE_STALE_MESSAGE, ensureRepoParaglide } from './scripts/paraglide-inputs-hash.mjs';
+import { FORK_EXEC_ARGV } from './scripts/vitest-fork-exec-argv.mjs';
 
 // CI-only tuning for shared self-hosted runners (intent-hq/monorepo#3082; the
 // recurrence class #3032/#2586/#1406/#1171/#545). The CI unit job runs on the
@@ -56,9 +57,12 @@ export default defineConfig(async () => {
       // Node 24's V8 Sparkplug/GC regression (nodejs/node#62393) SIGSEGVs long
       // test runs: forks surface it as dropped files, while threads crash the
       // controller directly. Keep process isolation and disable only Sparkplug
-      // in workers until the pinned runtime contains the upstream fix.
+      // in workers until the pinned runtime contains the upstream fix. The
+      // setup file strips these flags from process.execArgv again inside each
+      // fork so worker_threads constructed with an explicit execArgv (e.g. by
+      // @lix-js/sdk) are not rejected with ERR_WORKER_INVALID_EXEC_ARGV.
       pool: 'forks',
-      execArgv: ['--no-sparkplug'],
+      execArgv: [...FORK_EXEC_ARGV],
       // Redirects every worker's os.tmpdir() into a private root and fails the
       // run if a test leaves a temp entry behind (see src/test-global-setup.ts).
       globalSetup: ['./src/test-global-setup.ts'],
@@ -166,7 +170,8 @@ export default defineConfig(async () => {
         '@pierre/diffs/worker': path.resolve(__dirname, './src/__mocks__/@pierre/diffs/worker'),
       },
       conditions: ['import', 'module', 'browser', 'default'],
-      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
+      // Do not list '.svelte' here: knip turns non-default extensions into `src/**/*.<ext>` entries, hiding every unused Svelte component from `pnpm lint:dead-code`.
+      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
     },
     define: {
       __APP_VERSION__: JSON.stringify(packageJson.version),

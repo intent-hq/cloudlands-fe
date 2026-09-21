@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import NewWorkspaceInitialAgentHarness from './mocks/NewWorkspaceInitialAgentHarness.svelte';
 
 for (const coordinator of [true, false]) {

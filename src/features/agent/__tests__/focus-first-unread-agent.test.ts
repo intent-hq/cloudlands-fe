@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 interface MockSession {
   hasUnread?: boolean;
   lastMessageRole?: 'user' | 'assistant';
+  notificationsMuted?: boolean;
 }
 
 const mockState = {
@@ -154,6 +155,34 @@ describe('findFirstUnreadForegroundAgentId', () => {
     seedSessions({
       'agent-a': { lastMessageRole: 'user' },
       'agent-bg': { hasUnread: true, lastMessageRole: 'assistant' },
+    });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-a');
+  });
+
+  it('skips muted agents in every tier', () => {
+    seedAgents(['agent-a', 'agent-b', 'agent-c', 'agent-d'], true);
+    seedSessions({
+      'agent-a': { hasUnread: true, lastMessageRole: 'assistant', notificationsMuted: true },
+      'agent-b': { lastMessageRole: 'assistant', notificationsMuted: true },
+      'agent-c': { lastMessageRole: 'user' },
+      'agent-d': { lastMessageRole: 'assistant' },
+    });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-d');
+
+    seedSessions({
+      'agent-a': { hasUnread: true, notificationsMuted: true },
+      'agent-b': { lastMessageRole: 'assistant', notificationsMuted: true },
+      'agent-c': { lastMessageRole: 'user' },
+      'agent-d': { lastMessageRole: 'user' },
+    });
+    expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-c');
+  });
+
+  it('settles for the first foreground agent only when every agent is muted', () => {
+    seedAgents(['agent-a', 'agent-b'], true);
+    seedSessions({
+      'agent-a': { lastMessageRole: 'user', notificationsMuted: true },
+      'agent-b': { hasUnread: true, lastMessageRole: 'assistant', notificationsMuted: true },
     });
     expect(findFirstUnreadForegroundAgentId(WS)).toBe('agent-a');
   });

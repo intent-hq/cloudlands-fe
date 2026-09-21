@@ -617,6 +617,24 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
   });
 
+  it('selects a component test through the Svelte components its host imports, one hop only', () => {
+    const root = fixtureRoot({
+      'src/lib/__tests__/progress.ct.spec.ts': "import Host from './ProgressHost.svelte';",
+      'src/lib/__tests__/ProgressHost.svelte':
+        "import Progress from '../Progress.svelte';\nimport { fixtures } from './fixtures';",
+      'src/lib/__tests__/fixtures.ts': '',
+      'src/lib/Progress.svelte': "import Button from './Button.svelte';",
+      'src/lib/Button.svelte': '<button />',
+    });
+    const ctTests = ['src/lib/__tests__/progress.ct.spec.ts'];
+    const options = { root, ctTests };
+
+    expect(findRelatedCtTests(['src/lib/__tests__/ProgressHost.svelte'], options)).toEqual(ctTests);
+    expect(findRelatedCtTests(['src/lib/Progress.svelte'], options)).toEqual(ctTests);
+    expect(findRelatedCtTests(['src/lib/__tests__/fixtures.ts'], options)).toEqual([]);
+    expect(findRelatedCtTests(['src/lib/Button.svelte'], options)).toEqual([]);
+  });
+
   it('selects scene geometry for previews, fixtures, snapshots, and imported components', () => {
     const geometryTest = 'src/lib/components/workspace/workspace-hover-card.geometry.ct.spec.ts';
     const root = fixtureRoot({
@@ -729,8 +747,15 @@ describe('verification planning', () => {
   it('classifies test paths by the runner that owns them', () => {
     expect(testRunner('test/splash-loader.spec.ts')).toBe('playwright');
     expect(testRunner('test/nested/geometry.spec.ts')).toBe('playwright');
+    // playwright.config.ts `testIgnore` names (playwright/root-spec-pattern.mjs) run
+    // only through playwright.manual.config.ts, so they are not the Playwright lane.
     expect(testRunner('test/current-main-baseline.spec.ts')).toBe('manual');
     expect(testRunner('test/catalog-manual-review.capture.spec.ts')).toBe('manual');
+    expect(testRunner('test/electron-browser-lifetime.spec.ts')).toBe('manual');
+    expect(testRunner('test/nested/electron-browser-lifetime.spec.ts')).toBe('manual');
+    // Playwright matches testMatch with nocase + dot, so these are root specs too.
+    expect(testRunner('test/Foo.SPEC.ts')).toBe('playwright');
+    expect(testRunner('test/.hidden/x.spec.ts')).toBe('playwright');
     expect(testRunner('test/actions-status-visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.ct.spec.ts')).toBe('playwright');
@@ -1003,6 +1028,25 @@ describe('verification planning', () => {
     expect(ids).toContain('playwright-full');
     expect(ids).not.toContain('playwright-direct');
     expect(plan.fallbackReasons).toEqual([]);
+  });
+
+  // playwright.config.ts reads testDir/testMatch/testIgnore from these modules, so
+  // a change there can reroute root discovery the same way a config edit does.
+  it.each(['playwright/root-spec-pattern.mjs', 'playwright/ct-spec-pattern.mjs'])(
+    'runs the whole Playwright browser suite when %s changes',
+    (module) => {
+      const root = fixtureRoot({ [module]: 'export const ROOT_TEST_DIR = "test";' });
+      const plan = createVerificationPlan([module], { root, ctTests: [] });
+      const ids = plan.checks.map((check) => check.id);
+      expect(ids).toContain('playwright-full');
+      expect(plan.fallbackReasons).toEqual([]);
+    },
+  );
+
+  it('does not run the whole Playwright browser suite for other playwright/ sources', () => {
+    const root = fixtureRoot({ 'playwright/ct-port.ts': 'export const CT_PORT = 3100;' });
+    const plan = createVerificationPlan(['playwright/ct-port.ts'], { root, ctTests: [] });
+    expect(plan.checks.map((check) => check.id)).not.toContain('playwright-full');
   });
 });
 

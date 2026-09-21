@@ -211,12 +211,7 @@
         <Button variant="outline" size="sm" disabled={actionDisabled} onclick={handleDiscard}
           >{m.chat_shared_discard_label()}</Button
         >
-        <Button
-          size="sm"
-          class="border-primary bg-primary text-primary-foreground hover:border-primary hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/80"
-          disabled={actionDisabled}
-          onclick={handleApply}
-        >
+        <Button variant="primary" size="sm" disabled={actionDisabled} onclick={handleApply}>
           {isApplying
             ? m.chat_shared_applying_label()
             : isFailed

@@ -35,6 +35,7 @@
     createPrerequisiteTask,
   } from '$features/tasks/tasks-write-service';
   import { delegateExistingTaskRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { writable } from 'svelte/store';
   import type { NoteId, TaskStatus } from '$shared/types';
   import TaskStatusIcon from './TaskStatusIcon.svelte';
@@ -59,6 +60,9 @@
     wsIdStore.set(owningWorkspaceId ?? routeWorkspaceId ?? '');
   });
   let workspaceId = $derived(owningWorkspaceId ?? routeWorkspaceId ?? '');
+  // Delegation creates an agent (`agent.delegate`), refused (-32003) for a
+  // collaborator connection: the assign affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(wsIdStore);
 
   // Core derived state
   let checked = $derived(node.attrs.checked ?? false);
@@ -290,7 +294,7 @@
   }
 
   function emitLinkedTaskDelegateEvent() {
-    if (!linkedTaskNoteId) return;
+    if (!linkedTaskNoteId || $hidesAgentLifecycleActions$) return;
     // Prefer the linked note's own workspaceId (it may differ from the route
     // workspace if the task lives in a different workspace), then use the
     // immutable route context.
@@ -539,7 +543,7 @@
               <Fa icon={faLinkSlash} class="text-warning-ink" />
             </Button>
           {/if}
-          {#if !effectiveAgentId && !effectiveChecked}
+          {#if !effectiveAgentId && !effectiveChecked && !$hidesAgentLifecycleActions$}
             <Button
               variant="ghost-light"
               size="icon-xs"

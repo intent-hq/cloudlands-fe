@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import DaemonStatusIndicatorGeometryHost from './DaemonStatusIndicatorGeometryHost.svelte';
 
 test.use({ viewport: { width: 1000, height: 760 }, reducedMotion: 'reduce' });

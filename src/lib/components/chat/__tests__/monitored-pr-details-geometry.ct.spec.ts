@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import MonitoredPrsRowGeometryHost from './MonitoredPrsRowGeometryHost.svelte';
 
 test('aligns expanded details with the PR label as plain muted sentences', async ({

@@ -22,6 +22,8 @@ const mockState = vi.hoisted(() => {
 
   return {
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
+    hidesAgentLifecycleActions: store(false),
+    presencePeople: store<unknown[]>([]),
     activeAgentId: store('agent-1'),
     defaultModel: store('auggie:default'),
     dispatch: vi.fn(),
@@ -82,6 +84,10 @@ vi.mock('$store/renderer/store', async () => {
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
+  selectHidesAgentLifecycleActions: () => mockState.hidesAgentLifecycleActions,
+}));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentPresencePeople: () => mockState.presencePeople,
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectActiveAgentId: () => mockState.activeAgentId,

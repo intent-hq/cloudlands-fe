@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import Pickers from './initializer-pickers.preview.svelte';
 import InitialAgentPicker from './initial-agent-picker.preview.svelte';
@@ -185,6 +185,13 @@ for (const scenario of ['clone', 'long', 'remote'] as const) {
       '"branch":"feature/task-29"',
     );
     await expect(menu).toHaveCount(0);
+    // Committing through the search input must hand keyboard focus back to the trigger.
+    await expect(branch).toBeFocused();
+    await branch.press('Enter');
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(branch).toBeFocused();
   });
 }
 

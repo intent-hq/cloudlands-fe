@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import PanelHeaderIdentityHost from './mocks/PanelHeaderIdentityHost.svelte';
 
 const panelTypes = ['agent', 'note', 'file', 'terminal', 'browser', 'settings'] as const;

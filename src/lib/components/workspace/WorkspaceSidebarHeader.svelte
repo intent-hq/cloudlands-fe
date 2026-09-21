@@ -33,6 +33,7 @@
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+  import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     markKeySlotUnassigned,
     pinWorkspaceToKey,
@@ -378,6 +379,10 @@
   const pinnedKeySlot$ = selectWorkspacePinnedKeySlot(workspaceIdStore);
   const resolvedKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
 
+  // Owner-only actions (Transfer/Download, Delete) are refused by the daemon
+  // for collaborators (`require_owner`), so the menu hides them up front.
+  const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
+
   const microKeyAction: MenuAction | null = $derived.by(() => {
     const targetWorkspaceId = workspaceId || workspace?.id || '';
     if (!$microConnected$ || !targetWorkspaceId) return null;
@@ -410,7 +415,7 @@
   });
 
   const transferAction: MenuAction | null = $derived(
-    workspace
+    workspace && !$hidesOwnerActions$
       ? {
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
@@ -479,7 +484,7 @@
           variant="ghost"
           class="type-title relative z-10 h-auto cursor-text rounded border-none bg-transparent px-0 py-0.5 pr-1 text-left text-foreground
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-                 transition-all duration-150 leading-normal line-clamp-3
+                 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-normal line-clamp-3
                 focus-visible:outline focus-visible:outline-1
                  focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                  disabled:cursor-default disabled:opacity-50 {!workspace?.title
@@ -510,7 +515,7 @@
         class="type-body max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded bg-none py-0.5 text-foreground
                outline-none leading-snug
                focus:ring-none! focus:outline-none!
-               transition-all duration-150 disabled:opacity-50"
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
         style="field-sizing: content;"
         placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
       ></Textarea>
@@ -523,7 +528,7 @@
           ? 'italic text-ghost'
           : ''}
                max-w-full break-words whitespace-pre-wrap
-               transition-all duration-150 leading-snug
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug
                hover:text-foreground hover:opacity-80
                focus-visible:outline focus-visible:outline-1
                focus-visible:outline-ring focus-visible:outline-offset-[-1px]
@@ -566,7 +571,7 @@
               disabled={isSavingBranch}
               class="type-caption h-5 w-0 min-w-0 flex-1 rounded-sm bg-none px-1 py-0 leading-5 text-foreground
                      outline-none focus:ring-none! focus:outline-none!
-                     transition-all duration-150 disabled:opacity-50"
+                     transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
             />
           {:else}
@@ -580,7 +585,7 @@
               contentContainerClass="p-0! space-y-0!"
               showArrow={false}
               class="type-caption flex h-5 w-0 min-w-0 flex-1 cursor-text items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border-none bg-transparent p-0 text-left font-normal leading-5 text-muted-foreground
-                     transition-all duration-150 hover:text-foreground
+                     transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:text-foreground
                      focus-visible:outline focus-visible:outline-1
                      focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
@@ -622,7 +627,7 @@
           variant="ghost-light"
           size="icon-sm"
           aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
-          class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
+          class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
           disabled={isDeleting}
           data-workspace-actions-trigger
         >
@@ -646,7 +651,7 @@
             isWorkspaceRoot={true}
             onDelete={handleDelete}
             onClose={handleClose}
-            showDeleteOption={true}
+            showDeleteOption={!$hidesOwnerActions$}
             showFileNameCopy={false}
             {additionalActions}
           />

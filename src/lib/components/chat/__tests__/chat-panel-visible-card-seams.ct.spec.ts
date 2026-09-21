@@ -1,8 +1,10 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { AgentMessage } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { failOnConsoleErrors } from '../../../../test/ct-console-errors';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
+failOnConsoleErrors(test);
 test.afterEach(async ({ page }) => {
   expect(await page.pageErrors()).toEqual([]);
 });
@@ -97,6 +99,10 @@ for (const [scenario, between] of [
           }),
         ],
       },
+      // ChatPanel re-reads the queue via `agent.getQueue` on mount; this
+      // fixture seeds no queue, so the scripted daemon answers empty
+      // (intent-hq/intent#5276).
+      hooksConfig: { mockBackend: { 'agent.getQueue': { success: true, queue: [] } } },
     });
     const cards = component.getByTestId('event-wakeup-card');
     await expect(cards).toHaveCount(3);

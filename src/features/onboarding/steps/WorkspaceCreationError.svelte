@@ -113,7 +113,9 @@
         <Button
           variant="ghost"
           type="button"
-          class="shrink-0 rounded p-1.5 text-muted-foreground hover:text-foreground hover:bg-background/70 cursor-pointer"
+          size="icon-compact"
+          iconOnly
+          class="shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-background/70 cursor-pointer"
           aria-label={m.onboarding_creationError_copyCommand_ariaLabel()}
           onclick={() => copyCommand('gh auth login')}
         >

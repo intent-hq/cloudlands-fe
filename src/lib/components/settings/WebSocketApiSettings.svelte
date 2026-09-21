@@ -752,9 +752,11 @@
                 >
                 <Button
                   variant="ghost"
+                  size="icon-compact"
+                  iconOnly
                   type="button"
                   onclick={handleCopyTcAddress}
-                  class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                  class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                   title={m.settings_tunnel_tcAddress_copy()}
                 >
                   <Fa icon={faCopy} size="sm" />
@@ -914,28 +916,34 @@
               </code>
               <Button
                 variant="ghost"
+                size="icon-compact"
+                iconOnly
                 type="button"
                 onclick={() => (showToken = !showToken)}
-                class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                 title={showToken ? m.settings_wsApi_hideToken() : m.settings_wsApi_showToken()}
               >
                 <Fa icon={showToken ? faEyeSlash : faEye} size="sm" />
               </Button>
               <Button
                 variant="ghost"
+                size="icon-compact"
+                iconOnly
                 type="button"
                 onclick={handleCopy}
-                class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer"
+                class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                 title={m.settings_wsApi_copyToken()}
               >
                 <Fa icon={faCopy} size="sm" />
               </Button>
               <Button
                 variant="ghost"
+                size="icon-compact"
+                iconOnly
                 type="button"
                 onclick={handleRegenerate}
                 disabled={regenerating}
-                class="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
+                class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
                 title={m.settings_wsApi_regenerateToken()}
               >
                 {#if regenerating}
@@ -987,7 +995,7 @@
       <Button
         type="button"
         onclick={handleCloseQr}
-        class="mt-4 px-4 py-1.5 type-body font-medium text-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer"
+        class="mt-4 px-4 py-1.5 type-body font-medium text-foreground rounded-md transition-colors cursor-pointer"
       >
         {m.settings_wsApi_close()}
       </Button>

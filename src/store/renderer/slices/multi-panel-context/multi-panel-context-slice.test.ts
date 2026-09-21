@@ -9,6 +9,7 @@ import {
   clearSelection,
   toggleSelection,
   addSearchedItem,
+  clearChecked,
   type MultiPanelContextState,
   type PanelContextItem,
   type SelectionContextItem,
@@ -285,6 +286,93 @@ describe('multiPanelContextReducer', () => {
         addSearchedItem({ id: 's1', type: 'file', label: 'test.ts' }),
       );
       expect(state).toBe(stateWithPanel);
+    });
+  });
+
+  describe('clearChecked', () => {
+    it('should uncheck every checked panel and selection', () => {
+      const stateWithChecked: MultiPanelContextState = {
+        ...initialState,
+        panels: createCollection<PanelContextItem, 'id'>('id', [
+          makePanel({ id: 'p1', checked: true }),
+          makePanel({ id: 'p2', checked: false }),
+        ]),
+        selections: createCollection<SelectionContextItem, 'id'>('id', [
+          makeSelection({ id: 'sel-panel-1-tab-1', checked: true }),
+          makeSelection({
+            id: 'sel-panel-2-tab-2',
+            panelId: 'panel-2',
+            tabId: 'tab-2',
+            checked: false,
+          }),
+        ]),
+      };
+
+      const state = multiPanelContextReducer(stateWithChecked, clearChecked());
+
+      expect(getItems(state.panels).map((p) => [p.id, p.checked])).toEqual([
+        ['p1', false],
+        ['p2', false],
+      ]);
+      expect(getItems(state.selections).map((s) => [s.id, s.checked])).toEqual([
+        ['sel-panel-1-tab-1', false],
+        ['sel-panel-2-tab-2', false],
+      ]);
+    });
+
+    it('should remove search-added items and keep open-panel items unchecked', () => {
+      const stateWithSearch = multiPanelContextReducer(
+        withPanels(makePanel({ id: 'p1', checked: true })),
+        addSearchedItem({ id: 's1', type: 'file', label: 'searched.ts' }),
+      );
+
+      const state = multiPanelContextReducer(stateWithSearch, clearChecked());
+
+      expect(getItems(state.panels).map((p) => [p.id, p.checked])).toEqual([['p1', false]]);
+    });
+
+    it('should remove search-added items even when nothing is checked', () => {
+      const stateWithSearch = withPanels(
+        makePanel({ id: 'p1', checked: false }),
+        makePanel({ id: 's1', panelId: 'search', tabId: 's1', checked: false }),
+      );
+
+      const state = multiPanelContextReducer(stateWithSearch, clearChecked());
+
+      expect(state).not.toBe(stateWithSearch);
+      expect(getItems(state.panels).map((p) => p.id)).toEqual(['p1']);
+    });
+
+    it('should leave the selections collection untouched when only panels change', () => {
+      const stateWithChecked: MultiPanelContextState = {
+        ...initialState,
+        panels: createCollection<PanelContextItem, 'id'>('id', [
+          makePanel({ id: 'p1', checked: true }),
+        ]),
+        selections: createCollection<SelectionContextItem, 'id'>('id', [
+          makeSelection({ checked: false }),
+        ]),
+      };
+
+      const state = multiPanelContextReducer(stateWithChecked, clearChecked());
+
+      expect(state.selections).toBe(stateWithChecked.selections);
+      expect(getItems(state.panels)[0].checked).toBe(false);
+    });
+
+    it('should return the same state when nothing is checked and no search items exist', () => {
+      const stateUnchecked: MultiPanelContextState = {
+        ...initialState,
+        panels: createCollection<PanelContextItem, 'id'>('id', [
+          makePanel({ id: 'p1', checked: false }),
+        ]),
+        selections: createCollection<SelectionContextItem, 'id'>('id', [
+          makeSelection({ checked: false }),
+        ]),
+      };
+
+      expect(multiPanelContextReducer(stateUnchecked, clearChecked())).toBe(stateUnchecked);
+      expect(multiPanelContextReducer(initialState, clearChecked())).toBe(initialState);
     });
   });
 });

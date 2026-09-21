@@ -560,12 +560,14 @@
                       {term}
                       <Button
                         variant="ghost"
+                        size="icon-compact"
+                        iconOnly
                         type="button"
-                        class="text-muted-foreground hover:text-danger cursor-pointer transition-colors"
+                        class="size-5 text-muted-foreground hover:text-danger cursor-pointer transition-colors"
                         aria-label={m.settings_voice_vocabulary_remove_ariaLabel({ term })}
                         onclick={() => handleRemoveVocabularyTerm(term)}
                       >
-                        <Fa icon={faXmark} class="w-2.5 h-2.5" />
+                        <Fa icon={faXmark} />
                       </Button>
                     </span>
                   {/each}

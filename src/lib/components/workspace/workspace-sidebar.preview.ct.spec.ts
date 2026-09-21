@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -114,6 +114,7 @@ test('keeps assigned and unassigned status and title columns aligned through hov
         return {
           titleX: title.getBoundingClientRect().x,
           statusX: status.getBoundingClientRect().x,
+          height: row.getBoundingClientRect().height,
           overflow: row.scrollWidth - row.clientWidth,
         };
       }),
@@ -135,9 +136,31 @@ test('keeps assigned and unassigned status and title columns aligned through hov
       Math.min(...initial.map((rect) => rect.statusX)),
   ).toBeLessThanOrEqual(1);
   expect(initial.every((rect) => rect.overflow <= 1)).toBe(true);
-  const badgeBox = (await badge.boundingBox())!;
-  expect(badgeBox.width).toBeLessThanOrEqual(20);
-  expect(badgeBox.height).toBeLessThanOrEqual((await rows.first().boundingBox())!.height);
+  expect(
+    Math.max(...initial.map((rect) => rect.height)) -
+      Math.min(...initial.map((rect) => rect.height)),
+  ).toBeLessThanOrEqual(1);
+  const badgeFit = await badge.evaluate((node) => {
+    const row = node.closest<HTMLElement>('[data-workspace-card-row]')!;
+    const rect = (el: Element) => {
+      const { left, right, top, bottom } = el.getBoundingClientRect();
+      return { left, right, top, bottom };
+    };
+    const overlaps = (a: ReturnType<typeof rect>, b: ReturnType<typeof rect>) =>
+      a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+    const badgeRect = rect(node);
+    const rowRect = rect(row);
+    return {
+      insideRow:
+        badgeRect.top >= rowRect.top - 1 &&
+        badgeRect.bottom <= rowRect.bottom + 1 &&
+        badgeRect.left >= rowRect.left - 1 &&
+        badgeRect.right <= rowRect.right + 1,
+      overlapsStatus: overlaps(badgeRect, rect(row.querySelector('[data-workspace-status]')!)),
+      overlapsTitle: overlaps(badgeRect, rect(row.querySelector('[data-workspace-card-title]')!)),
+    };
+  });
+  expect(badgeFit).toEqual({ insideRow: true, overlapsStatus: false, overlapsTitle: false });
 
   await rows.nth(1).hover();
   expect(await positions()).toEqual(initial);

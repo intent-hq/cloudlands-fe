@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import DeleteWarningDialog from '../DeleteWarningDialog.svelte';
 import type { LocalChangesWarning } from '$store/renderer/slices/workspace-operations/workspace-operations-types';

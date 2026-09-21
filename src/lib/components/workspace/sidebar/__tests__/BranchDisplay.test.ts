@@ -261,4 +261,54 @@ describe('BranchDisplay', () => {
     expect(mockInvoke).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
   });
+
+  it('with canChangeTrunk=false renders the read-only trunk and never calls workspace.update', async () => {
+    const { notify } = await import('$lib/components/patterns/notify');
+    vi.mocked(notify.error).mockClear();
+
+    const { container } = await renderBranchDisplay({ canChangeTrunk: false, trunkBranch: 'main' });
+
+    expect(container.querySelector('[data-testid="branch-selector"]')).toBeNull();
+    expect(
+      container.querySelector<HTMLInputElement>('[data-branch-field="target"] input')?.value,
+    ).toBe('main');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it('with isOwner=false never enters branch-rename mode', async () => {
+    const { container } = await renderBranchDisplay({ isOwner: false, canChangeTrunk: false });
+    const branchBtn = container.querySelector(
+      '[data-testid="branch-name-button"]',
+    ) as HTMLButtonElement;
+    expect(branchBtn?.textContent).toContain('feature/branch');
+    await fireEvent.click(branchBtn);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(container.querySelector('input[type="text"]')).toBeNull();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('ignores a BranchSelector onchange echoing the current trunk (no workspace.update)', async () => {
+    const { notify } = await import('$lib/components/patterns/notify');
+    vi.mocked(notify.error).mockClear();
+
+    // MockBranchSelector always reports 'develop'; make that the current trunk
+    // so the change is an echo of the initial auto-selection.
+    const { container } = await renderBranchDisplay({
+      canChangeTrunk: true,
+      trunkBranch: 'develop',
+    });
+    const changeBtn = container.querySelector(
+      '[data-testid="branch-selector-change"]',
+    ) as HTMLButtonElement;
+    await fireEvent.click(changeBtn);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspace/setWorkspaceEntity' }),
+    );
+    expect(notify.error).not.toHaveBeenCalled();
+  });
 });

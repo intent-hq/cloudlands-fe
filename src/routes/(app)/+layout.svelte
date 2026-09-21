@@ -44,6 +44,7 @@
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
   import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
+  import ShareWorkspaceDialogHost from '$lib/components/modals/ShareWorkspaceDialogHost.svelte';
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
@@ -87,6 +88,9 @@
   import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
+    selectHidesAgentLifecycleActions,
+    selectIsCollaboratorOnlyClient,
+    selectIsWorkspaceCollaborator,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -151,6 +155,13 @@
   } from '$features/quit-confirmation/quit-confirmation-service';
   import QuitConfirmationModal from '$lib/components/modals/QuitConfirmationModal.svelte';
   import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation';
+  import {
+    installInviteConsentService,
+    respondToInviteConsent,
+  } from '$features/invite-consent/invite-consent-service';
+  import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
+  import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
+  import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
@@ -164,6 +175,8 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  // Workspace creation (repo picker) is administrator-only (multiplayer w3).
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
@@ -234,6 +247,10 @@
   // Quit confirmation modal state (main-process quit/restart interception)
   let showQuitConfirmationModal = $state(false);
   let quitConfirmationPayload = $state<QuitConfirmationShowPayload | null>(null);
+
+  // Invite consent modal state (main-process intent://invite GitHub identity prompt)
+  let showInviteConsentModal = $state(false);
+  let inviteConsentPayload = $state<InviteConsentShowPayload | null>(null);
 
   // The root route is a minimal empty state and fresh windows boot at
   // /workspace/new, which renders onboarding. Gate boot (and legacy `/`)
@@ -347,6 +364,18 @@
       onDismiss: () => {
         showQuitConfirmationModal = false;
         quitConfirmationPayload = null;
+      },
+    });
+
+    // Initialize invite-consent service (in-app modal for the invite GitHub identity check)
+    const disposeInviteConsent = installInviteConsentService({
+      onShow: (payload) => {
+        inviteConsentPayload = payload;
+        showInviteConsentModal = true;
+      },
+      onDismiss: () => {
+        showInviteConsentModal = false;
+        inviteConsentPayload = null;
       },
     });
 
@@ -499,7 +528,11 @@
       getCurrentPath: () => window.location.pathname,
       navigate: (path) => goto(path),
       openNewWorkspace: () => appStore.dispatch(setShowCreateModal(true)),
-      onCreateAgent: (workspaceId) => appStore.dispatch(createAgentRequested(workspaceId)),
+      onCreateAgent: (workspaceId) => {
+        // `agent.create` is refused (-32003) for a collaborator connection.
+        if (selectHidesAgentLifecycleActions.select(appStore.state, workspaceId)) return;
+        appStore.dispatch(createAgentRequested(workspaceId));
+      },
       onCreateNote: (workspaceId) => appStore.dispatch(createNoteRequested(workspaceId)),
       onCreateTerminal: (workspaceId) =>
         appStore.dispatch(createPanelTerminalRequested(workspaceId)),
@@ -517,6 +550,9 @@
           }
         : {}),
       onWorkspaceTabMoved: (detail) => dispatchWindowEvent(WORKSPACE_TAB_MOVED_EVENT, detail),
+      ...(hasCapability('windowChrome')
+        ? { closeWindow: () => invoke(IPC_CHANNELS.WINDOW.CLOSE) }
+        : {}),
       resolveBinding: getEffectiveShortcut,
     });
 
@@ -641,6 +677,9 @@
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
     // Registered globally so it works on workspace and non-workspace pages alike.
     const toggleTerminal = () => {
+      // Collaborators (multiplayer w3) are refused on terminal methods: no root
+      // overlay for a collaborator-only client, none for a collaborator workspace.
+      if ($isCollaboratorOnlyClient$) return;
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
@@ -648,6 +687,7 @@
         selectedWorkspaceId: $currentWorkspaceTabId,
         routeWorkspaceId: currentWorkspaceId,
       });
+      if (selectIsWorkspaceCollaborator.select(appStore.state, terminalContextId)) return;
       appStore.dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
@@ -825,6 +865,7 @@
       window.removeEventListener('keydown', handleBrowserNavigation);
       disposeInterruptedAgents();
       disposeQuitConfirmation();
+      disposeInviteConsent();
     };
   });
 
@@ -968,7 +1009,9 @@
             </div>
 
             <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->
-            <RootQuakeTerminalOverlay />
+            {#if !$isCollaboratorOnlyClient$}
+              <RootQuakeTerminalOverlay />
+            {/if}
           </main>
         </div>
       </div>
@@ -1058,7 +1101,7 @@
 
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
-    open={$showCreateModal$}
+    open={$showCreateModal$ && !$isCollaboratorOnlyClient$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 
@@ -1070,6 +1113,9 @@
 
   <!-- Redux-owned Import-from-file wizard host (opened from the File menu) -->
   <ImportWorkspaceModalHost />
+
+  <!-- Redux-owned owner-side Share dialog host (sidebar kebab + tab context menu) -->
+  <ShareWorkspaceDialogHost />
 
   <SetupPromptDialog />
 
@@ -1114,6 +1160,19 @@
       respondToQuitConfirmation(proceed);
     }}
   />
+
+  <!-- Invite Consent Modal (shown when main runs an intent://invite GitHub identity check) -->
+  <InviteConsentModal
+    bind:open={showInviteConsentModal}
+    payload={inviteConsentPayload}
+    onRespond={(action) => {
+      if (action === 'cancel') inviteConsentPayload = null;
+      respondToInviteConsent(action);
+    }}
+  />
+
+  <!-- Invite notice (intent://invite join failed / plaintext credential warning) -->
+  <InviteNoticeHost />
 
   {#if import.meta.env.DEV}
     <DebugPanel />

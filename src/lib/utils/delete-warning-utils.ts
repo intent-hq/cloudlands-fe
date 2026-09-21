@@ -4,6 +4,7 @@
 
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
+import { ensureWorkspacePullRequestPool } from '$features/workspace/workspace-detail-hydration';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
 import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
@@ -157,6 +158,9 @@ export interface ActiveWorkNames {
  * that a workspace archive/delete would stop, plus its unmerged (Open/Draft)
  * PRs and — only when `includeLocalChanges` is set — its local git changes.
  * Bulk flows leave it off so they never fan out `workspace.localChanges`.
+ * The open-PR count needs the full pool, so a `workspace.list`-capped
+ * `pullRequests` row (`pullRequestsTotal` above the stored count) is
+ * completed via one `workspace.get` first; complete rows issue no read.
  * @param workspaceId - The workspace ID to check
  */
 export async function getActiveWorkNames(
@@ -166,6 +170,7 @@ export async function getActiveWorkNames(
   const [hookNames, localChanges] = await Promise.all([
     getActiveHookNames(workspaceId),
     includeLocalChanges ? getLocalChanges(workspaceId) : Promise.resolve(null),
+    ensureWorkspacePullRequestPool(workspaceId),
   ]);
   return {
     agentNames: getRunningAgentNames(workspaceId),

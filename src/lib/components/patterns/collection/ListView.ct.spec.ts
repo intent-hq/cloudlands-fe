@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import CollectionStateHarness from './CollectionStateHarness.svelte';
 
 test('virtual rows fill the viewport on mount and resize without scrolling', async ({

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  ArtifactGoneError,
   DEFAULT_REPO,
   GH_MAX_BUFFER,
   GhError,
@@ -472,6 +473,41 @@ describe('collectRun shard resolution', () => {
     ).toEqual([]);
     expect(calls).toHaveLength(1);
   });
+
+  it('falls back to the job log when a listed artifact is gone by download time', () => {
+    const { runner, calls } = fakeRunner({ logs: { 22: LOG_WITH_SUMMARY, 33: LOG_WITH_SUMMARY } });
+    runner.jsonReport = (_repo: string, _runId: string, name: string) => {
+      calls.push(`download ${name}`);
+      throw new ArtifactGoneError(`gh run download failed: error downloading ${name}: HTTP 410`);
+    };
+    const { shards, warnings } = collectRun({
+      runId: RUN_ID,
+      repo: DEFAULT_REPO,
+      attempt: undefined,
+      runner,
+    });
+    expect(shards[1].source).toBe('log');
+    expect(shards[1].cases).toEqual([
+      expect.objectContaining({ status: 'flaky', title: 'wobbles' }),
+    ]);
+    expect(warnings).toEqual([
+      'shard 2/4: artifact playwright-ct-report-2-of-4 disappeared before it could be downloaded; using job logs',
+      expect.stringMatching(/^shard 2\/4: no JSON report artifact/),
+      expect.stringMatching(/^shard 3\/4: no JSON report artifact/),
+    ]);
+    expect(calls).toContain('download playwright-ct-report-2-of-4');
+    expect(calls).toContain('log 22');
+  });
+
+  it('still propagates a download failure that does not mean the artifact is gone', () => {
+    const { runner } = fakeRunner({ logs: { 22: LOG_WITH_SUMMARY } });
+    runner.jsonReport = () => {
+      throw new GhError('gh run download failed: HTTP 401: Bad credentials');
+    };
+    expect(() =>
+      collectRun({ runId: RUN_ID, repo: DEFAULT_REPO, attempt: undefined, runner }),
+    ).toThrow(GhError);
+  });
 });
 
 describe('createGhRunner gh argv', () => {
@@ -502,6 +538,45 @@ describe('createGhRunner gh argv', () => {
         '/tmp/ct-run-failures-test/playwright-ct-report-1-of-4',
       ],
     ]);
+  });
+
+  // `gh run download` re-lists the run and skips expired artifacts, so an
+  // artifact that vanished since our listing is reported one of three ways.
+  const ARCHIVE_URL = 'https://api.github.com/repos/o/r/actions/artifacts/900/zip';
+  it.each([
+    `error downloading playwright-ct-report-1-of-4: HTTP 404: Not Found (${ARCHIVE_URL})`,
+    `error downloading playwright-ct-report-1-of-4: HTTP 410: Artifact has expired (${ARCHIVE_URL})`,
+    'no artifact matches any of the names or patterns provided',
+    'no valid artifacts found to download',
+  ])('classifies a gone-artifact download failure — %s', (stderr) => {
+    const run = () => {
+      throw new GhError(`gh run download failed: ${stderr}`);
+    };
+    const runner = createGhRunner({ tmpDir: '/tmp/ct-run-failures-test', run });
+    expect(() => runner.jsonReport('o/r', RUN_ID, 'playwright-ct-report-1-of-4')).toThrow(
+      ArtifactGoneError,
+    );
+  });
+
+  it.each([
+    'gh run download failed: HTTP 401: Bad credentials (https://api.github.com/graphql)',
+    'gh run download failed: error fetching artifacts: HTTP 404: Not Found (https://api.github.com/repos/o/r/actions/runs/1/artifacts)',
+    'gh run download failed: error connect: connection refused',
+    'gh run download output exceeded the 4096 byte buffer limit',
+  ])('rethrows other download failures unchanged — %s', (message) => {
+    const run = () => {
+      throw new GhError(message);
+    };
+    const runner = createGhRunner({ tmpDir: '/tmp/ct-run-failures-test', run });
+    let caught: unknown;
+    try {
+      runner.jsonReport('o/r', RUN_ID, 'playwright-ct-report-1-of-4');
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(GhError);
+    expect(caught).not.toBeInstanceOf(ArtifactGoneError);
+    expect((caught as Error).message).toBe(message);
   });
 });
 
@@ -640,5 +715,75 @@ describe('main', () => {
     const help = capture();
     expect(main(['--help'], { createRunner: () => fakeRunner().runner, ...help.io })).toBe(0);
     expect(help.stdout()).toContain('usage:');
+  });
+
+  // The real gh runner over a fake `gh`: one red shard 2 whose artifact is
+  // listed as valid but fails to download with `downloadError`.
+  function ghRunnerWithVanishingArtifact(downloadError: string) {
+    const jobs = {
+      total_count: 1,
+      jobs: [
+        { id: 22, name: 'Component Tests (shard 2/4)', conclusion: 'failure', run_attempt: 1 },
+      ],
+    };
+    const artifacts = {
+      total_count: 1,
+      artifacts: [{ id: 900, name: 'playwright-ct-report-2-of-4', expired: false }],
+    };
+    const log = [...requiredLaneHeader(2), ...REQUIRED_FAILED_SUMMARY].join('\n');
+    const argv: string[][] = [];
+    const run = (args: string[]) => {
+      argv.push(args);
+      if (args[0] === 'run') throw new GhError(`gh run download failed: ${downloadError}`);
+      if (args[1] === '--allow-escape-sequences') return log;
+      const path = args[1];
+      if (path.includes('/artifacts')) return JSON.stringify(artifacts);
+      if (path.includes('/jobs')) return JSON.stringify(jobs);
+      throw new Error(`unexpected gh ${args.join(' ')}`);
+    };
+    return {
+      argv,
+      createRunner: ({ tmpDir }: { tmpDir: string }) => createGhRunner({ tmpDir, run }),
+    };
+  }
+
+  it.each([
+    [
+      'HTTP 404',
+      'error downloading playwright-ct-report-2-of-4: HTTP 404: Not Found (https://api.github.com/repos/intent-hq/cloudlands-fe/actions/artifacts/900/zip)',
+    ],
+    [
+      'HTTP 410',
+      'error downloading playwright-ct-report-2-of-4: HTTP 410: Artifact has expired (https://api.github.com/repos/intent-hq/cloudlands-fe/actions/artifacts/900/zip)',
+    ],
+  ])(
+    'falls back to the job log and exits 0 when the listed artifact fails to download with %s',
+    (_label, downloadError) => {
+      const { io, stdout, stderr } = capture();
+      const { argv, createRunner } = ghRunnerWithVanishingArtifact(downloadError);
+      const code = main([RUN_ID, '--json'], { createRunner, ...io });
+      expect(code).toBe(0);
+      const parsed = JSON.parse(stdout());
+      expect(parsed.totals).toEqual({ failed: 1, flaky: 0, redShards: 1 });
+      expect(parsed.shards[0].source).toBe('log');
+      expect(parsed.shards[0].cases).toEqual([REQUIRED_CASE]);
+      expect(stderr()).toContain(
+        'warning: shard 2/4: artifact playwright-ct-report-2-of-4 disappeared before it could be downloaded; using job logs',
+      );
+      expect(stderr()).toMatch(/warning: shard 2\/4: no JSON report artifact/);
+      expect(stderr()).not.toMatch(/error:/);
+      expect(argv.map((a) => a[0])).toEqual(['api', 'api', 'run', 'api']);
+    },
+  );
+
+  it('still exits 3 without touching job logs when the download fails for another reason', () => {
+    const { io, stdout, stderr } = capture();
+    const { argv, createRunner } = ghRunnerWithVanishingArtifact(
+      'HTTP 401: Bad credentials (https://api.github.com/graphql)',
+    );
+    expect(main([RUN_ID, '--json'], { createRunner, ...io })).toBe(3);
+    expect(stdout()).toBe('');
+    expect(stderr()).toContain('error: gh run download failed: HTTP 401: Bad credentials');
+    expect(argv.some((a) => a.includes('--allow-escape-sequences'))).toBe(false);
   });
 });

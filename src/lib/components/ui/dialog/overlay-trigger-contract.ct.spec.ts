@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import OverlayTriggerContractHarness from './OverlayTriggerContractHarness.svelte';
 
 for (const name of ['Dialog default trigger', 'Tooltip default trigger']) {

@@ -170,8 +170,9 @@
         <div class="flex items-center gap-0.5 sticky left-0">
           <Button
             variant="ghost"
-            size="sm"
-            class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
+            size="icon-compact"
+            iconOnly
+            class="size-5 opacity-60 hover:opacity-100"
             onclick={goToPrevState}
             aria-label={m.diagram_controls_previousStep_ariaLabel()}
           >
@@ -179,8 +180,9 @@
           </Button>
           <Button
             variant="ghost"
-            size="sm"
-            class="h-5 w-5 p-0 opacity-60 hover:opacity-100"
+            size="icon-compact"
+            iconOnly
+            class="size-5 opacity-60 hover:opacity-100"
             onclick={goToNextState}
             aria-label={m.diagram_controls_nextStep_ariaLabel()}
           >

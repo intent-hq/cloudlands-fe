@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import ComboboxHarness from '../combobox/combobox.test-harness.svelte';
 import MenuHarness from '../menu/MenuTestHarness.svelte';

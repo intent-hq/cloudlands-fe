@@ -1517,7 +1517,7 @@
           <!-- Local repo: folder picker button -->
           <Button
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 bg-sidebar text-left cursor-pointer"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 text-left cursor-pointer"
             onclick={handleSelectFolder}
           >
             <span
@@ -1754,12 +1754,14 @@
                 <Button
                   variant="ghost"
                   type="button"
+                  size="icon-compact"
+                  iconOnly
                   onclick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
                     handleRemoveRemoteSetup(setup.id);
                   }}
-                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
+                  class="ml-1 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
                   title={m.workspace_repoSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />

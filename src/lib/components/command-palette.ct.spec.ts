@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../test/ct-test';
 import CommandPalettePreview from './command-palette.preview.svelte';
 
 for (const width of [1280, 360]) {

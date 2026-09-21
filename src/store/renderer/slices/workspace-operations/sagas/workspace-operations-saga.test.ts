@@ -810,12 +810,15 @@ describe('workspaceOperationsSaga', () => {
       title: 'New space',
       repositoryPath: '/repo',
       baseRef: 'feature/x',
+      // The payload names no specialist, so the effective specialist is
+      // General and the payload's "Coordinator" name is not applied.
       initialAgent: {
-        name: 'Coordinator',
+        name: 'Agent',
         prompt: 'Edited prompt',
         metadata: { isInitialAgent: true },
       },
     });
+    expect(mocks.create.mock.calls[0]?.[0]?.initialAgent?.specialist).toBeUndefined();
     expect(mocks.create.mock.calls[0]?.[0]?.initialAgent).not.toHaveProperty('agentId');
     expect(getItem(run.state().workspace.workspaces, 'ws-created')).toBeDefined();
     expect(run.state().proposalLifecycle['create-success']).toMatchObject({

@@ -19,12 +19,8 @@ export const listMetadata = parseUiComponentMetadata({
   owner: '012-E',
   callers: [
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
-    'src/lib/components/browser/BrowserPanel.svelte',
     'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
     'src/lib/components/file-explorer/file-tree-view.svelte',
-    'src/lib/components/file-tracking/FileChangesList.svelte',
-    'src/lib/components/file-tracking/TreeNode.svelte',
-    'src/lib/components/notes/NotesPanel.svelte',
     'src/lib/components/terminal/QuakeTerminalOverlay.svelte',
     'src/lib/components/terminal/TerminalSidebar.svelte',
     'src/lib/components/workspace/WorkspaceAgentsList.svelte',

@@ -13,7 +13,11 @@ export interface ReplaceAgentSessionLike {
  * Eligible only when ALL gates pass:
  * - harness gate: the session's creation-time harnessFeatures snapshot
  *   (PROTOCOL §5.5) has `peerAgents === true` — an absent snapshot means
- *   ineligible; the live `agentFeatures.peerAgents` setting is never read
+ *   ineligible; the live `agentFeatures.peerAgents` setting is never read.
+ *   The snapshot is detail-only (stripped from `agent.list` rows), so a
+ *   session known only from a list row is ineligible until an `agent.get`
+ *   has filled it in — callers ensure that read (`ensureAgentSessionLoaded`)
+ *   and re-evaluate reactively rather than treating a first `false` as final
  * - top-level: no `createdByAgentId` / `parentAgentId` in either metadata
  *   record (`metadata` or its documented alternative location `agentMetadata`)
  * - non-background: neither `isBackground` nor either metadata record's
