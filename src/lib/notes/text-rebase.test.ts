@@ -575,6 +575,239 @@ describe('plain-text ↔ markdown alignment of repeated paragraphs', () => {
       expect(bToA(markdownStarts[i] + 4), `paragraph ${i}`).toBe(plainStarts[i] + 4);
     }
   });
+
+  /** Offset of the `n`-th (0-based) occurrence of `needle` in `text`, plus `into`. */
+  const nth = (text: string, needle: string, n: number, into = 0) => {
+    let at = -1;
+    for (let i = 0; i <= n; i += 1) at = text.indexOf(needle, at + 1);
+    if (at === -1)
+      throw new Error(`${JSON.stringify(needle)} #${n} not in ${JSON.stringify(text)}`);
+    return at + into;
+  };
+
+  it.each<
+    [
+      string,
+      string,
+      string,
+      Array<[plainNeedle: [string, number], markdownNeedle: [string, number]]>,
+    ]
+  >([
+    [
+      'a word split by formatting',
+      '**Repe**ated heading\n\nRepeated heading',
+      'Repeated heading\nRepeated heading',
+      [
+        [
+          ['Repe', 0],
+          ['Repe', 0],
+        ],
+        [
+          ['ated', 0],
+          ['ated', 0],
+        ],
+        [
+          ['Repe', 1],
+          ['Repe', 1],
+        ],
+      ],
+    ],
+    [
+      'a line without a word',
+      '**!!!!** ????????\n\n!!!! ????????',
+      '!!!! ????????\n!!!! ????????',
+      [
+        [
+          ['!!!!', 0],
+          ['!!!!', 0],
+        ],
+        [
+          ['????', 0],
+          ['????', 0],
+        ],
+        [
+          ['!!!!', 1],
+          ['!!!!', 1],
+        ],
+      ],
+    ],
+    [
+      'accented and astral characters',
+      '**Répeated** 😀 heading\n\nRépeated 😀 heading',
+      'Répeated 😀 heading\nRépeated 😀 heading',
+      [
+        [
+          ['Répe', 0],
+          ['Répe', 0],
+        ],
+        [
+          ['heading', 0],
+          ['heading', 0],
+        ],
+        [
+          ['Répe', 1],
+          ['Répe', 1],
+        ],
+      ],
+    ],
+    [
+      'blank lines around both paragraphs',
+      '\n\n**Repeated** heading\n\n\n\nRepeated heading\n\n',
+      '\n\nRepeated heading\n\n\nRepeated heading',
+      [
+        [
+          ['Repe', 0],
+          ['Repe', 0],
+        ],
+        [
+          ['Repe', 1],
+          ['Repe', 1],
+        ],
+      ],
+    ],
+    [
+      'an earlier verbatim copy on a hard-break continuation line',
+      '- span text \npeer markdown render\n\n**pee**r markdown',
+      'span text\uFFFCpeer markdown render\npeer markdown',
+      [
+        [
+          ['peer', 0],
+          ['peer', 0],
+        ],
+        [
+          ['pee', 1],
+          ['pee', 1],
+        ],
+        [
+          ['r markdown', 1],
+          ['r markdown', 1],
+        ],
+      ],
+    ],
+    [
+      'a later copy of a formatted word on the same line',
+      '- 😀 *alignment* ñandú. alignment peer',
+      '😀 alignment ñandú. alignment peer',
+      [
+        [
+          ['alig', 0],
+          ['alig', 0],
+        ],
+        [
+          ['ñand', 0],
+          ['ñand', 0],
+        ],
+        [
+          ['alig', 1],
+          ['alig', 1],
+        ],
+      ],
+    ],
+    [
+      'the next words inside a link destination',
+      'caret [render](https://sync/selection/editor) sync\n\n**sel**ection daemon',
+      'caret render sync\nselection daemon',
+      [
+        [
+          ['rend', 0],
+          ['rend', 0],
+        ],
+        [
+          ['sync', 0],
+          ['sync', 1],
+        ],
+        [
+          ['sel', 0],
+          ['sel', 1],
+        ],
+        [
+          ['ection', 0],
+          ['ection', 1],
+        ],
+      ],
+    ],
+  ])(
+    'anchors the first paragraph onto itself with %s',
+    async (_name, markdown, expectedPlain, pairs) => {
+      const plain = await projectWithEditor(markdown);
+      expect(plain).toBe(expectedPlain);
+      const { aToB, bToA } = withoutDeadline(() =>
+        createBidirectionalOffsetMapper(plain, markdown),
+      );
+      for (const [[plainNeedle, i], [markdownNeedle, j]] of pairs) {
+        const p = nth(plain, plainNeedle, i, 2);
+        const m = nth(markdown, markdownNeedle, j, 2);
+        expect(aToB(p), `${plainNeedle} #${i} →`).toBe(m);
+        expect(bToA(m), `${markdownNeedle} #${j} ←`).toBe(p);
+      }
+    },
+  );
+
+  it.each<[string, string, string, [string, number]]>([
+    [
+      'the words of the next line in a URL',
+      '[x](https://Repeated/heading)\n\nRepeated heading',
+      'x\nRepeated heading',
+      ['Repeated heading', 0],
+    ],
+    [
+      'the words of the next line in an earlier line',
+      '**Repeated** other heading\n\nRepeated heading',
+      'Repeated other heading\nRepeated heading',
+      ['Repeated heading', 0],
+    ],
+  ])(
+    'keeps a verbatim line in place with %s',
+    async (_name, markdown, expectedPlain, [needle, n]) => {
+      const plain = await projectWithEditor(markdown);
+      expect(plain).toBe(expectedPlain);
+      const { aToB, bToA } = withoutDeadline(() =>
+        createBidirectionalOffsetMapper(plain, markdown),
+      );
+      for (let into = 1; into < needle.length; into += 1) {
+        const p = nth(plain, needle, n, into);
+        const m = nth(markdown, needle, n, into);
+        expect(aToB(p), `${needle}[${into}] →`).toBe(m);
+        expect(bToA(m), `${needle}[${into}] ←`).toBe(p);
+      }
+    },
+  );
+
+  it('keeps a list item in place after a fence and formatted items sharing its first word', async () => {
+    const markdown = [
+      '```ts',
+      'const a = one(two);',
+      '```',
+      '',
+      '- Note text note selection. **markdown markdown** presence markdown editor.',
+      '- Span markdown sync editor. **render sync** selection workspace note.',
+      '- Span projection selection caret span sync editor span.',
+      '- Presence presence note peer alignment peer note.',
+    ].join('\n');
+    const plain = await projectWithEditor(markdown);
+    expect(plain).toBe(
+      [
+        'const a = one(two);',
+        'Note text note selection. markdown markdown presence markdown editor.',
+        'Span markdown sync editor. render sync selection workspace note.',
+        'Span projection selection caret span sync editor span.',
+        'Presence presence note peer alignment peer note.',
+      ].join('\n'),
+    );
+    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    // The words occur in the same order on both sides, so a forward scan
+    // locates each one independently of the alignment under test.
+    let plainPos = 0;
+    let markdownPos = 0;
+    for (const word of plain.match(/[a-z]{3,}/gi) ?? []) {
+      const p = plain.indexOf(word, plainPos);
+      const m = markdown.indexOf(word, markdownPos);
+      expect(aToB(p + 1), `${word} →`).toBe(m + 1);
+      expect(bToA(m + 1), `${word} ←`).toBe(p + 1);
+      plainPos = p + word.length;
+      markdownPos = m + word.length;
+    }
+  });
 });
 
 describe('alignment of blocks that never anchor', () => {
@@ -622,6 +855,172 @@ describe('alignment of blocks that never anchor', () => {
     expect(aToB(inTail)).toBe(b.length + tail.indexOf('share'));
     expect(bToA(b.length + tail.indexOf('share'))).toBe(inTail);
   });
+});
+
+describe('alignment over a corpus of small notes', () => {
+  /** A markdown piece paired with what the editor projects it to. */
+  type Atom = [markdown: string, plain: string];
+
+  /**
+   * A small synthetic note built from atoms whose projection is modelled
+   * independently of the alignment: headings, split-word and punctuation-only
+   * formatting, URLs, fenced code, blank-line runs, soft wraps, unicode, and
+   * paragraphs repeated verbatim (formatted first, plain later). The atoms are
+   * the oracle: an offset strictly inside an atom shared by both sides must map
+   * to the same offset inside the same atom.
+   */
+  function generateSmallNote(seed: number): Atom[] {
+    const rng = mulberry32(seed);
+    const pick = () => WORDS[Math.floor(rng() * WORDS.length)];
+    const unicode = ['Répétition', 'naïve', '日本語', '😀', 'ñandú'];
+    const words = (n: number) => Array.from({ length: n }, pick).join(' ');
+    const shared = (text: string): Atom => [text, text];
+    const syntax = (md: string): Atom => [md, ''];
+    const sentence = (): Atom[] => {
+      const roll = rng();
+      if (roll < 0.25) return [shared(words(2 + Math.floor(rng() * 5)))];
+      if (roll < 0.4) {
+        const [head, tail] = [pick(), pick()];
+        return [
+          syntax('**'),
+          shared(head.slice(0, 3)),
+          syntax('**'),
+          shared(`${head.slice(3)} ${tail}`),
+        ];
+      }
+      if (roll < 0.55)
+        return [syntax('**'), shared(words(2)), syntax('**'), shared(` ${words(2)}`)];
+      if (roll < 0.65) {
+        return [
+          shared(`${pick()} `),
+          syntax('['),
+          shared(pick()),
+          syntax(`](https://${pick()}/${pick()}/${pick()})`),
+          shared(` ${pick()}`),
+        ];
+      }
+      if (roll < 0.75) return [syntax('**'), shared('!!!!'), syntax('**'), shared(' ????????')];
+      if (roll < 0.85) {
+        return [
+          shared(`${unicode[Math.floor(rng() * unicode.length)]} `),
+          syntax('*'),
+          shared(pick()),
+          syntax('*'),
+          shared(` ${unicode[Math.floor(rng() * unicode.length)]}`),
+        ];
+      }
+      return [shared(words(3)), [' \n', '\uFFFC'], shared(words(3))];
+    };
+    const paragraph = (): Atom[] => [
+      ...sentence(),
+      ...(rng() < 0.5 ? [shared('. '), ...sentence()] : []),
+    ];
+
+    const blocks: Atom[][] = [];
+    const plainParagraphs: string[] = [];
+    const count = 3 + Math.floor(rng() * 6);
+    for (let i = 0; i < count; i += 1) {
+      const roll = rng();
+      let block: Atom[];
+      if (roll < 0.12)
+        block = [syntax('#'.repeat(1 + Math.floor(rng() * 3)) + ' '), shared(words(3))];
+      else if (roll < 0.22) {
+        const lines = Array.from(
+          { length: 1 + Math.floor(rng() * 3) },
+          () => `${pick()} = ${pick()};`,
+        );
+        block = [syntax('```\n'), shared(lines.join('\n')), syntax('\n```')];
+      } else if (roll < 0.4) {
+        const items = Array.from({ length: 2 + Math.floor(rng() * 3) }, (_, j) => [
+          ...(j > 0 ? [[`\n`, '\n'] as Atom] : []),
+          syntax('- '),
+          ...paragraph(),
+        ]);
+        block = items.flat();
+      } else if (roll < 0.55 && plainParagraphs.length > 0) {
+        block = [shared(plainParagraphs[Math.floor(rng() * plainParagraphs.length)])];
+      } else block = paragraph();
+      const plain = block.map(([, p]) => p).join('');
+      // A single-line paragraph's projection is itself valid markdown.
+      if (!/[\n\uFFFC]/.test(plain) && !block[0][0].startsWith('#')) plainParagraphs.push(plain);
+      blocks.push(block);
+    }
+
+    const atoms: Atom[] = [];
+    blocks.forEach((block, index) => {
+      if (index > 0) {
+        const extra = rng() < 0.2 ? 1 + Math.floor(rng() * 2) : 0;
+        // Blank lines between two lists only make one loose list.
+        const listRun = block[0][0] === '- ' && blocks[index - 1][0][0] === '- ';
+        atoms.push(['\n\n' + '\n'.repeat(extra), '\n' + (listRun ? '' : '\n'.repeat(extra))]);
+      }
+      atoms.push(...block);
+    });
+    return atoms;
+  }
+
+  /** `[plainOffset, markdownOffset]` for every code point strictly inside a shared atom. */
+  function interiorPairs(atoms: Atom[]): Array<[number, number]> {
+    const pairs: Array<[number, number]> = [];
+    let plainPos = 0;
+    let markdownPos = 0;
+    for (const [md, plain] of atoms) {
+      if (md === plain && md.length > 1) {
+        for (let i = 1; i < md.length; i += 1) {
+          const code = md.charCodeAt(i);
+          if (code >= 0xdc00 && code <= 0xdfff) continue;
+          pairs.push([plainPos + i, markdownPos + i]);
+        }
+      }
+      plainPos += plain.length;
+      markdownPos += md.length;
+    }
+    return pairs;
+  }
+
+  const SEEDS = Array.from({ length: 200 }, (_, i) => 1000 + i);
+
+  it('maps every interior offset exactly, in both directions, on 200 generated notes', async () => {
+    const failures: string[] = [];
+    let checked = 0;
+    for (const seed of SEEDS) {
+      const atoms = generateSmallNote(seed);
+      const markdown = atoms.map(([md]) => md).join('');
+      const plain = await projectWithEditor(markdown);
+      // The atom model must match production projection or the oracle is void.
+      expect(plain, `seed ${seed} projection of ${JSON.stringify(markdown)}`).toBe(
+        atoms.map(([, p]) => p).join(''),
+      );
+      const pairs = interiorPairs(atoms);
+      const { aToB, bToA } = withoutDeadline(() =>
+        createBidirectionalOffsetMapper(plain, markdown),
+      );
+      for (const [p, m] of pairs) {
+        checked += 1;
+        const forward = aToB(p);
+        const backward = bToA(m);
+        if (forward !== m || backward !== p) {
+          failures.push(
+            `seed ${seed} plain ${p}→${forward} (want ${m}), markdown ${m}→${backward} (want ${p}): ` +
+              JSON.stringify(plain.slice(Math.max(0, p - 12), p + 12)),
+          );
+        }
+      }
+      // Differential guard against the pre-anchoring whole-text diff: the
+      // anchored mapper may only disagree with it where legacy itself is
+      // off the oracle (an arbitrary tie between equal-cost alignments).
+      for (const [p, m] of pairs.filter((_, i) => i % 7 === 0)) {
+        const legacy = withoutDeadline(() => mapOffsetThroughDiff(plain, markdown, p));
+        if (legacy === m && aToB(p) !== m) {
+          failures.push(
+            `seed ${seed} plain ${p}: legacy exact (${m}) but anchored gave ${aToB(p)}`,
+          );
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(20_000);
+    expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
+  }, 240_000);
 });
 
 describe('alignment when the diff budget is exhausted', () => {
