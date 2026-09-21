@@ -10499,15 +10499,30 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     beforeEach(() => clearAgentFailureRegistry());
     afterEach(() => clearAgentFailureRegistry());
 
+    // The daemon's structured not-found rejection for `agent.get` (§9:
+    // -32602 with `error.data.code: "not-found"`), as the live transport
+    // surfaces it.
+    const agentNotFound = () =>
+      Object.assign(new Error('agent not found'), {
+        rpcCode: -32602,
+        code: 'not-found',
+        data: { code: 'not-found' },
+      });
+    const agentGetCalls = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.get');
+
     it('drops registry entries whose agent no longer exists on the daemon', async () => {
       // agent:deleted fired while the connection was down — the registry
-      // still holds the stale entry. The reconnect refresh must verify
-      // surviving entries against agent.list and drop the vanished one.
+      // still holds the stale entry. The reconnect refresh must verify each
+      // surviving entry with agent.get and drop the vanished one.
       recordAgentFailure({ agentId: 'agent-gone', workspaceId: WS, error: 'spawn failed' });
       recordAgentFailure({ agentId: 'agent-alive', workspaceId: WS, error: 'spawn failed' });
-      backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') {
-          return Promise.resolve({ agents: [{ id: 'agent-alive', workspaceId: WS }] });
+      backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method === 'agent.get') {
+          const { agentId } = params as { agentId: string };
+          return agentId === 'agent-gone'
+            ? Promise.reject(agentNotFound())
+            : Promise.resolve({ agent: { id: agentId, workspaceId: WS } });
         }
         return Promise.resolve({});
       });
@@ -10517,36 +10532,40 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-alive']);
     });
 
-    it('issues ONE agent.list per distinct workspace — no per-entry fan-out', async () => {
+    it('issues ONE agent.get point read per entry — never a workspace agent.list (intent#5531)', async () => {
       recordAgentFailure({ agentId: 'agent-a', workspaceId: 'ws-multi-1', error: 'boom' });
       recordAgentFailure({ agentId: 'agent-b', workspaceId: 'ws-multi-1', error: 'boom' });
       recordAgentFailure({ agentId: 'agent-c', workspaceId: 'ws-multi-2', error: 'boom' });
       backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') return Promise.resolve({ agents: [] });
+        if (method === 'agent.get') return Promise.reject(agentNotFound());
         return Promise.resolve({});
       });
 
       await refreshDaemonEventsAfterReconnect(null);
 
-      const listCalls = backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.list');
-      expect(listCalls.map(([, params]) => params)).toEqual(
-        expect.arrayContaining([{ workspaceId: 'ws-multi-1' }, { workspaceId: 'ws-multi-2' }]),
+      expect(agentGetCalls().map(([, params]) => params)).toEqual(
+        expect.arrayContaining([
+          { agentId: 'agent-a', workspaceId: 'ws-multi-1' },
+          { agentId: 'agent-b', workspaceId: 'ws-multi-1' },
+          { agentId: 'agent-c', workspaceId: 'ws-multi-2' },
+        ]),
       );
-      expect(listCalls).toHaveLength(2);
+      expect(agentGetCalls()).toHaveLength(3);
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', expect.anything());
       expect(listAgentFailureEntries()).toHaveLength(0);
     });
 
-    it('keeps a failure recorded while agent.list was in flight (mid-flight addition race)', async () => {
-      // An agent spawned + failed during the post-reconnect burst is absent
-      // from the in-flight list result; the identity guard (snapshot
-      // convention, same as retryAgent's) must keep it — dropping it would
+    it('keeps a failure recorded while agent.get was in flight (mid-flight addition race)', async () => {
+      // An agent spawned + failed during the post-reconnect burst was never
+      // read; the snapshot taken before the reads bounds what can be dropped
+      // (same identity-guard convention as retryAgent's) — dropping it would
       // silently dismiss a legitimate failure toast.
       recordAgentFailure({ agentId: 'agent-stale', workspaceId: WS, error: 'boom' });
-      let resolveList: ((value: unknown) => void) | undefined;
+      let rejectGet: ((reason: unknown) => void) | undefined;
       backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') {
-          return new Promise((resolve) => {
-            resolveList = resolve;
+        if (method === 'agent.get') {
+          return new Promise((_resolve, reject) => {
+            rejectGet = reject;
           });
         }
         return Promise.resolve({});
@@ -10554,21 +10573,22 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
       const refresh = refreshDaemonEventsAfterReconnect(null);
       await new Promise((resolve) => setTimeout(resolve, 0));
-      // New failure lands while the list is in flight — not in survivorIds.
+      // New failure lands while the read is in flight — never verified.
       recordAgentFailure({ agentId: 'agent-new', workspaceId: WS, error: 'boom' });
-      resolveList!({ agents: [] });
+      rejectGet!(agentNotFound());
       await refresh;
 
       expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-new']);
+      expect(agentGetCalls()).toHaveLength(1);
     });
 
-    it('keeps an entry replaced mid-flight (re-failure while the list was pending)', async () => {
+    it('keeps an entry replaced mid-flight (re-failure while the read was pending)', async () => {
       recordAgentFailure({ agentId: 'agent-re', workspaceId: WS, error: 'first failure' });
-      let resolveList: ((value: unknown) => void) | undefined;
+      let rejectGet: ((reason: unknown) => void) | undefined;
       backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') {
-          return new Promise((resolve) => {
-            resolveList = resolve;
+        if (method === 'agent.get') {
+          return new Promise((_resolve, reject) => {
+            rejectGet = reject;
           });
         }
         return Promise.resolve({});
@@ -10577,9 +10597,9 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       const refresh = refreshDaemonEventsAfterReconnect(null);
       await new Promise((resolve) => setTimeout(resolve, 0));
       // The same agent re-fails mid-flight: the registry now holds a FRESH
-      // entry object the stale list result must not erase.
+      // entry object the stale not-found result must not erase.
       recordAgentFailure({ agentId: 'agent-re', workspaceId: WS, error: 'second failure' });
-      resolveList!({ agents: [] });
+      rejectGet!(agentNotFound());
       await refresh;
 
       const entries = listAgentFailureEntries();
@@ -10587,16 +10607,25 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       expect(entries[0]!.error).toBe('second failure');
     });
 
-    it('keeps entries when agent.list resolves without a verifiable agents array', async () => {
-      // A malformed response (missing/non-array `agents`) proves nothing
-      // about deletion — treating it as a verified empty list would drop
-      // every entry in the workspace. Unverifiable ≠ deleted.
-      recordAgentFailure({ agentId: 'agent-a', workspaceId: 'ws-mal-1', error: 'boom' });
-      recordAgentFailure({ agentId: 'agent-b', workspaceId: 'ws-mal-2', error: 'boom' });
+    it('drops on a structured not-found but keeps on a transient error (unverifiable ≠ deleted)', async () => {
+      recordAgentFailure({ agentId: 'agent-deleted', workspaceId: WS, error: 'boom' });
+      recordAgentFailure({ agentId: 'agent-unreachable', workspaceId: WS, error: 'boom' });
+      // Same rpcCode as not-found but WITHOUT the structured code: a generic
+      // invalid-params rejection proves nothing about deletion.
+      recordAgentFailure({ agentId: 'agent-invalid', workspaceId: WS, error: 'boom' });
       backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
-        if (method === 'agent.list') {
-          const { workspaceId } = params as { workspaceId: string };
-          return Promise.resolve(workspaceId === 'ws-mal-1' ? {} : { agents: null });
+        if (method === 'agent.get') {
+          const { agentId } = params as { agentId: string };
+          if (agentId === 'agent-deleted') return Promise.reject(agentNotFound());
+          if (agentId === 'agent-invalid') {
+            return Promise.reject(
+              Object.assign(new Error('invalid params'), {
+                rpcCode: -32602,
+                code: 'INVALID_PARAMS',
+              }),
+            );
+          }
+          return Promise.reject(new Error('transport down'));
         }
         return Promise.resolve({});
       });
@@ -10604,29 +10633,28 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       await refreshDaemonEventsAfterReconnect(null);
 
       expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual([
-        'agent-a',
-        'agent-b',
+        'agent-unreachable',
+        'agent-invalid',
       ]);
     });
 
-    it('keeps entries when agent.list fails for their workspace (fail-safe)', async () => {
-      recordAgentFailure({ agentId: 'agent-unknown', workspaceId: WS, error: 'boom' });
+    it('keeps an entry whose agent.get resolves (the agent still exists)', async () => {
+      recordAgentFailure({ agentId: 'agent-alive', workspaceId: WS, error: 'boom' });
       backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') return Promise.reject(new Error('transport down'));
+        if (method === 'agent.get') return Promise.resolve({ agent: { id: 'agent-alive' } });
         return Promise.resolve({});
       });
 
       await refreshDaemonEventsAfterReconnect(null);
 
-      // Unverifiable ≠ deleted: the entry survives and live events converge it.
-      expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-unknown']);
+      expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-alive']);
     });
 
     it('skips the reconciliation entirely when the registry is empty', async () => {
       await refreshDaemonEventsAfterReconnect(null);
 
-      const listCalls = backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.list');
-      expect(listCalls).toHaveLength(0);
+      expect(agentGetCalls()).toHaveLength(0);
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', expect.anything());
     });
   });
 
