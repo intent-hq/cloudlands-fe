@@ -283,14 +283,14 @@
             >
               <Tabs.Trigger
                 value="all-workspaces"
-                class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+                class="sidebar-view-tab min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
               >
                 <span class="truncate">{m.layout_sidebarPanel_workspacesTab_label()}</span>
               </Tabs.Trigger>
               {#if !$isCollaboratorOnlyClient$}
                 <Tabs.Trigger
                   value="chief"
-                  class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+                  class="sidebar-view-tab min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
                 >
                   <span class="truncate">{m.layout_chiefCard_title()}</span>
                 </Tabs.Trigger>
@@ -305,7 +305,7 @@
             data-combined-panel-spaces
             data-tab-motion={animateTabContent}
           >
-            <div class="panel-header shrink-0">
+            <div class="panel-header workspace-panel-header shrink-0">
               <div class="min-w-0 flex-1">
                 <h2 class="panel-title text-ui font-medium text-foreground truncate">
                   {$isGuestWindow$
@@ -502,6 +502,14 @@
 <style>
   .sidebar-panel {
     container-type: inline-size;
+    /* WorkspaceCard's 4px margin + 10px padding + 14px status + 10px gap. */
+    --sidebar-label-inset: 2.375rem;
+  }
+
+  .sidebar-panel :global(.sidebar-view-tab) {
+    justify-content: flex-start;
+    /* Subtract the tab strip's 8px outer inset and 4px inner padding. */
+    padding-left: calc(var(--sidebar-label-inset) - 0.75rem);
   }
 
   /* Only the incoming pane moves; the outgoing pane becomes hidden/inert
@@ -595,8 +603,18 @@
     gap: 0.25rem;
   }
 
+  .workspace-panel-header .panel-title {
+    margin-left: calc(var(--sidebar-label-inset) - 0.5rem);
+  }
+
   /* Narrow: stack header vertically */
   @container (max-width: 160px) {
+    .workspace-panel-header,
+    :global(.sidebar-view-tabs) {
+      /* Compact rows use 8px padding and a 6px status-to-title gap. */
+      --sidebar-label-inset: 2rem;
+    }
+
     .panel-header {
       flex-direction: column;
       align-items: stretch;
@@ -605,6 +623,9 @@
     }
     .panel-title {
       font-size: 12px;
+    }
+    .workspace-panel-header .panel-title {
+      margin-left: calc(var(--sidebar-label-inset) - 0.375rem);
     }
   }
 </style>

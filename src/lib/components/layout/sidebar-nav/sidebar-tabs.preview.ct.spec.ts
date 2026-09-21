@@ -44,6 +44,36 @@ async function observePaneMotion(panel: Locator) {
   });
 }
 
+for (const width of [288, 100]) {
+  test(`tab label, heading and workspace titles share a left edge at ${width}px`, async ({
+    mount,
+  }) => {
+    const component = await mount(SidebarTabsPreview, { props: { width } });
+    const workspaces = component.getByRole('tab', { name: 'Workspaces', exact: true });
+    const heading = component.getByRole('heading', { name: 'All workspaces', exact: true });
+    const titles = component.locator('[data-workspace-card-title]');
+    await expect(titles).toHaveCount(4);
+
+    async function expectAligned() {
+      const label = await workspaces.locator('span').boundingBox();
+      const headingBox = await heading.boundingBox();
+      expect(label).not.toBeNull();
+      expect(headingBox).not.toBeNull();
+      expect(Math.abs(label!.x - headingBox!.x)).toBeLessThanOrEqual(1);
+      for (const title of await titles.all()) {
+        const box = await title.boundingBox();
+        expect(box).not.toBeNull();
+        expect(Math.abs(box!.x - headingBox!.x)).toBeLessThanOrEqual(1);
+      }
+    }
+
+    await expectAligned();
+    await component.getByRole('tab', { name: 'Intent', exact: true }).click();
+    await workspaces.click();
+    await expectAligned();
+  });
+}
+
 test('pointer tab changes enter from the destination side without remounting content', async ({
   mount,
   page,
