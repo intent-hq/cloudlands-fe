@@ -49,6 +49,18 @@
   let scrollbarGutterWidth = $state(0);
   let syntheticScrollbarGutterWidth = $state(0);
   $effect(() => {
+    // Theme aliases resolve on :root, as they do in the application.
+    const root = document.documentElement;
+    const hadLight = root.classList.contains('light');
+    const hadDark = root.classList.contains('dark');
+    root.classList.toggle('light', theme === 'light');
+    root.classList.toggle('dark', theme === 'dark');
+    return () => {
+      root.classList.toggle('light', hadLight);
+      root.classList.toggle('dark', hadDark);
+    };
+  });
+  $effect(() => {
     const element = scrollElement;
     if (!element) return;
     const measure = () => {
@@ -111,7 +123,7 @@
   });
 </script>
 
-<section class:dark={theme === 'dark'} style:width="{width}px" style:zoom data-panel={panelId}>
+<section style:width="{width}px" style:zoom data-panel={panelId}>
   <div class="grid grid-cols-2 gap-4 bg-background p-4 text-foreground">
     <div>
       <div data-testid="sent-card" class={USER_MESSAGE_SURFACE_CLASS}>

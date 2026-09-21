@@ -5,11 +5,7 @@
  * to prevent breaking markdown syntax.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { normalizeAnchorPositions } from '$lib/utils/anchor-normalization';
 
 describe('normalizeAnchorPositions', () => {

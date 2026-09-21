@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * ProjectPickerMessage — Message 2 of the onboarding flow.
    *
@@ -12,8 +13,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly } from '$lib/motion';
   import LocalRepoTab from './LocalRepoTab.svelte';
   import GitHubRepoTab from './GitHubRepoTab.svelte';
   import NewProjectTab from './NewProjectTab.svelte';
@@ -52,6 +52,8 @@
     githubUrl?: string;
     projectName?: string;
     isValid: boolean;
+    /** Local folder exists but has no Git repo; the daemon must initialize it. */
+    initGit?: boolean;
   }
 
   interface Props {
@@ -75,6 +77,7 @@
   // Local repo state
   let localRepoPath = $state('');
   let localBranch = $state('');
+  let localInitGit = $state(false);
 
   // GitHub repo state — a picked repo is identified by its URL only; the
   // daemon owns the checkout location (picked-repo flow).
@@ -191,6 +194,7 @@
     if (data.type === 'local' && data.path) {
       localRepoPath = data.path;
       localScope = data.scope;
+      localInitGit = false;
       activeTab = 'local';
       localBranch = $branchByRepo$[data.path] || localBranch;
     } else if (data.type === 'github' && data.githubUrl) {
@@ -211,6 +215,7 @@
         localRepoPath = data.repoPath;
         localBranch = typeof data.branch === 'string' ? data.branch : '';
         localScope = data.scope;
+        localInitGit = false;
         activeTab = 'local';
       } else if (data.githubUrl) {
         githubUrl = data.githubUrl;
@@ -245,6 +250,7 @@
         branch: localBranch,
         scope: localScope,
         isValid: !!localRepoPath,
+        ...(localInitGit ? { initGit: true } : {}),
       };
     } else if (activeTab === 'github') {
       // Branch is chosen in the prompt/configuration step via the shared
@@ -315,12 +321,9 @@
 </script>
 
 <!-- Message content — flies in from bottom -->
-<div class="space-y-5" data-message in:fly={{ y: 30, duration: 500, easing: cubicOut }}>
+<div class="space-y-5" data-message in:fly={{ tier: 'slow', distance: 30 }}>
   {#if !hideHeading}
-    <h2
-      class="text-2xl font-semibold tracking-tight"
-      in:fly={{ y: 14, duration: 400, delay: 80, easing: cubicOut }}
-    >
+    <h2 class="text-2xl font-semibold tracking-tight" in:fly={{ tier: 'slow', distance: 14 }}>
       {m.onboarding_projectPicker_chooseProject_title()}
     </h2>
     <p class="text-base text-muted-foreground leading-relaxed font-light max-w-lg">
@@ -331,12 +334,13 @@
   <!-- Tab bar -->
   <div
     class="flex gap-0 rounded-lg p-1 border border-border bg-muted/30"
-    in:fly={{ y: 12, duration: 350, delay: 150, easing: cubicOut }}
+    in:fly={{ tier: 'slow', distance: 12 }}
   >
     {#each tabs as tab (tab.id)}
-      <button
+      <Button
+        variant="ghost"
         type="button"
-        class="flex-1 px-3 py-2.5 text-sm rounded-md cursor-pointer transition-all duration-200
+        class="flex-1 px-3 py-2.5 text-sm rounded-md cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none
           {activeTab === tab.id
           ? 'bg-foreground font-medium text-background shadow-sm'
           : 'text-muted-foreground hover:text-foreground'}"
@@ -347,23 +351,24 @@
         }}
       >
         {tab.label}
-      </button>
+      </Button>
     {/each}
   </div>
 
   <!-- Tab content -->
-  <div class="min-h-[120px]" in:fly={{ y: 10, duration: 300, delay: 250, easing: cubicOut }}>
+  <div class="min-h-[120px]" in:fly={{ tier: 'slow', distance: 10 }}>
     {#key activeTab}
-      <div in:fly={{ x: slideDirection * 150, duration: 250, easing: cubicOut }}>
+      <div in:fly={{ tier: 'slow', axis: 'x', distance: slideDirection * 150 }}>
         {#if activeTab === 'local'}
           <LocalRepoTab
             selectedPath={localRepoPath}
-            onSelect={(path, scope) => {
+            onSelect={(path, scope, initGit) => {
               localRepoPath = path;
               localScope = scope;
+              localInitGit = initGit === true;
               notifyParent();
             }}
-            onSelectAndAdvance={(path, scope) => {
+            onSelectAndAdvance={(path, scope, initGit) => {
               // Capture reactive prop before state changes invalidate it.
               // Use typeof guard: during component teardown the Svelte 5
               // reactive proxy can return a truthy non-callable value,
@@ -371,6 +376,7 @@
               const advance = onSelectAndAdvance;
               localRepoPath = path;
               localScope = scope;
+              localInitGit = initGit === true;
               notifyParent();
               if (typeof advance === 'function') advance();
             }}

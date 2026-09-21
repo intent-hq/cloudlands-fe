@@ -7,19 +7,31 @@
    *
    * Performance optimizations:
    * - Throttled to 30fps instead of 60fps (halves GPU usage)
+   * - Renders at native display resolution for smooth gradients
    * - Pauses when tab is hidden (Page Visibility API)
    * - Simplified shader with fewer blobs (5 instead of 10)
-   * - Respects prefers-reduced-motion
+   * - Respects reduced motion (OS preference or battery saver)
    */
   import { onMount, onDestroy } from 'svelte';
+  import type { AuroraBenchmarkOptions } from './aurora-performance';
   import { browser } from '$app/environment';
-  import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
+  import {
+    scheduleLayoutRead,
+    scheduleLayoutWrite,
+    type CancelLayoutTask,
+  } from '$lib/utils/layout-phases';
+  import {
+    onReducedMotionChange,
+    prefersReducedMotion as isReducedMotionPreferred,
+  } from '$lib/utils/reduced-motion';
 
   interface Props {
     agentId?: string;
+    /** Developer benchmark only; remount when changing these controls. */
+    benchmark?: AuroraBenchmarkOptions;
   }
 
-  let { agentId = 'default' }: Props = $props();
+  let { agentId = 'default', benchmark }: Props = $props();
 
   let canvas = $state<HTMLCanvasElement>();
   let gl = $state<WebGLRenderingContext | null>(null);
@@ -32,15 +44,17 @@
   let initFailed = false;
   let startTime = $state<number>(0);
   let isPageVisible = $state<boolean>(true);
+  let isWindowFocused = $state<boolean>(true);
   let prefersReducedMotion = $state<boolean>(false);
   let lastFrameTime = $state<number>(0);
   let semanticColorReady = false;
 
   // Target 30fps instead of 60fps to reduce GPU usage
-  const TARGET_FRAME_TIME = 1000 / 30; // ~33ms per frame
+  const targetFrameTime = $derived(benchmark?.frameRate === 'display' ? 0 : 1000 / 30);
 
   // Random seed for variety each session
-  const seed = Math.random() * 1000;
+  const randomSeed = Math.random() * 1000;
+  const seed = $derived(benchmark?.seed ?? randomSeed);
 
   // Cached uniform locations (avoid getUniformLocation every frame)
   let uniformLocations: {
@@ -57,6 +71,22 @@
   let cachedCanvasWidth: number | null = null;
   let cachedCanvasHeight: number | null = null;
   let canvasResizeObserver: ResizeObserver | null = null;
+  let sizeReadPending = false;
+  let cancelSizeRead: CancelLayoutTask | null = null;
+  let cancelSizeWrite: CancelLayoutTask | null = null;
+
+  function scheduleCanvasSizeUpdate() {
+    if (sizeReadPending || destroyed) return;
+    sizeReadPending = true;
+    cancelSizeRead = scheduleLayoutRead(() => {
+      sizeReadPending = false;
+      if (!canvas || destroyed) return;
+      cachedCanvasWidth ??= canvas.clientWidth;
+      cachedCanvasHeight ??= canvas.clientHeight;
+      cancelSizeWrite?.();
+      cancelSizeWrite = scheduleLayoutWrite(() => updateCanvasSize());
+    });
+  }
 
   function getSemanticAuroraColor(): [number, number, number] | null {
     if (!canvas) return null;
@@ -129,6 +159,7 @@
 
   // Simplified shader: 5 blobs instead of 10, reduced fbm iterations (2 instead of 4)
   // This reduces GPU load by ~60% while maintaining visual quality
+  // i18n-ignore (GLSL shader source, not user-facing text)
   const fragmentShaderSource = `
     precision mediump float;
     uniform float u_time;
@@ -138,7 +169,7 @@
     uniform vec3 u_color3;
     uniform float u_seed;
 
-    // Hash function for grain and randomness
+    // Hash function for the session's blob phases
     float hash(vec2 p) {
       vec3 p3 = fract(vec3(p.xyx) * 0.1031);
       p3 += dot(p3, p3.yzx + 33.33);
@@ -185,8 +216,8 @@
       vec2 uv = gl_FragCoord.xy / u_resolution;
       float time = u_time * 0.6;
 
-      // Vertical gradient
-      float verticalFade = pow(1.0 - uv.y, 1.0);
+      // Keep the glow near the composer and fade gently into the conversation.
+      float verticalFade = pow(1.0 - uv.y, 2.0);
 
       // Color variety (reduced from 10 to 5)
       vec3 color4 = mix(u_color1, u_color3, 0.5);
@@ -259,11 +290,7 @@
       // Breathing pulse
       intensity *= 0.85 + sin(time * 0.5) * 0.15;
 
-      // Simplified grain (less expensive)
-      float grainValue = hash(gl_FragCoord.xy * 0.5);
-      color = color + (grainValue - 0.5) * 0.15;
-
-      float alpha = intensity * 0.9;
+      float alpha = intensity * 0.65;
       gl_FragColor = vec4(color * alpha, alpha);
     }
   `;
@@ -354,7 +381,7 @@
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    // Cache uniform locations once (avoids 6x getUniformLocation calls per frame)
+    // Cache uniform locations once
     uniformLocations = {
       time: gl.getUniformLocation(program, 'u_time'),
       resolution: gl.getUniformLocation(program, 'u_resolution'),
@@ -365,22 +392,22 @@
     };
     scheduleSemanticColorSync();
 
-    updateCanvasSize();
+    scheduleCanvasSizeUpdate();
 
     startTime = performance.now();
     render();
   }
 
   function updateCanvasSize(width?: number, height?: number) {
-    if (!canvas) return;
+    if (!canvas || destroyed) return;
 
     const cssWidth = width ?? cachedCanvasWidth ?? canvas.clientWidth;
     const cssHeight = height ?? cachedCanvasHeight ?? canvas.clientHeight;
     cachedCanvasWidth = cssWidth;
     cachedCanvasHeight = cssHeight;
 
-    const pixelWidth = Math.round(cssWidth * cachedDpr);
-    const pixelHeight = Math.round(cssHeight * cachedDpr);
+    const pixelWidth = Math.max(1, Math.round(cssWidth * cachedDpr));
+    const pixelHeight = Math.max(1, Math.round(cssHeight * cachedDpr));
     if (canvas.width === pixelWidth && canvas.height === pixelHeight) return;
 
     canvas.width = pixelWidth;
@@ -399,11 +426,18 @@
       }
     });
     canvasResizeObserver.observe(canvas);
-    updateCanvasSize();
   }
 
   function scheduleRender() {
-    if (animationFrame || !gl || !program || !isPageVisible || prefersReducedMotion) return;
+    if (
+      animationFrame ||
+      !gl ||
+      !program ||
+      !isPageVisible ||
+      !isWindowFocused ||
+      prefersReducedMotion
+    )
+      return;
     animationFrame = requestAnimationFrame(render);
   }
 
@@ -418,19 +452,19 @@
     animationFrame = 0;
     if (!gl || !program || !canvas) return;
 
-    // Skip rendering if page is hidden or user prefers reduced motion
-    if (!isPageVisible || prefersReducedMotion) {
+    // Skip rendering if the page or window is inactive, or the user prefers reduced motion
+    if (!isPageVisible || !isWindowFocused || prefersReducedMotion) {
       return;
     }
 
-    // Throttle to ~30fps to reduce GPU usage
+    // Production stays at 30fps; the benchmark can follow the display cadence.
     const now = performance.now();
     const elapsed = now - lastFrameTime;
-    if (elapsed < TARGET_FRAME_TIME) {
+    if (elapsed < targetFrameTime) {
       scheduleRender();
       return;
     }
-    lastFrameTime = now - (elapsed % TARGET_FRAME_TIME);
+    lastFrameTime = targetFrameTime ? now - (elapsed % targetFrameTime) : now;
 
     const width = canvas.width;
     const height = canvas.height;
@@ -443,9 +477,9 @@
     // Use cached uniform locations (set once in initWebGL)
     if (!uniformLocations) return;
 
-    gl.uniform1f(uniformLocations.time, (performance.now() - startTime) / 1000);
+    const elapsedSeconds = (performance.now() - startTime) / 1000;
+    gl.uniform1f(uniformLocations.time, elapsedSeconds);
     gl.uniform2f(uniformLocations.resolution, width, height);
-    gl.uniform1f(uniformLocations.seed, seed);
 
     if (!semanticColorReady) {
       // Sync runs in the batched read phase, never from the render loop —
@@ -455,7 +489,9 @@
       return;
     }
 
+    gl.uniform1f(uniformLocations.seed, seed);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    benchmark?.onDraw({ time: now, submissionMs: performance.now() - now, width, height });
 
     scheduleRender();
   }
@@ -465,6 +501,11 @@
     cancelColorRead?.();
     cancelColorRead = null;
     colorReadPending = false;
+    cancelSizeRead?.();
+    cancelSizeWrite?.();
+    cancelSizeRead = null;
+    cancelSizeWrite = null;
+    sizeReadPending = false;
     canvasResizeObserver?.disconnect();
     canvasResizeObserver = null;
     if (gl) {
@@ -500,9 +541,15 @@
     else cancelScheduledRender();
   }
 
+  function handleWindowFocusChange() {
+    isWindowFocused = !document.documentElement.hasAttribute('data-window-blurred');
+    if (isWindowFocused) scheduleRender();
+    else cancelScheduledRender();
+  }
+
   // Handle reduced motion preference changes
-  function handleMotionPreference(e: MediaQueryListEvent) {
-    prefersReducedMotion = e.matches;
+  function handleMotionPreference(reduced: boolean) {
+    prefersReducedMotion = reduced;
     if (prefersReducedMotion) cancelScheduledRender();
     else scheduleRender();
   }
@@ -517,8 +564,11 @@
     const dpr = window.devicePixelRatio || 1;
     const dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
     const handler = () => {
-      cachedDpr = window.devicePixelRatio || 1;
-      updateCanvasSize();
+      cachedDpr = Math.min(
+        window.devicePixelRatio || 1,
+        benchmark?.pixelRatio === 0.5 ? 0.5 : Infinity,
+      );
+      scheduleCanvasSizeUpdate();
       // Remove old listener and set up a new one with the updated DPR
       dprQuery.removeEventListener('change', handler);
       setupDprListener();
@@ -530,21 +580,29 @@
   onMount(() => {
     // Check initial states
     isPageVisible = !document.hidden;
-    prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    cachedDpr = window.devicePixelRatio || 1;
+    isWindowFocused = !document.documentElement.hasAttribute('data-window-blurred');
+    prefersReducedMotion = isReducedMotionPreferred();
+    cachedDpr = Math.min(
+      window.devicePixelRatio || 1,
+      benchmark?.pixelRatio === 0.5 ? 0.5 : Infinity,
+    );
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    const windowFocusObserver = new MutationObserver(handleWindowFocusChange);
+    windowFocusObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-window-blurred'],
+    });
 
     // Listen for motion preference changes
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    motionQuery.addEventListener('change', handleMotionPreference);
+    const stopWatchingMotion = onReducedMotionChange(handleMotionPreference);
 
     // Listen for DPR changes (e.g., moving between retina/non-retina displays)
     setupDprListener();
     setupCanvasResizeObserver();
 
-    const handleSemanticColorChange = () => syncSemanticAuroraColor();
+    const handleSemanticColorChange = () => scheduleSemanticColorSync();
     const themeObserver = new MutationObserver(handleSemanticColorChange);
     themeObserver.observe(document.documentElement, {
       attributes: true,
@@ -556,7 +614,8 @@
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      motionQuery.removeEventListener('change', handleMotionPreference);
+      windowFocusObserver.disconnect();
+      stopWatchingMotion();
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
       dprCleanup?.();

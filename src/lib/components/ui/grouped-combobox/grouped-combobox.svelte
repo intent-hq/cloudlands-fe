@@ -1,6 +1,8 @@
 <script lang="ts">
+  /* eslint-disable intent/no-raw-menu-row -- The role is used by an inline group-heading action, not a row. */
   import type { Snippet } from 'svelte';
   import Combobox, { type ComboboxGroup, type ComboboxOption } from '../combobox';
+  import { Button } from '$lib/components/ui/button';
   import Tooltip from '../tooltip/Tooltip.svelte';
   import type { GroupedOption, OptionGroup } from './types';
   import { m } from '$shared/paraglide/messages.js';
@@ -26,6 +28,8 @@
     tooltip?: string | Snippet;
     tooltipSide?: 'top' | 'right' | 'bottom' | 'left';
     defaultCollapsed?: boolean;
+    open?: boolean;
+    staticPosition?: boolean;
   }
 
   let {
@@ -49,6 +53,8 @@
     tooltip,
     tooltipSide = 'top',
     defaultCollapsed = true,
+    open = $bindable(false),
+    staticPosition = false,
   }: Props = $props();
 
   let searchQuery = $state('');
@@ -121,21 +127,26 @@
 {/snippet}
 
 {#snippet canonicalGroupAction(group: ComboboxGroup)}
-  <button
+  <Button
+    variant="plain"
     type="button"
+    data-list-overlay
+    role="option"
+    aria-selected="false"
     aria-label={m.ui_groupedCombobox_toggleGroup_ariaLabel({ group: group.label })}
     onclick={() => toggleGroup(group.key)}
   >
     {collapsedGroups.has(group.key)
       ? m.ui_groupedCombobox_expandGroup_label()
       : m.ui_groupedCombobox_collapseGroup_label()}
-  </button>
+  </Button>
   {@render groupAction?.(group as OptionGroup)}
 {/snippet}
 
 {#snippet combobox()}
   <Combobox
     bind:value
+    bind:open
     groups={canonicalGroups}
     {disabled}
     {placeholder}
@@ -144,7 +155,8 @@
     inputClass={triggerClass}
     contentClass={dropdownClass}
     ariaLabel={placeholder}
-    portal={false}
+    portal={!staticPosition}
+    {staticPosition}
     {header}
     {headerAction}
     {footer}

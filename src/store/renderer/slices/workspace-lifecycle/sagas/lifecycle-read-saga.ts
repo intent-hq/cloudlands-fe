@@ -1,13 +1,15 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
 import { reconcileGitStatusChanges } from '$features/file-tracking/git-status-reconciliation';
 import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
+import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
 import type { Workspace } from '$shared/types';
+import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
@@ -15,13 +17,10 @@ import {
   takeLeadingByAgent,
   takeLeadingByWorkspace,
   takeLeadingInContext,
+  takeLatestByContext,
   takeSingleFlightInContext,
 } from '../../../utils/context-saga-effects';
-import {
-  bulkUpsertSessions,
-  upsertSession,
-  type BulkUpsertSessionsOptions,
-} from '../../agent-session/agent-session-slice';
+import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import {
   selectAgentSession,
   selectAgentSessionsById,
@@ -58,7 +57,12 @@ import {
   hydrateTaskAgentAssociations,
   hydrateTaskAgentAssociationsRequested,
 } from '../../task-agent-associations/task-agent-associations-slice';
-import { hydrateTerminalsRequested, loadWorkspaceTerminals } from '../../terminals/terminals-slice';
+import { selectTerminalsForWorkspace } from '../../terminals/terminals-selectors';
+import {
+  hydrateTerminalsRequested,
+  loadWorkspaceTerminals,
+  removeTerminal,
+} from '../../terminals/terminals-slice';
 import {
   fetchWorkspaceTokenUsage,
   tokenUsageFetchFailed,
@@ -66,22 +70,43 @@ import {
 } from '../../token-usage/token-usage-slice';
 import {
   addAgent,
+  adjustScopeCount,
+  fetchBackgroundAgentsRequested,
+  fetchDelegatedAgentsRequested,
   fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setActiveAgentId,
   setAgents,
   setAgentsLoaded,
+  setIsLoadingLazyBin,
   setIsLoadingRetiredAgents,
+  setLazyBinLoaded,
   setRetiredAgentsLoaded,
   setRetiredCount,
+  setScopeCounts,
+  type LazyAgentListBin,
 } from '../../workspace-agents/workspace-agents-slice';
 import {
   selectActiveAgentId,
+  selectBackgroundAgentsLoaded,
+  selectDelegatedAgentsLoaded,
+  selectIsLoadingBackgroundAgents,
+  selectIsLoadingDelegatedAgents,
   selectIsLoadingRetiredAgents,
   selectRetiredAgentsLoaded,
+  selectScopeCounts,
   selectWorkspaceAgentIds,
 } from '../../workspace-agents/workspace-agents-selectors';
-import { eventsLoaded, loadEventsRequested } from '../../workspace-events/workspace-events-slice';
+import { selectOlderEventsNextToken } from '../../workspace-events/workspace-events-selectors';
+import {
+  eventsLoaded,
+  eventsLoadFailed,
+  eventsLoadStarted,
+  loadEventsRequested,
+  loadOlderEventsRequested,
+  olderEventsLoaded,
+  olderEventsLoadFailed,
+} from '../../workspace-events/workspace-events-slice';
 import {
   ensureWorkspaceTasksLoaded,
   loadWorkspaceTasksRequested,
@@ -97,8 +122,15 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '../../workspace/workspace-slice';
-import { selectWorkspaceById } from '../../workspace/workspace-selectors';
-import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
+import {
+  selectWorkspaceById,
+  selectWorkspaceListLoadedForBackend,
+} from '../../workspace/workspace-selectors';
+import {
+  backendReconnected,
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 import {
   createWorkspaceReadScheduler,
   type WorkspaceReadScheduler,
@@ -112,6 +144,22 @@ const logger = createLogger('LifecycleReadSaga');
  * the TTL and the next trigger will retry immediately.
  */
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
+/** Initial/latest page size; pages arrive newest→oldest and are stored oldest→newest. */
+const EVENTS_PAGE_LIMIT = 100;
+/**
+ * Backoff for a `workspace.list` that fails before the list has ever loaded
+ * for the active backend (e.g. the guest's tailcat tunnel is not up at boot).
+ * Later attempts wait `WORKSPACE_LIST_RETRY_CAP_MS`.
+ */
+const WORKSPACE_LIST_RETRY_DELAYS_MS = [1_000, 2_000, 5_000];
+const WORKSPACE_LIST_RETRY_CAP_MS = 15_000;
+/**
+ * Message of the daemon's `-32003 Forbidden` envelope. The workspace IPC
+ * bridge flattens daemon errors to their message string, so this is the only
+ * field the renderer can key the refusal off when it arrives via
+ * `workspaceClient`.
+ */
+const FORBIDDEN_ERROR_MESSAGE = 'Forbidden';
 
 function matchesWorkspaceCleanup(workspaceId: string) {
   return (action: { type: string; payload?: unknown }) =>
@@ -137,12 +185,13 @@ function scriptsReadContext(action: { type: string; payload: [string, ...unknown
 }
 
 function* refreshWorkspaces(): SagaGenerator<void> {
-  const workspaces: Awaited<ReturnType<typeof appClient.workspaces.list>> = yield* call(
-    [appClient.workspaces, appClient.workspaces.list],
-    { includeArchived: true },
+  const result: Awaited<ReturnType<typeof workspaceClient.list>> = yield* call(
+    [workspaceClient, workspaceClient.list],
+    { lite: true },
   );
+  if (!result.ok) throw new Error(result.error);
   const backendId = yield* selectActiveBackendId();
-  yield* put(replaceWorkspaceList(workspaces));
+  yield* put(replaceWorkspaceList(result.data));
   yield* put(setWorkspaceHasLoaded(true, backendId));
   const recentViews: Awaited<ReturnType<typeof appClient.workspaces.recentViews>> = yield* call([
     appClient.workspaces,
@@ -278,8 +327,8 @@ function* refreshAgentStats(agentId: string, forceRefresh: boolean): SagaGenerat
 
 /**
  * Drop rows the FE soft-hid (local pending registry) and rows carrying the
- * daemon's delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`,
- * v6.7+) — e.g. a deletion scheduled by another window.
+ * daemon's delete-grace-window deadline (PROTOCOL §5.5 `pendingDeleteAt`)
+ * — e.g. a deletion scheduled by another window.
  */
 function* filterPendingDeletions(
   listed: Awaited<ReturnType<typeof appClient.agents.list>>,
@@ -290,6 +339,15 @@ function* filterPendingDeletions(
     if (!(yield* call(isAgentDeletionPending, String(agent.id)))) fetched.push(agent);
   }
   return fetched;
+}
+
+/** Id-deduped union of two `agent.list` reads, the later read winning on overlap. */
+function mergeListedRows(
+  earlier: Awaited<ReturnType<typeof appClient.agents.list>>,
+  later: Awaited<ReturnType<typeof appClient.agents.list>>,
+): Awaited<ReturnType<typeof appClient.agents.list>> {
+  const laterIds = new Set(later.map((row) => String(row.id)));
+  return [...earlier.filter((row) => !laterIds.has(String(row.id))), ...later];
 }
 
 function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
@@ -307,51 +365,83 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
       inFlightPairIdsBeforeFetch.add(id);
     }
   }
-  // Default read (§5.5 soft retire): retired rows are excluded daemon-side
-  // and no longer ride every hydration frame; the sidebar's Retired bin
-  // renders its collapsed toggle from `retiredCount` (v8.2, served on every
-  // read) and loads the rows on demand via the retired-only read.
-  const { agents: defaultRows, retiredCount }: Awaited<
-    ReturnType<typeof appClient.agents.listWithMeta>
-  > = yield* call([appClient.agents, appClient.agents.listWithMeta], workspaceId);
+  // Default read: `scope: "topLevel"` (§5.5 row scope) — only the parentless
+  // foreground rows the sidebar lists by default ride the hydration frame;
+  // the Delegated and Background bins render their collapsed toggles from
+  // the daemon-served `scopeCounts` and load their rows on demand via the
+  // scoped reads, the same way the Retired bin (§5.5 soft retire) renders
+  // from `retiredCount` and loads via the retired-only read. An older daemon
+  // ignores `scope`, serves every non-retired row and omits `scopeCounts` —
+  // that absence is the signal to run the pre-scope all-rows path (no bins).
+  const {
+    agents: defaultRows,
+    retiredCount,
+    scopeCounts,
+  }: Awaited<ReturnType<typeof appClient.agents.listWithMeta>> = yield* call(
+    [appClient.agents, appClient.agents.listWithMeta],
+    workspaceId,
+    { scope: 'topLevel' as const },
+  );
   let listed = defaultRows;
-  // `setAgents` replaces the workspace snapshot, so once the retired rows have
-  // been lazily loaded a rehydrate must re-read them too — otherwise the
-  // reconcile would evict every retired id from the workspace list.
+  // `setAgents` replaces the workspace snapshot, so once a lazy bin's rows
+  // have been loaded a rehydrate must re-read that bin too — otherwise the
+  // reconcile would evict every one of its ids from the workspace list.
+  // Each extra read is a separate daemon round trip, so a row that moved
+  // bins between them can appear in two lists — dedupe by id, preferring
+  // the later (fresher) read; the retired-only row is read last since it
+  // carries the fresher `retiredAt`.
+  const delegatedLoadedAtRead = scopeCounts
+    ? yield* selectDelegatedAgentsLoaded.effect(workspaceId)
+    : false;
+  const backgroundLoadedAtRead = scopeCounts
+    ? yield* selectBackgroundAgentsLoaded.effect(workspaceId)
+    : false;
   const retiredLoadedAtRead = yield* selectRetiredAgentsLoaded.effect(workspaceId);
+  if (delegatedLoadedAtRead) {
+    const delegatedRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
+      [appClient.agents, appClient.agents.list],
+      workspaceId,
+      { scope: 'delegated' as const },
+    );
+    listed = mergeListedRows(listed, delegatedRows);
+  }
+  if (backgroundLoadedAtRead) {
+    const backgroundRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
+      [appClient.agents, appClient.agents.list],
+      workspaceId,
+      { scope: 'background' as const },
+    );
+    listed = mergeListedRows(listed, backgroundRows);
+  }
   if (retiredLoadedAtRead) {
     const retiredRows: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
       [appClient.agents, appClient.agents.list],
       workspaceId,
       { retiredOnly: true },
     );
-    // The two reads are separate daemon round trips, so an agent retired
-    // between them appears in BOTH lists — dedupe by id, preferring the
-    // retired-only row (it carries the fresher `retiredAt`).
-    const retiredIds = new Set(retiredRows.map((row) => String(row.id)));
-    listed = [...defaultRows.filter((row) => !retiredIds.has(String(row.id))), ...retiredRows];
+    listed = mergeListedRows(listed, retiredRows);
   }
-  // Everything from the loaded-check above through the `setAgents` put below
+  // Everything from the loaded-checks above through the `setAgents` put below
   // is synchronous saga work (sync calls, selects, puts — no promise yields),
-  // so a concurrent `fetchRetiredAgents` completion cannot interleave here.
-  // The mid-flight case — the lazy load finishing while the reads above were
-  // awaiting — is caught by the re-check just before `setAgents`.
+  // so a concurrent lazy-bin completion cannot interleave here. The mid-flight
+  // case — a lazy load finishing while the reads above were awaiting — is
+  // caught by the re-checks just after `setAgents`.
   const fetched = yield* filterPendingDeletions(listed);
   yield* put(setAgentsLoaded(workspaceId, true));
   yield* put(setRetiredCount(workspaceId, retiredCount));
+  yield* put(setScopeCounts(workspaceId, scopeCounts ?? null));
 
   const agents = [] as typeof fetched;
   // Crash-leftover runtime-flag convergence (monorepo#4135): a stored session
   // whose both-true isStreaming/isProcessing pair predates this read (the
   // pre-fetch snapshot above) and whose fresh list row reports the turn idle
-  // is a crash leftover no event will ever clear — upsert it with the
-  // stale-clear options so the list refresh converges it, matching the
-  // per-agent fetch path (agent-read-service). A genuinely live turn returns
-  // undefined options and keeps the default pair-guard preservation
-  // semantics (monorepo#1250). The per-agent `existing` read stays post-fetch
-  // on purpose: the message merge wants the latest stored transcript.
-  const staleClearAgents = [] as typeof fetched;
-  let staleClearOptions: BulkUpsertSessionsOptions | undefined;
+  // is a crash leftover no event will ever clear — tag that row for stale
+  // clearing in the single batch so list refresh converges it, matching the
+  // per-agent fetch path (agent-read-service). Genuinely live rows retain the
+  // default pair-guard semantics (monorepo#1250). The per-agent `existing`
+  // read stays post-fetch on purpose: the message merge wants the latest
+  // stored transcript.
+  const staleRuntimeFlagClearAgentIds: string[] = [];
   for (const agent of fetched) {
     const existing = yield* selectAgentSession.effect(String(agent.id));
     const hadInFlightPairBeforeFetch = inFlightPairIdsBeforeFetch.has(String(agent.id));
@@ -362,29 +452,38 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
     agents.push(merged);
     const clearOptions = staleRuntimeFlagClearUpsertOptions(hadInFlightPairBeforeFetch, agent);
     if (clearOptions) {
-      staleClearOptions = clearOptions;
-      staleClearAgents.push(merged);
+      staleRuntimeFlagClearAgentIds.push(String(agent.id));
     }
   }
   yield* put(setAgents(workspaceId, agents));
+  // A lazy load that completed while this hydration's daemon reads were in
+  // flight: the snapshot above just evicted its rows while the loaded flag
+  // reads true (bin would render empty and never refetch). Reset the flag and
+  // re-request so the bin's worker re-adds the rows.
   if (!retiredLoadedAtRead && (yield* selectRetiredAgentsLoaded.effect(workspaceId))) {
-    // The lazy retired load completed while this hydration's daemon reads were
-    // in flight: the snapshot above just evicted its rows while the loaded
-    // flag reads true (bin would render empty and never refetch). Reset the
-    // flag and re-request so the retired worker re-adds the rows.
     yield* put(setRetiredAgentsLoaded(workspaceId, false));
     yield* put(fetchRetiredAgentsRequested(workspaceId));
   }
-  if (agents.length > 0) {
-    if (staleClearAgents.length > 0) {
-      const staleClearIds = new Set(staleClearAgents.map((agent) => String(agent.id)));
-      const preserved = agents.filter((agent) => !staleClearIds.has(String(agent.id)));
-      if (preserved.length > 0) yield* put(bulkUpsertSessions(preserved));
-      yield* put(bulkUpsertSessions(staleClearAgents, staleClearOptions));
-    } else {
-      yield* put(bulkUpsertSessions(agents));
+  if (scopeCounts) {
+    if (!delegatedLoadedAtRead && (yield* selectDelegatedAgentsLoaded.effect(workspaceId))) {
+      yield* put(setLazyBinLoaded(workspaceId, 'delegated', false));
+      yield* put(fetchDelegatedAgentsRequested(workspaceId));
     }
-    for (const agent of agents) yield* put(upsertSession(agent));
+    if (!backgroundLoadedAtRead && (yield* selectBackgroundAgentsLoaded.effect(workspaceId))) {
+      yield* put(setLazyBinLoaded(workspaceId, 'background', false));
+      yield* put(fetchBackgroundAgentsRequested(workspaceId));
+    }
+  }
+  if (agents.length > 0) {
+    // `agent.list` rows are the slim §5.5 list projection: detail-only fields
+    // an earlier `agent.get` stored must survive this refresh.
+    if (staleRuntimeFlagClearAgentIds.length > 0) {
+      yield* put(
+        bulkUpsertSessions(agents, { staleRuntimeFlagClearAgentIds, listProjection: true }),
+      );
+    } else {
+      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
+    }
   }
 
   const activeAgentId = yield* selectActiveAgentId.effect(workspaceId);
@@ -399,7 +498,7 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
 }
 
 /**
- * On-demand retired-row load (§5.5 soft retire, v8.2): triggered when the
+ * On-demand retired-row load (§5.5 soft retire, `retiredOnly: true`): triggered when the
  * sidebar's Retired bin expands (or an active search needs retired coverage).
  * Loads once per workspace — a failed read leaves `retiredAgentsLoaded` false
  * so the next expand retries. Rows merge in via `addAgent` (append-only) so a
@@ -428,9 +527,8 @@ function* fetchRetiredAgents(workspaceId: string): SagaGenerator<void> {
             : agent,
         );
       }
-      yield* put(bulkUpsertSessions(agents));
+      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
       for (const agent of agents) {
-        yield* put(upsertSession(agent));
         yield* put(addAgent(workspaceId, agent));
       }
     }
@@ -441,6 +539,71 @@ function* fetchRetiredAgents(workspaceId: string): SagaGenerator<void> {
   } finally {
     yield* put(setIsLoadingRetiredAgents(workspaceId, false));
   }
+}
+
+const LAZY_BIN_LOADED_SELECTOR = {
+  delegated: selectDelegatedAgentsLoaded,
+  background: selectBackgroundAgentsLoaded,
+} as const satisfies Record<LazyAgentListBin, unknown>;
+const LAZY_BIN_LOADING_SELECTOR = {
+  delegated: selectIsLoadingDelegatedAgents,
+  background: selectIsLoadingBackgroundAgents,
+} as const satisfies Record<LazyAgentListBin, unknown>;
+
+/**
+ * On-demand scoped-bin load (§5.5 row scope, `scope: "delegated"` /
+ * `scope: "background"`): triggered when the sidebar's bin expands (or an
+ * active search needs its rows). Same contract as `fetchRetiredAgents`: loads
+ * once per workspace, a failed read leaves the loaded flag false so the next
+ * expand retries, rows merge in via `addAgent` (append-only). A no-op while no
+ * `scopeCounts` are held — an older daemon ignores `scope` and already served
+ * every row on the default read, so there is nothing to load.
+ */
+function* fetchLazyBinAgents(workspaceId: string, bin: LazyAgentListBin): SagaGenerator<void> {
+  if (!(yield* selectScopeCounts.effect(workspaceId))) return;
+  if (yield* LAZY_BIN_LOADED_SELECTOR[bin].effect(workspaceId)) return;
+  if (yield* LAZY_BIN_LOADING_SELECTOR[bin].effect(workspaceId)) return;
+  yield* put(setIsLoadingLazyBin(workspaceId, bin, true));
+  try {
+    const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
+      [appClient.agents, appClient.agents.list],
+      workspaceId,
+      { scope: bin },
+    );
+    const fetched = yield* filterPendingDeletions(listed);
+    if (fetched.length > 0) {
+      const agents = [] as typeof fetched;
+      for (const agent of fetched) {
+        const existing = yield* selectAgentSession.effect(String(agent.id));
+        agents.push(
+          agent.messages.length === 0 && existing && existing.messages.length > 0
+            ? { ...agent, messages: existing.messages }
+            : agent,
+        );
+      }
+      yield* put(bulkUpsertSessions(agents, { listProjection: true }));
+      for (const agent of agents) {
+        yield* put(addAgent(workspaceId, agent));
+      }
+    }
+    // Re-baseline the bin's count to the rows actually loaded so the bin
+    // label and its contents can never disagree after a load.
+    const counts = yield* selectScopeCounts.effect(workspaceId);
+    if (counts) {
+      yield* put(adjustScopeCount(workspaceId, bin, fetched.length - counts[bin]));
+    }
+    yield* put(setLazyBinLoaded(workspaceId, bin, true));
+  } finally {
+    yield* put(setIsLoadingLazyBin(workspaceId, bin, false));
+  }
+}
+
+function* fetchDelegatedAgents(workspaceId: string): SagaGenerator<void> {
+  yield* fetchLazyBinAgents(workspaceId, 'delegated');
+}
+
+function* fetchBackgroundAgents(workspaceId: string): SagaGenerator<void> {
+  yield* fetchLazyBinAgents(workspaceId, 'background');
 }
 
 type WorkspaceRead = (workspaceId: string) => SagaGenerator<void>;
@@ -501,11 +664,41 @@ function* runWorkspaceRead(
 }
 
 function* refreshEvents(workspaceId: string): SagaGenerator<void> {
-  const events: Awaited<ReturnType<typeof appClient.events.list>> = yield* call(
-    [appClient.events, appClient.events.list],
-    workspaceId,
-  );
-  yield* put(eventsLoaded(workspaceId, events));
+  try {
+    yield* put(eventsLoadStarted(workspaceId));
+    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
+      [appClient.events, appClient.events.queryPage],
+      workspaceId,
+      { limit: EVENTS_PAGE_LIMIT },
+    );
+    yield* put(eventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+  } catch (error) {
+    yield* put(
+      eventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+    );
+    throw error;
+  }
+}
+
+function* refreshOlderEvents(workspaceId: string): SagaGenerator<void> {
+  const nextToken = yield* selectOlderEventsNextToken.effect(workspaceId);
+  if (!nextToken) {
+    yield* put(olderEventsLoaded(workspaceId, [], null));
+    return;
+  }
+  try {
+    const page: Awaited<ReturnType<typeof appClient.events.queryPage>> = yield* call(
+      [appClient.events, appClient.events.queryPage],
+      workspaceId,
+      { limit: EVENTS_PAGE_LIMIT, nextToken },
+    );
+    yield* put(olderEventsLoaded(workspaceId, [...page.items].reverse(), page.nextToken));
+  } catch (error) {
+    yield* put(
+      olderEventsLoadFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+    );
+    throw error;
+  }
 }
 
 function* refreshTaskAgentLinks(workspaceId: string): SagaGenerator<void> {
@@ -524,25 +717,47 @@ function* refreshSkills(workspaceId: string): SagaGenerator<void> {
     );
     yield* put(setSkills(workspaceId, skills));
   } catch (error) {
-    yield* put(loadSkillsFailed(workspaceId, error instanceof Error ? error.message : String(error)));
+    yield* put(
+      loadSkillsFailed(workspaceId, error instanceof Error ? error.message : String(error)),
+    );
     throw error;
   }
 }
 
+/**
+ * Scripts and terminals are owner-only surfaces (multiplayer w3): a
+ * collaborator connection is refused with `-32003` on every read. That is a
+ * stable answer, not a failure, so these reads settle to an empty list
+ * instead of logging an error on every refresh.
+ */
 function* refreshWorkspaceScripts(workspaceId: string): SagaGenerator<void> {
-  const scripts: Awaited<ReturnType<typeof appClient.scripts.list>> = yield* call(
-    [appClient.scripts, appClient.scripts.list],
-    workspaceId,
-  );
+  let scripts: Awaited<ReturnType<typeof appClient.scripts.list>>;
+  try {
+    scripts = yield* call([appClient.scripts, appClient.scripts.list], workspaceId);
+  } catch (error) {
+    if (!isForbiddenErrorResponse(error)) throw error;
+    logger.debug(`Scripts are owner-only for ${workspaceId}; treating as empty`);
+    scripts = [];
+  }
   yield* put(setScriptsData(workspaceId, scripts));
   yield* put(setScriptsInitialized(workspaceId, true));
 }
 
 function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
-  const result: Awaited<ReturnType<typeof appClient.terminals.list>> = yield* call(
-    [appClient.terminals, appClient.terminals.list],
-    workspaceId,
-  );
+  let result: Awaited<ReturnType<typeof appClient.terminals.list>>;
+  try {
+    result = yield* call([appClient.terminals, appClient.terminals.list], workspaceId);
+  } catch (error) {
+    if (!isForbiddenErrorResponse(error)) throw error;
+    logger.debug(`Terminals are owner-only for ${workspaceId}; treating as empty`);
+    // A bare empty list preserves prior tabs (daemon-restart resilience), so
+    // any tabs still held for this workspace are dropped explicitly.
+    const stale = yield* selectTerminalsForWorkspace.effect(workspaceId);
+    for (const terminal of stale) {
+      yield* put(removeTerminal(workspaceId, terminal.id));
+    }
+    result = { terminals: [] };
+  }
   yield* put(
     Array.isArray(result)
       ? loadWorkspaceTerminals(workspaceId, result)
@@ -550,16 +765,64 @@ function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
   );
 }
 
+/**
+ * A `-32003 Forbidden` refusal is a stable answer: retrying gets the same
+ * response until the client reconnects under a different credential.
+ */
+function isStableWorkspaceListFailure(error: unknown): boolean {
+  if (isForbiddenErrorResponse(error)) return true;
+  return error instanceof Error && error.message === FORBIDDEN_ERROR_MESSAGE;
+}
+
+/**
+ * Until the list has loaded for the active backend, a failed `workspace.list`
+ * is retried with bounded backoff from inside the single-flight worker, so
+ * the trailing-coalesce guarantee holds and reads never fan out. A
+ * `backendReconnected` during the wait ends the loop early: the reconnect
+ * watcher re-puts `loadWorkspacesRequested`, which either queues as this
+ * worker's trailing rerun or starts a fresh one — one immediate read either
+ * way. Once loaded, a later failure is logged only.
+ */
 function* loadWorkspacesWorker() {
-  try {
-    yield* refreshWorkspaces();
-  } catch (error) {
-    logger.error('Refresh failed for workspaces', error);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      yield* refreshWorkspaces();
+      return;
+    } catch (error) {
+      const backendId = yield* selectActiveBackendId();
+      const loaded = yield* selectWorkspaceListLoadedForBackend.effect(backendId);
+      if (loaded || isStableWorkspaceListFailure(error)) {
+        logger.error('Refresh failed for workspaces', error);
+        return;
+      }
+      const delayMs = WORKSPACE_LIST_RETRY_DELAYS_MS[attempt] ?? WORKSPACE_LIST_RETRY_CAP_MS;
+      logger.warn('Refresh failed for workspaces; retrying', { attempt, delayMs, error });
+      const { reconnected } = yield* race({
+        timeout: delay(delayMs),
+        reconnected: take(backendReconnected),
+      });
+      if (reconnected) return;
+    }
+  }
+}
+
+/**
+ * A transport that was down at boot (guest tunnel) or dropped mid-session
+ * re-requests the list once it is back; the single-flight worker coalesces it.
+ */
+function* backendReconnectWorkspacesWatcher(): SagaGenerator<void> {
+  while (true) {
+    yield* take(backendReconnected);
+    yield* put(loadWorkspacesRequested());
   }
 }
 
 type TasksReadAction = ReturnType<
   typeof ensureWorkspaceTasksLoaded | typeof loadWorkspaceTasksRequested | typeof workspaceUnmounted
+>;
+
+type EventsReadAction = ReturnType<
+  typeof loadEventsRequested | typeof loadOlderEventsRequested | typeof workspaceUnmounted
 >;
 
 function tasksReadContext(pendingForcedReads: Set<string>, action: TasksReadAction) {
@@ -593,11 +856,33 @@ function* tasksWorker(
   );
 }
 
+function eventsReadContext(pendingInitialReads: Set<string>, action: EventsReadAction) {
+  const workspaceId = action.payload[0];
+  if (isWorkspaceCleanupAction(action)) {
+    pendingInitialReads.delete(workspaceId);
+    return { context: workspaceId || '', cancel: true as const };
+  }
+  if (workspaceId && action.type === loadEventsRequested.type) {
+    pendingInitialReads.add(workspaceId);
+  }
+  return workspaceId || '';
+}
+
 function* eventsWorker(
   scheduler: WorkspaceReadScheduler,
-  action: ReturnType<typeof loadEventsRequested>,
+  pendingInitialReads: Set<string>,
+  action: EventsReadAction,
 ) {
-  yield* runWorkspaceRead(scheduler, 'events', action.payload[0], refreshEvents);
+  if (isWorkspaceCleanupAction(action)) return;
+  const workspaceId = action.payload[0];
+  if (pendingInitialReads.delete(workspaceId)) {
+    yield* runWorkspaceRead(scheduler, 'events', workspaceId, refreshEvents, false);
+    if (action.type === loadOlderEventsRequested.type) {
+      yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);
+    }
+    return;
+  }
+  yield* runWorkspaceRead(scheduler, 'olderEvents', workspaceId, refreshOlderEvents, false);
 }
 
 function* tokenUsageWorker(
@@ -663,6 +948,20 @@ function* retiredAgentsWorker(
   yield* runWorkspaceRead(scheduler, 'retiredAgents', action.payload[0], fetchRetiredAgents);
 }
 
+function* delegatedAgentsWorker(
+  scheduler: WorkspaceReadScheduler,
+  action: ReturnType<typeof fetchDelegatedAgentsRequested>,
+) {
+  yield* runWorkspaceRead(scheduler, 'delegatedAgents', action.payload[0], fetchDelegatedAgents);
+}
+
+function* backgroundAgentsWorker(
+  scheduler: WorkspaceReadScheduler,
+  action: ReturnType<typeof fetchBackgroundAgentsRequested>,
+) {
+  yield* runWorkspaceRead(scheduler, 'backgroundAgents', action.payload[0], fetchBackgroundAgents);
+}
+
 function* terminalsWorker(
   scheduler: WorkspaceReadScheduler,
   action: ReturnType<typeof hydrateTerminalsRequested>,
@@ -699,8 +998,8 @@ function* contextWorker(
   initializedContexts: Set<string>,
   action: ReturnType<typeof initContextForWorkspace>,
 ) {
-  const [workspaceId] = action.payload;
-  if (!workspaceId || initializedContexts.has(workspaceId)) return;
+  const [workspaceId, force] = action.payload;
+  if (!workspaceId || (!force && initializedContexts.has(workspaceId))) return;
   try {
     yield* race({
       read: call(function* () {
@@ -748,6 +1047,7 @@ function* consoleOwnerReconcileWorker(action: ReturnType<typeof consoleOwnerChan
 export function* lifecycleReadSaga(): SagaGenerator<void> {
   const initializedContexts = new Set<string>();
   const pendingForcedTaskReads = new Set<string>();
+  const pendingInitialEventReads = new Set<string>();
   // One scheduler per saga run: it dies with the saga, so a restart can never
   // inherit slots held by reads that were cancelled with the previous run.
   const scheduler = createWorkspaceReadScheduler();
@@ -763,6 +1063,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // acquisition both re-request the list (coalesced by the worker above).
       takeEveryFromWindowEvent('focus', windowFocusReconcileWorker),
       takeEvery(consoleOwnerChanged, consoleOwnerReconcileWorker),
+      fork(backendReconnectWorkspacesWatcher),
       takeSingleFlightInContext(
         [ensureWorkspaceTasksLoaded, loadWorkspaceTasksRequested, workspaceUnmounted],
         (action) => tasksReadContext(pendingForcedTaskReads, action),
@@ -770,9 +1071,24 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         scheduler,
         pendingForcedTaskReads,
       ),
-      takeLeadingByWorkspace(loadEventsRequested, eventsWorker, scheduler),
+      takeSingleFlightInContext(
+        [loadEventsRequested, loadOlderEventsRequested, workspaceUnmounted],
+        (action) => eventsReadContext(pendingInitialEventReads, action),
+        eventsWorker,
+        scheduler,
+        pendingInitialEventReads,
+      ),
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker, scheduler),
-      takeLeadingByWorkspace(initContextForWorkspace, contextWorker, initializedContexts),
+      takeLatestByContext(
+        initContextForWorkspace,
+        (action) => ({
+          context: action.payload[0],
+          force: action.payload[1],
+          generation: action.payload[2] ?? 0,
+        }),
+        contextWorker,
+        initializedContexts,
+      ),
       takeLeadingByWorkspace(
         hydrateTaskAgentAssociationsRequested,
         taskAgentLinksWorker,
@@ -806,11 +1122,14 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         scheduler,
       ),
       takeLeadingByWorkspace(fetchRetiredAgentsRequested, retiredAgentsWorker, scheduler),
+      takeLeadingByWorkspace(fetchDelegatedAgentsRequested, delegatedAgentsWorker, scheduler),
+      takeLeadingByWorkspace(fetchBackgroundAgentsRequested, backgroundAgentsWorker, scheduler),
       takeLeadingByWorkspace(hydrateTerminalsRequested, terminalsWorker, scheduler),
       takeEvery(workspaceUnmounted, clearUnmountedInitializedContext, initializedContexts),
     ]);
   } finally {
     initializedContexts.clear();
     pendingForcedTaskReads.clear();
+    pendingInitialEventReads.clear();
   }
 }

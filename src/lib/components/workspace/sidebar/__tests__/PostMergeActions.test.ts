@@ -111,8 +111,8 @@ vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { update: mockWorkspaceUpdate, archive: mockArchive, unarchive: mockUnarchive },
 }));
 
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), custom: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), custom: vi.fn() },
 }));
 
 vi.mock('svelte-fa', async () => {
@@ -257,7 +257,7 @@ describe('PostMergeActions', () => {
 
   it('reset failure path: shows toast error and does not update post-merge', async () => {
     mockResetToTrunk.mockResolvedValue({ success: false, error: 'boom' });
-    const { toast } = await import('$lib/components/ui/toast');
+    const { notify } = await import('$lib/components/patterns/notify');
 
     const { container } = await renderPostMerge();
     const resetBtn = Array.from(container.querySelectorAll('button')).find((b) =>
@@ -265,7 +265,7 @@ describe('PostMergeActions', () => {
     ) as HTMLButtonElement;
     await fireEvent.click(resetBtn);
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('boom'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('boom'));
     expect(mocks.dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'git/setPostMergeState' }),
     );

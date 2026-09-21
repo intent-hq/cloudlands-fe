@@ -1,9 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-} from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { WorkspaceRebindTracker } from '../workspace-rebind-tracker';
 
 describe('WorkspaceRebindTracker', () => {
@@ -475,4 +470,3 @@ describe('WorkspaceRebindTracker', () => {
     });
   });
 });
-

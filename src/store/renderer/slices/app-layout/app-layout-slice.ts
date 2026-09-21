@@ -1,10 +1,6 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type {
-  AppLayoutState,
-  OpenAgentTabDetail,
-  SidebarLocateTarget,
-} from './app-layout-types';
+import type { AppLayoutState, OpenAgentTabDetail, SidebarLocateTarget } from './app-layout-types';
 
 export const initialState: AppLayoutState = {
   pendingCommandPaletteAction: null,

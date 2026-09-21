@@ -120,9 +120,20 @@ describe('formatRelativeTime', () => {
 });
 
 describe('formatCompactRelativeTime', () => {
+  it('shows seconds for positive sub-minute ages and now for zero or future ages', () => {
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 18_000), { now: NOW })).toBe(
+      '18s',
+    );
+    expect(en.formatCompactRelativeTime(NOW, { now: NOW })).toBe('now');
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() + 18_000), { now: NOW })).toBe(
+      'now',
+    );
+    expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 60_000), { now: NOW })).toBe('1m');
+  });
+
   it('formats unit-only compact ages', () => {
     expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 30_000), { now: NOW })).toBe(
-      'now',
+      '30s',
     );
     expect(en.formatCompactRelativeTime(new Date(NOW.getTime() - 5 * 60_000), { now: NOW })).toBe(
       '5m',
@@ -183,6 +194,24 @@ describe('formatCompactDuration', () => {
 
   it('uses localized narrow units', () => {
     expect(de.formatCompactDuration(5 * 60_000)).toBe('5 Min.');
+  });
+});
+
+describe('formatSalientDuration', () => {
+  it('shows only the largest salient unit', () => {
+    expect(en.formatSalientDuration(9 * 60_000 + 56_000)).toBe('9m');
+    expect(en.formatSalientDuration(56_000)).toBe('56s');
+    expect(en.formatSalientDuration(3_600_000 + 5 * 60_000)).toBe('1h');
+    expect(en.formatSalientDuration(2 * 86_400_000 + 3 * 3_600_000)).toBe('2d');
+  });
+
+  it('rounds sub-minute values to the nearest second', () => {
+    expect(en.formatSalientDuration(56_600)).toBe('57s');
+  });
+
+  it('clamps negatives and rejects invalid input', () => {
+    expect(en.formatSalientDuration(-5_000)).toBe('0s');
+    expect(en.formatSalientDuration(Number.NaN)).toBe('');
   });
 });
 

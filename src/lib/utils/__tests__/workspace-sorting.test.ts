@@ -1,12 +1,5 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  groupAndSortWorkspaces,
-  type GroupKeyInfo,
-} from '../workspace-sorting';
+import { describe, it, expect } from 'vitest';
+import { groupAndSortWorkspaces, type GroupKeyInfo } from '../workspace-sorting';
 import type { Workspace } from '$shared/types';
 
 // ---------------------------------------------------------------------------
@@ -75,11 +68,7 @@ describe('groupAndSortWorkspaces', () => {
     const groups = groupAndSortWorkspaces({ workspaces, getId, getGroupKey });
 
     // Group order: orgA (idx 0), orgB (idx 1), orgC (idx 2)
-    expect(groups.map((g) => g.groupKey.key)).toEqual([
-      'orgA/repoA',
-      'orgB/repoB',
-      'orgC/repoC',
-    ]);
+    expect(groups.map((g) => g.groupKey.key)).toEqual(['orgA/repoA', 'orgB/repoB', 'orgC/repoC']);
   });
 
   it('sorts workspaces within a single group by recency', () => {
@@ -183,9 +172,7 @@ describe('groupAndSortWorkspaces', () => {
   });
 
   it('preserves extra metadata from getGroupKey on each group', () => {
-    const workspaces = [
-      makeWorkspace({ id: 'a', repositoryOwner: 'org', repositoryName: 'repo' }),
-    ];
+    const workspaces = [makeWorkspace({ id: 'a', repositoryOwner: 'org', repositoryName: 'repo' })];
 
     const groups = groupAndSortWorkspaces({ workspaces, getId, getGroupKey });
 
@@ -216,5 +203,4 @@ describe('groupAndSortWorkspaces', () => {
     expect(groups[0].workspaces.map((i) => i.uid)).toEqual(['1', '3']);
     expect(groups[1].groupKey.key).toBe('B');
   });
-
 });

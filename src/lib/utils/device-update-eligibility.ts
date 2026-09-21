@@ -18,8 +18,8 @@ export interface UpdateEligibilityConnection {
   /** The daemon's reported version, or null/absent until captured. */
   daemonVersion?: string | null;
   /**
-   * Whether the daemon reports self-update support (`updateSupported`
-   * from `system.status`), or null/absent while unknown (capture pending, or
+   * Whether main captured the relevant daemon update capability
+   * (`exactUpdateSupported` for remotes, `updateSupported` for local daemons), or null/absent while unknown (capture pending, or
    * a daemon too old to report the field).
    */
   updateSupported?: boolean | null;

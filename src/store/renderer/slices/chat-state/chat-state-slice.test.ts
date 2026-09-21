@@ -14,6 +14,7 @@ import {
   chatReset,
   chatStreamingReconciled,
   chatModelUnavailableCleared,
+  chatErrorCleared,
   chatRebindStarted,
   chatRebindEnded,
   chatTrackedWorkspaceSet,
@@ -38,7 +39,6 @@ import {
   pendingProposalRecoverySettled,
   pendingProposalRecoveryPruned,
   chatSwitchBackRevealTimedOut,
-  chatUtilityFooterReady,
   messageBlockHydrationRequested,
   messageBlockHydrated,
   messageBlockHydrationFailed,
@@ -53,7 +53,6 @@ import {
 import type { QueuedMessage } from '$shared/types';
 import {
   selectAwaitingSwitchBackSnapshot,
-  selectAwaitingUtilityFooter,
   selectChatAgentState,
   selectChatError,
   selectChatFailureCorrelation,
@@ -193,6 +192,68 @@ describe('chatStateReducer', () => {
     const agent = state.byAgentId[AGENT];
     expect(agent.error).toBe('network error');
     expect(agent.modelUnavailable).toBeNull();
+  });
+
+  it('chatSendFailed records a quota failure so the retry-on-another-provider banner can show (#4455)', () => {
+    const state = chatStateReducer(
+      chatStateReducer(initialState, chatSendStarted(AGENT)),
+      chatSendFailed(AGENT, 'rate limit reached', 'turn-quota-1', undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    const agent = state.byAgentId[AGENT];
+    expect(agent.error).toBe('rate limit reached');
+    expect(agent.quotaExceeded).toEqual({ providerId: 'claude-code' });
+  });
+
+  it('chatSendFailed leaves quotaExceeded null for ordinary failures (#4455)', () => {
+    // A pre-#4455 daemon sends no errorCode, so the bridge passes undefined —
+    // the banner must stay on the plain "Try again" path.
+    const state = chatStateReducer(
+      chatStateReducer(initialState, chatSendStarted(AGENT)),
+      chatSendFailed(AGENT, 'network error'),
+    );
+    expect(state.byAgentId[AGENT].quotaExceeded).toBeNull();
+  });
+
+  it('a new turn clears a previous quota failure (#4455)', () => {
+    const failed = chatStateReducer(
+      chatStateReducer(initialState, chatSendStarted(AGENT)),
+      chatSendFailed(AGENT, 'quota exhausted', undefined, undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    expect(failed.byAgentId[AGENT].quotaExceeded).not.toBeNull();
+    const restarted = chatStateReducer(failed, chatSendStarted(AGENT));
+    expect(restarted.byAgentId[AGENT].quotaExceeded).toBeNull();
+  });
+
+  it('chatErrorCleared drops a quota failure along with the error it qualifies (#4455)', () => {
+    // Enqueue-success (chat-send-saga), the daemon-side redrive status edge
+    // (events bridge) and the agent.retry toast all recover via
+    // chatErrorCleared without chatSendStarted; the provider offer must not
+    // outlive the error it was attached to.
+    const failed = chatStateReducer(
+      chatStateReducer(initialState, chatSendStarted(AGENT)),
+      chatSendFailed(AGENT, 'quota exhausted', undefined, undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    const cleared = chatStateReducer(failed, chatErrorCleared(AGENT));
+    expect(cleared.byAgentId[AGENT].error).toBeNull();
+    expect(cleared.byAgentId[AGENT].quotaExceeded).toBeNull();
+  });
+
+  it('chatInitFailed clears a stale quota failure so the init error is the one shown (#4455)', () => {
+    const failed = chatStateReducer(
+      chatStateReducer(initialState, chatSendStarted(AGENT)),
+      chatSendFailed(AGENT, 'quota exhausted', undefined, undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    const state = chatStateReducer(failed, chatInitFailed(AGENT, 'oops'));
+    expect(state.byAgentId[AGENT].error).toBe('oops');
+    expect(state.byAgentId[AGENT].quotaExceeded).toBeNull();
   });
 
   it('chatSendFailed preserves lastAttemptedMessage so the banner retries the failed message (#969)', () => {
@@ -1651,86 +1712,7 @@ describe('chatState selectors', () => {
     });
   });
 
-  // Utility-footer reveal gate (awaitingUtilityFooter): transcript and footer
-  // flip in the same paint on first open AND switch-back.
-  describe('utility-footer reveal gate', () => {
-    const footerArmed = (state: ReturnType<typeof chatStateReducer>) =>
-      selectAwaitingUtilityFooter.select(asStoreState(state), AGENT);
-
-    it('arms on the FIRST hydration settle only (refresh re-settles never re-arm)', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      expect(footerArmed(state)).toBe(false);
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      expect(footerArmed(state)).toBe(true);
-
-      state = chatStateReducer(state, chatUtilityFooterReady(AGENT));
-      expect(footerArmed(state)).toBe(false);
-      state = chatStateReducer(state, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      expect(footerArmed(state)).toBe(false);
-    });
-
-    it('arms alongside the snapshot gate on markAgentAsViewed (switch-back)', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      state = chatStateReducer(state, chatUtilityFooterReady(AGENT));
-      state = chatStateReducer(
-        state,
-        chatTranscriptSnapshotApplied(AGENT, { truncated: false, totalMessages: 2 }),
-      );
-      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
-      expect(footerArmed(state)).toBe(false);
-      state = chatStateReducer(state, markAgentAsViewed(AGENT));
-      expect(footerArmed(state)).toBe(true);
-      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(true);
-    });
-
-    it('chatUtilityFooterReady clears the footer gate without touching the snapshot gate', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
-      state = chatStateReducer(state, markAgentAsViewed(AGENT));
-      state = chatStateReducer(state, chatUtilityFooterReady(AGENT));
-      expect(footerArmed(state)).toBe(false);
-      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(true);
-    });
-
-    it('chatUtilityFooterReady is a no-op when the gate is not armed', () => {
-      let before = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      before = chatStateReducer(before, transcriptHydrationSettled(AGENT));
-      before = chatStateReducer(before, chatUtilityFooterReady(AGENT));
-      const state = chatStateReducer(before, chatUtilityFooterReady(AGENT));
-      expect(state).toBe(before);
-    });
-
-    it('the shared bounded fallback timeout clears BOTH gates', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
-      state = chatStateReducer(state, markAgentAsViewed(AGENT));
-      state = chatStateReducer(state, chatSwitchBackRevealTimedOut(AGENT));
-      expect(footerArmed(state)).toBe(false);
-      expect(selectAwaitingSwitchBackSnapshot.select(asStoreState(state), AGENT)).toBe(false);
-    });
-
-    it('the fallback timeout clears a footer-only hold (first open)', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      expect(footerArmed(state)).toBe(true);
-      state = chatStateReducer(state, chatSwitchBackRevealTimedOut(AGENT));
-      expect(footerArmed(state)).toBe(false);
-    });
-
-    it('clears when the subscription closes (phase null) — no pending reveal on a backgrounded panel', () => {
-      let state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-      state = chatStateReducer(state, transcriptHydrationSettled(AGENT));
-      expect(footerArmed(state)).toBe(true);
-      state = chatStateReducer(state, chatLiveStreamPhaseChanged(AGENT, null));
-      expect(footerArmed(state)).toBe(false);
-    });
-  });
-
-  describe('lazy block hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
+  describe('lazy block hydration (§5.5 slim → agent.getMessageBlock)', () => {
     const MSG = 'msg-1';
     const BLOCK = 'msg-1:2';
     const entry = (state: ReturnType<typeof chatStateReducer>) =>

@@ -1,0 +1,86 @@
+<script lang="ts">
+  import CheckCircleIcon from 'phosphor-svelte/lib/CheckCircleIcon';
+  import ChatCircleDotsIcon from 'phosphor-svelte/lib/ChatCircleDotsIcon';
+  import CircleNotchIcon from 'phosphor-svelte/lib/CircleNotchIcon';
+  import DownloadSimpleIcon from 'phosphor-svelte/lib/DownloadSimpleIcon';
+  import InfoIcon from 'phosphor-svelte/lib/InfoIcon';
+  import WarningCircleIcon from 'phosphor-svelte/lib/WarningCircleIcon';
+  import WarningIcon from 'phosphor-svelte/lib/WarningIcon';
+
+  type ToastGlyphVariant =
+    'success' | 'error' | 'warning' | 'info' | 'loading' | 'update' | 'discussion';
+
+  let { variant }: { variant: ToastGlyphVariant } = $props();
+</script>
+
+<span class="toast-glyph toast-glyph-{variant}" data-toast-glyph={variant} aria-hidden="true">
+  {#if variant === 'success'}
+    <CheckCircleIcon size={16} weight="fill" aria-hidden="true" />
+  {:else if variant === 'error'}
+    <WarningCircleIcon size={16} weight="fill" aria-hidden="true" />
+  {:else if variant === 'warning'}
+    <WarningIcon size={16} weight="fill" aria-hidden="true" />
+  {:else if variant === 'info'}
+    <InfoIcon size={16} weight="fill" aria-hidden="true" />
+  {:else if variant === 'loading'}
+    <CircleNotchIcon size={16} weight="regular" aria-hidden="true" />
+  {:else if variant === 'update'}
+    <DownloadSimpleIcon size={16} weight="regular" aria-hidden="true" />
+  {:else}
+    <ChatCircleDotsIcon size={16} aria-hidden="true" />
+  {/if}
+</span>
+
+<style>
+  .toast-glyph {
+    display: inline-flex;
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 1rem;
+    align-items: center;
+    justify-content: center;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .toast-glyph-success {
+    color: hsl(var(--success));
+  }
+
+  .toast-glyph-error {
+    color: hsl(var(--danger));
+  }
+
+  .toast-glyph-info {
+    color: hsl(var(--info));
+  }
+
+  .toast-glyph-warning {
+    color: hsl(var(--warning-ink));
+  }
+
+  .toast-glyph-loading :global(path) {
+    transform-box: view-box;
+    transform-origin: center;
+    animation: toast-glyph-spin 900ms linear infinite;
+  }
+
+  .toast-glyph-update {
+    color: hsl(var(--ring));
+  }
+
+  .toast-glyph-discussion {
+    color: hsl(var(--info));
+  }
+
+  @container style(--motion-reduced: 1) {
+    .toast-glyph-loading :global(path) {
+      animation: none;
+    }
+  }
+
+  @keyframes toast-glyph-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

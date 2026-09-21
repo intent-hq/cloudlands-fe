@@ -1,11 +1,15 @@
 import { call, put, race, take, takeEvery } from 'typed-redux-saga';
 
-import { appClient } from '$lib/client';
+import { readAgentSession } from '$features/agent/agent-read-service';
 import { createLogger } from '$lib/utils/client-logger';
 import type { AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
-import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  markAgentDetailHydrated,
+  upsertSession,
+} from '../../agent-session/agent-session-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { ensureAgentSessionLoaded } from '../workspace-agents-slice';
@@ -16,13 +20,10 @@ const logger = createLogger('AgentReadSaga');
 function* loadAgentSessionSaga(wsId: string, agentId: string) {
   if (yield* call(isAgentDeletionPending, agentId)) return;
   try {
-    const session: AgentSession | null = yield* call(
-      [appClient.agents, appClient.agents.get],
-      agentId,
-    );
+    const session: AgentSession | null = yield* call(readAgentSession, agentId);
     if (!session || String(session.workspaceId) !== wsId) return;
     // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
-    // §5.5 `pendingDeleteAt`, v6.7+) — the deletion is pending daemon-side.
+    // §5.5 `pendingDeleteAt`) — the deletion is pending daemon-side.
     if (session.pendingDeleteAt) return;
     if (yield* call(isAgentDeletionPending, agentId)) return;
 
@@ -30,6 +31,7 @@ function* loadAgentSessionSaga(wsId: string, agentId: string) {
     const merged = existing ? { ...session, messages: existing.messages } : session;
     yield* put(bulkUpsertSessions([merged]));
     yield* put(upsertSession(merged));
+    yield* put(markAgentDetailHydrated(agentId));
   } catch (error) {
     if (isAgentNotFoundError(error)) {
       // Expected after deletion: a stale tab/route still references the

@@ -6,6 +6,10 @@ export const labelFixtures = [
     title: 'Label states',
     states: [
       'default',
+      'rest',
+      'hover',
+      'focus',
+      'error',
       'required',
       'optional',
       'disabled',

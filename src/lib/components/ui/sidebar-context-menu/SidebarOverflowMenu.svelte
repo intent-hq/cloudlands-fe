@@ -1,8 +1,16 @@
 <script lang="ts">
-  import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
+  import {
+    ActionMenu,
+    defineActions,
+    type ActionDefinition,
+  } from '$lib/components/patterns/action-menu';
+  import { Button } from '$lib/components/ui/button';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
-  import SidebarDropdownMenuItems from './SidebarDropdownMenuItems.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    isSeparator,
+    type SidebarMenuEntry,
+    type SidebarMenuItem,
+  } from '$lib/components/ui/sidebar-context-menu/types';
 
   let {
     items,
@@ -17,12 +25,53 @@
     orientation?: 'horizontal' | 'vertical';
     class?: string;
   } = $props();
+
+  function toActions(entries: readonly SidebarMenuEntry[]): ActionDefinition[] {
+    let group = 0;
+    return entries.flatMap((entry) => {
+      if (isSeparator(entry)) {
+        group += 1;
+        return [];
+      }
+      return [
+        {
+          id: entry.id,
+          label: entry.label,
+          icon: entry.icon,
+          destructive: entry.destructive,
+          disabled: entry.disabled,
+          checked: entry.checked,
+          group: String(group),
+          children: entry.submenu ? toActions(entry.submenu) : undefined,
+        },
+      ];
+    });
+  }
+
+  function findItem(entries: readonly SidebarMenuEntry[], id: string): SidebarMenuItem | undefined {
+    for (const entry of entries) {
+      if (isSeparator(entry)) continue;
+      if (entry.id === id) return entry;
+      const child = entry.submenu ? findItem(entry.submenu, id) : undefined;
+      if (child) return child;
+    }
+    return undefined;
+  }
+
+  const actions = $derived(defineActions(toActions(items)));
 </script>
 
-<DropdownMenu bind:open align="end">
+<ActionMenu
+  {actions}
+  bind:open
+  align="end"
+  {ariaLabel}
+  onAction={(id) => findItem(items, id)?.onClick()}
+>
   {#snippet trigger({ props })}
-    <button
+    <Button
       {...props}
+      variant="plain"
       type="button"
       class={className}
       aria-label={ariaLabel}
@@ -40,9 +89,6 @@
       {:else}
         <KebabIcon class="size-3.5" />
       {/if}
-    </button>
+    </Button>
   {/snippet}
-  {#snippet content()}
-    <SidebarDropdownMenuItems {items} />
-  {/snippet}
-</DropdownMenu>
+</ActionMenu>

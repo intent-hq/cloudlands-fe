@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   generateFindingLink,
@@ -60,9 +56,9 @@ describe('generateFindingLink', () => {
   });
 
   it('throws when neither repo nor githubUrl is provided', () => {
-    expect(() =>
-      generateFindingLink({ branch: 'main', finding: baseFinding }),
-    ).toThrow('Either "repo" or "githubUrl" must be provided');
+    expect(() => generateFindingLink({ branch: 'main', finding: baseFinding })).toThrow(
+      'Either "repo" or "githubUrl" must be provided',
+    );
   });
 
   it('includes specialist when provided', () => {
@@ -136,9 +132,9 @@ describe('generateFixAllLink', () => {
   });
 
   it('throws when findings array is empty', () => {
-    expect(() =>
-      generateFixAllLink({ repo: '/repo', branch: 'main', findings: [] }),
-    ).toThrow('At least one finding is required');
+    expect(() => generateFixAllLink({ repo: '/repo', branch: 'main', findings: [] })).toThrow(
+      'At least one finding is required',
+    );
   });
 
   it('round-trip: params survive URL encoding/decoding', () => {

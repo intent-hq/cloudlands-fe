@@ -155,6 +155,13 @@ export interface KeyboardShortcut {
   ignoreRepeat?: boolean;
   /** Checked before preventing the event, so route-scoped shortcuts remain native elsewhere. */
   enabled?: () => boolean;
+  /** Let local handlers claim the event before running this fallback shortcut. */
+  preferLocal?: boolean;
+  /**
+   * Fires even when focus is inside an xterm terminal. The terminal adapter handles its own
+   * Mod+T/W/J/F/K, so only set this on shortcuts xterm does not consume.
+   */
+  allowInTerminal?: boolean;
   /**
    * If true, this shortcut will always fire even when focus is in an input/textarea/contenteditable.
    * Use this for shortcuts like Ctrl+` (toggle terminal) that should work regardless of focus,
@@ -168,6 +175,15 @@ export class KeyboardShortcutManager {
   private dynamicShortcuts: KeyboardShortcut[] = [];
   private enabled = false;
   private boundHandler: ((e: KeyboardEvent) => void) | null = null;
+  private localFallbacks = new WeakMap<KeyboardEvent, KeyboardShortcut>();
+  private boundLocalFallback = (event: KeyboardEvent): void => {
+    const shortcut = this.localFallbacks.get(event);
+    this.localFallbacks.delete(event);
+    if (!shortcut || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    shortcut.action();
+  };
 
   constructor() {
     this.boundHandler = this.handleKeyDown.bind(this);
@@ -234,6 +250,8 @@ export class KeyboardShortcutManager {
     if (this.enabled && this.boundHandler) {
       // Must pass the same capture option used in addEventListener
       window.removeEventListener('keydown', this.boundHandler, true);
+      window.removeEventListener('keydown', this.boundLocalFallback);
+      this.localFallbacks = new WeakMap();
       this.enabled = false;
     }
   }
@@ -260,11 +278,7 @@ export class KeyboardShortcutManager {
 
     if (target.closest?.('[data-shortcut-input], [data-shortcut-entry]')) return;
 
-    // Don't intercept shortcuts when focus is in a terminal (xterm)
-    // Terminals need to receive shortcuts like Cmd+K (clear screen) directly
-    if (isFocusInTerminal(target)) {
-      return;
-    }
+    const inTerminal = isFocusInTerminal(target);
 
     // Don't handle shortcuts when typing in inputs (unless it's a global shortcut)
     const isInput =
@@ -299,6 +313,7 @@ export class KeyboardShortcutManager {
       this.shortcuts.get(key);
 
     if (shortcut) {
+      if (inTerminal && !shortcut.allowInTerminal) return;
       if (shortcut.ignoreRepeat && e.repeat) return;
       if (shortcut.enabled && !shortcut.enabled()) return;
 
@@ -316,6 +331,16 @@ export class KeyboardShortcutManager {
         : e.ctrlKey || e.metaKey || e.altKey; // On Win/Linux, Ctrl is also global
 
       if (!isInput || isGlobalShortcut || shortcut.global) {
+        if (shortcut.preferLocal) {
+          this.localFallbacks.set(e, shortcut);
+          // Re-append during capture so even window-level panel handlers mounted
+          // after this manager run first. A local preventDefault or stopped
+          // propagation owns the chord; otherwise the fallback runs before the
+          // browser's default action, without a timer or redispatching the key.
+          window.removeEventListener('keydown', this.boundLocalFallback);
+          window.addEventListener('keydown', this.boundLocalFallback);
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         shortcut.action();

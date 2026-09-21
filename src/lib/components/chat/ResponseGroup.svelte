@@ -9,8 +9,8 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import type { Snippet } from 'svelte';
-  import { flushSync, onDestroy } from 'svelte';
-  import type { TransitionConfig } from 'svelte/transition';
+  import { onDestroy } from 'svelte';
+  import type { ImmediateMotionConfig as TransitionConfig, SpringTierName } from '$lib/motion';
   import type { ContentBlock } from '$shared/types';
   import { getContentBlockText } from '$shared/utils/content-block-helpers';
   import { m } from '$shared/paraglide/messages.js';
@@ -35,8 +35,6 @@
     /** True when the owning message is the conversation's final assistant message. */
     isLastConversationMessage?: boolean;
     children: Snippet;
-    currentChild?: Snippet;
-    currentChildKey?: string;
     blocks?: ContentBlock[];
     reasoningPhase?: boolean;
     adjacentOperationalRow?: boolean;
@@ -50,8 +48,6 @@
     isTerminal = false,
     isLastConversationMessage = false,
     children,
-    currentChild,
-    currentChildKey,
     blocks,
     reasoningPhase = false,
     adjacentOperationalRow = false,
@@ -59,9 +55,10 @@
     class: className = '',
   }: Props = $props();
 
+  const hasPreview = $derived((blocks?.length ?? 0) > 0);
   // svelte-ignore state_referenced_locally -- intentional initial seed; the streaming-edge effect below manages transitions.
   let isExpanded = $state(
-    (isStreaming && !currentChild) || (!isStreaming && isTerminal && isLastConversationMessage),
+    (isStreaming && !hasPreview) || (!isStreaming && isTerminal && isLastConversationMessage),
   );
   let isClosing = $state(false);
   let isInitialized = false;
@@ -70,7 +67,7 @@
   let prevTerminal = false;
   let collapseTimer: ReturnType<typeof setTimeout> | null = null;
   let contentEl: HTMLElement | undefined = $state();
-  let triggerEl: HTMLButtonElement | undefined = $state();
+  let triggerEl: HTMLButtonElement | null = $state(null);
   const instanceId = $props.id();
   const detailsId = `response-group-details-${instanceId}`;
   let searchOwnsExpansion = false;
@@ -87,11 +84,18 @@
 
     if (!isExpanded) return;
     if (contentEl?.contains(document.activeElement)) triggerEl?.focus({ preventScroll: true });
-    flushSync(() => {
-      isClosing = true;
-    });
-    isExpanded = false;
+    isClosing = true;
   }
+
+  // Two-phase collapse: `isClosing` renders first so the details body is
+  // inert and hidden from assistive tech before its outro starts, then this
+  // effect flips `isExpanded` in the following batch. A synchronous flush
+  // would do the same ordering, but `setExpanded` also runs from the
+  // streaming-edge effect below, and a `flushSync` inside an effect body
+  // nulls the outer batch mid-traversal (sveltejs/svelte#18546).
+  $effect(() => {
+    if (isClosing) isExpanded = false;
+  });
 
   function clearCollapseTimer() {
     if (!collapseTimer) return;
@@ -111,13 +115,13 @@
   $effect(() => {
     const currentlyStreaming = isStreaming;
     const currentlyTerminal = isTerminal;
-    const hasCurrentChild = Boolean(currentChild);
+    const currentlyHasPreview = hasPreview;
     if (!isInitialized) {
       isInitialized = true;
       desiredExpanded = isExpanded;
       prevStreaming = currentlyStreaming;
       prevTerminal = currentlyTerminal;
-      if (currentlyStreaming && hasCurrentChild && disclosureOverride === 'automatic') {
+      if (currentlyStreaming && currentlyHasPreview && disclosureOverride === 'automatic') {
         setExpanded(false);
       } else if (!currentlyStreaming && disclosureOverride !== 'expanded-completed') {
         // A terminal group of the conversation's final assistant message keeps
@@ -133,7 +137,7 @@
       if (!prevStreaming && disclosureOverride === 'expanded-completed') {
         disclosureOverride = 'automatic';
       }
-      if (disclosureOverride === 'automatic') setExpanded(!hasCurrentChild);
+      if (disclosureOverride === 'automatic') setExpanded(!currentlyHasPreview);
       clearCollapseTimer();
     } else if (prevStreaming && !currentlyStreaming) {
       if (currentlyTerminal) {
@@ -185,7 +189,7 @@
     if (!searchOwnsExpansion) return;
     searchOwnsExpansion = false;
     if (isStreaming && disclosureOverride === 'automatic') {
-      setExpanded(!currentChild);
+      setExpanded(!hasPreview);
       return;
     }
     setExpanded(false);
@@ -222,7 +226,7 @@
   // props instead.
   function previewTransition(
     node: Element,
-    params: { duration?: number; y?: number } = {},
+    params: { tier?: SpringTierName; y?: number } = {},
     options: { direction?: 'in' | 'out' | 'both' } = {},
   ): TransitionConfig {
     if (isExpanded || (!isStreaming && isTerminal && disclosureOverride !== 'collapsed')) {
@@ -245,7 +249,7 @@
 {#snippet summary()}
   <span class="font-normal {OPERATIONAL_PRIMARY_CLASS}" data-testid="response-group-name"
     >{displayName}</span
-  >{#if textSnippet && !isExpanded && (!isStreaming || !currentChild)}<InlineMarkdownSnippet
+  >{#if textSnippet && !isExpanded && (!isStreaming || !hasPreview)}<InlineMarkdownSnippet
       content={textSnippet}
       class="ml-2.5 font-normal {OPERATIONAL_SECONDARY_CLASS}"
       testId="response-group-snippet"
@@ -260,18 +264,7 @@
         data-operational-expanded-guide
         aria-hidden="true"
       ></span>
-      <!-- Keying on the current child's block identity makes a discrete swap
-           replace nodes: the outgoing child's outro and the incoming child's
-           intro run the same tick-driven disclosure motion, so their combined
-           height interpolates old→new under the followed-bottom lease.
-           Streaming growth within one child keeps the key stable and never
-           animates; the local transition stays inert when the preview itself
-           mounts or unmounts. -->
-      {#key currentChildKey}
-        <div data-response-group-preview-child transition:safeDisclosureTransition>
-          {@render currentChild?.()}
-        </div>
-      {/key}
+      {@render children()}
     </div>
   </CylinderScroller>
 {/snippet}
@@ -292,7 +285,7 @@
 <ChatOperationalRow
   {leading}
   {summary}
-  preview={!isExpanded && isStreaming && currentChild ? preview : undefined}
+  preview={!isExpanded && isStreaming && hasPreview ? preview : undefined}
   details={isExpanded ? details : undefined}
   interactive
   showChevron={false}
@@ -303,7 +296,7 @@
   summaryTitle={accessibleSummary}
   onclick={toggle}
   {detailsId}
-  previewClass={OPERATIONAL_GROUP_CONTENT_CLASS}
+  previewClass={`${OPERATIONAL_GROUP_CONTENT_CLASS} pt-[var(--space-2)]`}
   detailsClass={groupContentClass}
   {previewTransition}
   detailsTransition={safeDisclosureTransition}

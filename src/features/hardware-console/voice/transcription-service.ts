@@ -23,7 +23,7 @@
  * The request carries lightweight dynamic context (workspace title, branch,
  * visible agent names) as `context.keyterms` + `context.prompt`, gathered
  * off `appStore.state` only — no extra RPCs — plus the active workspace id
- * (`workspaceId`, §5.41 v5.1) so the daemon injects the workspace's
+ * (`workspaceId`, §5.41) so the daemon injects the workspace's
  * auto-derived vocabulary server-side; the OS-engine route fetches the same
  * terms via the cached workspace-vocabulary-service for parity.
  * The app-owned transcription saga owns action watching and cancellation;
@@ -100,9 +100,11 @@ function focusDictationComposer(agentId: string): void {
 const TRANSCRIPTION_TOAST_ID = 'hardware-console-voice-transcription';
 
 /** Lazily pull the toast lib so this service stays light. */
-let toastPromise: Promise<(typeof import('svelte-sonner'))['toast']> | null = null;
+let toastPromise: Promise<(typeof import('$lib/components/patterns/notify'))['notify']> | null =
+  null;
 function getToast() {
-  if (!toastPromise) toastPromise = import('svelte-sonner').then((module) => module.toast);
+  if (!toastPromise)
+    toastPromise = import('$lib/components/patterns/notify').then((module) => module.notify);
   return toastPromise;
 }
 
@@ -242,7 +244,7 @@ export function mergeOsContextualStrings(
  * workspace-vocabulary-service; a failed fetch degrades to no terms), and
  * the context keyterms as contextual strings; `daemon` calls the cloud
  * `voice.transcribe` with the `workspaceId` so the daemon injects the same
- * workspace vocabulary server-side (§5.41 v5.1). `unavailable` still goes
+ * workspace vocabulary server-side (§5.41). `unavailable` still goes
  * to the daemon — the triggers gate that case up front, and the daemon's
  * no-key error toast covers any race. State is read at call time so a
  * settings change applies to the next dictation without re-wiring the
@@ -280,8 +282,8 @@ async function transcribeWithSelectedEngine(
 }
 
 /**
- * Matches the daemon's no-API-key failure (intent-voice registry). Daemons on
- * PROTOCOL §5.41 v4.4+ carry a structured `error.data.code`
+ * Matches the daemon's no-API-key failure (intent-voice registry). Daemons
+ * whose `voice.transcribe` failure (PROTOCOL §5.41) carries a structured `error.data.code`
  * (`voice-no-api-key`, intent-hq/monorepo#1448), matched first; the
  * descriptive-message sniff is kept only as a fallback for older daemons
  * whose `error.data` is the plain string.
@@ -472,7 +474,8 @@ export async function handleFinishedRecording(
     : (composerAgentId ?? resolveTargetAgentId(state, routeWorkspaceId));
   const context = gatherTranscriptionContext(state, routeWorkspaceId);
   // The active workspace (chief excluded, same rule as the context) opts the
-  // call into workspace-vocabulary biasing on both engines (§5.41 v5.1).
+  // call into workspace-vocabulary biasing on both engines (§5.41
+  // `voice.transcribe` `workspaceId`).
   const workspaceId = normalizedWorkspaceId(routeWorkspaceId) ?? undefined;
 
   const hudLabel = m.hardwareConsole_voice_transcribing_label();
@@ -534,8 +537,8 @@ export async function handleFinishedRecording(
           error: clipboardError,
         });
       }
-      const toast = await getToast();
-      toast.error(
+      const notify = await getToast();
+      notify.error(
         copied
           ? m.hardwareConsole_voice_insertFailedCopied_error()
           : m.hardwareConsole_voice_insertFailed_error(),
@@ -561,11 +564,11 @@ export async function handleFinishedRecording(
     }
     settle();
     logger.error('voice.transcribe failed', { error });
-    const toast = await getToast();
+    const notify = await getToast();
     if (error instanceof OsTranscriptionError && error.code === 'authorization-denied') {
       // Actionable: the Settings Voice section explains the System Settings
       // grant and offers the engine/key alternatives.
-      toast.error(m.hardwareConsole_voice_osAuthDenied_error(), {
+      notify.error(m.hardwareConsole_voice_osAuthDenied_error(), {
         id: TRANSCRIPTION_TOAST_ID,
         description: errorDetail(error),
         action: voiceSettingsToastAction(),
@@ -576,18 +579,18 @@ export async function handleFinishedRecording(
     ) {
       // The user's explicit OS-engine choice is honored — never a silent
       // fallback to the cloud path — so an unavailable engine fails clearly.
-      toast.error(m.hardwareConsole_voice_osUnavailable_error(), {
+      notify.error(m.hardwareConsole_voice_osUnavailable_error(), {
         id: TRANSCRIPTION_TOAST_ID,
         description: errorDetail(error),
         action: voiceSettingsToastAction(),
       });
     } else if (isNoApiKeyError(error)) {
-      toast.error(m.hardwareConsole_voice_noKey_error(), {
+      notify.error(m.hardwareConsole_voice_noKey_error(), {
         id: TRANSCRIPTION_TOAST_ID,
         description: errorDetail(error),
       });
     } else {
-      toast.error(m.hardwareConsole_voice_transcribeFailed_error(), {
+      notify.error(m.hardwareConsole_voice_transcribeFailed_error(), {
         id: TRANSCRIPTION_TOAST_ID,
         description: errorDetail(error),
       });

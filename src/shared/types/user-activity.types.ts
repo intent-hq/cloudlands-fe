@@ -5,7 +5,6 @@
  * Stored separately from notes to support future multi-user scenarios.
  */
 
-
 /**
  * Record of when a user last read a note
  */

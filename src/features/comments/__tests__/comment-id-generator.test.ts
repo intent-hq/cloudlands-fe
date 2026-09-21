@@ -2,15 +2,8 @@
  * Tests for comment ID generator
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  generateCommentId,
-  isValidCommentId,
-} from '$shared/utils/comment-id-generator';
+import { describe, it, expect } from 'vitest';
+import { generateCommentId, isValidCommentId } from '$shared/utils/comment-id-generator';
 
 describe('Comment ID Generator', () => {
   describe('generateCommentId', () => {

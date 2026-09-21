@@ -20,17 +20,15 @@
   let { item }: Props = $props();
 </script>
 
-<div class="flex items-center gap-2.5">
+<span class="flex min-w-0 items-baseline gap-2">
   {#if item.type === 'message' && item.isArchivedWorkspace}
-    <span
-      class="text-ui font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-foreground/[0.05] text-subtle flex-none"
-    >
+    <span class="shrink-0 rounded bg-muted px-1.5 py-0.5 type-caption text-muted-foreground">
       {m.lib_commandPalette_archivedWorkspace_pill()}
     </span>
   {/if}
-  <span class="text-[14px] font-medium text-foreground truncate">{item.label}</span>
+  <span class="min-w-0 truncate type-caption text-foreground">{item.label}</span>
   {#if item.type === 'message' && item.workspaceName}
-    <span class="text-xs text-subtle truncate">
+    <span class="min-w-0 truncate type-caption text-muted-foreground">
       <span aria-hidden="true">·</span>
       {item.workspaceName}
       {#if item.repoLabel}
@@ -40,6 +38,6 @@
     </span>
   {/if}
   {#if item._time}
-    <span class="text-ui text-subtle flex-none ml-auto">{item._time}</span>
+    <span class="ml-auto shrink-0 type-caption text-muted-foreground">{item._time}</span>
   {/if}
-</div>
+</span>

@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StoreState } from '$store/renderer/types';
 import type { ProviderAvailabilityResult } from '$features/providers/provider-availability.client';
 
@@ -37,14 +31,17 @@ const mockState = vi.hoisted(() => ({
   selectedModel: '',
   selectedModelByProvider: {} as Record<string, string>,
   availableModels: [] as Array<{ value: string; label: string; description?: string }>,
-  modelsByProvider: {} as Record<string, Array<{ value: string; label: string; description?: string }>>,
+  modelsByProvider: {} as Record<
+    string,
+    Array<{ value: string; label: string; description?: string }>
+  >,
   userOverrides: { modelOverrides: {} as Record<string, string> },
   specialists: [
     {
-      id: 'spec-writer',
-      name: 'Coordinator',
-      description: 'Plans work',
-      defaultBehaviorPrompt: 'coordinator-prompt',
+      id: 'developer',
+      name: 'Developer',
+      description: 'Builds features end to end',
+      defaultBehaviorPrompt: 'developer-prompt',
     },
   ] as MockSpecialist[],
 }));
@@ -72,8 +69,8 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: makeSelector(() => mockState.specialists),
-  selectEffectiveBehaviorPrompt: makeSelector((_specialistId: string) =>
-    mockState.specialists[0]?.defaultBehaviorPrompt ?? '',
+  selectEffectiveBehaviorPrompt: makeSelector(
+    (_specialistId: string) => mockState.specialists[0]?.defaultBehaviorPrompt ?? '',
   ),
   selectUserOverrides: makeSelector(() => mockState.userOverrides),
 }));
@@ -98,7 +95,8 @@ vi.mock('$store/renderer/slices/model/model-slice', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => {},
@@ -126,19 +124,25 @@ import { MOCK_PROVIDER_CATALOG } from '../../../test/fixtures/provider-catalog.f
 // The resolver reads the default provider + tier tables straight off
 // state.providerCatalog (real selectors, not mocked) — hydrate it. The
 // effective default provider is settings-derived (never fabricated from the
-// catalog), so providerSettings mirrors the mocked active provider.
+// catalog), so model.defaultProviderId mirrors the mocked active provider.
 const fakeState = {
   providerCatalog: providerCatalogReducer(
     providerCatalogInitialState,
     providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
   ),
-  get providerSettings() {
-    return { activeProviderId: mockState.activeProviderId, enabledProviders: {} };
+  providerSettings: { enabledProviders: {} },
+  get model() {
+    return { defaultProviderId: mockState.activeProviderId };
   },
 } as unknown as StoreState;
 
 function setAvailability(
-  overrides: Partial<Record<keyof ProviderAvailabilityResult['providers'], { available: boolean; authenticated?: boolean }>>,
+  overrides: Partial<
+    Record<
+      keyof ProviderAvailabilityResult['providers'],
+      { available: boolean; authenticated?: boolean }
+    >
+  >,
 ) {
   const base: ProviderAvailabilityResult['providers'] = {
     auggie: { available: false, authenticated: undefined },
@@ -163,6 +167,31 @@ function setAvailability(
 }
 
 describe('resolveOnboardingModel', () => {
+  it('does not auto-pick Antigravity without a saved preference or card/model choice', async () => {
+    mockState.activeProviderId = '';
+    setAvailability({ antigravity: { available: true, authenticated: true } });
+    expect((await resolveOnboardingModel(fakeState)).provider).toBe('');
+    setAvailability({
+      antigravity: { available: true, authenticated: true },
+      codex: { available: true, authenticated: true },
+    });
+    expect((await resolveOnboardingModel(fakeState)).provider).toBe('codex');
+  });
+
+  it.each(['active', 'specialist', 'model'])(
+    'honors an explicit Antigravity %s choice',
+    async (choice) => {
+      mockState.activeProviderId = choice === 'active' ? 'antigravity' : '';
+      if (choice === 'specialist') mockState.specialists[0].codingAgent = 'antigravity';
+      setAvailability({
+        antigravity: { available: true, authenticated: true },
+        codex: { available: true, authenticated: true },
+      });
+      const pick = choice === 'model' ? { provider: 'antigravity', model: 'model-a' } : undefined;
+      expect((await resolveOnboardingModel(fakeState, pick)).provider).toBe('antigravity');
+    },
+  );
+
   beforeEach(() => {
     vi.clearAllMocks();
     setAvailability({ auggie: { available: true, authenticated: true } });
@@ -174,10 +203,10 @@ describe('resolveOnboardingModel', () => {
     mockState.userOverrides = { modelOverrides: {} };
     mockState.specialists = [
       {
-        id: 'spec-writer',
-        name: 'Coordinator',
-        description: 'Plans work',
-        defaultBehaviorPrompt: 'coordinator-prompt',
+        id: 'developer',
+        name: 'Developer',
+        description: 'Builds features end to end',
+        defaultBehaviorPrompt: 'developer-prompt',
       },
     ];
   });
@@ -190,7 +219,55 @@ describe('resolveOnboardingModel', () => {
 
     expect(result.provider).toBe('auggie');
     expect(result.model).toBeUndefined();
-    expect(result.specialistId).toBe('spec-writer');
+    expect(result.specialistId).toBe('developer');
+    expect(result.specialistName).toBe('Developer');
+  });
+
+  it('keeps Developer with the bundled name when the specialist list has not loaded yet (empty)', async () => {
+    mockState.specialists = [];
+
+    const result = await resolveOnboardingModel(fakeState);
+
+    expect(result.specialistId).toBe('developer');
+    expect(result.specialistName).toBeTruthy();
+    expect(result.specialistName).not.toBe('developer');
+  });
+
+  it('falls back to General (null specialist) when a loaded specialist list lacks the Developer', async () => {
+    mockState.specialists = [
+      {
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: 'Plans and delegates',
+        defaultBehaviorPrompt: 'coordinator-prompt',
+      },
+    ];
+    mockState.userOverrides = { modelOverrides: { developer: 'auggie:fable-5' } };
+
+    const result = await resolveOnboardingModel(fakeState);
+
+    expect(result.specialistId).toBeNull();
+    expect(result.specialistName).toBeUndefined();
+    expect(result.behaviorPrompt).toBeUndefined();
+    // A Developer-scoped model override must not leak onto the General agent.
+    expect(result.model).toBeUndefined();
+    expect(result.provider).toBe('auggie');
+  });
+
+  it('uses the resolved catalog name for the Developer (file/project override)', async () => {
+    mockState.specialists = [
+      {
+        id: 'developer',
+        name: 'Team Builder',
+        description: 'Project-overridden developer',
+        defaultBehaviorPrompt: 'custom-developer-prompt',
+      },
+    ];
+
+    const result = await resolveOnboardingModel(fakeState);
+
+    expect(result.specialistId).toBe('developer');
+    expect(result.specialistName).toBe('Team Builder');
   });
 
   it('returns opencode with no model when only opencode is installed and active', async () => {
@@ -292,22 +369,22 @@ describe('resolveOnboardingModel', () => {
   describe('user-selected Pi provider (provider propagation regression)', () => {
     const PI_MODEL = 'pi:anthropic/claude-opus-4.7';
 
-    // Mirrors the real Coordinator file specialist that pins auggie/fable-5.
-    const pinnedCoordinator = (): void => {
+    // Mirrors a Developer file specialist that pins auggie/fable-5.
+    const pinnedDeveloper = (): void => {
       mockState.specialists = [
         {
-          id: 'spec-writer',
-          name: 'Coordinator',
-          description: 'Plans work',
+          id: 'developer',
+          name: 'Developer',
+          description: 'Builds features end to end',
           codingAgent: 'auggie',
           defaultModel: 'fable-5',
-          defaultBehaviorPrompt: 'coordinator-prompt',
+          defaultBehaviorPrompt: 'developer-prompt',
         },
       ];
     };
 
     it('routes to pi with no model (daemon resolves) when the user explicitly picked pi', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: true },
@@ -324,7 +401,7 @@ describe('resolveOnboardingModel', () => {
     });
 
     it('honors user-explicit pi under the relaxed auth gate (authenticated=undefined)', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: undefined },
@@ -338,7 +415,7 @@ describe('resolveOnboardingModel', () => {
     });
 
     it('routes to auggie with no model when the user made no explicit provider change', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: true },
@@ -356,7 +433,7 @@ describe('resolveOnboardingModel', () => {
     });
 
     it('throws when user-explicit pi is not installed (no silent auggie fallback)', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({ auggie: { available: true, authenticated: true } });
       mockState.activeProviderId = 'pi';
 
@@ -364,7 +441,7 @@ describe('resolveOnboardingModel', () => {
     });
 
     it('throws when user-explicit pi is installed but explicitly not authenticated', async () => {
-      pinnedCoordinator();
+      pinnedDeveloper();
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: false },
@@ -379,7 +456,7 @@ describe('resolveOnboardingModel', () => {
     it('submits the override when it belongs to the resolved provider', async () => {
       setAvailability({ auggie: { available: true, authenticated: true } });
       mockState.activeProviderId = 'auggie';
-      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'sonnet4.5' } };
+      mockState.userOverrides = { modelOverrides: { developer: 'sonnet4.5' } };
 
       const result = await resolveOnboardingModel(fakeState);
 
@@ -397,7 +474,7 @@ describe('resolveOnboardingModel', () => {
       // effective default — claude-code here — by design; only an explicit
       // cross-provider prefix is droppable.)
       mockState.activeProviderId = 'claude-code';
-      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'auggie:fable-5' } };
+      mockState.userOverrides = { modelOverrides: { developer: 'auggie:fable-5' } };
 
       const result = await resolveOnboardingModel(fakeState);
 
@@ -407,26 +484,45 @@ describe('resolveOnboardingModel', () => {
   });
 
   describe('user-selected model override (onboarding prompt-step picker)', () => {
-    it('returns the picked compound model with its provider, bypassing all other resolution', async () => {
+    it('returns the picked model with its provider leg, bypassing all other resolution', async () => {
       setAvailability({
         auggie: { available: true, authenticated: true },
         pi: { available: true, authenticated: true },
       });
       mockState.activeProviderId = 'auggie';
 
-      const result = await resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7');
+      const result = await resolveOnboardingModel(fakeState, {
+        model: 'anthropic/claude-opus-4.7',
+        provider: 'pi',
+      });
 
       expect(result.provider).toBe('pi');
-      expect(result.model).toBe('pi:anthropic/claude-opus-4.7');
-      expect(result.specialistId).toBe('spec-writer');
-      expect(result.behaviorPrompt).toBe('coordinator-prompt');
+      expect(result.model).toBe('anthropic/claude-opus-4.7');
+      expect(result.specialistId).toBe('developer');
+      expect(result.specialistName).toBe('Developer');
+      expect(result.behaviorPrompt).toBe('developer-prompt');
     });
 
-    it('attributes a bare model id to the default provider', async () => {
+    it('splits a legacy compound pick without a provider leg at the boundary', async () => {
+      setAvailability({
+        auggie: { available: true, authenticated: true },
+        pi: { available: true, authenticated: true },
+      });
+      mockState.activeProviderId = 'auggie';
+
+      const result = await resolveOnboardingModel(fakeState, {
+        model: 'pi:anthropic/claude-opus-4.7',
+      });
+
+      expect(result.provider).toBe('pi');
+      expect(result.model).toBe('anthropic/claude-opus-4.7');
+    });
+
+    it('attributes a bare model id without a provider leg to the default provider', async () => {
       setAvailability({ auggie: { available: true, authenticated: true } });
       mockState.activeProviderId = 'auggie';
 
-      const result = await resolveOnboardingModel(fakeState, 'sonnet4.5');
+      const result = await resolveOnboardingModel(fakeState, { model: 'sonnet4.5' });
 
       expect(result.provider).toBe('auggie');
       expect(result.model).toBe('sonnet4.5');
@@ -438,9 +534,12 @@ describe('resolveOnboardingModel', () => {
         opencode: { available: true, authenticated: true },
       });
       mockState.activeProviderId = 'auggie';
-      mockState.userOverrides = { modelOverrides: { 'spec-writer': 'opencode:x' } };
+      mockState.userOverrides = { modelOverrides: { developer: 'opencode:x' } };
 
-      const result = await resolveOnboardingModel(fakeState, 'opus4.7');
+      const result = await resolveOnboardingModel(fakeState, {
+        model: 'opus4.7',
+        provider: 'auggie',
+      });
 
       expect(result.provider).toBe('auggie');
       expect(result.model).toBe('opus4.7');
@@ -453,10 +552,13 @@ describe('resolveOnboardingModel', () => {
       });
       mockState.activeProviderId = 'auggie';
 
-      const result = await resolveOnboardingModel(fakeState, 'opencode:anthropic/claude-4');
+      const result = await resolveOnboardingModel(fakeState, {
+        model: 'anthropic/claude-4',
+        provider: 'opencode',
+      });
 
       expect(result.provider).toBe('opencode');
-      expect(result.model).toBe('opencode:anthropic/claude-4');
+      expect(result.model).toBe('anthropic/claude-4');
     });
 
     it("throws when the picked model's provider is not installed (no silent switch)", async () => {
@@ -464,7 +566,7 @@ describe('resolveOnboardingModel', () => {
       mockState.activeProviderId = 'auggie';
 
       await expect(
-        resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7'),
+        resolveOnboardingModel(fakeState, { model: 'anthropic/claude-opus-4.7', provider: 'pi' }),
       ).rejects.toThrow(/'pi'/);
     });
 
@@ -476,9 +578,8 @@ describe('resolveOnboardingModel', () => {
       mockState.activeProviderId = 'auggie';
 
       await expect(
-        resolveOnboardingModel(fakeState, 'pi:anthropic/claude-opus-4.7'),
+        resolveOnboardingModel(fakeState, { model: 'anthropic/claude-opus-4.7', provider: 'pi' }),
       ).rejects.toThrow(/'pi'/);
     });
   });
 });
-

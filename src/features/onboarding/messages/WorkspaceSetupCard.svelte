@@ -13,23 +13,26 @@
    * - "this terminal" → focuses the setup terminal
    * - Specialist name → rich tooltip with description, prompt preview, settings link
    */
-  import { slide, blur } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { blur, slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faFolderOpen,
     faCodeBranch,
     faTerminal,
     faRobot,
-    faCopy,
   } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import ShimmerOverlay from '$lib/components/ui/ShimmerOverlay.svelte';
+  import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
-  import { getSpecialistById } from '$lib/constants/specialists';
+  import {
+    DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+    getSpecialistById,
+  } from '$lib/constants/specialists';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
   import {
     createProgressLabel,
@@ -65,9 +68,12 @@
     setupScriptContent?: string;
     /** Callback to focus the setup terminal */
     onFocusSetupTerminal?: () => void;
-    /** Name of the specialist/agent (e.g. "Coordinator") */
+    /**
+     * Fallback display name when `specialistId` resolves to nothing (neither
+     * the live catalog nor the bundled constants know the id).
+     */
     specialistName?: string;
-    /** The specialist ID for tooltip/settings linking */
+    /** The specialist ID for name resolution, tooltip and settings linking */
     specialistId?: string;
     /** Whether the user provided an initial prompt */
     hasPrompt?: boolean;
@@ -114,6 +120,7 @@
   // one it ever renders. An absent id binds a never-matching key (null entry).
   // svelte-ignore state_referenced_locally
   const progressEntry$ = selectWorkspaceCreateProgress(progressId ?? '');
+  const specialists$ = selectSpecialists();
 
   // Monotonic floor: track the highest percent seen so the label and bar
   // never move backwards even if frames arrive out of order. Clamped to 100
@@ -131,8 +138,23 @@
   const displayBranch = $derived(baseRef.replace(/^[^/]+\//, ''));
 
   const specialist = $derived(specialistId ? getSpecialistById(specialistId) : undefined);
-  /** Use the specialist's canonical name when available, fall back to the passed-in prop */
-  const displaySpecialistName = $derived(specialist?.name || specialistName);
+  /**
+   * Resolve the name by id: the live catalog first (file / project overrides
+   * of a bundled specialist carry their configured name), then the bundled
+   * constants, then the passed-in `specialistName`. Callers such as ChatPanel
+   * pass the agent *session* name, which must not shadow the specialist name
+   * once the id resolves (a renamed agent still shows its specialist here).
+   */
+  const catalogSpecialist = $derived(
+    specialistId ? $specialists$.find((s) => s.id === specialistId) : undefined,
+  );
+  const displaySpecialistName = $derived(
+    catalogSpecialist?.name || specialist?.name || specialistName,
+  );
+  /** Both the Coordinator and the Developer write a spec before implementing. */
+  const writesSpecFirst = $derived(
+    specialistId === 'spec-writer' || specialistId === DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  );
 
   const steps = $derived.by(() => {
     const all: StepStatus[] = [repoStatus, branchStatus];
@@ -151,7 +173,7 @@
 
   function copyToClipboard(text: string, label: string) {
     navigator.clipboard.writeText(text);
-    toast.success(m.onboarding_setupCard_copied_label({ label }));
+    notify.success(m.onboarding_setupCard_copied_label({ label }));
   }
 
   function shortenPath(p: string): string {
@@ -166,7 +188,7 @@
 </script>
 
 <div
-  class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden transition-all duration-500"
+  class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden transition-all duration-spring-slow ease-spring-slow motion-reduce:transition-none"
 >
   <!-- Header -->
   <div
@@ -176,9 +198,9 @@
     <div class="inline-grid *:[grid-area:1/1]">
       {#key allDone}
         <h3
-          class="text-lg font-semibold tracking-[-0.016em] transition-colors duration-500"
-          in:blur={{ duration: 400, delay: 200, amount: 3, easing: cubicOut }}
-          out:blur={{ duration: 300, amount: 3, easing: cubicOut }}
+          class="text-lg font-semibold tracking-[-0.016em] transition-colors duration-spring-slow ease-spring-slow motion-reduce:transition-none"
+          in:blur={{ tier: 'slow', distance: 3 }}
+          out:blur={{ tier: 'slow', distance: 3 }}
         >
           {#if allDone}
             <span class="inline-flex items-center gap-1.5">
@@ -194,10 +216,7 @@
       <span class="text-sm font-mono text-muted-foreground tabular-nums">
         <span class="inline-grid *:[grid-area:1/1]">
           {#key currentStep}
-            <span
-              class="inline-block col-span-1 row-span-1"
-              in:slide={{ axis: 'y', duration: 300 }}
-            >
+            <span class="inline-block col-span-1 row-span-1" in:slide={{ axis: 'y', tier: 'slow' }}>
               {currentStep}
             </span>
           {/key}
@@ -217,9 +236,9 @@
     )}
       <div
         class="relative flex items-start overflow-hidden rounded-md py-0.75 text-base leading-relaxed"
-        style:gap="var(--operational-leading-gap)"
+        style:gap="0.25rem"
         style:padding-inline="var(--operational-row-inline-padding)"
-        transition:slide={{ duration: 300, easing: cubicOut }}
+        transition:slide={{ tier: 'slow' }}
       >
         {#if status === 'active'}
           <div class="absolute inset-0 left-5">
@@ -227,27 +246,31 @@
           </div>
         {/if}
         <span
-          class="{CHAT_OPERATIONAL_SUMMARY_TONE_CLASS} relative z-10 mt-1 flex size-[var(--operational-leading-slot-size)] shrink-0 items-center justify-center"
+          class="{CHAT_OPERATIONAL_SUMMARY_TONE_CLASS} relative z-10 mt-1 flex size-4 shrink-0 items-center justify-start"
+          data-testid="workspace-setup-step-icon"
         >
           <Fa {icon} size={14} class={iconClass} />
         </span>
-        <span class="text-muted-foreground font-normal leading-snug relative z-10">
+        <div
+          class="setup-step-content min-w-0 text-muted-foreground font-normal leading-snug relative z-10"
+          data-testid="workspace-setup-step-content"
+        >
           {#if status === 'active'}
             <div
-              in:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
-              out:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+              in:slide={{ axis: 'y', tier: 'moderate' }}
+              out:slide={{ axis: 'y', tier: 'moderate' }}
             >
               {@render activeContent()}
             </div>
           {:else}
             <div
-              in:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
-              out:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+              in:slide={{ axis: 'y', tier: 'moderate' }}
+              out:slide={{ axis: 'y', tier: 'moderate' }}
             >
               {@render doneContent()}
             </div>
           {/if}
-        </span>
+        </div>
       </div>
     {/snippet}
 
@@ -261,11 +284,16 @@
         repoDone,
       )}
     {/if}
-    {#snippet repoNameCopyable()}
+    {#snippet repoNameCopyable(after = '')}
       {#if repoPath}
-        {@render copyableRef(repoName, m.onboarding_setupCard_originalFolder_label(), repoPath)}
+        {@render copyableRef(
+          repoName,
+          m.onboarding_setupCard_originalFolder_label(),
+          repoPath,
+          after,
+        )}
       {:else}
-        {repoName}
+        {repoName}{after}
       {/if}
     {/snippet}
     {#snippet repoActive()}
@@ -281,7 +309,7 @@
         </span>
         <div class="mt-1 h-[2px] w-full max-w-64 rounded-full bg-secondary overflow-hidden">
           <div
-            class="h-full bg-foreground/60 transition-[width] duration-300 ease-out"
+            class="h-full bg-foreground/60 transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             style="width: {maxPercent}%"
             role="progressbar"
             aria-label={createProgressLabel($progressEntry$)}
@@ -293,7 +321,7 @@
         </div>
       {:else if skipIsolation}
         {m.onboarding_setupCard_opening_before()}
-        {@render repoNameCopyable()}{m.onboarding_setupCard_opening_after()}
+        {@render repoNameCopyable(m.onboarding_setupCard_opening_after())}
       {:else}
         {m.onboarding_setupCard_creatingIsolatedCopy_before()} {@render repoNameCopyable()}
       {/if}
@@ -309,13 +337,11 @@
             isDirectory={true}
             variant="sidebar"
             compact
-            class="inline"
+            inline
+            class="setup-path"
           >
-            <span
-              class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
-              >{shortenPath(worktreePath)}</span
-            >
-          </OpenComboButton>{/if}.
+            {@render referenceLabel(shortenPath(worktreePath), '.')}
+          </OpenComboButton>{:else}.{/if}
       {:else}
         {m.onboarding_setupCard_createdIsolatedCopy_before()}
         {@render repoNameCopyable()}
@@ -326,13 +352,11 @@
             isDirectory={true}
             variant="sidebar"
             compact
-            class="inline"
+            inline
+            class="setup-path"
           >
-            <span
-              class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
-              >{shortenPath(worktreePath)}</span
-            >
-          </OpenComboButton>{/if}.
+            {@render referenceLabel(shortenPath(worktreePath), '.')}
+          </OpenComboButton>{:else}.{/if}
       {/if}
     {/snippet}
 
@@ -351,25 +375,38 @@
       {:else if branch}
         {m.onboarding_setupCard_creatingBranch_before()} <span class="">{branch}</span>
         {m.onboarding_setupCard_creatingBranch_middle()}
-        <button
-          class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
-          onclick={() => copyToClipboard(baseRef, m.onboarding_setupCard_baseRef_label())}
-          >{baseRef}</button
-        >{m.onboarding_setupCard_creatingBranch_after()}
+        {@render copyableRef(
+          baseRef,
+          m.onboarding_setupCard_baseRef_label(),
+          undefined,
+          m.onboarding_setupCard_creatingBranch_after(),
+        )}
       {:else}
         {m.onboarding_setupCard_creatingBranchNoName_label()}
       {/if}
     {/snippet}
-    {#snippet copyableRef(text: string, label: string, copyValue?: string)}
-      <button
-        class="group/copy inline-flex items-center gap-0.5 underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
+    {#snippet referenceLabel(text: string, punctuation = '')}
+      {@const characters = Array.from(text)}
+      <!-- Native buttons are atomic inline boxes. Keep punctuation inside the
+           control, joined to the final character even during emergency wrapping. -->
+      <span class="underline underline-offset-2">{characters.slice(0, -1).join('')}</span><span
+        class="whitespace-nowrap"
+        ><span class="underline underline-offset-2">{characters.at(-1) ?? ''}</span><span
+          class="setup-reference-punctuation"
+          aria-hidden="true">{punctuation}</span
+        ></span
+      >
+    {/snippet}
+    {#snippet copyableRef(text: string, label: string, copyValue?: string, after = '')}
+      {@const punctuation = after.match(/^\p{P}+/u)?.[0] ?? ''}
+      <Button
+        variant="plain"
+        wrapContent={false}
+        class="setup-inline-link cursor-pointer hover:text-foreground transition-colors"
         onclick={() => copyToClipboard(copyValue ?? text, label)}
       >
-        {text}<span
-          class="inline-flex w-0 overflow-hidden opacity-0 group-hover/copy:w-3.5 group-hover/copy:opacity-40 transition-all duration-200"
-          ><Fa icon={faCopy} size="xs" class="ml-0.5" /></span
-        >
-      </button>
+        {@render referenceLabel(text, punctuation)}
+      </Button>{after.slice(punctuation.length)}
     {/snippet}
     {#snippet branchDone()}
       {#if skipIsolation}
@@ -378,7 +415,9 @@
           {@render copyableRef(
             branch,
             m.onboarding_setupCard_branchName_label(),
-          )}{m.onboarding_setupCard_workingOnBranchDone_after()}
+            undefined,
+            m.onboarding_setupCard_workingOnBranchDone_after(),
+          )}
         {:else}
           {m.onboarding_setupCard_workingDirectlyOnBranch_label()}
         {/if}
@@ -387,11 +426,15 @@
         {@render copyableRef(
           branch,
           m.onboarding_setupCard_branchName_label(),
-        )}{m.onboarding_setupCard_workingInNewBranch_middle()}
+          undefined,
+          m.onboarding_setupCard_workingInNewBranch_middle(),
+        )}
         {@render copyableRef(
           baseRef,
           m.onboarding_setupCard_baseRef_label(),
-        )}{m.onboarding_setupCard_workingInNewBranch_after()}
+          undefined,
+          m.onboarding_setupCard_workingInNewBranch_after(),
+        )}
       {:else}
         {m.onboarding_setupCard_branchCreated_label()}
       {/if}
@@ -412,11 +455,20 @@
       {#if projectType}<span class="">{projectType}</span
         >{:else}{m.onboarding_setupCard_project_label()}{/if}
       {m.onboarding_setupCard_ranSetup_middle()}{#if onFocusSetupTerminal}{' '}{m.onboarding_setupCard_ranSetupIn_middle()}
-        <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
+        <TooltipRich
+          class="inline"
+          side="bottom"
+          align="start"
+          interactive
+          maxWidth="22rem"
+          delayDuration={300}
+        >
           {#snippet trigger()}
-            <button
-              class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
-              onclick={onFocusSetupTerminal}>{m.onboarding_setupCard_terminalTab_label()}</button
+            <Button
+              variant="plain"
+              wrapContent={false}
+              class="setup-inline-link underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
+              onclick={onFocusSetupTerminal}>{m.onboarding_setupCard_terminalTab_label()}</Button
             >
           {/snippet}
           {#snippet content()}
@@ -438,11 +490,20 @@
       {@render stepRow(agentStatus, faRobot, 'ml-[-0.5px]', agentActive, agentDone)}
     {/if}
     {#snippet specialistWithTooltip()}
-      <TooltipRich side="bottom" align="start" interactive maxWidth="22rem" delayDuration={300}>
+      <TooltipRich
+        class="inline"
+        side="bottom"
+        align="start"
+        interactive
+        maxWidth="22rem"
+        delayDuration={300}
+      >
         {#snippet trigger()}
-          <button
-            class="underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
-            onclick={openSpecialistSettings}>{displaySpecialistName}</button
+          <Button
+            variant="plain"
+            wrapContent={false}
+            class="setup-inline-link underline underline-offset-2 cursor-pointer hover:text-foreground transition-colors"
+            onclick={openSpecialistSettings}>{displaySpecialistName}</Button
           >
         {/snippet}
         {#snippet content()}
@@ -464,7 +525,7 @@
         {m.onboarding_setupCard_agentReadyNamed_after()}
       {:else if !hasPrompt}
         {m.onboarding_setupCard_agentReady_label()}
-      {:else if specialistId === 'spec-writer'}
+      {:else if writesSpecFirst}
         {m.onboarding_setupCard_specStartingUp_before()}
         {@render specialistWithTooltip()}
         {m.onboarding_setupCard_specStartingUp_after()}
@@ -483,7 +544,7 @@
         {m.onboarding_setupCard_agentReadyNamed_after()}
       {:else if !hasPrompt}
         {m.onboarding_setupCard_agentReady_label()}
-      {:else if specialistId === 'spec-writer'}
+      {:else if writesSpecFirst}
         {m.onboarding_setupCard_specDone_before()}
         {@render specialistWithTooltip()}
         {m.onboarding_setupCard_specDone_after()}
@@ -499,12 +560,37 @@
 </div>
 
 <style>
-  @keyframes celebrate-bounce {
+  .setup-step-content {
+    overflow-wrap: anywhere;
+  }
+
+  .setup-step-content :global(.setup-inline-link),
+  .setup-step-content :global(.setup-path button) {
+    display: inline;
+    padding: 0;
+    height: auto;
+    min-height: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    letter-spacing: inherit;
+    vertical-align: baseline;
+    white-space: normal;
+    text-align: inherit;
+    overflow-wrap: anywhere;
+  }
+
+  .setup-step-content :global(.setup-path) {
+    display: inline;
+  }
+
+  .setup-step-content :global(.setup-path button) {
+    text-decoration: none;
+  }
+
+  @keyframes celebrate-settle {
     0% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.005);
+      transform: scale(0.995);
     }
     100% {
       transform: scale(1);
@@ -513,10 +599,7 @@
 
   @keyframes celebrate-glow {
     0% {
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.15);
-    }
-    40% {
-      box-shadow: 0 0 16px 2px hsl(var(--primary) / 0.12);
+      box-shadow: 0 0 16px 2px hsl(var(--primary) / 0.15);
     }
     100% {
       box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
@@ -525,7 +608,7 @@
 
   :global(.setup-card-celebrate) {
     animation:
-      celebrate-bounce 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+      celebrate-settle var(--spring-slow) var(--ease-spring-slow),
       celebrate-glow 1.2s ease-out;
   }
 </style>

@@ -1,9 +1,9 @@
 /**
  * Running-agents quit confirmation for the main process.
  *
- * Shows the ownership-branched "agents are still working" prompt when a daemon
- * reports responding agents, and returns whether the caller should proceed
- * with quit/teardown. Shared by:
+ * Shows the "agents are still working" prompt when quitting would interrupt
+ * agents on the app-spawned sidecar, and returns whether the caller should
+ * proceed with quit/teardown. Shared by:
  *   - `before-quit` (Cmd+Q) and the non-macOS `window-all-closed` path in
  *     `src/main/index.ts`;
  *   - `AutoUpdateService.installUpdate()`, which must confirm BEFORE calling
@@ -14,8 +14,14 @@
  * `quit-confirmation:*` channels, contract in
  * `src/shared/ipc/quit-confirmation.ts`), enriched with the agent-owned
  * embedded browser tabs quitting would destroy — and shown whenever quitting
- * disrupts anything: responding agents OR agent-owned tabs (tabs alone
- * trigger the prompt too). The renderer round-trip is
+ * disrupts anything: interrupted sidecar agents OR agent-owned tabs (tabs
+ * alone trigger the prompt too). Under REV-2 (PROTOCOL §5.9 / §5.45) a tab this
+ * app hosts only counts when its workspace's *driving client*
+ * (`workspace.getBrowserClient(...).resolved`) is this app's own clientId —
+ * an agent's tabs migrate to whichever client drives the workspace, so
+ * quitting a non-driving client destroys nothing the agent depends on. The
+ * lookup is fail-open per workspace: a failed or unsupported RPC keeps the
+ * tab counted. The renderer round-trip is
  * fail-open: when no window is available, the renderer never acknowledges the
  * show request within {@link RENDERER_ACK_TIMEOUT_MS}, or sending fails, the
  * flow falls back to the native message box (quit-dialog.ts) so quit is never
@@ -35,12 +41,14 @@
  * §5.5), so the daemon's per-agent `isResponding` flag is the source of truth
  * for "still running" (see running-agents.ts).
  *
- * Multiple daemons can be in play at once. Every live pooled backend with an
- * open window is queried, plus the local sidecar when it is still running.
- * Agents are grouped by whether quitting stops their daemon — remote agents and
- * agents on an adopted external local daemon keep running, while agents on our
- * spawned sidecar are interrupted (see quit-dialog.ts). The throwaway local
- * query is best effort, so a dead/absent daemon never blocks quit.
+ * Multiple daemons can be in play at once, but only the daemon quitting shuts
+ * down matters: agents on a remote backend or on an adopted external local
+ * daemon keep running after the app closes, so they never trigger the prompt
+ * and are not queried. Agents are enumerated only when the connection mode is
+ * `sidecar` — on the pooled local client when a window still owns one, else
+ * through a best-effort throwaway probe so a dead/absent daemon never blocks
+ * quit. Browser-tab enumeration still consults every pooled backend, since the
+ * driving-client lookup must ask the daemon hosting each tab's workspace.
  *
  * Kept out of `src/main/index.ts` (heavy top-level side effects) so it is
  * unit-testable and importable from the auto-update service without a
@@ -62,28 +70,29 @@ import type {
   QuitConfirmationShowPayload,
 } from '../shared/ipc/quit-confirmation';
 import { Logger } from '../shared/logger';
+import {
+  isWorkspaceBrowserClient,
+  type WorkspaceBrowserClient,
+} from '../shared/types/browser-clients';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { QuitConfirmationAckSchema, QuitConfirmationResponseSchema } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
-import {
-  buildQuitDialogOptions,
-  buildTabsOnlyQuitDialogOptions,
-  type QuitAgentGroups,
-} from './quit-dialog';
+import { buildQuitDialogOptions, buildTabsOnlyQuitDialogOptions } from './quit-dialog';
 import {
   listRespondingAgents,
   type RespondingAgent,
   type RunningAgentsRpc,
 } from './running-agents';
 import { getMainWindow } from './state';
+import { getBackendIdForWindow } from './window-backend';
 
 const logger = new Logger('QuitConfirmation');
 
 /**
- * Overall budget for the short-lived startup-backend probe opened while a
- * remote backend is active — connect plus every RPC it makes. The quit prompt
- * must not stall behind an unreachable socket, so the probe is raced against
- * this deadline and fails open.
+ * Overall budget for the short-lived startup-backend probe opened when no
+ * window owns a pooled local client — connect plus every RPC it makes. The
+ * quit prompt must not stall behind an unreachable socket, so the probe is
+ * raced against this deadline and fails open.
  */
 const LOCAL_PROBE_TIMEOUT_MS = 2_000;
 
@@ -109,8 +118,27 @@ export interface QuitConfirmationDeps {
   listRespondingAgents(client: RunningAgentsRpc): Promise<RespondingAgent[]>;
   /** Best-effort responding agents on the startup/default backend, via a throwaway client. */
   listLocalRespondingAgents(): Promise<RespondingAgent[]>;
-  /** Agent-owned embedded browser tabs that quitting destroys (best effort). */
+  /** Agent-owned embedded browser tabs this app hosts (best effort). */
   listDisruptedBrowserTabs(): Promise<QuitBrowserTabSummary[]>;
+  /** This app's stable §5.17 clientId, as presented on `client.hello`. */
+  getOwnClientId(): Promise<string>;
+  /**
+   * Distinct backend ids of the live windows hosting `workspaceId` (active
+   * view or tab bar). Workspace ids are daemon-local, so this is the only
+   * evidence binding a hosted tab's workspace to the daemon it lives on.
+   */
+  getHostingBackendIds(workspaceId: string): Promise<string[]>;
+  /**
+   * `workspace.getBrowserClient { workspaceId }` on one pooled backend —
+   * which client drives the workspace's agent browser tabs right now. Throws
+   * on any transport/RPC failure (unknown workspace on that backend, daemon
+   * too old, disconnected); the caller treats a throw as "unknown" and keeps
+   * the tab counted.
+   */
+  getWorkspaceBrowserClient(
+    client: RunningAgentsRpc,
+    workspaceId: string,
+  ): Promise<WorkspaceBrowserClient>;
   /**
    * Renderer round-trip: show the modal in `parent` and resolve the user's
    * decision (true = proceed). Resolves null when the renderer path is
@@ -121,7 +149,8 @@ export interface QuitConfirmationDeps {
     parent: BrowserWindow | null,
     payload: QuitConfirmationShowPayload,
   ): Promise<boolean | null>;
-  buildQuitDialogOptions(groups: QuitAgentGroups): MessageBoxOptions;
+  /** Native fallback copy for the sidecar agents quitting interrupts. */
+  buildQuitDialogOptions(interrupted: RespondingAgent[]): MessageBoxOptions;
   /** Native fallback copy when only browser tabs are disrupted (no agents). */
   buildTabsOnlyQuitDialogOptions(tabCount: number): MessageBoxOptions;
   /** Window to parent the dialog to (focused window, else main window). */
@@ -136,8 +165,8 @@ export interface QuitConfirmationDeps {
  * Query the startup/default backend — the target `resolveBackendConfig` derives
  * from the environment, normally the local daemon — through a short-lived
  * JSON-RPC client, raced against {@link LOCAL_PROBE_TIMEOUT_MS} and disposed on
- * every exit path. Used when no pooled local client owns a window but a remote
- * window or managed sidecar means the local daemon remains relevant to quit.
+ * every exit path. Used when the managed sidecar is running but no pooled
+ * local client owns a window (e.g. only remote windows are open).
  */
 async function defaultListLocalRespondingAgents(): Promise<RespondingAgent[]> {
   const [{ app }, { JsonRpcClient }, { resolveBackendConfig }] = await Promise.all([
@@ -200,10 +229,42 @@ function defaultShowMessageBox(
  * did; tests inject this seam instead.
  */
 async function defaultListDisruptedBrowserTabs(): Promise<QuitBrowserTabSummary[]> {
-  const { embeddedBrowserCdp } = await import(
-    '../features/browser/main/embedded-browser-cdp-service'
-  );
+  const { embeddedBrowserCdp } =
+    await import('../features/browser/main/embedded-browser-cdp-service');
   return embeddedBrowserCdp.listAgentOwnedTabs();
+}
+
+/** Lazy import: client-identity pulls in the local-prefs store. */
+async function defaultGetOwnClientId(): Promise<string> {
+  const { getOrCreateClientId } = await import('../features/backend/main/client-identity');
+  return getOrCreateClientId();
+}
+
+async function defaultGetHostingBackendIds(workspaceId: string): Promise<string[]> {
+  // Lazy: system.ipc pulls in the backend IPC chain (see confirmQuitInner).
+  const { getWindowIdsForWorkspace } = await import('../features/system/main/system.ipc');
+  const ids = new Set<string>();
+  for (const windowId of getWindowIdsForWorkspace(workspaceId)) {
+    const window = BrowserWindow.fromId(windowId);
+    if (window && !window.isDestroyed()) ids.add(getBackendIdForWindow(window));
+  }
+  return [...ids];
+}
+
+async function defaultGetWorkspaceBrowserClient(
+  client: RunningAgentsRpc,
+  workspaceId: string,
+): Promise<WorkspaceBrowserClient> {
+  if (client.getStatus() !== 'connected') {
+    throw new Error('backend not connected');
+  }
+  const result = await client.request<{ browserClient?: unknown }>('workspace.getBrowserClient', {
+    workspaceId,
+  });
+  if (!isWorkspaceBrowserClient(result?.browserClient)) {
+    throw new Error('malformed workspace.getBrowserClient result');
+  }
+  return result.browserClient;
 }
 
 /** The renderer decision (or ack failure) for the request main is waiting on. */
@@ -330,15 +391,14 @@ async function defaultConfirmViaRenderer(
     ackTimer = setTimeout(() => resolve('timeout'), RENDERER_ACK_TIMEOUT_MS);
   });
   try {
-    const ackOutcome = await Promise.race([
-      acked.then(() => 'acked' as const),
-      ackTimeout,
-      gone,
-    ]);
+    const ackOutcome = await Promise.race([acked.then(() => 'acked' as const), ackTimeout, gone]);
     if (ackOutcome === 'gone') {
-      logger.warn('Renderer went away before acknowledging quit confirmation; using native dialog', {
-        requestId: payload.requestId,
-      });
+      logger.warn(
+        'Renderer went away before acknowledging quit confirmation; using native dialog',
+        {
+          requestId: payload.requestId,
+        },
+      );
       return null;
     }
     if (ackOutcome === 'timeout') {
@@ -399,27 +459,115 @@ async function listLocalAgentsFailOpen(deps: QuitConfirmationDeps): Promise<Resp
   }
 }
 
-/** First occurrence per `agentId` wins; the two sources can resolve to one daemon. */
-function dedupeByAgentId(agents: RespondingAgent[]): RespondingAgent[] {
-  const seen = new Set<string>();
-  return agents.filter((agent) => {
-    if (seen.has(agent.agentId)) return false;
-    seen.add(agent.agentId);
-    return true;
-  });
-}
-
-/** Tab enumeration wrapper: any failure means "no tab data", never a throw. */
+/**
+ * Tab enumeration wrapper: any failure means "no tab data", never a throw.
+ * The hosted tabs are then narrowed to workspaces this app drives.
+ */
 async function listDisruptedTabsFailOpen(
   deps: QuitConfirmationDeps,
+  targets: QuitBackendTarget[],
 ): Promise<QuitBrowserTabSummary[]> {
   try {
-    return await deps.listDisruptedBrowserTabs();
+    const hostedTabs = await deps.listDisruptedBrowserTabs();
+    return await filterTabsOfDrivenWorkspaces(deps, targets, hostedTabs);
   } catch (error) {
     logger.warn('Browser tab enumeration failed during quit check; omitting tab data', {
       error: error instanceof Error ? error.message : String(error),
     });
     return [];
+  }
+}
+
+/**
+ * Keep only tabs whose workspace this app drives (PROTOCOL §5.9 resolution as
+ * reported by `workspace.getBrowserClient`). Fail-open per workspace: a tab
+ * with no workspaceId, no single hosting backend, a lookup that fails on the
+ * hosting backend, or an unavailable own clientId keeps the tab counted. Only
+ * a workspace that positively resolves to a *different* client drops its tabs.
+ */
+async function filterTabsOfDrivenWorkspaces(
+  deps: QuitConfirmationDeps,
+  targets: QuitBackendTarget[],
+  tabs: QuitBrowserTabSummary[],
+): Promise<QuitBrowserTabSummary[]> {
+  if (tabs.length === 0) return tabs;
+
+  let ownClientId: string;
+  try {
+    ownClientId = await deps.getOwnClientId();
+  } catch (error) {
+    logger.warn('Own clientId unavailable during quit check; counting every hosted tab', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return tabs;
+  }
+
+  const workspaceIds = [
+    ...new Set(tabs.flatMap((tab) => (tab.workspaceId ? [tab.workspaceId] : []))),
+  ];
+  const drivenByOther = new Set<string>();
+  await Promise.all(
+    workspaceIds.map(async (workspaceId) => {
+      const drivingClientId = await resolveDrivingClientId(deps, targets, workspaceId);
+      if (drivingClientId !== null && drivingClientId !== ownClientId) {
+        drivenByOther.add(workspaceId);
+      }
+    }),
+  );
+
+  const kept = tabs.filter((tab) => !tab.workspaceId || !drivenByOther.has(tab.workspaceId));
+  if (kept.length !== tabs.length) {
+    logger.info('Ignoring hosted tabs of workspaces another client drives', {
+      dropped: tabs.length - kept.length,
+      workspaceIds: [...drivenByOther],
+    });
+  }
+  return kept;
+}
+
+/**
+ * The driving clientId of `workspaceId`, asked only of the backend whose
+ * window hosts that workspace. Workspace ids are daemon-local (an import
+ * keeps the source id), so another pooled daemon answering for the same id
+ * is never authoritative. `null` means unknown — no or ambiguous hosting
+ * backend, no live pooled client for it, or the lookup failed — or that no
+ * client currently drives it (`resolved: null`); all keep the tab counted.
+ */
+async function resolveDrivingClientId(
+  deps: QuitConfirmationDeps,
+  targets: QuitBackendTarget[],
+  workspaceId: string,
+): Promise<string | null> {
+  let hostingBackendIds: string[];
+  try {
+    hostingBackendIds = await deps.getHostingBackendIds(workspaceId);
+  } catch (error) {
+    logger.debug('Hosting backend lookup failed during quit check', {
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+  if (hostingBackendIds.length !== 1) {
+    logger.debug('No single hosting backend for workspace during quit check', {
+      workspaceId,
+      hostingBackendIds,
+    });
+    return null;
+  }
+  const [backendId] = hostingBackendIds;
+  const target = targets.find((candidate) => candidate.id === backendId);
+  if (!target) return null;
+  try {
+    const browserClient = await deps.getWorkspaceBrowserClient(target.client, workspaceId);
+    return browserClient.resolved?.clientId ?? null;
+  } catch (error) {
+    logger.debug('workspace.getBrowserClient failed during quit check', {
+      backendId,
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
 }
 
@@ -451,8 +599,8 @@ function withOwnerNames(
 let inFlightConfirmation: Promise<boolean> | null = null;
 
 /**
- * Show the quit confirmation prompt if quitting disrupts anything — active
- * agents or agent-owned embedded browser tabs.
+ * Show the quit confirmation prompt if quitting disrupts anything — agents on
+ * the spawned sidecar or agent-owned embedded browser tabs.
  *
  * Returns true if the caller should proceed with quit/teardown (nothing
  * disrupted, or user confirmed), false if the user cancelled.
@@ -496,6 +644,9 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
     listRespondingAgents,
     listLocalRespondingAgents: defaultListLocalRespondingAgents,
     listDisruptedBrowserTabs: defaultListDisruptedBrowserTabs,
+    getOwnClientId: defaultGetOwnClientId,
+    getHostingBackendIds: defaultGetHostingBackendIds,
+    getWorkspaceBrowserClient: defaultGetWorkspaceBrowserClient,
     confirmViaRenderer: defaultConfirmViaRenderer,
     buildQuitDialogOptions,
     buildTabsOnlyQuitDialogOptions,
@@ -505,66 +656,41 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
   };
 
   const targets = deps.getBackendTargets();
-  const hasLocalTarget = targets.some((target) => target.id === LOCAL_CONNECTION_ID);
-  const hasRemoteTarget = targets.some((target) => target.id !== LOCAL_CONNECTION_ID);
-  const localProbeNeeded =
-    !hasLocalTarget && (hasRemoteTarget || deps.getConnectionMode() === 'sidecar');
-  const [targetAgents, probedLocalAgents, disruptedBrowserTabs] = await Promise.all([
-    Promise.all(
-      targets.map(async (target) => ({
-        id: target.id,
-        agents: await deps.listRespondingAgents(target.client),
-      })),
-    ),
-    localProbeNeeded ? listLocalAgentsFailOpen(deps) : Promise.resolve<RespondingAgent[]>([]),
-    listDisruptedTabsFailOpen(deps),
+  // Only agents on the daemon quitting shuts down are interrupted: a remote
+  // backend and an adopted external local daemon both outlive the app, so
+  // their agents are never queried. The spawned sidecar is asked through its
+  // pooled client when a window still owns one, else through the throwaway
+  // probe. Browser tabs are enumerated regardless.
+  const sidecarActive = deps.getConnectionMode() === 'sidecar';
+  const localTarget = targets.find((target) => target.id === LOCAL_CONNECTION_ID);
+  const [interrupted, disruptedBrowserTabs] = await Promise.all([
+    !sidecarActive
+      ? Promise.resolve<RespondingAgent[]>([])
+      : localTarget
+        ? deps.listRespondingAgents(localTarget.client)
+        : listLocalAgentsFailOpen(deps),
+    listDisruptedTabsFailOpen(deps, targets),
   ]);
-  const remoteAgents = targetAgents
-    .filter((target) => target.id !== LOCAL_CONNECTION_ID)
-    .flatMap((target) => target.agents);
-  const localAgents = [
-    ...targetAgents
-      .filter((target) => target.id === LOCAL_CONNECTION_ID)
-      .flatMap((target) => target.agents),
-    ...probedLocalAgents,
-  ];
 
-  // Framing depends only on whether quitting stops an agent's daemon: a remote
-  // backend and an adopted external local daemon both outlive the app, our
-  // spawned sidecar does not.
-  const localKeepsRunning = deps.getConnectionMode() === 'external';
-  const keepRunning = dedupeByAgentId(
-    localKeepsRunning ? [...remoteAgents, ...localAgents] : remoteAgents,
-  );
-  const keepRunningIds = new Set(keepRunning.map((agent) => agent.agentId));
-  const interrupted = dedupeByAgentId(localKeepsRunning ? [] : localAgents).filter(
-    (agent) => !keepRunningIds.has(agent.agentId),
-  );
-  const groups: QuitAgentGroups = { keepRunning, interrupted };
-
-  // Prompt when quitting disrupts anything: running agent work OR agent-owned
-  // browser tabs (tabs alone trigger the prompt too — destroying them mid-use
-  // is disruptive even with zero responding agents). Both empty → quit
-  // silently.
-  const agentCount = groups.keepRunning.length + groups.interrupted.length;
-  if (agentCount === 0 && disruptedBrowserTabs.length === 0) {
+  // Prompt when quitting disrupts anything: interrupted agent work OR
+  // agent-owned browser tabs (tabs alone trigger the prompt too — destroying
+  // them mid-use is disruptive even with zero responding agents). Both empty →
+  // quit silently.
+  if (interrupted.length === 0 && disruptedBrowserTabs.length === 0) {
     return true;
   }
 
   logger.info('Disruptive quit attempt detected', {
-    keepRunning: groups.keepRunning.length,
-    interrupted: groups.interrupted.length,
-    agentIds: [...groups.keepRunning, ...groups.interrupted].map((s) => s.agentId),
+    interrupted: interrupted.length,
+    agentIds: interrupted.map((agent) => agent.agentId),
     disruptedBrowserTabs: disruptedBrowserTabs.length,
   });
 
   const parent = deps.getParentWindow();
-  const allAgents = [...groups.keepRunning, ...groups.interrupted];
   const payload: QuitConfirmationShowPayload = {
     requestId: randomUUID(),
-    keepRunning: toAgentSummaries(groups.keepRunning),
-    interrupted: toAgentSummaries(groups.interrupted),
-    disruptedBrowserTabs: withOwnerNames(disruptedBrowserTabs, allAgents),
+    interrupted: toAgentSummaries(interrupted),
+    disruptedBrowserTabs: withOwnerNames(disruptedBrowserTabs, interrupted),
   };
 
   const rendererDecision = await deps.confirmViaRenderer(parent, payload);
@@ -581,9 +707,9 @@ async function confirmQuitInner(overrides: Partial<QuitConfirmationDeps>): Promi
   // is never blocked by a broken/missing renderer. Tabs-only (no agents) gets
   // dedicated native copy; agent cases keep the existing agent copy.
   const options =
-    agentCount === 0
+    interrupted.length === 0
       ? deps.buildTabsOnlyQuitDialogOptions(disruptedBrowserTabs.length)
-      : deps.buildQuitDialogOptions(groups);
+      : deps.buildQuitDialogOptions(interrupted);
   const result = await deps.showMessageBox(parent, options);
 
   if (result.response === 1) {

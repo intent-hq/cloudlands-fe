@@ -11,10 +11,20 @@ vi.mock('./backend-transport', () => ({
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
+// `$lib/client` resolves to the REAL LiveWorkspacesClient (over the fake
+// transport above) so the on-demand detail helper's reads hit the same
+// single-flight seam as `open` / `get`.
+vi.mock('$lib/client', async () => {
+  const { LiveWorkspacesClient } = await import('./live-workspaces-client');
+  return { appClient: { workspaces: new LiveWorkspacesClient() } };
+});
+
 import { backendRequest } from './backend-transport';
 import { BackendError } from './backend-transport-types';
 import { LiveWorkspacesClient } from './live-workspaces-client';
 import { CreateWorkspaceRequestSchema } from '$shared/schemas';
+import { appClient } from '$lib/client';
+import { fetchWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -414,6 +424,70 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
   });
 });
 
+describe('LiveWorkspacesClient.get (PROTOCOL §5.1, fake transport)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('shares one in-flight workspace.get between open() and the on-demand detail helper', async () => {
+    const workspace = {
+      id: '88888888-8888-4888-8888-888888888888',
+      title: 'Shared read',
+      branch: 'intent/shared-read',
+      status: 'Active',
+    };
+    let resolveRequest: ((value: { workspace: unknown }) => void) | undefined;
+    mockedRequest.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
+    const client = appClient.workspaces as LiveWorkspacesClient;
+    const getSpy = vi.spyOn(client, 'get');
+
+    const opened = client.open(workspace.id);
+    const detail = fetchWorkspaceDetail(workspace.id);
+    // The helper resolves `$lib/client` lazily — wait until its read has
+    // reached the client seam before asserting the wire count.
+    await vi.waitFor(() => expect(getSpy).toHaveBeenCalledTimes(2));
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.get', { workspaceId: workspace.id });
+    resolveRequest?.({ workspace });
+    const [fromOpen, fromDetail] = await Promise.all([opened, detail]);
+    expect(fromOpen).toMatchObject({ id: workspace.id, title: workspace.title });
+    expect(fromDetail).toMatchObject({ id: workspace.id, title: workspace.title });
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    getSpy.mockRestore();
+  });
+
+  it('does not share reads across different workspace ids', async () => {
+    const idA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+    const idB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
+    mockedRequest
+      .mockResolvedValueOnce({ workspace: { id: idA, title: 'A' } })
+      .mockResolvedValueOnce({ workspace: { id: idB, title: 'B' } });
+    const client = new LiveWorkspacesClient();
+
+    const [a, b] = await Promise.all([client.get(idA), client.get(idB)]);
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    expect(a).toMatchObject({ id: idA });
+    expect(b).toMatchObject({ id: idB });
+  });
+
+  it('clears a failed single-flight read so a later call can retry', async () => {
+    const id = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3';
+    mockedRequest
+      .mockRejectedValueOnce(new Error('workspace.get timed out'))
+      .mockResolvedValueOnce({ workspace: { id, title: 'Recovered' } });
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.get(id)).rejects.toThrow('timed out');
+    await expect(client.get(id)).resolves.toMatchObject({ id, title: 'Recovered' });
+
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
@@ -547,6 +621,45 @@ describe('LiveWorkspacesClient.list (PROTOCOL §5.1, fake transport)', () => {
 
     expect(mockedRequest).toHaveBeenCalledWith('workspace.list', undefined);
     expect(workspaces[0]?.displayStatus).toBeUndefined();
+  });
+
+  it('passes the membership summary through normalization (intent-hq/intentd#1868)', async () => {
+    // `ownerPrincipalId` / `myRole` / `memberCount` ride every workspace
+    // payload once the daemon tracks members; the normalizer retains them
+    // verbatim so chat can gate author identity on `memberCount >= 2`.
+    mockedRequest.mockResolvedValueOnce({
+      workspaces: [
+        {
+          id: '66666666-6666-4666-8666-666666666666',
+          title: 'Shared ws',
+          branch: 'intent/shared',
+          status: 'Active',
+          ownerPrincipalId: 'principal-owner',
+          myRole: 'collaborator',
+          memberCount: 2,
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        },
+        {
+          id: '77777777-7777-4777-8777-777777777777',
+          title: 'Legacy ws',
+          branch: 'intent/legacy',
+          status: 'Active',
+        },
+      ],
+    });
+    const client = new LiveWorkspacesClient();
+
+    const workspaces = await client.list();
+
+    expect(workspaces[0]).toMatchObject({
+      ownerPrincipalId: 'principal-owner',
+      myRole: 'collaborator',
+      memberCount: 2,
+    });
+    expect(workspaces[1]?.myRole).toBeUndefined();
+    expect(workspaces[1]?.memberCount).toBeUndefined();
+    expect(workspaces[1]?.ownerPrincipalId).toBeUndefined();
   });
 
   it('passes the BE-owned attention flag through normalization (PROTOCOL §5.1 / §9.9)', async () => {
@@ -909,4 +1022,94 @@ describe('LiveWorkspacesClient context (PROTOCOL §5.1, fake transport)', () => 
 
     expect(await client.updateContext('ws-abc', [good] as never)).toEqual([good]);
   });
+});
+
+describe('LiveWorkspacesClient browser client pin (REV-2 PROTOCOL §5.17, fake transport)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('getBrowserClient sends { workspaceId } and unwraps the browserClient envelope', async () => {
+    const browserClient = {
+      clientId: 'cli-desk',
+      source: 'workspace',
+      resolved: { clientId: 'cli-desk', name: 'Intent Desktop' },
+    };
+    mockedRequest.mockResolvedValueOnce({ browserClient });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getBrowserClient('ws-abc')).toEqual(browserClient);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.getBrowserClient', {
+      workspaceId: 'ws-abc',
+    });
+  });
+
+  it('getBrowserClient surfaces the unpinned default shape (no clientId, resolved may be null)', async () => {
+    mockedRequest.mockResolvedValueOnce({ browserClient: { source: 'default', resolved: null } });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getBrowserClient('ws-abc')).toEqual({ source: 'default', resolved: null });
+  });
+
+  it('setBrowserClient sends the pinned clientId and returns the new pin state', async () => {
+    const browserClient = {
+      clientId: 'cli-laptop',
+      source: 'workspace',
+      resolved: { clientId: 'cli-laptop', name: 'Intent Desktop' },
+    };
+    mockedRequest.mockResolvedValueOnce({ browserClient });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.setBrowserClient('ws-abc', 'cli-laptop')).toEqual(browserClient);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.setBrowserClient', {
+      workspaceId: 'ws-abc',
+      clientId: 'cli-laptop',
+    });
+  });
+
+  it('setBrowserClient sends an explicit JSON null to clear the pin', async () => {
+    mockedRequest.mockResolvedValueOnce({
+      browserClient: { source: 'default', resolved: { clientId: 'cli-desk' } },
+    });
+    const client = new LiveWorkspacesClient();
+
+    await client.setBrowserClient('ws-abc', null);
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.setBrowserClient', {
+      workspaceId: 'ws-abc',
+      clientId: null,
+    });
+  });
+
+  it('setBrowserClient propagates the daemon -32602 for an unknown clientId', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({ code: 'INVALID_PARAMS', message: 'unknown clientId', rpcCode: -32602 }),
+    );
+    const client = new LiveWorkspacesClient();
+
+    await expect(client.setBrowserClient('ws-abc', 'cli-nope')).rejects.toMatchObject({
+      rpcCode: -32602,
+    });
+  });
+
+  it.each([
+    ['an unknown source', { source: 'bogus', resolved: null }],
+    // `clientId` is the pin: present exactly when `source: "workspace"`.
+    ['source "workspace" without the pinned clientId', { source: 'workspace', resolved: null }],
+    [
+      'source "default" carrying a clientId',
+      { source: 'default', clientId: 'cli-desk', resolved: null },
+    ],
+    [
+      'a resolved entry without clientId',
+      { source: 'workspace', clientId: 'cli-desk', resolved: { name: 'Intent Desktop' } },
+    ],
+  ])(
+    'rejects a malformed browserClient envelope (%s) instead of healing it',
+    async (_case, bad) => {
+      mockedRequest.mockResolvedValueOnce({ browserClient: bad });
+      const client = new LiveWorkspacesClient();
+
+      await expect(client.getBrowserClient('ws-abc')).rejects.toThrow(
+        'Invalid workspace.getBrowserClient response shape',
+      );
+    },
+  );
 });

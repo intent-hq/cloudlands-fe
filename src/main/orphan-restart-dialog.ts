@@ -28,9 +28,7 @@ export function buildOrphanRestartDialogOptions(agents: RespondingAgent[]): Mess
     type: 'warning',
     title: m.orphanRestart_dialog_title(),
     message:
-      count > 1
-        ? m.quit_dialog_agents_working_many({ count })
-        : m.quit_dialog_agents_working_one(),
+      count > 1 ? m.quit_dialog_agents_working_many({ count }) : m.quit_dialog_agents_working_one(),
     detail:
       count > 1
         ? m.orphanRestart_dialog_detail_many({ count, names })

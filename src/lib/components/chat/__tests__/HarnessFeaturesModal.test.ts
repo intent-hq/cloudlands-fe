@@ -89,7 +89,7 @@ describe('HarnessFeaturesModal', () => {
   it('shows the version in the title and settings-page labels with descriptions', async () => {
     renderModal({ version: '1.0', features: { structuredQuestions: true } });
 
-    const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' });
+    const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' }); // protocol-version-ok: agent-harness product version fixture
     expect(dialog).toBeTruthy();
     // Settings-page pretty labels, not raw camelCase keys.
     expect(screen.getByText('Structured questions')).toBeTruthy();

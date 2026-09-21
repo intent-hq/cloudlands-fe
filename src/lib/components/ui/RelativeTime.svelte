@@ -1,8 +1,8 @@
 <script lang="ts">
   import {
-  createReactiveRelativeTime,
-  createReactiveCompactTime,
-} from '$lib/utils/reactive-time.svelte';
+    createReactiveRelativeTime,
+    createReactiveCompactTime,
+  } from '$lib/utils/reactive-time.svelte';
   import { formatFullDateTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import { onDestroy } from 'svelte';

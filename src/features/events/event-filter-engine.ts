@@ -4,11 +4,7 @@
  * Handles filtering of workspace events based on filter criteria.
  */
 
-import {
-  WorkspaceEvent,
-  EventFilter,
-  FilterOperator,
-} from './types';
+import { WorkspaceEvent, EventFilter, FilterOperator } from './types';
 import { Logger } from '../../shared/logger';
 
 const logger = new Logger('EventFilterEngine');

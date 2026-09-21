@@ -159,9 +159,7 @@ describe('HardwareRpcClient device-originated requests', () => {
     });
     client.handleMessage({ method: 'host.focused_app', params: null, id: 6 });
     await flushMicrotasks();
-    expect(port.sent).toEqual([
-      { id: 6, error: { code: -32000, message: 'Error: no window' } },
-    ]);
+    expect(port.sent).toEqual([{ id: 6, error: { code: -32000, message: 'Error: no window' } }]);
   });
 
   it('ignores malformed messages without id or method', () => {

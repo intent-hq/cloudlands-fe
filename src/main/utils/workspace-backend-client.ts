@@ -3,13 +3,20 @@
  * currently hosting it (monorepo#3501).
  *
  * Electron `protocol.handle` requests do not expose the initiating
- * webContents, so the workspace-file:// and workspace-asset:// handlers cannot
- * ask "which window issued this fetch?". Instead they resolve the owning
- * backend from the main-side window-tracking maps: any window hosting the
- * workspace (actively routed or in its tab bar) is bound to the backend the
- * workspace lives on.
+ * webContents. When the requesting window is known — a `webRequest` redirect
+ * stamped its backend id onto the URL (`?backend=`, see
+ * `setupWorkspaceMediaBackendHinting`) — that hint is authoritative: the
+ * hinted backend's pooled client serves the request, and a disconnected
+ * hinted backend fails closed rather than falling through to another daemon
+ * (the primary compatibility client is allowed only where the wiring says it
+ * coincides with the hinted backend, i.e. the implicit local one).
  *
- * Fallback semantics:
+ * Without a hint (legacy URL), the handlers resolve the owning backend from
+ * the main-side window-tracking maps: any window hosting the workspace
+ * (actively routed or in its tab bar) is bound to the backend the workspace
+ * lives on.
+ *
+ * Fallback semantics (unhinted):
  * - No hosting window at all → the app-primary compatibility client
  *   (pre-per-window-connections #1572 behavior). This is also the only
  *   available guess for cross-workspace references — e.g. a note rendered in
@@ -25,8 +32,9 @@
  *   collision across daemons yields a clean failure, not wrong-backend bytes.
  * - When the same workspace id is hosted by windows stamped to different
  *   backends, the first backend with a live pooled client wins; that order is
- *   Map-iteration-order arbitrary. Fine in practice — one workspace lives on
- *   one backend.
+ *   Map-iteration-order arbitrary. This is exactly the workspace-id-collision
+ *   case the hint exists for, so it is reported via `onAmbiguousHosting`
+ *   instead of being picked silently.
  *
  * Dependency-light by design: callers inject the lookups so this stays
  * unit-testable without Electron or the backend client pool.
@@ -47,6 +55,16 @@ export interface WorkspaceBackendLookup<C> {
    * fail closed instead).
    */
   isPrimaryFallbackAllowed(backendId: string): boolean;
+  /**
+   * Called when an unhinted resolution finds the workspace hosted by windows
+   * bound to more than one backend, so the caller can log the ambiguity.
+   */
+  onAmbiguousHosting?(workspaceId: string, hostingBackendIds: string[]): void;
+}
+
+export interface WorkspaceBackendResolveOptions {
+  /** Backend id of the requesting window (from the URL hint), or null when unhinted. */
+  backendIdHint?: string | null;
 }
 
 export type WorkspaceBackendResolution<C> =
@@ -68,19 +86,43 @@ export type WorkspaceBackendResolution<C> =
     };
 
 /**
- * Pick the backend client that owns `workspaceId`: the first hosting window
- * whose backend has a live pooled client wins; see the module doc for the
- * fallback/fail-closed semantics when none does.
+ * Pick the backend client that owns `workspaceId`. With a `backendIdHint`
+ * the hinted backend is the only candidate (live client, else the primary
+ * fallback only where allowed, else fail closed). Without one, the first
+ * hosting window whose backend has a live pooled client wins; see the module
+ * doc for the fallback/fail-closed semantics when none does.
  */
 export function resolveWorkspaceBackendClient<C>(
   workspaceId: string,
   lookup: WorkspaceBackendLookup<C>,
+  { backendIdHint = null }: WorkspaceBackendResolveOptions = {},
 ): WorkspaceBackendResolution<C> {
+  if (backendIdHint !== null) {
+    const client = lookup.getClientForBackend(backendIdHint);
+    if (client) return { client, backendId: backendIdHint, fallback: null };
+    if (lookup.isPrimaryFallbackAllowed(backendIdHint)) {
+      return {
+        client: lookup.getPrimaryClient(),
+        backendId: null,
+        fallback: 'unpooled-backend',
+        attemptedBackendIds: [backendIdHint],
+      };
+    }
+    return {
+      client: null,
+      backendId: backendIdHint,
+      fallback: 'backend-disconnected',
+      attemptedBackendIds: [backendIdHint],
+    };
+  }
+
   const attempted: string[] = [];
   for (const windowId of lookup.getWindowIdsForWorkspace(workspaceId)) {
     const backendId = lookup.getBackendIdForWindowId(windowId);
-    if (!backendId || attempted.includes(backendId)) continue;
-    attempted.push(backendId);
+    if (backendId && !attempted.includes(backendId)) attempted.push(backendId);
+  }
+  if (attempted.length > 1) lookup.onAmbiguousHosting?.(workspaceId, [...attempted]);
+  for (const backendId of attempted) {
     const client = lookup.getClientForBackend(backendId);
     if (client) return { client, backendId, fallback: null };
   }
@@ -123,23 +165,25 @@ export interface WorkspaceBackendRetryOptions {
  * renderer IPCs after navigation, so a cached image can issue its protocol
  * request before the main process has recorded the workspace; the browser
  * never retries a 404'd <img>, so a brief wait here absorbs that startup race
- * (monorepo#3501). Steady-state resolutions (hosting window known, or a
- * stamped-but-disconnected backend) return immediately.
+ * (monorepo#3501). Steady-state resolutions (hosting window known, a
+ * stamped-but-disconnected backend, or any hinted resolution) return
+ * immediately.
  */
 export async function resolveWorkspaceBackendClientWithRetry<C>(
   workspaceId: string,
   lookup: WorkspaceBackendLookup<C>,
   { attempts, delayMs, sleep }: WorkspaceBackendRetryOptions,
+  resolveOptions: WorkspaceBackendResolveOptions = {},
 ): Promise<WorkspaceBackendResolution<C>> {
   const wait = sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  let resolution = resolveWorkspaceBackendClient(workspaceId, lookup);
+  let resolution = resolveWorkspaceBackendClient(workspaceId, lookup, resolveOptions);
   for (
     let attempt = 1;
     attempt < attempts && resolution.fallback === 'no-hosting-window';
     attempt++
   ) {
     await wait(delayMs);
-    resolution = resolveWorkspaceBackendClient(workspaceId, lookup);
+    resolution = resolveWorkspaceBackendClient(workspaceId, lookup, resolveOptions);
   }
   return resolution;
 }

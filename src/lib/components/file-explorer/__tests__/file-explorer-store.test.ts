@@ -1,9 +1,16 @@
+import { describe, it, expect } from 'vitest';
 import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import { fileExplorerReducer, initialState, setFileExplorerWorkspacePath, setRootNode, addExpandedPath, removeExpandedPath, setGitStatusMap, setFileExplorerLoading, clearExpandedPathsExceptRoot, setChildrenAtPathAction } from '$store/renderer/slices/file-explorer/file-explorer-slice';
+  fileExplorerReducer,
+  initialState,
+  setFileExplorerWorkspacePath,
+  setRootNode,
+  addExpandedPath,
+  removeExpandedPath,
+  setGitStatusMap,
+  setFileExplorerLoading,
+  clearExpandedPathsExceptRoot,
+  setChildrenAtPathAction,
+} from '$store/renderer/slices/file-explorer/file-explorer-slice';
 import {
   selectFileExplorerNodeMap,
   selectFileExplorerRootNode,
@@ -26,7 +33,10 @@ describe('FileExplorerReducer', () => {
   });
 
   it('should set workspace path and reset tree', () => {
-    const state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(wsId, '/test/path'));
+    const state = fileExplorerReducer(
+      initialState,
+      setFileExplorerWorkspacePath(wsId, '/test/path'),
+    );
     const ws = state.byWorkspaceId[wsId];
     expect(ws.workspacePath).toBe('/test/path');
     expect(ws.rootPath).toBeNull();
@@ -87,7 +97,9 @@ describe('FileExplorerReducer', () => {
 
   it('should set children at path', () => {
     const root: FileNode = {
-      name: 'root', path: '/root', type: 'directory',
+      name: 'root',
+      path: '/root',
+      type: 'directory',
       children: [{ name: 'src', path: '/root/src', type: 'directory', children: [] }],
     };
     let state = fileExplorerReducer(initialState, setRootNode(wsId, root));
@@ -95,20 +107,32 @@ describe('FileExplorerReducer', () => {
       { name: 'index.ts', path: '/root/src/index.ts', type: 'file' },
     ];
     state = fileExplorerReducer(state, setChildrenAtPathAction(wsId, '/root/src', newChildren));
-    expect(state.byWorkspaceId[wsId].nodes.map['/root/src'].children).toEqual(['/root/src/index.ts']);
-    expect(selectFileExplorerRootNode.select({ fileExplorer: state } as any, wsId)?.children).toEqual(['/root/src']);
+    expect(state.byWorkspaceId[wsId].nodes.map['/root/src'].children).toEqual([
+      '/root/src/index.ts',
+    ]);
+    expect(
+      selectFileExplorerRootNode.select({ fileExplorer: state } as any, wsId)?.children,
+    ).toEqual(['/root/src']);
   });
 
   it('should preserve sidebar search by keeping directory branches with matching descendants', () => {
     const root: FileNode = {
-      name: 'root', path: '/root', type: 'directory',
+      name: 'root',
+      path: '/root',
+      type: 'directory',
       children: [
         {
-          name: 'src', path: '/root/src', type: 'directory',
+          name: 'src',
+          path: '/root/src',
+          type: 'directory',
           children: [
             {
-              name: 'components', path: '/root/src/components', type: 'directory',
-              children: [{ name: 'Button.svelte', path: '/root/src/components/Button.svelte', type: 'file' }],
+              name: 'components',
+              path: '/root/src/components',
+              type: 'directory',
+              children: [
+                { name: 'Button.svelte', path: '/root/src/components/Button.svelte', type: 'file' },
+              ],
             },
             { name: 'index.ts', path: '/root/src/index.ts', type: 'file' },
           ],
@@ -225,10 +249,7 @@ describe('gitignore semantics — shouldHide + isGitignored', () => {
   });
 
   it('should respect last-match-wins for negation then re-ignore', () => {
-    const entries = [
-      { name: 'important.log' },
-      { name: 'debug.log' },
-    ];
+    const entries = [{ name: 'important.log' }, { name: 'debug.log' }];
 
     const children = buildFilteredNodes(entries, ['!important.log', 'important.log']);
     const byName = (name: string) => children.find((n) => n.name === name)!;
@@ -274,7 +295,12 @@ describe('gitignore semantics — shouldHide + isGitignored', () => {
       { name: '.npmrc' },
     ];
 
-    const children = buildFilteredNodes(entries, ['.env', '.env.local', '.env.example', '!.env.example']);
+    const children = buildFilteredNodes(entries, [
+      '.env',
+      '.env.local',
+      '.env.example',
+      '!.env.example',
+    ]);
     const byName = (name: string) => children.find((n) => n.name === name)!;
 
     expect(byName('.env').isGitignored).toBe(true);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * SettingsCard - Hover card content for the Settings nav item
    * Navigates to the settings page on click.
@@ -8,10 +9,10 @@
 
   import { closeAll } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { store as appStore } from '$store/renderer/store';
-
 </script>
 
-<button
+<Button
+  variant="ghost"
   class="w-full text-left px-3 py-2 hover:bg-muted/30 transition-colors cursor-pointer text-xs text-muted-foreground hover:text-foreground"
   onclick={() => {
     appStore.dispatch(closeAll(false));
@@ -19,4 +20,4 @@
   }}
 >
   {m.layout_settingsCard_goSettings_label()}
-</button>
+</Button>

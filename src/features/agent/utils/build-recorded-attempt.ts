@@ -9,7 +9,7 @@ import type { LastAttemptedMessage } from '$store/renderer/slices/chat-state/cha
  *
  * The opaque `messageMetadata` tag rides along too, so a retried wizard answer
  * keeps its `question_answers` tag (an untagged resend would leave the daemon's
- * question hold pending).
+ * pending question set unanswered and the sticky wizard visible).
  *
  * Single construction site shared by chat-send-service (direct/queue-on-send
  * recording) and agent-send (auto-queue park, #1011) — the park reducer's

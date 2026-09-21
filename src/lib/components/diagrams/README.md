@@ -86,9 +86,7 @@ const diagram = createArchitectureDiagram(
     { id: 'client', label: 'Client', kind: 'actor' },
     { id: 'api', label: 'API', kind: 'service' },
   ],
-  [
-    { from: 'client', to: 'api', label: 'HTTP Request' },
-  ]
+  [{ from: 'client', to: 'api', label: 'HTTP Request' }],
 );
 ```
 

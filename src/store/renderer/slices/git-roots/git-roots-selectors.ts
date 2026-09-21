@@ -31,15 +31,13 @@ export interface WorkspaceGitRootEntry {
 }
 
 /** All registered (secondary) git roots for a workspace, in seed order. */
-export const selectGitRoots = store.createSelector(
-  (state, workspaceId: string): GitRootRow[] => {
-    // Optional chain: cross-slice consumers run against partial test states
-    // without this slice.
-    const ws = state.gitRoots?.byWorkspaceId?.[workspaceId];
-    if (!ws) return [];
-    return getItems(ws.gitRoots);
-  },
-);
+export const selectGitRoots = store.createSelector((state, workspaceId: string): GitRootRow[] => {
+  // Optional chain: cross-slice consumers run against partial test states
+  // without this slice.
+  const ws = state.gitRoots?.byWorkspaceId?.[workspaceId];
+  if (!ws) return [];
+  return getItems(ws.gitRoots);
+});
 
 function primaryEntry(workspace: Workspace): WorkspaceGitRootEntry {
   return {

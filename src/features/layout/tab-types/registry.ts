@@ -40,12 +40,9 @@ export interface TabTypeComponentProps {
 /**
  * Definition of a tab type
  */
-interface TabTypeDefinition {
+interface TabTypeMetadata {
   /** Unique type identifier (matches PanelTabType) */
   type: string;
-
-  /** Svelte component to render for this tab type */
-  component: Component<TabTypeComponentProps>;
 
   /** Icon to display in tab bar and headers */
   icon: IconDefinition;
@@ -66,13 +63,29 @@ interface TabTypeDefinition {
   defaultWidthTier: PanelDefaultWidthTier;
 }
 
+export type TabTypeComponent = Component<TabTypeComponentProps>;
+export type TabTypeComponentLoader = () => Promise<{ default: TabTypeComponent }>;
+
+export type TabTypeDefinition = TabTypeMetadata &
+  (
+    | { loadComponent: TabTypeComponentLoader; component?: never }
+    | { component: TabTypeComponent; loadComponent?: never }
+  );
+
+interface ComponentLoadState {
+  registration: TabTypeDefinition;
+  promise: Promise<TabTypeComponent>;
+  component?: TabTypeComponent;
+}
+
 /**
  * Tab Type Registry
  *
  * Singleton registry for all tab types in the application.
  */
-class TabTypeRegistry {
+export class TabTypeRegistry {
   private types = new Map<string, TabTypeDefinition>();
+  private componentLoads = new Map<string, ComponentLoadState>();
 
   /**
    * Register a new tab type
@@ -82,6 +95,51 @@ class TabTypeRegistry {
       console.warn(`Tab type "${definition.type}" is already registered. Overwriting.`);
     }
     this.types.set(definition.type, definition);
+    this.componentLoads.delete(definition.type);
+  }
+
+  /** Load a tab component once, sharing the import across every panel of this type. */
+  loadComponent(type: string): Promise<TabTypeComponent> {
+    const registration = this.types.get(type);
+    if (!registration) {
+      return Promise.reject(new Error(`Unknown tab type: ${type}`));
+    }
+
+    const cached = this.componentLoads.get(type);
+    if (cached?.registration === registration) return cached.promise;
+
+    const state = { registration } as ComponentLoadState;
+    const promise =
+      'component' in registration && registration.component
+        ? Promise.resolve(registration.component)
+        : Promise.resolve()
+            .then(() => registration.loadComponent())
+            .then((module) => module.default);
+    state.promise = promise
+      .then((component) => {
+        if (this.componentLoads.get(type) === state) state.component = component;
+        return component;
+      })
+      .catch((error: unknown) => {
+        if (this.componentLoads.get(type) === state) this.componentLoads.delete(type);
+        throw error;
+      });
+    this.componentLoads.set(type, state);
+    return state.promise;
+  }
+
+  /** Return a resolved component without starting its loader. */
+  getLoadedComponent(type: string): TabTypeComponent | undefined {
+    const registration = this.types.get(type);
+    if (!registration) return undefined;
+    if ('component' in registration) return registration.component;
+    const cached = this.componentLoads.get(type);
+    return cached?.registration === registration ? cached.component : undefined;
+  }
+
+  /** Clear a rejected/stale load so the next request performs a fresh import. */
+  resetComponentLoad(type: string): void {
+    this.componentLoads.delete(type);
   }
 
   /**

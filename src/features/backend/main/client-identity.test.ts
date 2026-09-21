@@ -76,3 +76,67 @@ describe('client-identity (§5.17 stable clientId)', () => {
     expect(await (await import('./client-identity')).getOrCreateClientId()).toBe('cli-9b21');
   });
 });
+
+/**
+ * REV-2 (§5.17): the MAIN pooled client — the one connection that serves the
+ * `browser.exec` reverse handler — hellos with the product name, the host
+ * triple, and `capabilities.browserExec: true` on top of the stable clientId.
+ * Auxiliary clients keep presenting the bare `{ clientId }` (asserted where
+ * each is built, e.g. workspace-transfer.ipc.test.ts).
+ */
+describe('client-identity (REV-2 main-client hello params)', () => {
+  it('builds the main hello params: stable clientId + name + hostname + browserExec', async () => {
+    const { buildMainClientHelloParams, getOrCreateClientId } = await import('./client-identity');
+    const params = await buildMainClientHelloParams();
+
+    expect(params).toEqual({
+      clientId: await getOrCreateClientId(),
+      name: 'Intent Desktop',
+      hostname: os.hostname(),
+      capabilities: { browserExec: true },
+    });
+    // The triple learned from the local daemon is absent until captured —
+    // never defaulted, so the daemon's client row stays truthful.
+    expect(params).not.toHaveProperty('prettyHostname');
+    expect(params).not.toHaveProperty('deviceKind');
+  });
+
+  it('adds prettyHostname/deviceKind from a local host.status result and reports changes', async () => {
+    const { buildMainClientHelloParams, setLocalHostIdentity } = await import('./client-identity');
+
+    // PROTOCOL §5.14 `host.status` shape (fields the FE reads).
+    const hostStatus = {
+      hostname: 'dev-box.local',
+      prettyHostname: ' Clément’s Mac Studio ',
+      deviceKind: 'macStudio',
+      os: 'macos',
+      arch: 'aarch64',
+    };
+    expect(setLocalHostIdentity(hostStatus)).toBe(true);
+    expect(setLocalHostIdentity(hostStatus)).toBe(false);
+
+    const params = await buildMainClientHelloParams();
+    expect(params.prettyHostname).toBe('Clément’s Mac Studio');
+    expect(params.deviceKind).toBe('macStudio');
+    // `hostname` is this process's OS hostname, not the daemon-reported one:
+    // the daemon's row identifies the machine the APP runs on.
+    expect(params.hostname).toBe(os.hostname());
+    expect(params.capabilities).toEqual({ browserExec: true });
+  });
+
+  it('drops an unknown deviceKind and a blank prettyHostname instead of forwarding them', async () => {
+    const { buildMainClientHelloParams, setLocalHostIdentity } = await import('./client-identity');
+
+    expect(
+      setLocalHostIdentity({ hostname: 'x', prettyHostname: '   ', deviceKind: 'toaster' }),
+    ).toBe(false);
+    const params = await buildMainClientHelloParams();
+    expect(params).not.toHaveProperty('prettyHostname');
+    expect(params).not.toHaveProperty('deviceKind');
+
+    // Losing the triple (e.g. the daemon stops reporting it) is a change too.
+    expect(setLocalHostIdentity({ prettyHostname: 'Box', deviceKind: 'laptop' })).toBe(true);
+    expect(setLocalHostIdentity(null)).toBe(true);
+    expect(await buildMainClientHelloParams()).not.toHaveProperty('deviceKind');
+  });
+});

@@ -1,5 +1,3 @@
-
-
 /**
  * Full Linear authentication state for the UI
  */

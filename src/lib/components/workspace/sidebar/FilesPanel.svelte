@@ -11,7 +11,7 @@
     promptFileConflict,
     type WebConflictPromptRequest,
   } from './file-conflict-prompt';
-  import { toast } from 'svelte-sonner';
+  import { notify, type ProgressHandle } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
   import { gitCache } from '$features/git/git-cache';
@@ -118,7 +118,7 @@
       if (response.success) {
         logger.info('File renamed successfully', { oldPath, newPath });
         const fileName = newPath.split('/').pop() || newPath;
-        toast.success(m.workspace_filesPanel_renamedTo_label({ fileName }));
+        notify.success(m.workspace_filesPanel_renamedTo_label({ fileName }));
         // Notify parent so it can update any open panels with this file
         logger.info('Calling onFileRenamed callback', {
           hasCallback: !!onFileRenamed,
@@ -133,7 +133,7 @@
       }
     } catch (error) {
       logger.error('Failed to rename file', error as Error, { oldPath, newPath });
-      toast.error(m.workspace_filesPanel_renameFailed_error(), {
+      notify.error(m.workspace_filesPanel_renameFailed_error(), {
         description: (error as Error).message,
       });
     }
@@ -164,10 +164,10 @@
 
     // Show progress toast for multiple items or potential folders
     const hasMultipleItems = files.length > 1;
-    let progressToastId: string | number | undefined;
+    let progressToast: ProgressHandle | undefined;
 
     if (hasMultipleItems) {
-      progressToastId = toast.loading(
+      progressToast = notify.progress(
         m.workspace_filesPanel_copyingItems_label({ count: formatInteger(files.length) }),
       );
     }
@@ -233,7 +233,7 @@
         // Show progress for single folder drops (they can take time for large directories)
         const isSingleItem = files.length === 1;
         if (isSingleItem) {
-          progressToastId = toast.loading(`Copying "${finalFileName}"...`);
+          progressToast = notify.progress(`Copying "${finalFileName}"...`);
         }
 
         let response: { success: boolean; error?: string; data?: { isDirectory?: boolean } };
@@ -296,17 +296,17 @@
     }
 
     // Dismiss progress toast
-    if (progressToastId !== undefined) {
-      toast.dismiss(progressToastId);
+    if (progressToast) {
+      progressToast.dismiss();
     }
 
     // Show result toast notification
     if (successCount > 0 && failedCount === 0 && skippedCount === 0) {
       const message = formatSuccessMessage(successCount, folderCount, files);
-      toast.success(message);
+      notify.success(message);
     } else if (successCount > 0 && failedCount === 0 && skippedCount > 0) {
       const message = formatSuccessMessage(successCount, folderCount, files);
-      toast.success(message, {
+      notify.success(message, {
         description:
           skippedCount === 1
             ? m.workspace_filesPanel_filesSkipped_one()
@@ -321,7 +321,7 @@
           count: formatInteger(skippedCount),
         });
       }
-      toast.warning(
+      notify.warning(
         m.workspace_filesPanel_addedItemsFailed_label({
           added: formatInteger(successCount),
           failed: formatInteger(failedCount),
@@ -331,7 +331,7 @@
         },
       );
     } else if (failedCount > 0) {
-      toast.error(
+      notify.error(
         failedCount === 1
           ? m.workspace_filesPanel_addFailed_one()
           : m.workspace_filesPanel_addFailed_many(),
@@ -340,7 +340,7 @@
         },
       );
     } else if (skippedCount > 0) {
-      toast.info(
+      notify.info(
         skippedCount === 1
           ? m.workspace_filesPanel_wereSkipped_one()
           : m.workspace_filesPanel_wereSkipped_many({ count: formatInteger(skippedCount) }),

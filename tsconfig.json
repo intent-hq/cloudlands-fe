@@ -49,6 +49,7 @@
     "src/lib/types/**/*.js",
     "src/shared/paraglide/**/*",
     "src/features/agent/testing/**/*",
+    "src/lib/components/__knip-canary__/**/*",
     "**/*.test.ts",
     "**/*.spec.ts"
   ]

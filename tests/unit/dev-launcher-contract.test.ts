@@ -40,8 +40,10 @@ describe('dev Electron child lifecycle', () => {
 
   it('stops the renderer when either Electron dev process fails', () => {
     expect(scripts['dev:base']).toContain('node scripts/dev-stack.mjs');
-    expect(scripts['dev:base']).toContain('--long "pnpm run dev:electron"');
+    expect(scripts['dev:base']).toContain('--long "node scripts/pnpm-run.mjs dev:electron"');
     expect(scripts['dev:cdp:base']).toContain('node scripts/dev-stack.mjs');
-    expect(scripts['dev:cdp:base']).toContain('--long "pnpm run dev:electron:cdp"');
+    expect(scripts['dev:cdp:base']).toContain(
+      '--long "node scripts/pnpm-run.mjs dev:electron:cdp"',
+    );
   });
 });

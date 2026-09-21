@@ -1,3 +1,8 @@
+// @verify-changed-triggers: scripts/run-ct-tests.mjs, playwright-ct.config.ts,
+//   src/lib/components/chat/__tests__/chat-message-navigator.ct.spec.ts,
+//   src/lib/components/chat/__tests__/ChatMessageNavigatorIntegrationHost.svelte,
+//   src/lib/components/chat/__tests__/ChatMessageNavigatorHost.svelte
+
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

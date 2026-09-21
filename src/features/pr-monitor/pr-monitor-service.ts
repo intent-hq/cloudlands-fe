@@ -1,5 +1,5 @@
 /**
- * PR-monitor read/cancel/flush surface (PROTOCOL v6.1, §6.9).
+ * PR-monitor read/cancel/flush surface (PROTOCOL §5.42, §6.9).
  *
  * Monitors are agent-owned (`ws.pr.monitor` is MCP-only); the FE reads via
  * `prMonitor.list`, cancels via `prMonitor.cancel`, flushes the pending
@@ -45,7 +45,9 @@ export interface PrMonitorSnapshot {
     changesRequested: number;
   };
   threads: {
-    unresolved: number;
+    /** Absent (never `null`) when the host could not read thread resolution
+     * state — the count is unknown, not zero. */
+    unresolved?: number;
     resolutionRequired?: boolean | null;
   };
   /** Additive: present (true) when the host reports the PR queued to merge;
@@ -72,6 +74,10 @@ export interface PrMonitorRow {
   lastChangeAt?: string;
   lastPolledAt?: string;
   lastError?: string;
+  /** RFC 3339 deadline of the daemon's forge rate-limit pause; present on
+   * ACTIVE rows only while polling is suspended (`lastSnapshot` is stale
+   * until the first post-pause poll clears it). */
+  pausedUntil?: string;
   title?: string;
   url?: string;
   lastSnapshot?: PrMonitorSnapshot;
@@ -144,9 +150,7 @@ export function foldPrMonitorEvent(
     case 'prMonitor:emitted':
       return {
         monitors: monitors.map((m) =>
-          m.monitorId === monitorId
-            ? { ...m, pendingChanges: [], hasPendingChanges: false }
-            : m,
+          m.monitorId === monitorId ? { ...m, pendingChanges: [], hasPendingChanges: false } : m,
         ),
         needsRefetch: false,
       };
@@ -222,6 +226,7 @@ export interface PrMonitorsSubscription {
 export function subscribePrMonitors(
   workspaceId: string,
   handler: (monitors: PrMonitorRow[]) => void,
+  statusHandler?: (status: 'failed') => void,
 ): PrMonitorsSubscription {
   let disposed = false;
   let subscriptionId: string | undefined;
@@ -260,11 +265,9 @@ export function subscribePrMonitors(
       })
       .catch((error) => {
         logger.warn('prMonitor.list failed', { workspaceId, error });
-        // Still emit the cached list (empty on a failed initial seed) so the
-        // consumer's workspace entry exists: the utility-footer readiness
-        // gate treats a failed seed as ready-with-empty and never wedges
-        // the reveal.
+        // Preserve cached rows, then independently surface the failed read.
         emit();
+        statusHandler?.('failed');
       })
       .finally(() => {
         refetchInFlight = false;

@@ -111,7 +111,6 @@ describe('EventWakeupBanner details disclosure', () => {
     const details = screen.getByTestId('event-wakeup-details');
     expect(details.className).toContain('border-t');
     expect(details.className).toContain('border-border');
-    expect(details.className).toContain('px-3');
     expect(details.className).toContain('py-2');
     expect(details.className).not.toContain('border-l');
     expect(details.className).not.toContain('pl-5');

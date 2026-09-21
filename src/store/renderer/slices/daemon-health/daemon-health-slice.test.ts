@@ -26,8 +26,14 @@ import {
   stopUnslothRequested,
   stopUnslothSucceeded,
   stopUnslothFailed,
+  agentMemoryBreakdownClosed,
+  agentMemoryUsageRequested,
+  agentMemoryUsageSucceeded,
+  agentMemoryUsageFailed,
 } from './daemon-health-slice';
+import { collaboratorSystemStatusProjection } from './daemon-health.test-fixtures';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
   SidecarRunLog,
   SystemStatusWirePayload,
@@ -43,6 +49,8 @@ describe('daemonHealthReducer', () => {
       polling: false,
       transport: null,
       reconnectAttempts: 0,
+      connectionLimited: false,
+      connectionLimitRetryAfterMs: null,
       hostLocality: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
@@ -51,13 +59,19 @@ describe('daemonHealthReducer', () => {
       hasEverConnected: false,
       sidecarSpawnPending: false,
       sidecarSpawnError: null,
+      daemonUpdateDisconnectedAt: null,
       sidecarRunLog: null,
       sidecarRunLogPending: false,
       sidecarRunLogError: null,
+      statusCheckFailure: null,
+      connectionGeneration: 0,
       unslothStatus: null,
       unslothPolling: false,
       unslothStopping: false,
       unslothStopError: null,
+      agentMemoryUsage: null,
+      agentMemoryUsageFetching: false,
+      agentMemoryUsageError: false,
     });
   });
 
@@ -228,6 +242,70 @@ describe('daemonHealthReducer', () => {
       expect(next.reconnectAttempts).toBe(0);
     });
 
+    // Multiplayer guest caps: main reports a 503-refused connect as
+    // `connectionLimited`; the posture holds across retries until main
+    // reports otherwise, and a successful connect clears it.
+    it('tracks connectionLimited from the status extras and clears it on connect', () => {
+      const limited = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: true }),
+      );
+      expect(limited.connectionLimited).toBe(true);
+
+      const retrying = daemonHealthReducer(
+        limited,
+        connectionStatusChanged('connecting', undefined, { reconnectAttempts: 1 }),
+      );
+      expect(retrying.connectionLimited).toBe(true);
+
+      const otherFailure = daemonHealthReducer(
+        retrying,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: false }),
+      );
+      expect(otherFailure.connectionLimited).toBe(false);
+
+      const connected = daemonHealthReducer(limited, connectionStatusChanged('connected'));
+      expect(connected.connectionLimited).toBe(false);
+    });
+
+    it('tracks the connection-limit retry wait alongside the posture', () => {
+      const limited = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected', undefined, {
+          connectionLimited: true,
+          connectionLimitRetryAfterMs: 45_000,
+        }),
+      );
+      expect(limited.connectionLimitRetryAfterMs).toBe(45_000);
+
+      // A retry broadcast without the field keeps the last known wait.
+      const retrying = daemonHealthReducer(
+        limited,
+        connectionStatusChanged('connecting', undefined, { reconnectAttempts: 1 }),
+      );
+      expect(retrying.connectionLimitRetryAfterMs).toBe(45_000);
+
+      // A refreshed refusal replaces it.
+      const refreshed = daemonHealthReducer(
+        retrying,
+        connectionStatusChanged('disconnected', undefined, {
+          connectionLimited: true,
+          connectionLimitRetryAfterMs: 120_000,
+        }),
+      );
+      expect(refreshed.connectionLimitRetryAfterMs).toBe(120_000);
+
+      // A failure of another kind drops it with the posture.
+      const otherFailure = daemonHealthReducer(
+        refreshed,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: false }),
+      );
+      expect(otherFailure.connectionLimitRetryAfterMs).toBeNull();
+
+      const connected = daemonHealthReducer(refreshed, connectionStatusChanged('connected'));
+      expect(connected.connectionLimitRetryAfterMs).toBeNull();
+    });
+
     it('latches sidecarGaveUp + reason on a give-up disconnect', () => {
       const state = { ...initialState, health: 'healthy' as const, transport: sidecarTransport };
       const next = daemonHealthReducer(
@@ -365,6 +443,86 @@ describe('daemonHealthReducer', () => {
       );
       expect(afterConnecting.hasEverConnected).toBe(false);
     });
+
+    describe('daemonUpdateDisconnectedAt', () => {
+      const t0 = new Date('2026-09-04T10:00:00.000Z').getTime();
+
+      it('stores the drop time main stamped on an update-caused disconnect', () => {
+        const state = { ...initialState, health: 'healthy' as const };
+        const next = daemonHealthReducer(
+          state,
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        expect(next.daemonUpdateDisconnectedAt).toBe(t0);
+        expect(next.health).toBe('down');
+      });
+
+      it('stores the time on a flagged connecting status too', () => {
+        const next = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('connecting', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        expect(next.daemonUpdateDisconnectedAt).toBe(t0);
+      });
+
+      it('mirrors the value main repeats across later pushes for the same restart', () => {
+        const first = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        const second = daemonHealthReducer(
+          first,
+          connectionStatusChanged('connecting', undefined, {
+            daemonUpdateDisconnectedAt: t0,
+            reconnectAttempts: 2,
+          }),
+        );
+        const third = daemonHealthReducer(
+          second,
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        expect(second.daemonUpdateDisconnectedAt).toBe(t0);
+        expect(third.daemonUpdateDisconnectedAt).toBe(t0);
+      });
+
+      it('clears the time on a successful connect', () => {
+        const state = { ...initialState, daemonUpdateDisconnectedAt: t0 };
+        const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
+        expect(next.daemonUpdateDisconnectedAt).toBeNull();
+      });
+
+      it('leaves the time untouched on a disconnect without the marker', () => {
+        const unflagged = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('disconnected'),
+        );
+        expect(unflagged.daemonUpdateDisconnectedAt).toBeNull();
+
+        const state = { ...initialState, daemonUpdateDisconnectedAt: t0 };
+        const next = daemonHealthReducer(
+          state,
+          connectionStatusChanged('disconnected', undefined, { reconnectAttempts: 1 }),
+        );
+        expect(next.daemonUpdateDisconnectedAt).toBe(t0);
+      });
+
+      it('stores a fresh time for a new update after a reconnect cleared the previous one', () => {
+        const first = daemonHealthReducer(
+          initialState,
+          connectionStatusChanged('disconnected', undefined, { daemonUpdateDisconnectedAt: t0 }),
+        );
+        const reconnected = daemonHealthReducer(first, connectionStatusChanged('connected'));
+        expect(reconnected.daemonUpdateDisconnectedAt).toBeNull();
+
+        const again = daemonHealthReducer(
+          reconnected,
+          connectionStatusChanged('disconnected', undefined, {
+            daemonUpdateDisconnectedAt: t0 + 60_000,
+          }),
+        );
+        expect(again.daemonUpdateDisconnectedAt).toBe(t0 + 60_000);
+      });
+    });
   });
 
   describe('spawnSidecarRequested / spawnSidecarFailed', () => {
@@ -493,6 +651,11 @@ describe('daemonHealthReducer', () => {
         memoryBytes: 104857600,
         workspacesDiskAvailableBytes: 453316378624,
         workspacesDiskTotalBytes: 1099511627776,
+        childProcesses: 9,
+        childMemoryBytes: 3650000000,
+        childMemoryPeakBytes: 6970000000,
+        agentMemoryBytes: 3221225472,
+        agentProcessCount: 2,
         fingerprint: 'abc123',
         hostname: 'studio.local',
         protocolVersion: '2.0',
@@ -505,7 +668,7 @@ describe('daemonHealthReducer', () => {
       };
       const state = { ...initialState, polling: true };
       const receivedAt = '2026-07-30T20:00:00.000Z';
-      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt));
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt, 0));
 
       expect(next.polling).toBe(false);
       expect(next.stats).toEqual({
@@ -523,12 +686,78 @@ describe('daemonHealthReducer', () => {
         workspacesDiskAvailableBytes: 453316378624,
         workspacesDiskTotalBytes: 1099511627776,
         hostname: 'studio.local',
+        childProcesses: 9,
+        childMemoryBytes: 3650000000,
+        childMemoryPeakBytes: 6970000000,
+        agentMemoryBytes: 3221225472,
+        agentProcessCount: 2,
         os: 'macos',
         arch: 'aarch64',
         transport: undefined,
       });
       expect(next.lastUpdated).toBe(receivedAt);
       expect(next.hostLocality).toBe('local');
+    });
+
+    it('keeps counts and telemetry absent for the collaborator projection (intentd #1934)', () => {
+      // Exactly the guest-safe key set a Collaborator caller receives — the
+      // typed literal lives in a check-covered module so a re-required wire
+      // field fails `pnpm run check`, not only this runtime test.
+      const payload = collaboratorSystemStatusProjection;
+      // COLLABORATOR_STATUS_FIELDS / COLLABORATOR_STATUS_HOST_FIELDS @ 60de0618.
+      expect(Object.keys(payload).sort()).toEqual(
+        [
+          'running',
+          'listenMode',
+          'port',
+          'version',
+          'buildCommit',
+          'protocolVersion',
+          'fingerprint',
+          'localIps',
+          'tcAddress',
+          'hostname',
+          'prettyHostname',
+          'host',
+        ].sort(),
+      );
+      expect(Object.keys(payload.host).sort()).toEqual(
+        ['os', 'arch', 'locality', 'deviceKind', 'hardwareModel'].sort(),
+      );
+      expect(payload).not.toHaveProperty('transports');
+      expect(payload).not.toHaveProperty('clients');
+      expect(payload).not.toHaveProperty('agents');
+      expect(payload).not.toHaveProperty('maxAgents');
+      expect(payload.host).not.toHaveProperty('hasDisplay');
+      const state = { ...initialState, polling: true };
+      const receivedAt = '2026-09-16T13:00:00.000Z';
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt, 0));
+
+      expect(next.polling).toBe(false);
+      expect(next.stats).toEqual({
+        listenMode: payload.listenMode,
+        port: payload.port,
+        version: payload.version,
+        buildCommit: payload.buildCommit,
+        protocolVersion: payload.protocolVersion,
+        hostname: payload.hostname,
+        os: payload.host.os,
+        arch: payload.host.arch,
+      });
+      expect(next.stats?.clients).toBeUndefined();
+      expect(next.stats?.agents).toBeUndefined();
+      expect(next.stats?.maxAgents).toBeUndefined();
+      expect(next.stats?.uptimeSeconds).toBeUndefined();
+      expect(next.stats?.cpuPercent).toBeUndefined();
+      expect(next.stats?.memoryBytes).toBeUndefined();
+      expect(next.stats?.workspacesDiskAvailableBytes).toBeUndefined();
+      expect(next.stats?.workspacesDiskTotalBytes).toBeUndefined();
+      // Nothing numeric was coerced from a missing field.
+      for (const value of Object.values(next.stats ?? {})) {
+        expect(Number.isNaN(value)).toBe(false);
+      }
+      expect(next.lastUpdated).toBe(receivedAt);
+      expect(next.hostLocality).toBe('remote');
     });
 
     it('treats new fields as optional (graceful degradation)', () => {
@@ -553,7 +782,7 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, polling: true };
       const next = daemonHealthReducer(
         state,
-        systemStatusSuccess(payload, '2026-07-30T20:00:01.000Z'),
+        systemStatusSuccess(payload, '2026-07-30T20:00:01.000Z', 0),
       );
 
       expect(next.polling).toBe(false);
@@ -592,7 +821,7 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, hostLocality: 'local' as const };
       const next = daemonHealthReducer(
         state,
-        systemStatusSuccess(payload, '2026-07-30T20:00:02.000Z'),
+        systemStatusSuccess(payload, '2026-07-30T20:00:02.000Z', 0),
       );
 
       expect(next.hostLocality).toBe('local');
@@ -635,24 +864,358 @@ describe('daemonHealthReducer', () => {
       };
       const next = daemonHealthReducer(
         connected,
-        systemStatusSuccess(payload, '2026-08-11T00:00:00.000Z'),
+        systemStatusSuccess(payload, '2026-08-11T00:00:00.000Z', connected.connectionGeneration),
       );
 
       expect(next.stats?.transport).toEqual(bootTransport);
     });
   });
 
+  describe('connection generation (#4439)', () => {
+    const payload: SystemStatusWirePayload = {
+      running: true,
+      listenMode: 'uds',
+      transports: ['uds'],
+      port: null,
+      clients: 1,
+      agents: 0,
+      protocolVersion: '2.0',
+      host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+    };
+    const failure = { kind: 'timeout' as const, failedAt: '2026-09-05T10:00:00.000Z' };
+    const uds: BackendTransportInfo = { mode: 'external-uds', target: '/tmp/intentd.sock' };
+    // Remote WebSocket as main reports it: `external-ws` with the sanitized URL
+    // (userinfo and query already stripped by formatTransportInfo).
+    const remoteWs: BackendTransportInfo = {
+      mode: 'external-ws',
+      target: 'ws://127.0.0.1:5181/ws',
+    };
+
+    it('starts a new generation on every connection lifecycle change', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const down = daemonHealthReducer(a, connectionStatusChanged('disconnected'));
+      const connecting = daemonHealthReducer(down, connectionStatusChanged('connecting'));
+      const b = daemonHealthReducer(connecting, connectionStatusChanged('connected', uds));
+      const switched = daemonHealthReducer(b, connectionStatusChanged('connected', remoteWs));
+      expect(switched.transport).toEqual(remoteWs);
+      expect([a, down, connecting, b, switched].map((s) => s.connectionGeneration)).toEqual([
+        1, 2, 3, 4, 5,
+      ]);
+    });
+
+    it('a repeated connected notification for the same connection is metadata, not a new lifecycle', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const polling = daemonHealthReducer(a, pollSystemStatus());
+      const repeat = daemonHealthReducer(
+        polling,
+        connectionStatusChanged('connected', { ...uds, updateSupported: true }),
+      );
+      expect(repeat.connectionGeneration).toBe(a.connectionGeneration);
+      expect(repeat.polling).toBe(true);
+      expect(repeat.transport).toEqual({ ...uds, updateSupported: true });
+
+      const applied = daemonHealthReducer(
+        repeat,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', a.connectionGeneration),
+      );
+      expect(applied.polling).toBe(false);
+      expect(applied.stats?.clients).toBe(1);
+      expect(applied.lastUpdated).toBe('2026-09-05T10:00:10.000Z');
+    });
+
+    it('a same-connection metadata refresh keeps degraded health and its failure context', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const degraded = daemonHealthReducer(a, systemStatusFailure(failure, a.connectionGeneration));
+      expect(degraded.health).toBe('degraded');
+
+      const refreshed = daemonHealthReducer(
+        degraded,
+        connectionStatusChanged('connected', { ...uds, updateSupported: true }),
+      );
+      expect(refreshed.health).toBe('degraded');
+      expect(refreshed.statusCheckFailure).toBe(degraded.statusCheckFailure);
+      expect(refreshed.lastUpdated).toBe(degraded.lastUpdated);
+      expect(refreshed.connectionGeneration).toBe(a.connectionGeneration);
+      expect(refreshed.transport).toEqual({ ...uds, updateSupported: true });
+
+      const again = daemonHealthReducer(
+        refreshed,
+        systemStatusFailure(
+          { ...failure, failedAt: '2026-09-05T10:00:10.000Z' },
+          a.connectionGeneration,
+        ),
+      );
+      expect(again.health).toBe('degraded');
+      expect(again.statusCheckFailure?.consecutiveFailures).toBe(2);
+
+      const recovered = daemonHealthReducer(
+        again,
+        systemStatusSuccess(payload, '2026-09-05T10:00:20.000Z', a.connectionGeneration),
+      );
+      expect(recovered.health).toBe('healthy');
+      expect(recovered.statusCheckFailure).toBeNull();
+
+      const reconnected = daemonHealthReducer(
+        daemonHealthReducer(again, connectionStatusChanged('disconnected')),
+        connectionStatusChanged('connected', uds),
+      );
+      expect(reconnected.health).toBe('healthy');
+      expect(reconnected.statusCheckFailure).toBeNull();
+      expect(reconnected.connectionGeneration).toBe(a.connectionGeneration + 2);
+    });
+
+    it('a lifecycle change invalidates the in-flight poll flag', () => {
+      const polling = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        pollSystemStatus(),
+      );
+      expect(polling.polling).toBe(true);
+      expect(daemonHealthReducer(polling, connectionStatusChanged('disconnected')).polling).toBe(
+        false,
+      );
+      expect(daemonHealthReducer(polling, connectionStatusChanged('connected', uds)).polling).toBe(
+        false,
+      );
+    });
+
+    it('ignores a failure from a previous connection once the new one is healthy', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const down = daemonHealthReducer(a, connectionStatusChanged('disconnected'));
+      const b = daemonHealthReducer(down, connectionStatusChanged('connected', uds));
+      const polling = daemonHealthReducer(b, pollSystemStatus());
+
+      const next = daemonHealthReducer(
+        polling,
+        systemStatusFailure(failure, a.connectionGeneration),
+      );
+      expect(next).toBe(polling);
+    });
+
+    it('ignores a success from a previous connection while the new one is down', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const down = daemonHealthReducer(a, connectionStatusChanged('disconnected'));
+      const next = daemonHealthReducer(
+        down,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', a.connectionGeneration),
+      );
+      expect(next).toBe(down);
+    });
+
+    it('ignores a success from before a direct transport switch, even after the new connection has fresh stats', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const b = daemonHealthReducer(a, connectionStatusChanged('connected', remoteWs));
+      expect(b.stats).toBeNull();
+
+      const staleAfterSwitch = daemonHealthReducer(
+        b,
+        systemStatusSuccess(
+          { ...payload, hostname: 'old-daemon' },
+          '2026-09-05T10:00:05.000Z',
+          a.connectionGeneration,
+        ),
+      );
+      expect(staleAfterSwitch).toBe(b);
+
+      const fresh = daemonHealthReducer(
+        b,
+        systemStatusSuccess(
+          { ...payload, hostname: 'new-daemon', host: { ...payload.host, locality: 'remote' } },
+          '2026-09-05T10:00:06.000Z',
+          b.connectionGeneration,
+        ),
+      );
+      const staleAfterFresh = daemonHealthReducer(
+        fresh,
+        systemStatusSuccess(
+          { ...payload, hostname: 'old-daemon' },
+          '2026-09-05T10:00:07.000Z',
+          a.connectionGeneration,
+        ),
+      );
+      expect(staleAfterFresh).toBe(fresh);
+      expect(staleAfterFresh.stats?.hostname).toBe('new-daemon');
+      expect(staleAfterFresh.hostLocality).toBe('remote');
+      expect(staleAfterFresh.lastUpdated).toBe('2026-09-05T10:00:06.000Z');
+    });
+
+    it('ignores a stale failure from before a switch instead of degrading the new connection', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const b = daemonHealthReducer(a, connectionStatusChanged('connected', remoteWs));
+      const next = daemonHealthReducer(b, systemStatusFailure(failure, a.connectionGeneration));
+      expect(next).toBe(b);
+      expect(next.health).toBe('healthy');
+      expect(next.statusCheckFailure).toBeNull();
+    });
+
+    it('still applies results from the current connection', () => {
+      const a = daemonHealthReducer(initialState, connectionStatusChanged('connected', uds));
+      const degraded = daemonHealthReducer(a, systemStatusFailure(failure, a.connectionGeneration));
+      expect(degraded.health).toBe('degraded');
+      const recovered = daemonHealthReducer(
+        degraded,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', a.connectionGeneration),
+      );
+      expect(recovered.health).toBe('healthy');
+      expect(recovered.stats?.clients).toBe(1);
+    });
+  });
+
   describe('systemStatusFailure', () => {
+    const failure = { kind: 'status-check-failed' as const, failedAt: '2026-09-05T10:00:00.000Z' };
+    const laterFailure = { kind: 'timeout' as const, failedAt: '2026-09-05T10:00:10.000Z' };
+
     it('clears polling flag', () => {
-      const state = { ...initialState, polling: true };
-      const next = daemonHealthReducer(state, systemStatusFailure());
+      const state = { ...initialState, health: 'healthy' as const, polling: true };
+      const next = daemonHealthReducer(state, systemStatusFailure(failure, 0));
       expect(next.polling).toBe(false);
     });
 
-    it('leaves health unchanged', () => {
+    it('degrades a healthy connection and records the failure context (#4439)', () => {
       const state = { ...initialState, health: 'healthy' as const, polling: true };
-      const next = daemonHealthReducer(state, systemStatusFailure());
+      const next = daemonHealthReducer(state, systemStatusFailure(failure, 0));
+      expect(next.health).toBe('degraded');
+      expect(next.statusCheckFailure).toEqual({
+        kind: 'status-check-failed',
+        failedAt: '2026-09-05T10:00:00.000Z',
+        consecutiveFailures: 1,
+      });
+    });
+
+    it('keeps the last-success freshness while degraded', () => {
+      const state = {
+        ...initialState,
+        health: 'healthy' as const,
+        lastUpdated: '2026-09-05T09:59:50.000Z',
+      };
+      const next = daemonHealthReducer(state, systemStatusFailure(failure, 0));
+      expect(next.lastUpdated).toBe('2026-09-05T09:59:50.000Z');
+    });
+
+    it('refreshes the context and counts consecutive failures while already degraded', () => {
+      const degraded = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        systemStatusFailure(failure, 0),
+      );
+      const next = daemonHealthReducer(degraded, systemStatusFailure(laterFailure, 0));
+      expect(next.health).toBe('degraded');
+      expect(next.statusCheckFailure).toEqual({
+        kind: 'timeout',
+        failedAt: '2026-09-05T10:00:10.000Z',
+        consecutiveFailures: 2,
+      });
+    });
+
+    it('records nothing for a same-connection failure while already down', () => {
+      const state = { ...initialState, health: 'down' as const, polling: true };
+      const next = daemonHealthReducer(state, systemStatusFailure(failure, 0));
+      expect(next.health).toBe('down');
+      expect(next.statusCheckFailure).toBeNull();
+      expect(next.polling).toBe(false);
+    });
+
+    it('stores only the serializable category and timing, never the raw error', () => {
+      const next = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        systemStatusFailure(failure, 0),
+      );
+      expect(Object.keys(next.statusCheckFailure ?? {}).sort()).toEqual([
+        'consecutiveFailures',
+        'failedAt',
+        'kind',
+      ]);
+    });
+  });
+
+  describe('degraded → recovery (#4439)', () => {
+    const failure = { kind: 'status-check-failed' as const, failedAt: '2026-09-05T10:00:00.000Z' };
+    const payload: SystemStatusWirePayload = {
+      running: true,
+      listenMode: 'uds',
+      transports: ['uds'],
+      port: null,
+      clients: 1,
+      agents: 0,
+      protocolVersion: '2.0',
+      host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+    };
+
+    it('restores healthy and clears the failure context on the next successful check', () => {
+      const degraded = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        systemStatusFailure(failure, 0),
+      );
+      expect(degraded.health).toBe('degraded');
+
+      const next = daemonHealthReducer(
+        degraded,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', 0),
+      );
       expect(next.health).toBe('healthy');
+      expect(next.statusCheckFailure).toBeNull();
+      expect(next.lastUpdated).toBe('2026-09-05T10:00:10.000Z');
+    });
+
+    it('recovers from a heartbeat-triggered degradation too', () => {
+      const degraded = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        heartbeatFailed(),
+      );
+      const next = daemonHealthReducer(
+        degraded,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', 0),
+      );
+      expect(next.health).toBe('healthy');
+    });
+
+    it('does not let a late success override a newer disconnected state', () => {
+      const down = daemonHealthReducer(
+        { ...initialState, health: 'degraded' as const },
+        connectionStatusChanged('disconnected'),
+      );
+      const next = daemonHealthReducer(
+        down,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', 0),
+      );
+      expect(next).toBe(down);
+      expect(next.health).toBe('down');
+    });
+
+    it('does not let a late success override a newer connecting state', () => {
+      const connecting = daemonHealthReducer(
+        { ...initialState, health: 'degraded' as const },
+        connectionStatusChanged('connecting'),
+      );
+      const next = daemonHealthReducer(
+        connecting,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', 0),
+      );
+      expect(next).toBe(connecting);
+      expect(next.health).toBe('down');
+    });
+
+    it('does not revive health from a same-connection success while down', () => {
+      const down = daemonHealthReducer(
+        { ...initialState, health: 'degraded' as const },
+        connectionStatusChanged('disconnected'),
+      );
+      const next = daemonHealthReducer(
+        down,
+        systemStatusSuccess(payload, '2026-09-05T10:00:10.000Z', down.connectionGeneration),
+      );
+      expect(next.health).toBe('down');
+    });
+
+    it('keeps the failure context across a disconnect and clears it on reconnect', () => {
+      const degraded = daemonHealthReducer(
+        { ...initialState, health: 'healthy' as const },
+        systemStatusFailure(failure, 0),
+      );
+      const down = daemonHealthReducer(degraded, connectionStatusChanged('disconnected'));
+      expect(down.statusCheckFailure).not.toBeNull();
+
+      const reconnected = daemonHealthReducer(down, connectionStatusChanged('connected'));
+      expect(reconnected.health).toBe('healthy');
+      expect(reconnected.statusCheckFailure).toBeNull();
     });
   });
 
@@ -737,6 +1300,86 @@ describe('daemonHealthReducer', () => {
       const next = daemonHealthReducer(state, stopUnslothFailed('transport error'));
       expect(next.unslothStopping).toBe(false);
       expect(next.unslothStopError).toBe('transport error');
+    });
+  });
+
+  describe('agent memory breakdown', () => {
+    const usage: AgentMemoryUsageWirePayload = {
+      sampledAt: '2026-09-20T06:00:00.000Z',
+      totalBytes: 3221225472,
+      agents: [
+        {
+          agentId: 'agent-1',
+          agentName: 'Implement dark mode',
+          workspaceId: 'ws-1',
+          provider: 'claude',
+          model: 'claude-sonnet-4',
+          rootPid: 100,
+          processCount: 1,
+          memoryBytes: 3221225472,
+          processes: [
+            {
+              pid: 100,
+              parentPid: 1,
+              name: 'claude-code-acp',
+              cmdline: 'claude-code-acp --stdio',
+              memoryBytes: 3221225472,
+            },
+          ],
+        },
+      ],
+    };
+
+    it('agentMemoryUsageRequested marks a fetch in flight', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageRequested());
+      expect(next.agentMemoryUsageFetching).toBe(true);
+    });
+
+    it('agentMemoryUsageSucceeded stores the wire payload as-is and clears a prior error', () => {
+      const state = {
+        ...initialState,
+        agentMemoryUsageFetching: true,
+        agentMemoryUsageError: true,
+      };
+      const next = daemonHealthReducer(state, agentMemoryUsageSucceeded(usage));
+      expect(next.agentMemoryUsageFetching).toBe(false);
+      expect(next.agentMemoryUsageError).toBe(false);
+      expect(next.agentMemoryUsage).toEqual(usage);
+    });
+
+    it('agentMemoryUsageSucceeded is ignored when no fetch is in flight (late resolve after close)', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageSucceeded(usage));
+      expect(next).toBe(initialState);
+      expect(next.agentMemoryUsage).toBeNull();
+    });
+
+    it('agentMemoryUsageFailed flags the error but keeps the last good usage', () => {
+      const state = { ...initialState, agentMemoryUsageFetching: true, agentMemoryUsage: usage };
+      const next = daemonHealthReducer(state, agentMemoryUsageFailed());
+      expect(next.agentMemoryUsageFetching).toBe(false);
+      expect(next.agentMemoryUsageError).toBe(true);
+      expect(next.agentMemoryUsage).toEqual(usage);
+    });
+
+    it('agentMemoryUsageFailed is ignored when no fetch is in flight', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageFailed());
+      expect(next).toBe(initialState);
+    });
+
+    it('agentMemoryBreakdownClosed drops the usage and cancels an in-flight fetch', () => {
+      const state = {
+        ...initialState,
+        agentMemoryUsageFetching: true,
+        agentMemoryUsageError: true,
+        agentMemoryUsage: usage,
+      };
+      const closed = daemonHealthReducer(state, agentMemoryBreakdownClosed());
+      expect(closed.agentMemoryUsage).toBeNull();
+      expect(closed.agentMemoryUsageFetching).toBe(false);
+      expect(closed.agentMemoryUsageError).toBe(false);
+
+      const late = daemonHealthReducer(closed, agentMemoryUsageSucceeded(usage));
+      expect(late.agentMemoryUsage).toBeNull();
     });
   });
 });

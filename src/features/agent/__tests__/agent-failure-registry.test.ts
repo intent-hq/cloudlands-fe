@@ -37,8 +37,18 @@ describe('agent-failure-registry entries', () => {
   });
 
   it('dedupes by agentId — the same agent failing twice keeps one entry', () => {
-    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-a', error: 'Connection refused', at: 1 });
-    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-a', error: 'Rate limit exceeded', at: 2 });
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-a',
+      error: 'Connection refused',
+      at: 1,
+    });
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-a',
+      error: 'Rate limit exceeded',
+      at: 2,
+    });
 
     const entries = listAgentFailureEntries();
     expect(entries).toHaveLength(1);
@@ -49,8 +59,18 @@ describe('agent-failure-registry entries', () => {
 
 describe('agent-failure-registry removal lifecycle', () => {
   it('removes agents one at a time until the registry is empty', () => {
-    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-a', error: 'Connection refused', at: 1 });
-    recordAgentFailure({ agentId: 'agent-2', workspaceId: 'ws-b', error: 'Connection refused', at: 2 });
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-a',
+      error: 'Connection refused',
+      at: 1,
+    });
+    recordAgentFailure({
+      agentId: 'agent-2',
+      workspaceId: 'ws-b',
+      error: 'Connection refused',
+      at: 2,
+    });
 
     expect(removeAgentFailure('agent-1')).toBe(true);
     let entries = listAgentFailureEntries();
@@ -71,11 +91,21 @@ describe('agent-failure-registry subscription', () => {
     const listener = vi.fn();
     subscribeToAgentFailures(listener);
 
-    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-a', error: 'Connection refused', at: 1 });
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-a',
+      error: 'Connection refused',
+      at: 1,
+    });
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener.mock.calls[0][0]).toHaveLength(1);
 
-    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-a', error: 'Connection refused', at: 2 });
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-a',
+      error: 'Connection refused',
+      at: 2,
+    });
     expect(listener).toHaveBeenCalledTimes(2);
 
     removeAgentFailure('agent-1');
@@ -98,11 +128,21 @@ describe('agent-failure-registry subscription', () => {
     subscribeToAgentFailures(throwing);
     const unsubscribe = subscribeToAgentFailures(listener);
 
-    recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-a', error: 'Connection refused', at: 1 });
+    recordAgentFailure({
+      agentId: 'agent-1',
+      workspaceId: 'ws-a',
+      error: 'Connection refused',
+      at: 1,
+    });
     expect(listener).toHaveBeenCalledTimes(1);
 
     unsubscribe();
-    recordAgentFailure({ agentId: 'agent-2', workspaceId: 'ws-a', error: 'Connection refused', at: 2 });
+    recordAgentFailure({
+      agentId: 'agent-2',
+      workspaceId: 'ws-a',
+      error: 'Connection refused',
+      at: 2,
+    });
     expect(listener).toHaveBeenCalledTimes(1);
     expect(throwing).toHaveBeenCalledTimes(2);
   });

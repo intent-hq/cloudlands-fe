@@ -1,3 +1,4 @@
+// @ui-invariant
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -6,10 +7,6 @@ const root = path.resolve(process.cwd(), 'src');
 const extensions = new Set(['.css', '.svelte', '.ts']);
 const semanticExceptions = new Map<string, string[]>([
   ['src/lib/components/chat/ToolDetails.svelte', ['border-[#a9b1d6]/10']],
-  [
-    'src/lib/components/code-walkthrough/WalkthroughAnnotationCard.svelte',
-    ['border-slate-200', 'border-slate-700'],
-  ],
 ]);
 const forbidden = [
   /\b(?:border|divide|bg)-border\/[0-9]+\b/g,

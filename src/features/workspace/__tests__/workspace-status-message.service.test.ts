@@ -1,22 +1,8 @@
-import {
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import {
-  WorkspaceStatus,
-  type Workspace,
-  type WorkspaceId,
-} from '../../../shared/types';
+import { WorkspaceStatus, type Workspace, type WorkspaceId } from '../../../shared/types';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import { WorkspaceService } from '../main/workspace.service';
-
-vi.mock('../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: unknown) => action),
-}));
 
 // Stub the daemon client so WorkspaceService's activity-repair path
 // (`note.list` / `agent.list` per PROTOCOL.md §5.4/§5.5) resolves to empty
@@ -25,6 +11,7 @@ vi.mock('../../../store/main/redux-store-bridge', () => ({
 // now delegates to the daemon.
 const workspaceStore = new Map<string, Record<string, unknown>>();
 vi.mock('../../backend/main/backend.ipc', () => ({
+  onBackendReconnected: () => () => {},
   getBackendClient: () => ({
     request: vi.fn(async (method: string, params: unknown) => {
       if (method === 'note.list') return { notes: [] };
@@ -87,7 +74,6 @@ describe('WorkspaceService statusMessage updates', () => {
       expect(result.data.status).toBe(WorkspaceStatus.Active);
       expect(result.data.statusMessage).toBe('Investigating verification results.');
     }
-    expect(mainDispatch).toHaveBeenCalled();
 
     service.cleanup();
   });

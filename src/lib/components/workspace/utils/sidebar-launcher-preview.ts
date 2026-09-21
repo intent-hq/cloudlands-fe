@@ -2,6 +2,7 @@ import type { AgentSession, Note } from '$shared/types';
 import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
 import { stripInternalDeliveryNotes } from '$lib/utils/user-message-presentation';
 import { stripMarkdownFormatting, stripUserMessagePrefixes } from '$lib/utils/text-utils';
+import { isRetiredAgentSession } from '../workspace-agents-list-utils';
 
 export interface AgentLauncherPreview {
   lastUserMessage: string;
@@ -59,7 +60,9 @@ export function deriveAgentLauncherItems(
   totalAgents: number;
   overflowCount: number;
 } {
-  const uniqueAgents = [...new Map(agents.map((agent) => [agent.id, agent])).values()];
+  const uniqueAgents = [...new Map(agents.map((agent) => [agent.id, agent])).values()].filter(
+    (agent) => !isRetiredAgentSession(agent),
+  );
   const agentStates = uniqueAgents.map((agent) => ({
     agent,
     isRunning: getIsRunning(agent),

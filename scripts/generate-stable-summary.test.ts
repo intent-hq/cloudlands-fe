@@ -29,9 +29,12 @@ describe('generate-stable-summary CLI', () => {
     process.argv = ['node', 'generate-stable-summary.mjs', ...args, '--out', outFile];
     vi.resetModules();
     await import('./generate-stable-summary.mjs?t=' + Date.now());
-    await vi.waitFor(() => {
-      readFileSync(outFile, 'utf8');
-    }, { timeout: 5000 });
+    await vi.waitFor(
+      () => {
+        readFileSync(outFile, 'utf8');
+      },
+      { timeout: 5000 },
+    );
     return readFileSync(outFile, 'utf8');
   }
 
@@ -59,10 +62,14 @@ describe('generate-stable-summary CLI', () => {
     process.env.INTENTD_TOKEN = 'intentd-token';
 
     const markdown = await runScript([
-      '--version', '2.1.0',
-      '--prev-stable', '2.0.7',
-      '--intentd-version', '0.9.0',
-      '--intentd-base', '0.8.0',
+      '--version',
+      '2.1.0',
+      '--prev-stable',
+      '2.0.7',
+      '--intentd-version',
+      '0.9.0',
+      '--intentd-base',
+      '0.8.0',
     ]);
 
     // Leading summary lines
@@ -78,16 +85,20 @@ describe('generate-stable-summary CLI', () => {
     );
     expect(markdown).toContain('https://github.com/intent-hq/intentd/compare/v0.8.0...v0.9.0');
     expect(markdown).toContain('### Features');
-    expect(markdown).toContain('- add daemon feature ([#10](https://github.com/intent-hq/intentd/pull/10))');
+    expect(markdown).toContain(
+      '- add daemon feature ([#10](https://github.com/intent-hq/intentd/pull/10))',
+    );
     expect(markdown).toContain('### Bug Fixes');
-    expect(markdown).toContain('- fix daemon bug ([#11](https://github.com/intent-hq/intentd/pull/11))');
+    expect(markdown).toContain(
+      '- fix daemon bug ([#11](https://github.com/intent-hq/intentd/pull/11))',
+    );
     // chore(release) commits are skipped
     expect(markdown).not.toContain('release v0.9.0');
 
     // intentd API calls use INTENTD_TOKEN and the pinned API version header
-    const intentdCalls = authByUrl.filter(c => c.url.includes('/repos/intent-hq/intentd/'));
+    const intentdCalls = authByUrl.filter((c) => c.url.includes('/repos/intent-hq/intentd/'));
     expect(intentdCalls.length).toBeGreaterThanOrEqual(1);
-    expect(intentdCalls.every(c => c.auth === 'Bearer intentd-token')).toBe(true);
+    expect(intentdCalls.every((c) => c.auth === 'Bearer intentd-token')).toBe(true);
     const firstCall = mockFetch.mock.calls[0];
     const headers = (firstCall?.[1] as RequestInit)?.headers as Record<string, string>;
     expect(headers?.['X-GitHub-Api-Version']).toBe('2022-11-28');
@@ -103,10 +114,14 @@ describe('generate-stable-summary CLI', () => {
     process.env.GITHUB_TOKEN = 'fake-token';
 
     const markdown = await runScript([
-      '--version', '2.1.0',
-      '--prev-stable', '2.0.7',
-      '--intentd-version', '0.9.0',
-      '--intentd-base', '0.9.0',
+      '--version',
+      '2.1.0',
+      '--prev-stable',
+      '2.0.7',
+      '--intentd-version',
+      '0.9.0',
+      '--intentd-base',
+      '0.9.0',
     ]);
 
     expect(markdown).toContain('- Backend daemon (intentd): v0.9.0 (unchanged)');
@@ -126,9 +141,12 @@ describe('generate-stable-summary CLI', () => {
     process.env.GITHUB_TOKEN = 'fake-token';
 
     const markdown = await runScript([
-      '--version', '2.1.0',
-      '--prev-stable', '2.0.7',
-      '--intentd-version', '0.9.0',
+      '--version',
+      '2.1.0',
+      '--prev-stable',
+      '2.0.7',
+      '--intentd-version',
+      '0.9.0',
     ]);
 
     expect(markdown).toContain('- Backend daemon (intentd): v0.9.0');
@@ -167,10 +185,14 @@ describe('generate-stable-summary CLI', () => {
     process.env.GITHUB_TOKEN = 'fake-token';
 
     const markdown = await runScript([
-      '--version', '2.1.0',
-      '--prev-stable', '2.0.7',
-      '--intentd-version', '0.9.0',
-      '--intentd-base', '0.8.0',
+      '--version',
+      '2.1.0',
+      '--prev-stable',
+      '2.0.7',
+      '--intentd-version',
+      '0.9.0',
+      '--intentd-base',
+      '0.8.0',
     ]);
 
     // Fail-soft: the summary is still written with the pin line + compare
@@ -195,10 +217,14 @@ describe('generate-stable-summary CLI', () => {
     delete process.env.INTENTD_TOKEN;
 
     const markdown = await runScript([
-      '--version', '2.1.0',
-      '--prev-stable', '2.0.7',
-      '--intentd-version', '0.9.0',
-      '--intentd-base', '0.8.0',
+      '--version',
+      '2.1.0',
+      '--prev-stable',
+      '2.0.7',
+      '--intentd-version',
+      '0.9.0',
+      '--intentd-base',
+      '0.8.0',
     ]);
 
     expect(fetchCalls.length).toBe(0);
@@ -219,10 +245,14 @@ describe('generate-stable-summary CLI', () => {
     process.env.GITHUB_TOKEN = 'fake-token';
 
     const markdown = await runScript([
-      '--version', '2.1.0',
-      '--prev-stable', 'garbage',
-      '--intentd-version', '0.9.0',
-      '--intentd-base', 'garbage',
+      '--version',
+      '2.1.0',
+      '--prev-stable',
+      'garbage',
+      '--intentd-version',
+      '0.9.0',
+      '--intentd-base',
+      'garbage',
     ]);
 
     expect(fetchCalls.length).toBe(0);

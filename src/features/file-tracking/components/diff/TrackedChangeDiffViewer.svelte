@@ -29,6 +29,7 @@
   import { getChangedLineNumbersFromContent } from './line-staging';
   import Fa from 'svelte-fa';
   import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -82,7 +83,7 @@
     virtualizer?: import('@pierre/diffs').Virtualizer;
     /**
      * Secondary git root scoping the committed-content fetches (multi git
-     * root tracking, v6.15). Absent → primary-root behavior, byte-identical.
+     * root tracking). Absent → primary-root behavior, byte-identical.
      */
     gitRootId?: string;
     /**
@@ -184,7 +185,7 @@
 
   // Get workspace info
   const workspace = $derived($workspace$);
-  // When a secondary git root scopes this diff (v6.15), its path is the base
+  // When a secondary git root scopes this diff (`gitRootId`), its path is the base
   // for absolute↔relative path resolution instead of the workspace worktree.
   const workspacePath = $derived(
     gitRootPath || workspace?.worktreePath || workspace?.repositoryPath || '',
@@ -1254,8 +1255,8 @@
     </div>
   {:else if error}
     <div class="error-state">
-      <Fa icon={faExclamationTriangle} class="text-error-foreground" />
-      <span class="text-error-foreground text-sm ml-2">{error}</span>
+      <Fa icon={faExclamationTriangle} class="text-danger" />
+      <span class="text-danger text-sm ml-2">{error}</span>
     </div>
   {:else if contentTooLarge}
     <div class="error-state">
@@ -1293,24 +1294,35 @@
           </span>
           {#if modifiedCount > 0}
             {#if change.stage === 'unstaged' && onStageHunk}
-              <button class="hunk-action-btn hunk-stage-btn" onclick={stageSelectedLines}>
+              <Button
+                variant="plain"
+                size="compact"
+                class="hunk-action-btn hunk-stage-btn h-auto! gap-1 rounded-sm! bg-success/15 px-2! py-[0.2rem]! text-success hover:bg-success/25"
+                onclick={stageSelectedLines}
+              >
                 <span class="icon">+</span>
                 {m.ui_trackedDiff_stage_label()}
-              </button>
+              </Button>
             {:else if change.stage === 'staged' && onUnstageHunk}
-              <button class="hunk-action-btn hunk-unstage-btn" onclick={unstageSelectedLines}>
+              <Button
+                variant="plain"
+                size="compact"
+                class="hunk-action-btn hunk-unstage-btn h-auto! gap-1 rounded-sm! bg-danger/15 px-2! py-[0.2rem]! text-danger hover:bg-danger/25"
+                onclick={unstageSelectedLines}
+              >
                 <span class="icon">−</span>
                 {m.ui_trackedDiff_unstage_label()}
-              </button>
+              </Button>
             {/if}
           {/if}
-          <button
-            class="hunk-action-btn"
-            style="background: transparent; color: hsl(var(--muted-foreground));"
+          <Button
+            variant="plain"
+            size="compact"
+            class="hunk-action-btn h-auto! rounded-sm! px-2! py-[0.2rem]! text-muted-foreground"
             onclick={() => (selectedLines = null)}
           >
             ✕
-          </button>
+          </Button>
         </div>
       {/if}
 
@@ -1484,6 +1496,6 @@
   }
 
   .diff-skeleton-line--removed {
-    background: hsl(var(--destructive) / 0.08);
+    background: hsl(var(--danger-background) / 0.08);
   }
 </style>

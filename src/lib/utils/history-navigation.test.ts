@@ -213,13 +213,16 @@ describe('history-navigation', () => {
       expect(e.defaultPrevented).toBe(false);
     });
 
-    it.each([3, 4])('mouseup with button %i targeting the webview itself does not navigate', (button) => {
-      const e = new MouseEvent('mouseup', { button, bubbles: true, cancelable: true });
-      webview.dispatchEvent(e);
-      expect(backSpy).not.toHaveBeenCalled();
-      expect(forwardSpy).not.toHaveBeenCalled();
-      expect(e.defaultPrevented).toBe(false);
-    });
+    it.each([3, 4])(
+      'mouseup with button %i targeting the webview itself does not navigate',
+      (button) => {
+        const e = new MouseEvent('mouseup', { button, bubbles: true, cancelable: true });
+        webview.dispatchEvent(e);
+        expect(backSpy).not.toHaveBeenCalled();
+        expect(forwardSpy).not.toHaveBeenCalled();
+        expect(e.defaultPrevented).toBe(false);
+      },
+    );
 
     it.each([3, 4])('mousedown with button %i from inside a webview keeps default', (button) => {
       const e = new MouseEvent('mousedown', { button, bubbles: true, cancelable: true });

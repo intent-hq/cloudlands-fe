@@ -14,7 +14,7 @@
   bind:this={ref}
   data-slot="sheet-footer"
   class={cn(
-    'mt-auto flex flex-col gap-2 border-t border-border bg-popover px-4 py-3 sm:flex-row sm:items-center sm:justify-end',
+    'mt-auto flex flex-col gap-2 px-6 pb-6 pt-4 sm:flex-row sm:items-center sm:justify-end',
     className,
   )}
   {...restProps}

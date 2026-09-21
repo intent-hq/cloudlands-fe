@@ -1,13 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport only: no terminal RPC ever reaches the user's real daemon.
 // `runMutation` and the base64 encode/decode helpers stay real so the asserted
 // wire method + params and the response-folding paths are exercised end-to-end.
-vi.mock("./backend-transport", () => {
+vi.mock('./backend-transport', () => {
   const onBackendNotification = vi.fn();
   return {
     backendRequest: vi.fn(),
-    backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-term-1" })),
+    backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: 'sub-term-1' })),
     backendUnsubscribe: vi.fn(() => Promise.resolve()),
     onBackendNotification,
     // RESUB-1: subscribeEvents() installs a reconnect listener; these tests
@@ -21,8 +21,8 @@ import {
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
-} from "./backend-transport";
-import { LiveTerminalsClient } from "./live-terminals-client";
+} from './backend-transport';
+import { LiveTerminalsClient } from './live-terminals-client';
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedSubscribe = vi.mocked(backendSubscribe);
@@ -33,141 +33,141 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("LiveTerminalsClient wire requests (fake transport)", () => {
-  it("create forwards terminal.create with workspaceId/cols/rows and surfaces the daemon-assigned terminalId", async () => {
-    mockedRequest.mockResolvedValueOnce({ terminalId: "term-1" });
+describe('LiveTerminalsClient wire requests (fake transport)', () => {
+  it('create forwards terminal.create with workspaceId/cols/rows and surfaces the daemon-assigned terminalId', async () => {
+    mockedRequest.mockResolvedValueOnce({ terminalId: 'term-1' });
     const client = new LiveTerminalsClient();
 
-    const result = await client.create({ workspaceId: "ws-1", cols: 80, rows: 24 });
+    const result = await client.create({ workspaceId: 'ws-1', cols: 80, rows: 24 });
 
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.create", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.create', {
+      workspaceId: 'ws-1',
       cols: 80,
       rows: 24,
     });
-    expect(result).toEqual({ success: true, id: "term-1" });
+    expect(result).toEqual({ success: true, id: 'term-1' });
   });
 
-  it("create includes optional cwd / command when provided", async () => {
-    mockedRequest.mockResolvedValueOnce({ terminalId: "term-2" });
+  it('create includes optional cwd / command when provided', async () => {
+    mockedRequest.mockResolvedValueOnce({ terminalId: 'term-2' });
     const client = new LiveTerminalsClient();
 
     await client.create({
-      workspaceId: "ws-1",
+      workspaceId: 'ws-1',
       cols: 80,
       rows: 24,
-      cwd: "/tmp/proj",
-      command: "/bin/zsh",
+      cwd: '/tmp/proj',
+      command: '/bin/zsh',
     });
 
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.create", {
-      workspaceId: "ws-1",
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.create', {
+      workspaceId: 'ws-1',
       cols: 80,
       rows: 24,
-      cwd: "/tmp/proj",
-      command: "/bin/zsh",
+      cwd: '/tmp/proj',
+      command: '/bin/zsh',
     });
   });
 
-  it("create maps a transport error to a failed MutationResult", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+  it('create maps a transport error to a failed MutationResult', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const client = new LiveTerminalsClient();
 
-    expect(await client.create({ workspaceId: "ws-1", cols: 80, rows: 24 })).toEqual({
+    expect(await client.create({ workspaceId: 'ws-1', cols: 80, rows: 24 })).toEqual({
       success: false,
-      error: "boom",
+      error: 'boom',
     });
   });
 
-  it("write forwards terminal.write with the input bytes base64-encoded", async () => {
+  it('write forwards terminal.write with the input bytes base64-encoded', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveTerminalsClient();
 
-    const result = await client.write("term-1", "ls\n");
+    const result = await client.write('term-1', 'ls\n');
 
     expect(result).toEqual({ success: true });
     // base64("ls\n") === "bHMK"
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.write", {
-      terminalId: "term-1",
-      data: "bHMK",
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.write', {
+      terminalId: 'term-1',
+      data: 'bHMK',
     });
   });
 
-  it("preserves xterm DEL as one byte in terminal.write params", async () => {
+  it('preserves xterm DEL as one byte in terminal.write params', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveTerminalsClient();
 
-    expect(await client.write("term-1", "\x7f")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.write", {
-      terminalId: "term-1",
-      data: "fw==",
+    expect(await client.write('term-1', '\x7f')).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.write', {
+      terminalId: 'term-1',
+      data: 'fw==',
     });
   });
 
-  it("resize forwards terminal.resize with cols/rows ints", async () => {
+  it('resize forwards terminal.resize with cols/rows ints', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveTerminalsClient();
 
-    expect(await client.resize("term-1", 100, 30)).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.resize", {
-      terminalId: "term-1",
+    expect(await client.resize('term-1', 100, 30)).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.resize', {
+      terminalId: 'term-1',
       cols: 100,
       rows: 30,
     });
   });
 
-  it("kill forwards terminal.kill with terminalId", async () => {
+  it('kill forwards terminal.kill with terminalId', async () => {
     mockedRequest.mockResolvedValueOnce({ ok: true });
     const client = new LiveTerminalsClient();
 
-    expect(await client.kill("term-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.kill", { terminalId: "term-1" });
+    expect(await client.kill('term-1')).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.kill', { terminalId: 'term-1' });
   });
 
-  it("getBuffer forwards terminal.getBuffer and decodes the base64 scrollback", async () => {
+  it('getBuffer forwards terminal.getBuffer and decodes the base64 scrollback', async () => {
     // base64("ls\nfile.txt\n") === "bHMKZmlsZS50eHQK"
-    mockedRequest.mockResolvedValueOnce({ data: "bHMKZmlsZS50eHQK" });
+    mockedRequest.mockResolvedValueOnce({ data: 'bHMKZmlsZS50eHQK' });
     const client = new LiveTerminalsClient();
 
-    expect(await client.getBuffer("term-1")).toEqual("ls\nfile.txt\n");
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.getBuffer", { terminalId: "term-1" });
+    expect(await client.getBuffer('term-1')).toEqual('ls\nfile.txt\n');
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.getBuffer', { terminalId: 'term-1' });
   });
 
-  it("getBuffer threads maxBytes through when provided", async () => {
-    mockedRequest.mockResolvedValueOnce({ data: "" });
+  it('getBuffer threads maxBytes through when provided', async () => {
+    mockedRequest.mockResolvedValueOnce({ data: '' });
     const client = new LiveTerminalsClient();
 
-    await client.getBuffer("term-1", 4096);
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.getBuffer", {
-      terminalId: "term-1",
+    await client.getBuffer('term-1', 4096);
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.getBuffer', {
+      terminalId: 'term-1',
       maxBytes: 4096,
     });
   });
 
-  it("getBuffer folds transport failures to an empty string", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+  it('getBuffer folds transport failures to an empty string', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('boom'));
     const client = new LiveTerminalsClient();
 
-    expect(await client.getBuffer("term-1")).toEqual("");
+    expect(await client.getBuffer('term-1')).toEqual('');
   });
 
-  it("output forwards terminal.readOutput with { workspaceId, terminalId } and accepts a bare string or { output }", async () => {
+  it('output forwards terminal.readOutput with { workspaceId, terminalId } and accepts a bare string or { output }', async () => {
     // PROTOCOL §5.13 / router.rs `terminal.readOutput` requires `workspaceId`
     // alongside `terminalId` (mirrors the `script.*` fix in #25). Sending only
     // `{ terminalId }` is rejected by the daemon router.
-    mockedRequest.mockResolvedValueOnce("plaintext-1");
-    mockedRequest.mockResolvedValueOnce({ output: "plaintext-2" });
+    mockedRequest.mockResolvedValueOnce('plaintext-1');
+    mockedRequest.mockResolvedValueOnce({ output: 'plaintext-2' });
     const client = new LiveTerminalsClient();
 
-    expect(await client.output("ws-1", "term-1")).toEqual("plaintext-1");
-    expect(await client.output("ws-1", "term-1")).toEqual("plaintext-2");
-    expect(mockedRequest).toHaveBeenNthCalledWith(1, "terminal.readOutput", {
-      workspaceId: "ws-1",
-      terminalId: "term-1",
+    expect(await client.output('ws-1', 'term-1')).toEqual('plaintext-1');
+    expect(await client.output('ws-1', 'term-1')).toEqual('plaintext-2');
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'terminal.readOutput', {
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
     });
-    expect(mockedRequest).toHaveBeenNthCalledWith(2, "terminal.readOutput", {
-      workspaceId: "ws-1",
-      terminalId: "term-1",
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'terminal.readOutput', {
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
     });
   });
 
@@ -178,86 +178,92 @@ describe("LiveTerminalsClient wire requests (fake transport)", () => {
     // the daemon boot that produced the snapshot (monorepo#1334).
     mockedRequest.mockResolvedValueOnce({
       terminals: [
-        { id: "pty-0", name: "Setup Script", cwd: "/tmp/proj", isExecutingCommand: false },
-        { id: "pty-1", name: "Terminal", cwd: "/tmp/proj", isExecutingCommand: true },
+        { id: 'pty-0', name: 'Setup Script', cwd: '/tmp/proj', isExecutingCommand: false },
+        { id: 'pty-1', name: 'Terminal', cwd: '/tmp/proj', isExecutingCommand: true },
       ],
-      daemonBootId: "boot-1",
+      daemonBootId: 'boot-1',
     });
     const client = new LiveTerminalsClient();
 
-    const result = await client.list("ws-1");
-    expect(mockedRequest).toHaveBeenCalledWith("terminal.list", { workspaceId: "ws-1" });
+    const result = await client.list('ws-1');
+    expect(mockedRequest).toHaveBeenCalledWith('terminal.list', { workspaceId: 'ws-1' });
     expect(result).toEqual({
       terminals: [
         {
-          id: "pty-0",
-          name: "Setup Script",
-          workspaceId: "ws-1",
+          id: 'pty-0',
+          name: 'Setup Script',
+          workspaceId: 'ws-1',
           createdAt: undefined,
           isConnected: true,
           isExecuting: false,
         },
         {
-          id: "pty-1",
-          name: "Terminal",
-          workspaceId: "ws-1",
+          id: 'pty-1',
+          name: 'Terminal',
+          workspaceId: 'ws-1',
           createdAt: undefined,
           isConnected: true,
           isExecuting: true,
         },
       ],
-      daemonBootId: "boot-1",
+      daemonBootId: 'boot-1',
     });
   });
 
-  it("list never fabricates an id-derived label when the daemon omits name (no pty-X flicker)", async () => {
-    mockedRequest.mockResolvedValueOnce({ terminals: [{ id: "pty-7" }], daemonBootId: "boot-1" });
+  it('list never fabricates an id-derived label when the daemon omits name (no pty-X flicker)', async () => {
+    mockedRequest.mockResolvedValueOnce({ terminals: [{ id: 'pty-7' }], daemonBootId: 'boot-1' });
     const client = new LiveTerminalsClient();
 
-    const { terminals } = await client.list("ws-1");
+    const { terminals } = await client.list('ws-1');
     // Empty name → display falls back to 'Terminal' in the selectors, never "Terminal pty-7".
     expect(terminals).toEqual([
-      { id: "pty-7", name: "", workspaceId: "ws-1", createdAt: undefined, isConnected: true },
+      { id: 'pty-7', name: '', workspaceId: 'ws-1', createdAt: undefined, isConnected: true },
     ]);
   });
 
-  it("list surfaces an authoritative same-boot empty envelope (converge-to-zero input, monorepo#1334)", async () => {
-    mockedRequest.mockResolvedValueOnce({ terminals: [], daemonBootId: "boot-1" });
+  it('list surfaces an authoritative same-boot empty envelope (converge-to-zero input, monorepo#1334)', async () => {
+    mockedRequest.mockResolvedValueOnce({ terminals: [], daemonBootId: 'boot-1' });
     const client = new LiveTerminalsClient();
 
-    expect(await client.list("ws-1")).toEqual({ terminals: [], daemonBootId: "boot-1" });
+    expect(await client.list('ws-1')).toEqual({ terminals: [], daemonBootId: 'boot-1' });
   });
 
-  it("list tolerates a legacy bare-array response by shape detection (no daemonBootId)", async () => {
-    mockedRequest.mockResolvedValueOnce([{ id: "pty-0", name: "Terminal" }]);
+  it('list tolerates a legacy bare-array response by shape detection (no daemonBootId)', async () => {
+    mockedRequest.mockResolvedValueOnce([{ id: 'pty-0', name: 'Terminal' }]);
     const client = new LiveTerminalsClient();
 
-    const result = await client.list("ws-1");
+    const result = await client.list('ws-1');
     expect(result).toEqual({
       terminals: [
-        { id: "pty-0", name: "Terminal", workspaceId: "ws-1", createdAt: undefined, isConnected: true },
+        {
+          id: 'pty-0',
+          name: 'Terminal',
+          workspaceId: 'ws-1',
+          createdAt: undefined,
+          isConnected: true,
+        },
       ],
     });
-    expect("daemonBootId" in result).toBe(false);
+    expect('daemonBootId' in result).toBe(false);
   });
 
-  it("list omits daemonBootId when the envelope carries a non-string value", async () => {
+  it('list omits daemonBootId when the envelope carries a non-string value', async () => {
     mockedRequest.mockResolvedValueOnce({ terminals: [], daemonBootId: 42 });
     const client = new LiveTerminalsClient();
 
-    const result = await client.list("ws-1");
+    const result = await client.list('ws-1');
     expect(result).toEqual({ terminals: [] });
   });
 
-  it("list throws on transport error (STAB-24 fix: failed fetch must not clobber tabs)", async () => {
-    mockedRequest.mockRejectedValueOnce(new Error("network timeout"));
+  it('list throws on transport error (STAB-24 fix: failed fetch must not clobber tabs)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('network timeout'));
     const client = new LiveTerminalsClient();
 
-    await expect(client.list("ws-1")).rejects.toThrow("network timeout");
+    await expect(client.list('ws-1')).rejects.toThrow('network timeout');
   });
 });
 
-describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
+describe('LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)', () => {
   // Lets backendSubscribe's promise resolve so `subscribeEvents` can capture
   // the daemon-assigned subscriptionId before the test delivers notifications.
   async function flushSubscribe(): Promise<void> {
@@ -265,7 +271,7 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
     await Promise.resolve();
   }
 
-  it("routes terminal:data with a base64 chunk to onData decoded as UTF-8", async () => {
+  it('routes terminal:data with a base64 chunk to onData decoded as UTF-8', async () => {
     let handler: ((n: { method: string; params?: unknown }) => void) | undefined;
     mockedOnNotification.mockImplementationOnce((cb) => {
       handler = cb as typeof handler;
@@ -274,34 +280,34 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
 
     const onData = vi.fn();
     const client = new LiveTerminalsClient();
-    client.subscribeEvents("term-1", { onData });
+    client.subscribeEvents('term-1', { onData });
     await flushSubscribe();
 
     expect(mockedSubscribe).toHaveBeenCalledWith({
-      eventTypes: ["terminal:data", "terminal:exit", "terminal:cwd", "terminal:title"],
+      eventTypes: ['terminal:data', 'terminal:exit', 'terminal:cwd', 'terminal:title'],
     });
 
     // PROTOCOL §5.13 emits `events.event` with the event nested under params.event
     // and the resolving subscriptionId tagged on params.
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-term-1",
+        subscriptionId: 'sub-term-1',
         event: {
-          type: "terminal:data",
-          workspaceId: "ws-1",
-          id: "evt-1",
-          timestamp: "2026-06-17T05:00:00.000Z",
-          actor: { type: "system" },
-          data: { terminalId: "term-1", chunk: "bHMKZmlsZS50eHQK" },
+          type: 'terminal:data',
+          workspaceId: 'ws-1',
+          id: 'evt-1',
+          timestamp: '2026-06-17T05:00:00.000Z',
+          actor: { type: 'system' },
+          data: { terminalId: 'term-1', chunk: 'bHMKZmlsZS50eHQK' },
         },
       },
     });
 
-    expect(onData).toHaveBeenCalledWith({ terminalId: "term-1", chunk: "ls\nfile.txt\n" });
+    expect(onData).toHaveBeenCalledWith({ terminalId: 'term-1', chunk: 'ls\nfile.txt\n' });
   });
 
-  it("preserves PTY erase-echo bytes when decoding terminal:data", async () => {
+  it('preserves PTY erase-echo bytes when decoding terminal:data', async () => {
     let handler: ((n: { method: string; params?: unknown }) => void) | undefined;
     mockedOnNotification.mockImplementationOnce((cb) => {
       handler = cb as typeof handler;
@@ -309,28 +315,28 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
     });
     const onData = vi.fn();
     const client = new LiveTerminalsClient();
-    client.subscribeEvents("term-1", { onData });
+    client.subscribeEvents('term-1', { onData });
     await flushSubscribe();
 
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-term-1",
+        subscriptionId: 'sub-term-1',
         event: {
-          type: "terminal:data",
-          workspaceId: "ws-1",
-          id: "evt-1",
-          timestamp: "2026-06-17T05:00:00.000Z",
-          actor: { type: "system" },
-          data: { terminalId: "term-1", chunk: "CCAI" },
+          type: 'terminal:data',
+          workspaceId: 'ws-1',
+          id: 'evt-1',
+          timestamp: '2026-06-17T05:00:00.000Z',
+          actor: { type: 'system' },
+          data: { terminalId: 'term-1', chunk: 'CCAI' },
         },
       },
     });
 
-    expect(onData).toHaveBeenCalledWith({ terminalId: "term-1", chunk: "\x08 \x08" });
+    expect(onData).toHaveBeenCalledWith({ terminalId: 'term-1', chunk: '\x08 \x08' });
   });
 
-  it("ignores events for other terminals and unknown event types", async () => {
+  it('ignores events for other terminals and unknown event types', async () => {
     let handler: ((n: { method: string; params?: unknown }) => void) | undefined;
     mockedOnNotification.mockImplementationOnce((cb) => {
       handler = cb as typeof handler;
@@ -339,30 +345,30 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
     const onData = vi.fn();
     const onExit = vi.fn();
     const client = new LiveTerminalsClient();
-    client.subscribeEvents("term-1", { onData, onExit });
+    client.subscribeEvents('term-1', { onData, onExit });
     await flushSubscribe();
 
     // Other terminal — must be ignored even when tagged with our subscriptionId.
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-term-1",
-        event: { type: "terminal:data", data: { terminalId: "term-other", chunk: "AA==" } },
+        subscriptionId: 'sub-term-1',
+        event: { type: 'terminal:data', data: { terminalId: 'term-other', chunk: 'AA==' } },
       },
     });
     // Non-terminal family — must be ignored.
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-term-1",
-        event: { type: "file:changed", data: { terminalId: "term-1" } },
+        subscriptionId: 'sub-term-1',
+        event: { type: 'file:changed', data: { terminalId: 'term-1' } },
       },
     });
     expect(onData).not.toHaveBeenCalled();
     expect(onExit).not.toHaveBeenCalled();
   });
 
-  it("routes terminal:exit with exitCode and terminal:cwd with cwd", async () => {
+  it('routes terminal:exit with exitCode and terminal:cwd with cwd', async () => {
     let handler: ((n: { method: string; params?: unknown }) => void) | undefined;
     mockedOnNotification.mockImplementationOnce((cb) => {
       handler = cb as typeof handler;
@@ -371,29 +377,29 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
     const onExit = vi.fn();
     const onCwd = vi.fn();
     const client = new LiveTerminalsClient();
-    client.subscribeEvents("term-1", { onExit, onCwd });
+    client.subscribeEvents('term-1', { onExit, onCwd });
     await flushSubscribe();
 
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-term-1",
-        event: { type: "terminal:exit", data: { terminalId: "term-1", exitCode: 137 } },
+        subscriptionId: 'sub-term-1',
+        event: { type: 'terminal:exit', data: { terminalId: 'term-1', exitCode: 137 } },
       },
     });
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-term-1",
-        event: { type: "terminal:cwd", data: { terminalId: "term-1", cwd: "/tmp" } },
+        subscriptionId: 'sub-term-1',
+        event: { type: 'terminal:cwd', data: { terminalId: 'term-1', cwd: '/tmp' } },
       },
     });
 
-    expect(onExit).toHaveBeenCalledWith({ terminalId: "term-1", exitCode: 137 });
-    expect(onCwd).toHaveBeenCalledWith({ terminalId: "term-1", cwd: "/tmp" });
+    expect(onExit).toHaveBeenCalledWith({ terminalId: 'term-1', exitCode: 137 });
+    expect(onCwd).toHaveBeenCalledWith({ terminalId: 'term-1', cwd: '/tmp' });
   });
 
-  it("dedupes daemon fan-out: same terminal:data delivered under two subscriptionIds only fires onData for the matching one", async () => {
+  it('dedupes daemon fan-out: same terminal:data delivered under two subscriptionIds only fires onData for the matching one', async () => {
     let handler: ((n: { method: string; params?: unknown }) => void) | undefined;
     mockedOnNotification.mockImplementationOnce((cb) => {
       handler = cb as typeof handler;
@@ -402,7 +408,7 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
 
     const onData = vi.fn();
     const client = new LiveTerminalsClient();
-    client.subscribeEvents("term-1", { onData });
+    client.subscribeEvents('term-1', { onData });
     await flushSubscribe();
 
     // The daemon fans out one events.event per matching subscription on the
@@ -411,25 +417,25 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
     // same terminal:data twice — but only the delivery tagged with our
     // subscriptionId must reach this subscriber.
     const sameEvent = {
-      type: "terminal:data",
-      workspaceId: "ws-1",
-      id: "evt-dup",
-      data: { terminalId: "term-1", chunk: "YQ==" }, // base64("a")
+      type: 'terminal:data',
+      workspaceId: 'ws-1',
+      id: 'evt-dup',
+      data: { terminalId: 'term-1', chunk: 'YQ==' }, // base64("a")
     };
     handler!({
-      method: "events.event",
-      params: { subscriptionId: "sub-term-1", event: sameEvent },
+      method: 'events.event',
+      params: { subscriptionId: 'sub-term-1', event: sameEvent },
     });
     handler!({
-      method: "events.event",
-      params: { subscriptionId: "sub-term-2", event: sameEvent },
+      method: 'events.event',
+      params: { subscriptionId: 'sub-term-2', event: sameEvent },
     });
 
     expect(onData).toHaveBeenCalledTimes(1);
-    expect(onData).toHaveBeenCalledWith({ terminalId: "term-1", chunk: "a" });
+    expect(onData).toHaveBeenCalledWith({ terminalId: 'term-1', chunk: 'a' });
   });
 
-  it("ignores a terminal:data tagged with a foreign subscriptionId even when data.terminalId matches", async () => {
+  it('ignores a terminal:data tagged with a foreign subscriptionId even when data.terminalId matches', async () => {
     let handler: ((n: { method: string; params?: unknown }) => void) | undefined;
     mockedOnNotification.mockImplementationOnce((cb) => {
       handler = cb as typeof handler;
@@ -438,16 +444,16 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
 
     const onData = vi.fn();
     const client = new LiveTerminalsClient();
-    client.subscribeEvents("term-1", { onData });
+    client.subscribeEvents('term-1', { onData });
     await flushSubscribe();
 
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-someone-else",
+        subscriptionId: 'sub-someone-else',
         event: {
-          type: "terminal:data",
-          data: { terminalId: "term-1", chunk: "YQ==" },
+          type: 'terminal:data',
+          data: { terminalId: 'term-1', chunk: 'YQ==' },
         },
       },
     });
@@ -455,7 +461,7 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
     expect(onData).not.toHaveBeenCalled();
   });
 
-  it("drops notifications that arrive before backendSubscribe resolves (no subscriptionId yet)", async () => {
+  it('drops notifications that arrive before backendSubscribe resolves (no subscriptionId yet)', async () => {
     let handler: ((n: { method: string; params?: unknown }) => void) | undefined;
     mockedOnNotification.mockImplementationOnce((cb) => {
       handler = cb as typeof handler;
@@ -472,44 +478,44 @@ describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
 
     const onData = vi.fn();
     const client = new LiveTerminalsClient();
-    client.subscribeEvents("term-1", { onData });
+    client.subscribeEvents('term-1', { onData });
 
     // No subscriptionId captured yet — deliveries must be dropped.
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-term-late",
-        event: { type: "terminal:data", data: { terminalId: "term-1", chunk: "YQ==" } },
+        subscriptionId: 'sub-term-late',
+        event: { type: 'terminal:data', data: { terminalId: 'term-1', chunk: 'YQ==' } },
       },
     });
     expect(onData).not.toHaveBeenCalled();
 
     // After resolution, matching deliveries flow through.
-    resolveSubscribe!({ subscriptionId: "sub-term-late" });
+    resolveSubscribe!({ subscriptionId: 'sub-term-late' });
     await flushSubscribe();
     handler!({
-      method: "events.event",
+      method: 'events.event',
       params: {
-        subscriptionId: "sub-term-late",
-        event: { type: "terminal:data", data: { terminalId: "term-1", chunk: "Yg==" } },
+        subscriptionId: 'sub-term-late',
+        event: { type: 'terminal:data', data: { terminalId: 'term-1', chunk: 'Yg==' } },
       },
     });
     expect(onData).toHaveBeenCalledTimes(1);
-    expect(onData).toHaveBeenCalledWith({ terminalId: "term-1", chunk: "b" });
+    expect(onData).toHaveBeenCalledWith({ terminalId: 'term-1', chunk: 'b' });
   });
 
-  it("unsubscribes the daemon subscription on disposer", async () => {
+  it('unsubscribes the daemon subscription on disposer', async () => {
     const offFn = vi.fn();
     mockedOnNotification.mockImplementationOnce(() => offFn);
     const client = new LiveTerminalsClient();
 
-    const dispose = client.subscribeEvents("term-1", { onData: vi.fn() });
+    const dispose = client.subscribeEvents('term-1', { onData: vi.fn() });
     // Let the subscribe promise resolve to capture the subscriptionId.
     await Promise.resolve();
     await Promise.resolve();
 
     dispose();
     expect(offFn).toHaveBeenCalledTimes(1);
-    expect(mockedUnsubscribe).toHaveBeenCalledWith("sub-term-1");
+    expect(mockedUnsubscribe).toHaveBeenCalledWith('sub-term-1');
   });
 });

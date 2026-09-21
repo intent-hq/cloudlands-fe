@@ -39,18 +39,27 @@ describe('chat search utilities', () => {
     ]);
   });
 
-  it('indexes only the current visible child in a live response group', () => {
+  it('indexes every visible child in a live response group without a disclosure path', () => {
     const message = assistant(
       'assistant-live',
       [
-        { type: 'text', text: '<group:Live>hidden earlier detail' },
+        { type: 'text', text: '<group:Live>visible earlier detail' },
         { type: 'text', text: 'current live detail' },
         { type: 'tool_result', tool_use_id: 'tool-1', output: 'not a visible row' },
       ],
       true,
     );
 
-    expect(findChatSearchMatches([message], 'earlier', new Map())).toEqual([]);
+    expect(findChatSearchMatches([message], 'earlier', new Map())).toEqual([
+      {
+        messageId: 'assistant-live',
+        matchIndexInMessage: 0,
+        occurrenceInBlock: 0,
+        turnKey: 'assistant-live',
+        blockPath: 'b:0:c:0',
+        disclosurePath: [],
+      },
+    ]);
     expect(findChatSearchMatches([message], 'current live', new Map())).toEqual([
       {
         messageId: 'assistant-live',
@@ -63,7 +72,7 @@ describe('chat search utilities', () => {
     ]);
   });
 
-  it('indexes the adjacent description selected by both live renderers', () => {
+  it('indexes live adjacent text while excluding reasoning history', () => {
     const message = assistant(
       'assistant-adjacent-preview',
       [

@@ -95,11 +95,12 @@ describe('getAgentAttentionRequest', () => {
     ).toEqual({ kind: 'discussion', reason: undefined, timestamp: undefined });
   });
 
-  describe('live-turn gate (mid-turn rehydration defense)', () => {
+  describe('attention trumps a live turn (no live-turn gate)', () => {
     const pending = {
       attentionRequestKind: 'blocker',
       attentionRequestReason: 'CI credentials expired',
     } as const;
+    const expected = { kind: 'blocker', reason: 'CI credentials expired', timestamp: undefined };
 
     it.each([
       ['turnInFlight', { turnInFlight: true }],
@@ -109,27 +110,25 @@ describe('getAgentAttentionRequest', () => {
       ['isResponding', { isResponding: true }],
       ['isWaitingOnTool', { isWaitingOnTool: true }],
       ['running lastToolUse', { lastToolUse: { status: 'running' } }],
-    ])('suppresses a pending request while the turn is live (%s)', (_label, activity) => {
-      expect(getAgentAttentionRequest({ ...pending, ...activity })).toBeNull();
-    });
-
-    it('surfaces the request once the turn ends (flags cleared)', () => {
-      expect(getAgentAttentionRequest({ ...pending, status: 'idle', isResponding: false })).toEqual(
-        { kind: 'blocker', reason: 'CI credentials expired', timestamp: undefined },
+    ])('returns the pending request while the turn is live (%s)', (_label, activity) => {
+      expect(getAgentAttentionRequest({ ...pending, status: 'active', ...activity })).toEqual(
+        expected,
       );
     });
 
-    it('does not suppress on a bare active status without turn evidence', () => {
-      expect(getAgentAttentionRequest({ ...pending, status: 'active' })).toEqual({
-        kind: 'blocker',
-        reason: 'CI credentials expired',
-        timestamp: undefined,
-      });
+    it('returns the request once the turn ends (flags cleared)', () => {
+      expect(getAgentAttentionRequest({ ...pending, status: 'idle', isResponding: false })).toEqual(
+        expected,
+      );
     });
 
-    it('does not suppress on a terminal status with stale activity flags', () => {
+    it('returns the request on a bare active status without turn evidence', () => {
+      expect(getAgentAttentionRequest({ ...pending, status: 'active' })).toEqual(expected);
+    });
+
+    it('returns the request on a terminal status with stale activity flags', () => {
       expect(getAgentAttentionRequest({ ...pending, status: 'error', isResponding: true })).toEqual(
-        { kind: 'blocker', reason: 'CI credentials expired', timestamp: undefined },
+        expected,
       );
     });
   });

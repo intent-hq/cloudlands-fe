@@ -8,9 +8,11 @@
  * instead of "Other".
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { toNativePath } from '$lib/utils/path-utils';
+import { invoke } from '$lib/electron-bridge';
+import { setOpenAction } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -43,18 +45,8 @@ vi.mock('svelte-fa', async () => {
   return { default: MockFa };
 });
 
-vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => {
-  const MockDropdown = (await import('./mocks/dropdown-menu.svelte')).default;
-  return { default: MockDropdown };
-});
-
-vi.mock('$lib/components/ui/button', async () => {
-  const MockButton = (await import('./mocks/button.svelte')).default;
-  return { Button: MockButton };
-});
-
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('$lib/electron-bridge', () => ({
@@ -74,6 +66,60 @@ const mockEditors: InstalledEditor[] = [
   },
 ];
 
+const manyMockEditors: InstalledEditor[] = [
+  ...mockEditors,
+  {
+    id: 'cursor',
+    name: 'Cursor',
+    shortLabel: 'Cursor',
+    appName: 'Cursor',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 90,
+    installed: true,
+  },
+  {
+    id: 'zed',
+    name: 'Zed',
+    shortLabel: 'Zed',
+    appName: 'Zed',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 80,
+    installed: true,
+  },
+  {
+    id: 'windsurf',
+    name: 'Windsurf',
+    shortLabel: 'Windsurf',
+    appName: 'Windsurf',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 70,
+    installed: true,
+  },
+  {
+    id: 'finder',
+    name: 'Finder',
+    shortLabel: 'Finder',
+    appName: 'Finder',
+    category: 'finder',
+    handlerType: 'finder',
+    priority: 0,
+    installed: true,
+  },
+  {
+    id: 'hidden-editor',
+    name: 'Hidden Editor',
+    shortLabel: 'Hidden',
+    appName: 'Hidden Editor',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 60,
+    installed: true,
+  },
+];
+
 const mockWorkspaces = [
   { id: 'ws-local' },
   { id: 'ws-remote', environmentConfig: { type: 'remote' } },
@@ -83,12 +129,16 @@ function makeState(
   transport: BackendTransportInfo | null,
   hostLocality: 'local' | 'remote' | null = null,
   selectedAction = 'vscode',
+  editors: InstalledEditor[] = mockEditors,
+  hiddenEditorIds: string[] = [],
+  editorOrder: string[] = [],
 ): Partial<StoreState> {
   return {
     externalEditors: {
       selectedAction,
-      editors: createCollection<InstalledEditor, 'id'>('id', mockEditors),
-      hiddenEditorIds: [],
+      editors: createCollection<InstalledEditor, 'id'>('id', editors),
+      editorOrder,
+      hiddenEditorIds,
       loading: false,
       error: null,
       lastFetched: 0,
@@ -105,7 +155,7 @@ async function renderCombo(props: Record<string, unknown> = {}) {
     await import('$features/external-editors/components/OpenComboButton.svelte')
   ).default;
   const { container } = render(OpenComboButton, {
-    props: { filePath: '/tmp/project', branchName: 'main', ...props },
+    props: { filePath: '/tmp/project', branchName: 'main', usePortal: false, ...props },
   });
   return container;
 }
@@ -113,26 +163,21 @@ async function renderCombo(props: Record<string, unknown> = {}) {
 async function renderAndOpenDropdown(props: Record<string, unknown> = {}) {
   const container = await renderCombo(props);
 
-  // Full mode renders [primary, dropdown-toggle] buttons; open the dropdown.
-  const buttons = container.querySelectorAll('button');
-  await fireEvent.click(buttons[buttons.length - 1]);
-  await waitFor(() => {
-    expect(container.querySelector('.dropdown-content')).toBeTruthy();
-  });
+  // Exercise the production menu context instead of substituting a plain div.
+  await fireEvent.click(within(container).getByRole('button', { name: 'Open in...' }));
+  await within(container).findByRole('menu');
   return container;
 }
 
 function actionLabels(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll('.dropdown-content button span.flex-1')).map(
-    (el) => el.textContent?.trim() ?? '',
-  );
+  return within(container)
+    .getAllByRole('menuitem')
+    .map((el) => within(el).getByText(/\S/, { selector: 'span' }).textContent?.trim() ?? '');
 }
 
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('./mocks/Fa.svelte'));
-warmImport(() => import('./mocks/dropdown-menu.svelte'));
-warmImport(() => import('./mocks/button.svelte'));
 warmImport(() => import('$features/external-editors/components/OpenComboButton.svelte'));
 
 describe('OpenComboButton locality gating (monorepo#883)', () => {
@@ -186,6 +231,65 @@ describe('OpenComboButton locality gating (monorepo#883)', () => {
     expect(actionLabels(container)).toEqual([
       'Visual Studio Code',
       'Finder',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
+
+  it('offers every installed non-hidden editor without duplicating the file manager', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' }, null, 'vscode', manyMockEditors, [
+      'hidden-editor',
+    ]);
+    const container = await renderAndOpenDropdown();
+
+    expect(actionLabels(container)).toEqual([
+      'Visual Studio Code',
+      'Cursor',
+      'Zed',
+      'Windsurf',
+      'Finder',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
+
+  it('does not restore a hidden file manager fallback', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' }, null, 'vscode', manyMockEditors, [
+      'hidden-editor',
+      'finder',
+    ]);
+    const container = await renderAndOpenDropdown();
+
+    expect(actionLabels(container)).toEqual([
+      'Visual Studio Code',
+      'Cursor',
+      'Zed',
+      'Windsurf',
+      'Other',
+      'Copy path',
+      'Copy branch name',
+    ]);
+  });
+
+  it('preserves selector-provided order when Finder is moved away from the end', async () => {
+    mockStoreState = makeState(
+      { mode: 'sidecar-uds' },
+      null,
+      'vscode',
+      manyMockEditors,
+      ['hidden-editor'],
+      ['zed', 'finder', 'vscode', 'windsurf', 'cursor', 'hidden-editor'],
+    );
+    const container = await renderAndOpenDropdown();
+
+    expect(actionLabels(container)).toEqual([
+      'Zed',
+      'Finder',
+      'Visual Studio Code',
+      'Windsurf',
+      'Cursor',
       'Other',
       'Copy path',
       'Copy branch name',
@@ -305,5 +409,44 @@ describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
     const buttons = container.querySelectorAll('button');
     expect(buttons).toHaveLength(1);
     expect(buttons[0].getAttribute('title')).toBe('Copy path');
+  });
+});
+
+describe('OpenComboButton menu action dispatch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExternalEditorsCapability = true;
+  });
+
+  it('opens a selected local editor once and closes the menu', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const container = await renderAndOpenDropdown();
+
+    await fireEvent.click(within(container).getByRole('menuitem', { name: 'Visual Studio Code' }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('vscode:open', '/tmp/project'),
+    );
+    expect(mockDispatch).toHaveBeenCalledWith(setOpenAction('vscode'));
+    await waitFor(() => expect(within(container).queryByRole('menu')).toBeNull());
+  });
+
+  it('copies the branch on a remote workspace without invoking a local app', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+
+    try {
+      mockStoreState = makeState({ mode: 'sidecar-uds' });
+      const container = await renderAndOpenDropdown({ workspaceId: 'ws-remote' });
+
+      await fireEvent.click(within(container).getByRole('menuitem', { name: 'Copy branch name' }));
+
+      await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledExactlyOnceWith('main'));
+      expect(mockDispatch).toHaveBeenCalledWith(setOpenAction('copy-branch'));
+      expect(invoke).not.toHaveBeenCalled();
+      await waitFor(() => expect(within(container).queryByRole('menu')).toBeNull());
+    } finally {
+      delete (navigator as { clipboard?: unknown }).clipboard;
+    }
   });
 });

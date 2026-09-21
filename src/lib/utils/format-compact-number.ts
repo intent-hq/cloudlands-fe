@@ -31,4 +31,3 @@ export function formatCompactNumber(value: number): string {
   }
   return `${sign}${Math.round(abs)}`;
 }
-

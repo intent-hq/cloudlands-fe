@@ -55,6 +55,23 @@ describe('sendWorkspaceCommand', () => {
     expect(mainSource).not.toContain("accelerator: 'CmdOrCtrl+PageDown'");
   });
 
+  it('shows workspace creation chords while leaving their accelerators to the renderer', () => {
+    const mainSource = readFileSync(resolve(process.cwd(), 'src/main/index.ts'), 'utf8');
+
+    for (const [label, accelerator] of [
+      ['menu_new_agent', 'CmdOrCtrl+Alt+A'],
+      ['menu_new_note', 'CmdOrCtrl+Alt+N'],
+      ['menu_new_terminal', 'CmdOrCtrl+Alt+T'],
+      ['menu_new_browser', 'CmdOrCtrl+Alt+B'],
+    ]) {
+      expect(mainSource).toMatch(
+        new RegExp(
+          `label: m\\.${label}\\(\\),\\s*accelerator: '${accelerator.replaceAll('+', '\\+')}',[\\s\\S]*?registerAccelerator: false`,
+        ),
+      );
+    }
+  });
+
   it('opens New Window on the focused window backend instead of the local default', () => {
     vi.mocked(getFocusedWindowBackendId).mockReturnValue('remote-1');
 

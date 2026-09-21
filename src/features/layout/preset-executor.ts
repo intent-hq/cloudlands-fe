@@ -70,13 +70,14 @@ async function applyPlanningPreset(
 
   // Find the oldest agent (the initial coordinator)
   const agents = selectForegroundWorkspaceAgents.select(appStore.state, workspaceId);
-  const orchestrator = agents.length > 0
-    ? agents.reduce((oldest, current) => {
-      const oldestTime = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Infinity;
-      const currentTime = current.createdAt ? new Date(current.createdAt).getTime() : Infinity;
-      return currentTime < oldestTime ? current : oldest;
-    })
-    : undefined;
+  const orchestrator =
+    agents.length > 0
+      ? agents.reduce((oldest, current) => {
+          const oldestTime = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Infinity;
+          const currentTime = current.createdAt ? new Date(current.createdAt).getTime() : Infinity;
+          return currentTime < oldestTime ? current : oldest;
+        })
+      : undefined;
 
   // Batch all changes into a single history entry
   return layoutManager.batchMutations(() => {
@@ -305,13 +306,14 @@ async function applyReviewPreset(
 
   // Find the oldest agent (the initial coordinator)
   const agents = selectForegroundWorkspaceAgents.select(appStore.state, workspaceId);
-  const coordinator = agents.length > 0
-    ? agents.reduce((oldest, current) => {
-      const oldestTime = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Infinity;
-      const currentTime = current.createdAt ? new Date(current.createdAt).getTime() : Infinity;
-      return currentTime < oldestTime ? current : oldest;
-    })
-    : undefined;
+  const coordinator =
+    agents.length > 0
+      ? agents.reduce((oldest, current) => {
+          const oldestTime = oldest.createdAt ? new Date(oldest.createdAt).getTime() : Infinity;
+          const currentTime = current.createdAt ? new Date(current.createdAt).getTime() : Infinity;
+          return currentTime < oldestTime ? current : oldest;
+        })
+      : undefined;
 
   // Batch all changes into a single history entry
   return layoutManager.batchMutations(() => {

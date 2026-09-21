@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
+    SUBSCRIPTION_CARD_SURFACE_CLASS,
+  } from '../subscription-disclosure';
   import QueuedMessageList from '../QueuedMessageList.svelte';
   import type { QueuedMessage } from '$shared/types';
 
@@ -38,7 +42,7 @@
     <div class="h-12" data-testid="transcript-tail">Transcript tail</div>
     <div class="mt-auto" data-testid="transcript-utility-stack">
       <div class="w-full {compact ? 'mt-6' : 'mt-8'}" data-testid="subscription-utility-area">
-        <section class="overflow-hidden rounded-lg border border-border bg-card/80 shadow-sm">
+        <section class="{SUBSCRIPTION_CARD_CONTAINMENT_CLASS} {SUBSCRIPTION_CARD_SURFACE_CLASS}">
           <button
             type="button"
             class="w-full px-3 py-2 text-left"

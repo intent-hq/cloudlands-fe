@@ -4,7 +4,6 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Mention from '@tiptap/extension-mention';
-import Image from '@tiptap/extension-image';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
@@ -61,6 +60,8 @@ import { handleLink } from '$features/navigation/link-handler';
 import { isCmdClickModifier } from '$shared/utils/link-helpers';
 import { FilePathDecorations } from '$lib/components/tiptap/FilePathDecorations';
 import { CodeBlockCopyButton } from '$lib/components/tiptap/CodeBlockCopyButton';
+import { NoteImage } from '$lib/components/tiptap/NoteImage';
+import { NoteVideo } from '$lib/components/tiptap/NoteVideo';
 import { handleNoteEditorCopyAsMarkdown } from './selected-note-markdown-copy';
 import { store as appStore } from '$store/renderer/store';
 const lowlight = safeLowlight;
@@ -229,6 +230,7 @@ const SelectionPreservation = Extension.create({
 });
 
 interface EditorConfigOptions {
+  ariaLabel?: string;
   element: HTMLElement;
   content: string;
   editable: boolean;
@@ -252,6 +254,7 @@ interface EditorConfigOptions {
  */
 export function createEditorConfig(options: EditorConfigOptions): EditorOptions {
   const {
+    ariaLabel = m.workspace_noteWithComments_editor_ariaLabel(),
     element,
     content,
     editable,
@@ -384,7 +387,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         createWorkspacesLink({
           openOnClick: false,
           HTMLAttributes: {
-            class: 'text-primary underline cursor-pointer',
+            class: 'text-primary-ink underline cursor-pointer',
           },
         }),
         TaskList.configure({
@@ -419,13 +422,15 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         FilePathDecorations.configure({
           onFilePathClick,
         }),
-        Image.configure({
+        NoteImage.configure({
           inline: false,
           allowBase64: true,
+          workspaceId: workspace?.id,
           HTMLAttributes: {
             class: 'note-image max-w-full rounded-md',
           },
         }),
+        NoteVideo.configure({ workspaceId: workspace?.id }),
 
         // Table support
         Table.configure({
@@ -797,7 +802,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         createWorkspacesLink({
           openOnClick: false,
           HTMLAttributes: {
-            class: 'text-primary underline cursor-pointer',
+            class: 'text-primary-ink underline cursor-pointer',
           },
         }),
         TaskList.configure({
@@ -831,13 +836,15 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
         FilePathDecorations.configure({
           onFilePathClick,
         }),
-        Image.configure({
+        NoteImage.configure({
           inline: false,
           allowBase64: true,
+          workspaceId: workspace?.id,
           HTMLAttributes: {
             class: 'note-image max-w-full rounded-md',
           },
         }),
+        NoteVideo.configure({ workspaceId: workspace?.id }),
 
         // Table support
         Table.configure({
@@ -1054,13 +1061,16 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
     },
     editorProps: {
       attributes: {
+        role: 'textbox',
+        'aria-multiline': 'true',
+        'aria-label': ariaLabel,
         class:
           'tiptap-editor h-full !outline-none focus:!outline-none border-none prose prose-sm dark:prose-invert max-w-none',
       },
       handleDOMEvents: copySelectionAsMarkdown
         ? {
             copy: (view: any, event: Event) =>
-              handleNoteEditorCopyAsMarkdown(view, event as ClipboardEvent),
+              handleNoteEditorCopyAsMarkdown(view, event as ClipboardEvent, workspace?.id),
           }
         : undefined,
       handleClick: (_view: any, _pos: any, event: any) => {

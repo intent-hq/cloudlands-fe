@@ -1,20 +1,20 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { NodeViewWrapper } from '$lib/utils/tiptap/svelte-node-view';
   import type { NodeViewProps } from '@tiptap/core';
   import hljs from 'highlight.js';
   import '$lib/styles/syntax-highlighting.css';
   import Fa from 'svelte-fa';
-  import {
-  faPencil,
-  faExpand,
-  faTimes,
-} from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { faPencil, faExpand } from '@fortawesome/free-solid-svg-icons';
+  import { slide } from '$lib/motion';
   import { tick } from 'svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
-  import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
+  import MermaidRenderer, {
+    type MermaidRenderState,
+  } from '$lib/components/markdown/MermaidRenderer.svelte';
+  import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
-  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { m } from '$shared/paraglide/messages.js';
 
   // TipTap NodeViewProps
@@ -24,6 +24,10 @@
 
   // Extract mermaid code from node attributes
   let savedCode = $derived<string>(node?.attrs?.code || '');
+
+  // Exposed on the wrapper so tiptap-editor.css can keep failed renders in
+  // the prose column instead of the wide diagram lane.
+  let renderState = $state<MermaidRenderState>('pending');
 
   // Decode base64 for display
   function decodeBase64(str: string): string {
@@ -58,7 +62,7 @@
   // Fullscreen state
   let isFullscreen = $state(false);
   let fullscreenSvg = $state('');
-  let fullscreenDialogElement: HTMLDivElement | undefined = $state();
+  let fullscreenOpenerElement: HTMLElement | null = $state(null);
   let diagramContainerEl: HTMLDivElement | undefined = $state();
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
 
@@ -66,6 +70,7 @@
     // Prevent the click from propagating to ProseMirror selection handling
     e.stopPropagation();
     e.preventDefault();
+    fullscreenOpenerElement = e.currentTarget as HTMLElement;
     // Blur any focused element (including TipTap editor) to avoid RangeError
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -84,17 +89,10 @@
     fullscreenSvg = '';
   }
 
-  function handleFullscreenBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
-      closeFullscreen();
-    }
-  }
-
   function handleFullscreenKeydown(e: KeyboardEvent) {
     // Zoom keys (+/-/0): forward to the viewport unless it already handled
     // the event itself (keydown bubbling up from inside the viewport)
-    if (!e.defaultPrevented && zoomPanViewport?.handleKeydown(e)) return;
-    if (e.key === 'Escape') closeFullscreen();
+    if (!e.defaultPrevented) zoomPanViewport?.handleKeydown(e);
   }
 
   // Whether code editor is visible
@@ -110,7 +108,9 @@
   let hasChanges = $derived(editCode !== originalCode);
 
   // The code to render in the diagram
-  let displayCode = $derived(showCode ? (isBase64(savedCode) ? encodeBase64(editCode) : editCode) : savedCode);
+  let displayCode = $derived(
+    showCode ? (isBase64(savedCode) ? encodeBase64(editCode) : editCode) : savedCode,
+  );
 
   // Syntax highlighted HTML
   let highlightedCode = $derived.by(() => {
@@ -124,7 +124,7 @@
 
   // Debounce timer for auto-saving
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-  let textareaEl: HTMLTextAreaElement;
+  let textareaEl = $state<HTMLTextAreaElement>();
 
   async function openCodeView(e: MouseEvent) {
     // Prevent the click from selecting text or triggering bubble menu
@@ -191,40 +191,30 @@
       showCode = false;
     }
   }
-
-  // Escape layer: registered only while fullscreen so stacked overlays
-  // dismiss one at a time in LIFO order
-  $effect(() => {
-    if (!isFullscreen) return;
-    return pushEscapeLayer(() => closeFullscreen());
-  });
-
-  // Auto-focus fullscreen dialog for accessibility
-  $effect(() => {
-    if (isFullscreen && fullscreenDialogElement) {
-      try {
-        fullscreenDialogElement.focus();
-      } catch {
-        // Defensive: ignore focus errors from ProseMirror selection reconciliation
-      }
-    }
-  });
 </script>
 
-<NodeViewWrapper class="mermaid-block-wrapper" data-drag-handle>
+<NodeViewWrapper class="mermaid-block-wrapper" data-drag-handle data-render-state={renderState}>
   <div class="mermaid-block" class:selected class:dark-mode={$isDarkTheme}>
     <!-- Diagram -->
     <div bind:this={diagramContainerEl}>
-      <MermaidRenderer code={displayCode} showExpandButton={false} />
+      <MermaidRenderer
+        code={displayCode}
+        showExpandButton={false}
+        onRenderStateChange={(state) => (renderState = state)}
+      />
     </div>
 
     <!-- Code editor -->
     {#if showCode}
-      <div class="mermaid-code-section" contenteditable="false" transition:slide={{ axis: 'y', duration: 200 }}>
+      <div
+        class="mermaid-code-section"
+        contenteditable="false"
+        transition:slide={{ axis: 'y', tier: 'moderate' }}
+      >
         <div class="code-editor-wrapper">
           <pre class="code-highlight hljs" aria-hidden="true">{@html highlightedCode + '\n'}</pre>
-          <textarea
-            bind:this={textareaEl}
+          <Textarea
+            bind:ref={textareaEl}
             class="code-textarea"
             value={editCode}
             oninput={handleCodeInput}
@@ -232,14 +222,20 @@
             spellcheck="false"
             autocorrect="off"
             autocapitalize="off"
-          ></textarea>
+          ></Textarea>
         </div>
         <div class="edit-actions">
           {#if hasChanges}
-            <button type="button" class="action-btn" onclick={cancelChanges}>{m.tiptap_mermaidBlock_cancel_label()}</button>
-            <button type="button" class="action-btn primary" onclick={saveChanges}>{m.tiptap_mermaidBlock_save_label()}</button>
+            <Button type="button" variant="ghost" class="action-btn" onclick={cancelChanges}
+              >{m.tiptap_mermaidBlock_cancel_label()}</Button
+            >
+            <Button type="button" class="action-btn primary" onclick={saveChanges}
+              >{m.tiptap_mermaidBlock_save_label()}</Button
+            >
           {:else}
-            <button type="button" class="action-btn" onclick={closeCodeView}>{m.tiptap_mermaidBlock_close_label()}</button>
+            <Button type="button" variant="ghost" class="action-btn" onclick={closeCodeView}
+              >{m.tiptap_mermaidBlock_close_label()}</Button
+            >
           {/if}
         </div>
       </div>
@@ -248,47 +244,50 @@
     <!-- Action buttons (edit + expand) -->
     {#if !showCode}
       <div class="action-btns">
-        <button type="button" class="hover-btn" onclick={openCodeView} title={m.tiptap_mermaidBlock_editCode_tooltip()}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-compact"
+          iconOnly
+          class="hover-btn"
+          onclick={openCodeView}
+          title={m.tiptap_mermaidBlock_editCode_tooltip()}
+        >
           <Fa icon={faPencil} size="xs" />
-        </button>
-        <button type="button" class="hover-btn" onclick={openFullscreen} title={m.tiptap_mermaidBlock_fullscreen_tooltip()}>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-compact"
+          iconOnly
+          class="hover-btn"
+          onclick={openFullscreen}
+          title={m.tiptap_mermaidBlock_fullscreen_tooltip()}
+        >
           <Fa icon={faExpand} size="xs" />
-        </button>
+        </Button>
       </div>
     {/if}
   </div>
 </NodeViewWrapper>
 
-<!-- Fullscreen overlay -->
-{#if isFullscreen}
+<MediaLightbox
+  bind:open={isFullscreen}
+  ariaLabel={m.tiptap_mermaidBlock_fullscreenView_ariaLabel()}
+  closeLabel={m.tiptap_mermaidBlock_closeFullscreen_ariaLabel()}
+  onClose={closeFullscreen}
+  openerElement={fullscreenOpenerElement}
+  onKeydown={handleFullscreenKeydown}
+>
   <div
-    class="fullscreen-overlay"
-    onclick={handleFullscreenBackdropClick}
-    onkeydown={handleFullscreenKeydown}
-    tabindex="-1"
-    role="dialog"
-    aria-modal="true"
-    aria-label={m.tiptap_mermaidBlock_fullscreenView_ariaLabel()}
-    bind:this={fullscreenDialogElement}
+    class="h-[90vh] w-[90vw] overflow-hidden rounded-lg bg-background shadow-2xl"
+    data-media-lightbox-content
   >
-    <div class="fullscreen-content">
-      <button
-        class="close-button"
-        onclick={closeFullscreen}
-        title={m.tiptap_mermaidBlock_closeFullscreen_tooltip()}
-        aria-label={m.tiptap_mermaidBlock_closeFullscreen_ariaLabel()}
-      >
-        <Fa icon={faTimes} size="sm" />
-      </button>
-      <!-- Fresh component per open, so zoom/pan state resets each time -->
-      <div class="fullscreen-diagram">
-        <ZoomPanViewport bind:this={zoomPanViewport}>
-          {@html fullscreenSvg}
-        </ZoomPanViewport>
-      </div>
-    </div>
+    <ZoomPanViewport bind:this={zoomPanViewport}>
+      <div class="fullscreen-diagram">{@html fullscreenSvg}</div>
+    </ZoomPanViewport>
   </div>
-{/if}
+</MediaLightbox>
 
 <style>
   .mermaid-block-wrapper {
@@ -297,6 +296,9 @@
 
   .mermaid-block {
     position: relative;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.5rem;
   }
 
   .mermaid-block:hover .action-btns {
@@ -305,83 +307,35 @@
 
   .action-btns {
     position: absolute;
-    top: 0;
-    right: 0;
+    top: 0.375rem;
+    right: 0.375rem;
     display: flex;
-    gap: 0;
+    gap: 0.25rem;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--spring-moderate) var(--spring-moderate-ease);
   }
 
-  .hover-btn {
-    padding: 4px;
-    background: hsl(var(--muted) / 0.8);
+  /* Sizing comes from the Button `icon-compact` size (square, zero padding). */
+  :global(.hover-btn) {
+    background: rgb(0 0 0 / 0.6);
     border: none;
-    color: hsl(var(--muted-foreground));
+    border-radius: 0.375rem;
+    color: white;
     cursor: pointer;
-    transition: color 0.15s;
+    transition: background var(--spring-moderate) var(--spring-moderate-ease);
   }
 
-  .hover-btn:hover {
-    color: hsl(var(--foreground));
-  }
-
-  /* Fullscreen overlay */
-  .fullscreen-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 16px;
-  }
-
-  .fullscreen-content {
-    position: relative;
-    background: hsl(var(--background));
-    border-radius: 8px;
-    width: 90vw;
-    height: 90vh;
-    overflow: hidden;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
-    display: flex;
-    flex-direction: column;
-  }
-
-  .close-button {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    padding: 6px 8px;
-    background: hsl(var(--muted));
-    border: 1px solid hsl(var(--border));
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: hsl(var(--foreground));
-    z-index: 1001;
-    transition: background 0.2s ease-in-out;
-  }
-
-  .close-button:hover {
-    background: hsl(var(--muted) / 0.8);
+  :global(.hover-btn:hover) {
+    background: rgb(0 0 0 / 0.75);
   }
 
   .fullscreen-diagram {
-    flex: 1;
-    min-height: 0;
     padding: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
+    width: 100%;
+    height: 100%;
   }
 
   .fullscreen-diagram :global(svg) {
@@ -415,7 +369,7 @@
     background: transparent;
   }
 
-  .code-textarea {
+  :global(.code-textarea) {
     position: absolute;
     top: 0;
     left: 0;
@@ -435,7 +389,7 @@
     overflow: hidden;
   }
 
-  .code-textarea:focus {
+  :global(.code-textarea:focus) {
     outline: none;
   }
 
@@ -445,26 +399,26 @@
     margin-top: 0.25rem;
   }
 
-  .action-btn {
+  :global(.action-btn) {
     padding: 0.25rem 0.5rem;
     font-size: 0.7rem;
     background: transparent;
     border: none;
     color: hsl(var(--muted-foreground));
     cursor: pointer;
-    transition: color 0.15s;
+    transition: color var(--spring-moderate) var(--spring-moderate-ease);
   }
 
-  .action-btn:hover {
+  :global(.action-btn:hover) {
     color: hsl(var(--foreground));
   }
 
-  .action-btn.primary {
-    color: hsl(var(--primary));
+  :global(.action-btn.primary) {
+    color: hsl(var(--primary-ink));
   }
 
-  .action-btn.primary:hover {
-    color: hsl(var(--primary) / 0.8);
+  :global(.action-btn.primary:hover) {
+    color: hsl(var(--primary-ink) / 0.8);
   }
 
   .mermaid-loading {
@@ -478,18 +432,20 @@
     width: 16px;
     height: 16px;
     border: 2px solid hsl(var(--muted));
-    border-top-color: hsl(var(--primary));
+    border-top-color: hsl(var(--primary-ink));
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .mermaid-error {
     font-size: 0.75rem;
-    color: hsl(var(--destructive));
+    color: hsl(var(--danger));
   }
 
   /* Syntax highlighting for dark mode */
@@ -497,26 +453,58 @@
     color: #d4d4d4;
   }
 
-  .dark-mode :global(.hljs-keyword) { color: #569cd6; }
-  .dark-mode :global(.hljs-string) { color: #ce9178; }
-  .dark-mode :global(.hljs-number) { color: #b5cea8; }
-  .dark-mode :global(.hljs-comment) { color: #6a9955; }
-  .dark-mode :global(.hljs-section) { color: #569cd6; }
-  .dark-mode :global(.hljs-bullet) { color: #d7ba7d; }
-  .dark-mode :global(.hljs-emphasis) { font-style: italic; }
-  .dark-mode :global(.hljs-strong) { font-weight: bold; }
+  .dark-mode :global(.hljs-keyword) {
+    color: #569cd6;
+  }
+  .dark-mode :global(.hljs-string) {
+    color: #ce9178;
+  }
+  .dark-mode :global(.hljs-number) {
+    color: #b5cea8;
+  }
+  .dark-mode :global(.hljs-comment) {
+    color: #6a9955;
+  }
+  .dark-mode :global(.hljs-section) {
+    color: #569cd6;
+  }
+  .dark-mode :global(.hljs-bullet) {
+    color: #d7ba7d;
+  }
+  .dark-mode :global(.hljs-emphasis) {
+    font-style: italic;
+  }
+  .dark-mode :global(.hljs-strong) {
+    font-weight: bold;
+  }
 
   /* Syntax highlighting for light mode */
   .mermaid-block:not(.dark-mode) .code-highlight {
     color: #1f2937;
   }
 
-  .mermaid-block:not(.dark-mode) :global(.hljs-keyword) { color: #0000ff; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-string) { color: #a31515; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-number) { color: #098658; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-comment) { color: #008000; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-section) { color: #0000ff; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-bullet) { color: #795e26; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-emphasis) { font-style: italic; }
-  .mermaid-block:not(.dark-mode) :global(.hljs-strong) { font-weight: bold; }
+  .mermaid-block:not(.dark-mode) :global(.hljs-keyword) {
+    color: #0000ff;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-string) {
+    color: #a31515;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-number) {
+    color: #098658;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-comment) {
+    color: #008000;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-section) {
+    color: #0000ff;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-bullet) {
+    color: #795e26;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-emphasis) {
+    font-style: italic;
+  }
+  .mermaid-block:not(.dark-mode) :global(.hljs-strong) {
+    font-weight: bold;
+  }
 </style>

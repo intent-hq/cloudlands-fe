@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import EventWakeupMotionHost from './EventWakeupMotionHost.svelte';
 
 test('uses descriptive ordered headers for small wakes and count-only text for five', async ({

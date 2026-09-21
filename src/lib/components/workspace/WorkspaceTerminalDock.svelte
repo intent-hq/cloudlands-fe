@@ -61,7 +61,7 @@
     variant="plain"
     class="absolute inset-0 z-0 h-auto cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
     onclick={openShell}
-    aria-label={m.workspace_terminalDock_shell_label()}
+    aria-label={m.workspace_multiSelectSidebar_shellTab_label()}
     aria-expanded={onExpand ? expanded : undefined}
   ></Button>
   <div
@@ -69,7 +69,7 @@
     data-sidebar-launcher-row
   >
     <span class="cursor-pointer truncate text-sm font-semibold flex-1" data-sidebar-launcher-label
-      >{m.workspace_terminalDock_shell_label()}</span
+      >{m.workspace_multiSelectSidebar_shellTab_label()}</span
     >
     {#each $terminals$.slice(0, 1) as terminal (terminal.id)}
       {@const terminalName =

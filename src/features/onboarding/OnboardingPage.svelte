@@ -7,8 +7,7 @@
    * for the workspace creation flow (/workspace/new).
    */
 
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly } from '$lib/motion';
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
@@ -25,17 +24,19 @@
     EnhancePromptUnavailableError,
     isEnhancePromptAvailable,
   } from '$lib/client/live/live-prompt-enhancement';
-  import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectEffectiveDefaultProviderId,
+    selectProviderCatalogEntries,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
 
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import {
     selectOnboardingStep,
     selectOnboardingState,
-    selectOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import {
     goToStep,
@@ -62,6 +63,7 @@
   } from '$lib/components/modals/PullConflictDialog.svelte';
 
   import AgentGrid from '$features/onboarding/messages/AgentGrid.svelte';
+  import ClaudeLoginButton from '$features/onboarding/messages/ClaudeLoginButton.svelte';
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
   import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
@@ -71,20 +73,20 @@
     selectHostRequirementsHasCheckedOnce,
   } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
   import {
-    selectProviderStatusMap,
-    selectHasCheckedOnce as selectProvidersCheckedOnce,
-  } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
-  import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
-  import { hasReadyProvider } from '$store/renderer/slices/setup-prompt/setup-prompt-utils';
-  import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { hasAvailableWorkspace } from '$features/workspace/utils/empty-window-destination';
-  import {
-    determineOnboardingInitialStep,
-    resolveFastPathSettlement,
-  } from '$features/onboarding/utils/determine-onboarding-initial-step';
+    checkSingleProviderRequested,
+    ensureProvidersChecked,
+  } from '$store/renderer/slices/agent-availability/agent-availability-slice';
+  import { determineOnboardingInitialStep } from '$features/onboarding/utils/determine-onboarding-initial-step';
 
   import { Button } from '$lib/components/ui/button';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import { shell } from '$lib/electron-bridge';
+  import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
+  import {
+    mapTestPromptFailure,
+    shouldRunOnboardingTestPrompt,
+    type TestPromptFailureGuidance,
+  } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { shouldPullSourceRepositoryBeforeCreate } from '$lib/components/workspace/initializer/workspace-create-pull-policy';
@@ -94,6 +96,7 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { resolveOnboardingModel } from '$features/onboarding/utils/resolve-onboarding-model';
   import { commitOnboardingDefaultModel } from '$features/onboarding/utils/commit-onboarding-default-model';
+  import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
     parseContextMentions,
@@ -107,7 +110,9 @@
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
     hasStagedFileItems,
+    heldImageBlocks,
     redeemStagedAttachments,
+    retainImagePlacementIdentity,
     sendHeldFirstMessage,
   } from '$lib/components/workspace/initializer/staged-attachments';
   import {
@@ -127,12 +132,18 @@
   import {
     cancelWorkspaceInitializerOnboardingFormStateDebounce,
     debounceWorkspaceInitializerOnboardingFormState,
+    setWorkspaceInitializerLastSubmittedAgent,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import {
+    DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+    getSpecialistById,
+  } from '$lib/constants/specialists';
   import {
     selectWorkspaceInitializerHydrated,
     selectWorkspaceInitializerOnboardingFormState,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { selectModel } from '$store/renderer/slices/model/model-slice';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
   import { bootstrapNewWorkspaceLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -177,9 +188,7 @@
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const allRequirementsMet$ = selectAllRequirementsMet();
   const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
-  const providerStatusMap$ = selectProviderStatusMap();
-  const providersCheckedOnce$ = selectProvidersCheckedOnce();
-  const workspaceItems$ = selectWorkspaceItems();
+  const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   let projectSelection = $state<ProjectSelection | null>(null);
   let projectName = $derived.by(() => {
@@ -518,6 +527,14 @@
   // retry create mints a fresh id, which rekeys the card and rebinds its
   // init-bound selector cleanly.
   let onboardingCreateProgressId = $state<string | null>(null);
+  // Initial agent shown on the setup card: the Developer specialist's id and
+  // localized name, refreshed from the resolved config at create time (both
+  // undefined when the resolved list lacks the Developer → General).
+  let setupSpecialistId = $state<string | undefined>(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID);
+  let setupSpecialistName = $state<string | undefined>(
+    getSpecialistById(DEFAULT_NEW_WORKSPACE_SPECIALIST_ID)?.name ??
+      DEFAULT_NEW_WORKSPACE_SPECIALIST_ID,
+  );
 
   // Setup script state — session-local: the default is restored per repo
   // from the repo config / localStorage last-used, never from persisted
@@ -528,32 +545,42 @@
   let setupScriptNameSource = $state<SetupScriptNameSource>('custom');
   let isCustomSetupScript = $state(false);
 
-  // User-picked model for the initial Coordinator agent (step 3 picker).
-  // undefined + false means the auto-resolved default applies (behavior
-  // identical to before the picker existed).
+  // User-picked model (bare id) + its provider for the initial Developer
+  // agent (step 3 picker). undefined + false means the auto-resolved default
+  // applies (behavior identical to before the picker existed).
   let onboardingSelectedModel = $state<string | undefined>(undefined);
+  let onboardingSelectedProvider = $state<string | undefined>(undefined);
   let onboardingModelWasOverridden = $state(false);
 
   // One-time restore of a persisted mid-onboarding model pick once the
-  // workspace-initializer state has hydrated.
+  // workspace-initializer state has hydrated. A legacy pre-triple compound id
+  // is split at this boundary; new persisted picks are bare and paired with
+  // the persisted selectedProvider.
   let onboardingModelRestoreApplied = false;
   $effect(() => {
     if (!isOnboarding || !$workspaceInitializerHydrated$ || onboardingModelRestoreApplied) return;
     onboardingModelRestoreApplied = true;
     const persisted = selectWorkspaceInitializerOnboardingFormState.select(appStore.state);
     if (persisted?.modelWasOverridden && persisted.selectedModel) {
-      onboardingSelectedModel = persisted.selectedModel;
+      const { providerId, modelId } = splitLegacyCompoundId(persisted.selectedModel);
+      onboardingSelectedModel = modelId;
+      onboardingSelectedProvider = persisted.selectedProvider ?? providerId ?? undefined;
       onboardingModelWasOverridden = true;
     }
   });
 
   /** User picked a model in the prompt-step picker: it also becomes the
    * global default (the model-selection persistence middleware owns writing
-   * it to the daemon settings catalog and any provider switch). */
-  function handleOnboardingModelChange(model: string) {
-    onboardingSelectedModel = model;
+   * it to the daemon settings catalog and any provider switch). The picker
+   * reports the resolved triple legs so no model-string parsing happens here. */
+  function handleOnboardingModelChange(
+    model: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
+    onboardingSelectedModel = pick?.modelId ?? model;
+    onboardingSelectedProvider = pick?.providerId;
     onboardingModelWasOverridden = true;
-    appStore.dispatch(selectModel(model));
+    appStore.dispatch(selectModel(pick?.modelId ?? model, pick?.providerId));
   }
 
   // Repo-committed setup script from <repo>/.intent/config.json (local repos
@@ -604,6 +631,7 @@
     const skipIso = onboardingSkipIsolation;
     const step = $onboardingStep$;
     const pickedModel = onboardingSelectedModel;
+    const pickedProvider = onboardingSelectedProvider;
     const modelOverridden = onboardingModelWasOverridden;
 
     if (!isOnboarding || !$workspaceInitializerHydrated$) return;
@@ -624,6 +652,7 @@
         skipIsolation: skipIso,
         selectedModel: pickedModel,
         modelWasOverridden: modelOverridden,
+        selectedProvider: pickedProvider,
         step,
       }),
     );
@@ -633,11 +662,68 @@
   let agentGridRef: AgentGrid | null = $state(null);
   let onboardingSkipIsolation = $state(false);
 
+  let onboardingTestPromptRunning = $state(false);
+  let onboardingTestPromptFailure = $state<TestPromptFailureGuidance | null>(null);
+  let onboardingGridSelectedProviderId = $state<string | undefined>(undefined);
+  const onboardingSelectedCatalogEntry = $derived(
+    $providerCatalogEntries$.find((entry) => entry.id === onboardingGridSelectedProviderId),
+  );
+  const shouldTestOnboardingProvider = $derived(
+    shouldRunOnboardingTestPrompt(onboardingSelectedCatalogEntry),
+  );
+
   /** Advance from the welcome step, first committing the grid's resolved
    *  provider selection so a no-click advance still enables/activates the
-   *  visually-selected provider (D1(B): commit only on explicit advance). */
-  function advanceFromWelcomeStep() {
-    agentGridRef?.commitSelection();
+   *  visually-selected provider (D1(B): commit only on explicit advance).
+   *  For allowlisted providers that support it, one live test prompt runs first:
+   *  success advances, a structured failure
+   *  keeps the user on the step with actionable guidance. */
+  async function advanceFromWelcomeStep() {
+    if (onboardingTestPromptRunning) return;
+    const committed = agentGridRef?.commitSelection();
+    const providerId = committed ?? onboardingGridSelectedProviderId;
+    if (!providerId) return;
+    if (shouldTestOnboardingProvider) {
+      onboardingTestPromptFailure = null;
+      onboardingTestPromptRunning = true;
+      try {
+        // No explicit model: the daemon applies its resolved default for the
+        // provider (the welcome step precedes any model pick).
+        const result = await runProviderTestPrompt({ providerId });
+        // Provider switched mid-test: the result belongs to the previous
+        // selection — drop it (neither advance nor show stale guidance).
+        if (providerId !== onboardingGridSelectedProviderId) return;
+        if (!result.ok) {
+          const entry = selectProviderCatalogEntries
+            .select(appStore.state)
+            .find((e) => e.id === providerId);
+          const guidance = mapTestPromptFailure(result, entry, providerId);
+          onboardingTestPromptFailure = guidance;
+          if (guidance.isAuthRequired) {
+            // Re-sync the card's auth badge with the demoted daemon verdict.
+            appStore.dispatch(checkSingleProviderRequested(providerId));
+          }
+          return;
+        }
+      } catch (err) {
+        if (providerId !== onboardingGridSelectedProviderId) return;
+        // Transport/wire error (daemon unreachable, divergent payload). The
+        // raw message can be a multi-line ZodError dump — log the full detail
+        // and surface only the first line.
+        logger.error('Onboarding test prompt failed', { providerId, error: err });
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        onboardingTestPromptFailure = {
+          message: m.onboarding_testPrompt_generic_error({
+            message: rawMessage.split('\n', 1)[0],
+          }),
+          showClaudeLoginButton: false,
+          isAuthRequired: false,
+        };
+        return;
+      } finally {
+        onboardingTestPromptRunning = false;
+      }
+    }
     appStore.dispatch(goToStep('github'));
   }
 
@@ -695,64 +781,19 @@
     // (resetOnboarding preserves a pending fullFlowRequested — see the slice.)
     if (isOnboarding) {
       appStore.dispatch(resetOnboarding());
-      // Kick the bulk provider check so the initial-step decision (and the
-      // fast-path settlement below) has real availability data to settle on
-      // even when the welcome step's AgentGrid never mounts.
       appStore.dispatch(ensureProvidersChecked());
     }
   });
 
-  // True while 'project' was entered on the persisted local flag alone; the
-  // settlement effect below corrects back to 'welcome' if the provider check
-  // settles with no ready provider and no workspaces.
-  let onboardingFastPathPending = $state(false);
-
-  // Requirements gate: advance only once the check group has settled with
-  // every requirement met; otherwise stay blocked on the requirements step
-  // (OnboardingRequirementsStep renders the setup guidance and re-checks on
-  // focus/visibility until the tools appear). Once green, jump to the step
-  // the provider-setup state warrants: 'project' when setup is already done
-  // (ready provider / existing workspaces / persisted local flag), 'welcome'
-  // for the full flow otherwise. An explicit full-flow request (Command
-  // Palette "Show onboarding") always gets the full flow and is consumed here.
   $effect(() => {
-    if (
-      isOnboarding &&
-      $onboardingStep$ === 'requirements' &&
-      $requirementsCheckedOnce$ &&
-      $allRequirementsMet$
-    ) {
-      const fullFlowRequested = selectOnboardingFullFlowRequested.select(appStore.state);
-      const decision = determineOnboardingInitialStep({
-        fullFlowRequested,
-        hasReadyProvider: hasReadyProvider($providerStatusMap$),
-        hasCompletedProviderSetup: selectHasCompletedProviderSetup.select(appStore.state),
-        hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
-        providersCheckedOnce: $providersCheckedOnce$,
-      });
-      if (fullFlowRequested) {
-        appStore.dispatch(setOnboardingFullFlowRequested(false));
-      }
-      onboardingFastPathPending = decision.viaLocalFastPath;
-      appStore.dispatch(goToStep(decision.step));
-    }
-  });
-
-  // Local fast-path settlement: the persisted flag skipped ahead while the
-  // bulk provider check was still pending; once it settles with no ready
-  // provider (and no workspaces exist), route back into provider setup.
-  $effect(() => {
-    if (!isOnboarding || !onboardingFastPathPending) return;
-    const settlement = resolveFastPathSettlement({
-      hasReadyProvider: hasReadyProvider($providerStatusMap$),
-      providersCheckedOnce: $providersCheckedOnce$,
-      hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
+    if (!isOnboarding || $onboardingStep$ !== 'requirements') return;
+    const step = determineOnboardingInitialStep({
+      requirementsCheckedOnce: $requirementsCheckedOnce$,
+      allRequirementsMet: $allRequirementsMet$,
     });
-    if (settlement === 'pending') return;
-    onboardingFastPathPending = false;
-    if (settlement === 'correct' && $onboardingStep$ === 'project') {
-      appStore.dispatch(goToStep('welcome'));
-    }
+    if (step === 'requirements') return;
+    appStore.dispatch(setOnboardingFullFlowRequested(false));
+    appStore.dispatch(goToStep(step));
   });
 
   // ============================================================================
@@ -794,7 +835,8 @@
       projectIdentityChanged ||
       previous?.branch !== selection.branch ||
       previous?.scope !== selection.scope ||
-      previous?.isValid !== selection.isValid;
+      previous?.isValid !== selection.isValid ||
+      previous?.initGit !== selection.initGit;
 
     if (!selectionChanged) return;
 
@@ -951,10 +993,10 @@
       const result = await enhancePrompt(onboardingInputValue);
       onboardingInputValue = result.enhanced;
       await getOnboardingRichTextarea()?.setContent(result.enhanced);
-      toast.success(m.onboarding_page_promptEnhanced_label());
+      notify.success(m.onboarding_page_promptEnhanced_label());
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
-      toast.error(
+      notify.error(
         error instanceof EnhancePromptUnavailableError
           ? m.onboarding_page_enhanceUnavailable_error()
           : error instanceof Error && error.message
@@ -1027,15 +1069,10 @@
       const snapshot = $state.snapshot(pending);
       // Rebuild imageBlocks from the CURRENT thumbnail row, not the pending
       // snapshot: the thumbnails stay editable while the failed send is
-      // resumable, so a removed image must not ride the retry.
-      const imageBlocks = $state
-        .snapshot(onboardingImageItems)
-        .filter((item) => item.imageData && item.imageMimeType)
-        .map((item) => ({
-          type: 'image' as const,
-          data: item.imageData as string,
-          mimeType: item.imageMimeType as string,
-        }));
+      // resumable, so a removed image must not ride the retry. The items
+      // carry the placement identity retained from the failed attempt, so
+      // the retry replays committed placements instead of re-placing them.
+      const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
       const sendResult = await sendHeldFirstMessage(
         {
           workspaceId: snapshot.workspaceId,
@@ -1047,6 +1084,10 @@
         redemption.fileBlocks,
       );
       if (!sendResult.sent) {
+        onboardingImageItems = retainImagePlacementIdentity(
+          onboardingImageItems,
+          sendResult.imageBlocks,
+        );
         // Framed like the compact initializer: the workspace already exists,
         // Create resumes this flow — with the daemon's detail when available.
         throw new Error(
@@ -1090,21 +1131,21 @@
     // Existing repositories cannot be created until BranchSelector resolves
     // (or the user manually enters) a branch. Snapshot the effective branch
     // before the prompt step unmounts so workspace.create never receives ''.
-    const isNewRepo = projectSelection.type === 'new';
+    const treatAsNewRepo = shouldTreatAsNewRepo(projectSelection);
     const currentBranch = projectSelection.branch;
     const effectiveBranch =
-      selectedPRBranch && currentBranch !== selectedPRBranch && !isNewRepo
+      selectedPRBranch && currentBranch !== selectedPRBranch && !treatAsNewRepo
         ? selectedPRBranch
         : currentBranch;
-    if (!isNewRepo && !effectiveBranch.trim()) {
-      toast.error(m.onboarding_page_branchRequired_toast());
+    if (!treatAsNewRepo && !effectiveBranch.trim()) {
+      notify.error(m.onboarding_page_branchRequired_toast());
       return;
     }
 
     if (hasBlockingAttachments(onboardingStagedItems)) {
       // The error banner's Retry also lands here — surface why nothing
       // happened instead of a silent no-op (pills must be retried/removed).
-      toast.error(m.onboarding_page_blockingAttachments_toast());
+      notify.error(m.onboarding_page_blockingAttachments_toast());
       return;
     }
 
@@ -1122,14 +1163,7 @@
     // Images live in the context-item list (bound to the prompt step's
     // thumbnail row), not the editor — snapshot to plain JSON so the $state
     // Proxy tree never reaches Electron's structured clone (monorepo#2576).
-    const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = $state
-      .snapshot(onboardingImageItems)
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData as string,
-        mimeType: item.imageMimeType as string,
-      }));
+    const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
 
     isOnboardingCreating = true;
     onboardingCreationError = null;
@@ -1155,10 +1189,17 @@
         model: effectiveModel,
         behaviorPrompt,
         specialistId,
+        specialistName,
       } = await resolveOnboardingModel(
         reduxState,
-        onboardingModelWasOverridden ? onboardingSelectedModel : undefined,
+        onboardingModelWasOverridden && onboardingSelectedModel
+          ? { model: onboardingSelectedModel, provider: onboardingSelectedProvider }
+          : undefined,
       );
+      setupSpecialistId = specialistId ?? undefined;
+      setupSpecialistName = specialistName;
+      // General (null specialist) uses the modal's generic agent name.
+      const agentName = specialistName ?? m.workspace_fileChanges_agent_label();
 
       // The prompt-step picker is the authoritative source of the initial
       // default provider + default model (monorepo#3044): commit the resolved
@@ -1204,7 +1245,7 @@
         shouldPullSourceRepositoryBeforeCreate({
           branchBehind: onboardingBranchBehind,
           isLocalRepository: projectSelection.type === 'local',
-          isNewRepository: projectSelection.type === 'new',
+          isNewRepository: treatAsNewRepo,
           skipIsolation: onboardingSkipIsolation,
           pullEnabled: onboardingShouldPullBeforeCreate,
         })
@@ -1279,8 +1320,8 @@
         title: '',
         repositoryPath: isGithubPick ? undefined : projectSelection.repoPath,
         githubUrl: projectSelection.githubUrl,
-        baseRef: effectiveBranch,
-        isNewRepo,
+        baseRef: treatAsNewRepo ? 'main' : effectiveBranch,
+        isNewRepo: treatAsNewRepo,
         skipIsolation: onboardingSkipIsolation || undefined,
         scope: projectSelection.scope || undefined,
         setupScript: setupScriptParam,
@@ -1288,11 +1329,11 @@
         linearIssue,
         sentryIssue,
         initialAgent: {
-          name: 'Coordinator',
+          name: agentName,
           model: effectiveModel,
           prompt: hasStagedFiles ? undefined : prompt,
           agentType,
-          specialist: specialistId,
+          specialist: specialistId ?? undefined,
           behaviorPrompt,
           provider,
           contextReferences:
@@ -1301,7 +1342,7 @@
           metadata: {
             source: 'onboarding',
             isInitialAgent: true,
-            specialist: specialistId,
+            specialist: specialistId ?? undefined,
           },
         },
         progressId: createProgressId, // Echoed on git:clone:progress/done frames (PROTOCOL §5.1)
@@ -1340,12 +1381,28 @@
       if (agentId) {
         appStore.dispatch(setInitialAgentId(workspace.id, agentId));
       }
+      // Seed the New Workspace modal's remembered choice with the onboarding
+      // agent (single-agent Developer, or General when it was unavailable);
+      // the workspace-initializer saga persists it.
+      appStore.dispatch(
+        setWorkspaceInitializerLastSubmittedAgent({
+          selectedSpecialist: specialistId,
+          isTeamMode: false,
+          selectedModel: onboardingSelectedModel,
+          modelWasOverridden: onboardingModelWasOverridden,
+          selectedReasoningEffort: undefined,
+          selectedProvider: onboardingSelectedProvider,
+        }),
+      );
       appStore.dispatch(
         bootstrapNewWorkspaceLayout(
           workspace.id,
           agentId ?? null,
-          'Coordinator',
-          specialistId === 'spec-writer',
+          agentName,
+          // The Developer writes a spec before implementing (like the
+          // Coordinator did), so the spec-first layout is kept; a General
+          // agent does not.
+          specialistId !== null,
           undefined,
           // Daemon-persisted links are canonical; fall back to the request's
           // links when an older daemon does not echo them (PROTOCOL §5.1).
@@ -1398,6 +1455,12 @@
         );
         if (!sendResult.sent) {
           onboardingCreationErrorCode = null;
+          // Retain the failed attempt's image placement identity on the
+          // thumbnail items so the resumed send replays, not re-places.
+          onboardingImageItems = retainImagePlacementIdentity(
+            onboardingImageItems,
+            sendResult.imageBlocks,
+          );
           // Framed like the compact initializer: the workspace already
           // exists, submit resumes — with the daemon's detail when available.
           throw new Error(
@@ -1525,7 +1588,7 @@
         <!-- Replace the form with the summary card while creating -->
         <div
           class="flex-1 flex flex-col items-center justify-center"
-          in:fly={{ y: 20, duration: 400, easing: cubicOut }}
+          in:fly={{ tier: 'slow', distance: 20 }}
         >
           <div class="w-full max-w-lg">
             <!-- Key on the progressId: the card binds its progress selector at
@@ -1543,7 +1606,8 @@
                 baseRef={projectSelection?.branch
                   ? `origin/${projectSelection.branch}`
                   : 'origin/main'}
-                specialistName="Coordinator"
+                specialistId={setupSpecialistId}
+                specialistName={setupSpecialistName}
                 {setupScriptStatus}
                 repoStatus={setupRepoStatus}
                 branchStatus={setupBranchStatus}
@@ -1581,7 +1645,8 @@
                         {/if}
 
                         {#if !isRequirementsStep && onboardingVisibleStep > 1}
-                          <button
+                          <Button
+                            variant="ghost"
                             type="button"
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>
@@ -1592,14 +1657,14 @@
                           >
                             <Fa icon={faArrowLeft} size="xs" />
                             <span>{m.onboarding_page_back_label()}</span>
-                          </button>
+                          </Button>
                         {/if}
                       </div>
                     </div>
 
                     <div class="flex flex-col">
                       {#if isRequirementsStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 1">
                           <div class="space-y-3">
                             {#if !$requirementsCheckedOnce$}
                               <h1 class="text-5xl font-semibold tracking-tight leading-tight">
@@ -1616,7 +1681,7 @@
                           </div>
                         </div>
                       {:else if isWelcomeStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 1">
                           <div class="space-y-3">
                             <h1 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_welcome_title()}
@@ -1629,7 +1694,7 @@
                           </div>
                         </div>
                       {:else if isGitHubStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 2">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 2">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_connectGithub_title()}
@@ -1642,7 +1707,7 @@
                           </div>
                         </div>
                       {:else if isProjectStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 3">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 3">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_whatProject_title()}
@@ -1653,7 +1718,7 @@
                           </div>
                         </div>
                       {:else}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 4">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 4">
                           <div class="space-y-6">
                             <h2 class="text-5xl font-semibold tracking-tighter">
                               {m.onboarding_page_whatToBuild_title()}
@@ -1668,7 +1733,7 @@
                 <!-- Interactive widgets -->
                 <div class="w-full min-w-0">
                   {#key $onboardingStep$}
-                    <div class="py-8 space-y-6" in:fly={{ y: 15, duration: 300, easing: cubicOut }}>
+                    <div class="py-8 space-y-6" in:fly={{ tier: 'slow', distance: 15 }}>
                       {#if isRequirementsStep}
                         <div class="max-w-5xl mx-auto" data-testid="onboarding-requirements-step">
                           <OnboardingRequirementsStep />
@@ -1681,6 +1746,16 @@
                               onAvailabilityChange={(hasAny) => {
                                 hasConnectedProvider = hasAny;
                               }}
+                              onSelectionChange={(providerId) => {
+                                // Guard on actual change: AgentGrid's $effect tracks
+                                // this callback prop, so a parent re-render re-invokes
+                                // it with an unchanged selection — which must not
+                                // clear a just-assigned failure panel.
+                                if (providerId !== onboardingGridSelectedProviderId) {
+                                  onboardingGridSelectedProviderId = providerId;
+                                  onboardingTestPromptFailure = null;
+                                }
+                              }}
                             />
                           </div>
                         </div>
@@ -1688,19 +1763,65 @@
                           <Button
                             class="group/button"
                             size="xl"
-                            variant={!hasConnectedProvider ? 'outline' : 'default'}
+                            variant={!hasConnectedProvider ? 'outline' : 'primary'}
                             disabled={!hasConnectedProvider}
+                            loading={onboardingTestPromptRunning}
                             onclick={advanceFromWelcomeStep}
                           >
-                            {m.onboarding_page_letsGo_label()}
-                            {#if hasConnectedProvider}
-                              <span class="ml-1 opacity-50">⌘↵</span>
+                            {#if onboardingTestPromptRunning}
+                              {m.onboarding_testPrompt_running_label()}
+                            {:else}
+                              {m.onboarding_page_letsGo_label()}
+                              {#if hasConnectedProvider}
+                                <span class="ml-1 opacity-50">⌘↵</span>
+                              {/if}
                             {/if}
                           </Button>
                           {#if !hasConnectedProvider}
                             <p class="text-xs text-muted-foreground">
                               {m.onboarding_page_connectAgent_description()}
                             </p>
+                          {/if}
+                          {#if onboardingTestPromptFailure}
+                            <div
+                              data-testid="onboarding-test-prompt-failure"
+                              class="mt-2 max-w-xl rounded-md border border-danger/40 bg-danger-background/5 p-3 text-sm"
+                            >
+                              <p>{onboardingTestPromptFailure.message}</p>
+                              {#if onboardingTestPromptFailure.showClaudeLoginButton}
+                                <div class="mt-2">
+                                  <ClaudeLoginButton />
+                                </div>
+                              {:else if onboardingTestPromptFailure.loginCommandHint}
+                                <div class="mt-2 text-xs">
+                                  <span class="opacity-70"
+                                    >{m.onboarding_testPrompt_runToLogIn_label()}</span
+                                  >
+                                  <div class="mt-1 flex items-center gap-1">
+                                    <code
+                                      class="min-w-0 flex-1 truncate rounded bg-background/60 px-1.5 py-0.5 font-mono text-foreground"
+                                      >{onboardingTestPromptFailure.loginCommandHint}</code
+                                    >
+                                    <CopyButton
+                                      text={onboardingTestPromptFailure.loginCommandHint}
+                                      class="hover:bg-background/60"
+                                    />
+                                  </div>
+                                </div>
+                              {/if}
+                              {#if onboardingTestPromptFailure.loginDocsUrl}
+                                {@const docsUrl = onboardingTestPromptFailure.loginDocsUrl}
+                                <Button
+                                  type="button"
+                                  variant="link"
+                                  size="xs"
+                                  class="mt-2 h-auto px-0 text-xs underline hover:no-underline"
+                                  onclick={() => shell.open(docsUrl)}
+                                >
+                                  {m.chat_modelPicker_setupDocs_label()}
+                                </Button>
+                              {/if}
+                            </div>
                           {/if}
                         </div>
                       {:else if isGitHubStep}
@@ -1725,7 +1846,7 @@
                             <Button
                               class="group/button"
                               size="xl"
-                              variant={!projectSelection?.isValid ? 'outline' : 'default'}
+                              variant={!projectSelection?.isValid ? 'outline' : 'primary'}
                               disabled={!projectSelection?.isValid}
                               onclick={() => appStore.dispatch(goToStep('configuring'))}
                             >

@@ -16,6 +16,7 @@ vi.mock('$shared/logger', () => ({
 
 import { AuthRejectedError, type BackendConnectionConfig } from './backend-connection';
 import { JsonRpcClient } from './json-rpc-client';
+import { TC_ADDRESS_WITH_PSK } from '../../../test/fixtures/tc-address.fixture';
 
 class FakeSocket extends EventEmitter {
   write(): boolean {
@@ -43,10 +44,10 @@ const secrets = [
   'config-fingerprint',
 ];
 
-function makeClient(): { client: JsonRpcClient; socket: FakeSocket } {
+function makeClient(connectionConfig = config): { client: JsonRpcClient; socket: FakeSocket } {
   const socket = new FakeSocket();
   const client = new JsonRpcClient({
-    config,
+    config: connectionConfig,
     socketFactory: () => socket as unknown as Duplex,
     heartbeatIntervalMs: 0,
   });
@@ -97,5 +98,34 @@ describe('backend connection logging redaction', () => {
     );
     expectNoSecrets(loggerMocks.warn.mock.calls);
     client.dispose();
+  });
+
+  it.each([
+    { host: TC_ADDRESS_WITH_PSK },
+    { host: 'backend.example', tcAddress: TC_ADDRESS_WITH_PSK },
+  ])('omits Tailcat credentials from connection lifecycle logs for $host', (target) => {
+    const { client, socket } = makeClient({
+      transport: 'wss',
+      ...target,
+      port: 8443,
+      token: 'config-token',
+      fingerprint: 'config-fingerprint',
+    });
+    try {
+      client.start();
+      socket.emit('connect');
+      socket.emit('error', new AuthRejectedError(401));
+      expect(loggerMocks.info).toHaveBeenCalledWith('Connecting to backend', expect.anything());
+      expect(loggerMocks.info).toHaveBeenCalledWith('Backend connected', expect.anything());
+      expect(loggerMocks.warn).toHaveBeenCalledWith(
+        'Backend rejected authentication; automatic reconnect halted',
+        expect.objectContaining({ statusCode: 401 }),
+      );
+      const logs = [loggerMocks.info.mock.calls, loggerMocks.warn.mock.calls];
+      expectNoSecrets(logs);
+      expect(JSON.stringify(logs)).not.toContain(TC_ADDRESS_WITH_PSK);
+    } finally {
+      client.dispose();
+    }
   });
 });

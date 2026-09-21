@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { StoreState } from '../../types';
-import type { TabState } from './tab-state-slice';
+import {
+  acquireBrowserTabMount,
+  releaseBrowserTabMount,
+  requestBrowserTabRecovery,
+  consumeBrowserTabRecovery,
+  tabStateReducer,
+  type TabState,
+} from './tab-state-slice';
 import {
   selectActiveWorkspaceIds,
+  selectMountedBrowserTabLeases,
+  selectBrowserTabRecoveryRequests,
   selectPersistedWorkspaceTabsState,
   selectWorkspaceTabOrder,
   selectWorkspaceTabsHydrated,
@@ -23,11 +32,31 @@ const tabState: TabState = {
   recentlyClosedTabAt: {},
   version: 1,
   hydratedBackendId: null,
+  mountedBrowserTabLeases: {},
+  browserTabRecoveryRequests: {},
 };
 
 const state = { tabState } as unknown as StoreState;
 
 describe('tab state selectors', () => {
+  it('exposes pending recovery until its matching request is consumed', () => {
+    const pending = tabStateReducer(tabState, requestBrowserTabRecovery('tab-a', 'req-1'));
+    expect(selectBrowserTabRecoveryRequests.select({ ...state, tabState: pending })).toEqual({
+      'tab-a': 'req-1',
+    });
+    const consumed = tabStateReducer(pending, consumeBrowserTabRecovery('tab-a', 'req-1'));
+    expect(selectBrowserTabRecoveryRequests.select({ ...state, tabState: consumed })).toEqual({});
+  });
+
+  it('selects only currently leased browser mounts', () => {
+    const mounted = tabStateReducer(tabState, acquireBrowserTabMount('browser-a', 'mount-1'));
+    expect(selectMountedBrowserTabLeases.select({ ...state, tabState: mounted })).toEqual({
+      'browser-a': { 'mount-1': true },
+    });
+    const released = tabStateReducer(mounted, releaseBrowserTabMount('browser-a', 'mount-1'));
+    expect(selectMountedBrowserTabLeases.select({ ...state, tabState: released })).toEqual({});
+  });
+
   it('selects open workspace IDs in openTabs object-key order', () => {
     const stateWithFlags = {
       tabState: {

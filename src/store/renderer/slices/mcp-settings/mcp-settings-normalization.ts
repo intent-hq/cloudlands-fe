@@ -111,6 +111,8 @@ export function mapDaemonMcpState(state: unknown): McpServerStatus | null {
       return 'stopped';
     case 'error':
       return 'error';
+    case 'auth_required':
+      return 'auth_required';
     default:
       return null;
   }

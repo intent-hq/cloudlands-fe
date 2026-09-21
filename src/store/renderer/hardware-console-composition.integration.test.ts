@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { appClient } from '$lib/client';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { startRootStoreLifecycle } from './root-store-lifecycle';
 import { store as appStore } from './store';
 import { startAllAppSagas } from './sagas';
@@ -88,8 +88,8 @@ vi.mock('$features/hardware-console/instance', () => ({
   getHardwareConsoleManager: () => hardware.manager,
 }));
 vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: vi.fn(async () => undefined) }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
 
 const settingsBag = {
@@ -149,7 +149,7 @@ describe('hardware-console production composition', () => {
     await vi.waitFor(() => expect(hardware.manager.start).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(appStore.state.hardwareConsole.isConsoleOwner).toBe(true));
     await vi.waitFor(() => expect(appStore.state.hardwareConsole.promptsHydrated).toBe(true));
-    await vi.waitFor(() => expect(toast.success).toHaveBeenCalled());
+    await vi.waitFor(() => expect(notify.success).toHaveBeenCalled());
     await vi.waitFor(() =>
       expect(hardware.client.call).toHaveBeenCalledWith('v.oai.thstatus', expect.any(Array)),
     );

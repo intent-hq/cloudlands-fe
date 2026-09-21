@@ -1,10 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { useOptimisticState } from '../use-optimistic-state.svelte';
 
 describe('useOptimisticState', () => {

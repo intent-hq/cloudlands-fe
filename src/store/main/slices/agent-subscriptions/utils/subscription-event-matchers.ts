@@ -21,11 +21,23 @@ export function matchesDataMatcher(
     case 'equals':
       return actual === matcher.value;
     case 'contains':
-      return typeof actual === 'string' && typeof matcher.value === 'string' && actual.includes(matcher.value);
+      return (
+        typeof actual === 'string' &&
+        typeof matcher.value === 'string' &&
+        actual.includes(matcher.value)
+      );
     case 'starts_with':
-      return typeof actual === 'string' && typeof matcher.value === 'string' && actual.startsWith(matcher.value);
+      return (
+        typeof actual === 'string' &&
+        typeof matcher.value === 'string' &&
+        actual.startsWith(matcher.value)
+      );
     case 'ends_with':
-      return typeof actual === 'string' && typeof matcher.value === 'string' && actual.endsWith(matcher.value);
+      return (
+        typeof actual === 'string' &&
+        typeof matcher.value === 'string' &&
+        actual.endsWith(matcher.value)
+      );
     case 'matches': {
       if (typeof actual !== 'string') return false;
       try {

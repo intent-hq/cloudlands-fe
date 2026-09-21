@@ -1,63 +1,30 @@
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
-import {
-  findAvailableModelMatch,
-  normalizeModelForProvider,
-  normalizeProviderModels,
-  resolveDefaultModel,
-} from "./model-selection-utils";
+import { describe, expect, it } from 'vitest';
+import { resolveDefaultModel, toBareProviderModels } from './model-selection-utils';
 
-const defaultProviderId = "auggie";
+const defaultProviderId = 'auggie';
 
-describe("model-selection-utils", () => {
-  it("normalizes models for the default and non-default providers", () => {
+describe('model-selection-utils', () => {
+  it('splits legacy compound values down to bare model ids', () => {
     expect(
-      normalizeModelForProvider(defaultProviderId, `${defaultProviderId}:gpt5.4`, defaultProviderId)
-    ).toBe("gpt5.4");
-    expect(normalizeModelForProvider("codex", "gpt-5.3-codex/high", defaultProviderId)).toBe(
-      "codex:gpt-5.3-codex/high"
-    );
-  });
-
-  it("normalizes provider model maps", () => {
-    expect(
-      normalizeProviderModels(
-        {
-          [defaultProviderId]: `${defaultProviderId}:gpt5.4`,
-          codex: "gpt-5.3-codex/high",
-        },
-        defaultProviderId
-      )
+      toBareProviderModels({
+        [defaultProviderId]: `${defaultProviderId}:gpt5.4`,
+        codex: 'codex:gpt-5.3-codex/high',
+        'claude-code': 'sonnet4.5',
+      }),
     ).toEqual({
-      [defaultProviderId]: "gpt5.4",
-      codex: "codex:gpt-5.3-codex/high",
+      [defaultProviderId]: 'gpt5.4',
+      codex: 'gpt-5.3-codex/high',
+      'claude-code': 'sonnet4.5',
     });
   });
 
-  it("matches available values by full ID or parsed model ID", () => {
-    const availableValues = ["codex:gpt-5.3-codex/high", "codex:gpt-5.3-codex/medium"];
-
+  it('resolves the CLI-marked default model and falls back to the first row', () => {
     expect(
-      findAvailableModelMatch(availableValues, "codex", "gpt-5.3-codex/high", defaultProviderId)
-    ).toBe("codex:gpt-5.3-codex/high");
-    expect(
-      findAvailableModelMatch(availableValues, "codex", "gpt-5.3-codex/medium", defaultProviderId)
-    ).toBe("codex:gpt-5.3-codex/medium");
-  });
-
-  it("resolves the CLI-marked default model and falls back to the first row", () => {
-    expect(
-      resolveDefaultModel([
-        { value: "codex:gpt5.4" },
-        { value: "codex:other", isDefault: true },
-      ])
-    ).toBe("codex:other");
-    expect(
-      resolveDefaultModel([{ value: "codex:other" }, { value: "codex:another" }])
-    ).toBe("codex:other");
-    expect(resolveDefaultModel([])).toBe("");
+      resolveDefaultModel([{ value: 'codex:gpt5.4' }, { value: 'codex:other', isDefault: true }]),
+    ).toBe('codex:other');
+    expect(resolveDefaultModel([{ value: 'codex:other' }, { value: 'codex:another' }])).toBe(
+      'codex:other',
+    );
+    expect(resolveDefaultModel([])).toBe('');
   });
 });

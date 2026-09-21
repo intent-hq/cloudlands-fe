@@ -11,13 +11,13 @@
  * so callers surface them in the UI — there is no silent fallback to the
  * original prompt.
  */
-import { backendRequest } from "./backend-transport";
+import { backendRequest } from './backend-transport';
 
 /** §5.31 result envelope, returned verbatim by the daemon. */
 export interface EnhancePromptResult {
   enhanced: string;
   original: string;
-  mode: "enhance" | "layout";
+  mode: 'enhance' | 'layout';
 }
 
 /**
@@ -39,7 +39,7 @@ export class EnhancePromptUnavailableError extends Error {
 
   constructor(reason: string) {
     super(reason);
-    this.name = "EnhancePromptUnavailableError";
+    this.name = 'EnhancePromptUnavailableError';
     this.reason = reason;
   }
 }
@@ -47,21 +47,19 @@ export class EnhancePromptUnavailableError extends Error {
 function isUnavailable(
   result: EnhancePromptResult | EnhancePromptUnavailable,
 ): result is EnhancePromptUnavailable {
-  return "available" in result && result.available === false;
+  return 'available' in result && result.available === false;
 }
 
 /**
  * FE mirror of the §5.31 provider gate: `agent.enhancePrompt` is auggie-only.
  * The daemon derives the effective provider from settings (provider of
- * `model.default`, else `providers.active`) and no longer treats an unset
- * `providers.active` as auggie — callers pass the settings-derived effective
+ * `model.default`, else `model.defaultProvider`) and does not treat an unset
+ * default provider as auggie — callers pass the settings-derived effective
  * provider (`selectEffectiveDefaultProviderId`), and the affordance is hidden
  * unless it resolves to auggie ('' before hydration is honestly unavailable).
  */
-export function isEnhancePromptAvailable(
-  effectiveProviderId: string | null | undefined,
-): boolean {
-  return effectiveProviderId === "auggie";
+export function isEnhancePromptAvailable(effectiveProviderId: string | null | undefined): boolean {
+  return effectiveProviderId === 'auggie';
 }
 
 export interface EnhancePromptOptions {
@@ -73,7 +71,7 @@ export interface EnhancePromptOptions {
 
 function buildParams(
   prompt: string,
-  mode: "enhance" | "layout",
+  mode: 'enhance' | 'layout',
   { model, workspaceId }: EnhancePromptOptions,
 ): Record<string, unknown> {
   return {
@@ -90,8 +88,8 @@ export async function enhancePrompt(
   options: EnhancePromptOptions = {},
 ): Promise<EnhancePromptResult> {
   const result = await backendRequest<EnhancePromptResult | EnhancePromptUnavailable>(
-    "agent.enhancePrompt",
-    buildParams(prompt, "enhance", options),
+    'agent.enhancePrompt',
+    buildParams(prompt, 'enhance', options),
   );
   if (isUnavailable(result)) {
     throw new EnhancePromptUnavailableError(result.reason);
@@ -105,8 +103,8 @@ export async function generateLayout(
   options: EnhancePromptOptions = {},
 ): Promise<EnhancePromptResult> {
   const result = await backendRequest<EnhancePromptResult | EnhancePromptUnavailable>(
-    "agent.enhancePrompt",
-    buildParams(prompt, "layout", options),
+    'agent.enhancePrompt',
+    buildParams(prompt, 'layout', options),
   );
   if (isUnavailable(result)) {
     throw new EnhancePromptUnavailableError(result.reason);

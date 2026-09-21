@@ -29,8 +29,9 @@ import {
 /**
  * Resolve the configured browser WebSocket URL. Runtime configuration wins;
  * the build-time environment fallback exists only for local development.
- * Returns `undefined` when unset, blank, or not a `ws://`/`wss://` URL so the
- * factory falls back to the Electron-IPC transport's degraded behavior.
+ * A single-leading-slash path resolves against the browser page origin. Returns
+ * `undefined` when unset, blank, or not a supported path/WS URL so the factory
+ * falls back to the Electron-IPC transport's degraded behavior.
  */
 export function resolveBrowserWsUrl(
   raw: unknown = (() => {
@@ -46,6 +47,17 @@ export function resolveBrowserWsUrl(
   if (typeof raw !== 'string') return undefined;
   const url = raw.trim();
   if (!url) return undefined;
+  if (url.startsWith('/') && !url.startsWith('//') && !url.includes('\\')) {
+    const location = globalThis.location;
+    if (location?.host && (location.protocol === 'http:' || location.protocol === 'https:')) {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${location.host}${url}`;
+    }
+    console.warn(
+      '[browser-websocket-transport] Ignoring same-origin WebSocket path without an HTTP page origin',
+    );
+    return undefined;
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -209,7 +221,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
  * object per text frame (no newline framing — the WebSocket provides message
  * boundaries). Lifecycle mirrors the main-process `JsonRpcClient`: lazy
  * connect on first request, exponential-backoff reconnect, pending requests
- * failed fast on drop, `reconnected` fired on the 2nd+ successful connect.
+ * failed fast on drop, `reconnected` fired after a prior connection or failed dial.
  */
 export class BrowserWebSocketTransport implements BackendTransport {
   private readonly url: string;
@@ -229,8 +241,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private connectWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
   private readonly pending = new Map<number, PendingRequest>();
-  /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
+  /** A successful connection or failed dial requires recovery on the next connect. */
   private hasBeenConnected = false;
+  private hasConnectionFailed = false;
   private readonly notificationHandlers = new Set<(n: BackendNotification) => void>();
   private readonly reconnectedHandlers = new Set<() => void>();
   private readonly statusHandlers = new Set<(status: BrowserWsConnectionStatus) => void>();
@@ -438,8 +451,9 @@ export class BrowserWebSocketTransport implements BackendTransport {
     this.connecting = false;
     this.connected = true;
     this.currentReconnectDelay = this.reconnectDelayMs;
-    const wasReconnect = this.hasBeenConnected;
+    const wasReconnect = this.hasBeenConnected || this.hasConnectionFailed;
     this.hasBeenConnected = true;
+    this.hasConnectionFailed = false;
     this.notifyStatusChange();
     this.flushWaiters();
     // Fire AFTER waiters so queued sends and the resubscribe replay observe a
@@ -452,6 +466,7 @@ export class BrowserWebSocketTransport implements BackendTransport {
   private onConnectionFailure(error: Error): void {
     this.clearConnectTimer();
     if (this.disposed) return;
+    this.hasConnectionFailed = true;
     this.connected = false;
     this.notifyStatusChange();
     this.teardownSocket();

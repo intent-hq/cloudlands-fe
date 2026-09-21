@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import type { TransitionConfig } from 'svelte/transition';
+  import type { ImmediateMotionConfig as TransitionConfig, SpringTierName } from '$lib/motion';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -13,6 +13,9 @@
     safeOperationalDetailsTransition,
   } from './operational-disclosure-row';
   import { searchDisclosureEvents } from './chat-search-disclosure';
+  import { animatedHeight } from '$lib/motion';
+  import { Button } from '$lib/components/ui/button';
+  import { streamingPulse } from './streaming-pulse';
 
   interface Props {
     leading: Snippet;
@@ -34,14 +37,15 @@
     detailsClass?: string;
     previewTransition?: (
       node: Element,
-      params?: { duration?: number; y?: number },
+      params?: { tier?: SpringTierName; y?: number },
       options?: { direction?: 'in' | 'out' | 'both' },
     ) => TransitionConfig;
     detailsTransition?: (node: Element) => TransitionConfig;
+    animateDetailsHeight?: boolean;
     detailsMotion?: string;
     detailsInert?: boolean;
     detailsAriaHidden?: boolean;
-    triggerElement?: HTMLButtonElement;
+    triggerElement?: HTMLButtonElement | null;
     detailsElement?: HTMLElement;
     adjacentOperationalRow?: boolean;
     streaming?: boolean;
@@ -79,10 +83,11 @@
     detailsClass = '',
     previewTransition,
     detailsTransition = safeOperationalDetailsTransition,
+    animateDetailsHeight = false,
     detailsMotion,
     detailsInert = false,
     detailsAriaHidden,
-    triggerElement = $bindable(),
+    triggerElement = $bindable(null),
     detailsElement = $bindable(),
     adjacentOperationalRow = false,
     streaming = false,
@@ -104,7 +109,7 @@
   // fallback keeps removal synchronous for rows without preview motion.
   function previewContentTransition(
     node: Element,
-    params?: { duration?: number; y?: number },
+    params?: { tier?: SpringTierName; y?: number },
     options?: { direction?: 'in' | 'out' | 'both' },
   ): TransitionConfig {
     if (!previewTransition) return { duration: 0 };
@@ -127,10 +132,13 @@
 >
   <div class={CHAT_OPERATIONAL_ROW_CLASS} data-operational-disclosure-row data-compact-tool-row>
     {#if interactive}
-      <button
-        bind:this={triggerElement}
+      <Button
+        variant="plain"
+        bind:ref={triggerElement}
         type="button"
-        class="col-span-2 flex min-w-0 w-full cursor-pointer items-center gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2 focus-visible:outline-none"
+        truncateLabel={false}
+        labelClass="type-body"
+        class="type-body col-span-2 flex h-auto min-w-0 w-full cursor-pointer items-center justify-start gap-[var(--operational-leading-gap)] border-0 bg-transparent p-0 text-left focus-visible:underline focus-visible:underline-offset-2"
         data-testid={disclosureTestId}
         aria-label={ariaLabel}
         aria-expanded={expanded}
@@ -140,7 +148,8 @@
         {onkeydown}
       >
         <span
-          class="{CHAT_OPERATIONAL_LEADING_CLASS} {streaming ? 'animate-pulse' : ''}"
+          class={CHAT_OPERATIONAL_LEADING_CLASS}
+          use:streamingPulse={streaming}
           data-operational-leading
           data-operational-icon-box
           data-tool-icon={toolIcon || undefined}>{@render leading()}</span
@@ -153,10 +162,11 @@
           data-chat-search-block-path={summarySearchPath}
           title={summaryTitle}>{@render summary()}</span
         >
-      </button>
+      </Button>
     {:else}
       <div
-        class="{CHAT_OPERATIONAL_LEADING_CLASS} {streaming ? 'animate-pulse' : ''}"
+        class={CHAT_OPERATIONAL_LEADING_CLASS}
+        use:streamingPulse={streaming}
         data-operational-leading
         data-operational-icon-box
         data-tool-icon={toolIcon || undefined}
@@ -195,7 +205,21 @@
     </div>
   {/if}
 
-  {#if details}
+  {#if details && animateDetailsHeight}
+    <div
+      bind:this={detailsElement}
+      id={expanded ? detailsId : undefined}
+      data-operational-expanded-content={expanded ? '' : undefined}
+      data-response-group-motion="animated-height"
+      inert={!expanded || detailsInert}
+      aria-hidden={detailsAriaHidden ?? !expanded}
+      use:animatedHeight={expanded}
+    >
+      {#if expanded}
+        <div class={detailsClass}>{@render details()}</div>
+      {/if}
+    </div>
+  {:else if details}
     <div
       bind:this={detailsElement}
       id={detailsId}

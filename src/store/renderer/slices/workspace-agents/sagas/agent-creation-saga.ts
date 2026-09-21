@@ -4,6 +4,7 @@ import { agentFactory } from '$features/agent/services/agent-factory';
 import { buildTaskAgentInitialMessage } from '$features/notes/utils/task-agent-message-builder';
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { SPECIALISTS } from '$lib/constants/specialists';
 import { createLogger } from '$lib/utils/client-logger';
 import { generateSpecialistAgentName } from '$lib/utils/agent-name-generator';
@@ -14,8 +15,8 @@ import { AgentStatus } from '$shared/types';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { createAgentTypeId, parseAgentTypeId } from '$shared/types/agent.types';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
-import { splitCompoundModelId } from '$shared/utils/compound-model-id';
 import { isNoteContentStale } from '$shared/utils/note-content';
+import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
 import {
   agentSessionLaunchAgentRequested,
@@ -31,9 +32,13 @@ import {
   selectEffectiveBehaviorPrompt,
   selectEffectiveCodingAgent,
   selectExplicitModel,
+  selectExplicitReasoningEffort,
   selectSpecialists,
 } from '../../specialists/specialists-selectors';
-import { selectWorkspaceById } from '../../workspace/workspace-selectors';
+import {
+  selectHidesAgentLifecycleActions,
+  selectWorkspaceById,
+} from '../../workspace/workspace-selectors';
 import { selectNoteById } from '../../workspace-notes/workspace-notes-selectors';
 import { createChiefVirtualWorkspace } from '../chief-virtual-workspace';
 import { selectAllWorkspaceAgents } from '../workspace-agents-selectors';
@@ -54,9 +59,27 @@ function hasUsableSession(session: AgentSession | undefined): boolean {
   return !!session?.backendSessionId && session.status !== AgentStatus.Pending;
 }
 
+/**
+ * Normalises a creation failure into the `Error` handed to `action.failure`.
+ * A daemon `-32003` refusal keeps its `rpcCode` (so `showCreationError` still
+ * routes it to the refusal toast) but carries the localized not-permitted
+ * sentence instead of the raw daemon text, so promise-bearing callers render
+ * the same message the toast does.
+ */
 function creationError(error: unknown, fallback = m.agent_creation_createFailed_error()): Error {
+  if (isForbiddenErrorResponse(error)) {
+    return Object.assign(new Error(m.agent_creation_notPermitted_error()), {
+      rpcCode: (error as { rpcCode: number }).rpcCode,
+      cause: error,
+    });
+  }
   if (error instanceof Error) return error;
   return new Error(error ? String(error) : fallback);
+}
+
+/** The typed transport error when the factory captured one, else its flattened text. */
+function factoryFailure(result: { error?: string; cause?: unknown }): unknown {
+  return result.cause ?? result.error;
 }
 
 function isProviderModelMismatch(error: unknown): boolean {
@@ -64,10 +87,22 @@ function isProviderModelMismatch(error: unknown): boolean {
   return /\bmodel\b.+\bdoes not belong to provider\b/i.test(message);
 }
 
-async function showCreationError(error: unknown): Promise<void> {
+async function showCreationRefused(): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(m.agent_creation_createFailed_error(), {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(m.agent_creation_notPermitted_error(), {
+      description: m.agent_creation_notPermitted_description(),
+    });
+  } catch (toastError) {
+    logger.error('Failed to surface agent creation refusal', toastError);
+  }
+}
+
+async function showCreationError(error: unknown): Promise<void> {
+  if (isForbiddenErrorResponse(error)) return showCreationRefused();
+  try {
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(m.agent_creation_createFailed_error(), {
       description: isProviderModelMismatch(error)
         ? m.agent_creation_providerModelMismatch_description()
         : m.agent_creation_failed_description(),
@@ -75,6 +110,21 @@ async function showCreationError(error: unknown): Promise<void> {
   } catch (toastError) {
     logger.error('Failed to surface agent creation error', toastError);
   }
+}
+
+/**
+ * Agent creation (`agent.create` / `agent.delegate` / `agent.wakeOrCreate`) is
+ * refused with -32003 for a collaborator connection. The gated affordances are
+ * already withheld; a request that still arrives (shortcut, palette, stale
+ * surface) is refused here before anything is sent, with the same localized
+ * sentence the daemon's refusal would render.
+ */
+function* refusedForCollaborator(wsId: string): SagaGenerator<boolean> {
+  const hidden = yield* selectHidesAgentLifecycleActions.effect(wsId);
+  if (!hidden) return false;
+  logger.warn('Agent creation refused for a collaborator connection', { workspaceId: wsId });
+  yield* call(showCreationRefused);
+  return true;
 }
 
 function* validateWorkspace(wsId: string): SagaGenerator<Workspace | null> {
@@ -120,12 +170,9 @@ function* openCreatedAgent(
   }
 }
 
-function providerForModel(model: string | undefined, fallback: string): string {
-  return model?.includes(':') ? splitCompoundModelId(model).providerId || fallback : fallback;
-}
-
 function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): SagaGenerator<void> {
   const [wsId, agentType, options] = action.payload;
+  if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -140,14 +187,16 @@ function* createBasicAgent(action: ReturnType<typeof createAgentRequested>): Sag
       name,
       nameExplicitlySet: false,
       workspaceId: WorkspaceId(wsId),
+      // Store selections are bare model ids paired with the active provider —
+      // the explicit triple rides the request as-is (no model-string parsing).
       model,
-      provider: providerForModel(model, activeProvider),
+      provider: activeProvider,
       agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId('chat'),
       source: 'keyboard-shortcut',
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create agent', { workspaceId: wsId, error: result.error });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -168,13 +217,18 @@ function* createSpecialistAgent(
   action: ReturnType<typeof createAgentWithSpecialistRequested>,
 ): SagaGenerator<void> {
   const [wsId, specialistId, options] = action.payload;
+  if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
+  // General (no specialist): the store's bare model selection paired with the
+  // active provider. A specialist swaps in its effective coding agent and its
+  // explicit model override (undefined ⇒ the daemon resolves the default in
+  // that provider's context).
   let model: string | undefined = yield* selectSelectedModel.effect();
-  const activeProvider = yield* selectActiveProviderId.effect();
-  let provider = providerForModel(model, activeProvider);
+  let provider: string = yield* selectActiveProviderId.effect();
   let behaviorPrompt: string | undefined;
+  let reasoningEffort: string | undefined;
   let baseName = 'Agent';
   if (specialistId) {
     const specialists = yield* selectSpecialists.effect();
@@ -182,9 +236,15 @@ function* createSpecialistAgent(
     if (specialist) {
       baseName = specialist.name;
       provider = yield* selectEffectiveCodingAgent.effect(specialistId);
-      model = yield* selectExplicitModel.effect(specialistId);
-      provider = providerForModel(model, provider);
+      // Legacy boundary: an explicit frontmatter model may still be a
+      // pre-triple compound id — split so the request carries a bare model,
+      // its prefix winning provider attribution over the coding agent.
+      const explicit = yield* selectExplicitModel.effect(specialistId);
+      const pinned = explicit ? splitLegacyCompoundId(explicit) : undefined;
+      model = pinned?.modelId || undefined;
+      provider = pinned?.providerId || provider;
       behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
+      reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId);
     }
   }
   const name = generateSpecialistAgentName(
@@ -200,12 +260,13 @@ function* createSpecialistAgent(
       provider,
       agentType: createAgentTypeId('chat'),
       behaviorPrompt,
+      reasoningEffort,
       source: 'specialist-picker',
       metadata: specialistId ? { specialist: specialistId } : undefined,
     });
     if (!result.success || !result.agent) {
       logger.error('Failed to create specialist agent', { workspaceId: wsId, error: result.error });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
@@ -226,6 +287,7 @@ function* runAgentForNote(
   action: ReturnType<typeof runAgentForNoteRequested>,
 ): SagaGenerator<void> {
   const [wsId, noteId, noteTitle] = action.payload;
+  if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   let note = yield* selectNoteById.effect(wsId, noteId);
@@ -250,12 +312,16 @@ function* runAgentForNote(
   const specialistId = configured?.id ?? 'implementor';
   let model = yield* selectExplicitModel.effect(specialistId);
   let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId);
+  let reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId);
   if (!behaviorPrompt) {
     const specialist = SPECIALISTS.find((candidate) => candidate.id === specialistId);
     if (specialist) {
       behaviorPrompt = specialist.defaultBehaviorPrompt;
       if (!model) {
         model = specialist.defaultModel ?? '';
+      }
+      if (!reasoningEffort) {
+        reasoningEffort = specialist.reasoningEffort;
       }
     }
   }
@@ -265,14 +331,17 @@ function* runAgentForNote(
   );
   const defaultProvider = yield* selectEffectiveDefaultProviderId.effect();
   const activeProvider = yield* selectActiveProviderId.effect();
+  // Legacy boundary: an explicit frontmatter model may still be a pre-triple
+  // compound id — split so the request carries a bare model, its prefix
+  // winning provider attribution.
+  const pinned = model ? splitLegacyCompoundId(model) : undefined;
   // A specialist explicitly pinned to a coding agent runs on it; otherwise
   // inherit the workspace's initial-agent provider, then the active provider.
-  // Compound explicit models carry their own authoritative provider.
-  const inheritedProvider =
+  const provider =
+    pinned?.providerId ||
     configured?.codingAgent ||
     (initial ? getAgentProvider(initial, defaultProvider) : undefined) ||
     activeProvider;
-  const provider = providerForModel(model, inheritedProvider);
   try {
     const result = yield* call([agentFactory, agentFactory.createAgent], workspace, {
       name: noteTitle || m.agent_creation_taskAgent_name(),
@@ -280,10 +349,11 @@ function* runAgentForNote(
       workspaceId: WorkspaceId(wsId),
       // Resolved-model catalog values are previews only. When the specialist
       // has no explicit model, omit it so the daemon resolves in this provider.
-      model,
+      model: pinned?.modelId || undefined,
       provider,
       agentType: createAgentTypeId('task-loop'),
       behaviorPrompt,
+      reasoningEffort,
       source: 'task-metadata-bar-run',
       metadata: { taskNoteId: noteId, source: 'task-run', specialist: specialistId },
       initialMessage: buildTaskAgentInitialMessage(note),
@@ -294,7 +364,7 @@ function* runAgentForNote(
         noteId,
         error: result.error,
       });
-      yield* call(showCreationError, result.error);
+      yield* call(showCreationError, factoryFailure(result));
       return;
     }
     yield* put(openAgentTabRequested(wsId, { agentId: result.agentId }));
@@ -308,6 +378,7 @@ function* delegateExistingTask(
   action: ReturnType<typeof delegateExistingTaskRequested>,
 ): SagaGenerator<void> {
   const [wsId, noteId, , openAgent] = action.payload;
+  if (yield* call(refusedForCollaborator, wsId)) return;
   const workspace = yield* call(validateWorkspace, wsId);
   if (!workspace) return;
   try {
@@ -339,6 +410,11 @@ function* createFromConfig(
   const [wsId, config, options] = action.payload;
   let settled = false;
   try {
+    if (yield* call(refusedForCollaborator, wsId)) {
+      yield* put(action.failure(new Error(m.agent_creation_notPermitted_error())));
+      settled = true;
+      return;
+    }
     const workspace = yield* call(validateWorkspace, wsId);
     if (!workspace) throw new Error(m.agent_creation_workspaceUnavailable_error());
     const agents = yield* selectAllWorkspaceAgents.effect(wsId);
@@ -346,7 +422,7 @@ function* createFromConfig(
       ...config,
       workspaceId: WorkspaceId(wsId),
     });
-    if (!result.success || !result.agent) throw creationError(result.error);
+    if (!result.success || !result.agent) throw creationError(factoryFailure(result));
     yield* call(registerCreatedAgent, wsId, result.agent, agents);
     yield* put(setActiveAgentId(wsId, result.agent.id));
     yield* call(openCreatedAgent, wsId, result.agent, options);
@@ -370,13 +446,12 @@ function* launchAgent(
   const [wsId, config, options] = action.payload;
   let settled = false;
   try {
+    // Fill the triple legs the caller left implicit from the store: the bare
+    // selected model and the active provider (they are paired by the model
+    // slice). Provider/model consistency is daemon-validated on `agent.create`
+    // (the mismatch error surfaces through showCreationError's guidance toast).
     const model = config.model ?? (yield* selectSelectedModel.effect());
-    const activeProvider = yield* selectActiveProviderId.effect();
-    const provider = config.provider ?? providerForModel(model, activeProvider);
-    const modelProvider = providerForModel(model, provider);
-    if (model && provider && modelProvider !== provider) {
-      throw new Error(`model ${model} does not belong to provider ${provider}`);
-    }
+    const provider = config.provider ?? (yield* selectActiveProviderId.effect());
     const request = createAgentFromConfigRequested(
       wsId,
       {

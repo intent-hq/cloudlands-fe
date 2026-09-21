@@ -17,14 +17,12 @@ const TIMEOUT_MS = 90000;
 const PROMPT = 'Say "hello" and nothing else.';
 
 // Models to test
-const MODELS = [
-  'claude-code',
-];
+const MODELS = ['claude-code'];
 
 interface TimingResult {
-  spawnToReady: number;      // Time from spawn to session ready
+  spawnToReady: number; // Time from spawn to session ready
   promptToFirstToken: number; // Time from prompt sent to first response chunk
-  totalTime: number;          // Total time from spawn to first token
+  totalTime: number; // Total time from spawn to first token
 }
 
 async function measureResponseTime(model: string): Promise<TimingResult> {
@@ -151,11 +149,13 @@ async function runBenchmark() {
       try {
         const result = await measureResponseTime(model);
         results.push(result);
-        console.log(`✅ ${result.totalTime.toFixed(0)}ms (TTFT: ${result.promptToFirstToken.toFixed(0)}ms)`);
+        console.log(
+          `✅ ${result.totalTime.toFixed(0)}ms (TTFT: ${result.promptToFirstToken.toFixed(0)}ms)`,
+        );
       } catch (e: any) {
         console.log(`❌ ${e.message}`);
       }
-      await new Promise(r => setTimeout(r, 500)); // Delay between runs
+      await new Promise((r) => setTimeout(r, 500)); // Delay between runs
     }
 
     if (results.length > 0) {
@@ -163,14 +163,14 @@ async function runBenchmark() {
         model,
         results,
         stats: {
-          spawnToReady: calculateStats(results.map(r => r.spawnToReady)),
-          promptToFirst: calculateStats(results.map(r => r.promptToFirstToken)),
-          total: calculateStats(results.map(r => r.totalTime)),
+          spawnToReady: calculateStats(results.map((r) => r.spawnToReady)),
+          promptToFirst: calculateStats(results.map((r) => r.promptToFirstToken)),
+          total: calculateStats(results.map((r) => r.totalTime)),
         },
       });
     }
 
-    await new Promise(r => setTimeout(r, 1000)); // Delay between models
+    await new Promise((r) => setTimeout(r, 1000)); // Delay between models
   }
 
   // Print summary table
@@ -186,8 +186,14 @@ async function runBenchmark() {
 
   for (const r of allResults) {
     const modelName = r.model.padEnd(27).substring(0, 27);
-    const ttft = `${r.stats.promptToFirst.avg.toFixed(0)}ms ± ${r.stats.promptToFirst.std.toFixed(0)}ms`.padEnd(16);
-    const range = `${r.stats.promptToFirst.min.toFixed(0)}-${r.stats.promptToFirst.max.toFixed(0)}ms`.padEnd(16);
+    const ttft =
+      `${r.stats.promptToFirst.avg.toFixed(0)}ms ± ${r.stats.promptToFirst.std.toFixed(0)}ms`.padEnd(
+        16,
+      );
+    const range =
+      `${r.stats.promptToFirst.min.toFixed(0)}-${r.stats.promptToFirst.max.toFixed(0)}ms`.padEnd(
+        16,
+      );
     const runs = `${r.results.length}/${ITERATIONS}`.padEnd(7);
     console.log(`│ ${modelName} │ ${ttft} │ ${range} │ ${runs} │`);
   }
@@ -201,7 +207,9 @@ async function runBenchmark() {
 
   for (const r of allResults) {
     const modelName = r.model.padEnd(27).substring(0, 27);
-    const total = `${r.stats.total.avg.toFixed(0)}ms ± ${r.stats.total.std.toFixed(0)}ms`.padEnd(16);
+    const total = `${r.stats.total.avg.toFixed(0)}ms ± ${r.stats.total.std.toFixed(0)}ms`.padEnd(
+      16,
+    );
     const init = `${r.stats.spawnToReady.avg.toFixed(0)}ms`.padEnd(16);
     console.log(`│ ${modelName} │ ${total} │ ${init} │`);
   }

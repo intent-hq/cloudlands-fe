@@ -125,6 +125,31 @@ describe('MessageActions shared surface', () => {
     expect(onVote.mock.calls).toEqual([['up'], ['down']]);
     expect(onCopy).toHaveBeenCalledTimes(1);
   });
+
+  it('forwards modifier keys through declarative copy actions', async () => {
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const onCopy = vi.fn();
+    render(MessageActions, {
+      props: { role: 'assistant', onCopy, requestId: 'request-42' },
+    });
+    const copy = screen.getByRole('button', {
+      name: m.chat_messageActions_copyMessage_ariaLabel(),
+    });
+
+    await fireEvent.click(copy, { shiftKey: true });
+    expect(writeText).toHaveBeenCalledWith('request-42');
+    expect(onCopy).not.toHaveBeenCalled();
+
+    await fireEvent.click(copy);
+    expect(onCopy).toHaveBeenCalledTimes(1);
+    if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+    else delete (navigator as { clipboard?: Clipboard }).clipboard;
+  });
 });
 
 describe('MessageActions timestamp', () => {

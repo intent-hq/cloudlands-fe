@@ -1,10 +1,10 @@
-import type { WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
-import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
+import type { WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
+import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 
 /** Per-workspace canonical task state. */
 export interface WorkspaceTasksWorkspaceState {
   /** Canonical task facts keyed by task note ID (insertion-ordered). */
-  tasks: Collection<WorkspaceTask, "id">;
+  tasks: Collection<WorkspaceTask, 'id'>;
   /**
    * Workspace-wide task progress rollup emitted by `task.list` (PROTOCOL §5.4).
    * Stored verbatim — selectors expose it directly without re-derivation.
@@ -30,4 +30,3 @@ export interface WorkspaceTaskProgress {
   completed: number;
   inProgress: number;
 }
-

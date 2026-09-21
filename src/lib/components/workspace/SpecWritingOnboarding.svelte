@@ -11,7 +11,6 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
-
   const logger = createLogger('SpecWritingOnboarding');
 
   interface Props {
@@ -21,7 +20,6 @@
   }
 
   let { agentId, workspaceId }: Props = $props();
-
 
   let isStopping = $state(false);
 
@@ -195,7 +193,7 @@
   }
 
   .step.current .step-content h4 {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
 
   .step-content p {
@@ -211,7 +209,7 @@
   }
 
   .step-content a {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
     text-decoration: underline;
     cursor: pointer;
   }

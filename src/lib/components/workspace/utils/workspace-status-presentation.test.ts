@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WORKSPACE_DISPLAY_STATUS_VALUES } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 import {
   getWorkspaceStatusPresentation,
   resolveWorkspaceStatusState,
@@ -10,14 +11,15 @@ const expected: Array<
   [WorkspaceStatusPresentationState, 'dot' | 'icon', string | null, string, string]
 > = [
   ['failed', 'icon', 'triangle-exclamation', 'text-foreground', 'Failed'],
-  ['blocked', 'icon', 'xmark', 'text-destructive', 'Blocked'],
-  ['needs_attention', 'icon', 'circle-question', 'text-warning', 'Needs attention'],
+  ['blocked', 'icon', 'xmark', 'text-danger', 'Blocked'],
+  ['needs_attention', 'icon', 'circle-question', 'text-warning-ink', 'Needs attention'],
   ['in_progress', 'dot', null, 'workspace-status-color-active', 'In progress'],
-  ['waiting', 'icon', 'clock', 'text-muted-foreground', 'Waiting'],
+  ['waiting', 'icon', 'hourglass', 'text-muted-foreground', 'Waiting'],
   ['unread', 'dot', null, 'workspace-status-color-unread', 'Unread'],
   ['not_started', 'dot', null, 'text-muted-foreground/35', 'Not started'],
   ['idle', 'dot', null, 'text-muted-foreground/35', 'Idle'],
   ['complete', 'icon', 'circle-check', 'text-success', 'Complete'],
+  ['pr_queued', 'icon', 'hourglass-half', 'text-info', m.workspace_statusIcon_prQueued_label()],
   ['pr_ready', 'icon', 'code-pull-request', 'text-success', 'PR Mergeable'],
   ['pr_open', 'icon', 'code-pull-request', 'text-info', 'PR open'],
   ['pr_merged', 'icon', 'code-merge', 'text-purple-500', 'PR merged'],
@@ -76,17 +78,22 @@ describe('workspace status presentation', () => {
     });
   });
 
-  it.each(['not_started', 'idle', 'complete', 'pr_ready', 'pr_open', 'pr_merged'] as const)(
-    'uses unread before waiting over lower-priority %s',
-    (displayStatus) => {
-      expect(
-        resolveWorkspaceStatusState({ displayStatus, attention: 'unread', waiting: true }),
-      ).toBe('unread');
-      expect(resolveWorkspaceStatusState({ displayStatus, attention: 'none', waiting: true })).toBe(
-        'waiting',
-      );
-    },
-  );
+  it.each([
+    'not_started',
+    'idle',
+    'complete',
+    'pr_queued',
+    'pr_ready',
+    'pr_open',
+    'pr_merged',
+  ] as const)('uses unread before waiting over lower-priority %s', (displayStatus) => {
+    expect(resolveWorkspaceStatusState({ displayStatus, attention: 'unread', waiting: true })).toBe(
+      'unread',
+    );
+    expect(resolveWorkspaceStatusState({ displayStatus, attention: 'none', waiting: true })).toBe(
+      'waiting',
+    );
+  });
 
   it('does not infer durable state from activity or review attention', () => {
     expect(

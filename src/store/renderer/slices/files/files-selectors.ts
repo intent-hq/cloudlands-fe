@@ -1,18 +1,18 @@
-import { store } from "../../store";
-import {
-  getItem,
-  getItems,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import { emptyFilesWorkspaceState } from "./files-slice";
-import type { FileContentEntry, FilesWorkspaceState } from "./files-types";
+import { store } from '../../store';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { emptyFilesWorkspaceState } from './files-slice';
+import type { FileContentEntry, FilesWorkspaceState } from './files-types';
 
 const selectFilesWorkspaceState = store.createSelector(
-  (state, wsId: string): FilesWorkspaceState => state.files.byWorkspaceId[wsId] ?? emptyFilesWorkspaceState,
+  (state, wsId: string): FilesWorkspaceState =>
+    state.files.byWorkspaceId[wsId] ?? emptyFilesWorkspaceState,
 );
 
-export const selectAllFileContentEntries = store.createSelector((state, wsId: string): FileContentEntry[] => {
-  return getItems(selectFilesWorkspaceState.select(state, wsId).files);
-});
+export const selectAllFileContentEntries = store.createSelector(
+  (state, wsId: string): FileContentEntry[] => {
+    return getItems(selectFilesWorkspaceState.select(state, wsId).files);
+  },
+);
 
 export const selectFileContentEntry = store.createSelector(
   (state, wsId: string, path: string | null | undefined): FileContentEntry | undefined => {

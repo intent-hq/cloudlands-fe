@@ -217,7 +217,7 @@ describe('Edge Cases & Error Handling', () => {
 
       const results = await Promise.all(promises);
       expect(results.length).toBe(10);
-      expect(results.every(r => Array.isArray(r))).toBe(true);
+      expect(results.every((r) => Array.isArray(r))).toBe(true);
     });
   });
 });

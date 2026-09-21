@@ -1,9 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-} from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import AgentsList from '../AgentsList.svelte';
 import type { AgentSession } from '$shared/types';

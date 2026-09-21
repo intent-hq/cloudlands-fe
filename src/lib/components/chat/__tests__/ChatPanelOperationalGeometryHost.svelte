@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { faComment } from '@fortawesome/free-solid-svg-icons';
   import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+  import { AgentStatus } from '$shared/types/agent.types';
   import AgentTabType from '$features/layout/tab-types/AgentTabType.svelte';
+  import InitialAgentChatTabType from './InitialAgentChatTabType.svelte';
   import { tabTypeRegistry } from '$features/layout/tab-types/registry';
   import PanelLayout from '$lib/components/layout/panel-system/PanelLayout.svelte';
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
@@ -14,6 +16,12 @@
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    chatErrorCleared,
+    chatModelUnavailableCleared,
+    chatSendFailed,
+    streamCompleted,
+  } from '$store/renderer/slices/chat-state/chat-state-slice';
 
   let {
     theme = 'light',
@@ -24,6 +32,10 @@
     reasoningSearchOnly = false,
     groupedOrphanSearchOnly = false,
     terminalStatusOnly = false,
+    setupCardOnly = false,
+    pendingAssistantStatus,
+    pendingEvent = false,
+    cardSeamMessages,
   }: {
     theme?: 'light' | 'dark';
     zoom?: number;
@@ -33,7 +45,15 @@
     reasoningSearchOnly?: boolean;
     groupedOrphanSearchOnly?: boolean;
     terminalStatusOnly?: boolean;
+    setupCardOnly?: boolean;
+    pendingAssistantStatus?: 'thinking' | 'error' | 'model-unavailable' | 'idle' | 'reply';
+    pendingEvent?: boolean;
+    cardSeamMessages?: AgentMessage[];
   } = $props();
+  const setupCardFixture = untrack(() => setupCardOnly);
+  const reasoningSearchFixture = untrack(() => reasoningSearchOnly);
+  const pendingFixture = untrack(() => pendingAssistantStatus !== undefined);
+  const cardSeamFixture = untrack(() => cardSeamMessages);
   const workspaceId = 'chat-panel-operational-geometry';
   const agentId = 'chat-panel-operational-agent';
   const timestamp = '2026-08-17T12:00:00.000Z';
@@ -505,19 +525,36 @@
     message('assistant-tool-message-static', 'assistant', toolOnlyContent('message-static')),
     message('assistant-tool-message-streaming', 'assistant', toolOnlyContent('message-streaming')),
   ];
+  const pendingMessages = untrack(() => [
+    message('user-before-pending', 'user', [{ type: 'text', text: 'Earlier queued prompt' }]),
+    pendingEvent
+      ? eventTurn('pending', 'agent:idle', { agentName: 'Layout verifier' })[0]
+      : message('user-pending', 'user', [{ type: 'text', text: 'Wait for the first reply' }]),
+  ]);
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
-  const messages = terminalStatusOnly
-    ? terminalStatusMessages
-    : groupedOrphanSearchOnly
-      ? groupedOrphanSearchMessages
-      : reasoningSearchOnly
-        ? reasoningSearchMessages
-        : seamOnly
-          ? seamMessages
-          : alignmentMessages;
+  const messages =
+    cardSeamFixture ??
+    (pendingFixture
+      ? pendingMessages
+      : setupCardFixture
+        ? []
+        : terminalStatusOnly
+          ? terminalStatusMessages
+          : groupedOrphanSearchOnly
+            ? groupedOrphanSearchMessages
+            : reasoningSearchOnly
+              ? reasoningSearchMessages
+              : seamOnly
+                ? seamMessages
+                : alignmentMessages);
   // svelte-ignore state_referenced_locally -- each CT mount uses one immutable fixture scenario.
   const fixtureIsStreaming =
-    !terminalStatusOnly && !reasoningSearchOnly && !groupedOrphanSearchOnly && !detachedStatus;
+    !cardSeamFixture &&
+    !setupCardFixture &&
+    !terminalStatusOnly &&
+    !reasoningSearchOnly &&
+    !groupedOrphanSearchOnly &&
+    !detachedStatus;
   const session = {
     id: agentId,
     workspaceId,
@@ -525,8 +562,10 @@
     status: 'active',
     isActive: true,
     isStreaming: fixtureIsStreaming,
-    isProcessing: !reasoningSearchOnly,
-    isResponding: !reasoningSearchOnly,
+    isProcessing: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
+    isResponding: !cardSeamFixture && !setupCardFixture && !reasoningSearchFixture,
+    isInitialAgent: setupCardFixture,
+    metadata: setupCardFixture ? { isInitialAgent: true } : undefined,
     messages,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -534,7 +573,7 @@
 
   tabTypeRegistry.register({
     type: 'agent',
-    component: AgentTabType,
+    component: setupCardFixture ? InitialAgentChatTabType : AgentTabType,
     icon: faComment,
     defaultTitle: 'Agent',
     categoryLabel: 'Agents',
@@ -546,6 +585,8 @@
     setWorkspaceEntity({
       id: workspaceId,
       title: 'Operational geometry',
+      repositoryName: setupCardFixture ? 'intent' : undefined,
+      repositoryPath: setupCardFixture ? '/tmp/intent' : undefined,
       branch: 'test',
       status: 'active',
       path: '/tmp/chat-panel-operational-geometry',
@@ -578,6 +619,56 @@
     }),
   );
   store.dispatch(setRestoreStatus(workspaceId, 'restored'));
+
+  $effect(() => {
+    if (!pendingFixture) return;
+    const status = pendingAssistantStatus;
+    untrack(() => {
+      store.dispatch(
+        bulkUpsertSessions(
+          [
+            {
+              ...session,
+              status: status === 'thinking' ? AgentStatus.Active : AgentStatus.RuntimeIdle,
+              isActive: status === 'thinking',
+              isStreaming: status === 'thinking',
+              isProcessing: status === 'thinking',
+              isResponding: status === 'thinking',
+              messages:
+                status === 'reply'
+                  ? [
+                      ...pendingMessages,
+                      message('assistant-pending', 'assistant', [
+                        { type: 'text', text: 'The first reply has arrived.' },
+                      ]),
+                    ]
+                  : pendingMessages,
+            },
+          ],
+          { preserveExplicitRuntimeFlags: false },
+        ),
+      );
+      store.dispatch(chatErrorCleared(agentId));
+      store.dispatch(chatModelUnavailableCleared(agentId));
+      if (status === 'idle' || status === 'reply') {
+        store.dispatch(
+          streamCompleted(agentId, { lastAttemptedMessage: null, modelUnavailable: null }),
+        );
+      }
+      if (status === 'error') store.dispatch(chatSendFailed(agentId, 'The provider failed.'));
+      if (status === 'model-unavailable') {
+        store.dispatch(
+          streamCompleted(agentId, {
+            lastAttemptedMessage: null,
+            modelUnavailable: {
+              failedModel: 'preview:primary',
+              nextAvailableModel: 'preview:fallback',
+            },
+          }),
+        );
+      }
+    });
+  });
   onDestroy(disposeStore);
 </script>
 

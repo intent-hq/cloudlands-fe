@@ -123,7 +123,7 @@ export async function fetchRepoConfigSetupScript(repoPath: string): Promise<stri
 
 /**
  * Read the committed setup script for a GitHub repo with no local checkout
- * (`github.repoConfig.get`, PROTOCOL §5.27 v2.4, via the AppClient
+ * (`github.repoConfig.get`, PROTOCOL §5.27, via the AppClient
  * integrations domain). `ref` is forwarded when provided; the daemon defaults
  * to the repo's default branch. Resolves null for any failure (missing file,
  * unauthenticated private repo, transport error) — callers fall back to
@@ -195,7 +195,11 @@ export function chooseDefaultSetupScript(options: {
     return { content: repoConfigScript, name: REPO_CONFIG_SCRIPT_NAME, source: 'repo-config' };
   }
   if (lastUsed) {
-    return { content: lastUsed.content, name: lastUsed.name, source: lastUsed.nameSource ?? 'named' };
+    return {
+      content: lastUsed.content,
+      name: lastUsed.name,
+      source: lastUsed.nameSource ?? 'named',
+    };
   }
   if (genericTemplate) {
     return { content: genericTemplate.content, name: genericTemplate.name, source: 'named' };

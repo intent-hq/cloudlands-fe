@@ -17,7 +17,7 @@ const createTestEditor = (element: HTMLElement, content = '<p></p>') =>
         linkOnPaste: true,
         shouldAutoLink: (url: string) => /^https?:\/\//.test(url) || url.startsWith('intent://'),
         HTMLAttributes: {
-          class: 'text-primary underline',
+          class: 'text-primary-ink underline',
         },
       }),
     ],
@@ -105,7 +105,7 @@ describe('IntentLink autolink boundaries in the chat input', () => {
   it('keeps parsed link content highlighted (conversation-style rendering)', () => {
     editor = createTestEditor(
       element,
-      '<p><a href="https://example.com/docs">https://example.com/docs</a> for now</p>'
+      '<p><a href="https://example.com/docs">https://example.com/docs</a> for now</p>',
     );
 
     expect(linkedSegments(editor)).toEqual(['https://example.com/docs']);

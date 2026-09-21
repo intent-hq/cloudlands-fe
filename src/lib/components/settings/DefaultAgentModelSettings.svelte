@@ -7,26 +7,87 @@
     selectModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
-  import {
-    reloadModelsForProvider,
-    setDefaultReasoningEffort,
-  } from '$store/renderer/slices/model/model-slice';
+  import { setDefaultReasoningEffort } from '$store/renderer/slices/model/model-slice';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import {
+    selectBundledSpecialists,
+    selectFileSpecialists,
+  } from '$store/renderer/slices/specialists/specialists-selectors';
+  import {
+    deleteFileSpecialist as deleteFileSpecialistAction,
+    saveFileSpecialist,
+  } from '$store/renderer/slices/specialists/specialists-slice';
+  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { parseCompoundModelId } from '$shared/utils/compound-model-id';
+  import type { WorkspaceId } from '$shared/types/branded-ids';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
+  import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingsControlContext,
+  } from '$lib/components/patterns/settings';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
+  import {
+    buildResetToInheritPayloads,
+    hasExplicitModelPin,
+  } from './utils/reset-specialists-to-inherit';
 
-  let { testId }: { testId?: string } = $props();
+  interface Props {
+    testId?: string;
+    /** Explicit owner for settings opened outside a workspace route. */
+    workspaceId?: WorkspaceId | null;
+  }
+
+  let { testId, workspaceId }: Props = $props();
 
   const selectedModel$ = selectSelectedModel();
   const defaultReasoningEffort$ = selectDefaultReasoningEffort();
-  const activeProviderId$ = selectActiveProviderId();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
+  const fileSpecialists$ = selectFileSpecialists();
+  const routeWorkspaceContext = getWorkspaceRouteContext();
+  const routeWorkspaceId = $derived(
+    workspaceId !== undefined ? workspaceId : routeWorkspaceContext?.workspaceId,
+  );
+
+  // Show the reset-all button when any specialist pins an explicit
+  // frontmatter model instead of inheriting.
+  const anySpecialistHasExplicitModel = $derived(hasExplicitModelPin($fileSpecialists$));
+
+  function getCurrentWorkspacePath(): string | undefined {
+    if (!routeWorkspaceId) return undefined;
+    const workspace = selectWorkspaceById.select(appStore.state, routeWorkspaceId);
+    return workspace?.path ?? workspace?.worktreePath ?? workspace?.repositoryPath;
+  }
+
+  /**
+   * Clear the explicit model pin from every file specialist that
+   * has one so they all inherit the global default. Built-ins without an
+   * override file already inherit — no file is created for them. Built-in
+   * overrides that become identical to the bundled defaults once the pin
+   * is cleared are deleted instead of rewritten (monorepo#1450).
+   */
+  function resetAllSpecialistsToInherit() {
+    const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
+    const { saves, deletes } = buildResetToInheritPayloads(
+      $fileSpecialists$,
+      bundledSpecialists,
+      getCurrentWorkspacePath,
+    );
+    for (const payload of saves) {
+      appStore.dispatch(saveFileSpecialist(payload));
+    }
+    for (const ref of deletes) {
+      appStore.dispatch(deleteFileSpecialistAction(ref));
+    }
+  }
 
   function handleModelChange(compoundModelId: string) {
     if (!compoundModelId) return;
-    const { providerId, modelId } = parseCompoundModelId(compoundModelId, $defaultProviderId$);
+    const split = splitLegacyCompoundId(compoundModelId);
+    const providerId = split.providerId ?? $defaultProviderId$;
+    const modelId = split.modelId;
     const currentEffort = $defaultReasoningEffort$;
     const isKnownModel =
       selectModelDisplayName.select(appStore.state, providerId, modelId) !== undefined;
@@ -34,28 +95,67 @@
     if (currentEffort && isKnownModel && !supportedEfforts?.includes(currentEffort)) {
       appStore.dispatch(setDefaultReasoningEffort(''));
     }
-    if (providerId && providerId !== $activeProviderId$) {
-      appStore.dispatch(setActiveProvider(providerId));
-      appStore.dispatch(reloadModelsForProvider());
-    }
+    // Do NOT dispatch setActiveProvider/reloadModelsForProvider here: the
+    // ModelPicker below has `updateGlobalDefault` set, so it already
+    // dispatches `selectModel(modelId, providerId)` right after this
+    // callback returns. That action's saga (model-selection-saga) is the
+    // sole owner of persisting the provider+model default — it performs the
+    // provider switch (including reload) AND the atomic
+    // `model.defaultProvider` + `model.providerDefaults` write. Dispatching
+    // setActiveProvider here too raced a second, non-atomic
+    // `model.defaultProvider` write from provider-settings-saga against that
+    // atomic write, corrupting the persisted default (monorepo#4102-recurrence).
   }
+
+  const schema = $derived(
+    defineSettings({
+      sections: [
+        {
+          id: 'default-agent-model-section',
+          title: m.settings_section_defaults(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'default-agent-model',
+              label: m.settings_aiBehavior_defaultModel_label(),
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div data-testid={testId} class="flex min-w-0 flex-wrap items-center gap-3">
-  <span class="text-sm font-medium text-foreground shrink-0">
-    {m.settings_aiBehavior_defaultModel_label()}
-  </span>
-  <ModelPicker
-    selectedModel={$selectedModel$}
-    onModelChange={handleModelChange}
-    showDefaultOption={false}
-    variant="default"
-    size="sm"
-    updateGlobalDefault
-    showReasoning
-    reasoningEffort={$defaultReasoningEffort$ || null}
-    onReasoningChange={(effort) => {
-      appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
-    }}
+{#snippet defaultModelControl(_: SettingsControlContext)}
+  <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
+    {#if anySpecialistHasExplicitModel}
+      <Button type="button" variant="link" size="sm" onclick={resetAllSpecialistsToInherit}>
+        {m.settings_aiBehavior_resetAllSpecialists()}
+      </Button>
+    {/if}
+    <ModelPicker
+      selectedModel={$selectedModel$}
+      onModelChange={handleModelChange}
+      showDefaultOption={false}
+      variant="outline"
+      showProviderWarningNotice
+      noticeClass="mt-2"
+      size="sm"
+      updateGlobalDefault
+      showReasoning
+      reasoningEffort={$defaultReasoningEffort$ || null}
+      onReasoningChange={(effort) => {
+        appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
+      }}
+    />
+  </div>
+{/snippet}
+
+<div data-testid={testId}>
+  <SettingsForm
+    {schema}
+    embedded
+    compact={false}
+    custom={defineSettingsCustomControls({ 'default-agent-model': defaultModelControl })}
   />
 </div>

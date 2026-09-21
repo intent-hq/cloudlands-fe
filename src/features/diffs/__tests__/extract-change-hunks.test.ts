@@ -2,11 +2,7 @@
  * Tests for extract-change-hunks utility
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   extractChangesFromDiff,
   extractChangesFromContents,

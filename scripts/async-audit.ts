@@ -31,7 +31,11 @@ function scanFile(filePath: string): void {
     const lineNum = index + 1;
 
     // Check for missing await on async functions
-    if (line.match(/^\s*[a-zA-Z_$][a-zA-Z0-9_$]*\.(create|save|load|fetch|get|post|put|delete|update)\(/)) {
+    if (
+      line.match(
+        /^\s*[a-zA-Z_$][a-zA-Z0-9_$]*\.(create|save|load|fetch|get|post|put|delete|update)\(/,
+      )
+    ) {
       if (!line.includes('await') && !line.includes('.then(') && !line.includes('.catch(')) {
         // Check if it's in an async context
         const functionContext = getFunctionContext(lines, index);
@@ -137,8 +141,11 @@ function scanDirectory(dir: string): void {
         scanDirectory(fullPath);
       }
     } else if (entry.isFile()) {
-      if ((entry.name.endsWith('.ts') || entry.name.endsWith('.svelte')) &&
-          !entry.name.includes('.test.') && !entry.name.includes('.spec.')) {
+      if (
+        (entry.name.endsWith('.ts') || entry.name.endsWith('.svelte')) &&
+        !entry.name.includes('.test.') &&
+        !entry.name.includes('.spec.')
+      ) {
         scanFile(fullPath);
       }
     }
@@ -155,7 +162,7 @@ console.log(`Total Issues Found: ${issues.length}`);
 
 if (issues.length > 0) {
   console.log('\n⚠️  Issues Found:');
-  issues.slice(0, 20).forEach(issue => {
+  issues.slice(0, 20).forEach((issue) => {
     console.log(`  ${issue.file}:${issue.line}`);
     console.log(`    ${issue.type}: ${issue.description}`);
   });

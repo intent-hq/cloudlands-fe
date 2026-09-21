@@ -1,6 +1,6 @@
 import { call, cancelled, delay, put, takeEvery, takeLatest } from 'typed-redux-saga';
 
-import { backendRequest } from '$lib/client/live/backend-transport';
+import { updateSettings } from '$lib/client/live/live-settings-client';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   selectNotificationEnabled,
@@ -33,6 +33,7 @@ const NOTIFICATION_PATHS = {
 } as const;
 
 export function* persistNotificationSettingsWorker() {
+  yield* call(syncSoundPath);
   yield* delay(100);
   const enabled = yield* selectNotificationEnabled.effect();
   const soundEnabled = yield* selectSoundEnabled.effect();
@@ -40,18 +41,16 @@ export function* persistNotificationSettingsWorker() {
   const volume = yield* selectNotificationVolume.effect();
   const soundPath = yield* selectSoundPath.effect();
   try {
-    yield* call(backendRequest, 'settings.update', {
-      changes: [
-        { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
-        { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
-        {
-          path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused,
-          value: soundOnlyWhenUnfocused ?? false,
-        },
-        { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
-        { path: NOTIFICATION_PATHS.soundPath, value: soundPath },
-      ],
-    });
+    yield* call(updateSettings, [
+      { path: NOTIFICATION_PATHS.enabled, value: enabled ?? true },
+      { path: NOTIFICATION_PATHS.soundEnabled, value: soundEnabled ?? true },
+      {
+        path: NOTIFICATION_PATHS.soundOnlyWhenUnfocused,
+        value: soundOnlyWhenUnfocused ?? false,
+      },
+      { path: NOTIFICATION_PATHS.volume, value: volume ?? 0.5 },
+      { path: NOTIFICATION_PATHS.soundPath, value: soundPath },
+    ]);
   } catch (error) {
     logger.warn('Failed to persist notification settings to daemon', { error });
   }
@@ -79,10 +78,7 @@ function* syncSoundPath() {
 /** Root-owned persistence and local playback invalidation. */
 export function* notificationSettingsSaga() {
   yield* takeEvery(pickNotificationSoundRequested, pickNotificationSoundWorker);
-  yield* takeEvery(
-    [setSoundPath, hydrateNotificationSettings, resetNotificationSettings],
-    syncSoundPath,
-  );
+  yield* takeEvery(hydrateNotificationSettings, syncSoundPath);
   yield* takeLatest(
     [
       setNotificationEnabled,

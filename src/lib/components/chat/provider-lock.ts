@@ -17,11 +17,7 @@ function hasConversationStarted({
   pendingInitialPrompt,
   pendingContextReferenceCount = 0,
 }: Omit<ProviderLockStateInput, 'session'>): boolean {
-  return (
-    messages.length > 0 ||
-    Boolean(pendingInitialPrompt) ||
-    pendingContextReferenceCount > 0
-  );
+  return messages.length > 0 || Boolean(pendingInitialPrompt) || pendingContextReferenceCount > 0;
 }
 
 export function canChangeAgentProvider({

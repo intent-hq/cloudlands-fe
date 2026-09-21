@@ -11,10 +11,7 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 // rationale as hud-subscription.test.ts — deterministic wire traffic).
 vi.mock('$store/renderer/middlewares/daemon-health-service', () => ({
   createDaemonHealthMiddleware:
-    () =>
-    () =>
-    (next: (action: unknown) => unknown) =>
-    (action: unknown) =>
+    () => () => (next: (action: unknown) => unknown) => (action: unknown) =>
       next(action),
   disposeDaemonHealthService: () => {},
 }));

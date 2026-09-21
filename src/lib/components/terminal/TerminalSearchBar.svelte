@@ -57,12 +57,12 @@
 {#if isOpen}
   <PanelFindBar
     bind:query={searchQuery}
-    bind:inputRef={inputRef}
+    bind:inputRef
     placeholder={m.terminal_searchBar_find_placeholder()}
     autofocus
     {focusTrigger}
-    currentMatchIndex={currentMatchIndex}
-    totalMatches={totalMatches}
+    {currentMatchIndex}
+    {totalMatches}
     {resultText}
     emptyResultText={m.terminal_searchBar_noResults_label()}
     resultFormat="of"
@@ -72,6 +72,6 @@
     inputClass="w-[140px] text-[0.8125rem]"
     onPrevious={() => onFindPrevious(searchQuery)}
     onNext={() => onFindNext(searchQuery)}
-    onClose={onClose}
+    {onClose}
   />
 {/if}

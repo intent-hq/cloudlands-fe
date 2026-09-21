@@ -23,13 +23,13 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue(MODELS);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ providerSettings: { activeProviderId: 'codex' } }) },
+      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
     expect(loaded).toBe(true);
     expect(mocks.getProviderSettings).not.toHaveBeenCalled();
-    expect(mocks.list.mock.calls).toEqual([[]]);
+    expect(mocks.list.mock.calls).toEqual([['codex']]);
     expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
       { type: 'model/setAvailableModels', payload: [MODELS, 'codex'] },
       {
@@ -47,7 +47,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue(MODELS);
     const dispatch = vi.fn();
     await runSaga(
-      { dispatch, getState: () => ({ providerSettings: { activeProviderId: '' } }) },
+      { dispatch, getState: () => ({ model: { defaultProviderId: '' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -65,7 +65,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.getProviderSettings.mockResolvedValue(null);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ providerSettings: { activeProviderId: '' } }) },
+      { dispatch, getState: () => ({ model: { defaultProviderId: '' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -75,13 +75,13 @@ describe('loadModelsOnBootWorker', () => {
   });
 
   it('drops the response when the active provider changed while the list was in flight', async () => {
-    const current = { providerSettings: { activeProviderId: '' } };
+    const current = { model: { defaultProviderId: '' } };
     mocks.getProviderSettings.mockResolvedValue({
       activeProviderId: 'codex',
       enabledProviders: {},
     });
     mocks.list.mockImplementation(async () => {
-      current.providerSettings.activeProviderId = 'auggie';
+      current.model.defaultProviderId = 'auggie';
       return MODELS;
     });
     const dispatch = vi.fn();
@@ -99,7 +99,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockResolvedValue([]);
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ providerSettings: { activeProviderId: 'codex' } }) },
+      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -111,7 +111,7 @@ describe('loadModelsOnBootWorker', () => {
     mocks.list.mockRejectedValue(new Error('uds boom'));
     const dispatch = vi.fn();
     const loaded = await runSaga(
-      { dispatch, getState: () => ({ providerSettings: { activeProviderId: 'codex' } }) },
+      { dispatch, getState: () => ({ model: { defaultProviderId: 'codex' } }) },
       loadModelsOnBootWorker,
     ).toPromise();
 
@@ -147,7 +147,7 @@ describe('modelBootSaga', () => {
     runSaga(
       {
         dispatch: vi.fn(),
-        getState: () => ({ providerSettings: { activeProviderId: 'codex' } }),
+        getState: () => ({ model: { defaultProviderId: 'codex' } }),
       },
       modelBootSaga,
     );

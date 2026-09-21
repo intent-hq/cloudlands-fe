@@ -4,11 +4,25 @@
  * Utility for combining class names with conditional logic
  */
 
-import {
-  clsx,
-  type ClassValue,
-} from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { clsx, type ClassValue } from 'clsx';
+import { extendTailwindMerge } from 'tailwind-merge';
+
+const mergeClasses = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      'font-size': [
+        'type-caption',
+        'type-body',
+        'type-title',
+        'type-display',
+        'type-code',
+        'text-ui',
+        'text-ui-sm',
+        'text-xs',
+      ],
+    },
+  },
+});
 
 /**
  * Combine and merge Tailwind CSS classes intelligently.
@@ -35,5 +49,5 @@ import { twMerge } from 'tailwind-merge';
  * ```
  */
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+  return mergeClasses(clsx(inputs));
 }

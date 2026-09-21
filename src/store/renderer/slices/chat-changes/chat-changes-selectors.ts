@@ -1,7 +1,7 @@
-import { store } from "../../store";
-import { getItems } from "@augmentcode/themis/utils/collections/collection-utils";
-import { emptyChatChangesWorkspaceState } from "./chat-changes-slice";
-import type { AgentFileRefreshEntry, ChatChangesWorkspaceState } from "./chat-changes-types";
+import { store } from '../../store';
+import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import { emptyChatChangesWorkspaceState } from './chat-changes-slice';
+import type { AgentFileRefreshEntry, ChatChangesWorkspaceState } from './chat-changes-types';
 
 const selectChatChangesWorkspaceState = store.createSelector<
   [wsId?: string | null],
@@ -11,9 +11,10 @@ const selectChatChangesWorkspaceState = store.createSelector<
   return state.chatChanges.byWorkspaceId[wsId] ?? emptyChatChangesWorkspaceState;
 });
 
-export const selectAgentFileRefreshes = store.createSelector<[wsId?: string | null], AgentFileRefreshEntry[]>(
-  (state, wsId) => {
-    if (!wsId) return [];
-    return getItems(selectChatChangesWorkspaceState.select(state, wsId).refreshes);
-  },
-);
+export const selectAgentFileRefreshes = store.createSelector<
+  [wsId?: string | null],
+  AgentFileRefreshEntry[]
+>((state, wsId) => {
+  if (!wsId) return [];
+  return getItems(selectChatChangesWorkspaceState.select(state, wsId).refreshes);
+});

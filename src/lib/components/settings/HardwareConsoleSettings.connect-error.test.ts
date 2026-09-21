@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -59,6 +60,8 @@ vi.mock('$lib/utils/shortcuts', async (importOriginal) => ({
 vi.mock('$lib/utils/open-external', () => ({
   openExternalUrl: mocks.openExternalUrl,
 }));
+
+warmImport(() => import('./HardwareConsoleSettings.svelte'));
 
 async function buildState() {
   const { initialState } =

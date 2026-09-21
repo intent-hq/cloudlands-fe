@@ -88,7 +88,7 @@ interface WorkspaceNavigationHistoryEntry {
   chatChangesIsAggregate?: boolean;
   commitHash?: string;
   commitMessage?: string;
-  /** Secondary git root scoping the commit changeset (multi git root tracking, v6.15). */
+  /** Secondary git root scoping the commit changeset (multi git root tracking). */
   gitRootId?: string;
   result?: string | null;
   agentId?: string | null;
@@ -117,7 +117,7 @@ export interface WorkspaceNavigationMainPanelState {
   scrollToLine?: number;
   commitHash?: string;
   commitMessage?: string;
-  /** Secondary git root scoping the commit changeset (multi git root tracking, v6.15). */
+  /** Secondary git root scoping the commit changeset (multi git root tracking). */
   gitRootId?: string;
   branchBaseRef?: string;
   branchBaseCommitSha?: string;
@@ -442,9 +442,7 @@ export function chatChangesDedupId(options?: {
 
 export const openWorkspaceLocalChanges = createAction<
   [wsId: string, options?: { gitRootId?: string }]
->(
-  'workspaceNavigation/openWorkspaceLocalChanges',
-);
+>('workspaceNavigation/openWorkspaceLocalChanges');
 
 export const openWorkspaceCommitChangeset = createAction<
   [

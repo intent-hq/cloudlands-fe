@@ -2,16 +2,23 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Editor } from '@tiptap/core';
+import { tick } from 'svelte';
+import DOMPurify from 'dompurify';
+import { createEditorConfig } from './editor-config';
 import { processHTMLToMarkdown, processMarkdownToHTML } from './markdown-processor';
 
 describe('processMarkdownForDisplay error path', () => {
   afterEach(() => {
     vi.resetModules();
     vi.doUnmock('./tiptap-task-list-extension');
+    vi.doUnmock('dompurify');
   });
 
   it('sanitizes the fallback when parsing throws', async () => {
     vi.resetModules();
+    // A re-imported sanitizer needs its own hooks, not a second set on the shared instance.
+    vi.doMock('dompurify', () => ({ default: DOMPurify(window) }));
     vi.doMock('./tiptap-task-list-extension', () => ({
       createTiptapTaskListMarked: () => ({
         parse: () => {
@@ -51,7 +58,7 @@ describe('markdown-processor inline workspace file images', () => {
       workspaceId: 'ws-abc',
     });
 
-    expect(html).toContain('src="workspace-file://ws-abc/docs/shot.png"');
+    expect(html).toMatch(/src="workspace-file:\/\/ws-abc\/docs\/shot\.png\?v=[A-Za-z0-9._-]+"/);
     expect(html).toContain('alt="shot"');
   });
 
@@ -60,7 +67,28 @@ describe('markdown-processor inline workspace file images', () => {
       workspaceId: 'ws-xyz',
     });
 
-    expect(html).toContain('src="workspace-file://ws-xyz/shot.webp"');
+    expect(html).toMatch(/src="workspace-file:\/\/ws-xyz\/shot\.webp\?v=[A-Za-z0-9._-]+"/);
+  });
+
+  it('cache-busts image URLs with a fresh token per render, even on a cache hit', async () => {
+    const md = '![shot](intent://local/file/regenerated.png)';
+    const first = await processMarkdownToHTML(md, { workspaceId: 'ws-abc' });
+    const second = await processMarkdownToHTML(md, { workspaceId: 'ws-abc' });
+    const srcOf = (html: string) => /src="([^"]*)"/.exec(html)![1];
+
+    expect(srcOf(first)).toMatch(/^workspace-file:\/\/ws-abc\/regenerated\.png\?v=/);
+    expect(srcOf(second)).toMatch(/^workspace-file:\/\/ws-abc\/regenerated\.png\?v=/);
+    expect(srcOf(first)).not.toBe(srcOf(second));
+  });
+
+  it('reuses an explicit workspaceFileVersion so re-renders keep identical image URLs', async () => {
+    const md = '![shot](intent://local/file/stable.png)';
+    const options = { workspaceId: 'ws-abc', workspaceFileVersion: 'render-1' };
+    const first = await processMarkdownToHTML(md, options);
+    const second = await processMarkdownToHTML(md, options);
+
+    expect(first).toContain('src="workspace-file://ws-abc/stable.png?v=render-1"');
+    expect(second).toBe(first);
   });
 
   it('does not rewrite cross-workspace long-form intent file image links', async () => {
@@ -95,5 +123,394 @@ describe('markdown-processor inline workspace file images', () => {
 
     expect(a).toContain('workspace-file://ws-a/cache-test.png');
     expect(b).toContain('workspace-file://ws-b/cache-test.png');
+  });
+});
+
+describe('markdown-processor inline workspace file videos', () => {
+  it.each([
+    ['cross-workspace', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],
+    ['unknown workspace', 'workspace-asset://ws-abc/demo.mp4', undefined],
+    ['malformed path', 'workspace-asset://ws-abc/../demo.mp4', 'ws-abc'],
+    ['malformed escape', 'workspace-asset://ws-abc/bad%zz.webm', 'ws-abc'],
+    ['invalid backend', 'workspace-asset://ws-abc/demo.webm?backend=bad%2Froute', 'ws-abc'],
+    ['unknown query', 'workspace-asset://ws-abc/demo.mp4?unknown=1', 'ws-abc'],
+  ])(
+    'never restores rejected %s saved videos through inline note save/reload',
+    async (_reason, src, workspaceId) => {
+      const html = await processMarkdownToHTML(`Recording: ![rejected](${src})`, { workspaceId });
+      const rendered = document.createElement('div');
+      rendered.innerHTML = html;
+      expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+      const editor = new Editor(
+        createEditorConfig({
+          element: document.createElement('div'),
+          content: html,
+          editable: true,
+          onUpdate: () => {},
+          useMarkdown: true,
+          workspace: workspaceId ? { id: workspaceId } : undefined,
+          enableMentions: false,
+        }),
+      );
+      await tick();
+      try {
+        rendered.innerHTML = editor.getHTML();
+        expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+        rendered.innerHTML = await processMarkdownToHTML(processHTMLToMarkdown(editor.getHTML()), {
+          workspaceId,
+        });
+        expect(rendered.querySelector('img[src], video[src]')).toBeNull();
+      } finally {
+        editor.destroy();
+      }
+    },
+  );
+
+  it('keeps rejected saved-video code examples inert and unchanged', async () => {
+    const example = '![rejected](workspace-asset://other-ws/demo.webm?backend=bad%2Froute)';
+    const element = document.createElement('div');
+    element.innerHTML = await processMarkdownToHTML(`\`\`\`markdown\n${example}\n\`\`\``, {
+      workspaceId: 'ws-abc',
+    });
+    expect(element.querySelector('pre code')?.textContent?.trim()).toBe(example);
+    expect(element.querySelector('img[src], video[src]')).toBeNull();
+  });
+
+  it.each(['webm', 'mp4'])(
+    'round-trips a saved %s asset through the note editor',
+    async (extension) => {
+      const src = `workspace-asset://ws-abc/mfr7-1234abcd.${extension}?backend=remote-1&v=render-1`;
+      const markdown = `![saved demo](${src})`;
+      const html = await processMarkdownToHTML(markdown, { workspaceId: 'ws-abc' });
+      const element = document.createElement('div');
+      const editor = new Editor(
+        createEditorConfig({
+          element,
+          content: html,
+          editable: true,
+          onUpdate: () => {},
+          useMarkdown: true,
+          workspace: { id: 'ws-abc' },
+          enableMentions: false,
+        }),
+      );
+      await tick();
+      try {
+        expect(editor.getJSON().content?.some((node) => node.type === 'video')).toBe(true);
+        expect(editor.getHTML()).not.toContain('workspace-file://');
+        expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+        const reloaded = document.createElement('div');
+        reloaded.innerHTML = await processMarkdownToHTML(processHTMLToMarkdown(editor.getHTML()), {
+          workspaceId: 'ws-abc',
+        });
+        expect(reloaded.querySelector('video')?.getAttribute('src')).toBe(src);
+        expect(reloaded.querySelector('img')).toBeNull();
+      } finally {
+        await tick();
+        editor.destroy();
+      }
+    },
+  );
+
+  it.each([
+    'workspace-asset://other-ws/demo.webm',
+    'workspace-asset://ws-abc/../demo.webm',
+    'workspace-asset://ws-abc/demo.svg',
+    'workspace-asset://ws-abc/demo.mov',
+    'workspace-asset://ws-abc/demo.webm?unexpected=1',
+    'https://example.com/demo.webm',
+    'javascript:alert(1)',
+  ])('does not allow raw video with an unsafe source %s', async (src) => {
+    const html = await processMarkdownToHTML(`<video src="${src}" controls></video>`, {
+      workspaceId: 'ws-abc',
+    });
+    expect(html).not.toContain('<video');
+  });
+
+  it('renders allowlisted video markdown as a playable workspace video', async () => {
+    const html = await processMarkdownToHTML('![demo](intent://local/file/out/demo.mp4)', {
+      workspaceId: 'ws-abc',
+    });
+
+    expect(html).toContain('<video');
+    expect(html).toContain('src="workspace-file://ws-abc/out/demo.mp4"');
+    expect(html).toContain('controls');
+    expect(html).toContain('preload="metadata"');
+    expect(html).toContain('playsinline');
+    expect(html).toContain('data-name="demo"');
+  });
+
+  it.each(['mov', 'svg'])('does not rewrite non-allowlisted %s media', async (extension) => {
+    const html = await processMarkdownToHTML(`![demo](intent://local/file/out/demo.${extension})`, {
+      workspaceId: 'ws-abc',
+    });
+
+    expect(html).not.toContain('<video');
+    expect(html).not.toContain('workspace-file://');
+  });
+
+  it('survives the note editor and saves the original portable markdown link', async () => {
+    const markdown = '![demo](intent://local/file/out/demo.webm)';
+    const html = await processMarkdownToHTML(markdown, { workspaceId: 'ws-abc' });
+    const element = document.createElement('div');
+    const editor = new Editor(
+      createEditorConfig({
+        element,
+        content: html,
+        editable: false,
+        onUpdate: () => {},
+        useMarkdown: true,
+        workspace: { id: 'ws-abc' },
+        enableMentions: false,
+      }),
+    );
+
+    expect(editor.getHTML()).toContain('video');
+    expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+    editor.destroy();
+  });
+});
+
+describe('markdown-processor blank-line round trip', () => {
+  const countEmptyParagraphs = (html: string): number => {
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    return Array.from(container.querySelectorAll('p')).filter((p) => p.innerHTML === '').length;
+  };
+
+  const emptyParagraphs = (count: number): string => '<p></p>'.repeat(count);
+
+  const loadIntoEditor = async (markdown: string) => {
+    const html = await processMarkdownToHTML(markdown, { workspaceId: 'ws-abc' });
+    const editor = new Editor(
+      createEditorConfig({
+        element: document.createElement('div'),
+        content: html,
+        editable: true,
+        onUpdate: () => {},
+        useMarkdown: true,
+        workspace: { id: 'ws-abc' },
+        enableMentions: false,
+      }),
+    );
+    await tick();
+    return editor;
+  };
+
+  it.each([1, 2, 3])(
+    'serializes %i empty paragraph(s) between two paragraphs as extra blank lines',
+    (count) => {
+      const markdown = processHTMLToMarkdown(`<p>a</p>${emptyParagraphs(count)}<p>b</p>`);
+
+      expect(markdown).toBe(`a${'\n'.repeat(count + 2)}b`);
+    },
+  );
+
+  it.each([1, 2, 3])(
+    'renders %i empty paragraph(s) between two paragraphs from the serialized form',
+    async (count) => {
+      const html = await processMarkdownToHTML(`a${'\n'.repeat(count + 2)}b`);
+
+      expect(countEmptyParagraphs(html)).toBe(count);
+      expect(html).toMatch(/<p>a<\/p>/);
+      expect(html).toMatch(/<p>b<\/p>/);
+    },
+  );
+
+  it.each([1, 2, 3])(
+    'round-trips %i empty paragraph(s) at document start, between and at document end',
+    async (count) => {
+      const editorHtml = `${emptyParagraphs(count)}<p>a</p>${emptyParagraphs(count)}<p>b</p>${emptyParagraphs(count)}`;
+      const markdown = processHTMLToMarkdown(editorHtml);
+
+      const editor = await loadIntoEditor(markdown);
+      try {
+        const paragraphs = editor.getJSON().content ?? [];
+        expect(paragraphs.map((node) => node.content?.[0]?.text ?? '')).toEqual([
+          ...Array<string>(count).fill(''),
+          'a',
+          ...Array<string>(count).fill(''),
+          'b',
+          ...Array<string>(count).fill(''),
+        ]);
+        expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+      } finally {
+        await tick();
+        editor.destroy();
+      }
+    },
+  );
+
+  it('keeps the trailing form stable across repeated saves', async () => {
+    let markdown = processHTMLToMarkdown('<p>a</p><p></p><p></p>');
+    for (let i = 0; i < 3; i++) {
+      const editor = await loadIntoEditor(markdown);
+      try {
+        const next = processHTMLToMarkdown(editor.getHTML());
+        expect(next).toBe(markdown);
+        markdown = next;
+      } finally {
+        await tick();
+        editor.destroy();
+      }
+    }
+  });
+
+  it('drops the single empty paragraph the editor appends after a trailing heading', async () => {
+    expect(processHTMLToMarkdown('<h1>Heading</h1><p></p>')).toBe('# Heading');
+    expect(processHTMLToMarkdown('<ul><li><p>item</p></li></ul><p></p>')).toBe('- item');
+
+    const editor = await loadIntoEditor('# Heading');
+    try {
+      editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' edited');
+      await tick();
+      expect((editor.getJSON().content ?? []).map((node) => node.type)).toEqual([
+        'heading',
+        'paragraph',
+      ]);
+      expect(processHTMLToMarkdown(editor.getHTML())).toBe('# Heading edited');
+    } finally {
+      await tick();
+      editor.destroy();
+    }
+  });
+
+  it('keeps two empty paragraphs typed after a trailing heading', async () => {
+    const markdown = processHTMLToMarkdown('<h1>Heading</h1><p></p><p></p>');
+
+    expect(markdown).toBe('# Heading\n\n\n\n');
+
+    const editor = await loadIntoEditor(markdown);
+    try {
+      expect((editor.getJSON().content ?? []).map((node) => node.type)).toEqual([
+        'heading',
+        'paragraph',
+        'paragraph',
+      ]);
+      expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+    } finally {
+      await tick();
+      editor.destroy();
+    }
+  });
+
+  it('does not change a single paragraph separator or a single trailing newline', async () => {
+    expect(countEmptyParagraphs(await processMarkdownToHTML('a\n\nb'))).toBe(0);
+    expect(countEmptyParagraphs(await processMarkdownToHTML('a\n\nb\n'))).toBe(0);
+    expect(countEmptyParagraphs(await processMarkdownToHTML('a\n\nb\n\n'))).toBe(0);
+  });
+
+  it('leaves blank lines inside fenced code blocks untouched', async () => {
+    const html = await processMarkdownToHTML('```js\nconst a = 1;\n\n\n\nconst b = 2;\n```');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html).toContain('const a = 1;\n\n\n\nconst b = 2;');
+  });
+
+  it('leaves blank lines inside @@@task blocks untouched', async () => {
+    const html = await processMarkdownToHTML('@@@task\n# Title\n\n\n\nBody\n@@@', {
+      taskBlockRenderMode: 'content',
+    });
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+  });
+
+  it('leaves blank lines inside ws-block fences untouched', async () => {
+    const block =
+      '```ws-block\n{"type":"cli","id":"cli-1","command":"ls",\n\n\n"description":"list"}\n```';
+    const html = await processMarkdownToHTML(block);
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+  });
+
+  it('keeps a loose list with blank lines between items as one list', async () => {
+    const html = await processMarkdownToHTML('- a\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(1);
+  });
+
+  it('keeps one list when blank lines follow a continuation line', async () => {
+    const html = await processMarkdownToHTML('- a\n  continued\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(1);
+    expect(html.match(/<li/g)).toHaveLength(2);
+  });
+
+  it('keeps one list when blank lines follow a multi-line item', async () => {
+    const html = await processMarkdownToHTML('- a\n  line two\n  line three\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(1);
+    expect(html.match(/<li/g)).toHaveLength(2);
+  });
+
+  it('keeps one list when blank lines follow a nested item', async () => {
+    const html = await processMarkdownToHTML('- a\n  - nested\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(2);
+    expect(html.match(/<li/g)).toHaveLength(3);
+  });
+
+  it('keeps one ordered list when blank lines follow a deeply nested item', async () => {
+    const html = await processMarkdownToHTML('1. a\n   - x\n     - y\n\n\n2. b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ol/g)).toHaveLength(1);
+    expect(html.match(/<ul/g)).toHaveLength(2);
+    expect(html.match(/<li/g)).toHaveLength(4);
+  });
+
+  it('keeps one bullet list when blank lines follow a lazy continuation line', async () => {
+    const html = await processMarkdownToHTML('- a\ncontinued\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(1);
+    expect(html.match(/<li/g)).toHaveLength(2);
+  });
+
+  it('keeps one ordered list when blank lines follow a lazy continuation line', async () => {
+    const html = await processMarkdownToHTML('1. a\ncontinued\n\n\n2. b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ol/g)).toHaveLength(1);
+    expect(html.match(/<li/g)).toHaveLength(2);
+  });
+
+  it('keeps one list when a lazy continuation follows a nested item', async () => {
+    const html = await processMarkdownToHTML('- a\n  - nested\ncontinued\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(0);
+    expect(html.match(/<ul/g)).toHaveLength(2);
+    expect(html.match(/<li/g)).toHaveLength(3);
+  });
+
+  it('ends list context at a heading so a later blank-line run still expands', async () => {
+    const html = await processMarkdownToHTML('- a\ncontinued\n# H\n\n\n- b');
+
+    expect(countEmptyParagraphs(html)).toBe(1);
+    expect(html.match(/<ul/g)).toHaveLength(2);
+    expect(html).toContain('<h1>H</h1>');
+  });
+
+  it('round-trips an empty paragraph between a paragraph and a list', async () => {
+    const markdown = processHTMLToMarkdown('<p>a</p><p></p><ul><li><p>item</p></li></ul>');
+
+    expect(markdown).toBe('a\n\n\n- item');
+
+    const editor = await loadIntoEditor(markdown);
+    try {
+      expect((editor.getJSON().content ?? []).map((node) => node.type)).toEqual([
+        'paragraph',
+        'paragraph',
+        'bulletList',
+      ]);
+      expect(processHTMLToMarkdown(editor.getHTML())).toBe(markdown);
+    } finally {
+      await tick();
+      editor.destroy();
+    }
   });
 });

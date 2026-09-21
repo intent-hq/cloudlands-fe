@@ -313,9 +313,7 @@ export const dialog = {
     const paths = await invoke<string[] | null>(IPC_CHANNELS.DIALOG.OPEN, options);
     return paths?.[0] ?? null;
   },
-  async openFile(
-    options: { title?: string; defaultPath?: string } = {},
-  ): Promise<string | null> {
+  async openFile(options: { title?: string; defaultPath?: string } = {}): Promise<string | null> {
     if (!hasCapability('nativeDialogs')) return null;
 
     const paths = await invoke<string[] | null>(IPC_CHANNELS.DIALOG.OPEN, {

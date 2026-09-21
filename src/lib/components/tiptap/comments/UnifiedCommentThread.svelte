@@ -1,9 +1,5 @@
 <script lang="ts">
-  import {
-  faArrowUp,
-  faAt,
-  faPaperclip,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faArrowUp, faAt, faPaperclip } from '@fortawesome/free-solid-svg-icons';
   import AgentPeekCard from './AgentPeekCard.svelte';
   import Comment from './Comment.svelte';
   import Fa from 'svelte-fa';
@@ -11,12 +7,10 @@
   import TipTapEditor from '$lib/components/chat/input/TipTapEditor.svelte';
   import type { Workspace } from '$shared/types';
   import { Button } from '$lib/components/ui/button';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
 
-  import {
-  processMarkdownToHTML,
-  processHTMLToMarkdown,
-} from '$lib/utils/markdown-processor';
+  import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
 
   import { selectCommentById } from '$store/renderer/slices/comments/comments-selectors';
   import { updateCommentAction } from '$store/renderer/slices/comments/comments-slice';
@@ -97,6 +91,10 @@
     showType = true,
   }: Props = $props();
 
+  // One cache-busting token per thread instance: re-rendering the comment or
+  // its replies keeps their workspace image URLs stable.
+  const workspaceFileVersion = createWorkspaceFileVersion();
+
   let replyEditor: any = $state(null);
   $effect(() => {
     if (replyEditor && registerReplyInput) {
@@ -113,7 +111,11 @@
     editingReplyId = replyId;
     const reply = replies.find((r) => r.id === replyId);
     const html = await Promise.resolve(
-      processMarkdownToHTML(reply?.content || '', { allowEmpty: true }),
+      processMarkdownToHTML(reply?.content || '', {
+        allowEmpty: true,
+        workspaceId: workspace?.id,
+        workspaceFileVersion,
+      }),
     );
     replyEditHTML = html || '';
   }
@@ -123,7 +125,10 @@
     if (!id) return cancelEditReply();
     try {
       const html = replyEditEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, { preserveAnchors: false }).trim();
+      const md = processHTMLToMarkdown(html, {
+        preserveAnchors: false,
+        workspaceId: workspace?.id,
+      }).trim();
       if (!md) return cancelEditReply();
       const v2 = selectCommentById.select(appStore.state, id);
       if (v2) {
@@ -146,7 +151,13 @@
   $effect(() => {
     let destroyed = false;
     const content = comment.content || '';
-    Promise.resolve(processMarkdownToHTML(content, { allowEmpty: true })).then((h) => {
+    Promise.resolve(
+      processMarkdownToHTML(content, {
+        allowEmpty: true,
+        workspaceId: workspace?.id,
+        workspaceFileVersion,
+      }),
+    ).then((h) => {
       if (destroyed) return;
       try {
         const d = document.createElement('div');
@@ -164,7 +175,13 @@
   $effect(() => {
     let destroyed = false;
     replies?.forEach((r) => {
-      Promise.resolve(processMarkdownToHTML(r.content || '', { allowEmpty: true })).then((h) => {
+      Promise.resolve(
+        processMarkdownToHTML(r.content || '', {
+          allowEmpty: true,
+          workspaceId: workspace?.id,
+          workspaceFileVersion,
+        }),
+      ).then((h) => {
         if (destroyed) return;
         replyHtmls[r.id] = h || '';
       });
@@ -179,7 +196,10 @@
     if (!text) return;
     try {
       const html = replyEditor?.getHTML?.() ?? '';
-      const md = processHTMLToMarkdown(html, { preserveAnchors: false });
+      const md = processHTMLToMarkdown(html, {
+        preserveAnchors: false,
+        workspaceId: workspace?.id,
+      });
       const out = (md || text).trim();
       if (out) onReply?.(out);
     } finally {
@@ -196,7 +216,7 @@
 {:else}
   <!-- Unified container with consistent styling -->
   <div
-    class="flex flex-col bg-background rounded w-full transition-all duration-200 border border-border"
+    class="flex flex-col bg-background rounded w-full transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none border border-border"
     class:max-w-[380px]={!isCollapsed}
     class:max-h-[400px]={!isCollapsed}
     class:overflow-hidden={!isCollapsed}
@@ -229,7 +249,8 @@
       <!-- Show replies count in collapsed state -->
       {#if isCollapsed && replies.length > 0}
         <div class="ml-8">
-          <button
+          <Button
+            variant="ghost"
             class="text-ui text-muted-foreground hover:text-foreground mt-1"
             onclick={(e) => {
               e.stopPropagation();
@@ -240,24 +261,28 @@
             {replies.length === 1
               ? m.tiptap_commentThread_showReplies_one()
               : m.tiptap_commentThread_showReplies_many({ count: formatInteger(replies.length) })}
-          </button>
+          </Button>
         </div>
       {/if}
 
       {#if orphaned && !isCollapsed}
         <div class="ml-8">
           <span
-            class="text-xs text-amber-600 mt-1 inline-block"
-            title={m.tiptap_commentThread_unlinked_tooltip()}>{m.tiptap_commentThread_unlinked_label()}</span
+            class="text-xs text-warning-ink mt-1 inline-block"
+            title={m.tiptap_commentThread_unlinked_tooltip()}
+            >{m.tiptap_commentThread_unlinked_label()}</span
           >
         </div>
       {/if}
 
       <!-- Replies (only shown when expanded) -->
       {#if !isCollapsed && replies.length > 0}
-        <div class="pt-1.5 flex flex-col gap-1.5" transition:slide={{ axis: 'y', duration: 200 }}>
+        <div
+          class="pt-1.5 flex flex-col gap-1.5"
+          transition:slide={{ axis: 'y', tier: 'moderate' }}
+        >
           {#each replies as reply, index (reply.id)}
-            <div transition:slide={{ axis: 'y', duration: 200 }}>
+            <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
               <Comment
                 comment={reply}
                 {workspace}
@@ -285,13 +310,14 @@
     {#if !isCollapsed}
       <div
         class="px-3 py-1.5 border-t border-border"
-        transition:slide={{ axis: 'y', duration: 200 }}
+        transition:slide={{ axis: 'y', tier: 'moderate' }}
       >
         <div class="flex items-center gap-px">
           <InitialsAvatar name="User" size={24} class="shrink-0" />
           <div class="flex-1 rounded px-1 py-1">
             <TipTapEditor
               bind:this={replyEditor}
+              editorClassName="pt-2! pb-4!"
               value={replyValue}
               placeholder={m.tiptap_commentThread_reply_placeholder()}
               minHeight={32}
@@ -301,7 +327,11 @@
               onSubmit={() => submitReply()}
             />
           </div>
-          <Button variant="ghost-light" size="icon-sm" tooltip={m.tiptap_commentThread_attach_tooltip()}>
+          <Button
+            variant="ghost-light"
+            size="icon-sm"
+            tooltip={m.tiptap_commentThread_attach_tooltip()}
+          >
             <Fa icon={faPaperclip} size="sm" class="text-ghost" />
           </Button>
           <Button

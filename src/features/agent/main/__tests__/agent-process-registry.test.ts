@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   computeProcessCap,
@@ -54,13 +47,15 @@ describe('evictIdleProcesses', () => {
     _resetForTesting();
   });
 
-  function createMockProcess(overrides: {
-    isActive?: boolean;
-    hasPendingWork?: () => boolean;
-    agentId?: string;
-    workspaceId?: string;
-    lastActiveOffset?: number; // ms ago
-  } = {}) {
+  function createMockProcess(
+    overrides: {
+      isActive?: boolean;
+      hasPendingWork?: () => boolean;
+      agentId?: string;
+      workspaceId?: string;
+      lastActiveOffset?: number; // ms ago
+    } = {},
+  ) {
     const pid = nextPid++;
     const killFn = vi.fn().mockResolvedValue(undefined);
     const now = Date.now();
@@ -222,4 +217,3 @@ describe('evictIdleProcesses', () => {
     expect(idle.kill).toHaveBeenCalled();
   });
 });
-

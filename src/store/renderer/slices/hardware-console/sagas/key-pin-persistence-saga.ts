@@ -12,7 +12,12 @@ import {
   reconcileKeyPins,
 } from '$features/hardware-console/assignment/key-assignment';
 import { createLogger } from '$lib/utils/client-logger';
-import { hydrateHardwareConsoleKeyPins, keyPinsReconciled, markKeySlotUnassigned, pinWorkspaceToKey } from '../hardware-console-slice';
+import {
+  hydrateHardwareConsoleKeyPins,
+  keyPinsReconciled,
+  markKeySlotUnassigned,
+  pinWorkspaceToKey,
+} from '../hardware-console-slice';
 import {
   selectHardwareConsoleExcludedWorkspaceIds,
   selectHardwareConsoleKeyPins,
@@ -91,8 +96,7 @@ function* hydrateKeyPins(gate: HydrationGate): SagaGenerator<void> {
 }
 
 type PinMutationAction =
-  | ReturnType<typeof pinWorkspaceToKey>
-  | ReturnType<typeof markKeySlotUnassigned>;
+  ReturnType<typeof pinWorkspaceToKey> | ReturnType<typeof markKeySlotUnassigned>;
 
 function* persistPinMutation(gate: HydrationGate, action: PinMutationAction): SagaGenerator<void> {
   if (!gate.settled) {
@@ -128,11 +132,7 @@ export function* keyPinPersistenceSaga(): SagaGenerator<void> {
   const gate: HydrationGate = { settled: false, succeeded: false, persistQueued: false };
   yield* all([
     call(hydrateKeyPins, gate),
-    takeEvery(
-      [pinWorkspaceToKey, markKeySlotUnassigned],
-      persistPinMutation,
-      gate,
-    ),
+    takeEvery([pinWorkspaceToKey, markKeySlotUnassigned], persistPinMutation, gate),
     takeEvery(
       [
         setWorkspaceHasLoaded,

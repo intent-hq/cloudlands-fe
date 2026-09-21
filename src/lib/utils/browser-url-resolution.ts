@@ -25,6 +25,8 @@ export interface ResolvedBrowserLink {
   warning?: string;
   /** Explanatory error when the remote target is unreachable and not tunnelable. */
   error?: string;
+  /** The forward was refused as owner-only (multiplayer w3); `error` is agent-facing, show localized copy instead. */
+  forbidden?: boolean;
 }
 
 /** Renderer→main invoke boundary (`window.electronAPI.invoke` in Electron). */

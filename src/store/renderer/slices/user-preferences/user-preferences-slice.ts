@@ -53,6 +53,10 @@ export type UserPreferencesState = {
   hasCompletedProviderSetup: boolean;
   /** Whether reasoning (thinking) dropdowns are shown in chat transcripts. */
   showReasoningBlocks: boolean;
+  chatAuroraEnabled: boolean;
+  shellTransparencyEnabled: boolean;
+  /** Whether motion is reduced while the machine runs on battery. */
+  reduceMotionOnBattery: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -102,6 +106,9 @@ export const initialState: UserPreferencesState = {
   groupByRepo: true,
   hasCompletedProviderSetup: false,
   showReasoningBlocks: false,
+  chatAuroraEnabled: true,
+  shellTransparencyEnabled: true,
+  reduceMotionOnBattery: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   activityLogPresets: [],
@@ -251,12 +258,48 @@ export const setShowReasoningBlocks = showReasoningBlocksPreference.setAction;
 
 export const toggleShowReasoningBlocks = showReasoningBlocksPreference.toggleAction;
 
+const chatAuroraPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'chatAuroraEnabled',
+  setActionName: 'setChatAuroraEnabled',
+  toggleActionName: 'toggleChatAurora',
+});
+
+export const setChatAuroraEnabled = chatAuroraPreference.setAction;
+
+export const toggleChatAurora = chatAuroraPreference.toggleAction;
+
+const shellTransparencyPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'shellTransparencyEnabled',
+  setActionName: 'setShellTransparencyEnabled',
+  toggleActionName: 'toggleShellTransparency',
+});
+
+export const setShellTransparencyEnabled = shellTransparencyPreference.setAction;
+
+export const toggleShellTransparency = shellTransparencyPreference.toggleAction;
+
+const reduceMotionOnBatteryPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'reduceMotionOnBattery',
+  setActionName: 'setReduceMotionOnBattery',
+  toggleActionName: 'toggleReduceMotionOnBattery',
+});
+
+export const setReduceMotionOnBattery = reduceMotionOnBatteryPreference.setAction;
+
+export const toggleReduceMotionOnBattery = reduceMotionOnBatteryPreference.toggleAction;
+
 export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState);
 spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
 groupByRepoPreference.register(userPreferencesReducer);
 hasCompletedProviderSetupPreference.register(userPreferencesReducer);
 showReasoningBlocksPreference.register(userPreferencesReducer);
+chatAuroraPreference.register(userPreferencesReducer);
+shellTransparencyPreference.register(userPreferencesReducer);
+reduceMotionOnBatteryPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,

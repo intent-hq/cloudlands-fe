@@ -6,6 +6,7 @@
 import { TerminalAdapter } from './TerminalAdapter';
 import { TerminalBufferManager } from './terminal-buffer-manager';
 import { Logger } from '../../shared/logger';
+import { appClient } from '$lib/client';
 
 import {
   removeTerminal,
@@ -37,7 +38,9 @@ class RendererTerminalManager {
       // Pass `title` through untouched: the reducer falls back to the existing
       // daemon-provided name (e.g. "Setup Script") when no explicit title is
       // given, so hardcoding 'Terminal' here would clobber it.
-      appStore.dispatch(saveTerminalMetadataAction(workspaceId, terminalId, title, new Date().toISOString()));
+      appStore.dispatch(
+        saveTerminalMetadataAction(workspaceId, terminalId, title, new Date().toISOString()),
+      );
       logger.debug(`[RendererTerminalManager] Saved terminal metadata for ${terminalId}`);
     } catch (error) {
       logger.error('[RendererTerminalManager] Failed to save terminal metadata:', error);
@@ -202,6 +205,14 @@ class RendererTerminalManager {
       this.terminals.delete(terminalId);
       // Remove from metadata
       this.removeTerminalMetadata(terminalId, managed.workspaceId);
+    } else {
+      // Restored tabs can be closed before their renderer adapter is created.
+      void appClient.terminals.kill(terminalId).then(
+        (result) => {
+          if (!result.success) logger.error('Error killing terminal:', result.error);
+        },
+        (error) => logger.error('Error killing terminal:', error),
+      );
     }
   }
 

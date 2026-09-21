@@ -29,9 +29,8 @@ const mocks = vi.hoisted(() => {
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ hardwareConsole: { pttRecording: false, voiceTranscribing: false } }),
     dispatch: mocks.dispatch,
@@ -61,13 +60,20 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: Object.assign(() => mocks.readable(() => []), {
     select: vi.fn(() => []),
   }),
+  selectCustomSpecialistsLoaded: () => mocks.readable(() => true),
+  selectFileSpecialistsLoaded: () => mocks.readable(() => true),
   selectEffectiveBehaviorPrompt: { select: vi.fn(() => undefined) },
   selectEffectiveModel: { select: vi.fn(() => undefined) },
   selectEffectiveCodingAgent: { select: vi.fn(() => undefined) },
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
   selectOrchestratorSpecialist: Object.assign(
     () =>
-      mocks.readable(() => ({ id: 'spec-writer', name: 'Coordinator', description: '', role: 'orchestrator' })),
+      mocks.readable(() => ({
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: '',
+        role: 'orchestrator',
+      })),
     {
       select: vi.fn(() => ({
         id: 'spec-writer',
@@ -78,7 +84,6 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
     },
   ),
 }));
-
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$features/setup-scripts')>()),

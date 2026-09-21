@@ -38,8 +38,13 @@ describe('gitReadSaga', () => {
     vi.spyOn(gitClient, 'getStatus').mockResolvedValue({
       ok: true,
       data: {
-        branch: 'feature', ahead: 0, behind: 0, diverged: false, files: [],
-        hasUncommittedChanges: false, hasUntrackedFiles: false,
+        branch: 'feature',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        files: [],
+        hasUncommittedChanges: false,
+        hasUntrackedFiles: false,
       },
     });
     vi.spyOn(gitClient, 'getHistory').mockResolvedValue({
@@ -52,7 +57,9 @@ describe('gitReadSaga', () => {
     const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1', undefined, 30));
-    await vi.waitFor(() => expect(actions).toContainEqual(expect.objectContaining({ type: setSecondaryRootGit.type })));
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(expect.objectContaining({ type: setSecondaryRootGit.type })),
+    );
     expect(gitClient.getHistory).toHaveBeenCalledTimes(1);
     task.cancel();
     await task.toPromise();
@@ -62,27 +69,57 @@ describe('gitReadSaga', () => {
     vi.spyOn(gitClient, 'getStatus').mockResolvedValue({
       ok: true,
       data: {
-        branch: 'feature', ahead: 0, behind: 0, diverged: false,
+        branch: 'feature',
+        ahead: 0,
+        behind: 0,
+        diverged: false,
         files: [{ path: 'working.ts', status: 'M', staged: false }],
-        hasUncommittedChanges: true, hasUntrackedFiles: false,
+        hasUncommittedChanges: true,
+        hasUntrackedFiles: false,
       },
     });
     vi.spyOn(gitClient, 'getHistory').mockResolvedValue({ ok: true, data: { items: [] } });
     vi.mocked(appClient.git.diffs)
-      .mockResolvedValueOnce([{
-        file: 'working.ts', content: '', chunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2,
-          lines: [{ type: 'Addition', content: 'a' }, { type: 'Addition', content: 'b' }, { type: 'Deletion', content: 'c' }] }],
-      }] as never)
+      .mockResolvedValueOnce([
+        {
+          file: 'working.ts',
+          content: '',
+          chunks: [
+            {
+              oldStart: 1,
+              oldLines: 1,
+              newStart: 1,
+              newLines: 2,
+              lines: [
+                { type: 'Addition', content: 'a' },
+                { type: 'Addition', content: 'b' },
+                { type: 'Deletion', content: 'c' },
+              ],
+            },
+          ],
+        },
+      ] as never)
       .mockResolvedValueOnce([]);
     const channel = stdChannel();
     const actions: unknown[] = [];
     const task = runSaga({ channel, dispatch: (action) => actions.push(action) }, gitReadSaga);
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
-    await vi.waitFor(() => expect(actions).toContainEqual(expect.objectContaining({ type: setSecondaryRootGit.type })));
-    const completed = actions.find((action) => (action as { type?: string }).type === setSecondaryRootGit.type) as ReturnType<typeof setSecondaryRootGit>;
-    expect(completed.payload.data.status?.files[0]).toMatchObject({ path: 'working.ts', additions: 2, deletions: 1 });
-    expect(appClient.git.diffs).toHaveBeenCalledWith('ws-1', { paths: ['working.ts'], gitRootId: 'root-1' });
+    await vi.waitFor(() =>
+      expect(actions).toContainEqual(expect.objectContaining({ type: setSecondaryRootGit.type })),
+    );
+    const completed = actions.find(
+      (action) => (action as { type?: string }).type === setSecondaryRootGit.type,
+    ) as ReturnType<typeof setSecondaryRootGit>;
+    expect(completed.payload.data.status?.files[0]).toMatchObject({
+      path: 'working.ts',
+      additions: 2,
+      deletions: 1,
+    });
+    expect(appClient.git.diffs).toHaveBeenCalledWith('ws-1', {
+      paths: ['working.ts'],
+      gitRootId: 'root-1',
+    });
     task.cancel();
     await task.toPromise();
   });
@@ -122,9 +159,7 @@ describe('gitReadSaga', () => {
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1', 'boundary', 30));
     await vi.waitFor(() =>
-      expect(actions).toContainEqual(
-        expect.objectContaining({ type: setSecondaryRootGit.type }),
-      ),
+      expect(actions).toContainEqual(expect.objectContaining({ type: setSecondaryRootGit.type })),
     );
     const completed = actions.find(
       (action) => (action as { type?: string }).type === setSecondaryRootGit.type,
@@ -188,9 +223,7 @@ describe('gitReadSaga', () => {
     resolveFirst({ ok: true, data: { ...fresh, branch: 'stale' } });
     await settle();
     expect(
-      actions.filter(
-        (action) => (action as { type?: string }).type === setSecondaryRootGit.type,
-      ),
+      actions.filter((action) => (action as { type?: string }).type === setSecondaryRootGit.type),
     ).toHaveLength(1);
     task.cancel();
     await task.toPromise();
@@ -239,9 +272,7 @@ describe('gitReadSaga', () => {
           setSecondaryRootGit.type,
           setSecondaryRootGitError.type,
           setSecondaryRootCommitFiles.type,
-        ].includes(
-          (action as { type: string }).type,
-        ),
+        ].includes((action as { type: string }).type),
       ),
     ).toBe(false);
     task.cancel();
@@ -257,9 +288,7 @@ describe('gitReadSaga', () => {
 
     channel.put(loadSecondaryRootGit('ws-1', 'root-1'));
     await vi.waitFor(() =>
-      expect(actions).toContainEqual(
-        setSecondaryRootGitError('ws-1', 'root-1', 'status failed'),
-      ),
+      expect(actions).toContainEqual(setSecondaryRootGitError('ws-1', 'root-1', 'status failed')),
     );
     task.cancel();
     await task.toPromise();
@@ -278,7 +307,9 @@ describe('gitReadSaga', () => {
 
     channel.put(loadSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123'));
     await settle();
-    expect(actions).not.toContainEqual(expect.objectContaining({ type: setSecondaryRootGitError.type }));
+    expect(actions).not.toContainEqual(
+      expect.objectContaining({ type: setSecondaryRootGitError.type }),
+    );
     channel.put(loadSecondaryRootCommitFiles('ws-1', 'root-1', 'abc123'));
     await vi.waitFor(() =>
       expect(actions).toContainEqual(

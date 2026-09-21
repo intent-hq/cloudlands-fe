@@ -14,12 +14,40 @@ export const selectDaemonHealthLastUpdated = store.createSelector(
   (state) => state.daemonHealth.lastUpdated,
 );
 
+/**
+ * Context for the failed system.status poll behind a degraded health, or
+ * null while checks succeed (#4439). Pair with `selectDaemonHealthLastUpdated`
+ * for last-success freshness.
+ */
+export const selectDaemonStatusCheckFailure = store.createSelector(
+  (state) => state.daemonHealth.statusCheckFailure,
+);
+
+/**
+ * Connection lifecycle counter a system.status poll captures before its
+ * request so the reducer can discard the result if the connection changed
+ * meanwhile (see DaemonHealthState.connectionGeneration).
+ */
+export const selectDaemonConnectionGeneration = store.createSelector(
+  (state) => state.daemonHealth.connectionGeneration,
+);
+
 /** Last-known transport info; survives disconnects (see DaemonHealthState.transport). */
 export const selectDaemonTransport = store.createSelector((state) => state.daemonHealth.transport);
 
 /** Reconnect attempts since the last successful connect (#1750). */
 export const selectReconnectAttempts = store.createSelector(
   (state) => state.daemonHealth.reconnectAttempts,
+);
+
+/** The host's guest connection cap refused the last connect (HTTP 503). */
+export const selectConnectionLimited = store.createSelector(
+  (state) => state.daemonHealth.connectionLimited,
+);
+
+/** Main's scheduled wait before the next attempt while the cap refuses us; null otherwise. */
+export const selectConnectionLimitRetryAfterMs = store.createSelector(
+  (state) => state.daemonHealth.connectionLimitRetryAfterMs,
 );
 
 /** Connected-daemon-vs-pin version comparison derived for the health UI. */
@@ -117,6 +145,14 @@ export const selectSidecarSpawnError = store.createSelector(
   (state) => state.daemonHealth.sidecarSpawnError,
 );
 
+/**
+ * Epoch ms of the first disconnect caused by a user-requested daemon update,
+ * or null when the current outage (if any) is not update-caused.
+ */
+export const selectDaemonUpdateDisconnectedAt = store.createSelector(
+  (state) => state.daemonHealth.daemonUpdateDisconnectedAt,
+);
+
 /** Last-run sidecar log fetched on demand for the daemon-loss dialog, if any. */
 export const selectSidecarRunLog = store.createSelector(
   (state) => state.daemonHealth.sidecarRunLog,
@@ -140,4 +176,14 @@ export const selectUnslothStatus = store.createSelector(
 /** True while an unsloth.stop request is in flight. */
 export const selectUnslothStopping = store.createSelector(
   (state) => state.daemonHealth.unslothStopping,
+);
+
+/** Last agent.memoryUsage result (fetched while the agent memory breakdown is open), if any. */
+export const selectAgentMemoryUsage = store.createSelector(
+  (state) => state.daemonHealth.agentMemoryUsage,
+);
+
+/** True when the last agent.memoryUsage fetch failed. */
+export const selectAgentMemoryUsageError = store.createSelector(
+  (state) => state.daemonHealth.agentMemoryUsageError,
 );

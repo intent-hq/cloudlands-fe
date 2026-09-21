@@ -25,7 +25,7 @@
    * OnboardingRequirementsStep owns the blocked posture there.
    */
   import { page } from '$app/stores';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { checkHostRequirementsRequested } from '$store/renderer/slices/host-requirements/host-requirements-slice';
@@ -74,7 +74,7 @@
     if (hasShownThisSession || isOnboarding || $health$ !== 'healthy' || !node.checked || node.ok)
       return;
     hasShownThisSession = true;
-    toast.warning(
+    notify.warning(
       node.version
         ? m.lib_nodeVersionWarning_haveVersion_message({
             minimumVersion: MINIMUM_NODE_VERSION,

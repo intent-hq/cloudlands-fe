@@ -5,12 +5,7 @@
  * Manages test suites, parallel execution, and reporting.
  */
 
-import {
-  AgentTestHarness,
-  TestScenario,
-  TestMetrics,
-  HarnessConfig,
-} from './agent-test-harness';
+import { AgentTestHarness, TestScenario, TestMetrics, HarnessConfig } from './agent-test-harness';
 import { EventEmitter } from '$shared/utils/event-emitter';
 import * as fs from 'fs/promises';
 
@@ -405,8 +400,8 @@ export class AgentTestRunner extends EventEmitter {
           <th>Memory Leaks</th>
         </tr>
         ${suite.results
-    .map(
-      (result) => `
+          .map(
+            (result) => `
           <tr>
             <td>${result.scenario}</td>
             <td class="${result.success ? 'passed' : 'failed'}">${result.success ? 'PASSED' : 'FAILED'}</td>
@@ -415,8 +410,8 @@ export class AgentTestRunner extends EventEmitter {
             <td>${result.metrics.memoryUsage.leaks.length}</td>
           </tr>
         `,
-    )
-    .join('')}
+          )
+          .join('')}
       </table>
     </div>
   `,

@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 import AttachmentPreview from '../AttachmentPreview.svelte';
 
 describe('AttachmentPreview thumbnail lightbox', () => {
-  const mockImageData = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const mockImageData =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
   const mockImageMimeType = 'image/png';
 
   it('opens lightbox when thumbnail is clicked', async () => {

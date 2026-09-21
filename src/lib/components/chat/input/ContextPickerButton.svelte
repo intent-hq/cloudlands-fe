@@ -17,15 +17,16 @@
     faGlobe,
     faFolder,
     faSearch,
-    faSpinner,
     faRobot,
     faQuoteLeft,
     faTerminal,
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import { cn } from '$lib/utils';
+  import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Portal from '$lib/components/ui/Portal.svelte';
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { m } from '$shared/paraglide/messages.js';
@@ -54,6 +55,12 @@
     currentAgentId?: string;
     onToggle?: (id: string) => void;
     onToggleSelection?: (id: string) => void;
+    /**
+     * Called after a mention chip (terminal/script) is inserted into the editor,
+     * allowing an embedding menu to close. Toggling checkbox items or adding
+     * searched files/notes keeps the picker open for multi-selection.
+     */
+    onPick?: () => void;
     /** Callback to insert a mention chip into the editor (for types not in PanelContextItem) */
     onInsertMention?: (mention: {
       id: string;
@@ -63,6 +70,8 @@
       meta?: Record<string, unknown>;
     }) => void;
     renderTrigger?: boolean;
+    /** Render only the picker body inside an owning overlay such as Menu.SubContent. */
+    embedded?: boolean;
     class?: string;
   }
 
@@ -74,8 +83,10 @@
     currentAgentId,
     onToggle,
     onToggleSelection,
+    onPick,
     onInsertMention,
     renderTrigger = true,
+    embedded = false,
     class: className = '',
   }: Props = $props();
 
@@ -267,6 +278,7 @@
       externalAnchor = null;
       searchQuery = '';
       searchResults = [];
+      onPick?.();
       return;
     }
 
@@ -344,6 +356,7 @@
 
   onMount(() => {
     document.addEventListener('mousedown', handleClickOutside, true);
+    if (embedded) void tick().then(() => searchInputRef?.focus());
     return () => {
       document.removeEventListener('mousedown', handleClickOutside, true);
       if (searchDebounceTimer) {
@@ -379,166 +392,186 @@
   </TooltipShortcut>
 {/if}
 
-{#if isOpen}
-  <Portal zIndex={60}>
-    <div
-      bind:this={popoverRef}
-      class={cn(
-        'overflow-hidden rounded-lg border border-border',
-        'bg-popover text-popover-foreground shadow-lg',
-      )}
-      style={popoverStyle}
-      role="dialog"
-      aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
-    >
-      <!-- Header -->
-      <div class="px-3 py-2">
-        <div class="type-body font-medium">{m.chat_contextPicker_context_title()}</div>
-        <div class="type-caption text-subtle">
-          {m.chat_contextPicker_selectFiles_description()}
-        </div>
+{#snippet pickerBody()}
+  <div
+    bind:this={popoverRef}
+    class={cn(
+      'flex max-h-[min(400px,var(--bits-menu-content-available-height,calc(100dvh_-_1rem)))] flex-col overflow-hidden pb-2',
+      embedded
+        ? 'w-80'
+        : 'rounded-lg border border-border bg-popover text-popover-foreground shadow-lg',
+    )}
+    style={embedded ? undefined : popoverStyle}
+    role={embedded ? undefined : 'dialog'}
+    aria-label={m.chat_contextPicker_selectPanels_ariaLabel()}
+    data-context-picker-body
+    data-embedded={embedded ? '' : undefined}
+  >
+    <!-- Header -->
+    <div class="shrink-0 px-3 py-2">
+      <div class="type-body font-medium">{m.chat_contextPicker_context_title()}</div>
+      <div class="type-caption text-subtle">
+        {m.chat_contextPicker_selectFiles_description()}
       </div>
+    </div>
 
-      <!-- Search input -->
-      <div class="px-2">
-        <div class="relative">
-          <Fa
-            icon={faSearch}
-            class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-subtle"
+    <!-- Search input -->
+    <div class="shrink-0 px-2">
+      <div class="relative">
+        <Fa
+          icon={faSearch}
+          class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-subtle"
+        />
+        <Input
+          bind:this={searchInputRef}
+          type="text"
+          placeholder={m.chat_contextPicker_addFiles_placeholder()}
+          value={searchQuery}
+          oninput={handleSearchInput}
+          class="pl-7"
+          noFocusStyle
+        />
+        {#if isSearching}
+          <IntentMarkLoader
+            size={12}
+            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-subtle"
           />
-          <Input
-            bind:this={searchInputRef}
-            type="text"
-            placeholder={m.chat_contextPicker_addFiles_placeholder()}
-            value={searchQuery}
-            oninput={handleSearchInput}
-            class="pl-7"
-            noFocusStyle
-          />
-          {#if isSearching}
-            <Fa
-              icon={faSpinner}
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-subtle animate-spin"
-            />
-          {/if}
-        </div>
-      </div>
-
-      <!-- Content area -->
-      <div class="max-h-[280px] min-h-[120px] overflow-y-auto">
-        {#if showSearchResults}
-          <!-- Search results -->
-          {#if isSearching}
-            <!-- Skeleton loader while searching -->
-            <div class="py-1">
-              {#each [0, 1, 2] as i (i)}
-                <div class="flex items-center gap-2.5 px-3 py-2">
-                  <div class="h-3.5 w-3.5 rounded bg-muted animate-pulse"></div>
-                  <div class="flex-1 space-y-1.5">
-                    <div class="h-4 w-3/4 rounded bg-muted animate-pulse"></div>
-                    <div class="h-3 w-1/2 rounded bg-muted animate-pulse"></div>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {:else if searchResults.length === 0}
-            <div class="type-caption px-3 py-4 text-center text-subtle">
-              {m.chat_contextPicker_noResults_label()}
-            </div>
-          {:else}
-            <div class="py-1">
-              {#each searchResults as result (result.id)}
-                <button
-                  type="button"
-                  onclick={() => handleSelectSearchResult(result)}
-                  class="type-body flex w-full items-center gap-2 px-3 py-2
-                         hover:bg-muted/40 cursor-pointer transition-colors text-left"
-                >
-                  <Fa icon={getIconForType(result.type)} class="h-3.5 w-3.5 text-subtle" />
-                  <div class="flex-1 min-w-0">
-                    <div class="truncate font-medium">{result.label}</div>
-                    {#if result.subtitle || result.description}
-                      <div class="type-caption truncate text-subtle">
-                        {result.subtitle || result.description}
-                      </div>
-                    {/if}
-                  </div>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        {:else}
-          <!-- Open panels and selections grouped by panel -->
-          {#if groupedPanels.length > 0}
-            <div class="py-1">
-              {#each groupedPanels as group, groupIndex (group.panelId)}
-                <!-- Border between groups -->
-                {#if groupIndex > 0}
-                  <div class="border-t border-border my-1"></div>
-                {/if}
-
-                <!-- Panels in this group -->
-                {#each group.panels as panel (panel.id)}
-                  {@const isCurrentAgent =
-                    panel.type === 'agent' && panel.agentId === currentAgentId}
-                  <button
-                    type="button"
-                    onclick={() => !isCurrentAgent && handleToggleItem(panel.id)}
-                    disabled={isCurrentAgent}
-                    class={cn(
-                      'type-body flex w-full items-center gap-2 px-3 py-2 transition-colors',
-                      isCurrentAgent
-                        ? 'opacity-50 cursor-not-allowed'
-                        : 'hover:bg-muted/40 cursor-pointer',
-                    )}
-                  >
-                    <Checkbox
-                      checked={panel.checked}
-                      size="sm"
-                      disabled={isCurrentAgent}
-                      onCheckedChange={() => !isCurrentAgent && handleToggleItem(panel.id)}
-                      class="!mr-1"
-                    />
-                    <Fa icon={getIconForType(panel.type)} class="h-3.5 w-3.5 text-subtle" />
-                    <span class="flex-1 truncate text-left">{panel.label}</span>
-                    {#if isCurrentAgent}
-                      <span class="type-caption text-muted-foreground uppercase"
-                        >{m.chat_contextPicker_you_badge()}</span
-                      >
-                    {:else if panel.isActive}
-                      <span class="type-caption text-muted-foreground uppercase"
-                        >{m.chat_contextPicker_active_badge()}</span
-                      >
-                    {/if}
-                  </button>
-                {/each}
-
-                <!-- Selections in this group -->
-                {#each group.selections as selection (selection.id)}
-                  <button
-                    type="button"
-                    onclick={() => handleToggleSelectionItem(selection.id)}
-                    class="type-body flex w-full items-center gap-2 px-3 py-2
-                           hover:bg-muted/40 cursor-pointer transition-colors"
-                  >
-                    <Checkbox
-                      checked={selection.checked}
-                      size="sm"
-                      onCheckedChange={() => handleToggleSelectionItem(selection.id)}
-                    />
-                    <Fa icon={faQuoteLeft} class="h-3.5 w-3.5 text-ghost" />
-                    <span class="flex-1 truncate text-left">{truncateText(selection.text)}</span>
-                  </button>
-                {/each}
-              {/each}
-            </div>
-          {:else}
-            <div class="type-caption px-3 py-4 text-center text-subtle">
-              {m.chat_contextPicker_noPanels_label()}
-            </div>
-          {/if}
         {/if}
       </div>
     </div>
+
+    <!-- Content area -->
+    <div class="mt-1 max-h-[280px] min-h-0 overflow-y-auto px-2">
+      {#if showSearchResults}
+        <!-- Search results -->
+        {#if isSearching}
+          <!-- Skeleton loader while searching -->
+          <div class="py-1">
+            {#each [0, 1, 2] as i (i)}
+              <div class="flex items-center gap-2.5 px-3 py-2">
+                <div class="h-3.5 w-3.5 rounded bg-muted animate-pulse"></div>
+                <div class="flex-1 space-y-1.5">
+                  <div class="h-4 w-3/4 rounded bg-muted animate-pulse"></div>
+                  <div class="h-3 w-1/2 rounded bg-muted animate-pulse"></div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else if searchResults.length === 0}
+          <div class="type-caption px-3 py-4 text-left text-subtle">
+            {m.chat_contextPicker_noResults_label()}
+          </div>
+        {:else}
+          <div class="py-1">
+            {#each searchResults as result (result.id)}
+              <Button
+                type="button"
+                variant="plain"
+                onclick={() => handleSelectSearchResult(result)}
+                wrapContent={false}
+                class={cn(
+                  OPTION_LIST_ROW_CLASS,
+                  'flex h-auto w-full items-center justify-start gap-2 hover:bg-hover cursor-pointer transition-colors text-left',
+                )}
+              >
+                <Fa icon={getIconForType(result.type)} class="h-3.5 w-3.5 text-subtle" />
+                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div class="text-sm truncate font-medium">{result.label}</div>
+                  {#if result.subtitle || result.description}
+                    <div class="text-xs text-muted-foreground truncate">
+                      {result.subtitle || result.description}
+                    </div>
+                  {/if}
+                </div>
+              </Button>
+            {/each}
+          </div>
+        {/if}
+      {:else}
+        <!-- Open panels and selections grouped by panel -->
+        {#if groupedPanels.length > 0}
+          <div class="py-1">
+            {#each groupedPanels as group, groupIndex (group.panelId)}
+              <!-- Border between groups -->
+              {#if groupIndex > 0}
+                <div class="border-t border-border my-1"></div>
+              {/if}
+
+              <!-- Panels in this group -->
+              {#each group.panels as panel (panel.id)}
+                {@const isCurrentAgent = panel.type === 'agent' && panel.agentId === currentAgentId}
+                <Button
+                  type="button"
+                  variant="plain"
+                  onclick={() => !isCurrentAgent && handleToggleItem(panel.id)}
+                  disabled={isCurrentAgent}
+                  wrapContent={false}
+                  class={cn(
+                    OPTION_LIST_ROW_CLASS,
+                    'flex h-auto w-full items-center justify-start gap-2 transition-colors',
+                    isCurrentAgent
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'hover:bg-muted/40 cursor-pointer',
+                  )}
+                >
+                  <Checkbox
+                    checked={panel.checked}
+                    size="sm"
+                    disabled={isCurrentAgent}
+                    onCheckedChange={() => !isCurrentAgent && handleToggleItem(panel.id)}
+                    class="!mr-1"
+                  />
+                  <Fa icon={getIconForType(panel.type)} class="h-3.5 w-3.5 text-subtle" />
+                  <span class="flex-1 truncate text-left">{panel.label}</span>
+                  {#if isCurrentAgent}
+                    <span class="type-caption text-muted-foreground"
+                      >{m.chat_contextPicker_you_badge()}</span
+                    >
+                  {:else if panel.isActive}
+                    <span class="type-caption text-muted-foreground"
+                      >{m.chat_contextPicker_active_badge()}</span
+                    >
+                  {/if}
+                </Button>
+              {/each}
+
+              <!-- Selections in this group -->
+              {#each group.selections as selection (selection.id)}
+                <Button
+                  type="button"
+                  variant="plain"
+                  onclick={() => handleToggleSelectionItem(selection.id)}
+                  wrapContent={false}
+                  class={cn(
+                    OPTION_LIST_ROW_CLASS,
+                    'flex h-auto w-full items-center justify-start gap-2 hover:bg-hover cursor-pointer transition-colors',
+                  )}
+                >
+                  <Checkbox
+                    checked={selection.checked}
+                    size="sm"
+                    onCheckedChange={() => handleToggleSelectionItem(selection.id)}
+                  />
+                  <Fa icon={faQuoteLeft} class="h-3.5 w-3.5 text-ghost" />
+                  <span class="flex-1 truncate text-left">{truncateText(selection.text)}</span>
+                </Button>
+              {/each}
+            {/each}
+          </div>
+        {:else}
+          <div class="type-caption px-3 py-4 text-left text-subtle">
+            {m.chat_contextPicker_noPanels_label()}
+          </div>
+        {/if}
+      {/if}
+    </div>
+  </div>
+{/snippet}
+
+{#if embedded}
+  {@render pickerBody()}
+{:else if isOpen}
+  <Portal zIndex={60}>
+    {@render pickerBody()}
   </Portal>
 {/if}

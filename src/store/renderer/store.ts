@@ -1,21 +1,15 @@
-import type { Store } from "@augmentcode/themis/svelte-store";
+import type { Store } from '@augmentcode/themis/svelte-store';
 
 import {
   REDUX_DEBUG_LS_KEY,
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
   REDUX_DEBUG_LS_KEY_STRUCTURED_CLONE_KEY,
-} from "./constants";
-import type {
-  PreloadedStoreState,
-  ReduxStoreContext,
-} from "./types";
-import { safeLocalStorage } from "$lib/utils/safe-storage";
-import {
-  clearRendererStoreBridge,
-  initRendererStoreBridge,
-} from "./renderer-store-bridge";
+} from './constants';
+import type { PreloadedStoreState, ReduxStoreContext } from './types';
+import { safeLocalStorage } from '$lib/utils/safe-storage';
+import { clearRendererStoreBridge, initRendererStoreBridge } from './renderer-store-bridge';
 
-export { store } from "./configured-store";
+export { store } from './configured-store';
 
 type StoreDebugIntent = {
   reduxContext?: ReduxStoreContext | ReduxStoreContext[];
@@ -28,13 +22,14 @@ type StoreDebugIntent = {
   disableReduxLogging?: () => void;
 };
 
-type StoreDebugWindow = Window & typeof globalThis & {
-  intent?: StoreDebugIntent;
-  isStorybook?: boolean;
-};
+type StoreDebugWindow = Window &
+  typeof globalThis & {
+    intent?: StoreDebugIntent;
+    isStorybook?: boolean;
+  };
 
 const cleanUpWindow = (context: ReduxStoreContext) => {
-  if (typeof window === "undefined") {
+  if (typeof window === 'undefined') {
     return;
   }
 
@@ -55,7 +50,7 @@ const cleanUpWindow = (context: ReduxStoreContext) => {
 };
 
 const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
-  if (typeof window === "undefined") {
+  if (typeof window === 'undefined') {
     return;
   }
 
@@ -64,16 +59,18 @@ const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
   debugWindow.intent = debugWindow.intent || {};
 
   if (debugWindow.intent.reduxContext === storeContext) {
-    console.log("Context is exposed already");
+    console.log('Context is exposed already');
   } else if (!debugWindow.intent.reduxContext) {
     debugWindow.intent.reduxContext = storeContext;
   } else {
     const list: ReduxStoreContext[] = [];
-    debugWindow.intent.reduxContext = list.concat(debugWindow.intent.reduxContext).concat(storeContext);
+    debugWindow.intent.reduxContext = list
+      .concat(debugWindow.intent.reduxContext)
+      .concat(storeContext);
     if (debugWindow.isStorybook) {
-      console.log("Multiple Redux stores initialized:", debugWindow.intent.reduxContext);
+      console.log('Multiple Redux stores initialized:', debugWindow.intent.reduxContext);
     } else {
-      console.error("Multiple Redux stores initialized:", debugWindow.intent.reduxContext);
+      console.error('Multiple Redux stores initialized:', debugWindow.intent.reduxContext);
     }
   }
 
@@ -82,8 +79,8 @@ const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
   }
 
   const parseStoredBoolean = (value: string | null): boolean | undefined => {
-    if (value === "true") return true;
-    if (value === "false") return false;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
     return undefined;
   };
 
@@ -96,21 +93,21 @@ const exposeStoreContextDebug = (storeContext: ReduxStoreContext) => {
     if (safeLocalStorage.getItem(key)) {
       safeLocalStorage.removeItem(key);
     } else {
-      safeLocalStorage.setItem(key, "true");
+      safeLocalStorage.setItem(key, 'true');
     }
   };
 
   const logReduxLoggingReloadMessage = () => {
-    console.log("Redux logging preference updated. Reload to take effect.");
+    console.log('Redux logging preference updated. Reload to take effect.');
   };
 
   debugWindow.intent.enableReduxLogging = () => {
-    safeLocalStorage.setItem(REDUX_DEBUG_LS_KEY, "true");
+    safeLocalStorage.setItem(REDUX_DEBUG_LS_KEY, 'true');
     logReduxLoggingReloadMessage();
   };
 
   debugWindow.intent.disableReduxLogging = () => {
-    safeLocalStorage.setItem(REDUX_DEBUG_LS_KEY, "false");
+    safeLocalStorage.setItem(REDUX_DEBUG_LS_KEY, 'false');
     logReduxLoggingReloadMessage();
   };
 

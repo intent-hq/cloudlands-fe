@@ -1,5 +1,5 @@
-import { store } from "../../store";
-import type { WorkspaceCreateProgressEntry } from "./workspace-create-progress-types";
+import { store } from '../../store';
+import type { WorkspaceCreateProgressEntry } from './workspace-create-progress-types';
 
 export const selectWorkspaceCreateProgress = store.createSelector<
   [progressId: string],

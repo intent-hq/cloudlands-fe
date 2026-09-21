@@ -1,15 +1,16 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Use vi.hoisted so mock fns are available to the hoisted vi.mock factory
 const {
-  mockReadFile, mockStat, mockAccess, mockReaddir,
-  mockWriteFile, mockMkdir, mockUnlink, mockRm, mockRename,
+  mockReadFile,
+  mockStat,
+  mockAccess,
+  mockReaddir,
+  mockWriteFile,
+  mockMkdir,
+  mockUnlink,
+  mockRm,
+  mockRename,
 } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
   mockStat: vi.fn(),
@@ -156,4 +157,3 @@ describe('LocalMetadataFS', () => {
     });
   });
 });
-

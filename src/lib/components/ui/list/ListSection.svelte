@@ -4,8 +4,7 @@
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import Button from '../button/button.svelte';
-  import { slide } from 'svelte/transition';
-  import Header from '../Header.svelte';
+  import { slide } from '$lib/motion';
 
   interface Props extends HTMLAttributes<HTMLDivElement> {
     class?: string;
@@ -21,6 +20,7 @@
     onToggleCollapse?: () => void;
     children?: any;
     actions?: any; // Snippet for custom actions
+    headingLevel?: 2 | 3 | 4 | 5 | 6;
   }
 
   let {
@@ -37,6 +37,7 @@
     onToggleCollapse,
     children,
     actions,
+    headingLevel = 3,
     ...restProps
   }: Props = $props();
 
@@ -52,30 +53,35 @@
     {#if collapsible}
       <div
         class={cn(
-          'group type-caption flex min-h-7 items-center rounded-md border border-transparent font-medium text-muted-foreground',
-          'hover:bg-accent/60 hover:text-accent-foreground',
+          'group type-caption flex min-h-7 items-center rounded-md border border-transparent text-left font-medium text-muted-foreground',
+          'transition-colors duration-spring-fast ease-spring-fast hover:bg-hover hover:text-foreground motion-reduce:transition-none',
           titleClass,
         )}
       >
-        <button
+        <Button
+          variant="plain"
           type="button"
-          class="flex min-h-7 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-left outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 motion-reduce:transition-none"
+          class="flex min-h-7 min-w-0 flex-1 cursor-pointer items-center justify-start gap-1.5 rounded-md border border-transparent px-2 py-1 text-left focus-visible:-outline-offset-1 motion-reduce:transition-none [&_[data-slot=button-content]]:min-w-0 [&_[data-slot=button-content]]:w-full [&_[data-slot=button-content]]:justify-start"
           onclick={handleToggle}
           aria-expanded={!collapsed}
         >
           {#if icon}
             <Fa {icon} size="12" class="text-muted-foreground/50" />
           {/if}
-          <Header size={6} class="flex-1 text-left">{title}</Header>
+          <span
+            role="heading"
+            aria-level={headingLevel}
+            class="type-caption flex-1 text-left font-medium">{title}</span
+          >
           <Fa
             icon={faChevronDown}
             size="13"
             class={cn(
-              'text-muted-foreground/50 transition-transform duration-[var(--motion-standard)] motion-reduce:transition-none' /* a11y-ignore */,
-              collapsed && 'rotate-90',
+              'text-muted-foreground/50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none' /* a11y-ignore */,
+              collapsed && '-rotate-90',
             )}
           />
-        </button>
+        </Button>
         <div class="flex shrink-0 items-center gap-1 pr-1">
           {#if actions}
             {@render actions()}
@@ -103,8 +109,10 @@
           titleClass,
         )}
       >
-        <span class="a11y-ignore type-caption flex-1 text-left font-medium text-muted-foreground"
-          >{title}</span
+        <span
+          role="heading"
+          aria-level={headingLevel}
+          class="type-caption flex-1 text-left font-medium text-muted-foreground">{title}</span
         >
 
         <div class="flex items-center gap-1">
@@ -132,8 +140,8 @@
   {#if !collapsed}
     <div
       data-slot="list-section-content"
-      class={cn('flex min-w-0 flex-col', contentClass)}
-      transition:slide={{ duration: 150 }}
+      class={cn('flex min-w-0 flex-col items-stretch text-left', contentClass)}
+      transition:slide={{ tier: 'moderate' }}
     >
       {@render children?.()}
     </div>
@@ -141,7 +149,7 @@
 </div>
 
 <style>
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     [data-slot='list-section-content'] {
       transition-duration: 0ms !important;
     }

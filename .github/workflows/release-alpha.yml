@@ -120,7 +120,7 @@ jobs:
           if [ "$STATUS" -eq 0 ]; then
             echo "::error::Release v${VERSION} already exists on intent-hq/cloudlands-releases. Delete it there first to rebuild this tag."
             exit 1
-          elif echo "$RESPONSE" | grep -q "HTTP 404"; then
+          elif grep -q "HTTP 404" <<<"$RESPONSE"; then
             echo "No existing v${VERSION} release on intent-hq/cloudlands-releases, proceeding"
           else
             echo "::error::Failed to check for existing v${VERSION} release on intent-hq/cloudlands-releases: ${RESPONSE}"
@@ -261,6 +261,19 @@ jobs:
       # `prebuild` fix so the workflow_dispatch fallback can rebuild older tags.
       - name: Generate i18n catalog
         run: pnpm run generate:i18n
+
+      # dist:mac runs scripts/fetch-tailcat.cjs --targets=darwin-arm64, which
+      # builds the tailcat tunnel client from source (tailcat publishes no
+      # prebuilt macOS assets) and needs a Go toolchain — the hosted
+      # macos-15-xlarge runner ships none. Mac leg only: the Linux/Windows
+      # legs stage checksum-verified prebuilt assets. Version must satisfy
+      # tailcat v0.4.0's go.mod (go 1.27.0); mirrors intentd's macOS source
+      # build of the same pinned tag.
+      - name: Install Go (tailcat macOS source build)
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+          cache: false
 
       - name: Build and package macOS app
         run: pnpm run dist:mac
@@ -712,6 +725,7 @@ jobs:
         run: |
           echo "Collected release assets:"
           ls -lh dist-electron/
+          node scripts/validate-release-asset-names.mjs dist-electron
           MISSING=""
           for FEED in latest-mac.yml latest.yml latest-linux.yml latest-linux-arm64.yml; do
             if [ ! -f "dist-electron/$FEED" ]; then
@@ -813,7 +827,7 @@ jobs:
           fi
           # The value comes from a downloaded asset; validate its shape before it
           # reaches GITHUB_OUTPUT (guards against corrupt/multi-line values)
-          if [ -n "$INTENTD_BASE" ] && ! printf '%s' "$INTENTD_BASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          if [ -n "$INTENTD_BASE" ] && ! grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$INTENTD_BASE"; then
             echo "Ignoring malformed intentdVersion in ${PREV_FE_TAG} manifest; falling back to pin-only notes"
             INTENTD_BASE=""
           fi

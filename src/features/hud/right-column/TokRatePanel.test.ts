@@ -1,6 +1,6 @@
 /**
  * TokRatePanel tests — the chart shows a compact peak Y-scale label (no "PK"
- * prefix, no "−40M" window-start footer), renders the "1 MIN BUCKETS" window
+ * prefix, no "−40M" window-start footer), renders the "1 min buckets" window
  * label, and adds an x-axis of on-the-hour LOCAL-time ticks plus a right-edge
  * label at the newest bucket's local time. Labels are computed from the same
  * Date logic the component uses, so the assertions are timezone-independent.
@@ -81,7 +81,7 @@ describe('TokRatePanel', () => {
       hudRateHistoryLoaded(history(['2026-07-30T14:58:00Z', '2026-07-30T14:59:00Z'])),
     );
     flushSync();
-    expect(panel().querySelector('.hud-tokrate-window')?.textContent).toBe('1 MIN BUCKETS');
+    expect(panel().querySelector('.hud-tokrate-window')?.textContent).toBe('1 min buckets');
     expect(panel().textContent).not.toContain('PK');
     expect(panel().textContent).not.toContain('−40M');
   });
@@ -294,7 +294,7 @@ describe('TokRatePanel', () => {
       const labels = Array.from(
         screen.getByTestId('hud-tokrate-legend').querySelectorAll('.hud-tokrate-legend-item'),
       ).map((el) => el.textContent?.trim());
-      expect(labels).toEqual(['IN', 'OUT', 'THOUGHTS', 'CACHED']);
+      expect(labels).toEqual(['In', 'Out', 'Thoughts', 'Cached']);
     });
 
     it('normalizes bar height on the summed bucket total, thoughts included', async () => {

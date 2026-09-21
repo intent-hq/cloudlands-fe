@@ -4,6 +4,7 @@
 
 import { store } from '../../store';
 import { makeKey, emptyEntry } from './agent-subscription-ui-slice';
+import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
 import type {
   AgentSubscriptionUIEntry,
   Subscription,
@@ -11,6 +12,7 @@ import type {
   AgentStatus,
   WaitingState,
   WokenUpInfo,
+  SubscriptionSnapshotStatus,
 } from './agent-subscription-ui-types';
 
 // ---------------------------------------------------------------------------
@@ -69,17 +71,101 @@ export const selectWokenUpInfo = store.createSelector<
   return selectEntry.select(state, workspaceId, agentId).wokenUpInfo;
 });
 
-/**
- * Utility-footer readiness latch: true once an `agent.getSubscriptions`
- * snapshot read has settled (success OR failure) for this (workspace, agent).
- * A failed read counts as ready-with-empty so the footer readiness gate can
- * never wedge the transcript reveal on subscription data.
- */
-export const selectSubscriptionSnapshotFetched = store.createSelector<
+export interface AgentSubscriptionLane {
+  visible: boolean;
+  count: number;
+  participantAgentIds: string[];
+}
+
+function uniqueIds(ids: readonly string[]): string[] {
+  return [...new Set(ids.filter(Boolean))];
+}
+
+/** Store-backed agent lane used even when the subscription card body is unmounted. */
+export const selectAgentSubscriptionLane = store.createSelector<
   [workspaceId: string, agentId: string],
-  boolean
+  AgentSubscriptionLane
 >((state, workspaceId, agentId) => {
-  return selectEntry.select(state, workspaceId, agentId).snapshotFetched;
+  const entry = selectEntry.select(state, workspaceId, agentId);
+  const participantIds: string[] = [];
+  const seenIds = new Set<string>();
+  const addIds = (ids: readonly string[]) => {
+    for (const id of uniqueIds(ids)) {
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      participantIds.push(id);
+    }
+  };
+  const subscriptions = [...entry.subscriptions].sort(
+    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+  );
+  for (const subscription of subscriptions) {
+    if (subscription.delegationGroup?.awaitMode !== 'all') addIds(subscription.actorIds);
+  }
+  const groupsById = new Map<string, DelegationGroupStatus>();
+  for (const group of entry.delegationGroups) {
+    if (group.awaitMode === 'all') groupsById.set(group.groupId, group);
+  }
+  for (const group of groupsById.values()) addIds(group.expectedAgentIds);
+  for (const subscription of subscriptions) {
+    const group = subscription.delegationGroup;
+    if (group?.awaitMode === 'all' && !groupsById.has(group.groupId)) {
+      addIds(group.expectedAgentIds);
+    }
+  }
+
+  const completedIds = new Set<string>();
+  for (const group of entry.delegationGroups) {
+    for (const id of group.completedAgentIds) completedIds.add(id);
+    for (const id of group.deletedAgentIds) completedIds.add(id);
+    for (const [id, status] of Object.entries(group.agentStatuses)) {
+      if (status === 'completed') completedIds.add(id);
+    }
+  }
+  for (const [id, status] of Object.entries(entry.agentStatuses)) {
+    if (status === 'completed') completedIds.add(id);
+  }
+
+  const sessionsById = state.agentSessions?.byAgentId ?? {};
+  const finishedIds = new Set(
+    [...completedIds].filter((id) => {
+      const session = sessionsById[id];
+      return !session || !isAgentRunningState(toAgentRuntimeStateInput(session));
+    }),
+  );
+  const sourceIndex = new Map(participantIds.map((id, index) => [id, index]));
+  const priority = (id: string): number => {
+    const session = sessionsById[id];
+    if (!session) return 2;
+    if (session.attentionRequestKind === 'blocker') return 0;
+    if (session.attentionRequestKind === 'discussion') return 1;
+    if (finishedIds.has(id)) return 4;
+    const status = String(session.status).toLowerCase();
+    return status === 'responding' || status === 'active' || status === 'processing' ? 2 : 3;
+  };
+  const activeIds = participantIds
+    .filter((id) => !finishedIds.has(id))
+    .sort(
+      (a, b) => priority(a) - priority(b) || (sourceIndex.get(a) ?? 0) - (sourceIndex.get(b) ?? 0),
+    );
+
+  return {
+    visible:
+      entry.snapshotStatus !== 'ready' ||
+      entry.waitingState === 'completed' ||
+      participantIds.length > 0 ||
+      entry.wokenUpInfo !== null,
+    count: activeIds.length,
+    participantAgentIds: activeIds,
+  };
+});
+
+/** Per-source footer state; `ready` plus no rows is authoritative empty. */
+export const selectSubscriptionSnapshotStatus = store.createSelector<
+  [workspaceId: string, agentId: string],
+  SubscriptionSnapshotStatus
+>((state, workspaceId, agentId) => {
+  return selectEntry.select(state, workspaceId, agentId).snapshotStatus;
 });
 
 /**

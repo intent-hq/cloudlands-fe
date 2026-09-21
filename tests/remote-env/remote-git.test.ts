@@ -55,7 +55,10 @@ describe(`Remote Git Tests - ${profile.name}`, () => {
   afterAll(async () => {
     // Cleanup test branch
     await execCommand(client, `cd ${testRepoPath} && git checkout main 2>/dev/null || true`);
-    await execCommand(client, `cd ${testRepoPath} && git branch -D ${testBranch} 2>/dev/null || true`);
+    await execCommand(
+      client,
+      `cd ${testRepoPath} && git branch -D ${testBranch} 2>/dev/null || true`,
+    );
     client?.end();
   });
 
@@ -78,10 +81,7 @@ describe(`Remote Git Tests - ${profile.name}`, () => {
     });
 
     it('should get git log', async () => {
-      const result = await execCommand(
-        client,
-        `cd ${testRepoPath} && git log --oneline -n 5`,
-      );
+      const result = await execCommand(client, `cd ${testRepoPath} && git log --oneline -n 5`);
       expect(result.code).toBe(0);
       expect(result.stdout).toContain('Initial commit');
     });

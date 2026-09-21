@@ -37,6 +37,22 @@ describe('ChatImageBlock', () => {
     });
   });
 
+  it('replaces image bytes that cannot load with a clear placeholder', async () => {
+    render(ChatImageBlock, {
+      props: { data: 'not-an-image', mimeType: 'image/png', alt: 'broken.png' },
+    });
+
+    const image = screen
+      .getByRole('button', { name: /view broken\.png full size/i })
+      .querySelector('img')!;
+    await fireEvent.error(image);
+
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain('broken.png');
+    expect(status.textContent).toContain('could not load');
+    expect(screen.queryByRole('button', { name: /view broken\.png full size/i })).toBeNull();
+  });
+
   it('requests hydration instead of opening the lightbox for a truncated thumbnail block', async () => {
     const onHydrate = vi.fn();
     render(ChatImageBlock, {
@@ -152,7 +168,7 @@ describe('ImageActionsMenu actions', () => {
     });
     await openImageActionsMenu();
 
-    expect(screen.queryByRole('menuitem', { name: /copy image/i })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /copy image/i })).toBeTruthy();
     await fireEvent.click(screen.getByRole('menuitem', { name: /copy path/i }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('docs/some dir/pic.png'));

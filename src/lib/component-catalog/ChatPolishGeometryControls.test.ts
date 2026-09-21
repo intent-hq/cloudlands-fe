@@ -12,6 +12,13 @@ import {
 
 const entry = getCatalogEntry('chat-polish')!;
 
+async function renderReadyPreview() {
+  const view = render(CatalogFixtureList, { props: { entry } });
+  await screen.findByRole('slider', { name: 'Panel width' }, { timeout: 20_000 });
+  await screen.findByTestId('chat-polish-preview', {}, { timeout: 20_000 });
+  return view;
+}
+
 describe('ChatPolishGeometryControls', () => {
   beforeAll(() => appStore.init());
   afterEach(() => {
@@ -22,7 +29,7 @@ describe('ChatPolishGeometryControls', () => {
   });
 
   it('exposes named keyboard controls and updates every scoped custom property', async () => {
-    const view = render(CatalogFixtureList, { props: { entry } });
+    const view = await renderReadyPreview();
     const workbench = screen.getByTestId('chat-polish-workbench');
     const sidebar = screen.getByTestId('chat-polish-sidebar');
     const examples = screen.getByTestId('chat-polish-examples');
@@ -66,7 +73,7 @@ describe('ChatPolishGeometryControls', () => {
   });
 
   it('keeps live changes unsaved until Save, then reloads and clears them on Reset', async () => {
-    const first = render(CatalogFixtureList, { props: { entry } });
+    const first = await renderReadyPreview();
     const width = screen.getByRole('slider', { name: 'Panel width' });
     const operationalGap = screen.getByRole('slider', { name: 'Operational row gap' });
     await fireEvent.input(width, { target: { value: '640' } });
@@ -90,14 +97,15 @@ describe('ChatPolishGeometryControls', () => {
     first.unmount();
 
     vi.mocked(localStorage.getItem).mockReturnValue(stored);
-    render(CatalogFixtureList, { props: { entry } });
+    await renderReadyPreview();
     await waitFor(() => {
       expect((screen.getByRole('slider', { name: 'Panel width' }) as HTMLInputElement).value).toBe(
         '640',
       );
       expect(screen.getAllByTestId('chat-polish-preview')).toHaveLength(1);
-      expect((screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value)
-        .toBe('12');
+      expect(
+        (screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value,
+      ).toBe('12');
     });
     await fireEvent.click(screen.getByRole('button', { name: 'Reset production defaults' }));
     expect((screen.getByRole('slider', { name: 'Panel width' }) as HTMLInputElement).value).toBe(
@@ -106,15 +114,16 @@ describe('ChatPolishGeometryControls', () => {
     expect(screen.getByRole('switch', { name: 'Compact mode' }).getAttribute('aria-checked')).toBe(
       'false',
     );
-    expect((screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value)
-      .toBe(String(defaultChatPolishGeometry.operationalRowGap));
+    expect(
+      (screen.getByRole('slider', { name: 'Operational row gap' }) as HTMLInputElement).value,
+    ).toBe(String(defaultChatPolishGeometry.operationalRowGap));
     expect(screen.getAllByTestId('chat-polish-preview')).toHaveLength(entry.fixtures.length);
     expect(localStorage.removeItem).toHaveBeenCalledWith(CHAT_POLISH_STORAGE_KEY);
     expect(screen.getByLabelText('Save status').textContent).toBe('Production defaults restored');
   });
 
   it('keeps live preview changes and reports save and reset storage failures', async () => {
-    render(CatalogFixtureList, { props: { entry } });
+    await renderReadyPreview();
     const width = screen.getByRole('slider', { name: 'Panel width' });
     await fireEvent.input(width, { target: { value: '680' } });
     vi.mocked(localStorage.setItem).mockImplementation(() => {

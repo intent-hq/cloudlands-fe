@@ -2,7 +2,7 @@
  * MCP Connection Test
  *
  * Tests connection to HTTP/SSE MCP servers to detect auth requirements.
- * Delegated to the daemon via `mcp.testConnection` (PROTOCOL §5.22.2, v7.3):
+ * Delegated to the daemon via `mcp.testConnection` (PROTOCOL §5.22.2):
  * the probe runs from the daemon host so the FE never contacts MCP server
  * URLs directly. The daemon injects the stored `mcp.oauth.*` bag for
  * `serverName` when no explicit Authorization header is supplied.
@@ -36,14 +36,11 @@ export async function testMcpConnection(
   logger.info('Testing MCP connection via daemon:', { url, serverName, hasHeaders: !!headers });
 
   try {
-    const result = await getBackendClient().request<McpConnectionTestResult>(
-      'mcp.testConnection',
-      {
-        url,
-        ...(headers ? { headers } : {}),
-        ...(serverName ? { serverName } : {}),
-      },
-    );
+    const result = await getBackendClient().request<McpConnectionTestResult>('mcp.testConnection', {
+      url,
+      ...(headers ? { headers } : {}),
+      ...(serverName ? { serverName } : {}),
+    });
     logger.debug('MCP connection test result:', { url, status: result.status });
     return result;
   } catch (error) {

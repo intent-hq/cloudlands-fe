@@ -27,20 +27,20 @@
  * `workspace:open` idiom) so the first click → `+` → Coordinator → create
  * resolves before any component mounts.
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { AGENT_CHANNELS } from "$shared/ipc/channels";
-import { backendRequest } from "$lib/client/live/backend-transport";
-import { newIdempotencyKey } from "$lib/client/live/live-support";
+import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+import { AGENT_CHANNELS } from '$shared/ipc/channels';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { newIdempotencyKey } from '$lib/client/live/live-support';
 
 /** Coerce a possibly-unknown argument into a plain object record. */
 function asRecord(arg: unknown): Record<string, unknown> {
-  return arg && typeof arg === "object" ? (arg as Record<string, unknown>) : {};
+  return arg && typeof arg === 'object' ? (arg as Record<string, unknown>) : {};
 }
 
 /** Best-effort string read for an optional field. */
 function readString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 /**
@@ -71,43 +71,43 @@ function readString(record: Record<string, unknown>, key: string): string | unde
  */
 registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
   const request = asRecord(arg);
-  const workspaceId = readString(request, "workspaceId");
+  const workspaceId = readString(request, 'workspaceId');
   if (!workspaceId) {
     return {
       success: false,
-      error: { code: "INVALID_REQUEST", message: "workspaceId is required" },
+      error: { code: 'INVALID_REQUEST', message: 'workspaceId is required' },
     };
   }
   const metadata = asRecord(request.metadata);
   const params: Record<string, unknown> = {
     workspaceId,
-    name: readString(request, "name"),
-    model: readString(request, "model"),
-    reasoningEffort: readString(request, "reasoningEffort"),
-    specialistId: readString(metadata, "specialist"),
+    name: readString(request, 'name'),
+    model: readString(request, 'model'),
+    reasoningEffort: readString(request, 'reasoningEffort'),
+    specialistId: readString(metadata, 'specialist'),
     idempotencyKey: newIdempotencyKey(),
   };
   const nameExplicitlySet = request.nameExplicitlySet;
   if (
     nameExplicitlySet !== undefined &&
     nameExplicitlySet !== null &&
-    typeof nameExplicitlySet !== "boolean"
+    typeof nameExplicitlySet !== 'boolean'
   ) {
     return {
       success: false,
       error: {
-        code: "INVALID_REQUEST",
-        message: "nameExplicitlySet must be a boolean when present (PROTOCOL §5.5)",
+        code: 'INVALID_REQUEST',
+        message: 'nameExplicitlySet must be a boolean when present (PROTOCOL §5.5)',
       },
     };
   }
-  if (typeof nameExplicitlySet === "boolean") {
+  if (typeof nameExplicitlySet === 'boolean') {
     params.nameExplicitlySet = nameExplicitlySet;
   }
   try {
-    const result = await backendRequest<{ agent?: unknown }>("agent.create", params);
+    const result = await backendRequest<{ agent?: unknown }>('agent.create', params);
     const agent = (result as { agent?: unknown })?.agent;
-    const sessionId = readString(asRecord(agent), "id");
+    const sessionId = readString(asRecord(agent), 'id');
     if (!sessionId) {
       // The daemon-assigned id is the whole contract now: without it the FE
       // cannot address any follow-up send. Surface a clear backend error
@@ -115,8 +115,8 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
       return {
         success: false,
         error: {
-          code: "BACKEND_ERROR",
-          message: "agent.create response missing daemon-assigned agent.id",
+          code: 'BACKEND_ERROR',
+          message: 'agent.create response missing daemon-assigned agent.id',
         },
       };
     }
@@ -128,7 +128,7 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
     return {
       success: false,
       error: {
-        code: "BACKEND_ERROR",
+        code: 'BACKEND_ERROR',
         message: error instanceof Error ? error.message : String(error),
       },
     };
@@ -150,15 +150,15 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
  */
 registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, async (arg) => {
   const request = asRecord(arg);
-  const agentId = readString(request, "agentId");
-  const modelId = readString(request, "modelId");
-  const workspaceId = readString(request, "workspaceId");
-  const providerId = readString(request, "providerId");
+  const agentId = readString(request, 'agentId');
+  const modelId = readString(request, 'modelId');
+  const workspaceId = readString(request, 'workspaceId');
+  const providerId = readString(request, 'providerId');
   if (!agentId || !modelId || !workspaceId) {
-    return { success: false, error: "agentId, modelId and workspaceId are required" };
+    return { success: false, error: 'agentId, modelId and workspaceId are required' };
   }
   try {
-    const result = await backendRequest("agent.setModel", {
+    const result = await backendRequest('agent.setModel', {
       agentId,
       modelId,
       workspaceId,

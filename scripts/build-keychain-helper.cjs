@@ -21,27 +21,29 @@
  *
  * Skips recompilation when the existing binary is newer than the sources.
  */
-const { execFileSync } = require("child_process");
-const fs = require("fs");
-const path = require("path");
+const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-const FE_DIR = path.resolve(__dirname, "..");
-const sourceFile = path.join(FE_DIR, "resources/keychain/sync-helper.swift");
-const infoPlist = path.join(FE_DIR, "resources/keychain/helper-info.plist");
-const destDir = path.join(FE_DIR, "resources/keychain-helper");
-const bundleDir = path.join(destDir, "intent-keychain-helper.app");
-const bundlePlist = path.join(bundleDir, "Contents", "Info.plist");
-const destBin = path.join(bundleDir, "Contents", "MacOS", "intent-keychain-helper");
+const FE_DIR = path.resolve(__dirname, '..');
+const sourceFile = path.join(FE_DIR, 'resources/keychain/sync-helper.swift');
+const infoPlist = path.join(FE_DIR, 'resources/keychain/helper-info.plist');
+const destDir = path.join(FE_DIR, 'resources/keychain-helper');
+const bundleDir = path.join(destDir, 'intent-keychain-helper.app');
+const bundlePlist = path.join(bundleDir, 'Contents', 'Info.plist');
+const destBin = path.join(bundleDir, 'Contents', 'MacOS', 'intent-keychain-helper');
 
-if (process.platform !== "darwin") {
-  console.log("Skipping keychain helper build (macOS only).");
+if (process.platform !== 'darwin') {
+  console.log('Skipping keychain helper build (macOS only).');
   process.exit(0);
 }
 
 try {
-  execFileSync("xcrun", ["--find", "swiftc"], { stdio: "ignore" });
+  execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'ignore' });
 } catch {
-  console.warn("Warning: swiftc not found — keychain helper not built. Keychain sync will be unavailable.");
+  console.warn(
+    'Warning: swiftc not found — keychain helper not built. Keychain sync will be unavailable.',
+  );
   process.exit(0);
 }
 
@@ -58,12 +60,12 @@ if (
 
 fs.mkdirSync(path.dirname(destBin), { recursive: true });
 console.log(`Compiling ${sourceFile} -> ${destBin}`);
-execFileSync("xcrun", ["swiftc", "-O", "-o", destBin, sourceFile], { stdio: "inherit" });
+execFileSync('xcrun', ['swiftc', '-O', '-o', destBin, sourceFile], { stdio: 'inherit' });
 fs.copyFileSync(infoPlist, bundlePlist);
 // Ad-hoc sign the bundle so it runs locally in dev. Without the restricted
 // entitlements the data-protection keychain rejects it and the helper reports
 // "unavailable"; release packaging replaces this with the Developer ID
 // signature + embedded provisioning profile in the afterPack hook
 // (scripts/sign-sidecar.js).
-execFileSync("codesign", ["-f", "-s", "-", bundleDir], { stdio: "inherit" });
-console.log("Keychain helper built.");
+execFileSync('codesign', ['-f', '-s', '-', bundleDir], { stdio: 'inherit' });
+console.log('Keychain helper built.');

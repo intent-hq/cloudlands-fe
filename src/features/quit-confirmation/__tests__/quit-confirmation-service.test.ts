@@ -15,7 +15,6 @@ import type { QuitConfirmationShowPayload } from '$shared/ipc/quit-confirmation'
 const SHOW_PAYLOAD: QuitConfirmationShowPayload = {
   requestId: 'req-1',
   interrupted: [{ agentId: 'a1', agentName: 'Local Agent' }],
-  keepRunning: [],
   disruptedBrowserTabs: [],
 };
 

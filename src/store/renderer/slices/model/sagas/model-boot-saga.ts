@@ -31,17 +31,16 @@ export function* loadModelsOnBootWorker() {
   try {
     let providerId = yield* selectActiveProviderId.effect();
     if (!providerId) {
-      const providerSettings: Awaited<
-        ReturnType<typeof appClient.settings.getProviderSettings>
-      > = yield* call([appClient.settings, appClient.settings.getProviderSettings]);
+      const providerSettings: Awaited<ReturnType<typeof appClient.settings.getProviderSettings>> =
+        yield* call([appClient.settings, appClient.settings.getProviderSettings]);
       providerId = providerSettings?.activeProviderId ?? '';
     }
     if (!providerId) return false;
 
-    const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call([
-      appClient.models,
-      appClient.models.list,
-    ]);
+    const models: Awaited<ReturnType<typeof appClient.models.list>> = yield* call(
+      [appClient.models, appClient.models.list],
+      providerId,
+    );
 
     // Provider mismatch guard: if the active provider changed while the list
     // was in flight, the reload saga owns that provider's load — drop ours.

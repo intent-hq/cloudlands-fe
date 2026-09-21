@@ -9,14 +9,10 @@
    * This prevents focus loss during typing.
    */
   import type { NodeViewProps } from '@tiptap/core';
-  import {
-  NodeViewWrapper,
-  NodeViewContent,
-} from '$lib/utils/tiptap/svelte-node-view';
+  import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
 
   // Props are passed directly from SvelteNodeViewRenderer and are reactive via $state
   let {
-
     node: _node,
 
     selected: _selected,

@@ -38,7 +38,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-// Pre-7.0 daemon shape (no `favorites`); the FE keeps working against it.
+// Daemon listing shape without `favorites`; the FE keeps working against it.
 function listing(path: string): DirectoryPickerListing {
   return {
     path,
@@ -51,7 +51,7 @@ function listing(path: string): DirectoryPickerListing {
   };
 }
 
-// PROTOCOL.md §5.14 (v7.0) shape: `favorites` is always present, existence
+// PROTOCOL.md §5.14 shape: `favorites` is always present, existence
 // checked on the daemon host, `home` always leading.
 function listingWithFavorites(path: string): DirectoryPickerListing {
   return {

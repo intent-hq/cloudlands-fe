@@ -50,15 +50,15 @@ async function showAgentEvent(event: AgentEvent): Promise<void> {
   try {
     if (!event.data) return;
     const data = event.data;
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     if (event.kind === 'plan-required') {
-      toast.error('Intent: Plan Upgrade Required', {
+      notify.error('Intent: Plan Upgrade Required', {
         description: data.message,
         duration: 20_000,
       });
       return;
     }
-    toast.warning('Agent Authentication Required', {
+    notify.warning('Agent Authentication Required', {
       description: data.message,
       duration: 15_000,
       action: {

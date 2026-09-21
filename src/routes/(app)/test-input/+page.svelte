@@ -57,14 +57,14 @@
   <div class="space-y-2">
     <div class="flex gap-4">
       <button
-        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        class="px-4 py-2 bg-info text-info-foreground rounded hover:bg-info/90"
         onclick={toggleStreaming}
       >
         Toggle Streaming ({isStreaming ? 'ON' : 'OFF'})
       </button>
 
       <button
-        class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+        class="px-4 py-2 bg-success text-success-foreground rounded hover:bg-success/90"
         onclick={toggleProcessing}
       >
         Toggle Processing ({isProcessing ? 'ON' : 'OFF'})

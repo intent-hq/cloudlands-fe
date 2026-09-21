@@ -44,6 +44,7 @@
     background: hsl(var(--muted));
     padding-inline: 0.2em;
     font-family: var(--font-code);
-    font-size: 0.95em;
+    font-size: inherit;
+    line-height: inherit;
   }
 </style>

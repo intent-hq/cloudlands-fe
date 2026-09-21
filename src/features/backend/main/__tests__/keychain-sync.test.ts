@@ -29,6 +29,7 @@ vi.mock('child_process', async () => {
 import { spawn } from 'child_process';
 import {
   KEYCHAIN_PAYLOAD_VERSION,
+  KEYCHAIN_SERVICE_GUEST_SESSIONS,
   MAX_HELPER_OUTPUT_BYTES,
   TOMBSTONE_TTL_MS,
   accountKeyFor,
@@ -51,11 +52,14 @@ function rec(overrides: Partial<KeychainSyncRecord> = {}): KeychainSyncRecord {
   return {
     label: 'Studio Mac',
     accent: 'blue',
+    detectedDeviceKind: null,
+    deviceIcon: 'auto',
     host: '192.168.1.10',
     hosts: ['192.168.1.10'],
     port: 8443,
     fingerprint: 'AA:BB:CC',
     hostname: 'studio.local',
+    tcAddress: null,
     detectHosts: true,
     token: 'secret-token',
     updatedAt: NOW - 10_000,
@@ -139,10 +143,57 @@ describe('accountKeyFor', () => {
 });
 
 describe('payload schema', () => {
+  it('round-trips device metadata and defaults missing or unknown values', () => {
+    expect(
+      parsePayload(serializeRecord(rec({ detectedDeviceKind: 'macStudio', deviceIcon: 'cat' }))),
+    ).toEqual({
+      kind: 'record',
+      record: rec({ detectedDeviceKind: 'macStudio', deviceIcon: 'cat' }),
+    });
+    const legacy = JSON.parse(serializeRecord(rec()));
+    delete legacy.detectedDeviceKind;
+    delete legacy.deviceIcon;
+    expect(parsePayload(JSON.stringify(legacy))).toMatchObject({
+      kind: 'record',
+      record: { detectedDeviceKind: null, deviceIcon: 'auto' },
+    });
+    legacy.detectedDeviceKind = 'futureKind';
+    legacy.deviceIcon = 'futureIcon';
+    expect(parsePayload(JSON.stringify(legacy))).toMatchObject({
+      kind: 'record',
+      record: { detectedDeviceKind: null, deviceIcon: 'auto' },
+    });
+    legacy.detectedDeviceKind = 'robot';
+    legacy.deviceIcon = 'robot';
+    expect(parsePayload(JSON.stringify(legacy))).toMatchObject({
+      kind: 'record',
+      record: { detectedDeviceKind: null, deviceIcon: 'robot' },
+    });
+  });
+
   it('round-trips a live record', () => {
     const record = rec();
     const parsed = parsePayload(serializeRecord(record));
     expect(parsed).toEqual({ kind: 'record', record });
+  });
+
+  it('carries guest principal identity only when present (backends payload unchanged)', () => {
+    const owner = JSON.parse(serializeRecord(rec())) as Record<string, unknown>;
+    expect(owner).not.toHaveProperty('principalId');
+    expect(owner).not.toHaveProperty('login');
+
+    const guest = rec({ principalId: 'prn_7', login: 'octocat' });
+    const raw = JSON.parse(serializeRecord(guest)) as Record<string, unknown>;
+    expect(raw).toMatchObject({ principalId: 'prn_7', login: 'octocat' });
+    expect(parsePayload(serializeRecord(guest))).toEqual({ kind: 'record', record: guest });
+
+    const blank = { ...raw, principalId: '', login: 42 };
+    const parsed = parsePayload(JSON.stringify(blank));
+    expect(parsed.kind).toBe('record');
+    if (parsed.kind === 'record') {
+      expect(parsed.record).not.toHaveProperty('principalId');
+      expect(parsed.record).not.toHaveProperty('login');
+    }
   });
 
   it('round-trips an explicit blank accent on live records and tombstones', () => {
@@ -195,7 +246,22 @@ describe('payload schema', () => {
     const parsed = parsePayload(payload);
     expect(parsed).toMatchObject({
       kind: 'record',
-      record: { accent: 'blue', hosts: ['h'], hostname: null, detectHosts: true },
+      record: { accent: 'blue', hosts: ['h'], hostname: null, tcAddress: null, detectHosts: true },
+    });
+  });
+
+  it('round-trips a tc address and defaults blank/malformed ones to null', () => {
+    const record = rec({ tcAddress: 'tc7f2a91.tailcat.net' });
+    expect(parsePayload(serializeRecord(record))).toEqual({ kind: 'record', record });
+    // Payloads from apps that predate the field (or wrote junk) parse as
+    // null — additive compatibility, never `invalid`.
+    expect(parsePayload(JSON.stringify({ ...rec(), v: 1, tcAddress: '  ' }))).toMatchObject({
+      kind: 'record',
+      record: { tcAddress: null },
+    });
+    expect(parsePayload(JSON.stringify({ ...rec(), v: 1, tcAddress: 42 }))).toMatchObject({
+      kind: 'record',
+      record: { tcAddress: null },
     });
   });
 
@@ -258,6 +324,26 @@ describe('reconcile', () => {
     expect(result.pulled).toEqual([ACCOUNT]);
     expect(applied).toEqual([{ account: ACCOUNT, record: remoteRecord }]);
     expect(upserts).toEqual([]);
+  });
+
+  it('a detectHosts=false flip stamped past a peer refresh wins: pushed, the refreshed IPs are not pulled back', async () => {
+    // A peer that has not pulled the flip yet refreshed its candidate list
+    // at clock T; the flip was stamped strictly past T, so LWW keeps the
+    // cleared list and the flip propagates instead of the resurrected IPs.
+    const peerRefresh = rec({
+      hosts: ['192.168.1.10', '10.0.0.5', '10.0.0.6'],
+      updatedAt: NOW - 1000,
+    });
+    const flip = rec({ hosts: ['192.168.1.10'], detectHosts: false, updatedAt: NOW - 999 });
+    const { client, upserts } = fakeClient([item(peerRefresh)]);
+    const { adapter, applied } = fakeAdapter([flip]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(result.pulled).toEqual([]);
+    expect(applied).toEqual([]);
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(parsePayload(upserts[0].payload)).toEqual({ kind: 'record', record: flip });
   });
 
   it('remote tombstone newer than local live: deletes locally, no purge before TTL', async () => {
@@ -391,6 +477,52 @@ describe('reconcile', () => {
     expect(applied).toEqual([]);
     expect(upserts).toEqual([]);
     expect(deletes).toEqual([]);
+    expect(result.pulled).toEqual([]);
+    expect(result.pushed).toEqual([]);
+  });
+
+  it('equal clocks but only local carries a tc address: pushed re-stamped strictly newer', async () => {
+    // Additive-field upgrade: the address was captured by an app version
+    // that did not sync tcAddress, so the local record and its keychain
+    // copy share the same clock. The address-bearing side must win or the
+    // address never reaches the user's other devices.
+    const remoteRecord = rec({ updatedAt: NOW - 1000 });
+    const localRecord = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(result.pushed).toEqual([ACCOUNT]);
+    expect(parsePayload(upserts[0].payload)).toEqual({
+      kind: 'record',
+      record: { ...localRecord, updatedAt: NOW },
+    });
+  });
+
+  it('equal clocks but only remote carries a tc address: pulled verbatim', async () => {
+    const remoteRecord = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const localRecord = rec({ updatedAt: NOW - 1000 });
+    const { client, upserts } = fakeClient([item(remoteRecord)]);
+    const { adapter, applied } = fakeAdapter([localRecord]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(upserts).toEqual([]);
+    expect(result.pulled).toEqual([ACCOUNT]);
+    expect(applied).toEqual([{ account: ACCOUNT, record: remoteRecord }]);
+  });
+
+  it('equal clocks with matching tc addresses stay in sync (no writes)', async () => {
+    const record = rec({ updatedAt: NOW - 1000, tcAddress: 'tc123.example.ts.net' });
+    const { client, upserts } = fakeClient([item(record)]);
+    const { adapter, applied } = fakeAdapter([record]);
+
+    const result = await reconcile(adapter, { client, now: NOW });
+
+    expect(applied).toEqual([]);
+    expect(upserts).toEqual([]);
     expect(result.pulled).toEqual([]);
     expect(result.pushed).toEqual([]);
   });
@@ -1176,6 +1308,41 @@ describe('createHelperKeychainClient', () => {
       ok: true,
       items: [{ account: ACCOUNT, payload: '{"v":1}', modifiedAtMs: 123 }],
     });
+  });
+
+  it('passes --service ahead of every subcommand when a service is selected', async () => {
+    respondWith(JSON.stringify({ items: [] }));
+    const client = createHelperKeychainClient({
+      platform: 'darwin',
+      helperPath: HELPER,
+      service: KEYCHAIN_SERVICE_GUEST_SESSIONS,
+    });
+    expect(await client.list()).toEqual({ ok: true, items: [] });
+    expect(vi.mocked(spawn).mock.calls[0][1]).toEqual([
+      '--service',
+      KEYCHAIN_SERVICE_GUEST_SESSIONS,
+      'list',
+    ]);
+
+    const child = respondWith(JSON.stringify({ ok: true }));
+    const payload = serializeRecord(rec({ principalId: 'prn_7', login: 'octocat' }));
+    await client.upsert(ACCOUNT, payload);
+    expect(vi.mocked(spawn).mock.calls[1][1]).toEqual([
+      '--service',
+      KEYCHAIN_SERVICE_GUEST_SESSIONS,
+      'upsert',
+      ACCOUNT,
+    ]);
+    expect(child.stdin.written).toBe(JSON.stringify({ payload }));
+
+    respondWith(JSON.stringify({ ok: true }));
+    await client.delete(ACCOUNT);
+    expect(vi.mocked(spawn).mock.calls[2][1]).toEqual([
+      '--service',
+      KEYCHAIN_SERVICE_GUEST_SESSIONS,
+      'delete',
+      ACCOUNT,
+    ]);
   });
 
   it('list: surfaces per-item group and the top-level sharedGroup when reported', async () => {

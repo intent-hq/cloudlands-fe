@@ -3,13 +3,7 @@
  * Tests the click handler logic without requiring full Tiptap setup
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleIntentLink } from './workspaces-link-handler';
 
 describe('Tiptap Click Handler Integration', () => {

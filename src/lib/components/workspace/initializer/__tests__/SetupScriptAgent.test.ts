@@ -6,17 +6,15 @@
  * `setup-scripts:*` streaming IPC flow. These tests cover the seam calls and
  * the unmount race the old listener-cleanup tests guarded against.
  */
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  workspacesList: vi.fn(),
   generate: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
   appClient: {
-    workspaces: { list: mocks.workspacesList },
     setupScripts: { generate: mocks.generate },
   },
 }));
@@ -29,23 +27,15 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () =
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/button/button.svelte', async () => ({
-  default: (await import('./mocks/MockComponent.svelte')).default,
-}));
-
 vi.mock('svelte-fa', async () => ({
   default: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
 import SetupScriptAgent from '../SetupScriptAgent.svelte';
+import { initAppStore, store as appStore } from '$store/renderer/store';
+import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((innerResolve) => {
-    resolve = innerResolve;
-  });
-  return { promise, resolve };
-}
+let storeContext: ReturnType<typeof initAppStore> | undefined;
 
 /** §5.25 SetupScript record as the daemon returns it. */
 const RUST_DRAFT = {
@@ -58,13 +48,17 @@ const RUST_DRAFT = {
 describe('SetupScriptAgent (workspace.generateSetupScript flow)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.workspacesList.mockResolvedValue([
-      { id: 'ws-1', path: '/repo', repositoryPath: '/repo' },
-    ]);
+    storeContext = initAppStore(appStore);
+    appStore.dispatch(
+      replaceWorkspaceList([{ id: 'ws-1', path: '/repo', repositoryPath: '/repo' } as never]),
+    );
   });
 
   afterEach(() => {
+    appStore.dispatch(replaceWorkspaceList([]));
     cleanup();
+    storeContext?.dispose();
+    storeContext = undefined;
   });
 
   it('resolves the workspace by repo path, requests a draft, and renders it', async () => {
@@ -79,21 +73,42 @@ describe('SetupScriptAgent (workspace.generateSetupScript flow)', () => {
   });
 
   it('does not request a draft if the component unmounts before the workspace resolves', async () => {
-    const list = deferred<Array<{ id: string; path: string }>>();
-    mocks.workspacesList.mockReturnValue(list.promise);
-
     const { unmount } = render(SetupScriptAgent, { props: { repoPath: '/repo' } });
 
     unmount();
-    list.resolve([{ id: 'ws-1', path: '/repo' }]);
-    await list.promise;
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.generate).not.toHaveBeenCalled();
   });
 
+  it('replaces the loading state with a draft and only applies it on request', async () => {
+    let resolveDraft!: (draft: typeof RUST_DRAFT) => void;
+    mocks.generate.mockReturnValue(new Promise((resolve) => (resolveDraft = resolve)));
+    const onScriptGenerated = vi.fn();
+    render(SetupScriptAgent, { props: { repoPath: '/repo', onScriptGenerated } });
+    await waitFor(() => expect(mocks.generate).toHaveBeenCalledWith('ws-1'));
+    expect(screen.getByText(/Analyzing/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create Script' })).toBeNull();
+    resolveDraft(RUST_DRAFT);
+    const apply = await screen.findByRole('button', { name: 'Create Script' });
+    expect(screen.queryByText(/Analyzing/)).toBeNull();
+    expect(onScriptGenerated).not.toHaveBeenCalled();
+    await fireEvent.click(apply);
+    expect(onScriptGenerated).toHaveBeenCalledWith(
+      expect.objectContaining({ content: RUST_DRAFT.script }),
+    );
+  });
+
+  it('replaces loading with a generation error without offering a draft', async () => {
+    mocks.generate.mockRejectedValue(new Error('Fixture generation failed'));
+    render(SetupScriptAgent, { props: { repoPath: '/repo' } });
+    expect(await screen.findByText('Fixture generation failed')).toBeTruthy();
+    expect(screen.queryByText(/Analyzing/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create Script' })).toBeNull();
+  });
+
   it('shows an error when no workspace matches the repo path', async () => {
-    mocks.workspacesList.mockResolvedValue([{ id: 'ws-other', path: '/elsewhere' }]);
+    appStore.dispatch(replaceWorkspaceList([{ id: 'ws-other', path: '/elsewhere' } as never]));
 
     render(SetupScriptAgent, { props: { repoPath: '/repo' } });
 

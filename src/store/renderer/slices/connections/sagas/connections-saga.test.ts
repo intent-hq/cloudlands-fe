@@ -1,14 +1,14 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The update saga lazy-imports svelte-sonner for its outcome toasts.
-const toast = vi.hoisted(() => ({
+// The update saga lazy-imports $lib/components/patterns/notify for its outcome toasts.
+const notify = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
   dismiss: vi.fn(),
 }));
-vi.mock('svelte-sonner', () => ({ toast }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify }));
 
 import {
   CONNECTION_CHANNELS,
@@ -35,6 +35,8 @@ import {
   updateConnectionRequested,
   updateBackendRequested,
 } from '../connections-slice';
+import { selectIsConnecting, selectIsOpeningConnection } from '../connections-selectors';
+import type { StoreState } from '../../../types';
 import { connectionsSaga } from './connections-saga';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 
@@ -83,10 +85,10 @@ function start() {
 describe('connectionsSaga', () => {
   beforeEach(() => {
     callbacks = {};
-    toast.success.mockClear();
-    toast.error.mockClear();
-    toast.warning.mockClear();
-    toast.dismiss.mockClear();
+    notify.success.mockClear();
+    notify.error.mockClear();
+    notify.warning.mockClear();
+    notify.dismiss.mockClear();
     invoke = vi.fn(async (channel: string, params?: unknown) => {
       if (channel === CONNECTION_CHANNELS.LIST)
         return {
@@ -392,6 +394,165 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('opens two backends back-to-back and tracks each in flight per id (takeEvery, not takeLeading)', async () => {
+    let releaseFirst!: (value: { status: 'opened'; id: string }) => void;
+    const firstResult = new Promise<{ status: 'opened'; id: string }>((resolve) => {
+      releaseFirst = resolve;
+    });
+    invoke.mockImplementation(async (channel: string, params?: unknown) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN) {
+        const { id } = params as { id: string };
+        return id === 'remote-1' ? firstResult : { status: 'opened', id };
+      }
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = openConnectionRequested('remote-1');
+    const second = openConnectionRequested('remote-2');
+    run.channel.put(first);
+    run.channel.put(second);
+    await vi.waitFor(() =>
+      expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-2']),
+    );
+
+    // The second settles while the first is still awaiting its RPC; the
+    // global status stays busy for the remaining open.
+    await expect(second.promise).resolves.toEqual({ status: 'opened', id: 'remote-2' });
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
+    expect(run.getState().connections.status).toBe('connecting');
+
+    releaseFirst({ status: 'opened', id: 'remote-1' });
+    await expect(first.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(run.getState().connections.status).toBe('idle');
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: 'remote-1' });
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, { id: 'remote-2' });
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a repeat same-id open in flight until its own RPC settles', async () => {
+    const deferred: Array<(value: { status: 'opened'; id: string }) => void> = [];
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return new Promise<{ status: 'opened'; id: string }>((resolve) => {
+          deferred.push(resolve);
+        });
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = openConnectionRequested('remote-1');
+    const second = openConnectionRequested('remote-1');
+    run.channel.put(first);
+    run.channel.put(second);
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+    expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']);
+
+    // Only the first RPC settles: the second open is still outstanding, so the
+    // id stays tracked and the global status stays busy.
+    deferred[0]({ status: 'opened', id: 'remote-1' });
+    await expect(first.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
+    expect(run.getState().connections.status).toBe('connecting');
+
+    deferred[1]({ status: 'opened', id: 'remote-1' });
+    await expect(second.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(run.getState().connections.status).toBe('idle');
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a repeat same-id open tracked and busy when the first one fails', async () => {
+    type OpenResult = { status: 'opened'; id: string };
+    const deferred: Array<{
+      resolve: (value: OpenResult) => void;
+      reject: (error: Error) => void;
+    }> = [];
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN)
+        return new Promise<OpenResult>((resolve, reject) => {
+          deferred.push({ resolve, reject });
+        });
+      return {};
+    });
+    const run = start();
+    await settle();
+    const storeState = () => run.getState() as unknown as StoreState;
+
+    const first = openConnectionRequested('remote-1');
+    const second = openConnectionRequested('remote-1');
+    run.channel.put(first);
+    run.channel.put(second);
+    await vi.waitFor(() => expect(deferred).toHaveLength(2));
+    let secondSettled = false;
+    second.promise.then(
+      () => (secondSettled = true),
+      () => (secondSettled = true),
+    );
+
+    // Only the first RPC fails: its own promise rejects and the error is
+    // surfaced, but the outstanding second open keeps the id tracked and the
+    // busy selectors true.
+    deferred[0].reject(new Error('boom'));
+    await expect(first.promise).rejects.toThrow('boom');
+    await settle();
+    expect(secondSettled).toBe(false);
+    expect(run.getState().connections.openingIds).toEqual(['remote-1']);
+    expect(run.getState().connections.error).toBe('boom');
+    expect(selectIsOpeningConnection.select(storeState(), 'remote-1')).toBe(true);
+    expect(selectIsConnecting.select(storeState())).toBe(true);
+
+    deferred[1].resolve({ status: 'opened', id: 'remote-1' });
+    await expect(second.promise).resolves.toEqual({ status: 'opened', id: 'remote-1' });
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(run.getState().connections.status).toBe('idle');
+    expect(run.getState().connections.error).toBeNull();
+    expect(selectIsOpeningConnection.select(storeState(), 'remote-1')).toBe(false);
+    expect(selectIsConnecting.select(storeState())).toBe(false);
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('rejects every outstanding same-id open and clears the id when the root saga is cancelled', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === CONNECTION_CHANNELS.LIST)
+        return { connections: [LOCAL, REMOTE], activeId: LOCAL.id, windowBackendId: LOCAL.id };
+      if (channel === CONNECTION_CHANNELS.OPEN) return await new Promise(() => {});
+      return {};
+    });
+    const run = start();
+    await settle();
+
+    const first = openConnectionRequested('remote-1');
+    const second = openConnectionRequested('remote-1');
+    run.channel.put(first);
+    run.channel.put(second);
+    await vi.waitFor(() =>
+      expect(run.getState().connections.openingIds).toEqual(['remote-1', 'remote-1']),
+    );
+
+    run.task.cancel();
+    await run.task.toPromise();
+    await expect(first.promise).rejects.toThrow('Connection open was cancelled');
+    await expect(second.promise).rejects.toThrow('Connection open was cancelled');
+    expect(run.getState().connections.openingIds).toEqual([]);
+    expect(selectIsConnecting.select(run.getState() as unknown as StoreState)).toBe(false);
+  });
+
   it('passes through token-free open guidance without leaking an IPC exception', async () => {
     invoke.mockImplementation(async (channel: string) => {
       if (channel === CONNECTION_CHANNELS.LIST)
@@ -653,8 +814,8 @@ describe('connectionsSaga', () => {
     run.channel.put(action);
     await expect(action.promise).resolves.toEqual({ ok: true });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
-    expect(toast.success).toHaveBeenCalledTimes(1);
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(notify.success).toHaveBeenCalledTimes(1);
+    expect(notify.error).not.toHaveBeenCalled();
 
     run.task.cancel();
     await run.task.toPromise();
@@ -688,7 +849,7 @@ describe('connectionsSaga', () => {
     await expect(first.promise).resolves.toEqual({ ok: true });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-1' });
     expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, { id: 'remote-2' });
-    expect(toast.success).toHaveBeenCalledTimes(2);
+    expect(notify.success).toHaveBeenCalledTimes(2);
 
     run.task.cancel();
     await run.task.toPromise();
@@ -716,10 +877,10 @@ describe('connectionsSaga', () => {
       // A structured failure resolves (no throw) — the toast carries the news.
       await expect(action.promise).resolves.toEqual(expected);
     }
-    expect(toast.error).toHaveBeenCalledTimes(3);
+    expect(notify.error).toHaveBeenCalledTimes(3);
     // The daemon's message is embedded in the failed-toast text.
-    expect(String(toast.error.mock.calls[2]![0])).toContain('daemon is not sitter-supervised');
-    expect(toast.success).not.toHaveBeenCalled();
+    expect(String(notify.error.mock.calls[2]![0])).toContain('daemon is not sitter-supervised');
+    expect(notify.success).not.toHaveBeenCalled();
 
     run.task.cancel();
     await run.task.toPromise();
@@ -738,7 +899,7 @@ describe('connectionsSaga', () => {
     const action = updateBackendRequested('remote-1');
     run.channel.put(action);
     await expect(action.promise).rejects.toThrow('bridge unavailable');
-    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(notify.error).toHaveBeenCalledTimes(1);
 
     run.task.cancel();
     await run.task.toPromise();
@@ -769,8 +930,8 @@ describe('connectionsSaga', () => {
       // v-prefixed reported versions must not double the template's own "v".
       const vBehind = { ...BEHIND, daemonVersion: 'v0.9.0' };
       changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [message, options] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [message, options] = notify.warning.mock.calls[0]!;
       expect(String(message)).toContain('Studio Mac');
       expect(String(message)).toContain('v0.9.0');
       expect(String(message)).toContain('v0.10.0');
@@ -784,8 +945,8 @@ describe('connectionsSaga', () => {
       // toast still applies — no dismissal either.
       changed([LOCAL, vBehind], [BEHIND.id], 'v0.10.0');
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
-      expect(toast.dismiss).not.toHaveBeenCalled();
+      expect(notify.warning).toHaveBeenCalledTimes(1);
+      expect(notify.dismiss).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -796,11 +957,11 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
       changed([LOCAL, BEHIND], [], '0.10.0');
       await settle();
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(2));
 
       run.task.cancel();
       await run.task.toPromise();
@@ -811,18 +972,18 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      expect(toast.dismiss).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      expect(notify.dismiss).not.toHaveBeenCalled();
 
       changed([LOCAL, BEHIND], [], '0.10.0');
-      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
-      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+      await vi.waitFor(() => expect(notify.dismiss).toHaveBeenCalledTimes(1));
+      expect(notify.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
 
       // The toast was already dismissed: a further disconnected re-broadcast
       // must not dismiss again.
       changed([LOCAL, BEHIND], [], '0.10.0');
       await settle();
-      expect(toast.dismiss).toHaveBeenCalledTimes(1);
+      expect(notify.dismiss).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -833,14 +994,14 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // The version refresh (e.g. after a successful update) re-evaluates the
       // still-connected backend as no longer behind the pin.
       changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
-      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(notify.dismiss).toHaveBeenCalledTimes(1));
+      expect(notify.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -851,7 +1012,7 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // Still connected, but the broadcast lost its verdict inputs (e.g. a
       // refresh raced the fire-and-forget captures): no daemonVersion, no
@@ -862,13 +1023,13 @@ describe('connectionsSaga', () => {
       await settle();
       changed([LOCAL, { ...BEHIND, updateSupported: undefined }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.dismiss).not.toHaveBeenCalled();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.dismiss).not.toHaveBeenCalled();
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       // A later conclusive verdict (back at the pin) still dismisses.
       changed([LOCAL, { ...BEHIND, daemonVersion: '0.10.0' }], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledTimes(1));
-      expect(toast.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
+      await vi.waitFor(() => expect(notify.dismiss).toHaveBeenCalledTimes(1));
+      expect(notify.dismiss).toHaveBeenCalledWith(`connections-daemon-behind-${BEHIND.id}`);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -884,8 +1045,8 @@ describe('connectionsSaga', () => {
       await settle();
       changed([LOCAL, { ...BEHIND, updateSupported: false }], [], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
-      expect(toast.dismiss).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
+      expect(notify.dismiss).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -900,16 +1061,16 @@ describe('connectionsSaga', () => {
       // id must NOT count as evaluated.
       changed([LOCAL, { ...BEHIND, daemonVersion: null }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The capture's write/broadcast arrives: still counts as the transition.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // Unchanged re-broadcast after the conclusive one: silent.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -921,12 +1082,12 @@ describe('connectionsSaga', () => {
 
       changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // Re-broadcasts of the same conclusive state stay silent too.
       changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -939,17 +1100,17 @@ describe('connectionsSaga', () => {
       // A stale/conclusive false is evaluated but suppressed.
       changed([LOCAL, { ...BEHIND, updateSupported: false }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The fire-and-forget capture then flips the flag with the SAME
       // daemonVersion: the refresh must re-evaluate and toast exactly once.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // Unchanged re-broadcast after the toast: silent.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -963,11 +1124,11 @@ describe('connectionsSaga', () => {
       // unknown is inconclusive, so the id must NOT count as evaluated.
       changed([LOCAL, { ...BEHIND, updateSupported: null }], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The capture's write/broadcast arrives: still counts as the transition.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       run.task.cancel();
       await run.task.toPromise();
@@ -986,13 +1147,13 @@ describe('connectionsSaga', () => {
         return {};
       });
       const run = start();
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
 
       // The first post-hydration broadcast of the same pool stays silent —
       // the hydration announcement seeded the tracker.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1014,12 +1175,12 @@ describe('connectionsSaga', () => {
         changed(pool, connectedIds, '0.10.0', own);
       }
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // Behind but no pinned version reported: silent.
       changed([LOCAL, BEHIND], [BEHIND.id]);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1033,19 +1194,19 @@ describe('connectionsSaga', () => {
       // is not this window's to announce.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0', LOCAL.id);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // Window bound to a different remote: same silence.
       const other = { ...REMOTE, id: 'remote-2', daemonVersion: '0.10.0' };
       changed([LOCAL, BEHIND, other], [BEHIND.id, other.id], '0.10.0', other.id);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The skipped backend was never marked evaluated: the window that owns
       // it still announces on its own broadcast.
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0', BEHIND.id);
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      expect(toast.warning.mock.calls[0]![1].id).toBe(`connections-daemon-behind-${BEHIND.id}`);
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      expect(notify.warning.mock.calls[0]![1].id).toBe(`connections-daemon-behind-${BEHIND.id}`);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1062,8 +1223,8 @@ describe('connectionsSaga', () => {
       await settle();
 
       changed([LOCAL, BEHIND], [BEHIND.id], '0.10.0');
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [, options] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [, options] = notify.warning.mock.calls[0]!;
       options.action.onClick();
       await vi.waitFor(() =>
         expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, {
@@ -1071,7 +1232,7 @@ describe('connectionsSaga', () => {
         }),
       );
       // The outcome surfaces via the existing per-result update toast.
-      await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.success).toHaveBeenCalledTimes(1));
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1085,13 +1246,13 @@ describe('connectionsSaga', () => {
       // silent, and not marked evaluated.
       changed([LOCAL], [LOCAL.id], '0.10.0', LOCAL.id);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       // The external-daemon capture enriches the local record: toast once.
       const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [message, options] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [message, options] = notify.warning.mock.calls[0]!;
       expect(String(message)).toContain('This machine (local)');
       expect(String(message)).toContain('v0.9.0');
       expect(String(message)).toContain('v0.10.0');
@@ -1100,7 +1261,7 @@ describe('connectionsSaga', () => {
       // Unchanged re-broadcast: silent.
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await settle();
-      expect(toast.warning).toHaveBeenCalledTimes(1);
+      expect(notify.warning).toHaveBeenCalledTimes(1);
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1120,8 +1281,8 @@ describe('connectionsSaga', () => {
         updateSupported: true,
       };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [message] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [message] = notify.warning.mock.calls[0]!;
       expect(String(message)).toContain('This machine (local)');
       expect(String(message)).not.toContain('persisted-fallback-label');
 
@@ -1141,8 +1302,8 @@ describe('connectionsSaga', () => {
 
       const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: true };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
-      await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));
-      const [, options] = toast.warning.mock.calls[0]!;
+      await vi.waitFor(() => expect(notify.warning).toHaveBeenCalledTimes(1));
+      const [, options] = notify.warning.mock.calls[0]!;
       options.action.onClick();
       await vi.waitFor(() =>
         expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.UPDATE_BACKEND, {
@@ -1150,7 +1311,7 @@ describe('connectionsSaga', () => {
         }),
       );
       // The outcome surfaces via the existing per-result update toast.
-      await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(notify.success).toHaveBeenCalledTimes(1));
 
       run.task.cancel();
       await run.task.toPromise();
@@ -1163,7 +1324,7 @@ describe('connectionsSaga', () => {
       const localExternal = { ...LOCAL, daemonVersion: '0.9.0', updateSupported: false };
       changed([localExternal], [LOCAL.id], '0.10.0', LOCAL.id);
       await settle();
-      expect(toast.warning).not.toHaveBeenCalled();
+      expect(notify.warning).not.toHaveBeenCalled();
 
       run.task.cancel();
       await run.task.toPromise();

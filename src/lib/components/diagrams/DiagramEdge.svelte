@@ -36,7 +36,15 @@
   });
 
   // Get the appropriate arrowhead marker based on semantic style, scoped by diagram ID
-  const semanticMarkerStyles = new Set(['danger', 'success', 'warning', 'muted', 'inactive', 'highlighted', 'active']);
+  const semanticMarkerStyles = new Set([
+    'danger',
+    'success',
+    'warning',
+    'muted',
+    'inactive',
+    'highlighted',
+    'active',
+  ]);
   let markerSuffix = $derived(markerScope ? `-${markerScope}` : '');
   let markerUrl = $derived(
     edge.semanticStyle && semanticMarkerStyles.has(edge.semanticStyle)
@@ -47,15 +55,8 @@
 
 <g class={edgeClass}>
   <!-- Edge path -->
-  <path
-    d={edge.path}
-    class="edge-path"
-    marker-end={markerUrl}
-    vector-effect="non-scaling-stroke"
-  />
+  <path d={edge.path} class="edge-path" marker-end={markerUrl} vector-effect="non-scaling-stroke" />
 </g>
-
-
 
 <style>
   :global(.edge-path) {
@@ -92,7 +93,7 @@
   }
 
   :global(.edge-danger .edge-path) {
-    stroke: hsl(var(--destructive) / 0.8);
+    stroke: hsl(var(--danger) / 0.8);
     stroke-width: 1px;
   }
 

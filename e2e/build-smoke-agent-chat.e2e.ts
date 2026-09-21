@@ -55,7 +55,6 @@ test.describe('Build Smoke — Agent Chat UI', () => {
     console.log(
       `📝 Electron logs: main=${launched.logPaths.mainProcess}, renderer=${launched.logPaths.renderer}`,
     );
-
   });
 
   test.afterAll(async () => {
@@ -123,7 +122,9 @@ test.describe('Build Smoke — Agent Chat UI', () => {
       console.log('✅ Thinking indicator appeared');
 
       // 4. Streaming indicator appears (during chunked response)
-      await page.waitForSelector('[data-streaming="true"], [data-agent-status="streaming"]', { timeout: 15_000 });
+      await page.waitForSelector('[data-streaming="true"], [data-agent-status="streaming"]', {
+        timeout: 15_000,
+      });
       console.log('✅ Streaming indicator appeared');
 
       // 5. Agent card shows preview text in sidebar
@@ -145,7 +146,9 @@ test.describe('Build Smoke — Agent Chat UI', () => {
 
       // 8. Thinking/streaming indicators are gone
       const streamingVisible = await page
-        .locator('[data-streaming="true"], [data-agent-status="streaming"], [data-testid="streaming-status-thinking"]')
+        .locator(
+          '[data-streaming="true"], [data-agent-status="streaming"], [data-testid="streaming-status-thinking"]',
+        )
         .first()
         .isVisible({ timeout: 2_000 })
         .catch(() => false);
@@ -184,11 +187,15 @@ test.describe('Build Smoke — Agent Chat UI', () => {
       // Get the agent ID and dispatch workspace:open-agent directly
       const agentId4 = await page.locator('[data-agent-id]').first().getAttribute('data-agent-id');
       await page.evaluate((id) => {
-        window.dispatchEvent(new CustomEvent('workspace:open-agent', {
-          detail: { agentId: id },
-        }));
+        window.dispatchEvent(
+          new CustomEvent('workspace:open-agent', {
+            detail: { agentId: id },
+          }),
+        );
       }, agentId4);
-      await page.waitForSelector('.tab-content-wrapper:not(.hidden) [data-message-role]', { timeout: 15_000 });
+      await page.waitForSelector('.tab-content-wrapper:not(.hidden) [data-message-role]', {
+        timeout: 15_000,
+      });
 
       await waitForAgentCompletion(page, workspaceId, TEST_TIMEOUT);
 
@@ -200,16 +207,23 @@ test.describe('Build Smoke — Agent Chat UI', () => {
       }, workspaceId);
 
       const fileBasePath = worktreePath || repoPath;
-      console.log(`📂 Checking files in: ${fileBasePath} (worktree=${worktreePath}, repo=${repoPath})`);
+      console.log(
+        `📂 Checking files in: ${fileBasePath} (worktree=${worktreePath}, repo=${repoPath})`,
+      );
 
       const testFilePath = path.join(fileBasePath, 'test-output.txt');
 
       // Debug: list what's actually on disk
       try {
         const { execSync } = await import('child_process');
-        const listing = execSync(`find "${fileBasePath}" -maxdepth 2 -type f 2>/dev/null | head -20`, { encoding: 'utf-8' });
+        const listing = execSync(
+          `find "${fileBasePath}" -maxdepth 2 -type f 2>/dev/null | head -20`,
+          { encoding: 'utf-8' },
+        );
         console.log(`📂 Files on disk:\n${listing || '(none)'}`);
-      } catch { console.log('📂 Could not list files'); }
+      } catch {
+        console.log('📂 Could not list files');
+      }
 
       // The file should exist on disk
       expect(existsSync(testFilePath)).toBe(true);

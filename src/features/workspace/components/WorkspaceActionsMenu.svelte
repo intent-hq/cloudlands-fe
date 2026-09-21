@@ -22,13 +22,11 @@
 </script>
 
 <script lang="ts">
-  import CursorCodeIcon from '$lib/components/shared/icons/CursorCodeIcon.svelte';
-  import GhosttyIcon from '$lib/components/shared/icons/GhosttyIcon.svelte';
-  import JetBrainsIcon from '$lib/components/shared/icons/JetBrainsIcon.svelte';
-  import TerminalIcon from '$lib/components/shared/icons/TerminalIcon.svelte';
-  import VSCodeIcon from '$lib/components/shared/icons/VSCodeIcon.svelte';
-  import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
-  import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
+  import type { IconWeight } from 'phosphor-svelte';
+  import {
+    resolveEditorFallbackIcon,
+    resolveEditorIcon,
+  } from '$lib/components/shared/icons/editor-icon';
   import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
@@ -46,35 +44,24 @@
     faCheck,
     faChevronDown,
     faChevronLeft,
-    faCode,
     faFile,
-    faFolder,
-    faSpinner,
-    faTerminal,
     faTrash,
     faUpRightFromSquare,
   } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import * as Menu from '$lib/components/ui/menu';
   import { formatShortcut } from '$lib/utils/shortcuts';
   import { store as appStore } from '$store/renderer/store';
 
-  /** Icon mapping from editor ID to Svelte component */
-  const EDITOR_ICONS: Record<string, typeof VSCodeIcon> = {
-    vscode: VSCodeIcon,
-    cursor: CursorCodeIcon,
-    jetbrains: JetBrainsIcon,
-    xcode: XcodeIcon,
-    warp: WarpIcon,
-    ghostty: GhosttyIcon,
-    terminal: TerminalIcon,
-  };
-
   interface Props {
+    layout?: 'list' | 'submenu';
+    iconWeight?: IconWeight;
     filePath?: string;
     workspaceId?: string;
     isDirectory?: boolean;
@@ -98,6 +85,8 @@
   }
 
   let {
+    layout = 'list',
+    iconWeight,
     filePath = '',
     workspaceId = '',
     isDirectory = true,
@@ -134,9 +123,9 @@
 
   const installedEditors$ = selectInstalledEditorsFiltered(workspaceIdStore);
 
-  // Editors arrive priority-sorted; show only the top few and rely on "Choose app" for the rest.
-  const MAX_VISIBLE_EDITORS = 3;
-  const visibleEditors = $derived($installedEditors$.slice(0, MAX_VISIBLE_EDITORS));
+  // Editors arrive priority-sorted; expose every installed editor and rely on
+  // "Choose app" for applications that are not installed or enabled.
+  const visibleEditors = $derived($installedEditors$);
 
   // Shared layout so every row's icon and label line up in the same columns.
   const menuItemClass =
@@ -163,84 +152,58 @@
   // Resolve the absolute path
   $effect(() => {
     if (filePath && workspaceId) {
-      // Check if workspaceFolderPath is a special marker for workspace root
-      if (workspaceFolderPath === '__WORKSPACE_ROOT__') {
-        // For notes, resolve the workspace root path via IPC
-        invoke<any>('workspace:get-root', { workspaceId })
-          .then((rootPath) => {
-            if (rootPath) {
-              const normalizedRoot = rootPath.replace(/\\/g, '/');
-              if (isAbsolutePath(filePath)) {
+      invoke<any>('workspace:get', { id: workspaceId })
+        .then((result) => {
+          // Check if result exists and has valid data (not archived/deleted)
+          if (result && result.success && result.data) {
+            const workspace = result.data;
+            const workspaceRoot =
+              workspace.worktreePath || workspace.repositoryPath || workspace.path;
+            const workspacePath =
+              workspaceFolderPath === '__WORKSPACE_ROOT__'
+                ? workspaceRoot
+                : workspaceFolderPath || workspaceRoot;
+
+            if (workspacePath) {
+              const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/');
+              if (isWorkspaceRoot) {
+                resolvedPath = normalizedWorkspacePath;
+              } else if (isAbsolutePath(filePath)) {
                 resolvedPath = filePath.replace(/\\/g, '/');
               } else {
-                resolvedPath = `${normalizedRoot}/${filePath}`.replace(/\/+/g, '/');
+                resolvedPath = `${normalizedWorkspacePath}/${filePath}`.replace(/\/+/g, '/');
               }
-              resolvedFolderPath = normalizedRoot;
-              logger.info('[WorkspaceActionsMenu] Resolved note path:', {
+              resolvedFolderPath = normalizedWorkspacePath;
+              logger.info('[WorkspaceActionsMenu] Resolved file path:', {
                 filePath,
-                rootPath,
+                workspacePath,
                 resolvedPath,
               });
             } else {
               resolvedPath = filePath;
               resolvedFolderPath = '';
-              logger.warn('[WorkspaceActionsMenu] No workspace root found');
-            }
-          })
-          .catch((error) => {
-            resolvedPath = filePath;
-            resolvedFolderPath = '';
-            logger.error('[WorkspaceActionsMenu] Failed to get workspace root:', error);
-          });
-      } else {
-        // For code files, use the provided path or fall back to repository/worktree path
-        invoke<any>('workspace:get', { id: workspaceId })
-          .then((result) => {
-            // Check if result exists and has valid data (not archived/deleted)
-            if (result && result.success && result.data) {
-              const workspace = result.data;
-              const workspacePath =
-                workspaceFolderPath || workspace.worktreePath || workspace.repositoryPath;
-
-              if (workspacePath) {
-                const normalizedWorkspacePath = workspacePath.replace(/\\/g, '/');
-                if (isAbsolutePath(filePath)) {
-                  resolvedPath = filePath.replace(/\\/g, '/');
-                } else {
-                  resolvedPath = `${normalizedWorkspacePath}/${filePath}`.replace(/\/+/g, '/');
-                }
-                resolvedFolderPath = normalizedWorkspacePath;
-                logger.info('[WorkspaceActionsMenu] Resolved file path:', {
-                  filePath,
-                  workspacePath,
-                  resolvedPath,
-                });
-              } else {
-                resolvedPath = filePath;
-                resolvedFolderPath = '';
-                // Only warn if workspace exists but has no path (not for deleted workspaces)
-                if (workspace.status !== 'archived' && workspace.status !== 'deleted') {
-                  logger.warn('[WorkspaceActionsMenu] No workspace path found:', workspace);
-                }
-              }
-            } else {
-              resolvedPath = filePath;
-              resolvedFolderPath = '';
-              // Don't warn for archived/deleted workspaces
-              if (result?.error && !result.error.includes('not found')) {
-                logger.warn('[WorkspaceActionsMenu] Workspace not available:', result);
+              // Only warn if workspace exists but has no path (not for deleted workspaces)
+              if (workspace.status !== 'archived' && workspace.status !== 'deleted') {
+                logger.warn('[WorkspaceActionsMenu] No workspace path found:', workspace);
               }
             }
-          })
-          .catch((error) => {
+          } else {
             resolvedPath = filePath;
             resolvedFolderPath = '';
-            // Only log error if it's not a "not found" error (which is expected for deleted workspaces)
-            if (!error?.message?.includes('not found')) {
-              logger.error('[WorkspaceActionsMenu] Failed to resolve path:', error);
+            // Don't warn for archived/deleted workspaces
+            if (result?.error && !result.error.includes('not found')) {
+              logger.warn('[WorkspaceActionsMenu] Workspace not available:', result);
             }
-          });
-      }
+          }
+        })
+        .catch((error) => {
+          resolvedPath = filePath;
+          resolvedFolderPath = '';
+          // Only log error if it's not a "not found" error (which is expected for deleted workspaces)
+          if (!error?.message?.includes('not found')) {
+            logger.error('[WorkspaceActionsMenu] Failed to resolve path:', error);
+          }
+        });
     } else {
       resolvedPath = filePath;
       logger.info('[WorkspaceActionsMenu] Using filePath directly:', {
@@ -304,7 +267,7 @@
     } catch (error) {
       logger.error('Failed to open in VSCode:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'VS Code' }),
@@ -335,7 +298,7 @@
     } catch (error) {
       logger.error('Failed to open in JetBrains:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'JetBrains' }),
@@ -392,7 +355,7 @@
     } catch (error) {
       logger.error('Failed to open in Xcode:', error);
       // i18n-ignore (brand name)
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: 'Xcode' }),
@@ -461,7 +424,7 @@
       onClose?.();
     } catch (error) {
       logger.error(`[WorkspaceActionsMenu] Failed to open in ${editor.appName}:`, error);
-      toast.error(
+      notify.error(
         error instanceof Error
           ? error.message
           : m.ui_workspaceActions_openFailed_error({ name: editor.appName }),
@@ -500,7 +463,7 @@
         // i18n-ignore (IPC sentinel string from the main process, not UI copy)
         if (result?.error !== 'No application selected') {
           logger.error('Failed to open with other app:', result?.error);
-          toast.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
+          notify.error(result?.error || m.ui_workspaceActions_openOtherFailed_error());
         }
         return;
       }
@@ -508,7 +471,7 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open with other app:', error);
-      toast.error(
+      notify.error(
         error instanceof Error ? error.message : m.ui_workspaceActions_openOtherFailed_error(),
       );
     }
@@ -596,7 +559,7 @@
         onFileDeleted?.();
         onClose?.();
 
-        const toastId = toast.warning(
+        const toastId = notify.warning(
           m.ui_workspaceActions_deletedFile_label({ name: fileName }),
           withToastCountdown({
             duration: 15000,
@@ -614,17 +577,17 @@
                     type: 'create',
                     filePath: pathToDelete,
                   });
-                  toast.dismiss(toastId);
+                  notify.dismiss(toastId);
                 } catch (err) {
                   logger.error('[WorkspaceActionsMenu] Failed to restore file', err);
-                  toast.error(m.ui_workspaceActions_restoreFileFailed_error());
+                  notify.error(m.ui_workspaceActions_restoreFileFailed_error());
                 }
               },
             },
           }),
         );
       } else {
-        toast.error(
+        notify.error(
           m.ui_workspaceActions_deleteFileFailedDetail_error({
             error: result?.error || m.ui_workspaceActions_unknown_error(),
           }),
@@ -632,7 +595,7 @@
       }
     } catch (err) {
       logger.error('[WorkspaceActionsMenu] Error deleting file', err);
-      toast.error(m.ui_workspaceActions_deleteFileFailed_error());
+      notify.error(m.ui_workspaceActions_deleteFileFailed_error());
     } finally {
       isDeletingFile = false;
     }
@@ -662,12 +625,87 @@
 </script>
 
 <div class="w-full overflow-hidden">
-  {#if showFileActions}
+  {#if showFileActions && layout === 'submenu'}
+    <Menu.Sub>
+      <Menu.SubTrigger icon={faUpRightFromSquare} {iconWeight}>
+        <span class="min-w-0 flex-1 truncate">{m.ui_openCombo_openInApp_tooltip()}</span>
+      </Menu.SubTrigger>
+      <Menu.SubContent class="w-60">
+        {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
+          {#each visibleEditors as editor (editor.id)}
+            {@const IconComponent = resolveEditorIcon(editor)}
+            <Menu.Item onclick={() => openInEditor(editor)}>
+              <span class={iconSlotClass} aria-hidden="true">
+                {#if editor.iconBase64}
+                  <img
+                    src="data:image/png;base64,{editor.iconBase64}"
+                    alt={editor.name}
+                    class="size-4"
+                  />
+                {:else if IconComponent}
+                  <IconComponent size={12} />
+                {:else}
+                  <Fa
+                    icon={resolveEditorFallbackIcon(editor.category)}
+                    size="16"
+                    class="opacity-50"
+                  />
+                {/if}
+              </span>
+              <span class="min-w-0 flex-1 truncate">
+                {m.ui_workspaceActions_openIn_label({ name: editor.name })}
+              </span>
+            </Menu.Item>
+          {/each}
+
+          <Menu.Item onclick={openWithOther}>
+            <span class={iconSlotClass} aria-hidden="true">
+              <Fa icon={faUpRightFromSquare} size="16" class="opacity-50" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">{m.ui_workspaceActions_chooseApp_label()}</span>
+          </Menu.Item>
+          <Menu.Separator />
+        {/if}
+
+        <Menu.Item onclick={copyAbsolutePath}>
+          <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50" aria-hidden="true">
+            {isWindowsPlatform() ? '\\' : '/'}
+          </span>
+          <span class="min-w-0 flex-1 truncate">
+            {m.ui_workspaceActions_copyAbsolutePath_label()}
+          </span>
+        </Menu.Item>
+
+        {#if !isWorkspaceRoot}
+          <Menu.Item onclick={copyWorkspacePath}>
+            <span
+              class="{iconSlotClass} text-xs font-normal font-mono opacity-50"
+              aria-hidden="true">./</span
+            >
+            <span class="min-w-0 flex-1 truncate">
+              {m.ui_workspaceActions_copyRelativePath_label()}
+            </span>
+          </Menu.Item>
+        {/if}
+
+        {#if showFileNameCopy && !isDirectory}
+          <Menu.Item onclick={copyFileName}>
+            <span class={iconSlotClass} aria-hidden="true">
+              <Fa icon={faFile} size="16" class="opacity-50" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">
+              {m.ui_workspaceActions_copyFileName_label()}
+            </span>
+          </Menu.Item>
+        {/if}
+      </Menu.SubContent>
+    </Menu.Sub>
+  {:else if showFileActions}
     {#if canOpenExternalEditors && $isWorkspaceHostLocal$}
       <!-- Open Actions - dynamically rendered based on installed editors -->
       <div class="space-y-0.5">
         {#each visibleEditors as editor (editor.id)}
-          {@const IconComponent = EDITOR_ICONS[editor.id]}
+          {@const IconComponent = resolveEditorIcon(editor)}
           <Button
             variant="ghost"
             onclick={() => openInEditor(editor)}
@@ -683,12 +721,12 @@
                 />
               {:else if IconComponent}
                 <IconComponent size={12} />
-              {:else if editor.category === 'terminal'}
-                <Fa icon={faTerminal} size="12" class="opacity-50" />
-              {:else if editor.category === 'finder'}
-                <Fa icon={faFolder} size="12" class="opacity-50" />
               {:else}
-                <Fa icon={faCode} size="12" class="opacity-50" />
+                <Fa
+                  icon={resolveEditorFallbackIcon(editor.category)}
+                  size="16"
+                  class="opacity-50"
+                />
               {/if}
             </span>
             <span
@@ -707,7 +745,7 @@
           size="sm"
         >
           <span class={iconSlotClass}>
-            <Fa icon={faUpRightFromSquare} size="12" class="opacity-50" />
+            <Fa icon={faUpRightFromSquare} size="16" class="opacity-50" />
           </span>
           <span class="truncate min-w-0" title={m.ui_workspaceActions_chooseApp_label()}
             >{m.ui_workspaceActions_chooseApp_label()}</span
@@ -720,7 +758,7 @@
     <!-- Copy Actions -->
     <div class="space-y-0.5">
       <Button variant="ghost" onclick={copyAbsolutePath} class={menuItemClass} size="sm">
-        <span class="{iconSlotClass} text-xs font-black font-mono opacity-50">
+        <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50">
           {isWindowsPlatform() ? '\\' : '/'}
         </span>
         <span class="truncate min-w-0" title={m.ui_workspaceActions_copyAbsolutePath_label()}
@@ -730,7 +768,7 @@
 
       {#if !isWorkspaceRoot}
         <Button variant="ghost" onclick={copyWorkspacePath} class={menuItemClass} size="sm">
-          <span class="{iconSlotClass} text-xs font-black font-mono opacity-50">./</span>
+          <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50">./</span>
           <span class="truncate min-w-0" title={m.ui_workspaceActions_copyRelativePath_label()}
             >{m.ui_workspaceActions_copyRelativePath_label()}</span
           >
@@ -740,7 +778,7 @@
       {#if showFileNameCopy && !isDirectory}
         <Button variant="ghost" onclick={copyFileName} class={menuItemClass} size="sm">
           <span class={iconSlotClass}>
-            <Fa icon={faFile} size="12" class="opacity-50" />
+            <Fa icon={faFile} size="16" class="opacity-50" />
           </span>
           <span class="truncate min-w-0" title={m.ui_workspaceActions_copyFileName_label()}
             >{m.ui_workspaceActions_copyFileName_label()}</span
@@ -760,7 +798,7 @@
         variant="ghost"
         onclick={() => handleActionClick(action)}
         class="{menuItemClass} {action.variant === 'destructive'
-          ? 'hover:bg-destructive hover:text-destructive-foreground'
+          ? 'hover:bg-danger hover:text-danger-background'
           : ''}"
         size="sm"
       >
@@ -768,7 +806,7 @@
           {#if action.iconSnippet}
             {@render action.iconSnippet()}
           {:else if action.icon}
-            <Fa icon={action.icon} size="12" class="opacity-50" />
+            <Fa icon={action.icon} size="16" class="opacity-50" />
           {/if}
         </span>
         <span class="truncate min-w-0" title={action.label}>{action.label}</span>
@@ -809,7 +847,7 @@
   {#if showArchiveOption && (onArchive || onUnarchive)}
     <Button variant="ghost" onclick={handleArchive} class={menuItemClass} size="sm">
       <span class={iconSlotClass}>
-        <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="12" class="opacity-50" />
+        <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="16" class="opacity-50" />
       </span>
       <span
         class="truncate"
@@ -828,11 +866,11 @@
     <Button
       variant="ghost"
       onclick={handleDelete}
-      class="{menuItemClass} hover:bg-destructive hover:text-destructive-foreground"
+      class="{menuItemClass} hover:bg-danger hover:text-danger-background"
       size="sm"
     >
       <span class={iconSlotClass}>
-        <Fa icon={faTrash} size="12" class="opacity-50" />
+        <Fa icon={faTrash} size="16" class="opacity-50" />
       </span>
       <span class="truncate min-w-0" title={m.ui_workspaceActions_deleteSpace_label()}
         >{m.ui_workspaceActions_deleteSpace_label()}</span
@@ -847,14 +885,14 @@
       variant="ghost"
       onclick={handleDeleteFile}
       disabled={isDeletingFile}
-      class="{menuItemClass} hover:bg-destructive hover:text-destructive-foreground"
+      class="{menuItemClass} hover:bg-danger hover:text-danger-background"
       size="sm"
     >
       <span class={iconSlotClass}>
         {#if isDeletingFile}
-          <Fa icon={faSpinner} size="12" class="opacity-50 animate-spin" />
+          <IntentMarkLoader size={12} class="opacity-50" />
         {:else}
-          <Fa icon={faTrash} size="12" class="opacity-50" />
+          <Fa icon={faTrash} size="16" class="opacity-50" />
         {/if}
       </span>
       <span class="truncate min-w-0" title={m.ui_workspaceActions_deleteFile_label()}

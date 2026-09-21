@@ -6,16 +6,12 @@
    */
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
 
-  import {
-    selectAgentIsResponding,
-    selectAgentIsWaiting,
-    selectAgentSession,
-  } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
   import { getAgentPeekData } from '$lib/utils/agent-peek-utils';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-  import { getAvatarState } from '$features/agent/components/agent-avatar/avatar-state';
+  import { getAvatarStateForSession } from '$features/agent/components/agent-avatar/avatar-state';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import type { Workspace } from '$shared/types';
@@ -32,9 +28,18 @@
     isCompleted?: boolean;
     /** Optional activation used when the avatar represents a navigation target. */
     onclick?: (event: MouseEvent) => void;
+    /** Override the navigation label when a pinned avatar returns to its source. */
+    activationLabel?: string;
   }
 
-  let { agentId, agentName, workspace = null, isCompleted = false, onclick }: Props = $props();
+  let {
+    agentId,
+    agentName,
+    workspace = null,
+    isCompleted = false,
+    onclick,
+    activationLabel,
+  }: Props = $props();
 
   // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const permissionCount = selectPendingCount(agentId);
@@ -43,10 +48,6 @@
   // disk restore.
   // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
   const agent$ = selectAgentSession(agentId);
-  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
-  const agentIsResponding$ = selectAgentIsResponding(agentId);
-  // svelte-ignore state_referenced_locally -- selector readables are init-time only; instances are keyed by agentId.
-  const agentIsWaiting$ = selectAgentIsWaiting(agentId);
   const agentData = $derived(getAgentPeekData($agent$));
 
   $effect(() => {
@@ -59,19 +60,13 @@
   // Pending attention request (discussion/blocker), if any
   const attentionRequest = $derived(getAgentAttentionRequest($agent$));
 
-  // Get avatar state
+  // Use the canonical session state derivation for every agent surface.
   const state = $derived(
-    getAvatarState(
-      {
-        isStreaming: $agentIsResponding$ && !$agentIsWaiting$,
-        status: $agentIsWaiting$ ? 'waiting' : agentData?.status,
-      },
-      {
-        hasPermissionRequest: $permissionCount > 0,
-        isCompleted,
-        attentionKind: attentionRequest?.kind ?? null,
-      },
-    ),
+    getAvatarStateForSession($agent$, {
+      hasPermissionRequest: $permissionCount > 0,
+      isCompleted,
+      attentionKind: attentionRequest?.kind ?? null,
+    }),
   );
 
   // Get specialist from agent metadata (typed to match AgentAvatarWithState)
@@ -98,9 +93,8 @@
       class="inline-agent-avatar-trigger transition-colors hover:bg-muted/40 focus-visible:bg-muted/60 focus-visible:outline-none"
       {onclick}
       data-testid="inline-agent-avatar-trigger"
-      aria-label={onclick
-        ? m.chat_msgAttribution_openAgent_title({ name: displayName })
-        : undefined}
+      aria-label={activationLabel ??
+        (onclick ? m.chat_msgAttribution_openAgent_title({ name: displayName }) : undefined)}
     >
       <div
         class="inline-agent-avatar-ring relative ring-1 ring-card"
@@ -118,7 +112,7 @@
     <Tooltip.Content side="top" class="text-xs">
       <p>{displayName}</p>
       {#if attentionRequest}
-        <p class={attentionRequest.kind === 'blocker' ? 'text-red-500' : 'text-amber-500'}>
+        <p class="line-clamp-3">
           {attentionRequest.kind === 'blocker'
             ? m.chat_agentCard_attentionBlocker_label()
             : m.chat_agentCard_attentionDiscussion_label()}{#if attentionRequest.reason}

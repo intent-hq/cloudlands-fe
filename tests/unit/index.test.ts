@@ -14,19 +14,13 @@ import './performance-optimizer.test';
 describe('Agent System Unit Test Suite', () => {
   it('should have all test files imported', () => {
     // This test ensures all test files are included
-    const testFiles = [
-      'unified-id-service.test',
-      'performance-optimizer.test',
-    ];
+    const testFiles = ['unified-id-service.test', 'performance-optimizer.test'];
 
     expect(testFiles).toHaveLength(2);
   });
 
   it('should cover all core services', () => {
-    const services = [
-      'UnifiedIdService',
-      'PerformanceOptimizer',
-    ];
+    const services = ['UnifiedIdService', 'PerformanceOptimizer'];
 
     expect(services).toHaveLength(2);
   });

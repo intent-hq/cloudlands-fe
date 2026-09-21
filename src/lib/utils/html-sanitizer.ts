@@ -7,17 +7,125 @@
 
 import { Logger } from '$shared/logger';
 import DOMPurify from 'dompurify';
+import { isWorkspaceAssetVideoCandidate, workspaceAssetVideoSource } from './workspace-file-image';
 
 const logger = new Logger('html-sanitizer');
 
-// Restrict workspace-file: URLs to img[src]. ALLOWED_URI_REGEXP is
+const isWorkspaceFileUrl = (value: string): boolean =>
+  /^[\s\u0000-\u001f]*workspace-file:/i.test(value);
+
+let sanitizedWorkspaceId: string | undefined;
+let enforceWorkspaceFileScope = false;
+let preserveKatexLayoutStyles = false;
+
+const KATEX_DIMENSION = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:em|px|%)$/;
+const KATEX_DIMENSION_PROPERTIES = new Set([
+  'border-bottom-width',
+  'border-right-width',
+  'border-top-width',
+  'border-width',
+  'bottom',
+  'height',
+  'left',
+  'margin-left',
+  'margin-right',
+  'margin-top',
+  'min-width',
+  'padding-left',
+  'top',
+  'vertical-align',
+  'width',
+]);
+
+function sanitizeKatexStyle(value: string): string {
+  const declarations: string[] = [];
+  for (const declaration of value.split(';')) {
+    const separator = declaration.indexOf(':');
+    if (separator < 0) continue;
+    const property = declaration.slice(0, separator).trim().toLowerCase();
+    const propertyValue = declaration
+      .slice(separator + 1)
+      .trim()
+      .toLowerCase();
+    const dimensions = propertyValue.split(/\s+/);
+    const allowed =
+      (KATEX_DIMENSION_PROPERTIES.has(property) && KATEX_DIMENSION.test(propertyValue)) ||
+      (property === 'margin' &&
+        dimensions.length <= 4 &&
+        dimensions.every((part) => part === '0' || KATEX_DIMENSION.test(part))) ||
+      (property === 'position' && propertyValue === 'relative') ||
+      ((property === 'border-style' || property === 'border-right-style') &&
+        (propertyValue === 'solid' || propertyValue === 'dashed'));
+    if (allowed) declarations.push(`${property}:${propertyValue}`);
+  }
+  return declarations.length ? `${declarations.join(';')};` : '';
+}
+
+function isKatexLayoutElement(node: Element): boolean {
+  const wrapper = node.closest('.math-inline[data-math-source], .math-display[data-math-source]');
+  const katex = node.closest('.katex');
+  return wrapper !== null && katex !== null && wrapper.contains(katex);
+}
+
+function isAllowedWorkspaceFileUrl(value: string): boolean {
+  if (!isWorkspaceFileUrl(value)) return false;
+  const match = /^[\s\u0000-\u001f]*workspace-file:\/\/([^/?#]+)/i.exec(value);
+  if (!match || !sanitizedWorkspaceId) return false;
+  try {
+    return decodeURIComponent(match[1]) === sanitizedWorkspaceId;
+  } catch {
+    return false;
+  }
+}
+
+// Inline markdown videos are local workspace artifacts only. Remove the whole
+// element rather than leaving an inert player when an unsafe source is used.
+DOMPurify.addHook('uponSanitizeElement', (node) => {
+  if (
+    node instanceof Element &&
+    node.nodeName === 'VIDEO' &&
+    !workspaceAssetVideoSource(node.getAttribute('src') ?? '', sanitizedWorkspaceId) &&
+    (!isWorkspaceFileUrl(node.getAttribute('src') ?? '') ||
+      (enforceWorkspaceFileScope && !isAllowedWorkspaceFileUrl(node.getAttribute('src') ?? '')))
+  ) {
+    node.remove();
+  }
+});
+
+// Restrict workspace-file: URLs to media src attributes. ALLOWED_URI_REGEXP is
 // attribute-agnostic, so without this hook the scheme would also survive in
-// anchor hrefs; keeping it image-only avoids relying on the main-process
+// anchor hrefs; keeping it media-only avoids relying on the main-process
 // shell.openExternal allowlist to keep such links inert.
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (data.attrName === 'style') {
+    if (!preserveKatexLayoutStyles || !(node instanceof Element) || !isKatexLayoutElement(node)) {
+      data.keepAttr = false;
+      return;
+    }
+    data.attrValue = sanitizeKatexStyle(data.attrValue);
+    data.keepAttr = data.attrValue.length > 0;
+    return;
+  }
   if (
-    /^[\s\u0000-\u001f]*workspace-file:/i.test(data.attrValue) &&
-    !(data.attrName === 'src' && node.nodeName === 'IMG')
+    node.nodeName === 'IMG' &&
+    data.attrName === 'src' &&
+    isWorkspaceAssetVideoCandidate(data.attrValue) &&
+    !workspaceAssetVideoSource(data.attrValue, sanitizedWorkspaceId)
+  ) {
+    data.keepAttr = false;
+    return;
+  }
+  if (
+    enforceWorkspaceFileScope &&
+    isWorkspaceFileUrl(data.attrValue) &&
+    !isAllowedWorkspaceFileUrl(data.attrValue)
+  ) {
+    data.keepAttr = false;
+    return;
+  }
+  if (
+    isWorkspaceFileUrl(data.attrValue) &&
+    !(data.attrName === 'src' && (node.nodeName === 'IMG' || node.nodeName === 'VIDEO'))
   ) {
     data.keepAttr = false;
   }
@@ -86,6 +194,37 @@ const ALLOWED_TAGS = [
   'section',
   // Data elements for our app
   'data',
+  // KaTeX accessibility markup
+  'math',
+  'semantics',
+  'annotation',
+  'mrow',
+  'mi',
+  'mn',
+  'mo',
+  'mtext',
+  'mspace',
+  'mfrac',
+  'msqrt',
+  'mroot',
+  'mstyle',
+  'merror',
+  'mpadded',
+  'mphantom',
+  'menclose',
+  'msub',
+  'msup',
+  'msubsup',
+  'munder',
+  'mover',
+  'munderover',
+  'mmultiscripts',
+  'mtable',
+  'mtr',
+  'mtd',
+  // KaTeX stretchable delimiters and radicals
+  'svg',
+  'path',
 ];
 
 const ALLOWED_ATTRIBUTES = {
@@ -102,6 +241,8 @@ const ALLOWED_ATTRIBUTES = {
     'data-mention',
     'data-mention-id',
     'data-mention-type',
+    'data-math-source',
+    'aria-hidden',
     'style',
   ],
   // Link attributes (restricted)
@@ -192,65 +333,114 @@ function sanitizeHTML(html: string, options: Partial<typeof purifyConfig> = {}):
 /**
  * Sanitize HTML for display in markdown preview
  */
-export function sanitizeMarkdownHTML(html: string): string {
-  return sanitizeHTML(html, {
-    // Allow more tags for markdown
-    ALLOWED_TAGS: [...ALLOWED_TAGS, 'img', 'hr', 'details', 'summary', 'sub', 'sup'],
-    // Allow all attributes from ALLOWED_ATTRIBUTES plus img attributes
-    // DOMPurify expects attribute names in the array, not "tag:attr" format
-    ALLOWED_ATTR: [
-      'class',
-      'id',
-      'title',
-      'dir',
-      'lang', // Global attributes from "*"
-      'href',
-      'target',
-      'rel', // Link attributes from "a"
-      'data-mention',
-      'data-mention-id',
-      'data-mention-type',
-      'data-id',
-      'data-label',
-      'data-uri',
-      'data-meta', // TipTap mention attributes
-      'data-comment-id', // Span attributes
-      'data-anchor-id',
-      'data-anchor-type', // Comment anchor attributes
-      'data-comment-anchor', // Div attributes
-      'data-mermaid-code', // Mermaid diagram code
-      'data-diff-code', // Diff block code
-      'data-type',
-      'data-checked',
-      'data-status',
-      'data-delegated-agent-id', // Task list attributes
-      'data-question',
-      'data-options',
-      'data-selected', // Choice block attributes (V1 and V2)
-      'type',
-      'checked',
-      'disabled', // Input attributes
-      'src',
-      'alt',
-      'width',
-      'height', // Image attributes
-      'data-primitive',
-      'data-primitive-type',
-      'data-primitive-id',
-      'data-primitive-base64', // ws-block primitive attributes
-      'data-item-type',
-      'data-provider',
-      'data-title',
-      'data-identifier',
-      'data-url',
-      'data-description',
-      'data-metadata', // Context mention attributes (Linear, GitHub, Sentry issues)
-      'open', // details element open state
-      'tabindex', // for focusable elements like mention chips
-    ],
-    // Allow workspace-asset:// (embedded note images) and workspace-file://
-    // (inline workspace file images) protocols
-    ALLOWED_URI_REGEXP:
-      /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset|workspace-file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-  });
+export function sanitizeMarkdownHTML(
+  html: string,
+  workspaceId?: string,
+  options: { preserveKatexLayoutStyles?: boolean } = {},
+): string {
+  const previousWorkspaceId = sanitizedWorkspaceId;
+  const previousEnforcement = enforceWorkspaceFileScope;
+  const previousKatexLayoutStyles = preserveKatexLayoutStyles;
+  sanitizedWorkspaceId = workspaceId;
+  enforceWorkspaceFileScope = true;
+  preserveKatexLayoutStyles = options.preserveKatexLayoutStyles ?? false;
+  try {
+    return sanitizeHTML(html, {
+      // Allow more tags for markdown
+      ALLOWED_TAGS: [...ALLOWED_TAGS, 'img', 'video', 'hr', 'details', 'summary', 'sub', 'sup'],
+      // Allow all attributes from ALLOWED_ATTRIBUTES plus img attributes
+      // DOMPurify expects attribute names in the array, not "tag:attr" format
+      ALLOWED_ATTR: [
+        'class',
+        'id',
+        'title',
+        'dir',
+        'lang', // Global attributes from "*"
+        'href',
+        'target',
+        'rel', // Link attributes from "a"
+        'data-mention',
+        'data-mention-id',
+        'data-mention-type',
+        'data-id',
+        'data-label',
+        'data-uri',
+        'data-meta', // TipTap mention attributes
+        'data-comment-id', // Span attributes
+        'data-anchor-id',
+        'data-anchor-type', // Comment anchor attributes
+        'data-comment-anchor', // Div attributes
+        'data-mermaid-code', // Mermaid diagram code
+        'data-diff-code', // Diff block code
+        'data-type',
+        'data-checked',
+        'data-status',
+        'data-delegated-agent-id', // Task list attributes
+        'data-question',
+        'data-options',
+        'data-selected', // Choice block attributes (V1 and V2)
+        'type',
+        'checked',
+        'disabled', // Input attributes
+        'src',
+        'alt',
+        'width',
+        'height', // Image attributes
+        'controls',
+        'preload',
+        'playsinline',
+        'poster',
+        'data-name', // Video attributes
+        'data-media-unsupported', // Unsupported workspace media placeholder marker
+        'data-media-unavailable',
+        'data-media-src', // Unresolvable workspace media placeholder marker + original source
+        'data-primitive',
+        'data-primitive-type',
+        'data-primitive-id',
+        'data-primitive-base64', // ws-block primitive attributes
+        'data-item-type',
+        'data-provider',
+        'data-title',
+        'data-identifier',
+        'data-url',
+        'data-description',
+        'data-metadata', // Context mention attributes (Linear, GitHub, Sentry issues)
+        'data-math-source', // Original delimited TeX for lossless HTML-to-Markdown conversion
+        'aria-hidden',
+        ...(preserveKatexLayoutStyles ? ['style'] : []),
+        'display',
+        'encoding',
+        'xmlns',
+        'accent',
+        'accentunder',
+        'columnalign',
+        'columnspacing',
+        'columnlines',
+        'rowalign',
+        'rowspacing',
+        'rowlines',
+        'scriptlevel',
+        'displaystyle',
+        'fence',
+        'separator',
+        'stretchy',
+        'symmetric',
+        'minsize',
+        'maxsize',
+        'viewBox',
+        'preserveAspectRatio',
+        'd',
+        'open', // details element open state
+        'tabindex', // for focusable elements like mention chips
+      ],
+      // Allow workspace-asset:// (embedded note images) and workspace-file://
+      // (inline workspace file images) protocols
+      ALLOWED_URI_REGEXP:
+        /^(?:(?:https?|mailto|tel|sms|intent|workspace-asset|workspace-file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    });
+  } finally {
+    sanitizedWorkspaceId = previousWorkspaceId;
+    enforceWorkspaceFileScope = previousEnforcement;
+    preserveKatexLayoutStyles = previousKatexLayoutStyles;
+  }
 }

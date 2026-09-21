@@ -3,17 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
-  custom: vi.fn(),
+  agentFailure: vi.fn(),
   dismiss: vi.fn(),
   navigateToRoute: vi.fn(async () => {}),
   resolveKeySlot: vi.fn((workspaceId: string | undefined) => (workspaceId === 'ws-1' ? 3 : null)),
 }));
 vi.mock('$lib/client', () => ({ appClient: { agents: { retry: mocks.retry } } }));
-vi.mock('svelte-sonner', () => ({
-  toast: { custom: mocks.custom, dismiss: mocks.dismiss },
-}));
-vi.mock('$lib/components/ui/toast/AgentFailureToast.svelte', () => ({
-  default: 'AgentFailureToast',
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { agentFailure: mocks.agentFailure, dismiss: mocks.dismiss },
 }));
 vi.mock('$lib/utils/navigation.client', () => ({
   navigateToRoute: mocks.navigateToRoute,
@@ -99,7 +96,8 @@ function state(overrides: Record<string, unknown> = {}) {
 }
 
 function lastToast(id: string) {
-  return mocks.custom.mock.calls.filter(([, options]) => options.id === id).at(-1)?.[1];
+  const call = mocks.agentFailure.mock.calls.filter(([, options]) => options.id === id).at(-1);
+  return call ? { ...call[1], componentProps: call[0] } : undefined;
 }
 
 describe('agentFailureToastSaga', () => {
@@ -461,11 +459,11 @@ describe('agentFailureToastSaga', () => {
     await settle();
     expect(mocks.dismiss).toHaveBeenCalledWith('agent-failure:agent-1');
 
-    const callsAfterClose = mocks.custom.mock.calls.length;
+    const callsAfterClose = mocks.agentFailure.mock.calls.length;
     resolveRetry({ ok: false });
     await settle();
     // The failed retry must NOT resurrect the manually dismissed toast.
-    expect(mocks.custom).toHaveBeenCalledTimes(callsAfterClose);
+    expect(mocks.agentFailure).toHaveBeenCalledTimes(callsAfterClose);
     expect(getAgentFailureEntry('agent-1')).toBeDefined();
 
     // A NEWER failure during/after that window still re-shows the toast.
@@ -488,10 +486,10 @@ describe('agentFailureToastSaga', () => {
     expect(mocks.dismiss).toHaveBeenCalledWith('agent-failure:agent-1');
     expect(getAgentFailureEntry('agent-1')).toBeDefined();
 
-    const callsAfterClose = mocks.custom.mock.calls.length;
+    const callsAfterClose = mocks.agentFailure.mock.calls.length;
     recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom', at: 1000 });
     await settle();
-    expect(mocks.custom).toHaveBeenCalledTimes(callsAfterClose);
+    expect(mocks.agentFailure).toHaveBeenCalledTimes(callsAfterClose);
 
     recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom again', at: 2000 });
     await settle();
@@ -506,13 +504,13 @@ describe('agentFailureToastSaga', () => {
     const task = runSaga({ dispatch: vi.fn(), getState: state }, agentFailureToastSaga);
     recordAgentFailure({ agentId: 'agent-1', workspaceId: 'ws-1', error: 'boom' });
     await settle();
-    const callsBeforeCancel = mocks.custom.mock.calls.length;
+    const callsBeforeCancel = mocks.agentFailure.mock.calls.length;
     task.cancel();
     await task.toPromise();
     expect(mocks.dismiss).toHaveBeenCalledWith('agent-failure:agent-1');
 
     recordAgentFailure({ agentId: 'agent-2', workspaceId: 'ws-2', error: 'different' });
     await settle();
-    expect(mocks.custom).toHaveBeenCalledTimes(callsBeforeCancel);
+    expect(mocks.agentFailure).toHaveBeenCalledTimes(callsBeforeCancel);
   });
 });

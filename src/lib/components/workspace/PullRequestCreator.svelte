@@ -6,6 +6,7 @@
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Badge } from '$lib/components/ui/badge';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -17,7 +18,6 @@
     faCircleCheck,
     faMagic,
     faPaperPlane,
-    faSpinner,
     faCodeBranch,
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
@@ -185,7 +185,7 @@
   <div class="flex-1 overflow-y-auto">
     <div class="max-w-4xl mx-auto p-6 space-y-6">
       {#if error}
-        <div class="flex items-start gap-2 p-3 bg-destructive/10 text-error-foreground rounded-lg">
+        <div class="flex items-start gap-2 p-3 bg-danger-background/10 text-danger rounded-lg">
           <Fa icon={faExclamationCircle} size="sm" class="mt-0.5" />
           <span class="text-sm">{error}</span>
         </div>
@@ -269,7 +269,7 @@
           class="gap-1.5"
         >
           {#if generatingContent && !autoCreatePending}
-            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+            <IntentMarkLoader size={14} />
             {m.workspace_prCreator_generating_label()}
           {:else}
             <Fa icon={faMagic} size="sm" />
@@ -283,7 +283,7 @@
           class="gap-1.5"
         >
           {#if autoCreatePending}
-            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+            <IntentMarkLoader size={14} />
             {generatingContent
               ? m.workspace_prCreator_generating_label()
               : m.workspace_prCreator_creating_label()}
@@ -297,7 +297,7 @@
           disabled={generatingContent || creatingPR || !formData.title.value}
         >
           {#if creatingPR && !autoCreatePending}
-            <Fa icon={faSpinner} size="sm" class="animate-spin" />
+            <IntentMarkLoader size={14} />
             {m.workspace_prCreator_creating_label()}
           {:else}
             <Fa icon={faPaperPlane} size="sm" />

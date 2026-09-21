@@ -12,16 +12,16 @@
  * UI can show stale/mismatched data defensively (e.g. clear results the
  * moment the input diverges from `lastQuery`).
  */
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
   type Collection,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import type { GithubRepoItem } from "../github-repos/github-repos-slice";
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import type { GithubRepoItem } from '../github-repos/github-repos-slice';
 
 export type GithubRepoSearchState = {
-  results: Collection<GithubRepoItem, "id">;
+  results: Collection<GithubRepoItem, 'id'>;
   loading: boolean;
   error: string | null;
   /** Trimmed query that produced `results`. Empty string when idle. */
@@ -29,10 +29,10 @@ export type GithubRepoSearchState = {
 };
 
 export const initialState: GithubRepoSearchState = {
-  results: createCollection<GithubRepoItem, "id">("id"),
+  results: createCollection<GithubRepoItem, 'id'>('id'),
   loading: false,
   error: null,
-  lastQuery: "",
+  lastQuery: '',
 };
 
 /**
@@ -40,29 +40,25 @@ export const initialState: GithubRepoSearchState = {
  * the saga via a debounce effect so rapid keystrokes coalesce into a
  * single network round-trip.
  */
-export const searchGithubRepos = createAction<[query: string]>(
-  "githubRepoSearch/search",
-);
+export const searchGithubRepos = createAction<[query: string]>('githubRepoSearch/search');
 
 /** Saga → reducer: flip loading and record the query being searched. */
 export const setGithubRepoSearchLoading = createAction<[query: string]>(
-  "githubRepoSearch/setLoading",
+  'githubRepoSearch/setLoading',
 );
 
 /** Saga → reducer: store results for the given query. */
-export const setGithubRepoSearchResults = createAction<
-  [query: string, results: GithubRepoItem[]]
->("githubRepoSearch/setResults");
+export const setGithubRepoSearchResults = createAction<[query: string, results: GithubRepoItem[]]>(
+  'githubRepoSearch/setResults',
+);
 
 /** Saga → reducer: record an error for the given query. */
-export const setGithubRepoSearchError = createAction<
-  [query: string, error: string]
->("githubRepoSearch/setError");
+export const setGithubRepoSearchError = createAction<[query: string, error: string]>(
+  'githubRepoSearch/setError',
+);
 
 /** Reset to the initial empty state (empty query, clear on sign-out, etc.). */
-export const clearGithubRepoSearch = createAction(
-  "githubRepoSearch/clear",
-);
+export const clearGithubRepoSearch = createAction('githubRepoSearch/clear');
 
 export const githubRepoSearchReducer = createReducer<GithubRepoSearchState>(initialState);
 

@@ -5,7 +5,7 @@
  * Asserts (a) the exact JSON-RPC request the client emits — base64-encoded
  * `audio` (standard alphabet, padded), the container `mimeType`, `context`
  * present only when the caller gathered hints, `workspaceId` present only
- * when the caller opted into workspace-vocabulary injection (v5.1) — and
+ * when the caller opted into workspace-vocabulary injection (§5.41) — and
  * (b) the daemon-shaped result passes through untransformed. Errors are NOT
  * folded: the transcription flow surfaces them as toasts.
  */
@@ -63,7 +63,7 @@ describe('LiveVoiceClient (fake transport)', () => {
     }
   });
 
-  it('transcribe forwards workspaceId when the caller opts in (§5.41 v5.1)', async () => {
+  it('transcribe forwards workspaceId when the caller opts in (§5.41)', async () => {
     mockedRequest.mockResolvedValueOnce(TRANSCRIBE_RESULT);
     const client = new LiveVoiceClient();
 
@@ -125,7 +125,9 @@ describe('LiveVoiceClient (fake transport)', () => {
 
   it('propagates transport/daemon errors (the flow surfaces them as toasts)', async () => {
     mockedRequest.mockRejectedValueOnce(
-      new Error('voice: no API key found for elevenlabs (set voice.elevenlabs.apiKey or ELEVENLABS_API_KEY)'),
+      new Error(
+        'voice: no API key found for elevenlabs (set voice.elevenlabs.apiKey or ELEVENLABS_API_KEY)',
+      ),
     );
     const client = new LiveVoiceClient();
 
@@ -146,7 +148,10 @@ describe('LiveVoiceClient (fake transport)', () => {
 
   it('getWorkspaceVocabulary propagates the not-found -32602 (unknown workspaceId)', async () => {
     mockedRequest.mockRejectedValueOnce(
-      Object.assign(new Error('workspace not found'), { code: -32602, data: { code: 'not-found' } }),
+      Object.assign(new Error('workspace not found'), {
+        code: -32602,
+        data: { code: 'not-found' },
+      }),
     );
     const client = new LiveVoiceClient();
 

@@ -49,10 +49,9 @@ describe('auto-update-bridge-seeder', () => {
     registerAutoUpdateBridge();
 
     for (const channel of INVOKE_CHANNELS) {
-      const result = await mockInvoke<{ success: boolean; data: { forwarded: string } }>(
-        channel,
-        { probe: channel },
-      );
+      const result = await mockInvoke<{ success: boolean; data: { forwarded: string } }>(channel, {
+        probe: channel,
+      });
       expect(result.success).toBe(true);
       expect(result.data.forwarded).toBe(channel);
       expect(invokeSpy).toHaveBeenCalledWith(channel, { probe: channel });
@@ -87,9 +86,7 @@ describe('auto-update-bridge-seeder', () => {
     registerAutoUpdateBridge();
 
     for (const channel of INVOKE_CHANNELS) {
-      const result = await mockInvoke<{ success: boolean; error?: { message?: string } }>(
-        channel,
-      );
+      const result = await mockInvoke<{ success: boolean; error?: { message?: string } }>(channel);
       expect(result.success).toBe(false);
       expect(result.error?.message).toBe('Auto-update is not available in this build');
     }

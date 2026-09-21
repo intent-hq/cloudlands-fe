@@ -3,12 +3,38 @@
  * Mocks Electron and other dependencies for testing
  */
 
-import {
-  vi,
-  afterEach,
-} from 'vitest';
+import { vi, afterEach } from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
+import { scrubHostNodeInjection } from './scrub-host-node-injection';
+import { stripForkExecArgv } from '../scripts/vitest-fork-exec-argv.mjs';
+
+// vitest.config.ts starts each fork with V8 flags (`--no-sparkplug`) that Node
+// rejects with ERR_WORKER_INVALID_EXEC_ARGV when a worker_threads.Worker is
+// given them explicitly — the shape `@lix-js/sdk` (via @inlang/paraglide-js)
+// uses: `new Worker(url, { execArgv: process.execArgv })`. V8 flags are
+// process-wide, so the fork keeps running without Sparkplug; only what
+// children and workers inherit changes. The stripped list is recorded once per
+// fork so tests/unit/vitest-fork-exec-argv.test.ts can assert the workaround
+// still reached the fork (a later test file in the same fork sees nothing left
+// to strip and must not overwrite the record).
+const { kept: execArgvKept, removed: execArgvRemoved } = stripForkExecArgv(process.execArgv);
+process.execArgv = execArgvKept;
+if (execArgvRemoved.length > 0) {
+  process.env.INTENT_VITEST_STRIPPED_EXEC_ARGV = JSON.stringify(execArgvRemoved);
+}
+
+// Children spawned by tests must not inherit host-level Node injection: on a
+// Datadog-instrumented host, `NODE_OPTIONS=--require dd-trace/init` wrote tracer
+// startup logs to every child's stderr and failed 17 `scripts/` CLI tests
+// asserting an exact stderr (cloudlands-fe#2547 verifier run). This runs per
+// worker, after vitest forked it, so the workers keep their own NODE_OPTIONS
+// (CI's job-level heap flag) and only the processes tests spawn start clean.
+// Hosts with Datadog host-level injection (`/etc/ld.so.preload` launcher)
+// re-inject NODE_OPTIONS into every fresh `node` regardless of the env it
+// starts from; this documented opt-out makes the launcher skip the children.
+scrubHostNodeInjection(process.env);
+process.env.DD_INSTRUMENT_SERVICE_WITH_APM = 'false';
 
 // Ensure tests use a temporary workspaces root
 process.env.WORKSPACES_BASE_DIR =
@@ -22,7 +48,7 @@ if (typeof window !== 'undefined') {
       _keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
       options?: number | KeyframeAnimationOptions,
     ): Animation {
-      const duration = typeof options === 'number' ? options : options?.duration ?? 0;
+      const duration = typeof options === 'number' ? options : (options?.duration ?? 0);
       const animation = {
         currentTime: 0,
         effect: null,
@@ -52,11 +78,14 @@ if (typeof window !== 'undefined') {
       } as unknown as Animation;
 
       // Immediately call onfinish to complete the transition synchronously
-      setTimeout(() => {
-        if (animation.onfinish) {
-          animation.onfinish.call(animation, new Event('finish') as AnimationPlaybackEvent);
-        }
-      }, typeof duration === 'number' ? 0 : 0);
+      setTimeout(
+        () => {
+          if (animation.onfinish) {
+            animation.onfinish.call(animation, new Event('finish') as AnimationPlaybackEvent);
+          }
+        },
+        typeof duration === 'number' ? 0 : 0,
+      );
 
       return animation;
     };
@@ -190,14 +219,25 @@ vi.mock('electron', () => {
   const mockBrowserWindow = {
     getAllWindows: vi.fn(() => []),
     fromWebContents: vi.fn(() => null),
+    getFocusedWindow: vi.fn(() => null),
+  };
+
+  const mockDialog = {
+    showMessageBox: vi.fn(async () => ({ response: 0, checkboxChecked: false })),
   };
 
   return {
     __esModule: true,
-    default: { app: mockApp, ipcMain: mockIpcMain, BrowserWindow: mockBrowserWindow },
+    default: {
+      app: mockApp,
+      ipcMain: mockIpcMain,
+      BrowserWindow: mockBrowserWindow,
+      dialog: mockDialog,
+    },
     app: mockApp,
     ipcMain: mockIpcMain,
     BrowserWindow: mockBrowserWindow,
+    dialog: mockDialog,
   };
 });
 
@@ -219,7 +259,9 @@ vi.mock('$shared/main/ipc-debug-tracker', () => ({
 vi.mock('$features/protocol/main/protocol-adapter', () => ({
   protocolAdapter: {
     listWorkspaces: vi.fn().mockResolvedValue({ ok: true, data: [] }),
-    createNote: vi.fn().mockResolvedValue({ ok: true, data: { id: 'test-note-id', title: 'Test Note' } }),
+    createNote: vi
+      .fn()
+      .mockResolvedValue({ ok: true, data: { id: 'test-note-id', title: 'Test Note' } }),
     markAsTask: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     assignAgentToTask: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     getWorkspaceInfo: vi.fn().mockResolvedValue({ ok: true, data: null }),

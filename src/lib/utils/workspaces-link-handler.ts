@@ -13,7 +13,7 @@
  * This reserves the URL slot for future use.
  */
 
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { noteUrl } from '$shared/constants/intent-links';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -22,6 +22,7 @@ import {
   openWorkspaceNote,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 
 // URL-pattern examples shown in parse errors; passed as message params because
 // literal `{`/`}` inside a Paraglide message would parse as a parameter.
@@ -42,6 +43,7 @@ export interface WorkspacesLinkInfo {
   orgId: string; // Reserved for future, currently "local"
   workspaceId?: string; // Target workspace ID (undefined = current workspace)
   resourceId: string; // noteId, messageId, or decoded workspace-relative file path
+  line?: number; // Starting line for file links
   agentId?: string; // Conversation owner for message links
   valid: boolean;
   error?: string;
@@ -103,6 +105,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     let resourceType: string;
     let resourceId: string;
     let agentId: string | undefined;
+    let line: number | undefined;
 
     if (rawSegments[0] === 'file') {
       // Short format: file/{workspace-relative-path} (remaining segments form the path)
@@ -177,6 +180,11 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
     }
 
     if (resourceType === 'file') {
+      const lineFragment = /^#L\d+(?:-\d+|C\d+)?$/.test(urlObj.hash) ? urlObj.hash : '';
+      const parsedFilePath = parseFilePathLineSuffix(resourceId + lineFragment);
+      resourceId = parsedFilePath.path;
+      line = parsedFilePath.line;
+
       // Reject traversal-looking or absolute paths (e.g. "..", encoded slashes)
       if (!isSafeWorkspaceRelativePath(resourceId)) {
         return {
@@ -193,6 +201,7 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
         orgId,
         workspaceId,
         resourceId,
+        ...(line !== undefined ? { line } : {}),
         valid: true,
       };
     }
@@ -287,7 +296,7 @@ export async function handleIntentLink(
   const info = parseIntentLink(url);
 
   if (!info.valid) {
-    toast.error(m.ui_linkHandler_invalidLink_title(), {
+    notify.error(m.ui_linkHandler_invalidLink_title(), {
       description: info.error || m.ui_linkHandler_invalidLink_description(),
     });
     return true;
@@ -313,17 +322,17 @@ export async function handleIntentLink(
         break;
       }
       default:
-        toast.error(m.ui_linkHandler_unsupportedLink_title(), {
+        notify.error(m.ui_linkHandler_unsupportedLink_title(), {
           description: m.ui_linkHandler_unsupportedLink_description({ type: info.type }),
         });
     }
   } catch (error) {
     if (error instanceof NotFoundError) {
-      toast.error(m.ui_linkHandler_notFound_title(), {
+      notify.error(m.ui_linkHandler_notFound_title(), {
         description: error.message,
       });
     } else {
-      toast.error(m.ui_linkHandler_navigationFailed_title(), {
+      notify.error(m.ui_linkHandler_navigationFailed_title(), {
         description: error instanceof Error ? error.message : m.ui_linkHandler_unknownError_label(),
       });
     }
@@ -452,6 +461,7 @@ async function navigateToFile(
 
     appStore.dispatch(
       openWorkspaceFile(info.workspaceId, info.resourceId, {
+        ...(info.line !== undefined ? { line: info.line } : {}),
         openInAdjacentPanel: isCrossWorkspace ? false : (options.openInAdjacentPanel ?? false),
         sourcePanelId: isCrossWorkspace ? undefined : options.sourcePanelId,
       }),
@@ -466,6 +476,7 @@ async function navigateToFile(
 
   appStore.dispatch(
     openWorkspaceFile(sourceWorkspaceId, info.resourceId, {
+      ...(info.line !== undefined ? { line: info.line } : {}),
       openInAdjacentPanel: options.openInAdjacentPanel ?? false,
       sourcePanelId: options.sourcePanelId,
     }),

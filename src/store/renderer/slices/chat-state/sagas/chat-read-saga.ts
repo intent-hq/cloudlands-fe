@@ -42,6 +42,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import type { AgentMessage, AgentSession } from '$shared/types';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
+import { readAgentSession } from '$features/agent/agent-read-service';
 import {
   hasChatSubscriptionAcquisitionInFlight,
   hasReplayableChatSnapshot,
@@ -51,7 +52,11 @@ import {
   acquireChatInterestLease,
   releaseChatInterestLease,
 } from '$features/agent/utils/chat-interest-leases';
-import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  markAgentDetailHydrated,
+  upsertSession,
+} from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { cleanupDeletedAgentTabs } from '../../workspace-agents/sagas/deleted-agent-cleanup';
@@ -141,15 +146,12 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
   try {
     yield* put(transcriptHydrationStarted(agentId));
     started = true;
-    const session: AgentSession | null = yield* call(
-      [appClient.agents, appClient.agents.get],
-      agentId,
-    );
+    const session: AgentSession | null = yield* call(readAgentSession, agentId);
     if (!session || String(session.workspaceId) !== wsId) {
       return { started, succeeded: true };
     }
     // Skip rows carrying the daemon's delete-grace-window deadline (PROTOCOL
-    // §5.5 `pendingDeleteAt`, v6.7+) — a deletion scheduled by another
+    // §5.5 `pendingDeleteAt`) — a deletion scheduled by another
     // window/client (or before an FE restart) is not in the local registry.
     if (session.pendingDeleteAt) return { started, succeeded: true };
     if (yield* call(isAgentDeletionPending, agentId)) {
@@ -164,6 +166,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
     const hydrated = { ...session, messages: preserved };
     yield* put(bulkUpsertSessions([hydrated]));
     yield* put(upsertSession(hydrated));
+    yield* put(markAgentDetailHydrated(agentId));
 
     // SOLE SOURCE: wait (bounded) for the standing subscription's seq-0
     // snapshot. `chatTranscriptSnapshotApplied` is dispatched by the
@@ -337,7 +340,7 @@ function* snapshotRecoveryWorker(action: ReturnType<typeof chatTranscriptSnapsho
 }
 
 /**
- * Lazy block hydration (§5.5 slim projection → v7.2 `agent.getMessageBlock`):
+ * Lazy block hydration (§5.5 slim projection → `agent.getMessageBlock`):
  * fetch one FULL content block on demand when the user expands a truncated
  * tool row or views a truncated image. Single-flight per block, twice over:
  * the `messageBlockHydrationRequested` reducer parks `loading` under the

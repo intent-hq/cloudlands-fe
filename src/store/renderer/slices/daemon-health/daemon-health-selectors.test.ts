@@ -20,6 +20,7 @@ import {
   selectSidecarRunLogPending,
   selectSidecarRunLogError,
   selectDaemonVersionComparison,
+  selectDaemonStatusCheckFailure,
 } from './daemon-health-selectors';
 import { initialState } from './daemon-health-slice';
 
@@ -111,6 +112,18 @@ describe('sidecar startup-failure + hasEverConnected selectors', () => {
     expect(selectSidecarRunLog.select(fetched)).toEqual(runLog);
     expect(selectSidecarRunLogPending.select(fetched)).toBe(true);
     expect(selectSidecarRunLogError.select(fetched)).toBe('bridge unavailable');
+  });
+
+  it('reads the last status-check failure context (#4439)', () => {
+    expect(selectDaemonStatusCheckFailure.select(stateWith({}))).toBeNull();
+    const failure = {
+      kind: 'timeout' as const,
+      failedAt: '2026-09-05T10:00:00.000Z',
+      consecutiveFailures: 2,
+    };
+    expect(
+      selectDaemonStatusCheckFailure.select(stateWith({ statusCheckFailure: failure })),
+    ).toEqual(failure);
   });
 });
 

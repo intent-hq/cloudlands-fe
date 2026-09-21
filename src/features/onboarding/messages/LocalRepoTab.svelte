@@ -20,7 +20,10 @@
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Input from '$lib/components/ui/input/input.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
   import DirectoryPickerModal from './DirectoryPickerModal.svelte';
   import { pickDirectory } from '$lib/directory-picker-service';
 
@@ -30,12 +33,15 @@
     /** Path of the currently selected repo (for highlight state). */
     selectedPath?: string;
     /** Called when the user clicks a repo row or picks a folder. */
-    onSelect: (path: string, scope?: string) => void;
+    onSelect: (path: string, scope?: string, initGit?: boolean) => void;
     /** Called when user presses Enter - should select AND advance to next step */
-    onSelectAndAdvance?: (path: string, scope?: string) => void;
+    onSelectAndAdvance?: (path: string, scope?: string, initGit?: boolean) => void;
   }
 
   interface DirectoryStatus {
+    exists?: boolean;
+    isDirectory?: boolean;
+    isGitRepo?: boolean;
     relativePathFromGitRoot?: string;
     isSubdirectoryOfGitRepo?: boolean;
   }
@@ -51,6 +57,7 @@
   let listContainerRef = $state<HTMLDivElement | null>(null);
   /** Manually picked folders (via the folder picker) that aren't in known repos. */
   let manuallyAddedPaths = $state<string[]>([]);
+  let initGitPath = $state('');
 
   // Build recent repos list
   const recentRepos = $derived.by(() => {
@@ -128,10 +135,6 @@
     focusedViaKeyboard = false;
   });
 
-  function getGitHubAvatarUrl(owner: string, size: number = 32): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
-
   async function getDirectoryStatus(path: string): Promise<DirectoryStatus | null> {
     if (typeof window === 'undefined' || !window.electronAPI) return null;
     try {
@@ -149,11 +152,25 @@
     const advanceCb = onSelectAndAdvance;
     const selectCb = onSelect;
     const status = await getDirectoryStatus(path);
+    if (status?.isDirectory === false) {
+      initGitPath = '';
+      selectCb('');
+      return;
+    }
     const scope = status?.isSubdirectoryOfGitRepo ? status.relativePathFromGitRoot : undefined;
+    const initGit =
+      !!status &&
+      !!status.exists &&
+      !!status.isDirectory &&
+      !status.isGitRepo &&
+      !status.isSubdirectoryOfGitRepo;
+    initGitPath = initGit ? path : '';
     if (advance && advanceCb) {
-      advanceCb(path, scope);
+      if (initGit) advanceCb(path, scope, true);
+      else advanceCb(path, scope);
     } else {
-      selectCb(path, scope);
+      if (initGit) selectCb(path, scope, true);
+      else selectCb(path, scope);
     }
   }
 
@@ -234,25 +251,29 @@
     />
     <div class="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
       {#if searchQuery}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="text-muted-foreground/50 hover:text-foreground text-xs cursor-pointer p-1.5 rounded hover:bg-muted/40 transition-colors"
           onclick={() => {
             searchQuery = '';
             searchInputRef?.focus();
           }}
-          aria-label={m.onboarding_localRepoTab_clearSearch_ariaLabel()}>✕</button
+          aria-label={m.onboarding_localRepoTab_clearSearch_ariaLabel()}>✕</Button
         >
       {/if}
-      <button
+      <Button
+        variant="ghost"
         type="button"
-        class="text-muted-foreground/60 hover:text-foreground cursor-pointer p-1.5 mr-0.5 rounded hover:bg-muted/40 transition-colors"
+        size="icon-compact"
+        iconOnly
+        class="text-muted-foreground/60 hover:text-foreground cursor-pointer mr-0.5 rounded hover:bg-muted/40 transition-colors"
         onclick={handleSelectFolder}
         aria-label={m.onboarding_localRepoTab_browse_ariaLabel()}
         title={m.onboarding_localRepoTab_browse_ariaLabel()}
       >
         <Fa icon={faFolder} size="sm" />
-      </button>
+      </Button>
     </div>
   </div>
 
@@ -276,19 +297,17 @@
         {#each filteredRepos as repo, index (repo.path)}
           {@const isFocused = index === focusedIndex}
           {@const isCommitted = repo.path === selectedPath}
-          <button
+          <Button
+            variant="ghost"
             type="button"
             id="local-repo-option-{index}"
             role="option"
             aria-selected={isCommitted}
-            class={cn(
-              'w-full flex items-center gap-3 py-2.5 px-3 text-left rounded-lg transition-colors cursor-pointer',
-              {
-                'bg-foreground text-background pl-2.5': isCommitted,
-                'bg-muted/40': isFocused && !isCommitted,
-                'hover:bg-muted/30': !isFocused && !isCommitted,
-              },
-            )}
+            class={cn(menuItem(), 'gap-3 px-3 py-2.5 cursor-pointer', {
+              'bg-foreground text-background pl-2.5': isCommitted,
+              'bg-muted/40': isFocused && !isCommitted,
+              'hover:bg-muted/30': !isFocused && !isCommitted,
+            })}
             onclick={() => {
               void handleSelectPath(repo.path);
               searchInputRef?.focus();
@@ -297,12 +316,11 @@
           >
             <div class="size-6 shrink-0">
               {#if repo.owner}
-                <img
-                  src={getGitHubAvatarUrl(repo.owner, 32)}
+                <GitHubAvatar
+                  identity={repo.owner}
                   alt={repo.owner}
+                  size={24}
                   class="w-6 h-6 rounded-full shrink-0"
-                  loading="lazy"
-                  onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                 />
               {:else}
                 <div class="w-6 h-6 flex items-center justify-center shrink-0">
@@ -346,7 +364,16 @@
             >
               <path d="M9 5l7 7-7 7" />
             </svg>
-          </button>
+          </Button>
+          {#if isCommitted && initGitPath === repo.path}
+            <div
+              role="status"
+              class="mx-3 mb-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+            >
+              {m.workspace_repoSelector_notGitRepository_label()}
+              {m.onboarding_localRepoTab_initializeGit_description()}
+            </div>
+          {/if}
         {/each}
       </div>
     {:else if searchQuery}
@@ -354,7 +381,9 @@
         {m.onboarding_localRepoTab_noMatches_label({ query: searchQuery })}
       </div>
     {:else}
-      <div class="py-4 text-center text-sm text-muted-foreground">{m.onboarding_localRepoTab_noRecent_label()}</div>
+      <div class="py-4 text-center text-sm text-muted-foreground">
+        {m.onboarding_localRepoTab_noRecent_label()}
+      </div>
     {/if}
   </div>
 </div>

@@ -18,11 +18,13 @@ import {
   updateItem,
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { BrowserTab } from '$shared/types/browser-clients';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { removeScript } from '../scripts/scripts-slice';
 import { removeTerminal } from '../terminals/terminals-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import type {
+  BrowserTabViewport,
   PanelTab,
   PanelTabType,
   PanelState,
@@ -147,10 +149,41 @@ export const emptyWorkspaceState: WorkspacePanelLayoutState = {
   savedCanvasWidthSourceBeforeExpand: undefined,
   deferSpecTab: false,
   newWorkspaceLifecycle: null,
+  emptiedByUserClose: false,
 };
 
-const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
-  createWorkspaceScopedHelpers(emptyWorkspaceState);
+const {
+  getWorkspaceState,
+  setWorkspaceState: setWorkspaceStateUnchecked,
+  clearWorkspaceState,
+} = createWorkspaceScopedHelpers(emptyWorkspaceState);
+
+function hasAnyWorkspaceTab(ws: WorkspacePanelLayoutState): boolean {
+  return (
+    Object.values(ws.panels).some((panel) => panel.tabs.length > 0) ||
+    (ws.hiddenTabs?.ids.length ?? 0) > 0
+  );
+}
+
+/**
+ * `emptiedByUserClose` only means anything while the layout is still tabless:
+ * any transition that leaves a visible or hidden tab behind clears it here, so
+ * no tab-adding reducer has to remember to.
+ */
+function setWorkspaceState<S extends { byWorkspaceId: Record<string, WorkspacePanelLayoutState> }>(
+  state: S,
+  wsId: string,
+  ws: WorkspacePanelLayoutState,
+): S {
+  const next =
+    ws.emptiedByUserClose && hasAnyWorkspaceTab(ws) ? { ...ws, emptiedByUserClose: false } : ws;
+  return setWorkspaceStateUnchecked(state, wsId, next);
+}
+
+/** Flag a layout the user just emptied with an explicit close (see emptiedByUserClose). */
+function markEmptiedByUserClose(ws: WorkspacePanelLayoutState): WorkspacePanelLayoutState {
+  return hasAnyWorkspaceTab(ws) ? ws : { ...ws, emptiedByUserClose: true };
+}
 
 // ============================================================================
 // Actions
@@ -179,6 +212,12 @@ export const preparePanelLayoutBackendRestore = createAction(
   'panelLayout/preparePanelLayoutBackendRestore',
   (wsId: string) => [wsId] as const,
 );
+
+/**
+ * A backend switch ends the session every `emptiedByUserClose` belonged to:
+ * the incoming backend's tabless layouts were not emptied by this user.
+ */
+export const resetEmptiedByUserClose = createAction<[]>('panelLayout/resetEmptiedByUserClose');
 
 export const bootstrapNewWorkspaceLayout = createAction(
   'panelLayout/bootstrapNewWorkspaceLayout',
@@ -258,6 +297,11 @@ export const panelLayoutScopeUnmounted = createAction<[layoutId: string]>(
 );
 
 // --- Tab Operations ---
+/**
+ * `preserveFocus` (agent-driven opens) activates the tab in the target panel
+ * so its content paints, but keeps the current panel focus — the same
+ * contract as `openTabInRightmostColumn`, for `position: same` opens.
+ */
 export const openTab = createAction(
   'panelLayout/openTab',
   (
@@ -268,6 +312,7 @@ export const openTab = createAction(
     force?: boolean,
     timestamp?: number,
     allowDuplicate?: boolean,
+    preserveFocus?: boolean,
   ) => ({
     wsId,
     tab,
@@ -276,9 +321,15 @@ export const openTab = createAction(
     force: force ?? false,
     timestamp: timestamp ?? Date.now(),
     ...(allowDuplicate === undefined ? {} : { allowDuplicate }),
+    ...(preserveFocus === true ? { preserveFocus: true } : {}),
   }),
 );
 
+/**
+ * `preserveFocus` (agent-driven opens) activates the tab in the rightmost
+ * column so its content paints, but keeps the current panel focus: agents
+ * may show content without stealing the user's keyboard focus.
+ */
 export const openTabInRightmostColumn = createAction(
   'panelLayout/openTabInRightmostColumn',
   (
@@ -288,7 +339,7 @@ export const openTabInRightmostColumn = createAction(
       force?: boolean;
       allowDuplicate?: boolean;
       newTabId?: string;
-      background?: boolean;
+      preserveFocus?: boolean;
     },
     timestamp?: number,
   ) => ({
@@ -296,7 +347,7 @@ export const openTabInRightmostColumn = createAction(
     tab,
     force: options?.force ?? false,
     ...(options?.allowDuplicate === undefined ? {} : { allowDuplicate: options.allowDuplicate }),
-    background: options?.background ?? false,
+    preserveFocus: options?.preserveFocus ?? false,
     newTabId: options?.newTabId ?? generateTabId(),
     timestamp: timestamp ?? Date.now(),
   }),
@@ -415,7 +466,7 @@ export const closeActiveTab = createAction(
   }),
 );
 
-/** Close focused content, then remove its structural column only when already empty. */
+/** Close focused content and remove its structural column when it becomes empty. */
 export const closeFocusedPanelTab = createAction(
   'panelLayout/closeFocusedPanelTab',
   (wsId: string, timestamp?: number, availableCanvasWidth?: number, columnHistoryId?: string) => ({
@@ -428,10 +479,11 @@ export const closeFocusedPanelTab = createAction(
 
 export const reopenClosedTab = createAction(
   'panelLayout/reopenClosedTab',
-  (wsId: string, timestamp?: number, closedTabId?: string) => ({
+  (wsId: string, timestamp?: number, closedTabId?: string, targetPanelId?: string) => ({
     wsId,
     newTabId: generateTabId(),
     closedTabId,
+    targetPanelId,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -803,6 +855,21 @@ export const reconcileStaleAgentTabs = createAction<
 // --- Clear workspace ---
 export const clearPanelLayout = createAction<[wsId: string]>('panelLayout/clearPanelLayout');
 
+/**
+ * Destroy every tab of a type in a workspace — visible, hidden, recently
+ * closed, and in layout history — so nothing can restore or reopen one
+ * (multiplayer w3: a collaborator's restored layout must hold no terminal or
+ * browser tab, and `reopenClosedTab` / undo must not bring one back).
+ */
+export const destroyTabsByType = createAction(
+  'panelLayout/destroyTabsByType',
+  (wsId: string, tabType: PanelTabType, timestamp?: number) => ({
+    wsId,
+    tabType,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
 export const closeTabsByType = createAction(
   'panelLayout/closeTabsByType',
   (
@@ -867,47 +934,56 @@ function updateEquivalentTabData(
   return panel.tabs.map((tab) => (tab.id === match.tab.id ? { ...tab, data: updatedData } : tab));
 }
 
-function signalEquivalentTab(
-  ws: WorkspacePanelLayoutState,
-  match: EquivalentPanelTab,
-  requested: Omit<PanelTab, 'id'>,
-): WorkspacePanelLayoutState {
-  const panel = ws.panels[match.panelId];
-  if (!panel) return ws;
-  const tabs = updateEquivalentTabData(panel, match, requested);
-  if (panel.activeTabId === match.tab.id) {
-    return tabs === panel.tabs
-      ? ws
-      : { ...ws, panels: { ...ws.panels, [match.panelId]: { ...panel, tabs } } };
-  }
-  const attentionTabIds = panel.attentionTabIds?.includes(match.tab.id)
-    ? panel.attentionTabIds
-    : [...(panel.attentionTabIds ?? []), match.tab.id];
-  return {
-    ...ws,
-    panels: { ...ws.panels, [match.panelId]: { ...panel, tabs, attentionTabIds } },
-  };
-}
-
-function addBackgroundTab(
+/**
+ * Activate a new tab in `panelId` (so its content paints) while keeping the
+ * current panel focus and focus history untouched; the queued reveal is
+ * marked `preserveFocus` so it only scrolls the panel into view and the tab
+ * does not autofocus on mount (agent-driven visible opens, monorepo#3045).
+ */
+function activateTabPreservingFocus(
   ws: WorkspacePanelLayoutState,
   panelId: string,
   tab: Omit<PanelTab, 'id'>,
   tabId: string,
+  timestamp: number,
 ): WorkspacePanelLayoutState {
   const panel = ws.panels[panelId];
+  if (!panel) return ws;
+  const next = saveToHistory(ws, timestamp);
+  return {
+    ...next,
+    panels: {
+      ...next.panels,
+      [panelId]: {
+        ...panel,
+        tabs: [...panel.tabs, { ...tab, id: tabId }],
+        activeTabId: tabId,
+        pristine: false,
+      },
+    },
+    pendingPanelReveal: createPanelRevealRequest(panelId, tabId, tabId, true),
+  };
+}
+
+function activateEquivalentTabPreservingFocus(
+  ws: WorkspacePanelLayoutState,
+  match: EquivalentPanelTab,
+  requested: Omit<PanelTab, 'id'>,
+  requestId: string,
+): WorkspacePanelLayoutState {
+  const panel = ws.panels[match.panelId];
   if (!panel) return ws;
   return {
     ...ws,
     panels: {
       ...ws.panels,
-      [panelId]: {
-        ...panel,
-        tabs: [...panel.tabs, { ...tab, id: tabId }],
-        attentionTabIds: [...(panel.attentionTabIds ?? []), tabId],
-        pristine: false,
+      [match.panelId]: {
+        ...clearTabAttention(panel, match.tab.id),
+        activeTabId: match.tab.id,
+        tabs: updateEquivalentTabData(panel, match, requested),
       },
     },
+    pendingPanelReveal: createPanelRevealRequest(match.panelId, match.tab.id, requestId, true),
   };
 }
 
@@ -941,8 +1017,11 @@ function createPanelRevealRequest(
   panelId: string,
   tabId: string | null,
   requestId: string,
+  preserveFocus = false,
 ): PanelRevealRequest {
-  return { panelId, tabId, requestId };
+  return preserveFocus
+    ? { panelId, tabId, requestId, preserveFocus }
+    : { panelId, tabId, requestId };
 }
 
 function restoreExpandedWorkspaceLayout(
@@ -1693,6 +1772,24 @@ export const updateTabFavicon = createAction<[wsId: string, tabId: string, favic
   'panelLayout/updateTabFavicon',
 );
 
+export const updateTabViewport = createAction<
+  [wsId: string, tabId: string, viewport: BrowserTabViewport]
+>('panelLayout/updateTabViewport');
+
+function browserTabViewportEqual(
+  left: BrowserTabViewport | undefined,
+  right: BrowserTabViewport,
+): boolean {
+  if (left?.mode !== right.mode) return false;
+  if (right.mode === 'fit') return true;
+  if (left.mode === 'fit') return false;
+  return (
+    left.width === right.width &&
+    left.height === right.height &&
+    (right.mode !== 'preset' || (left.mode === 'preset' && left.presetId === right.presetId))
+  );
+}
+
 /**
  * Record the agent owning a browser tab (claimTab / agent openTab adopting an
  * existing tab, monorepo#2857). Persisted with the layout so ownership
@@ -1708,8 +1805,40 @@ export const setTabOwnerAgent = createAction<
     ownerAgentId: string,
     emulatedSize?: { width: number; height: number },
     ownerAgentName?: string,
+    viewport?: BrowserTabViewport,
   ]
 >('panelLayout/setTabOwnerAgent');
+
+/**
+ * The daemon tab registry acknowledged this client as the tab's host
+ * (REV-2 §5.45): record `hostClientId` so the tab persists geometry only from
+ * now on. Every other field stays as the host reported it.
+ */
+export const acknowledgeBrowserTabHost = createAction<
+  [wsId: string, tabId: string, hostClientId: string]
+>('panelLayout/acknowledgeBrowserTabHost');
+
+/**
+ * Apply a canonical registry row to an existing browser tab (REV-2 §5.45):
+ * a tab restored from geometry-only persistence, a mirror following its
+ * remote host, or a tab the daemon re-homed (`changes.hostClientId`). The
+ * row's host-reported fields replace the local ones; a cleared optional
+ * field is dropped (a cleared title shows the browser fallback, a cleared
+ * emulation resets the viewport it drove). Tabs the registry does not know
+ * are left untouched.
+ */
+export const applyBrowserTabRegistryRow = createAction<
+  [wsId: string, tabId: string, row: BrowserTab]
+>('panelLayout/applyBrowserTabRegistryRow');
+
+/**
+ * Ask the registry saga to diff the workspace's hosted browser tabs against
+ * the daemon now (REV-2 §5.45). No reducer: the saga's single-flight reporter
+ * is the only consumer.
+ */
+export const browserTabRegistryReportRequested = createAction<[wsId: string]>(
+  'panelLayout/browserTabRegistryReportRequested',
+);
 
 /**
  * Destroy ALL browser tabs owned by an agent — visible and hidden alike
@@ -1722,6 +1851,26 @@ export const destroyTabsByOwnerAgent = createAction(
   (wsId: string, agentId: string, timestamp?: number) => ({
     wsId,
     agentId,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
+
+/**
+ * Destroy only the HIDDEN browser tabs owned by an agent in a workspace
+ * (intent#4762): the conversation footer's "Close hidden tabs" bulk action.
+ * Visible owned tabs and other agents' hidden tabs are untouched. Routed
+ * through the same destroy semantics as `destroyTabsByOwnerAgent` (removed
+ * from `hiddenTabs`, purged from layout history, never in recentlyClosed).
+ * Only tabs hosted by `ownClientId` (or not yet homed by the registry) are
+ * destroyed: a mirror of a tab hosted elsewhere is closed on its host and
+ * leaves with the `browser:tab-closed` echo, never by a local destroy.
+ */
+export const destroyHiddenTabsByOwnerAgent = createAction(
+  'panelLayout/destroyHiddenTabsByOwnerAgent',
+  (wsId: string, agentId: string, ownClientId: string | null = null, timestamp?: number) => ({
+    wsId,
+    agentId,
+    ownClientId,
     timestamp: timestamp ?? Date.now(),
   }),
 );
@@ -1762,8 +1911,8 @@ export const openHiddenTab = createAction(
  * registrations stay attached. `focus` (default true) opens the tab in the
  * focused panel, activates it, and focuses/reveals its panel.
  * `focus: false` (agent showTab without focus, monorepo#3045) adds the pane
- * to another stack when available, marks it for attention, and preserves
- * both the active pane and panel focus.
+ * to another stack when available and activates it there via a
+ * focus-preserving reveal, so it is displayed without moving panel focus.
  */
 export const restoreHiddenTab = createAction(
   'panelLayout/restoreHiddenTab',
@@ -1772,6 +1921,22 @@ export const restoreHiddenTab = createAction(
     tabId,
     timestamp: timestamp ?? Date.now(),
     focus: focus ?? true,
+  }),
+);
+
+/**
+ * Activate a tab that is already in a panel (agent showTab without focus on
+ * a visible-but-inactive owned tab, monorepo#3045) via a focus-preserving
+ * reveal: the tab becomes its panel's active tab and the panel scrolls into
+ * view, but panel focus and focus history stay untouched. A no-op when the
+ * tab is not in any panel or is already active.
+ */
+export const activateVisibleTab = createAction(
+  'panelLayout/activateVisibleTab',
+  (wsId: string, tabId: string, timestamp?: number) => ({
+    wsId,
+    tabId,
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
@@ -1943,6 +2108,20 @@ function applyCanonicalDefaultPairGeometry(
 }
 
 export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialState);
+
+const handledActionTypes = new Set<string>();
+/**
+ * Every action type `panelLayoutReducer` handles — `panelLayout/*` and the
+ * cross-slice cases alike — recorded as each case is registered. The browser
+ * tab registry saga derives its layout-mutation predicate from this set, so a
+ * new registration can never be missed (intent-hq/intent#4835).
+ */
+export const PANEL_LAYOUT_HANDLED_ACTION_TYPES: ReadonlySet<string> = handledActionTypes;
+const registerCase = panelLayoutReducer.with;
+panelLayoutReducer.with = (action, handler) => {
+  handledActionTypes.add(action.type);
+  return registerCase(action, handler);
+};
 // --- Initialization ---
 panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
   const { wsId, layout } = payload;
@@ -1965,11 +2144,22 @@ panelLayoutReducer.with(initializeLayout, (state, { payload }) => {
     newWorkspaceLifecycle: layout.newWorkspaceLifecycle ?? null,
     pendingFocusTabId: null,
     pendingPanelReveal: null,
+    // A remount re-restores the same session's layout: keep the user's close
+    // (setWorkspaceState drops it as soon as the restored layout has a tab).
+    emptiedByUserClose: ws.emptiedByUserClose,
   });
 });
 panelLayoutReducer.with(preparePanelLayoutBackendRestore, (state, { payload: [wsId] }) => {
   const ws = getWorkspaceState(state, wsId);
   return setWorkspaceState(state, wsId, { ...ws, columnCountInitialized: false });
+});
+panelLayoutReducer.with(resetEmptiedByUserClose, (state) => {
+  let result = state;
+  for (const [wsId, ws] of Object.entries(state.byWorkspaceId)) {
+    if (!ws.emptiedByUserClose) continue;
+    result = setWorkspaceState(result, wsId, { ...ws, emptiedByUserClose: false });
+  }
+  return result;
 });
 panelLayoutReducer.with(bootstrapNewWorkspaceLayout, (state, { payload }) => {
   const {
@@ -2068,6 +2258,11 @@ panelLayoutReducer.with(setRestoreStatus, (state, { payload: [wsId, restoreStatu
   return setWorkspaceState(state, wsId, {
     ...ws,
     restoreStatus,
+    // The resetLayout a missing/invalid restore dispatches is saga-owned, not
+    // a user close; 'pending'/'restored' keep whatever this session recorded.
+    ...(restoreStatus === 'empty' || restoreStatus === 'invalid'
+      ? { emptiedByUserClose: false }
+      : {}),
     ...(restoreStatus === 'pending' ? { pendingFocusTabId: null, pendingPanelReveal: null } : {}),
   });
 });
@@ -2095,6 +2290,18 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
   const existing = payload.allowDuplicate
     ? null
     : findEquivalentPanelTab(wsId, ws, tab, targetPanelId);
+  if (payload.preserveFocus) {
+    if (existing) {
+      return setWorkspaceState(
+        state,
+        wsId,
+        activateEquivalentTabPreservingFocus(ws, existing, tab, newTabId),
+      );
+    }
+    if (!targetPanelId) return state;
+    const next = activateTabPreservingFocus(ws, targetPanelId, tab, newTabId, timestamp);
+    return next === ws ? state : setWorkspaceState(state, wsId, next);
+  }
   if (existing) {
     return setWorkspaceState(
       state,
@@ -2127,19 +2334,19 @@ panelLayoutReducer.with(openTab, (state, { payload }) => {
   return setWorkspaceState(state, wsId, ws);
 });
 panelLayoutReducer.with(openTabInRightmostColumn, (state, { payload }) => {
-  const { wsId, tab, force, allowDuplicate, newTabId, timestamp, background } = payload;
+  const { wsId, tab, force, allowDuplicate, newTabId, timestamp, preserveFocus } = payload;
   const ws = getWorkspaceState(state, wsId);
   const targetPanelId = getPanelOrder(ws.root)
     .filter((panelId) => ws.panels[panelId])
     .at(-1);
   if (!targetPanelId) return state;
-  if (background) {
+  if (preserveFocus) {
     if (tab.workspaceId && tab.workspaceId !== wsId) return state;
     if (ws.deferSpecTab && tab.type === 'note' && tab.noteId === 'spec' && !force) return state;
     const existing = allowDuplicate ? null : findEquivalentPanelTab(wsId, ws, tab, targetPanelId);
     const next = existing
-      ? signalEquivalentTab(ws, existing, tab)
-      : addBackgroundTab(ws, targetPanelId, tab, newTabId);
+      ? activateEquivalentTabPreservingFocus(ws, existing, tab, newTabId)
+      : activateTabPreservingFocus(ws, targetPanelId, tab, newTabId, timestamp);
     return next === ws ? state : setWorkspaceState(state, wsId, next);
   }
   return selfDispatch(
@@ -2368,7 +2575,8 @@ panelLayoutReducer.with(closeTab, (state, { payload }) => {
     ws = closePanelHelper(ws, targetPanelId);
   }
 
-  return setWorkspaceState(state, wsId, ws);
+  // A destroy is agent/registry-driven teardown, not a user emptying the layout.
+  return setWorkspaceState(state, wsId, destroy ? ws : markEmptiedByUserClose(ws));
 });
 // --- Close Active Tab ---
 panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
@@ -2386,7 +2594,7 @@ panelLayoutReducer.with(closeActiveTab, (state, { payload }) => {
   // Delegate to closeTab reducer by dispatching inline
   return selfDispatch(state, closeTab(wsId, panel.activeTabId, targetPanelId, timestamp));
 });
-// --- Close Focused Panel Content Or Its Already-Empty Column ---
+// --- Close Focused Panel Content And Its Empty Column ---
 panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
   const { wsId, timestamp, availableCanvasWidth, columnHistoryId } = payload;
   const ws = getWorkspaceState(state, wsId);
@@ -2394,55 +2602,63 @@ panelLayoutReducer.with(closeFocusedPanelTab, (state, { payload }) => {
   if (!panelId || !ws.panels[panelId]) return state;
 
   const panel = ws.panels[panelId];
-  if (!panel.activeTabId) {
-    if (panel.tabs.length > 0 || ws.columnCount <= 1) return state;
-    const panelIds = getPanelOrder(ws.root).filter((id) => ws.panels[id]);
-    if (
-      panelIds.length !== ws.columnCount ||
-      !isFixedColumnRoot(ws.root, panelIds) ||
-      panelIds.length <= 1
-    ) {
-      return state;
-    }
+  const activeTab = panel.activeTabId
+    ? panel.tabs.find((tab) => tab.id === panel.activeTabId)
+    : undefined;
+  if (activeTab?.closable === false || (!activeTab && panel.tabs.length > 0)) return state;
 
-    const removedIndex = panelIds.indexOf(panelId);
-    if (removedIndex < 0) return state;
-    const remainingPanelIds = panelIds.filter((id) => id !== panelId);
-    const focusedPanelId = remainingPanelIds[Math.min(removedIndex, remainingPanelIds.length - 1)];
-    const columnCount = (ws.columnCount - 1) as PanelColumnCount;
-    const canvasWidth = getEqualFixedColumnCanvasWidth(
-      columnCount,
-      availableCanvasWidth,
-      ws.canvasWidth,
-    );
-    const removed = closePanelHelper(ws, panelId);
-    if (removed === ws) return state;
-
-    const closedWorkspace = {
-      ...removed,
-      root: createFixedColumnRoot(remainingPanelIds),
-      focusedPanelId,
-      columnCount,
-      columnCountInitialized: true,
-      canvasWidth,
-      canvasWidthSource: canvasWidth === null ? null : 'explicit',
-      layoutHistory: removed.layoutHistory.map((snapshot) =>
-        removeFixedColumnFromHistorySnapshot(snapshot, panelId, availableCanvasWidth),
-      ),
-    } satisfies WorkspacePanelLayoutState;
-    return setWorkspaceState(
+  let stateAfterTabClose = state;
+  let closedTabIds: string[] = [];
+  if (activeTab) {
+    stateAfterTabClose = selfDispatch(
       state,
-      wsId,
-      recordClosedPanelColumn(ws, closedWorkspace, columnHistoryId, panelId, timestamp, []),
+      closeTab(wsId, activeTab.id, panelId, timestamp, { preservePanel: true }),
     );
+    if (panel.tabs.length > 1 || ws.columnCount <= 1) return stateAfterTabClose;
+    closedTabIds = [activeTab.id];
+  } else if (ws.columnCount <= 1) {
+    return state;
   }
 
-  const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
-  if (!activeTab || activeTab.closable === false) return state;
+  const wsAfterTabClose = getWorkspaceState(stateAfterTabClose, wsId);
+  const panelIds = getPanelOrder(wsAfterTabClose.root).filter((id) => wsAfterTabClose.panels[id]);
+  if (
+    panelIds.length !== wsAfterTabClose.columnCount ||
+    !isFixedColumnRoot(wsAfterTabClose.root, panelIds) ||
+    panelIds.length <= 1
+  ) {
+    return stateAfterTabClose;
+  }
 
-  return selfDispatch(
-    state,
-    closeTab(wsId, activeTab.id, panelId, timestamp, { preservePanel: true }),
+  const removedIndex = panelIds.indexOf(panelId);
+  if (removedIndex < 0) return stateAfterTabClose;
+  const remainingPanelIds = panelIds.filter((id) => id !== panelId);
+  const focusedPanelId = remainingPanelIds[Math.min(removedIndex, remainingPanelIds.length - 1)];
+  const columnCount = (wsAfterTabClose.columnCount - 1) as PanelColumnCount;
+  const canvasWidth = getEqualFixedColumnCanvasWidth(
+    columnCount,
+    availableCanvasWidth,
+    wsAfterTabClose.canvasWidth,
+  );
+  const removed = closePanelHelper(wsAfterTabClose, panelId);
+  if (removed === wsAfterTabClose) return stateAfterTabClose;
+
+  const closedWorkspace = {
+    ...removed,
+    root: createFixedColumnRoot(remainingPanelIds),
+    focusedPanelId,
+    columnCount,
+    columnCountInitialized: true,
+    canvasWidth,
+    canvasWidthSource: canvasWidth === null ? null : 'explicit',
+    layoutHistory: removed.layoutHistory.map((snapshot) =>
+      removeFixedColumnFromHistorySnapshot(snapshot, panelId, availableCanvasWidth),
+    ),
+  } satisfies WorkspacePanelLayoutState;
+  return setWorkspaceState(
+    stateAfterTabClose,
+    wsId,
+    recordClosedPanelColumn(ws, closedWorkspace, columnHistoryId, panelId, timestamp, closedTabIds),
   );
 });
 // --- Close Tabs By Type ---
@@ -2471,6 +2687,36 @@ panelLayoutReducer.with(closeTabsByType, (state, { payload }) => {
   }
   return result;
 });
+// --- Destroy Tabs By Type (multiplayer w3) ---
+panelLayoutReducer.with(destroyTabsByType, (state, { payload }) => {
+  const { wsId, tabType, timestamp } = payload;
+  const isType = (tab: PanelTab) => tab.type === tabType;
+  const before = getWorkspaceState(state, wsId);
+  const tabsToDestroy: { tabId: string; panelId: string }[] = [];
+  for (const [pId, panel] of Object.entries(before.panels)) {
+    for (const tab of panel.tabs) {
+      if (isType(tab)) tabsToDestroy.push({ tabId: tab.id, panelId: pId });
+    }
+  }
+  let result = state;
+  for (const { tabId, panelId } of tabsToDestroy) {
+    result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
+  }
+  const ws = getWorkspaceState(result, wsId);
+  let hiddenTabs = ws.hiddenTabs;
+  for (const tab of getItems(ws.hiddenTabs)) {
+    if (isType(tab)) hiddenTabs = removeItem(hiddenTabs, tab.id);
+  }
+  const recentlyClosed = ws.recentlyClosed.filter((entry) => !isType(entry.tab));
+  const untouched =
+    hiddenTabs === ws.hiddenTabs && recentlyClosed.length === ws.recentlyClosed.length;
+  const next = purgeTabsFromLayoutHistory(
+    untouched ? ws : { ...ws, hiddenTabs, recentlyClosed },
+    isType,
+  );
+  if (next === ws) return result;
+  return setWorkspaceState(result, wsId, next);
+});
 // --- Close Tabs By Agent ID ---
 panelLayoutReducer.with(closeTabsByAgentId, (state, { payload }) => {
   const { wsId, agentId, timestamp } = payload;
@@ -2488,7 +2734,11 @@ panelLayoutReducer.with(closeTabsByAgentId, (state, { payload }) => {
   for (const { tabId, panelId } of tabsToClose) {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
   }
-  return result;
+  // Deleted-agent cleanup is automated, not the user emptying the layout.
+  return setWorkspaceState(result, wsId, {
+    ...getWorkspaceState(result, wsId),
+    emptiedByUserClose: ws.emptiedByUserClose,
+  });
 });
 // --- Destroy Tabs By Owner Agent (monorepo#2857) ---
 panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
@@ -2522,6 +2772,27 @@ panelLayoutReducer.with(destroyTabsByOwnerAgent, (state, { payload }) => {
     result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp, true));
   }
   return result;
+});
+// --- Destroy Hidden Tabs By Owner Agent (intent#4762) ---
+panelLayoutReducer.with(destroyHiddenTabsByOwnerAgent, (state, { payload }) => {
+  const { wsId, agentId, ownClientId } = payload;
+  const ws = getWorkspaceState(state, wsId);
+  const hiddenOwned = getItems(ws.hiddenTabs).filter(
+    (tab) =>
+      tab.type === 'browser' &&
+      tab.ownerAgentId === agentId &&
+      (tab.hostClientId === undefined || tab.hostClientId === ownClientId),
+  );
+  if (hiddenOwned.length === 0) return state;
+  let hiddenTabs = ws.hiddenTabs;
+  for (const tab of hiddenOwned) {
+    hiddenTabs = removeItem(hiddenTabs, tab.id);
+  }
+  let next: WorkspacePanelLayoutState = { ...ws, hiddenTabs };
+  for (const tab of hiddenOwned) {
+    next = purgeTabFromLayoutHistory(next, tab.id);
+  }
+  return setWorkspaceState(state, wsId, next);
 });
 // --- Destroy Owned Tabs For Workspace (monorepo#2857) ---
 panelLayoutReducer.with(destroyOwnedTabsForWorkspace, (state, { payload }) => {
@@ -2611,7 +2882,8 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
   }
 
   // focus: false (agent showTab without focus): add the pane to another stack
-  // when available and signal it without replacing visible content or focus.
+  // when available and activate it there without moving panel focus, so the
+  // tab is displayed (monorepo#3045) while the user's focused content stays.
   const previousFocusedPanelId = ws.focusedPanelId;
   const order = getPanelOrder(ws.root);
   const targetPanelId =
@@ -2620,13 +2892,36 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
       ? previousFocusedPanelId
       : order.find((panelId) => ws.panels[panelId]));
   if (!targetPanelId) return state;
-  ws = addBackgroundTab(
+  ws = activateTabPreservingFocus(
     { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) },
     targetPanelId,
     hiddenTab,
     hiddenTab.id,
+    timestamp,
   );
   return setWorkspaceState(state, wsId, { ...ws, focusedPanelId: previousFocusedPanelId });
+});
+// --- Activate Visible Tab (focus-preserving) ---
+panelLayoutReducer.with(activateVisibleTab, (state, { payload }) => {
+  const { wsId, tabId, timestamp } = payload;
+  let ws = getWorkspaceState(state, wsId);
+  const panelId = Object.keys(ws.panels).find((id) =>
+    ws.panels[id].tabs.some((tab) => tab.id === tabId),
+  );
+  if (!panelId) return state;
+  const panel = ws.panels[panelId];
+  if (panel.activeTabId === tabId) return state;
+
+  ws = saveToHistory(ws, timestamp);
+  ws = {
+    ...ws,
+    panels: {
+      ...ws.panels,
+      [panelId]: { ...clearTabAttention(panel, tabId), activeTabId: tabId },
+    },
+    pendingPanelReveal: createPanelRevealRequest(panelId, tabId, tabId, true),
+  };
+  return setWorkspaceState(state, wsId, ws);
 });
 // --- Prune Recently Closed ---
 panelLayoutReducer.with(pruneRecentlyClosed, (state, { payload: [wsId, match] }) => {
@@ -2792,7 +3087,7 @@ panelLayoutReducer.with(reopenClosedPanelColumn, (state, { payload }) => {
 });
 // --- Reopen Closed Tab ---
 panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
-  const { wsId, newTabId, closedTabId, timestamp } = payload;
+  const { wsId, newTabId, closedTabId, targetPanelId: requestedPanelId, timestamp } = payload;
   let ws = getWorkspaceState(state, wsId);
   if (ws.recentlyClosed.length === 0) return state;
 
@@ -2806,7 +3101,12 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
   ws = saveToHistory(ws, timestamp);
   const closed = ws.recentlyClosed[closedIndex];
   const rest = ws.recentlyClosed.filter((_, index) => index !== closedIndex);
-  const targetPanelId = ws.panels[closed.panelId] ? closed.panelId : ws.focusedPanelId;
+  const targetPanelId =
+    requestedPanelId && ws.panels[requestedPanelId]
+      ? requestedPanelId
+      : ws.panels[closed.panelId]
+        ? closed.panelId
+        : ws.focusedPanelId;
   if (!targetPanelId || !ws.panels[targetPanelId]) return state;
 
   const panel = ws.panels[targetPanelId];
@@ -2827,6 +3127,7 @@ panelLayoutReducer.with(reopenClosedTab, (state, { payload }) => {
         ...panel,
         tabs: [...panel.tabs, newTab],
         activeTabId: newTabId,
+        pristine: false,
       },
     },
     focusedPanelId: targetPanelId,
@@ -3025,8 +3326,11 @@ panelLayoutReducer.with(
 // --- Set Tab Owner Agent (monorepo#2857) ---
 panelLayoutReducer.with(
   setTabOwnerAgent,
-  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize, ownerAgentName] }) => {
+  (state, { payload: [wsId, tabId, ownerAgentId, emulatedSize, ownerAgentName, viewport] }) => {
     const ws = getWorkspaceState(state, wsId);
+    const nextViewport =
+      viewport ??
+      (emulatedSize === undefined ? undefined : { mode: 'custom' as const, ...emulatedSize });
     for (const [pId, panel] of Object.entries(ws.panels)) {
       const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
       if (tabIdx >= 0) {
@@ -3036,6 +3340,7 @@ panelLayoutReducer.with(
           (emulatedSize === undefined ||
             (tab.emulatedSize?.width === emulatedSize.width &&
               tab.emulatedSize?.height === emulatedSize.height)) &&
+          (nextViewport === undefined || browserTabViewportEqual(tab.viewport, nextViewport)) &&
           (ownerAgentName === undefined || tab.ownerAgentName === ownerAgentName);
         if (unchanged) return state;
         const newTabs = panel.tabs.map((t, i) =>
@@ -3044,6 +3349,7 @@ panelLayoutReducer.with(
                 ...t,
                 ownerAgentId,
                 ...(emulatedSize === undefined ? {} : { emulatedSize }),
+                ...(nextViewport === undefined ? {} : { viewport: nextViewport }),
                 // An undefined name keeps any previously persisted one — a
                 // notification that couldn't resolve the name must not erase
                 // it (monorepo#3438).
@@ -3066,6 +3372,7 @@ panelLayoutReducer.with(
         (emulatedSize === undefined ||
           (hiddenTab.emulatedSize?.width === emulatedSize.width &&
             hiddenTab.emulatedSize?.height === emulatedSize.height)) &&
+        (nextViewport === undefined || browserTabViewportEqual(hiddenTab.viewport, nextViewport)) &&
         (ownerAgentName === undefined || hiddenTab.ownerAgentName === ownerAgentName);
       if (unchanged) return state;
       return setWorkspaceState(state, wsId, {
@@ -3074,6 +3381,7 @@ panelLayoutReducer.with(
           id: tabId,
           ownerAgentId,
           ...(emulatedSize === undefined ? {} : { emulatedSize }),
+          ...(nextViewport === undefined ? {} : { viewport: nextViewport }),
           ...(ownerAgentName === undefined ? {} : { ownerAgentName }),
         }),
       });
@@ -3081,6 +3389,115 @@ panelLayoutReducer.with(
     return state;
   },
 );
+/**
+ * Replace one browser tab wherever it lives (a panel or hiddenTabs) with
+ * `patch(tab)`; the state is returned unchanged when the tab is absent or the
+ * patch yields the same object.
+ */
+function patchBrowserTab(
+  state: PanelLayoutSliceState,
+  wsId: string,
+  tabId: string,
+  patch: (tab: PanelTab) => PanelTab,
+): PanelLayoutSliceState {
+  const ws = getWorkspaceState(state, wsId);
+  for (const [pId, panel] of Object.entries(ws.panels)) {
+    const tabIdx = panel.tabs.findIndex((t) => t.id === tabId && t.type === 'browser');
+    if (tabIdx < 0) continue;
+    const next = patch(panel.tabs[tabIdx]);
+    if (next === panel.tabs[tabIdx]) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      panels: {
+        ...ws.panels,
+        [pId]: { ...panel, tabs: panel.tabs.map((t, i) => (i === tabIdx ? next : t)) },
+      },
+    });
+  }
+  const hiddenTab = getItem(ws.hiddenTabs, tabId);
+  if (!hiddenTab || hiddenTab.type !== 'browser') return state;
+  const next = patch(hiddenTab);
+  if (next === hiddenTab) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    hiddenTabs: replaceItem(ws.hiddenTabs, tabId, next),
+  });
+}
+
+// --- Browser tab registry (REV-2 §5.45) ---
+panelLayoutReducer.with(
+  acknowledgeBrowserTabHost,
+  (state, { payload: [wsId, tabId, hostClientId] }) =>
+    patchBrowserTab(state, wsId, tabId, (tab) =>
+      tab.hostClientId === hostClientId ? tab : { ...tab, hostClientId },
+    ),
+);
+panelLayoutReducer.with(applyBrowserTabRegistryRow, (state, { payload: [wsId, tabId, row] }) =>
+  patchBrowserTab(state, wsId, tabId, (tab) => {
+    const {
+      browserRequestedUrl: _requested,
+      ownerAgentId: _owner,
+      ownerAgentName: _ownerName,
+      emulatedSize: _size,
+      ...rest
+    } = tab;
+    // Viewport mode is local geometry (the registry carries only dimensions):
+    // preserve Fit only for an echo of its retained offscreen size, or a fixed
+    // mode whose dimensions still match. A changed canonical size becomes Custom.
+    // Legacy tabs without a viewport also default to Fit.
+    const previousSize =
+      !tab.viewport || tab.viewport.mode === 'fit' ? tab.emulatedSize : tab.viewport;
+    const viewport = row.emulatedSize
+      ? previousSize?.width === row.emulatedSize.width &&
+        previousSize.height === row.emulatedSize.height
+        ? tab.viewport
+        : { mode: 'custom' as const, ...row.emulatedSize }
+      : tab.emulatedSize
+        ? { mode: 'fit' as const }
+        : tab.viewport;
+    return {
+      ...rest,
+      hostClientId: row.hostClientId,
+      browserUrl: row.url,
+      title: row.title ?? '',
+      ...(row.requestedUrl === undefined ? {} : { browserRequestedUrl: row.requestedUrl }),
+      ...(row.ownerAgentId === undefined ? {} : { ownerAgentId: row.ownerAgentId }),
+      ...(row.ownerAgentName === undefined ? {} : { ownerAgentName: row.ownerAgentName }),
+      ...(row.emulatedSize === undefined ? {} : { emulatedSize: row.emulatedSize }),
+      ...(viewport === undefined ? {} : { viewport }),
+    };
+  }),
+);
+// --- Update Browser Tab Viewport ---
+panelLayoutReducer.with(updateTabViewport, (state, { payload: [wsId, tabId, viewport] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  for (const [pId, panel] of Object.entries(ws.panels)) {
+    const tab = panel.tabs.find(
+      (candidate) => candidate.id === tabId && candidate.type === 'browser',
+    );
+    if (!tab) continue;
+    if (browserTabViewportEqual(tab.viewport, viewport)) return state;
+    return setWorkspaceState(state, wsId, {
+      ...ws,
+      panels: {
+        ...ws.panels,
+        [pId]: {
+          ...panel,
+          tabs: panel.tabs.map((candidate) =>
+            candidate.id === tabId ? { ...candidate, viewport } : candidate,
+          ),
+        },
+      },
+    });
+  }
+  const hiddenTab = getItem(ws.hiddenTabs, tabId);
+  if (!hiddenTab || hiddenTab.type !== 'browser') return state;
+  if (browserTabViewportEqual(hiddenTab.viewport, viewport)) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    hiddenTabs: updateItem(ws.hiddenTabs, { id: tabId, viewport }),
+  });
+});
 // --- Update Tab Favicon ---
 panelLayoutReducer.with(updateTabFavicon, (state, { payload: [wsId, tabId, faviconUrl] }) => {
   const ws = getWorkspaceState(state, wsId);
@@ -3224,7 +3641,7 @@ panelLayoutReducer.with(closeAllTabs, (state, { payload }) => {
   if (keptTabs.length === 0 && Object.keys(ws.panels).length > 1) {
     ws = closePanelHelper(ws, targetPanelId);
   }
-  return setWorkspaceState(state, wsId, ws);
+  return setWorkspaceState(state, wsId, markEmptiedByUserClose(ws));
 });
 // --- Close All Others Everywhere ---
 panelLayoutReducer.with(closeAllOthersEverywhere, (state, { payload }) => {
@@ -3363,7 +3780,7 @@ panelLayoutReducer.with(closePanel, (state, { payload }) => {
       .filter((tab) => tab.closable !== false && !isHideOnCloseTab(tab))
       .map((tab) => tab.id),
   );
-  return setWorkspaceState(state, wsId, updatedWs);
+  return setWorkspaceState(state, wsId, markEmptiedByUserClose(updatedWs));
 });
 panelLayoutReducer.with(reconcilePanelColumnCount, (state, { payload }) => {
   const { wsId, count, newPanelIds, timestamp, recordHistory, availableCanvasWidth } = payload;
@@ -3595,6 +4012,7 @@ panelLayoutReducer.with(resetLayout, (state, { payload }) => {
     savedCanvasWidthSourceBeforeExpand: undefined,
     deferSpecTab: false,
     newWorkspaceLifecycle: null,
+    emptiedByUserClose: true,
   });
 });
 // --- Go Back ---
@@ -3947,7 +4365,13 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
 
   const panelOrder = getPanelOrder(ws.root).filter((panelId) => ws.panels[panelId]);
   const sourceIndex = effectiveSourcePanelId ? panelOrder.indexOf(effectiveSourcePanelId) : -1;
-  if (sourceIndex >= 0 && panelOrder.length < 4 && effectiveSourcePanelId) {
+  const rightNeighborPanelId = sourceIndex >= 0 ? panelOrder[sourceIndex + 1] : undefined;
+  if (
+    !rightNeighborPanelId &&
+    sourceIndex >= 0 &&
+    panelOrder.length < 4 &&
+    effectiveSourcePanelId
+  ) {
     const saved = saveToHistory(ws, timestamp);
     const inserted = insertFixedColumn(
       saved,
@@ -3976,11 +4400,11 @@ panelLayoutReducer.with(openTabInAdjacentOrSplit, (state, { payload }) => {
   }
 
   const targetPanelId =
-    sourceIndex >= 0 ? (panelOrder[sourceIndex + 1] ?? panelOrder[0]) : panelOrder.at(-1);
+    rightNeighborPanelId ?? (sourceIndex >= 0 ? panelOrder[0] : panelOrder.at(-1));
   if (!targetPanelId) return state;
 
-  // Reuse the immediate right stack. At the four-column limit, wrap to the
-  // first stack rather than creating an invalid fifth column.
+  // Reuse the immediate right stack. From a capped rightmost stack, wrap to
+  // the first rather than creating an invalid fifth column.
   const result = selfDispatch(
     state,
     openTab(wsId, tab, targetPanelId, newTabId, force, timestamp, allowDuplicate),

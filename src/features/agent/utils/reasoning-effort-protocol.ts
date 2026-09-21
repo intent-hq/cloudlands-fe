@@ -1,5 +1,3 @@
-
-
 export function supportsReasoningEffortProtocol(protocolVersion?: string | null): boolean {
   if (!protocolVersion) return false;
   const match = protocolVersion.trim().match(/^([0-9]+)(?:\.([0-9]+))?/);

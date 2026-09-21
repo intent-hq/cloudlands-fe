@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { CDPSession } from '@playwright/test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
@@ -12,6 +13,57 @@ const cases = [
 async function expectUniqueVisible(locator: Locator) {
   await expect(locator).toHaveCount(1);
   await expect(locator).toBeVisible();
+}
+
+async function expectSharedDropdownSurface(surface: Locator) {
+  const contract = await surface.evaluate((node) => {
+    const probe = document.createElement('span');
+    probe.style.cssText = [
+      'background-color:hsl(var(--popover))',
+      'color:hsl(var(--popover-foreground))',
+      'border-color:hsl(var(--border))',
+      'border-radius:var(--radius-medium)',
+      'padding:var(--space-1)',
+      'z-index:var(--layer-popover)',
+    ].join(';');
+    document.body.append(probe);
+    const style = getComputedStyle(node);
+    const tokens = getComputedStyle(probe);
+    const result = {
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+      borderColor: style.borderTopColor,
+      borderWidths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth],
+      borderRadius: style.borderTopLeftRadius,
+      padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+      zIndex: style.zIndex,
+      boxShadow: style.boxShadow,
+      outlineStyle: style.outlineStyle,
+      transitionProperty: style.transitionProperty,
+      tokens: {
+        backgroundColor: tokens.backgroundColor,
+        color: tokens.color,
+        borderColor: tokens.borderTopColor,
+        borderRadius: tokens.borderTopLeftRadius,
+        padding: tokens.paddingTop,
+        zIndex: tokens.zIndex,
+      },
+    };
+    probe.remove();
+    return result;
+  });
+  expect(contract).toMatchObject({
+    backgroundColor: contract.tokens.backgroundColor,
+    color: contract.tokens.color,
+    borderColor: contract.tokens.borderColor,
+    borderWidths: ['1px', '1px', '1px'],
+    borderRadius: contract.tokens.borderRadius,
+    padding: Array(4).fill(contract.tokens.padding),
+    zIndex: contract.tokens.zIndex,
+    outlineStyle: 'none',
+  });
+  expect(contract.boxShadow).not.toBe('none');
+  expect(contract.transitionProperty).toBe('none');
 }
 
 function splitShadowLayers(value: string) {
@@ -209,8 +261,8 @@ test.describe('chat message navigator production path', () => {
       expect(actionsBox.x + actionsBox.width).toBeLessThanOrEqual(
         headerBox.x + headerBox.width + 0.5,
       );
-      expect(listIconBox.width).toBeCloseTo(14, 0);
-      expect(listIconBox.height).toBeCloseTo(14, 0);
+      expect(listIconBox.width).toBeCloseTo(16, 0);
+      expect(listIconBox.height).toBeCloseTo(16, 0);
       expect(arrowIconBox.width).toBeCloseTo(16, 0);
       expect(arrowIconBox.height).toBeCloseTo(16, 0);
       expect(arrowComputedSize).toEqual({ width: 16, height: 16 });
@@ -226,6 +278,7 @@ test.describe('chat message navigator production path', () => {
       await listButton.click();
       const dialog = await pickerForTrigger(page, listButton);
       await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
+      await expectSharedDropdownSurface(dialog);
       const search = dialog.getByRole('combobox', { name: 'Filter user messages' });
       const options = dialog.getByRole('option');
       await expectUniqueVisible(search);
@@ -276,9 +329,10 @@ test.describe('chat message navigator production path', () => {
       await expect(initialOption).toHaveAttribute('aria-selected', 'true');
       expect(
         await initialOption
-          .locator('span')
+          .locator('[data-slot="button-label"] > span')
           .evaluate((element) => getComputedStyle(element).fontWeight),
       ).toBe('400');
+      await expect(search).toBeFocused();
       const searchFocus = await search.evaluate((element) => {
         const style = getComputedStyle(element);
         return {
@@ -304,9 +358,10 @@ test.describe('chat message navigator production path', () => {
         };
       });
       expect(searchFocus.backgroundColor).toBe(searchBlur.backgroundColor);
-      expect(searchFocus.borderColor).not.toBe(searchBlur.borderColor);
+      expect(searchFocus.borderColor).toBe(searchBlur.borderColor);
       expect(hasVisibleBoxShadow(searchBlur.boxShadow)).toBe(false);
       expect(searchFocus.outline).toBe(searchBlur.outline);
+      expect(searchFocus.boxShadow).toBe(searchBlur.boxShadow);
       const rowFocus = await initialOption.evaluate((element) => {
         const style = getComputedStyle(element);
         return {
@@ -338,8 +393,12 @@ test.describe('chat message navigator production path', () => {
 
       const dialogBox = await dialog.boundingBox();
       if (!dialogBox) throw new Error('Expected the message picker dialog');
+      const computedMaxWidth = await dialog.evaluate(
+        (element) => getComputedStyle(element).maxWidth,
+      );
       const panelBox = await component.locator('[data-panel-id="chat-panel"]').boundingBox();
       if (!panelBox) throw new Error('Expected the production panel boundary');
+      expect(computedMaxWidth).not.toBe('none');
       expect(dialogBox.width).toBeLessThanOrEqual(Math.min(448, viewport.width - 16) + 0.5);
       expect(dialogBox.x).toBeGreaterThanOrEqual(Math.max(7.5, panelBox.x + 7.5));
       expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(
@@ -517,19 +576,37 @@ test.describe('chat message navigator production path', () => {
     let dialog = await pickerForTrigger(page, trigger);
     await expect(dialog).toHaveRole('dialog', { name: 'Browse user messages' });
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await trigger.focus();
+    await trigger.press('Space');
+    await expect(dialog).toHaveCount(0);
+
+    await trigger.press('Space');
+    dialog = await pickerForTrigger(page, trigger);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
 
     await trigger.press('Enter');
     dialog = await pickerForTrigger(page, trigger);
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await trigger.focus();
+    await trigger.press('Enter');
+    await expect(dialog).toHaveCount(0);
+
+    await trigger.press('Enter');
+    dialog = await pickerForTrigger(page, trigger);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
 
     await page.mouse.move(0, 0);
+    await trigger.hover();
+    const triggerTooltip = page.getByRole('tooltip', { name: 'Browse user messages' });
+    await expect(triggerTooltip).toBeVisible();
     await trigger.click();
     dialog = await pickerForTrigger(page, trigger);
     await expect(dialog.getByRole('combobox', { name: 'Filter user messages' })).toBeFocused();
+    await expect(triggerTooltip).toHaveCount(0);
+    await page.waitForTimeout(350);
+    await expect(triggerTooltip).toHaveCount(0);
     await title.click();
     await expect(dialog).toHaveCount(0);
 

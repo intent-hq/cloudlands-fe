@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { tick } from 'svelte';
   import Fa from 'svelte-fa';
   import {
@@ -185,17 +186,17 @@
   data-panel-navigator
 >
   <div
-    class="panel-navigator-track pointer-events-none relative h-9 w-full max-w-xl overflow-hidden rounded-(--radius-large) bg-popover/95 text-popover-foreground shadow-(--elevation-overlay) ring-1 ring-border ring-inset backdrop-blur-md"
+    class="panel-navigator-track pointer-events-none relative h-9 w-full max-w-xl overflow-hidden rounded-(--radius-large) bg-popover text-popover-foreground shadow-(--elevation-overlay) ring-1 ring-border ring-inset"
   >
     {#each panels as panel (panel.id)}
       {@const segment = segmentGeometry.get(panel.id)}
       {#if segment}
         {@const active = panel.id === activePanelId}
-        <button
+        <Button
+          variant="ghost"
           type="button"
-          class="panel-navigator-segment group pointer-events-auto absolute inset-y-0 z-10 min-w-0 border-0 bg-transparent p-1 text-muted-foreground focus-visible:outline-none"
-          style:left={`${segment.start * 100}%`}
-          style:width={`${segment.size * 100}%`}
+          class="panel-navigator-segment group pointer-events-auto absolute inset-y-0 z-10 h-auto min-w-0 border-0 bg-transparent p-1 text-muted-foreground focus-visible:outline-none"
+          style="left: {segment.start * 100}%; width: {segment.size * 100}%;"
           aria-label={panel.title}
           aria-current={active ? 'page' : undefined}
           title={panel.title}
@@ -211,7 +212,7 @@
           >
             <Fa icon={getPanelIcon(panel.type)} size={14} class="panel-navigator-icon" />
           </span>
-        </button>
+        </Button>
       {/if}
     {/each}
     <div
@@ -232,7 +233,7 @@
       box-shadow 120ms ease;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .panel-navigator-tile {
       transition: none;
     }

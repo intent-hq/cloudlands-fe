@@ -1,6 +1,7 @@
 import { Marked } from 'marked';
 import { addTasksBlockSupport } from './tiptap-task-block-extension';
 import { strikethroughDoubleTilde } from './marked-strikethrough';
+import { addMathSupport } from './marked-math';
 
 /**
  * Regular expression to match agent anchors in task items
@@ -82,7 +83,7 @@ function extractAgentAnchor(content: string): { content: string; agentId: string
  *
  * @returns A configured marked instance that outputs Tiptap-compatible HTML
  */
-export const createTiptapTaskListMarked = () => {
+export const createTiptapTaskListMarked = (options: { renderMath?: boolean } = {}) => {
   const markedInstance = new Marked();
 
   // Helper function to escape HTML entities in code blocks
@@ -321,6 +322,8 @@ export const createTiptapTaskListMarked = () => {
 
   // Restrict strikethrough to the double-tilde form (~~text~~)
   markedInstance.use(strikethroughDoubleTilde);
+
+  addMathSupport(markedInstance, options.renderMath === true);
 
   // Add choice block support
   // TODO: Re-enable after fixing renderer registration

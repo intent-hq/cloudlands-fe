@@ -30,4 +30,3 @@ try {
   console.error('Error killing Electron:', err.message);
   process.exit(0); // Don't fail the script
 }
-

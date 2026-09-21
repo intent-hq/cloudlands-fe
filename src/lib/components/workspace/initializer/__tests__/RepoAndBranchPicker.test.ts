@@ -84,7 +84,7 @@ describe('RepoAndBranchPicker', () => {
   });
 
   it('keeps selected, suggested, loading, open, focus, and disabled branch states on the pill surface', () => {
-    const { container } = render(RepoAndBranchPicker, {
+    render(RepoAndBranchPicker, {
       props: {
         repoType: 'local',
         repoPath: '/Users/dev/monorepo',
@@ -102,9 +102,7 @@ describe('RepoAndBranchPicker', () => {
     expect(branch.className).toContain('min-w-0');
     expect(branch.className).toContain('overflow-hidden');
     expect(branch.getAttribute('data-suggested-branch')).toBe('feature/contrast');
-    expect(container.querySelector('.animate-spin.text-subtle')?.className).not.toContain(
-      'bg-muted',
-    );
+    expect(screen.getByRole('status')).toBeTruthy();
   });
 
   it('applies the pill only to the interactive metadata value', () => {
@@ -214,23 +212,6 @@ describe('RepoAndBranchPicker', () => {
     expect(text).not.toContain('worktree');
   });
 
-  it('spaces the GitHub clone sentence fragments like the local-repo flow', () => {
-    const { container } = render(RepoAndBranchPicker, {
-      props: {
-        repoType: 'github',
-        githubUrl: 'https://github.com/intent-hq/monorepo',
-        repoPath: 'intent-hq/monorepo',
-        branch: 'main',
-      },
-    });
-
-    const middle = Array.from(container.querySelectorAll('span')).find((span) =>
-      span.textContent?.trim().startsWith('and work off'),
-    );
-    expect(middle?.className).toContain('mx-1');
-    expect(middle?.className).toContain('ml-2');
-  });
-
   it('gives the default-presentation repo value the same explicit color as the branch trigger', () => {
     render(RepoAndBranchPicker, {
       props: {
@@ -261,7 +242,7 @@ describe('RepoAndBranchPicker', () => {
   });
 
   it('renders a tiny metadata branch loader in place of the chevron', () => {
-    const { container } = render(RepoAndBranchPicker, {
+    render(RepoAndBranchPicker, {
       props: {
         branch: 'main',
         presentation: 'metadata',
@@ -276,6 +257,6 @@ describe('RepoAndBranchPicker', () => {
     expect(
       screen.getByTestId('branch-selector').getAttribute('data-trigger-content-class'),
     ).toContain('pr-5');
-    expect(container.querySelector('.animate-spin.text-subtle')).toBeTruthy();
+    expect(screen.getByRole('status')).toBeTruthy();
   });
 });

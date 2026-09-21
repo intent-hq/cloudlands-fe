@@ -18,10 +18,7 @@ import {
   clearAllAccumulators as clearAllAccumulatorsAction,
   messageAccumulatorReducer,
 } from './message-accumulator-slice';
-import {
-  selectAccumulator,
-  selectAccumulatorStats,
-} from './message-accumulator-selectors';
+import { selectAccumulator, selectAccumulatorStats } from './message-accumulator-selectors';
 import type { AccumulatorStats, SerializedAccumulatedMessage } from './message-accumulator-types';
 import { DEFAULT_ACCUMULATOR_CONFIG } from './message-accumulator-types';
 

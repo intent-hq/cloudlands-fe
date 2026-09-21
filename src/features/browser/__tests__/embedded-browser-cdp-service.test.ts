@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
   sendToWorkspaceWindows: vi.fn(),
   getAllWebContents: vi.fn(() => [] as unknown[]),
-  fromId: vi.fn(() => undefined),
+  fromId: vi.fn<(id: number) => unknown>(() => undefined),
   handlers: new Map<string, (event: unknown, data: unknown) => unknown>(),
 }));
 
@@ -47,10 +47,16 @@ const JPEG_1PX =
 type PanelTab = {
   tabId: string;
   url: string;
+  requestedUrl?: string;
   title: string;
   closable?: boolean;
   ownerAgentId?: string;
+  hidden?: boolean;
   emulatedSize?: { width: number; height: number };
+  viewport?:
+    | { mode: 'fit' }
+    | { mode: 'preset'; presetId: string; width: number; height: number }
+    | { mode: 'custom'; width: number; height: number };
 };
 
 /** Fake live webview backing a mounted tab. */
@@ -142,7 +148,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.handlers.clear();
   mocks.getAllWebContents.mockReturnValue([]);
-  mocks.fromId.mockReturnValue(undefined);
+  mocks.fromId.mockImplementation((id) =>
+    mocks.getAllWebContents().find((wc) => (wc as { id: number }).id === id),
+  );
   mocks.sendToWorkspaceWindows.mockReturnValue(DELIVERED);
 });
 
@@ -162,7 +170,81 @@ describe('focusTab', () => {
   });
 });
 
+describe('openDevToolsPanel', () => {
+  it('opens DevTools and selects the requested built-in panel', async () => {
+    const service = await loadService();
+    const executeJavaScript = vi.fn().mockResolvedValue(undefined);
+    const wc = {
+      ...fakeWebview(43, 'http://a/'),
+      openDevTools: vi.fn(),
+      devToolsWebContents: {
+        isDestroyed: () => false,
+        executeJavaScript,
+      },
+    };
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-devtools', 43);
+
+    await service.openDevToolsPanel('tab-devtools', 'console');
+
+    expect(wc.openDevTools).toHaveBeenCalledTimes(1);
+    expect(executeJavaScript).toHaveBeenCalledWith('DevToolsAPI.showPanel("console")');
+    service.unregisterTab('tab-devtools');
+  });
+});
+
 describe('listAllTabs vs closeTab registry agreement (#2536)', () => {
+  it('carries explicit recovery intent on the correlated local IPC request only', async () => {
+    const service = await loadService();
+    wireRenderer([{ tabId: 'tab-a', url: 'http://a/', title: 'A' }]);
+    await service.listAllTabs('ws-1', 'tab-a');
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledExactlyOnceWith(
+      'ws-1',
+      IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST,
+      {
+        workspaceId: 'ws-1',
+        requestId: expect.any(String),
+        recoverTabId: 'tab-a',
+      },
+    );
+    mocks.sendToWorkspaceWindows.mockClear();
+    await service.listAllTabs('ws-1');
+    expect(mocks.sendToWorkspaceWindows).toHaveBeenCalledExactlyOnceWith(
+      'ws-1',
+      IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST,
+      {
+        workspaceId: 'ws-1',
+        requestId: expect.any(String),
+      },
+    );
+  });
+
+  it('rejects a late dead registration without replacing the current live guest', async () => {
+    const service = await loadService();
+    const live = fakeWebview(11, 'http://a/');
+    mocks.getAllWebContents.mockReturnValue([live]);
+    service.registerTab('tab-a', 11);
+    service.registerTab('tab-a', 10);
+    expect(service.isTabMounted('tab-a')).toBe(true);
+    expect(service.listTabs()).toEqual([
+      expect.objectContaining({ tabId: 'tab-a', webContentsId: 11 }),
+    ]);
+  });
+
+  it('does not resolve a registration waiter with an already-dead guest', async () => {
+    vi.useFakeTimers();
+    try {
+      const service = await loadService();
+      const waiter = service.waitForTabRegistration('tab-dead', 1000);
+      mocks.fromId.mockReturnValue({ isDestroyed: () => true });
+      service.registerTab('tab-dead', 10);
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(waiter).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('excludes a UI-closed tab whose webview is still alive', async () => {
     const service = await loadService();
     // tab-closed was closed in the UI: gone from the panel layout, but its
@@ -402,6 +484,217 @@ describe('findModelTabByRequestedUrl (#2787, per-agent #2857)', () => {
   });
 });
 
+describe('viewport emulation modes', () => {
+  it('emulates an owned visible fit tab at its reported bounds with scale 1', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(60, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-fit-visible', 60);
+    service.setTabOwner('tab-fit-visible', 'agent-1');
+    service.reportTabViewBounds('tab-fit-visible', 640, 420);
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 640, height: 420, scale: 1 }),
+      );
+    });
+    expect(service.getTabEffectiveViewportSize('tab-fit-visible')).toEqual({
+      width: 640,
+      height: 420,
+    });
+  });
+
+  it('uses the default fallback for an owned hidden fit tab', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(61, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-fit-hidden', 61);
+    service.setTabOwner('tab-fit-hidden', 'agent-1');
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 1280, height: 800, scale: 1 }),
+      );
+    });
+  });
+
+  it('scales a preset down when it is larger than the panel', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(62, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-preset-large', 62);
+    service.setTabViewport('tab-preset-large', {
+      mode: 'preset',
+      presetId: 'large',
+      width: 800,
+      height: 600,
+    });
+    service.reportTabViewBounds('tab-preset-large', 400, 300);
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 800, height: 600, scale: 0.5 }),
+      );
+    });
+  });
+
+  it('does not upscale a preset smaller than the panel', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(63, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-preset-small', 63);
+    service.reportTabViewBounds('tab-preset-small', 800, 600);
+    service.setTabViewport('tab-preset-small', {
+      mode: 'preset',
+      presetId: 'small',
+      width: 400,
+      height: 300,
+    });
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 400, height: 300, scale: 1 }),
+      );
+    });
+  });
+
+  it('updates an owned tab retained size from a renderer-selected fixed viewport', async () => {
+    const service = await loadService();
+    service.setTabOwner('tab-owned-preset', 'agent-1', undefined, {
+      width: 1280,
+      height: 800,
+    });
+
+    service.setTabViewport('tab-owned-preset', {
+      mode: 'preset',
+      presetId: 'iphone-se',
+      width: 375,
+      height: 667,
+    });
+
+    expect(service.getTabEmulatedSize('tab-owned-preset')).toEqual({ width: 375, height: 667 });
+    expect(service.resizeTab('tab-owned-preset', 390)).toEqual({ width: 390, height: 667 });
+  });
+
+  it('keeps an owned tab retained size when switching to fit mode', async () => {
+    const service = await loadService();
+    service.setTabOwner('tab-owned-fit', 'agent-1', undefined, { width: 1024, height: 768 });
+
+    service.setTabViewport('tab-owned-fit', { mode: 'fit' });
+
+    expect(service.getTabEmulatedSize('tab-owned-fit')).toEqual({ width: 1024, height: 768 });
+  });
+
+  it('does not attach the debugger for a plain unowned fit tab', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(64, {});
+    wc.debugger.isAttached = () => false;
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-user-fit', 64);
+    service.setTabViewport('tab-user-fit', { mode: 'fit' });
+
+    expect(wc.debugger.attach).not.toHaveBeenCalled();
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalled();
+    expect(service.getTabEffectiveViewportSize('tab-user-fit')).toBeUndefined();
+  });
+
+  it('clears device metrics after an unowned tab returns from preset to fit', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(66, {});
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-user-preset', 66);
+    service.setTabViewport('tab-user-preset', {
+      mode: 'preset',
+      presetId: 'small',
+      width: 400,
+      height: 300,
+    });
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.any(Object),
+      ),
+    );
+
+    service.setTabViewport('tab-user-preset', { mode: 'fit' });
+
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.clearDeviceMetricsOverride',
+        undefined,
+      ),
+    );
+  });
+
+  it('waits for an in-flight device metrics override before clearing it', async () => {
+    let resolveOverride!: () => void;
+    const override = new Promise<void>((resolve) => {
+      resolveOverride = resolve;
+    });
+    const service = await loadService();
+    const wc = fakeCdpWebview(67, {
+      'Emulation.setDeviceMetricsOverride': override,
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-user-in-flight', 67);
+    service.setTabViewport('tab-user-in-flight', {
+      mode: 'preset',
+      presetId: 'small',
+      width: 400,
+      height: 300,
+    });
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.any(Object),
+      ),
+    );
+
+    service.setTabViewport('tab-user-in-flight', { mode: 'fit' });
+    expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+      'Emulation.clearDeviceMetricsOverride',
+      undefined,
+    );
+
+    resolveOverride();
+    await vi.waitFor(() =>
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.clearDeviceMetricsOverride',
+        undefined,
+      ),
+    );
+  });
+
+  it('rehydrates a legacy owned tab into fit mode', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(65, {});
+    mocks.fromId.mockReturnValue(wc);
+    mocks.getAllWebContents.mockReturnValue([wc]);
+    service.registerTab('tab-rehydrated-fit', 65);
+    wireRenderer([
+      {
+        tabId: 'tab-rehydrated-fit',
+        url: 'http://a/',
+        title: 'A',
+        ownerAgentId: 'agent-1',
+      },
+    ]);
+    await service.listAllTabs('ws-1');
+    service.reportTabViewBounds('tab-rehydrated-fit', 700, 500);
+
+    await vi.waitFor(() => {
+      expect(wc.debugger.sendCommand).toHaveBeenLastCalledWith(
+        'Emulation.setDeviceMetricsOverride',
+        expect.objectContaining({ width: 700, height: 500, scale: 1 }),
+      );
+    });
+  });
+});
+
 describe('tab ownership registry (#2857)', () => {
   it('claimTab: first claim wins, second claimant gets already-claimed with the owner id', async () => {
     const service = await loadService();
@@ -469,15 +762,52 @@ describe('tab ownership registry (#2857)', () => {
 
   it('rehydrates persisted ownership from the panel-layout tab list (restart)', async () => {
     const service = await loadService();
+    const requestedVisible = 'http://daemon.localhost:3000/';
+    const requestedHidden = 'http://daemon.localhost:4000/';
     wireRenderer([
-      { tabId: 'tab-owned', url: 'http://a/', title: 'A', ownerAgentId: 'agent-1' },
+      {
+        tabId: 'tab-owned',
+        url: 'http://a/',
+        requestedUrl: requestedVisible,
+        title: 'A',
+        ownerAgentId: 'agent-1',
+      },
+      {
+        tabId: 'tab-hidden',
+        url: 'http://h/',
+        requestedUrl: requestedHidden,
+        title: 'Hidden',
+        ownerAgentId: 'agent-1',
+        hidden: true,
+      },
+      { tabId: 'tab-legacy', url: 'http://legacy/', title: 'Legacy', ownerAgentId: 'agent-1' },
       { tabId: 'tab-user', url: 'http://b/', title: 'B' },
     ]);
+    mocks.getAllWebContents.mockReturnValue([
+      fakeWebview(62, 'http://a/'),
+      fakeWebview(63, 'http://h/'),
+    ]);
+    service.registerTab('tab-owned', 62);
+    service.registerTab('tab-hidden', 63);
 
     // Fresh service: the in-memory registry knows nothing until a tab list
     // reply crosses the IPC boundary.
     expect(service.getTabOwner('tab-owned')).toBeUndefined();
-    await expect(service.resolveTabOwner('tab-owned', 'ws-1')).resolves.toBe('agent-1');
+    const { tabs } = await service.listAllTabs('ws-1');
+    expect(tabs.find((tab) => tab.tabId === 'tab-owned')).toMatchObject({
+      requestedUrl: requestedVisible,
+    });
+    expect(tabs.find((tab) => tab.tabId === 'tab-hidden')).toMatchObject({
+      requestedUrl: requestedHidden,
+      hidden: true,
+    });
+    expect(tabs.find((tab) => tab.tabId === 'tab-legacy')).not.toHaveProperty('requestedUrl');
+    await expect(
+      service.findModelTabByRequestedUrl(requestedVisible, 'agent-1', 'ws-1'),
+    ).resolves.toBe('tab-owned');
+    await expect(
+      service.findModelTabByRequestedUrl(requestedHidden, 'agent-1', 'ws-1'),
+    ).resolves.toBe('tab-hidden');
     await expect(service.resolveTabOwner('tab-user', 'ws-1')).resolves.toBeUndefined();
     // No persisted size (pre-size layout): the default viewport applies.
     expect(service.getTabEmulatedSize('tab-owned')).toEqual({ width: 1280, height: 800 });
@@ -548,6 +878,7 @@ describe('tab ownership registry (#2857)', () => {
         workspaceId: 'ws-1',
         ownerAgentId: 'agent-1',
         emulatedSize: { width: 390, height: 844 },
+        viewport: { mode: 'custom', width: 390, height: 844 },
       },
     );
   });
@@ -693,9 +1024,186 @@ describe('screenshot Page-domain hang fallback (#3154)', () => {
     await vi.advanceTimersByTimeAsync(5_100);
 
     await expect(pending).rejects.toThrow(
-      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: capturePage timed out after 5000ms: the tab is not painting (its surface may be hidden or occluded).',
+      'Screenshot capture failed: CDP stage: Page.getLayoutMetrics failed: Page domain unavailable; Electron fallback stage: capturePage timed out after 5000ms: the tab is not painting. A visible tab paints only while it is on screen: its panel\'s active tab (listTabs reports displayed: true — otherwise use { action: "showTab", tabId } to activate it without stealing focus, or focusTab to activate and focus), with its workspace in view in the app and its panel not hidden by zoom; then capture again.',
     );
     expect(wc.capturePage).toHaveBeenCalledTimes(1);
     service.unregisterTab('tab-fallback-hang');
+  });
+});
+
+describe('capture stages bounded by the request deadline (intent-hq/intent#4835)', () => {
+  const LAYOUT_METRICS = {
+    layoutViewport: { clientWidth: 800, clientHeight: 600 },
+    cssVisualViewport: { clientWidth: 800, clientHeight: 600, pageX: 0, pageY: 0 },
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-12T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function rejection(pending: Promise<unknown>) {
+    pending.catch(() => {});
+    try {
+      await pending;
+    } catch (err) {
+      return err as Error & { errorCode?: string; stage?: string };
+    }
+    throw new Error('expected rejection');
+  }
+
+  it('clamps a hanging Page command and the capturePage fallback to the deadline, naming the stage', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(71, { 'Page.getLayoutMetrics': 'hang' }, 'hang');
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-deadline', 71);
+
+    // 3 s left: the 5 s CDP cap collapses to 3 s, then nothing is left for
+    // the fallback — the whole chain answers at the deadline, not at 10 s.
+    const pending = service.screenshot('tab-deadline', { deadline: Date.now() + 3_000 });
+    const settled = rejection(pending);
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(wc.capturePage).not.toHaveBeenCalled();
+    // The fallback gets a zero budget, so the chain settles right after the
+    // deadline — well short of the 10 s the two uncapped stages would take.
+    await vi.advanceTimersByTimeAsync(101);
+
+    const err = await settled;
+    expect(err.errorCode).toBe('deadline-exhausted');
+    expect(err.stage).toBe('capturePage');
+    expect(err.message).toContain('Page.getLayoutMetrics timed out after 3000ms');
+    expect(err.message).toContain('request deadline was exhausted');
+    expect(err.message).toContain('capturePage timed out after 0ms');
+    expect(wc.capturePage).toHaveBeenCalledTimes(1);
+    service.unregisterTab('tab-deadline');
+  });
+
+  it('a fallback that times out on its own cap is reported as not-painting, not deadline-exhausted', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(
+      72,
+      { 'Page.getLayoutMetrics': new Error('Page domain unavailable') },
+      'hang',
+    );
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-not-painting', 72);
+
+    const pending = service.screenshot('tab-not-painting', { deadline: Date.now() + 18_000 });
+    const settled = rejection(pending);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const err = await settled;
+    expect(err.errorCode).toBe('not-painting');
+    expect(err.stage).toBe('capturePage');
+    expect(err.message).toContain('capturePage timed out after 5000ms: the tab is not painting');
+    service.unregisterTab('tab-not-painting');
+  });
+
+  it('a successful capture inside the budget is unaffected by the deadline', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(73, {
+      'Page.getLayoutMetrics': LAYOUT_METRICS,
+      'Page.captureScreenshot': { data: JPEG_1PX },
+    });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-ok', 73);
+
+    await expect(service.screenshot('tab-ok', { deadline: Date.now() + 18_000 })).resolves.toEqual({
+      base64: JPEG_1PX,
+      width: 800,
+      height: 600,
+    });
+    service.unregisterTab('tab-ok');
+  });
+
+  it('bounds Runtime.evaluate by the deadline only when one is given', async () => {
+    const service = await loadService();
+    const wc = fakeCdpWebview(74, { 'Runtime.evaluate': 'hang' });
+    mocks.fromId.mockReturnValue(wc);
+    service.registerTab('tab-eval', 74);
+
+    const bounded = service.evaluate('tab-eval', '1', { deadline: Date.now() + 1_000 });
+    const settled = rejection(bounded);
+    let unboundedSettled = false;
+    service.evaluate('tab-eval', '1').finally(() => {
+      unboundedSettled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const err = await settled;
+    expect(err.errorCode).toBe('deadline-exhausted');
+    expect(err.stage).toBe('Runtime.evaluate');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(unboundedSettled).toBe(false);
+    service.unregisterTab('tab-eval');
+  });
+
+  describe('waitForTabLoad', () => {
+    function loadingWebview(id: number, url: string) {
+      const listeners = new Map<string, () => void>();
+      let loading = true;
+      return {
+        wc: {
+          ...fakeWebview(id, url),
+          isLoading: () => loading,
+          once: vi.fn((event: string, cb: () => void) => listeners.set(event, cb)),
+          removeListener: vi.fn((event: string) => listeners.delete(event)),
+        },
+        finishLoad() {
+          loading = false;
+          listeners.get('did-stop-loading')?.();
+        },
+      };
+    }
+
+    it('resolves undefined for a tab that is not mounted', async () => {
+      const service = await loadService();
+      await expect(service.waitForTabLoad('nope', 1_000)).resolves.toBeUndefined();
+    });
+
+    it('resolves immediately with the live URL when the guest is not loading', async () => {
+      const service = await loadService();
+      const wc = { ...fakeWebview(75, 'http://127.0.0.1:5199/app'), isLoading: () => false };
+      mocks.fromId.mockReturnValue(wc);
+      service.registerTab('tab-settled', 75);
+
+      await expect(service.waitForTabLoad('tab-settled', 5_000)).resolves.toEqual({
+        loading: false,
+        url: 'http://127.0.0.1:5199/app',
+      });
+      service.unregisterTab('tab-settled');
+    });
+
+    it('resolves loading: false once did-stop-loading fires within the budget', async () => {
+      const service = await loadService();
+      const { wc, finishLoad } = loadingWebview(76, 'http://127.0.0.1:5199/');
+      mocks.fromId.mockReturnValue(wc);
+      service.registerTab('tab-loading', 76);
+
+      const pending = service.waitForTabLoad('tab-loading', 5_000);
+      await vi.advanceTimersByTimeAsync(1_000);
+      finishLoad();
+
+      await expect(pending).resolves.toEqual({ loading: false, url: 'http://127.0.0.1:5199/' });
+      expect(wc.removeListener).toHaveBeenCalledWith('did-stop-loading', expect.any(Function));
+      service.unregisterTab('tab-loading');
+    });
+
+    it('resolves loading: true when the budget elapses first', async () => {
+      const service = await loadService();
+      const { wc } = loadingWebview(77, 'http://127.0.0.1:5199/');
+      mocks.fromId.mockReturnValue(wc);
+      service.registerTab('tab-still-loading', 77);
+
+      const pending = service.waitForTabLoad('tab-still-loading', 2_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      await expect(pending).resolves.toEqual({ loading: true, url: 'http://127.0.0.1:5199/' });
+      service.unregisterTab('tab-still-loading');
+    });
   });
 });

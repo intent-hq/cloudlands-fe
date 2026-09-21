@@ -5,21 +5,28 @@
    * Daemon-side agent configuration:
    * - agents.maxConcurrent: concurrent agent session cap
    * - agents.flushQueuedMessages: batch-deliver queued messages when a turn ends
-   * - agents.memoryBudgetMb: aggregate child-tree memory admission gate (0 = off)
+   * - agents.memoryBudgetMb: aggregate child-tree memory admission gate
+   *   (absent = auto, a host-derived budget the catalog advertises as
+   *   defaultValue; 0 = off)
    * - agents.idleReapMinutes: idle-agent reap interval (0 = off)
+   * - agents.acpNodeMaxOldSpaceMb: V8 heap cap for Node/Electron ACP processes
    *
-   * None of these take effect live — every row says so, matching the shipped
-   * "Max concurrent agents" copy.
+   * The heap cap is read at spawn time and applies to newly started agent
+   * processes; the rest take effect on daemon restart. Every row says which,
+   * matching the shipped "Max concurrent agents" copy.
    */
 
   import { appClient } from '$lib/client';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import { Input } from '$lib/components/ui/input';
-  import { Select } from '$lib/components/ui/select';
-  import { Slider } from '$lib/components/ui/slider';
-  import { Switch } from '$lib/components/ui/switch';
+  import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingsControlContext,
+  } from '$lib/components/patterns/settings';
+  import { Input, Select, Slider, Switch } from '$lib/components/patterns/settings/custom-controls';
   import type { SettingDefinitionWithValue } from '$lib/client';
 
   type FlushQueuedMessagesMode = 'all' | 'systemOnly' | 'off';
@@ -40,6 +47,7 @@
   const FLUSH_SETTING_PATH = 'agents.flushQueuedMessages';
   const MEMORY_BUDGET_PATH = 'agents.memoryBudgetMb';
   const IDLE_REAP_PATH = 'agents.idleReapMinutes';
+  const ACP_HEAP_PATH = 'agents.acpNodeMaxOldSpaceMb';
 
   // Slider granularity. The *range* is never hardcoded — it comes from the
   // catalog bound the daemon reports for `agents.memoryBudgetMb` (total physical
@@ -56,11 +64,22 @@
   const IDLE_REAP_MIN_MINUTES = 1;
   const IDLE_REAP_FALLBACK_MAX_MINUTES = 120;
 
+  // Heap-cap bounds used only when the catalog entry omits them; the daemon's
+  // own definition (min/max/defaultValue) is authoritative when present.
+  const ACP_HEAP_FALLBACK_MIN_MB = 1024;
+  const ACP_HEAP_FALLBACK_MAX_MB = 65536;
+  const ACP_HEAP_FALLBACK_DEFAULT_MB = 8192;
+
   // Memory budget (MB). `committed` is the daemon-acknowledged value; `draft`
   // tracks the slider while dragging and is reset from `committed` whenever a
   // save fails, so a rejected write never leaves the control lying.
   let memoryBudgetSupported = $state(false);
   let memoryBudgetMb = $state(0);
+  // True while the key is absent and the daemon runs its host-derived budget:
+  // `memoryBudgetMb` then holds that budget (the catalog's defaultValue) so the
+  // controls sit on the number in force, but "Current:" must say it is auto
+  // rather than a value the user persisted. Cleared by the first write.
+  let memoryBudgetAuto = $state(false);
   let memoryBudgetDraftMb = $state(0);
   let memoryBudgetInput = $state('0');
   let memoryBudgetMaxMb = $state<number | null>(null);
@@ -93,6 +112,20 @@
   let idleReapWriting = false;
   let idleReapQueuedMinutes: number | null = null;
 
+  // ACP Node heap cap (MB). `acpHeapMb` is the effective value: the daemon
+  // reports `value: null` while the config key is absent, in which case the
+  // catalog `defaultValue` is what spawns actually use.
+  let acpHeapSupported = $state(false);
+  let acpHeapMb = $state(ACP_HEAP_FALLBACK_DEFAULT_MB);
+  let acpHeapInput = $state('');
+  let acpHeapMinMb = $state(ACP_HEAP_FALLBACK_MIN_MB);
+  let acpHeapMaxMb = $state(ACP_HEAP_FALLBACK_MAX_MB);
+  let acpHeapDefaultMb = $state(ACP_HEAP_FALLBACK_DEFAULT_MB);
+  // As above: in-flight write bookkeeping, not rendered.
+  let acpHeapTargetMb = ACP_HEAP_FALLBACK_DEFAULT_MB;
+  let acpHeapWriting = false;
+  let acpHeapQueuedMb: number | null = null;
+
   const flushModeOptions = $derived([
     { value: 'all', label: m.settings_agentBackend_flushQueuedMessages_all_label() },
     { value: 'systemOnly', label: m.settings_agentBackend_flushQueuedMessages_systemOnly_label() },
@@ -113,12 +146,14 @@
     // keeps compatibility with isolated component harnesses that predate
     // SettingsClient.get while still exercising the exact live wire contract.
     if (typeof appClient.settings.get === 'function') {
-      const [maxConcurrentEntry, flushEntry, memoryBudgetEntry, idleReapEntry] = await Promise.all([
-        appClient.settings.get(SETTING_PATH),
-        appClient.settings.get(FLUSH_SETTING_PATH),
-        appClient.settings.get(MEMORY_BUDGET_PATH),
-        appClient.settings.get(IDLE_REAP_PATH),
-      ]);
+      const [maxConcurrentEntry, flushEntry, memoryBudgetEntry, idleReapEntry, acpHeapEntry] =
+        await Promise.all([
+          appClient.settings.get(SETTING_PATH),
+          appClient.settings.get(FLUSH_SETTING_PATH),
+          appClient.settings.get(MEMORY_BUDGET_PATH),
+          appClient.settings.get(IDLE_REAP_PATH),
+          appClient.settings.get(ACP_HEAP_PATH),
+        ]);
       if (!maxConcurrentEntry || !flushEntry) {
         settingsError = m.settings_agentBackend_loadError();
         return;
@@ -134,6 +169,7 @@
           : 'all';
       applyMemoryBudget(memoryBudgetEntry);
       applyIdleReap(idleReapEntry);
+      applyAcpHeap(acpHeapEntry);
       settingsError = '';
       return;
     }
@@ -163,6 +199,7 @@
     }
     applyMemoryBudget(byPath.get(MEMORY_BUDGET_PATH));
     applyIdleReap(byPath.get(IDLE_REAP_PATH));
+    applyAcpHeap(byPath.get(ACP_HEAP_PATH));
   }
 
   /**
@@ -171,6 +208,11 @@
    * a control that writes to a setting it does not have; a daemon that reports
    * the path without an upper bound keeps the number field and drops the
    * slider, because the slider's maximum is the catalog's to supply.
+   *
+   * A `null` value is the absent key, which the daemon treats as auto and
+   * advertises as `defaultValue` (the budget auto resolves to on this host).
+   * That default seeds the controls so saving without moving them writes
+   * nothing; a daemon without it falls back to reading the absent key as off.
    */
   function applyMemoryBudget(entry: SettingDefinitionWithValue | null | undefined) {
     if (!entry) {
@@ -179,7 +221,13 @@
     }
     memoryBudgetSupported = true;
     const catalogMax = typeof entry.max === 'number' && entry.max > 0 ? entry.max : null;
-    const value = typeof entry.value === 'number' && entry.value > 0 ? Math.round(entry.value) : 0;
+    const autoMb =
+      entry.value == null && typeof entry.defaultValue === 'number' && entry.defaultValue > 0
+        ? Math.round(entry.defaultValue)
+        : null;
+    const value =
+      autoMb ?? (typeof entry.value === 'number' && entry.value > 0 ? Math.round(entry.value) : 0);
+    memoryBudgetAuto = autoMb !== null;
     // The ceiling widens to admit what the daemon already holds, and never
     // narrows to hide it: the config file's own validation is looser than the
     // catalog bound, so a budget configured above it is a value the daemon
@@ -224,10 +272,54 @@
     syncIdleReapFromCommitted();
   }
 
+  /**
+   * Hydrate the heap-cap row; an absent path hides it, as above. A `null`
+   * value means the config key is not set, so the effective cap is the
+   * catalog default — that is what the field shows, never a blank.
+   */
+  function applyAcpHeap(entry: SettingDefinitionWithValue | null | undefined) {
+    if (!entry) {
+      acpHeapSupported = false;
+      return;
+    }
+    acpHeapSupported = true;
+    const fallbackDefault =
+      typeof entry.defaultValue === 'number' && entry.defaultValue > 0
+        ? Math.round(entry.defaultValue)
+        : ACP_HEAP_FALLBACK_DEFAULT_MB;
+    const value =
+      typeof entry.value === 'number' && entry.value > 0
+        ? Math.round(entry.value)
+        : fallbackDefault;
+    const catalogMin =
+      typeof entry.min === 'number' && entry.min > 0 ? entry.min : ACP_HEAP_FALLBACK_MIN_MB;
+    const catalogMax =
+      typeof entry.max === 'number' && entry.max > 0 ? entry.max : ACP_HEAP_FALLBACK_MAX_MB;
+    // Same rule as the budget: the bounds widen to admit what the daemon
+    // already holds rather than clamping a real value and writing it back.
+    acpHeapMinMb = Math.min(catalogMin, value);
+    acpHeapMaxMb = Math.max(catalogMax, value);
+    acpHeapDefaultMb = fallbackDefault;
+    acpHeapMb = value;
+    acpHeapTargetMb = value;
+    syncAcpHeapFromCommitted();
+  }
+
   function clampMemoryBudget(value: number) {
     const rounded = Math.round(value);
     if (!Number.isFinite(rounded) || rounded < 0) return 0;
     return memoryBudgetMaxMb === null ? rounded : Math.min(rounded, memoryBudgetMaxMb);
+  }
+
+  function clampAcpHeap(value: number) {
+    const rounded = Math.round(value);
+    if (!Number.isFinite(rounded)) return acpHeapMb;
+    return Math.min(Math.max(rounded, acpHeapMinMb), acpHeapMaxMb);
+  }
+
+  /** Reset the field to the daemon-acknowledged (or effective default) cap. */
+  function syncAcpHeapFromCommitted() {
+    acpHeapInput = String(acpHeapMb);
   }
 
   function clampIdleReap(value: number) {
@@ -244,8 +336,8 @@
 
   /**
    * Reset the stepper to the daemon-acknowledged interval. While reaping is
-   * off the stepper is disabled and shows the value the toggle would restore,
-   * because 0 is not a value the stepper itself can hold.
+   * off the stepper is not rendered and holds the value the toggle would
+   * restore, because 0 is not a value the stepper itself can hold.
    */
   function syncIdleReapFromCommitted() {
     idleReapInput = String(idleReapMinutes > 0 ? idleReapMinutes : idleReapResumeMinutes);
@@ -292,11 +384,15 @@
           return;
         }
         memoryBudgetMb = entry.value;
+        memoryBudgetAuto = false;
         settingsError = '';
         value = memoryBudgetQueuedMb;
         memoryBudgetQueuedMb = null;
         if (value === null) {
-          // Settled. Normalise only the surfaces the user has not touched since
+          // Settled: the target follows what the daemon acknowledged, so a
+          // differing ack does not make re-entering the requested value a no-op.
+          memoryBudgetTargetMb = memoryBudgetMb;
+          // Normalise only the surfaces the user has not touched since
           // the write went out — a response landing mid-edit must not rewrite
           // the number being typed or the slider being dragged.
           if (memoryBudgetInput === sentInput) memoryBudgetInput = String(memoryBudgetMb);
@@ -378,6 +474,9 @@
         next = idleReapQueuedMinutes;
         idleReapQueuedMinutes = null;
         if (next === null) {
+          // Settled: the target follows what the daemon acknowledged, so a
+          // differing ack does not make re-entering the requested value a no-op.
+          idleReapTargetMinutes = idleReapMinutes;
           // The toggle always follows the settled value — it has no in-progress
           // state to protect — but the stepper text is left alone if the user
           // has typed something newer since the write went out.
@@ -420,6 +519,74 @@
 
   async function handleIdleReapKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') await commitIdleReapInput();
+  }
+
+  async function saveAcpHeap(next: number) {
+    const clamped = clampAcpHeap(next);
+    // Serialized and coalesced exactly like the budget, and for the same
+    // reason — see saveMemoryBudget.
+    if (clamped === acpHeapTargetMb) {
+      if (!acpHeapWriting) syncAcpHeapFromCommitted();
+      return;
+    }
+    acpHeapTargetMb = clamped;
+    if (acpHeapWriting) {
+      acpHeapQueuedMb = clamped;
+      return;
+    }
+    acpHeapWriting = true;
+    try {
+      let value: number | null = clamped;
+      while (value !== null) {
+        const sentInput = acpHeapInput;
+        const applied = await appClient.settings.update([{ path: ACP_HEAP_PATH, value }]);
+        const entry = applied.find((change) => change.path === ACP_HEAP_PATH);
+        if (!entry || typeof entry.value !== 'number') {
+          settingsError = m.settings_agentBackend_saveError();
+          acpHeapQueuedMb = null;
+          acpHeapTargetMb = acpHeapMb;
+          syncAcpHeapFromCommitted();
+          return;
+        }
+        acpHeapMb = entry.value;
+        settingsError = '';
+        value = acpHeapQueuedMb;
+        acpHeapQueuedMb = null;
+        if (value === null) {
+          // Settled: the target follows what the daemon acknowledged, so a
+          // differing ack does not make re-entering the requested value a no-op.
+          acpHeapTargetMb = acpHeapMb;
+          if (acpHeapInput === sentInput) acpHeapInput = String(acpHeapMb);
+        }
+      }
+    } catch (error) {
+      settingsError = m.settings_agentBackend_saveError();
+      acpHeapQueuedMb = null;
+      acpHeapTargetMb = acpHeapMb;
+      syncAcpHeapFromCommitted();
+      console.error('Failed to save agent settings:', error);
+    } finally {
+      acpHeapWriting = false;
+    }
+  }
+
+  function handleAcpHeapInput(event: Event) {
+    acpHeapInput = (event.target as HTMLInputElement).value;
+  }
+
+  async function commitAcpHeapInput() {
+    const trimmed = acpHeapInput.trim();
+    const parsed = Number(trimmed);
+    if (trimmed === '' || !Number.isFinite(parsed)) {
+      // Invalid: restore the committed value rather than guessing at intent.
+      syncAcpHeapFromCommitted();
+      return;
+    }
+    await saveAcpHeap(parsed);
+  }
+
+  async function handleAcpHeapKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') await commitAcpHeapInput();
   }
 
   async function handleFlushModeChange(value: string) {
@@ -502,11 +669,25 @@
       : m.settings_agentBackend_memoryBudget_megabytesValue({ value: formatInteger(valueMb) });
   }
 
+  /**
+   * The absent key reads as "Auto (N MB)" — the host-derived budget the daemon
+   * is enforcing — never as a bare N the user did not persist.
+   */
+  function formatCommittedMemoryBudget() {
+    return memoryBudgetAuto
+      ? m.settings_agentBackend_memoryBudget_autoValue({ value: formatInteger(memoryBudgetMb) })
+      : formatMemoryBudget(memoryBudgetMb);
+  }
+
   /** The live slider/field value, which is not yet saved while it is being dragged. */
-  const memoryBudgetDraftDisplay = $derived(formatMemoryBudget(memoryBudgetDraftMb));
+  const memoryBudgetDraftDisplay = $derived(
+    memoryBudgetDraftMb === memoryBudgetMb
+      ? formatCommittedMemoryBudget()
+      : formatMemoryBudget(memoryBudgetDraftMb),
+  );
 
   /** The daemon-acknowledged value, which is what "Current:" may claim. */
-  const memoryBudgetDisplay = $derived(formatMemoryBudget(memoryBudgetMb));
+  const memoryBudgetDisplay = $derived(formatCommittedMemoryBudget());
 
   // Shown only while the ceiling is the catalog's own bound; once a configured
   // budget has widened it past total memory the sentence would not be true.
@@ -520,171 +701,235 @@
 
   const idleReapEnabled = $derived(idleReapMinutes > 0);
 
+  function formatAcpHeap(valueMb: number) {
+    return m.settings_agentBackend_acpHeap_megabytesValue({ value: formatInteger(valueMb) });
+  }
+
+  /** The effective cap: the daemon-acknowledged value, or the catalog default while unset. */
+  const acpHeapDisplay = $derived(formatAcpHeap(acpHeapMb));
+
   /** 0 reads as "off" — the documented disable value, not a 0-minute interval. */
   const idleReapDisplay = $derived(
     idleReapEnabled
       ? m.settings_agentBackend_idleReap_minutesValue({ value: formatInteger(idleReapMinutes) })
       : m.settings_agentBackend_idleReap_offValue(),
   );
+
+  const schema = $derived.by(() =>
+    defineSettings({
+      sections: [
+        {
+          id: 'agent-backend',
+          title: m.settings_section_agentBackend(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'max-concurrent-agents',
+              label: m.settings_agentBackend_maxConcurrent_label(),
+              description: m.settings_agentBackend_maxConcurrent_description({
+                current: displayValue,
+              }),
+            },
+            {
+              kind: 'custom',
+              id: 'flush-queued-messages',
+              label: m.settings_agentBackend_flushQueuedMessages_label(),
+              description: m.settings_agentBackend_flushQueuedMessages_description(),
+            },
+            {
+              kind: 'custom',
+              id: 'memory-budget',
+              label: m.settings_agentBackend_memoryBudget_label(),
+              when: () => memoryBudgetSupported,
+            },
+            {
+              kind: 'custom',
+              id: 'idle-reap',
+              label: m.settings_agentBackend_idleReap_toggleLabel(),
+              when: () => idleReapSupported,
+            },
+            {
+              kind: 'custom',
+              id: 'idle-reap-minutes-row',
+              label: m.settings_agentBackend_idleReap_label(),
+              description: m.settings_agentBackend_idleReap_boundsNote({
+                min: formatInteger(IDLE_REAP_MIN_MINUTES),
+                max: formatInteger(idleReapMaxMinutes),
+              }),
+              when: () => idleReapSupported && idleReapToggleOn,
+              class: 'ml-3',
+            },
+            {
+              kind: 'custom',
+              id: 'acp-node-heap',
+              label: m.settings_agentBackend_acpHeap_label(),
+              when: () => acpHeapSupported,
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div class="space-y-4">
-  {#if settingsError}
-    <div class="text-xs text-destructive mb-2">
-      {settingsError}
-    </div>
+{#snippet memoryBudgetDescription()}
+  {m.settings_agentBackend_memoryBudget_description({ current: memoryBudgetDisplay })}
+  {#if memoryBudgetMaxDisplay}
+    {m.settings_agentBackend_memoryBudget_boundsNote({ max: memoryBudgetMaxDisplay })}
   {/if}
+{/snippet}
 
-  <!-- Max Concurrent Agents -->
-  <div class="flex items-center justify-between gap-4">
-    <div class="flex-1 min-w-0">
-      <p class="text-sm font-medium text-foreground">
-        {m.settings_agentBackend_maxConcurrent_label()}
-      </p>
-      <p class="text-xs text-subtle mt-0.5">
-        {m.settings_agentBackend_maxConcurrent_description({ current: displayValue })}
-      </p>
-    </div>
-    <div class="shrink-0 w-32">
-      <Input
-        type="number"
-        bind:value={inputValue}
-        oninput={handleInput}
-        onblur={handleBlur}
-        onkeydown={handleKeydown}
-        placeholder={m.settings_agentBackend_autoPlaceholder()}
-        min="0"
-        max="200"
-        step="1"
-        class="h-9 text-sm"
+{#snippet idleReapDescription()}
+  {m.settings_agentBackend_idleReap_description({ current: idleReapDisplay })}
+  {m.settings_agentBackend_idleReap_offNote()}
+{/snippet}
+
+{#snippet acpHeapDescription()}
+  {m.settings_agentBackend_acpHeap_description({ current: acpHeapDisplay })}
+  {m.settings_agentBackend_acpHeap_boundsNote({
+    min: formatAcpHeap(acpHeapMinMb),
+    max: formatAcpHeap(acpHeapMaxMb),
+    defaultValue: formatAcpHeap(acpHeapDefaultMb),
+  })}
+{/snippet}
+
+{#snippet maxConcurrentControl({ labelId, descriptionId }: SettingsControlContext)}
+  <Input
+    id="maxConcurrentAgents"
+    type="number"
+    bind:value={inputValue}
+    oninput={handleInput}
+    onblur={handleBlur}
+    onkeydown={handleKeydown}
+    placeholder={m.settings_agentBackend_autoPlaceholder()}
+    min="0"
+    max="200"
+    step="1"
+    aria-labelledby={labelId}
+    aria-describedby={descriptionId}
+    class="w-32"
+  />
+{/snippet}
+
+{#snippet flushQueuedMessagesControl({ labelId, descriptionId }: SettingsControlContext)}
+  <div class="w-32">
+    <Select.Root value={flushQueuedMessages} onchange={handleFlushModeChange}>
+      <Select.Trigger
+        id="flushQueuedMessages"
+        aria-labelledby={labelId}
+        aria-describedby={descriptionId}
+      >
+        <span class="truncate">{flushModeLabel}</span>
+      </Select.Trigger>
+      <Select.Content portal class="max-h-[300px] w-32">
+        {#each flushModeOptions as option (option.value)}
+          <Select.Item value={option.value}>
+            <span class="truncate">{option.label}</span>
+          </Select.Item>
+        {/each}
+      </Select.Content>
+    </Select.Root>
+  </div>
+{/snippet}
+
+{#snippet memoryBudgetControl({ labelId, descriptionId }: SettingsControlContext)}
+  <div class="flex w-32 flex-col gap-2">
+    {#if memoryBudgetMaxMb !== null}
+      <Slider
+        value={memoryBudgetDraftMb}
+        min={0}
+        max={memoryBudgetMaxMb}
+        step={MEMORY_BUDGET_STEP_MB}
+        onValueChange={handleMemoryBudgetSlide}
+        onchange={handleMemoryBudgetSlideCommit}
+        aria-label={m.settings_agentBackend_memoryBudget_sliderLabel()}
+        aria-describedby={descriptionId}
+        aria-valuetext={memoryBudgetDraftDisplay}
       />
-    </div>
+    {/if}
+    <Input
+      id="memoryBudgetMb"
+      type="number"
+      bind:value={memoryBudgetInput}
+      oninput={handleMemoryBudgetInput}
+      onblur={commitMemoryBudgetInput}
+      onkeydown={handleMemoryBudgetKeydown}
+      min="0"
+      max={memoryBudgetMaxMb === null ? undefined : String(memoryBudgetMaxMb)}
+      step="1"
+      aria-labelledby={labelId}
+      aria-describedby={descriptionId}
+      class="w-32"
+    />
   </div>
+{/snippet}
 
-  <!-- Flush Queued Messages -->
-  <div class="flex items-center justify-between gap-4">
-    <div class="flex-1 min-w-0">
-      <label for="flushQueuedMessages" class="text-sm font-medium text-foreground">
-        {m.settings_agentBackend_flushQueuedMessages_label()}
-      </label>
-      <p class="text-xs text-subtle mt-0.5">
-        {m.settings_agentBackend_flushQueuedMessages_description()}
-      </p>
-    </div>
-    <div class="shrink-0 w-48">
-      <Select.Root value={flushQueuedMessages} onchange={handleFlushModeChange}>
-        <Select.Trigger id="flushQueuedMessages" class="py-1.5">
-          <span class="truncate">{flushModeLabel}</span>
-        </Select.Trigger>
-        <Select.Content portal class="max-h-[300px] w-48">
-          {#each flushModeOptions as option (option.value)}
-            <Select.Item value={option.value}>
-              <span class="truncate">{option.label}</span>
-            </Select.Item>
-          {/each}
-        </Select.Content>
-      </Select.Root>
-    </div>
+{#snippet idleReapControl({ labelId, descriptionId }: SettingsControlContext)}
+  <Switch
+    id="idleReapToggle"
+    bind:checked={idleReapToggleOn}
+    onCheckedChange={handleIdleReapToggle}
+    size="sm"
+    ariaLabelledby={labelId}
+    ariaDescribedby={descriptionId}
+  />
+{/snippet}
+
+{#snippet idleReapMinutesControl({ labelId, descriptionId }: SettingsControlContext)}
+  <Input
+    id="idleReapMinutes"
+    type="number"
+    bind:value={idleReapInput}
+    oninput={handleIdleReapInput}
+    onblur={commitIdleReapInput}
+    onkeydown={handleIdleReapKeydown}
+    min={String(IDLE_REAP_MIN_MINUTES)}
+    max={String(idleReapMaxMinutes)}
+    step="1"
+    aria-labelledby={labelId}
+    aria-describedby={descriptionId}
+    class="w-32"
+  />
+{/snippet}
+
+{#snippet acpHeapControl({ labelId, descriptionId }: SettingsControlContext)}
+  <Input
+    id="acpNodeMaxOldSpaceMb"
+    type="number"
+    bind:value={acpHeapInput}
+    oninput={handleAcpHeapInput}
+    onblur={commitAcpHeapInput}
+    onkeydown={handleAcpHeapKeydown}
+    min={String(acpHeapMinMb)}
+    max={String(acpHeapMaxMb)}
+    step="1"
+    aria-labelledby={labelId}
+    aria-describedby={descriptionId}
+    class="w-32"
+  />
+{/snippet}
+
+{#if settingsError}
+  <div class="type-body mb-2 text-danger" role="alert">
+    {settingsError}
   </div>
+{/if}
 
-  <!-- Agent memory budget (hidden when the daemon does not report the path) -->
-  {#if memoryBudgetSupported}
-    <div class="flex items-start justify-between gap-4">
-      <div class="flex-1 min-w-0">
-        <label for="memoryBudgetMb" class="text-sm font-medium text-foreground">
-          {m.settings_agentBackend_memoryBudget_label()}
-        </label>
-        <p class="text-xs text-subtle mt-0.5">
-          {m.settings_agentBackend_memoryBudget_description({ current: memoryBudgetDisplay })}
-        </p>
-        {#if memoryBudgetMaxDisplay}
-          <p class="text-xs text-subtle mt-0.5">
-            {m.settings_agentBackend_memoryBudget_boundsNote({ max: memoryBudgetMaxDisplay })}
-          </p>
-        {/if}
-      </div>
-      <div class="shrink-0 w-56 flex flex-col gap-2">
-        {#if memoryBudgetMaxMb !== null}
-          <Slider
-            value={memoryBudgetDraftMb}
-            min={0}
-            max={memoryBudgetMaxMb}
-            step={MEMORY_BUDGET_STEP_MB}
-            onValueChange={handleMemoryBudgetSlide}
-            onchange={handleMemoryBudgetSlideCommit}
-            aria-label={m.settings_agentBackend_memoryBudget_sliderLabel()}
-            aria-valuetext={memoryBudgetDraftDisplay}
-          />
-        {/if}
-        <div class="flex items-center gap-2">
-          <Input
-            id="memoryBudgetMb"
-            type="number"
-            bind:value={memoryBudgetInput}
-            oninput={handleMemoryBudgetInput}
-            onblur={commitMemoryBudgetInput}
-            onkeydown={handleMemoryBudgetKeydown}
-            min="0"
-            max={memoryBudgetMaxMb === null ? undefined : String(memoryBudgetMaxMb)}
-            step="1"
-            class="h-9 text-sm"
-          />
-          <span class="text-xs text-subtle shrink-0">{memoryBudgetDraftDisplay}</span>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Idle reap minutes (hidden when the daemon does not report the path) -->
-  {#if idleReapSupported}
-    <div class="flex items-start justify-between gap-4">
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium text-foreground">
-          {m.settings_agentBackend_idleReap_label()}
-        </p>
-        <p class="text-xs text-subtle mt-0.5">
-          {m.settings_agentBackend_idleReap_description({ current: idleReapDisplay })}
-        </p>
-        <p class="text-xs text-subtle mt-0.5">
-          {m.settings_agentBackend_idleReap_boundsNote({
-            min: formatInteger(IDLE_REAP_MIN_MINUTES),
-            max: formatInteger(idleReapMaxMinutes),
-          })}
-        </p>
-      </div>
-      <div class="shrink-0 w-56 flex items-center justify-end gap-3">
-        <span class="flex items-center gap-2 text-xs text-subtle">
-          {m.settings_agentBackend_idleReap_toggleLabel()}
-          <Switch
-            bind:checked={idleReapToggleOn}
-            onCheckedChange={handleIdleReapToggle}
-            size="sm"
-            ariaLabel={m.settings_agentBackend_idleReap_toggleLabel()}
-          />
-        </span>
-        <!--
-          The stepper follows the toggle, not the last daemon acknowledgement:
-          while a disable is in flight the daemon still reports the old
-          interval, and a stepper left live in that window would let an edit
-          queue a positive write behind the 0 and quietly undo the switch-off.
-        -->
-        <div class="w-24">
-          <Input
-            id="idleReapMinutes"
-            type="number"
-            bind:value={idleReapInput}
-            oninput={handleIdleReapInput}
-            onblur={commitIdleReapInput}
-            onkeydown={handleIdleReapKeydown}
-            disabled={!idleReapToggleOn}
-            aria-label={m.settings_agentBackend_idleReap_stepperLabel()}
-            min={String(IDLE_REAP_MIN_MINUTES)}
-            max={String(idleReapMaxMinutes)}
-            step="1"
-            class="h-9 text-sm"
-          />
-        </div>
-      </div>
-    </div>
-  {/if}
-</div>
+<SettingsForm
+  {schema}
+  embedded
+  compact={false}
+  custom={defineSettingsCustomControls({
+    'max-concurrent-agents': maxConcurrentControl,
+    'flush-queued-messages': flushQueuedMessagesControl,
+    'memory-budget': memoryBudgetControl,
+    'idle-reap': idleReapControl,
+    'idle-reap-minutes-row': idleReapMinutesControl,
+    'acp-node-heap': acpHeapControl,
+  })}
+  descriptions={{
+    'memory-budget': memoryBudgetDescription,
+    'idle-reap': idleReapDescription,
+    'acp-node-heap': acpHeapDescription,
+  }}
+/>

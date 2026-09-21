@@ -1,4 +1,10 @@
 import type { Component } from 'svelte';
+import type { CatalogPreviewFit } from './catalog-preferences';
+import {
+  collectGeometry,
+  type GeometryProbeOptions,
+  type GeometryProbeResult,
+} from './geometry-probe';
 import {
   validatePreviewDefinition,
   type LoadedPreview,
@@ -55,6 +61,16 @@ const loadersBySlug = createPreviewLoaderIndex(
   Object.entries(previewLoaders) as Array<[string, PreviewLoader]>,
 );
 
+export function registerPreviewLoader(slug: string, loader: PreviewLoader): () => void {
+  const previous = loadersBySlug.get(slug);
+  loadersBySlug.set(slug, loader);
+  return () => {
+    if (loadersBySlug.get(slug) !== loader) return;
+    if (previous) loadersBySlug.set(slug, previous);
+    else loadersBySlug.delete(slug);
+  };
+}
+
 export function listPreviewIds(): string[] {
   return [...loadersBySlug.keys()].sort();
 }
@@ -70,13 +86,17 @@ export interface ActivePreview {
   state: string;
   width: number;
   status: 'ready';
+  fit?: CatalogPreviewFit;
 }
 
 interface PreviewBrowserApi {
   list: () => string[];
   states: (slug: string) => Promise<string[]>;
   current: () => ActivePreview | null;
+  probe: (options?: GeometryProbeOptions) => ActivePreviewGeometry | null;
 }
+
+type ActivePreviewGeometry = GeometryProbeResult & Pick<ActivePreview, 'slug' | 'state' | 'width'>;
 
 let activePreview: ActivePreview | null = null;
 
@@ -93,6 +113,15 @@ export function installPreviewBrowserApi(target: Window): () => void {
       return loaded ? Object.keys(loaded.definition.states) : [];
     },
     current: () => activePreview,
+    probe: (options) => {
+      if (!activePreview) return null;
+      const root = target.document.querySelector<HTMLElement>(
+        '[data-preview-ready="true"] [data-testid="catalog-scene-focus"]',
+      );
+      if (!root) return null;
+      const { slug, state, width } = activePreview;
+      return { slug, state, width, ...collectGeometry(root, options) };
+    },
   };
   target.__INTENT_PREVIEW__ = api;
   return () => {

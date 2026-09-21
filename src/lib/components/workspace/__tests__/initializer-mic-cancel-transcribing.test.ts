@@ -28,9 +28,8 @@ const mocks = vi.hoisted(() => {
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
     state: () => ({ hardwareConsole: mocks.hardwareConsole }),
     dispatch: mocks.dispatch,
@@ -60,13 +59,20 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: Object.assign(() => mocks.readable(() => []), {
     select: vi.fn(() => []),
   }),
+  selectCustomSpecialistsLoaded: () => mocks.readable(() => true),
+  selectFileSpecialistsLoaded: () => mocks.readable(() => true),
   selectEffectiveBehaviorPrompt: { select: vi.fn(() => undefined) },
   selectEffectiveModel: { select: vi.fn(() => undefined) },
   selectEffectiveCodingAgent: { select: vi.fn(() => undefined) },
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
   selectOrchestratorSpecialist: Object.assign(
     () =>
-      mocks.readable(() => ({ id: 'spec-writer', name: 'Coordinator', description: '', role: 'orchestrator' })),
+      mocks.readable(() => ({
+        id: 'spec-writer',
+        name: 'Coordinator',
+        description: '',
+        role: 'orchestrator',
+      })),
     {
       select: vi.fn(() => ({
         id: 'spec-writer',
@@ -77,7 +83,6 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
     },
   ),
 }));
-
 
 vi.mock('$features/setup-scripts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$features/setup-scripts')>()),
@@ -106,8 +111,7 @@ vi.mock('$lib/client', () => ({
 }));
 
 vi.mock('$lib/client/live/live-prompt-enhancement', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('$lib/client/live/live-prompt-enhancement')>();
+  const actual = await importOriginal<typeof import('$lib/client/live/live-prompt-enhancement')>();
   return {
     ...actual,
     enhancePrompt: vi.fn(async (p: string) => ({ enhanced: p })),
@@ -239,9 +243,7 @@ describe('CompactWorkspaceInitializer mic cancel-while-transcribing', () => {
     const button = transcribingMicButton();
     expect(button).not.toBeNull();
     expect(button!.disabled).toBe(false);
-    expect(button!.getAttribute('aria-label')).toBe(
-      m.chat_richInput_micCancelTranscribing_label(),
-    );
+    expect(button!.getAttribute('aria-label')).toBe(m.chat_richInput_micCancelTranscribing_label());
   });
 
   it('clicking the cancel control abandons the in-flight transcription session', async () => {
@@ -313,7 +315,10 @@ describe('CompactWorkspaceInitializer input lock while enhancing', () => {
   it('disables the prompt input and Create button while enhancing and restores them on success', async () => {
     let resolveEnhance!: (value: { enhanced: string }) => void;
     vi.mocked(enhancePrompt).mockImplementation(
-      () => new Promise((resolve) => { resolveEnhance = resolve; }) as never,
+      () =>
+        new Promise((resolve) => {
+          resolveEnhance = resolve;
+        }) as never,
     );
     await renderWithPrompt();
 
@@ -334,7 +339,10 @@ describe('CompactWorkspaceInitializer input lock while enhancing', () => {
   it('restores editability when enhancement fails', async () => {
     let rejectEnhance!: (error: unknown) => void;
     vi.mocked(enhancePrompt).mockImplementation(
-      () => new Promise((_resolve, reject) => { rejectEnhance = reject; }) as never,
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectEnhance = reject;
+        }) as never,
     );
     await renderWithPrompt();
 

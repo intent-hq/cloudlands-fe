@@ -52,9 +52,11 @@ function isWrappedSelectorArgumentToGet(node, svelteStoreGetNames) {
         current = current.parent;
         break;
       default:
-        return current.parent.type === 'CallExpression'
-          && current.parent.arguments[0] === current
-          && isTrackedIdentifier(current.parent.callee, svelteStoreGetNames);
+        return (
+          current.parent.type === 'CallExpression' &&
+          current.parent.arguments[0] === current &&
+          isTrackedIdentifier(current.parent.callee, svelteStoreGetNames)
+        );
     }
   }
 
@@ -77,18 +79,22 @@ function isSelectorCall(node, selectorNames) {
 
 function isReadableValueIdentifier(node) {
   const unwrapped = unwrapExpression(node);
-  return unwrapped?.type === 'Identifier'
-    && unwrapped.name.startsWith('$')
-    && unwrapped.name.endsWith('$')
-    && unwrapped.name.length > 2;
+  return (
+    unwrapped?.type === 'Identifier' &&
+    unwrapped.name.startsWith('$') &&
+    unwrapped.name.endsWith('$') &&
+    unwrapped.name.length > 2
+  );
 }
 
 function isRedundantReadableDerivedAlias(node) {
   const init = unwrapExpression(node.init);
-  return init?.type === 'CallExpression'
-    && isTrackedIdentifier(init.callee, DERIVED_RUNE_NAMES)
-    && init.arguments.length === 1
-    && isReadableValueIdentifier(init.arguments[0]);
+  return (
+    init?.type === 'CallExpression' &&
+    isTrackedIdentifier(init.callee, DERIVED_RUNE_NAMES) &&
+    init.arguments.length === 1 &&
+    isReadableValueIdentifier(init.arguments[0])
+  );
 }
 
 function isInsideFunction(node) {
@@ -111,9 +117,9 @@ function isInsideEventHandler(node) {
     }
 
     if (
-      current.type === 'SvelteAttribute'
-      && typeof current.key?.name === 'string'
-      && /^on[A-Z]/.test(current.key.name)
+      current.type === 'SvelteAttribute' &&
+      typeof current.key?.name === 'string' &&
+      /^on[A-Z]/.test(current.key.name)
     ) {
       return true;
     }
@@ -125,11 +131,16 @@ function isInsideEventHandler(node) {
 function isInsideModuleScript(node) {
   for (let current = node.parent; current; current = current.parent) {
     if (current.type === 'SvelteScriptElement') {
-      return current.startTag?.attributes?.some(
-        (attribute) => attribute.type === 'SvelteAttribute'
-          && attribute.key?.name === 'context'
-          && attribute.value?.some((value) => value.type === 'SvelteLiteral' && value.value === 'module'),
-      ) ?? false;
+      return (
+        current.startTag?.attributes?.some(
+          (attribute) =>
+            attribute.type === 'SvelteAttribute' &&
+            attribute.key?.name === 'context' &&
+            attribute.value?.some(
+              (value) => value.type === 'SvelteLiteral' && value.value === 'module',
+            ),
+        ) ?? false
+      );
     }
   }
 
@@ -148,7 +159,8 @@ export default {
   meta: {
     type: 'problem',
     docs: {
-      description: 'Warn about selector lifecycle violations and redundant readable aliases in Svelte components',
+      description:
+        'Warn about selector lifecycle violations and redundant readable aliases in Svelte components',
     },
     schema: [],
   },
@@ -176,15 +188,18 @@ export default {
       },
 
       CallExpression(node) {
-        if (isTrackedIdentifier(node.callee, svelteStoreGetNames) && isSelectorCall(node.arguments[0], selectorNames)) {
+        if (
+          isTrackedIdentifier(node.callee, svelteStoreGetNames) &&
+          isSelectorCall(node.arguments[0], selectorNames)
+        ) {
           context.report({ node, message: GET_SELECTOR_MESSAGE });
           return;
         }
 
         if (
-          isTrackedIdentifier(node.callee, selectorNames)
-          && isRestrictedLifecycleContext(node)
-          && !isWrappedSelectorArgumentToGet(node, svelteStoreGetNames)
+          isTrackedIdentifier(node.callee, selectorNames) &&
+          isRestrictedLifecycleContext(node) &&
+          !isWrappedSelectorArgumentToGet(node, svelteStoreGetNames)
         ) {
           context.report({ node, message: SELECTOR_NESTED_MESSAGE });
         }

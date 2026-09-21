@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ToolResultRendererParityHost from './ToolResultRendererParityHost.svelte';
 import {
   groupedObjectEnvelopeOrphanBlocks,
@@ -129,10 +129,11 @@ test('renders object-envelope orphan text at payload-scoped search paths', async
   }
 });
 
-test('keeps markdown workspace images in chat thumbnail mode on both surfaces', async ({
+test('reports unconfirmed image load failures on both browser surfaces', async ({
   mount,
   page,
 }) => {
+  await page.route('https://example.com/unrelated.png', (route) => route.abort('connectionfailed'));
   const message = reconcileToolResultMessage(markdownImageOrphanBlocks(), true);
   const component = await mount(ToolResultRendererParityHost, {
     props: { content: message.contentBlocks ?? [], isStreaming: true },
@@ -141,17 +142,11 @@ test('keeps markdown workspace images in chat thumbnail mode on both surfaces', 
     component.getByTestId('normal-workspace-surface'),
     component.getByTestId('dedicated-agent-surface'),
   ]) {
-    const workspaceImage = surface.locator('img[src^="workspace-file://"]');
-    const externalImage = surface.locator('img[src="https://example.com/unrelated.png"]');
-    await expect(workspaceImage).toHaveCount(1);
-    await expect(
-      workspaceImage.locator('xpath=ancestor::div[contains(@class, "markdown-viewer")]'),
-    ).toHaveClass(/chat-image-thumbnails/);
-    await workspaceImage.hover();
-    await expect(surface.getByTestId('markdown-image-actions-overlay')).toBeVisible();
-    await page.mouse.move(0, 0);
-    await expect(surface.getByTestId('markdown-image-actions-overlay')).toHaveCount(0);
-    await externalImage.hover();
+    const fallbacks = surface.getByTestId('media-unavailable');
+    await expect(fallbacks).toHaveCount(2);
+    await expect(fallbacks.nth(0)).toHaveAttribute('data-reason', 'load-failed');
+    await expect(fallbacks.nth(1)).toHaveAttribute('data-reason', 'load-failed');
+    await expect(surface.getByRole('button', { name: 'Copy path' })).toHaveCount(1);
     await expect(surface.getByTestId('markdown-image-actions-overlay')).toHaveCount(0);
   }
 });

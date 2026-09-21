@@ -6,8 +6,12 @@
  * dialog is confirmed; cancelling keeps edit mode open with the draft intact.
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { mockInvoke, registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
+import { createMockWorkspace } from '../../../../test/factories/workspace.factory';
 
 const { dispatchMock } = vi.hoisted(() => ({ dispatchMock: vi.fn() }));
 
@@ -52,6 +56,7 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
 }));
 
 import ChatMessage from '../ChatMessage.svelte';
+import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from '../attachment-image-url';
 
 function userMessage(): AgentMessage {
   return {
@@ -96,7 +101,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     );
     // Confirming closes both the dialog and edit mode (the edit input exits
     // via a slide transition, so wait for its removal).
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('mock-rich-input')).toBeNull());
   });
 
@@ -148,7 +153,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     const onEditSubmit = vi.fn();
     await renderAndSave(onEditSubmit);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onEditSubmit).not.toHaveBeenCalled();
@@ -201,6 +206,47 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     );
   });
 
+  it('confirm from a message with a legacy inline file block sends only text + reference blocks, with no data key', async () => {
+    // Persisted before the daemon's `degrade_inline_file_blocks` pass existed:
+    // a file block carrying inline bytes and no
+    // attachmentId. It is text now — the edit forwards the attachment
+    // reference only, and no `data` key may appear anywhere in the payload.
+    const message: AgentMessage = {
+      id: 'msg-legacy',
+      role: 'user',
+      contentBlocks: [
+        { type: 'text', text: 'original text' },
+        { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'legacy.txt' },
+        { type: 'file', attachmentId: 'att-uuid-9', fileName: 'report.pdf', size: 4096 },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, { props: { message, onEditSubmit } });
+
+    // Rendered as text, never as a chip: only the reference chip exists.
+    expect(screen.getByText(/Attached file: legacy\.txt/)).toBeTruthy();
+    expect(screen.getAllByTestId('chat-message-file-chip')).toHaveLength(1);
+
+    await fireEvent.click(screen.getByText(/original text/));
+    await waitFor(() => expect(screen.getByTestId('mock-rich-input')).toBeTruthy());
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit & regenerate' }));
+
+    await waitFor(() => expect(onEditSubmit).toHaveBeenCalledTimes(1));
+    const [text, model, blocks] = onEditSubmit.mock.calls[0];
+    expect(text).toBe('original textAttached file: legacy.txt');
+    expect(model).toBeUndefined();
+    expect(blocks).toEqual({
+      fileBlocks: [
+        { type: 'file', attachmentId: 'att-uuid-9', fileName: 'report.pdf', size: 4096 },
+      ],
+    });
+    expect(JSON.stringify(blocks)).not.toContain('"data"');
+    expect(JSON.stringify(blocks)).not.toContain('aGVsbG8=');
+  });
+
   it('confirm passes no blocks argument for a plain text message', async () => {
     const onEditSubmit = vi.fn();
     await renderAndSave(onEditSubmit);
@@ -210,6 +256,116 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     await waitFor(() =>
       expect(onEditSubmit).toHaveBeenCalledWith('original text', undefined, undefined),
     );
+  });
+});
+
+describe('ChatMessage attachment-reference thumbnails', () => {
+  const originalInvoke = window.electronAPI!.invoke;
+  const workspace = createMockWorkspace({ id: WorkspaceId('ws-thumb') });
+
+  // PROTOCOL §5.9 `file.getAttachmentInfo` result for the referenced row.
+  const attachmentInfo = {
+    attachmentId: 'att-thumb-1',
+    fileName: 'shot.png',
+    mimeType: 'image/png',
+    size: 1234,
+    uploadedAt: '2026-01-01T12:00:00Z',
+    path: '.intent/attachments/att-thumb-1/shot.png',
+    exists: true,
+  };
+
+  function referenceMessage(): AgentMessage {
+    return {
+      id: 'msg-thumb',
+      role: 'user',
+      contentBlocks: [
+        { type: 'text', text: 'see attached' },
+        { type: 'image', attachmentId: 'att-thumb-1', mimeType: 'image/png' },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+  }
+
+  beforeEach(() => {
+    resetMockIpcRouter();
+    window.electronAPI!.invoke = vi.fn((channel: string, payload?: unknown) =>
+      mockInvoke(channel, payload),
+    );
+  });
+  afterEach(() => {
+    window.electronAPI!.invoke = originalInvoke;
+    resetMockIpcRouter();
+  });
+
+  it('falls back to the placeholder tile and evicts the cached URL when the thumbnail fails to load', async () => {
+    const getAttachmentInfo = vi.fn(() => ({ ok: true, result: attachmentInfo }));
+    registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, (payload) => {
+      expect(payload).toEqual({
+        method: 'file.getAttachmentInfo',
+        params: { attachmentId: 'att-thumb-1' },
+      });
+      return getAttachmentInfo();
+    });
+
+    render(ChatMessage, { props: { message: referenceMessage(), workspace } });
+
+    // The reference resolves to a workspace-file:// URL and renders as <img>.
+    const img = await screen.findByRole('img', { name: /attached image/i });
+    const url = 'workspace-file://ws-thumb/.intent/attachments/att-thumb-1/shot.png';
+    expect(img.getAttribute('src')).toBe(url);
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+    // The module cache serves the same URL without another wire round-trip.
+    await expect(resolveAttachmentImageUrl('ws-thumb', 'att-thumb-1')).resolves.toBe(url);
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+
+    // The protocol handler refused the bytes (e.g. 404): the <img> errors.
+    await fireEvent.error(img);
+
+    await waitFor(() => expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy());
+    expect(screen.queryByRole('img', { name: /attached image/i })).toBeNull();
+    // Evicted: the next resolve re-issues file.getAttachmentInfo instead of
+    // replaying the URL that just failed — and this instance does not loop.
+    await expect(resolveAttachmentImageUrl('ws-thumb', 'att-thumb-1')).resolves.toBe(url);
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy();
+  });
+
+  it('re-resolves a failed thumbnail once the backend reconnects', async () => {
+    const getAttachmentInfo = vi.fn(() => ({ ok: true, result: attachmentInfo }));
+    registerMockIpcHandler(IPC_CHANNELS.BACKEND.REQUEST, () => getAttachmentInfo());
+    const statusHandlers: Array<(payload: unknown) => void> = (
+      window.electronAPI as any
+    )._getRegisteredHandlers(IPC_CHANNELS.BACKEND.STATUS);
+    statusHandlers.length = 0;
+    // Start from an empty module cache (the previous test re-cached the URL).
+    evictAttachmentImageUrl('ws-thumb', 'att-thumb-1');
+
+    render(ChatMessage, { props: { message: referenceMessage(), workspace } });
+
+    const img = await screen.findByRole('img', { name: /attached image/i });
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+
+    // The owning backend dropped: the hinted read fails closed and the
+    // thumbnail parks on the placeholder without a resolve/fail loop.
+    await fireEvent.error(img);
+    await waitFor(() => expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy());
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+
+    // A plain (non-reconnect) status broadcast changes nothing.
+    for (const handler of [...statusHandlers]) handler({ status: 'connected' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy();
+
+    // The `reconnected` marker (backend.ipc.ts RESUB-1) clears the failure:
+    // the still-mounted message re-resolves and renders the thumbnail again.
+    for (const handler of [...statusHandlers]) handler({ status: 'connected', reconnected: true });
+    const restored = await screen.findByRole('img', { name: /attached image/i });
+    expect(restored.getAttribute('src')).toBe(
+      'workspace-file://ws-thumb/.intent/attachments/att-thumb-1/shot.png',
+    );
+    expect(getAttachmentInfo).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId('chat-message-image-placeholder')).toBeNull();
   });
 });
 

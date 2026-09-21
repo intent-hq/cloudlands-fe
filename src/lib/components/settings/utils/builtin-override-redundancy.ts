@@ -33,6 +33,7 @@ function modelOptionsEqual(
     left.length === right.length &&
     left.every(
       (opt, i) =>
+        normalized(opt.provider) === normalized(right[i].provider) &&
         opt.model === right[i].model &&
         opt.hint === right[i].hint &&
         normalized(opt.reasoningEffort) === normalized(right[i].reasoningEffort),

@@ -1,23 +1,28 @@
 <script lang="ts">
   import type { HTMLAttributes } from 'svelte/elements';
-  import {
-  cn,
-  type WithElementRef,
-} from '$lib/utils.js';
+  import { cn, type WithElementRef } from '$lib/utils.js';
 
   let {
     ref = $bindable(null),
     class: className,
+    orientation = 'vertical',
     children,
     ...restProps
-  }: WithElementRef<HTMLAttributes<HTMLElement>> = $props();
+  }: WithElementRef<HTMLAttributes<HTMLElement>> & {
+    orientation?: 'vertical' | 'horizontal';
+  } = $props();
 </script>
 
 <div
   bind:this={ref}
   data-slot="sidebar-footer"
   data-sidebar="footer"
-  class={cn('flex flex-col gap-2 p-2', className)}
+  data-orientation={orientation}
+  class={cn(
+    'mt-auto flex shrink-0 gap-2 p-2',
+    orientation === 'horizontal' ? 'flex-row items-center' : 'flex-col',
+    className,
+  )}
   {...restProps}
 >
   {@render children?.()}

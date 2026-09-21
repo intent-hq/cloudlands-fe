@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
@@ -145,7 +139,12 @@ describe('setupWorkspaceSummaryIPC', () => {
   describe('workspace:get-tasks', () => {
     it('returns the canonical task list', async () => {
       const tasks = [
-        { id: 'task-1', title: 'Do thing', status: 'in_progress', updatedAt: '2026-06-09T00:00:00.000Z' },
+        {
+          id: 'task-1',
+          title: 'Do thing',
+          status: 'in_progress',
+          updatedAt: '2026-06-09T00:00:00.000Z',
+        },
         { id: 'task-2', title: 'Other thing', status: 'complete' },
       ];
       mocks.getWorkspaceTasks.mockResolvedValue(tasks);
@@ -172,4 +171,3 @@ describe('setupWorkspaceSummaryIPC', () => {
     });
   });
 });
-

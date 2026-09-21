@@ -130,7 +130,9 @@ describe('debug IPC TRIGGER_BACKEND_RESUME wire contract', () => {
     setupDebugIPC();
 
     const calls = (ipcMain.handle as any).mock.calls as Array<[string, Function]>;
-    const handler = calls.find(([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME)![1];
+    const handler = calls.find(
+      ([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME,
+    )![1];
 
     request.mockResolvedValueOnce({ success: true, queued: true, messageId: 'user-msg-2' });
 
@@ -153,7 +155,9 @@ describe('debug IPC TRIGGER_BACKEND_RESUME wire contract', () => {
     setupDebugIPC();
 
     const calls = (ipcMain.handle as any).mock.calls as Array<[string, Function]>;
-    const handler = calls.find(([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME)![1];
+    const handler = calls.find(
+      ([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME,
+    )![1];
 
     request.mockResolvedValueOnce({ success: true, queued: false });
 
@@ -175,7 +179,9 @@ describe('debug IPC TRIGGER_BACKEND_RESUME wire contract', () => {
     setupDebugIPC();
 
     const calls = (ipcMain.handle as any).mock.calls as Array<[string, Function]>;
-    const handler = calls.find(([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME)![1];
+    const handler = calls.find(
+      ([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME,
+    )![1];
 
     request.mockRejectedValueOnce(new Error('rpc boom'));
 

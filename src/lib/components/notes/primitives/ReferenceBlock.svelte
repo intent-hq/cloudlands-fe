@@ -8,7 +8,7 @@
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import Fa from 'svelte-fa';
   import { faCode, faArrowRight } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import { invoke } from '$lib/electron-bridge';
   import { parseSemanticId, getSemanticId } from '$shared/types/notes-primitives';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -25,11 +25,16 @@
 
   const logger = createLogger('ReferenceBlock');
 
+  type ShortFormReferencePrimitive = ReferencePrimitive & {
+    semanticId?: string;
+    filePath?: string;
+  };
+
   // TipTap NodeViewProps
   let { node, extension }: NodeViewProps = $props();
 
   // Get primitive data from node
-  let primitive = $derived(node?.attrs?.data as ReferencePrimitive);
+  let primitive = $derived(node?.attrs?.data as ShortFormReferencePrimitive);
 
   // Component state
   let expanded = $state(false);
@@ -43,7 +48,11 @@
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Get semantic ID (provided or derived from filePath + range)
-  let semanticId = $derived(primitive ? getSemanticId(primitive.target) : null);
+  let semanticId = $derived(
+    primitive
+      ? getSemanticId(primitive.target) || primitive.semanticId || primitive.filePath || null
+      : null,
+  );
   // Parse semantic ID
   let parsedId = $derived(semanticId ? parseSemanticId(semanticId) : null);
   // Get type from new format or legacy format
@@ -205,8 +214,9 @@
       <div class="flex min-h-9 items-center gap-2 px-3 py-1.5">
         {#if linkedAgentId}
           <!-- Show agent avatar that opens the agent panel -->
-          <button
+          <Button
             type="button"
+            variant="ghost"
             class="shrink-0 rounded-sm transition-opacity hover:opacity-80"
             onclick={(event) => {
               event.stopPropagation();
@@ -222,13 +232,14 @@
             title={m.notes_referenceBlock_viewAgent_tooltip()}
           >
             <AgentAvatar agentId={linkedAgentId} variant="compact" />
-          </button>
+          </Button>
         {:else}
           <Fa icon={faCode} size="xs" class="shrink-0 text-muted-foreground" />
         {/if}
         <!-- Clickable area to toggle expansion -->
-        <button
+        <Button
           type="button"
+          variant="ghost"
           class="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors hover:text-foreground"
           onclick={() => (expanded = !expanded)}
         >
@@ -243,7 +254,7 @@
               {lineRangeDisplay()}
             </span>
           {/if}
-        </button>
+        </Button>
         <Button
           variant="ghost-light"
           size="icon-xs"
@@ -258,7 +269,7 @@
 
       <!-- Code preview (shown when expanded) -->
       {#if expanded}
-        <div transition:slide={{ duration: 150 }} class="overflow-x-auto">
+        <div transition:slide={{ tier: 'moderate' }} class="overflow-x-auto">
           <div class="w-full border-t border-border">
             {#if loading}
               <div class="p-3">

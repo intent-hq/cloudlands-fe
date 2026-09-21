@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   /**
    * "+ Add model option" rows for the specialist editor (PROTOCOL §5.11
    * `modelOptions`): each row is a ModelPicker + free-text
@@ -7,6 +9,13 @@
    * or the effort changes on a committed row, or a committed row is removed.
    * The parent persists the committed list via `saveFileSpecialist` (empty
    * list ⇒ key omitted on the wire so inheritance is preserved).
+   *
+   * Rows carry the triple shape `{ provider?, model, hint, reasoningEffort? }`
+   * with a BARE `model` id (PROTOCOL §5.11); the ModelPicker boundary still
+   * speaks compound ids, so the row's pair recombines for display while picks
+   * consume the resolved triple legs the picker emits. The effort level is
+   * chosen inside the picker dropdown (mirroring the main Model row) — there
+   * is no separate per-row effort control.
    */
   import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
@@ -14,8 +23,9 @@
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import type { SpecialistModelOption } from '$shared/specialist-file-types';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
+  import { selectProviderModelEffortLevels } from '$store/renderer/slices/model/model-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -41,23 +51,38 @@
   function committed(list: Row[]): SpecialistModelOption[] {
     return list
       .filter((row) => row.model !== '')
-      .map(({ model, hint, reasoningEffort }) => ({
+      .map(({ provider, model, hint, reasoningEffort }) => ({
+        // Omit unset keys so the wire keeps inherit semantics
+        // (PROTOCOL §5.11 — never null/"" on a modelOptions entry).
+        ...(provider ? { provider } : {}),
         model,
         hint,
-        // Omit the key when unset so the wire keeps inherit semantics
-        // (PROTOCOL §5.11 — never null/"" on a modelOptions entry).
         ...(reasoningEffort ? { reasoningEffort } : {}),
       }));
   }
 
   /**
+   * Compound id for the ModelPicker boundary (display + catalog lookups).
+   * The picker still speaks `provider:model` ids; the row stores the triple.
+   */
+  function pickerModelId(row: SpecialistModelOption): string {
+    if (!row.model) return '';
+    return row.provider ? `${row.provider}:${row.model}` : row.model;
+  }
+
+  /**
    * Drop an effort level the newly picked model does not advertise, so a
    * model switch resets the row to Default instead of persisting a level the
-   * catalog no longer offers.
+   * catalog no longer offers. The lookup is provider-scoped: a cross-provider
+   * pick consults the resolved provider's cached catalog, not the active one.
    */
-  function effortForModel(model: string, effort: string | undefined): string | undefined {
+  function effortForModel(
+    providerId: string | undefined,
+    modelId: string,
+    effort: string | undefined,
+  ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectModelEffortLevels.select(appStore.state, model);
+    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
     return levels?.includes(effort) ? effort : undefined;
   }
 
@@ -74,6 +99,7 @@
       saved.length === local.length &&
       saved.every(
         (opt, i) =>
+          (opt.provider ?? undefined) === (local[i].provider ?? undefined) &&
           opt.model === local[i].model &&
           opt.hint === local[i].hint &&
           (opt.reasoningEffort ?? undefined) === (local[i].reasoningEffort ?? undefined),
@@ -87,14 +113,23 @@
     rows = [...rows, { key: nextKey++, model: '', hint: '' }];
   }
 
-  function handleModelChange(index: number, compoundModelId: string) {
+  function handleModelChange(
+    index: number,
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     if (!compoundModelId) return;
+    // Prefer the resolved triple legs the picker emits (catalog-group
+    // attribution for bare cross-provider picks); fall back to splitting a
+    // legacy compound id (an empty prefix never propagates as a provider id).
+    const { providerId, modelId } = pick ?? splitLegacyCompoundId(compoundModelId);
     rows = rows.map((row, i) =>
       i === index
         ? {
             ...row,
-            model: compoundModelId,
-            reasoningEffort: effortForModel(compoundModelId, row.reasoningEffort),
+            provider: providerId || undefined,
+            model: modelId,
+            reasoningEffort: effortForModel(providerId || undefined, modelId, row.reasoningEffort),
           }
         : row,
     );
@@ -133,63 +168,63 @@
   }
 </script>
 
-<div class="flex flex-col gap-2">
-  <div>
-    <span class="text-sm font-medium text-foreground">
-      {m.settings_aiBehavior_modelOptions_label()}
-    </span>
-    <p class="text-xs text-muted-foreground mt-0.5">
-      {m.settings_aiBehavior_modelOptions_description()}
-    </p>
-  </div>
-
-  {#each rows as row, index (row.key)}
-    <div class="flex items-center gap-2">
-      <div class="shrink-0">
-        <ModelPicker
-          selectedModel={row.model || undefined}
-          onModelChange={(model) => handleModelChange(index, model)}
-          showDefaultOption={false}
-          defaultModelLabel={m.settings_aiBehavior_modelOptions_selectModel_label()}
-          variant="default"
-          size="sm"
-          showReasoning
-          reasoningEffort={row.reasoningEffort ?? null}
-          onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
+<SettingsFieldRow
+  id="specialist-model-options"
+  label={m.settings_aiBehavior_modelOptions_label()}
+  description={m.settings_aiBehavior_modelOptions_description()}
+  compact
+>
+  <div class="flex min-w-0 flex-col gap-2">
+    {#each rows as row, index (row.key)}
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <div class="min-w-0 max-w-full">
+          <ModelPicker
+            selectedModel={pickerModelId(row) || undefined}
+            onModelChange={(model, pick) => handleModelChange(index, model, pick)}
+            showDefaultOption={false}
+            defaultModelLabel={m.settings_aiBehavior_modelOptions_selectModel_label()}
+            variant="default"
+            size="sm"
+            showReasoning
+            reasoningEffort={row.reasoningEffort ?? null}
+            onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
+          />
+        </div>
+        <Input
+          type="text"
+          value={row.hint}
+          onblur={(e) => handleHintBlur(index, e.currentTarget.value.trim())}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder={m.settings_aiBehavior_modelOptions_hint_placeholder()}
+          class="min-w-0 flex-1 basis-32"
         />
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          type="button"
+          onclick={() => removeRow(index)}
+          aria-label={m.settings_aiBehavior_modelOptions_remove_ariaLabel()}
+          class="shrink-0"
+        >
+          <Fa icon={faXmark} class="size-3.5" />
+        </Button>
       </div>
-      <input
-        type="text"
-        value={row.hint}
-        onblur={(e) => handleHintBlur(index, e.currentTarget.value.trim())}
-        onkeydown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            e.currentTarget.blur();
-          }
-        }}
-        placeholder={m.settings_aiBehavior_modelOptions_hint_placeholder()}
-        class="flex-1 min-w-0 h-8 px-2.5 text-sm rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-      />
-      <button
-        type="button"
-        onclick={() => removeRow(index)}
-        aria-label={m.settings_aiBehavior_modelOptions_remove_ariaLabel()}
-        class="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-      >
-        <Fa icon={faXmark} class="w-3.5 h-3.5" />
-      </button>
-    </div>
-  {/each}
+    {/each}
 
-  <div>
-    <button
+    <Button
+      variant="link"
+      size="sm"
       type="button"
       onclick={addRow}
-      class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+      class="w-fit justify-start px-0"
     >
-      <Fa icon={faPlus} class="w-3 h-3" />
       {m.settings_aiBehavior_modelOptions_add()}
-    </button>
+      {#snippet trailingIcon()}<Fa icon={faPlus} class="size-3" />{/snippet}
+    </Button>
   </div>
-</div>
+</SettingsFieldRow>

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   navigateToRoute: vi.fn(),
   getActiveWorkNames: vi.fn(),
   invoke: vi.fn(),
-  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  notify: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 vi.mock('../../workspace/utils/workspace.client', () => ({
   workspaceClient: {
@@ -30,15 +30,21 @@ vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate
 vi.mock('$lib/utils/delete-warning-utils', () => ({
   getActiveWorkNames: mocks.getActiveWorkNames,
 }));
-vi.mock('svelte-sonner', () => ({ toast: mocks.toast }));
+vi.mock('$lib/components/patterns/notify', async () => ({
+  ...(await vi.importActual('$lib/components/ui/toast/toast-countdown')),
+  notify: mocks.notify,
+}));
 vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import type { BulkOperationProposal, WorkspaceCreateProposal } from '$shared/types/proposal';
+import type { Specialist } from '$lib/constants/specialists';
+import { initialState as githubAuthInitialState } from '../../github-auth/github-auth-slice';
 import {
   initialState as proposalLifecycleInitialState,
   proposalLifecycleReducer,
 } from '../../proposal-lifecycle/proposal-lifecycle-slice';
+import { initialState as specialistsInitialState } from '../../specialists/specialists-slice';
 import {
   initialState as workspaceInitialState,
   replaceWorkspaceList,
@@ -62,7 +68,7 @@ import {
   requestUnarchiveWorkspace,
   workspaceOperationsReducer,
 } from '../workspace-operations-slice';
-import { TOAST_COUNTDOWN_CLASS } from '$lib/components/ui/toast';
+import { TOAST_COUNTDOWN_CLASS } from '$lib/components/patterns/notify';
 import {
   WORKSPACE_DELETION_TOMBSTONE_TTL_MS,
   WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -112,19 +118,37 @@ const createProposal = (applyToolCallId: string): WorkspaceCreateProposal => ({
   applyToolCallId,
 });
 
+const noActiveWork = { agentNames: [], hookNames: [], openPrs: [], localChanges: null };
+
+const localChanges = {
+  roots: [
+    {
+      kind: 'primary' as const,
+      path: '/work/repo',
+      branch: 'feat/x',
+      hasRemoteRefs: true,
+      unpushedCount: 2,
+      uncommittedCount: 0,
+    },
+  ],
+  hasUnpushedCommits: true,
+  hasUncommittedChanges: false,
+};
+
 function latestUndo(): (() => void) | undefined {
-  const options = mocks.toast.warning.mock.calls.at(-1)?.[1] as
+  const options = mocks.notify.warning.mock.calls.at(-1)?.[1] as
     { action?: { onClick?: () => void } } | undefined;
   return options?.action?.onClick;
 }
 
-function harness(seed: Workspace[]) {
+function harness(seed: Workspace[], bundledSpecialists: Specialist[] = []) {
   const channel = stdChannel();
   let workspaceState = workspaceInitialState;
   for (const item of seed)
     workspaceState = workspaceReducer(workspaceState, setWorkspaceEntity(item));
   let operations = operationsInitialState;
   let proposalLifecycle = proposalLifecycleInitialState;
+  const specialists = { ...specialistsInitialState, bundledSpecialists };
   const dispatch = vi.fn((action) => {
     workspaceState = workspaceReducer(workspaceState, action);
     operations = workspaceOperationsReducer(operations, action);
@@ -139,6 +163,8 @@ function harness(seed: Workspace[]) {
         workspace: workspaceState,
         workspaceOperations: operations,
         proposalLifecycle,
+        specialists,
+        githubAuth: githubAuthInitialState,
       }),
     },
     workspaceOperationsSaga,
@@ -163,7 +189,7 @@ function harness(seed: Workspace[]) {
 describe('workspaceOperationsSaga', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getActiveWorkNames.mockResolvedValue({ agentNames: [], hookNames: [], openPrs: [] });
+    mocks.getActiveWorkNames.mockResolvedValue(noActiveWork);
     mocks.navigate.mockResolvedValue(undefined);
   });
   afterEach(() => vi.useRealTimers());
@@ -178,7 +204,7 @@ describe('workspaceOperationsSaga', () => {
     run.send(requestArchiveWorkspace('ws-2'));
     await settle();
     expect(mocks.archive.mock.calls).toEqual([['ws-1'], ['ws-2']]);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     // Tab close + navigation are driven by the daemon workspace:updated event
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(
@@ -199,8 +225,8 @@ describe('workspaceOperationsSaga', () => {
     run.send(confirmBulkArchive());
     await settle();
     expect(mocks.archive).toHaveBeenCalledTimes(2);
-    expect(mocks.toast.warning).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.warning).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -326,6 +352,7 @@ describe('workspaceOperationsSaga', () => {
       agentNames: ['Ada'],
       hookNames: ['ci-watch'],
       openPrs: [],
+      localChanges: null,
     });
     mocks.deleteWorkspace.mockResolvedValue({
       ok: true,
@@ -336,9 +363,21 @@ describe('workspaceOperationsSaga', () => {
     run.send(requestDeleteWorkspace('ws-1'));
     await settle();
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+    // Single-workspace gating is the only path that asks for local changes
+    expect(mocks.getActiveWorkNames).toHaveBeenCalledExactlyOnceWith('ws-1', {
+      includeLocalChanges: true,
+    });
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openDeleteWarning',
-      payload: [{ workspaceId: 'ws-1', agentNames: ['Ada'], hookNames: ['ci-watch'], openPrs: [] }],
+      payload: [
+        {
+          workspaceId: 'ws-1',
+          agentNames: ['Ada'],
+          hookNames: ['ci-watch'],
+          openPrs: [],
+          localChanges: null,
+        },
+      ],
     });
 
     run.send(confirmDeleteWorkspace());
@@ -347,7 +386,7 @@ describe('workspaceOperationsSaga', () => {
       undoDelayMs: WORKSPACE_OPERATION_UNDO_DURATION_MS,
     });
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
-    expect(mocks.toast.warning).toHaveBeenCalledExactlyOnceWith(
+    expect(mocks.notify.warning).toHaveBeenCalledExactlyOnceWith(
       expect.any(String),
       expect.objectContaining({
         duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -380,7 +419,7 @@ describe('workspaceOperationsSaga', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.cancelDelete).toHaveBeenCalledExactlyOnceWith('ws-1');
     // The daemon already committed: show "could not undo" and stay deleted
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toBeUndefined();
     expect(run.state().workspace.pendingDeletions['ws-1']).toBe(true);
     run.task.cancel();
@@ -395,6 +434,7 @@ describe('workspaceOperationsSaga', () => {
       agentNames: [],
       hookNames: ['pr-watch'],
       openPrs: [],
+      localChanges: null,
     });
     mocks.archive.mockResolvedValue({
       ok: true,
@@ -406,9 +446,20 @@ describe('workspaceOperationsSaga', () => {
     await settle();
 
     expect(mocks.archive).not.toHaveBeenCalled();
+    expect(mocks.getActiveWorkNames).toHaveBeenCalledExactlyOnceWith('ws-1', {
+      includeLocalChanges: true,
+    });
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
-      payload: [{ workspaceId: 'ws-1', agentNames: [], hookNames: ['pr-watch'], openPrs: [] }],
+      payload: [
+        {
+          workspaceId: 'ws-1',
+          agentNames: [],
+          hookNames: ['pr-watch'],
+          openPrs: [],
+          localChanges: null,
+        },
+      ],
     });
 
     run.send(confirmArchiveWorkspace());
@@ -428,7 +479,7 @@ describe('workspaceOperationsSaga', () => {
         status: 'Open' as const,
       },
     ];
-    mocks.getActiveWorkNames.mockResolvedValue({ agentNames: [], hookNames: [], openPrs });
+    mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, openPrs });
     const run = harness([workspace('ws-1'), workspace('ws-2')]);
 
     run.send(requestDeleteWorkspace('ws-1'));
@@ -436,7 +487,9 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openDeleteWarning',
-      payload: [{ workspaceId: 'ws-1', agentNames: [], hookNames: [], openPrs }],
+      payload: [
+        { workspaceId: 'ws-1', agentNames: [], hookNames: [], openPrs, localChanges: null },
+      ],
     });
 
     run.send(requestArchiveWorkspace('ws-2'));
@@ -444,9 +497,93 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
-      payload: [{ workspaceId: 'ws-2', agentNames: [], hookNames: [], openPrs }],
+      payload: [
+        { workspaceId: 'ws-2', agentNames: [], hookNames: [], openPrs, localChanges: null },
+      ],
     });
 
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('shows the delete and archive warnings when only local changes exist (zero agents/hooks/PRs)', async () => {
+    mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, localChanges });
+    const run = harness([workspace('ws-1'), workspace('ws-2')]);
+
+    run.send(requestDeleteWorkspace('ws-1'));
+    await settle();
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+    expect(run.state().workspaceOperations.showDeleteWarning).toBe(true);
+    expect(run.state().workspaceOperations.localChangesForDelete).toEqual(localChanges);
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'workspaceOperations/openDeleteWarning',
+      payload: [{ workspaceId: 'ws-1', agentNames: [], hookNames: [], openPrs: [], localChanges }],
+    });
+
+    run.send(requestArchiveWorkspace('ws-2'));
+    await settle();
+    expect(mocks.archive).not.toHaveBeenCalled();
+    expect(run.state().workspaceOperations.showArchiveWarning).toBe(true);
+    expect(run.state().workspaceOperations.localChangesForArchive).toEqual(localChanges);
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'workspaceOperations/openArchiveWarning',
+      payload: [{ workspaceId: 'ws-2', agentNames: [], hookNames: [], openPrs: [], localChanges }],
+    });
+
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('does not warn when the local-changes result reports a clean, fully pushed tree', async () => {
+    mocks.getActiveWorkNames.mockResolvedValue({
+      ...noActiveWork,
+      localChanges: {
+        roots: [{ ...localChanges.roots[0], unpushedCount: 0 }],
+        hasUnpushedCommits: false,
+        hasUncommittedChanges: false,
+      },
+    });
+    mocks.archive.mockResolvedValue({
+      ok: true,
+      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
+    });
+    const run = harness([workspace('ws-1')]);
+
+    run.send(requestArchiveWorkspace('ws-1'));
+    await settle();
+
+    expect(run.state().workspaceOperations.showArchiveWarning).toBe(false);
+    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('never asks for local changes in the bulk archive / bulk delete-archived flows', async () => {
+    mocks.archive.mockResolvedValue({
+      ok: true,
+      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
+    });
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([
+      workspace('ws-1'),
+      workspace('ws-2'),
+      workspace('ws-3', WorkspaceStatusEnum.Archived),
+    ]);
+
+    run.send(openBulkArchiveConfirm('intent-hq/repo'));
+    run.send(confirmBulkArchive());
+    await settle();
+    run.send(openBulkDeleteArchivedConfirm('intent-hq/repo'));
+    run.send(confirmBulkDeleteArchived());
+    await settle();
+
+    expect(new Set(mocks.getActiveWorkNames.mock.calls.map(([id]) => id))).toEqual(
+      new Set(['ws-1', 'ws-2', 'ws-3']),
+    );
+    // Bulk paths never pass includeLocalChanges — the RPC is single-workspace only
+    for (const call of mocks.getActiveWorkNames.mock.calls) {
+      expect(call).toHaveLength(1);
+    }
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -463,11 +600,11 @@ describe('workspaceOperationsSaga', () => {
     });
     expect(getItem(run.state().workspace.workspaces, 'ws-1')).toMatchObject({ id: 'ws-1' });
     expect(run.state().workspace.pendingDeletions['ws-1']).toBeUndefined();
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
   });
 
   it('runs deletion undo windows concurrently and undoes each via cancelDelete', async () => {
-    mocks.getActiveWorkNames.mockReturnValue({ agentNames: [], hookNames: [], openPrs: [] });
+    mocks.getActiveWorkNames.mockReturnValue(noActiveWork);
     mocks.navigate.mockReturnValue(undefined);
     mocks.deleteWorkspace.mockResolvedValue({
       ok: true,
@@ -481,8 +618,8 @@ describe('workspaceOperationsSaga', () => {
     await settle();
 
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
-    expect(mocks.toast.warning).toHaveBeenCalledTimes(2);
-    for (const [, options] of mocks.toast.warning.mock.calls) {
+    expect(mocks.notify.warning).toHaveBeenCalledTimes(2);
+    for (const [, options] of mocks.notify.warning.mock.calls) {
       (options as { action: { onClick: () => void } }).action.onClick();
     }
     await settle();
@@ -495,7 +632,7 @@ describe('workspaceOperationsSaga', () => {
 
   it('ignores repeated delete requests for the same soft-hidden workspace', async () => {
     vi.useFakeTimers();
-    mocks.getActiveWorkNames.mockReturnValue({ agentNames: [], hookNames: [], openPrs: [] });
+    mocks.getActiveWorkNames.mockReturnValue(noActiveWork);
     mocks.navigate.mockReturnValue(undefined);
     mocks.deleteWorkspace.mockResolvedValue({
       ok: true,
@@ -531,7 +668,7 @@ describe('workspaceOperationsSaga', () => {
     ]);
     run.send(requestArchiveWorkspace('ws-1'));
     await settle();
-    expect(mocks.toast.warning).toHaveBeenCalledExactlyOnceWith(
+    expect(mocks.notify.warning).toHaveBeenCalledExactlyOnceWith(
       expect.any(String),
       expect.objectContaining({
         duration: WORKSPACE_OPERATION_UNDO_DURATION_MS,
@@ -551,8 +688,8 @@ describe('workspaceOperationsSaga', () => {
     run.send(requestUnarchiveWorkspace('ws-3'));
     await settle();
     expect(mocks.unarchive.mock.calls).toEqual([['ws-1'], ['ws-2'], ['ws-3']]);
-    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     // Direct unarchive gets no focus behavior — only the undo path does
     expect(mocks.navigateToRoute).toHaveBeenCalledTimes(1);
     run.task.cancel();
@@ -570,7 +707,7 @@ describe('workspaceOperationsSaga', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
-    expect(mocks.toast.info).toHaveBeenCalledTimes(2);
+    expect(mocks.notify.info).toHaveBeenCalledTimes(2);
     empty.task.cancel();
     await empty.task.toPromise();
 
@@ -587,8 +724,8 @@ describe('workspaceOperationsSaga', () => {
     mocks.getActiveWorkNames.mockImplementation((workspaceId: string) =>
       Promise.resolve(
         workspaceId === 'ws-2'
-          ? { agentNames: [], hookNames: ['pr-watch'], openPrs: [bulkPr] }
-          : { agentNames: ['Ada'], hookNames: [], openPrs: [bulkPr] },
+          ? { ...noActiveWork, hookNames: ['pr-watch'], openPrs: [bulkPr] }
+          : { ...noActiveWork, agentNames: ['Ada'], openPrs: [bulkPr] },
       ),
     );
     mocks.deleteWorkspace
@@ -611,9 +748,9 @@ describe('workspaceOperationsSaga', () => {
     guarded.send(confirmBulkDeleteWarning());
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(3);
-    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.info).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.info).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     // Only the successful delete (ws-1) is tombstoned; a stale refetch cannot
     // resurrect it, and the grace timer clears the tombstone afterwards.
     expect(guarded.state().workspace.pendingDeletions).toEqual({ 'ws-1': true });
@@ -648,7 +785,7 @@ describe('workspaceOperationsSaga', () => {
       type: 'knownRepos/removeRepo',
       payload: ['/repo/one'],
     });
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -673,12 +810,15 @@ describe('workspaceOperationsSaga', () => {
       title: 'New space',
       repositoryPath: '/repo',
       baseRef: 'feature/x',
+      // The payload names no specialist, so the effective specialist is
+      // General and the payload's "Coordinator" name is not applied.
       initialAgent: {
-        name: 'Coordinator',
+        name: 'Agent',
         prompt: 'Edited prompt',
         metadata: { isInitialAgent: true },
       },
     });
+    expect(mocks.create.mock.calls[0]?.[0]?.initialAgent?.specialist).toBeUndefined();
     expect(mocks.create.mock.calls[0]?.[0]?.initialAgent).not.toHaveProperty('agentId');
     expect(getItem(run.state().workspace.workspaces, 'ws-created')).toBeDefined();
     expect(run.state().proposalLifecycle['create-success']).toMatchObject({
@@ -693,7 +833,51 @@ describe('workspaceOperationsSaga', () => {
       error: 'cannot resolve base ref',
       errorCode: 'base-ref-unresolvable',
     });
-    expect(mocks.toast.error).toHaveBeenCalledWith('cannot resolve base ref');
+    expect(mocks.notify.error).toHaveBeenCalledWith('cannot resolve base ref');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('names the initial agent from the resolved specialist, or "Agent" for General', async () => {
+    mocks.create.mockResolvedValue({ ok: true, data: { workspace: workspace('ws-named') } });
+    const coordinator = {
+      id: 'coordinator',
+      name: 'Coordinator',
+      description: 'Plans and delegates',
+    } as Specialist;
+    const run = harness([], [coordinator]);
+    const unnamed = (applyToolCallId: string, specialist?: string): WorkspaceCreateProposal => ({
+      kind: 'workspace-create',
+      payload: {
+        operation: 'workspace.create',
+        params: {
+          title: 'New space',
+          repositoryPath: '/repo',
+          baseRef: 'main',
+          initialAgent: { prompt: 'Go', ...(specialist ? { specialist } : {}) },
+        },
+      },
+      preview: { title: 'Create workspace' },
+      applyToolCallId,
+    });
+
+    run.send(applyWorkspaceProposal({ proposal: unnamed('general-create') }));
+    run.send(applyWorkspaceProposal({ proposal: unnamed('specialist-create', 'coordinator') }));
+    run.send(
+      applyWorkspaceProposal({
+        proposal: unnamed('edited-general-create', 'coordinator'),
+        editedFields: { specialist: null },
+      }),
+    );
+    run.send(applyWorkspaceProposal({ proposal: unnamed('unknown-create', 'not-a-specialist') }));
+    await settle();
+
+    expect(mocks.create.mock.calls.map(([request]) => request.initialAgent?.name)).toEqual([
+      'Agent',
+      'Coordinator',
+      'Agent',
+      'Agent',
+    ]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -777,7 +961,7 @@ describe('workspaceOperationsSaga', () => {
       status: WorkspaceStatusEnum.Archived,
       archived: true,
     });
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -800,8 +984,8 @@ describe('workspaceOperationsSaga', () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
     expect(run.state().proposalLifecycle['delete-applied']).toMatchObject({ status: 'applied' });
-    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
-    expect(mocks.toast.info).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.success).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.info).toHaveBeenCalledTimes(1);
     // The successful delete (ws-1) is tombstoned for the grace window; a stale
     // refetch cannot re-admit it, and the timer clears the tombstone afterwards.
     expect(run.state().workspace.pendingDeletions).toEqual({ 'ws-1': true });
@@ -815,7 +999,7 @@ describe('workspaceOperationsSaga', () => {
     );
     await vi.advanceTimersByTimeAsync(50);
     expect(run.state().proposalLifecycle['delete-failed']).toMatchObject({ status: 'failed' });
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.notify.error).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(WORKSPACE_DELETION_TOMBSTONE_TTL_MS);
     expect(run.state().workspace.pendingDeletions).toEqual({});
     run.task.cancel();

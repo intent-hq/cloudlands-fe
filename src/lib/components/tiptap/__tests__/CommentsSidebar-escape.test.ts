@@ -4,20 +4,8 @@
  * Migrated from a manual `document` keydown listener; the layer is only
  * registered while a comment is focused, and Escape unfocuses it.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeAll,
-  afterEach,
-} from 'vitest';
-import {
-  render,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { render, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import type { Editor } from '@tiptap/core';
 
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -28,11 +16,8 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 
 // Stub the heavy thread renderer — the escape layer lives on the sidebar.
 vi.mock('../comments/ResponsiveCommentThread.svelte', async () => ({
-  default: (
-    await import(
-      '../../workspace/initializer/__tests__/mocks/MockComponent.svelte'
-    )
-  ).default,
+  default: (await import('../../workspace/initializer/__tests__/mocks/MockComponent.svelte'))
+    .default,
 }));
 
 import { store as appStore } from '$store/renderer/store';

@@ -131,7 +131,9 @@ export function resolveStreamContentBlocks(
   eventType: StreamEventType,
 ): ContentBlock[] | undefined {
   if (incoming) {
-    return existing && existing.length > 0 ? mergeStreamContentBlocks(existing, incoming) : incoming;
+    return existing && existing.length > 0
+      ? mergeStreamContentBlocks(existing, incoming)
+      : incoming;
   }
   return eventType === 'complete' || eventType === 'error' || eventType === 'timeout'
     ? existing

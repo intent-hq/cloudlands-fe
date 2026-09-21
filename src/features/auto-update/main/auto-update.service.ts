@@ -120,7 +120,7 @@ class AutoUpdateService {
     await this.loadChannelFromSettings();
 
     // Set initial feed URL based on channel
-    this.setChannel(this.state.channel);
+    await this.setChannel(this.state.channel);
 
     // Set up event handlers
     this.setupEventHandlers();

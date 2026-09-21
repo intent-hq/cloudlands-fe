@@ -1,11 +1,15 @@
 import { expect, test, type ConsoleMessage, type Locator, type Page } from '@playwright/test';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
+const require = createRequire(import.meta.url);
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const artifactDir = path.resolve('test-results/catalog-artifacts');
+const catalogReadyTimeout = 90_000;
 const catalogSlugs = [
   'badge',
   'breadcrumb',
@@ -31,7 +35,7 @@ const catalogSlugs = [
   'sidebar',
   'skeleton',
   'slider',
-  'spinner',
+  'loading-indicator',
   'switch',
   'textarea',
   'toggle',
@@ -40,56 +44,136 @@ const catalogSlugs = [
 ] as const;
 
 test.use(existsSync(systemChrome) ? { channel: 'chrome' } : {});
-test.describe.configure({ mode: 'serial' });
+
+/**
+ * Shared guard for every catalog route: the page must render without runtime errors
+ * and without a leaked desktop bridge. Set up before navigation, asserted at teardown.
+ */
+const catalogTest = test.extend<{ catalogRuntimeGuard: void }>({
+  catalogRuntimeGuard: [
+    async ({ page }, use) => {
+      const consoleErrors: string[] = [];
+      const pageErrors: string[] = [];
+      page.on('console', (message: ConsoleMessage) => {
+        if (message.type() === 'error') consoleErrors.push(message.text());
+      });
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.addInitScript(() => {
+        delete (window as Window & { electronAPI?: unknown }).electronAPI;
+      });
+      await use();
+      expect(await readDesktopBridge(page)).toEqual({ type: 'undefined', keys: [] });
+      expect(consoleErrors).toEqual([]);
+      expect(pageErrors).toEqual([]);
+    },
+    { auto: true },
+  ],
+});
+
+async function readDesktopBridge(page: Page) {
+  return page.evaluate(() => {
+    const value = (window as Window & { electronAPI?: unknown }).electronAPI;
+    return {
+      type: typeof value,
+      keys: value && typeof value === 'object' ? Object.keys(value) : [],
+    };
+  });
+}
 
 let server: ViteDevServer;
 let baseUrl: string;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({ browser }) => {
+  test.setTimeout(120_000);
   mkdirSync(artifactDir, { recursive: true });
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('catalog-shell'),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
   baseUrl = server.resolvedUrls?.local[0] ?? '';
   expect(baseUrl).not.toBe('');
+  await expect
+    .poll(
+      async () => {
+        try {
+          const response = await fetch(`${baseUrl}sandbox`, {
+            signal: AbortSignal.timeout(10_000),
+          });
+          await response.arrayBuffer();
+          return response.status;
+        } catch {
+          return 0;
+        }
+      },
+      { timeout: 90_000, intervals: [100, 250, 500, 1_000] },
+    )
+    .toBe(200);
+  const readinessPage = await browser.newPage();
+  try {
+    await readinessPage.goto(`${baseUrl}sandbox`, {
+      waitUntil: 'domcontentloaded',
+      timeout: catalogReadyTimeout,
+    });
+    await expectCatalogIntroductionReady(readinessPage);
+  } finally {
+    await readinessPage.close();
+  }
 });
 
 test.afterAll(async () => {
   await server?.close();
 });
 
+test('SearchableSelect playground keeps the last open option visible', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${baseUrl}sandbox/searchable-select`, { waitUntil: 'networkidle' });
+  const preview = page.locator('[data-catalog-preview="searchable-select"]').first();
+  await preview.getByRole('combobox').first().click();
+  const lastOption = preview.getByRole('option').last();
+  await expect(lastOption).toBeInViewport({ ratio: 1 });
+  const unobscured = await lastOption.evaluate((option) => {
+    const rect = option.getBoundingClientRect();
+    return option.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.bottom - 1));
+  });
+  expect(unobscured).toBe(true);
+});
+
 for (const viewport of [
   { name: 'desktop', width: 1440, height: 1000 },
   { name: 'compact', width: 390, height: 844 },
 ] as const) {
-  test(`${viewport.name} renders every canonical preview without a desktop bridge`, async ({
-    page,
-  }) => {
-    test.setTimeout(120_000);
-    const consoleErrors: string[] = [];
-    const pageErrors: string[] = [];
-    page.on('console', (message: ConsoleMessage) => {
-      if (message.type() === 'error') consoleErrors.push(message.text());
-    });
-    page.on('pageerror', (error) => pageErrors.push(error.message));
-    await page.addInitScript(() => {
-      delete (window as Window & { electronAPI?: unknown }).electronAPI;
-    });
-    await page.setViewportSize(viewport);
-    const faviconResponse = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === '/favicon.png',
-    );
-    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
-    expect((await faviconResponse).status()).toBe(200);
-    await expect(page.getByTestId('catalog-shell')).toBeVisible();
+  catalogTest(
+    `${viewport.name} renders every canonical preview without a desktop bridge`,
+    async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.setViewportSize(viewport);
+      await page.goto(`${baseUrl}sandbox`, { waitUntil: 'domcontentloaded' });
+      await expectCatalogShellReady(page);
+      const faviconUrl = await page.locator('link[rel="icon"]').evaluate((link) => {
+        return (link as HTMLLinkElement).href;
+      });
+      expect((await page.request.get(faviconUrl)).status()).toBe(200);
 
-    await assertGallery(page);
-    await captureGalleryArtifacts(page, viewport.name);
+      await assertIntroduction(page);
+      await captureIntroductionArtifacts(page, viewport.name);
 
-    for (const slug of catalogSlugs) {
-      await page.goto(`${baseUrl}sandbox/${slug}`, { waitUntil: 'networkidle' });
+      if (viewport.name === 'desktop') await captureKeyboardFocusEvidence(page);
+
+      expect((await page.screenshot({ fullPage: true })).byteLength).toBeGreaterThan(10_000);
+    },
+  );
+  for (const slug of catalogSlugs) {
+    catalogTest(`${viewport.name} exercises ${slug} on its component route`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.setViewportSize(viewport);
+
+      await page.goto(`${baseUrl}sandbox/${slug}`, { waitUntil: 'domcontentloaded' });
+      await expectCatalogShellReady(page);
       const previews = page.locator(`[data-catalog-preview="${slug}"]`);
+      // CSR hydration can finish well after the shell mounts on a cold module graph.
+      await expect(previews.first()).toBeVisible({ timeout: catalogReadyTimeout });
       const previewCount = await previews.count();
       expect(previewCount).toBeGreaterThan(0);
       for (let index = 0; index < previewCount; index += 1) {
@@ -98,7 +182,7 @@ for (const viewport of [
         ).toBeVisible();
         await expect(
           previews.nth(index).locator('[data-catalog-rendered-state]').first(),
-        ).toBeAttached();
+        ).toBeAttached({ timeout: catalogReadyTimeout });
       }
       if (viewport.name === 'compact' && (slug === 'combobox' || slug === 'select')) {
         await assertChoiceLongListGeometry(page, slug);
@@ -119,21 +203,8 @@ for (const viewport of [
       ) {
         await captureCatalogArtifacts(page, viewport.name, slug);
       }
-    }
-    if (viewport.name === 'desktop') await captureKeyboardFocusEvidence(page);
-
-    const bridge = await page.evaluate(() => {
-      const value = (window as Window & { electronAPI?: unknown }).electronAPI;
-      return {
-        type: typeof value,
-        keys: value && typeof value === 'object' ? Object.keys(value) : [],
-      };
     });
-    expect(bridge).toEqual({ type: 'undefined', keys: [] });
-    expect(consoleErrors).toEqual([]);
-    expect(pageErrors).toEqual([]);
-    expect((await page.screenshot({ fullPage: true })).byteLength).toBeGreaterThan(10_000);
-  });
+  }
 }
 
 test('200% zoom uses DPR2 device metrics and keeps the catalog contained', async ({
@@ -156,9 +227,10 @@ test('200% zoom uses DPR2 device metrics and keeps the catalog contained', async
     screenHeight: physicalHeight,
   });
   try {
-    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
-    const heading = page.getByRole('heading', { name: 'Design system workspace' });
-    const intro = page.getByText(/^Explore live semantic foundations/);
+    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'domcontentloaded' });
+    await expectCatalogIntroductionReady(page);
+    const heading = page.getByRole('heading', { name: 'Intent design system', exact: true });
+    const intro = page.getByTestId('catalog-introduction').locator('header > p').last();
     await expect(heading).toBeVisible();
 
     const [headingBox, introBox] = await Promise.all([heading.boundingBox(), intro.boundingBox()]);
@@ -174,7 +246,14 @@ test('200% zoom uses DPR2 device metrics and keeps the catalog contained', async
     expect(evidence.innerHeight).toBe(cssHeight);
     expect(evidence.viewportWidth).toBe(cssWidth);
     expect(evidence.viewportHeight).toBe(cssHeight);
-    expect((headingBox?.height ?? 0) * evidence.devicePixelRatio).toBeGreaterThanOrEqual(48);
+    // 388bffff replaced the gallery heading; verify scaling against the current rendered text.
+    const headingLineHeight = await heading.evaluate((element) =>
+      parseFloat(getComputedStyle(element).lineHeight),
+    );
+    expect(headingBox?.height).toBeGreaterThanOrEqual(headingLineHeight);
+    expect((headingBox?.height ?? 0) * evidence.devicePixelRatio).toBeGreaterThan(
+      headingBox?.height ?? 0,
+    );
     expect((introBox?.height ?? 0) * evidence.devicePixelRatio).toBeGreaterThanOrEqual(32);
     await assertNoPageOverflow(page);
 
@@ -185,128 +264,150 @@ test('200% zoom uses DPR2 device metrics and keeps the catalog contained', async
     });
     const screenshot = Buffer.from(capture.data, 'base64');
     expect(pngDimensions(screenshot)).toEqual({ width: physicalWidth, height: physicalHeight });
-    writeFileSync(path.join(artifactDir, 'zoom-200-gallery.png'), screenshot);
+    writeFileSync(path.join(artifactDir, 'zoom-200-introduction.png'), screenshot);
   } finally {
     await cdp.send('Emulation.clearDeviceMetricsOverride');
   }
 });
 
-async function captureKeyboardFocusEvidence(page: Page) {
+test('keeps the bundled Inter Variable font across scene round trips and theme changes', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(`${baseUrl}sandbox/button`, { waitUntil: 'networkidle' });
+  await page.addInitScript(() => {
+    delete (window as Window & { electronAPI?: unknown }).electronAPI;
+  });
+  await page.goto(`${baseUrl}sandbox/button?state=default&theme=light&width=960&motion=full`, {
+    waitUntil: 'networkidle',
+  });
+  await expectPreviewReady(page, 'button', 'default');
+  const first = await readShellFontEvidence(page);
+  expect(first.family).toMatch(/^"?Inter Variable"?/);
+  expect(first.loadedFaces).toBeGreaterThan(0);
+
+  await navigateWithinDocument(page, '/sandbox/mention-agent-avatar?state=idle&width=960');
+  await expectPreviewReady(page, 'mention-agent-avatar', 'idle');
   await setCatalogTheme(page, 'dark');
 
-  const control = page.getByRole('button', { name: 'Run action' });
-  const readIndicator = () =>
-    control.evaluate((element) => {
-      const style = getComputedStyle(element);
-      const probe = document.createElement('span');
-      probe.style.color = 'hsl(var(--ring))';
-      document.body.append(probe);
-      const ringColor = getComputedStyle(probe).color;
-      probe.remove();
-      const shadowColors = style.boxShadow.match(/rgba?\([^)]+\)|color\([^)]+\)/g) ?? [];
-      const shadowHasVisibleColor = shadowColors.some((color) => {
-        const slashAlpha = color.match(/\/\s*([0-9.]+)/)?.[1];
-        if (slashAlpha !== undefined) return Number.parseFloat(slashAlpha) > 0;
-        const channels = color.match(/[0-9.]+/g)?.map(Number) ?? [];
-        return channels.length < 4 || channels[3] > 0;
-      });
-      const shadowExtent = Math.max(
-        0,
-        ...(style.boxShadow
-          .match(/-?[0-9.]+px/g)
-          ?.map((value) => Math.abs(Number.parseFloat(value))) ?? []),
-      );
-      const preview = element.closest('[data-catalog-preview]');
-      return {
-        adjacentBackground: preview ? getComputedStyle(preview).backgroundColor : 'transparent',
-        borderColor: style.borderColor,
-        borderWidth: Number.parseFloat(style.borderWidth),
-        boxShadow: style.boxShadow,
-        focusVisible: element.matches(':focus-visible'),
-        outlineStyle: style.outlineStyle,
-        outlineWidth: Number.parseFloat(style.outlineWidth),
-        ringColor,
-        shadowExtent,
-        shadowHasVisibleColor,
-      };
+  await navigateWithinDocument(page, '/sandbox/button?state=default&width=960');
+  await expectPreviewReady(page, 'button', 'default');
+  await setCatalogTheme(page, 'light');
+
+  const roundTrip = await readShellFontEvidence(page);
+  expect(roundTrip.documentToken).toBe(first.documentToken);
+  expect(roundTrip.family).toBe(first.family);
+  expect(roundTrip.loadedFaces).toBeGreaterThan(0);
+  expect(roundTrip.fontsStatus).toBe('loaded');
+  expect(roundTrip.checkPasses).toBe(true);
+});
+
+/** Client-side SvelteKit navigation: the router intercepts same-origin anchor clicks. */
+async function navigateWithinDocument(page: Page, href: string) {
+  await page.evaluate((target) => {
+    const anchor = document.createElement('a');
+    anchor.href = target;
+    anchor.textContent = 'navigate';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  }, href);
+  await expect(page).toHaveURL(new RegExp(href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+}
+
+async function expectPreviewReady(page: Page, slug: string, state: string) {
+  const scene = page.locator(
+    `[data-testid="catalog-scene"][data-preview-slug="${slug}"][data-preview-state="${state}"]`,
+  );
+  await expect(scene).toHaveAttribute('data-preview-ready', 'true');
+  await expect(scene).toHaveAttribute('data-preview-stable', 'true');
+}
+
+async function readShellFontEvidence(page: Page) {
+  return page.evaluate(async () => {
+    await document.fonts.ready;
+    const documentWindow = window as Window & { __catalogDocumentToken?: string };
+    documentWindow.__catalogDocumentToken ??= crypto.randomUUID();
+    const shell = document.querySelector('[data-testid="catalog-shell"]');
+    const family = shell ? getComputedStyle(shell).fontFamily : '';
+    let loadedFaces = 0;
+    document.fonts.forEach((face) => {
+      if (face.family.replace(/["']/g, '') === 'Inter Variable' && face.status === 'loaded') {
+        loadedFaces += 1;
+      }
     });
-  const focusViaKeyboard = async () => {
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    for (
-      let index = 0;
-      index < 12 && !(await control.evaluate((node) => node === document.activeElement));
-      index += 1
-    ) {
-      await page.keyboard.press('Tab');
-    }
+    return {
+      documentToken: documentWindow.__catalogDocumentToken,
+      family,
+      loadedFaces,
+      fontsStatus: document.fonts.status,
+      checkPasses: document.fonts.check("16px 'Inter Variable'"),
+    };
+  });
+}
+
+async function captureKeyboardFocusEvidence(page: Page) {
+  await page.goto(`${baseUrl}sandbox/button`, { waitUntil: 'domcontentloaded' });
+  await expectCatalogShellReady(page);
+  await setCatalogTheme(page, 'dark');
+  const control = page.getByRole('button', { name: '1. Primary', exact: true });
+  // The later Wave 11 focus port replaced the legacy border/shadow ring with an outline.
+  for (const reduced of [false, true]) {
+    await setReducedMotion(page, reduced);
+    await control.blur();
+    await expect(control).not.toBeFocused();
+    const resting = await readFocusIndicator(control);
+    await control.focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
     await expect(control).toBeFocused();
-  };
-  const waitForVisibleIndicator = async (unfocused: Awaited<ReturnType<typeof readIndicator>>) => {
-    await expect
-      .poll(
-        async () => {
-          const focus = await readIndicator();
-          const shadowChanged = focus.boxShadow !== unfocused.boxShadow;
-          const thickness = Math.max(
-            focus.outlineStyle === 'none' ? 0 : focus.outlineWidth,
-            focus.borderWidth + (shadowChanged ? focus.shadowExtent : 0),
-          );
-          return (
-            focus.focusVisible &&
-            focus.borderColor === focus.ringColor &&
-            shadowChanged &&
-            focus.shadowHasVisibleColor &&
-            thickness >= 2 &&
-            contrastRatio(focus.adjacentBackground, focus.borderColor) >= 3
-          );
-        },
-        { timeout: 2_000 },
-      )
-      .toBe(true);
-    return readIndicator();
-  };
+    const indicator = await readFocusIndicator(control);
+    expect(indicator.visible).toBe(true);
+    expect(indicator.width).toBeGreaterThanOrEqual(1);
+    expect(indicator.style).toBe('solid');
+    // WCAG 2.4.11/1.4.11: the indicator must be a visible change with ≥3:1 contrast
+    // against the surface it sits on (the outline is offset outside the control).
+    expect(indicator.color).not.toBe(resting.color);
+    expect(colorAlpha(indicator.color)).toBeGreaterThan(0);
+    expect(contrastRatio(indicator.adjacentBackground, indicator.color)).toBeGreaterThanOrEqual(3);
+    await page.screenshot({
+      path: path.join(artifactDir, `keyboard-focus-button-${reduced ? 'reduced' : 'full'}.png`),
+    });
+  }
+}
 
-  const unfocused = await readIndicator();
-  await focusViaKeyboard();
-  const focus = await waitForVisibleIndicator(unfocused);
-  expect(focus.focusVisible).toBe(true);
-  expect(focus.borderColor).toBe(focus.ringColor);
-  expect(focus.shadowHasVisibleColor).toBe(true);
-  expect(focus.boxShadow).not.toBe(unfocused.boxShadow);
-  expect(focus.borderWidth + focus.shadowExtent).toBeGreaterThanOrEqual(2);
-  expect(contrastRatio(focus.adjacentBackground, focus.borderColor)).toBeGreaterThanOrEqual(3);
-
-  const screenshot = await page.screenshot({
-    path: path.join(artifactDir, 'keyboard-focus-button-dark-compact.png'),
+/** Outline tuple plus the nearest painted background the offset outline sits on. */
+async function readFocusIndicator(control: Locator) {
+  return control.evaluate((element) => {
+    const alpha = (color: string) => {
+      const channels = color.match(/[0-9.]+/g) ?? [];
+      return channels.length >= 4 ? Number(channels[3]) : 1;
+    };
+    const style = getComputedStyle(element);
+    let adjacentBackground = 'rgb(0, 0, 0)';
+    for (
+      let node = parseFloat(style.outlineOffset) > 0 ? element.parentElement : element;
+      node;
+      node = node.parentElement
+    ) {
+      const background = getComputedStyle(node).backgroundColor;
+      if (alpha(background) > 0) {
+        adjacentBackground = background;
+        break;
+      }
+    }
+    return {
+      visible: element.matches(':focus-visible'),
+      width: parseFloat(style.outlineWidth),
+      style: style.outlineStyle,
+      color: style.outlineColor,
+      adjacentBackground,
+    };
   });
-  expect(pngDimensions(screenshot)).toEqual({ width: 1280, height: 800 });
-  const box = await control.boundingBox();
-  expect(box).not.toBeNull();
-  const detail = await page.screenshot({
-    path: path.join(artifactDir, 'keyboard-focus-button-detail-dark-compact.png'),
-    clip: {
-      x: Math.max(0, (box?.x ?? 0) - 24),
-      y: Math.max(0, (box?.y ?? 0) - 24),
-      width: (box?.width ?? 0) + 48,
-      height: (box?.height ?? 0) + 48,
-    },
-  });
-  expect(pngDimensions(detail).width).toBeGreaterThan(box?.width ?? 0);
-  expect(pngDimensions(detail).height).toBeGreaterThan(box?.height ?? 0);
+}
 
-  await setReducedMotion(page, true);
-  await expect
-    .poll(async () => {
-      const state = await readIndicator();
-      return !state.focusVisible && state.borderColor !== state.ringColor;
-    })
-    .toBe(true);
-  const reducedUnfocused = await readIndicator();
-  await focusViaKeyboard();
-  await waitForVisibleIndicator(reducedUnfocused);
-  await setReducedMotion(page, false);
+function colorAlpha(color: string): number {
+  const channels = color.match(/[0-9.]+/g) ?? [];
+  return channels.length >= 4 ? Number(channels[3]) : 1;
 }
 
 function pngDimensions(png: Buffer) {
@@ -317,8 +418,8 @@ async function assertChoiceLongListGeometry(page: Page, slug: 'combobox' | 'sele
   const state = page.locator(`[data-catalog-state="${slug}-long-list"]`);
   const listbox = state.getByRole('listbox');
   const precedingState = state.locator('xpath=preceding-sibling::*[1]');
-  const fixture = state.locator('xpath=ancestor::*[@data-catalog-fixture][1]');
-  const heading = fixture.locator('.fixture-heading');
+  const fixture = state.locator('xpath=ancestor::section[@data-catalog-fixture][1]');
+  const heading = fixture.getByRole('heading').first();
   await expect(listbox).toBeVisible();
 
   const [stateBox, listboxBox, precedingBox, headingBox] = await Promise.all([
@@ -343,7 +444,7 @@ async function assertChoiceLongListGeometry(page: Page, slug: 'combobox' | 'sele
 async function captureChoiceLongListInitialState(page: Page, slug: 'combobox' | 'select') {
   const fixture = page
     .locator(`[data-catalog-state="${slug}-long-list"]`)
-    .locator('xpath=ancestor::*[@data-catalog-fixture][1]');
+    .locator('xpath=ancestor::section[@data-catalog-fixture][1]');
   await fixture.screenshot({
     path: path.join(artifactDir, `compact-${slug}-initial-long-list.png`),
   });
@@ -351,15 +452,19 @@ async function captureChoiceLongListInitialState(page: Page, slug: 'combobox' | 
 
 async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[number]) {
   if (slug === 'badge') {
-    await expect(page.locator('[data-slot="badge"]').first()).toContainText('Default badge');
+    await expect(page.locator('[data-slot="badge"]').first()).toContainText('Neutral: Draft');
   } else if (slug === 'button') {
-    const button = page.getByRole('button', { name: 'Run action' });
+    const button = page.getByRole('button', { name: '1. Primary', exact: true });
     await button.click();
     await button.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByLabel('Button click count')).toHaveText('2');
   } else if (slug === 'button-group') {
-    await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Share' })).toHaveAttribute(
+      'data-state',
+      'active',
+    );
   } else if (slug === 'checkbox') {
     const checkbox = page.getByRole('checkbox', { name: 'Catalog checkbox' });
     await checkbox.click();
@@ -401,7 +506,7 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
     await expect(defaultState.getByLabel('Combobox value', { exact: true })).toContainText('grace');
   } else if (slug === 'select') {
     const defaultState = page.locator('[data-catalog-rendered-state~="closed"]');
-    const trigger = defaultState.getByRole('button', { name: 'Catalog select' });
+    const trigger = defaultState.getByRole('combobox', { name: 'Catalog select' });
     await trigger.click();
     await defaultState.getByRole('option', { name: 'Banana' }).click();
     await expect(page.getByLabel('Select value')).toHaveText('banana');
@@ -440,7 +545,10 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
   } else if (slug === 'settings-page-shell') {
     const actionPreview = page.locator('[data-catalog-renderer-fixture="editorial-shell"]');
     const linkedPreview = page.locator('[data-catalog-renderer-fixture="busy-shell"]');
-    const shell = actionPreview.getByRole('region', { name: 'Application settings' });
+    const shell = actionPreview.getByRole('region', {
+      name: 'Editorial Settings shell',
+      exact: true,
+    });
     await expect(shell).toBeVisible();
     const actionBack = actionPreview.getByRole('button', { name: 'Back to workspace' });
     await actionBack.focus();
@@ -454,7 +562,7 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
     await expect(linkedBack).toHaveAttribute('href', '#catalog-settings-shell');
     await assertSettingsShellLayout(page, actionPreview, linkedPreview);
   } else if (slug === 'settings-section') {
-    await expect(page.getByRole('region', { name: 'Notifications' })).toHaveAttribute(
+    await expect(page.getByRole('region', { name: 'Notifications', exact: true })).toHaveAttribute(
       'aria-busy',
       'true',
     );
@@ -478,11 +586,26 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();
     await trigger.click();
+    await expect(menu).toBeVisible();
     const outsideTarget = page.getByRole('button', { name: 'Menu outside target' });
-    if ((page.viewportSize()?.width ?? 0) < 500) await outsideTarget.click({ force: true });
-    else await outsideTarget.click();
-    await expect(menu).toBeHidden();
+    // The menu arms its outside-pointerdown dismissal a few frames after it mounts, so a
+    // click that lands before that is ignored (a forced click skips the stability wait
+    // that usually covers this on a warm worker). Retry the outside click until it takes.
+    await expect(async () => {
+      if ((page.viewportSize()?.width ?? 0) < 500) await outsideTarget.click({ force: true });
+      else await outsideTarget.click();
+      await expect(menu).toBeHidden({ timeout: 1_000 });
+    }).toPass();
   } else if (slug === 'dialog' || slug === 'sheet') {
+    if (slug === 'dialog') {
+      const initialDialog = page.getByRole('dialog', {
+        name: 'Catalog dialog open state',
+        exact: true,
+      });
+      await expect(initialDialog).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(initialDialog).toBeHidden();
+    }
     const trigger = page.getByRole('button', {
       name: slug === 'dialog' ? 'Open catalog dialog' : 'Open catalog sheet',
     });
@@ -516,38 +639,42 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
   }
 }
 
-async function assertGallery(page: Page) {
-  const gallery = page.getByTestId('catalog-gallery');
-  await expect(gallery).toBeVisible();
-  await expect(page.getByRole('navigation', { name: 'Catalog navigation' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Foundations' })).toBeVisible();
-  await expect(page.getByTestId('foundation-colors')).toBeVisible();
+// Wave 11 batch 5a (388bffff) retired the home gallery, search, group filter and hash anchors.
+async function assertIntroduction(page: Page) {
+  await expectCatalogIntroductionReady(page);
+  await expect(
+    page.getByRole('navigation', { name: 'Component catalog', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('main')).toBeVisible();
   for (const slug of catalogSlugs) {
-    const entry = gallery.locator(`[data-catalog-gallery-entry="${slug}"]`);
-    await expect(entry).toBeVisible();
-    await expect(entry.locator(`[data-catalog-preview="${slug}"]`).first()).toBeVisible();
+    await expect(page.getByRole('main').locator(`a[href="/sandbox/${slug}"]`)).toBeVisible();
   }
-
-  const search = page.getByTestId('catalog-search');
-  await search.fill('dialog');
-  await expect(gallery.locator('[data-catalog-gallery-entry="dialog"]')).toBeVisible();
-  await expect(gallery.locator('[data-catalog-gallery-entry="button"]')).toHaveCount(0);
-  await search.fill('');
-
-  const groupFilter = page.getByTestId('catalog-group-filter');
-  await groupFilter.click();
-  await page.getByRole('option', { name: 'Overlays' }).click();
-  await expect(gallery.locator('[data-catalog-gallery-entry="dialog"]')).toBeVisible();
-  await expect(gallery.locator('[data-catalog-gallery-entry="badge"]')).toHaveCount(0);
-  await groupFilter.click();
-  await page.getByRole('option', { name: 'All sections' }).click();
-
-  await page.getByRole('link', { name: 'Dialog', exact: true }).first().click();
-  await expect(page).toHaveURL(/\/sandbox#component-dialog$/);
-  await expect(page.locator('#component-dialog')).toBeInViewport();
-  await page.reload({ waitUntil: 'networkidle' });
-  await expect(page.locator('#component-dialog')).toBeInViewport();
+  const dialog = page.getByRole('main').locator('a[href="/sandbox/dialog"]');
+  await dialog.focus();
+  await dialog.press('Enter');
+  await expect(page).toHaveURL(/\/sandbox\/dialog(?:\?|$)/, { timeout: catalogReadyTimeout });
+  await expect(page.locator('[data-catalog-preview="dialog"]').first()).toBeVisible({
+    timeout: catalogReadyTimeout,
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expectCatalogShellReady(page);
+  await expect(page.locator('[data-catalog-preview="dialog"]').first()).toBeVisible({
+    timeout: catalogReadyTimeout,
+  });
+  await page.goto(`${baseUrl}sandbox`, { waitUntil: 'domcontentloaded' });
+  await expectCatalogIntroductionReady(page);
   await assertNoPageOverflow(page);
+}
+
+async function expectCatalogIntroductionReady(page: Page) {
+  await expectCatalogShellReady(page);
+  await expect(page.getByTestId('catalog-introduction')).toBeVisible({
+    timeout: catalogReadyTimeout,
+  });
+}
+
+async function expectCatalogShellReady(page: Page) {
+  await expect(page.getByTestId('catalog-shell')).toBeVisible({ timeout: catalogReadyTimeout });
 }
 
 async function assertNoPageOverflow(page: Page) {
@@ -577,7 +704,7 @@ async function assertNoPageOverflow(page: Page) {
   expect(overflow).toEqual({ body: 0, elements: [] });
 }
 
-async function captureGalleryArtifacts(page: Page, viewport: string) {
+async function captureIntroductionArtifacts(page: Page, viewport: string) {
   await page.evaluate(() => window.scrollTo(0, 0));
   let lightColors: { background: string; backgroundToken: string } | undefined;
   for (const theme of ['light', 'dark'] as const) {
@@ -603,7 +730,7 @@ async function captureGalleryArtifacts(page: Page, viewport: string) {
     }
     expect(contrastRatio(colors.background, colors.foreground)).toBeGreaterThanOrEqual(4.5);
     await page.screenshot({
-      path: path.join(artifactDir, `${viewport}-gallery-${theme}.png`),
+      path: path.join(artifactDir, `${viewport}-introduction-${theme}.png`),
       fullPage: true,
     });
   }
@@ -664,7 +791,7 @@ async function assertSettingsShellLayout(
   expect(Math.abs((placement.footerWidth ?? 0) - placement.shellWidth)).toBeLessThanOrEqual(2);
 
   if ((page.viewportSize()?.width ?? 0) < 500) {
-    const navigation = shell.locator('[data-slot="settings-page-navigation"]');
+    const navigation = shell.locator('[data-slot="settings-page-navigation"] .overflow-x-auto');
     const overflow = await navigation.evaluate((element) => ({
       clientWidth: element.clientWidth,
       scrollWidth: element.scrollWidth,
@@ -682,15 +809,8 @@ async function assertSettingsShellLayout(
 async function assertSettingsArtifactContrast(page: Page, slug: string) {
   if (!['settings-section', 'settings-field-row', 'file-input', 'slider'].includes(slug)) return;
   const preview = page.locator(`[data-catalog-preview="${slug}"]`);
-  if (slug === 'slider') {
-    const invalidSlider = preview.getByRole('slider', { name: 'Invalid catalog volume' });
-    const colors = await resolvedArtifactColors(invalidSlider, 'accentColor');
-    expect(
-      contrastRatio(colors.background, colors.foreground),
-      `${slug} invalid accent`,
-    ).toBeGreaterThanOrEqual(3);
-    return;
-  }
+  // Slider port 3ac8fcfc retired the native invalid/accent-color specimen.
+  if (slug === 'slider') return;
   const alert = preview.getByRole('alert').first();
   const colors = await resolvedArtifactColors(alert, 'color');
   expect(colors.opacity, `${slug} alert opacity`).toBe(1);
@@ -768,6 +888,7 @@ async function assertReducedComponentMotion(page: Page) {
 }
 
 async function setCatalogTheme(page: Page, theme: 'light' | 'dark') {
+  await expandCustomization(page);
   const control = page.getByRole('radio', {
     name: theme === 'dark' ? 'Dark' : 'Light',
     exact: true,
@@ -777,6 +898,7 @@ async function setCatalogTheme(page: Page, theme: 'light' | 'dark') {
 }
 
 async function setReducedMotion(page: Page, enabled: boolean) {
+  await expandCustomization(page);
   const control = page.getByRole('switch', { name: 'Reduce motion' });
   const checked = (await control.getAttribute('aria-checked')) === 'true';
   if (checked !== enabled) await control.click();
@@ -861,4 +983,47 @@ async function captureCatalogArtifacts(
     });
     if (slug !== 'badge') await page.keyboard.press('Escape');
   }
+}
+
+async function expandCustomization(page: Page) {
+  const toggle = page.getByRole('button', { name: 'Customize preview' });
+  if ((await toggle.isVisible()) && (await toggle.getAttribute('aria-expanded')) === 'false')
+    await toggle.click();
+}
+
+for (const route of ['', '/button', '/checkbox', '/fields']) {
+  test(`shell accessibility and preferences on /sandbox${route}`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto(`${baseUrl}sandbox${route}`, { waitUntil: 'networkidle' });
+    await expect(page.getByTestId('catalog-shell')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('main')).toBeVisible();
+    await expect(
+      page.getByRole('navigation', { name: 'Component catalog', exact: true }),
+    ).toBeVisible();
+    await setCatalogTheme(page, 'dark');
+    await setReducedMotion(page, true);
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-theme', 'dark');
+    await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
+      'data-catalog-motion',
+      'reduced',
+    );
+    await expandCustomization(page);
+    const motion = await page
+      .getByRole('switch', { name: 'Reduce motion' })
+      .evaluate((element) => getComputedStyle(element).transitionDuration);
+    expect(maxDurationMs(motion)).toBeLessThanOrEqual(0.01);
+    // The preference attribute precedes the effect applying the root theme and its colours.
+    await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+    await expect(
+      page.locator('.catalog-sidebar a[data-slot="sidebar-menu-button"]').first(),
+    ).toHaveCSS('color', 'rgb(255, 255, 255)', { timeout: 30_000 });
+    await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') });
+    const violations = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: () => Promise<{ violations: unknown[] }> } })
+        .axe;
+      return (await axe.run()).violations;
+    });
+    expect(violations).toEqual([]);
+  });
 }

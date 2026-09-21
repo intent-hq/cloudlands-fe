@@ -50,6 +50,8 @@ export interface ProviderAvailabilityResult {
     droid: ProviderStatus;
     grok: ProviderStatus;
     unsloth: ProviderStatus;
+    /** Absent when connected to a daemon without Antigravity support. */
+    antigravity?: ProviderStatus;
   };
   /**
    * Provider IDs that are hidden because their required env var or feature
@@ -82,7 +84,26 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   droid: 'droid',
   grok: 'grok',
   unsloth: 'unsloth',
+  antigravity: 'antigravity',
 };
+
+/**
+ * npx-only providers whose `providers.paths` override the daemon honors
+ * (exec'd in place of the pinned npx spawn). Mirrors intentd's
+ * `ProviderConfig::npx_only_honors_path_override`, which is opt-in per
+ * provider; other npx-only providers (e.g. `pi`) stay pinned-npx-only and
+ * ignore an override, so the path UI must not offer one. The wire carries no
+ * flag for this yet, hence the FE-side mirror.
+ */
+export const NPX_ONLY_PATH_OVERRIDE_PROVIDERS: ReadonlySet<string> = new Set(['claude-code']);
+
+/** Antigravity needs a confirmed OAuth session; preserve other providers' gates. */
+export function isProviderAuthenticationReady(
+  providerId: string,
+  authenticated?: boolean,
+): boolean {
+  return providerId === 'antigravity' ? authenticated === true : authenticated !== false;
+}
 
 /**
  * Given a ProviderAvailabilityResult-shaped providers map and an optional set
@@ -90,7 +111,7 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
  * available and not hidden.
  */
 export function getAvailableIdsFromResult(
-  providers: Record<string, { available: boolean }>,
+  providers: Record<string, { available: boolean } | undefined>,
   hiddenProviders: string[] = [],
 ): string[] {
   const hidden = new Set(hiddenProviders);

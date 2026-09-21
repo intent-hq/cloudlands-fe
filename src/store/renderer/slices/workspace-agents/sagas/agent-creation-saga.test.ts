@@ -5,11 +5,22 @@ const mocks = vi.hoisted(() => ({
   createAgent: vi.fn(),
   toastError: vi.fn(),
   backendRequest: vi.fn(),
+  // When true, `agentFactory.createAgent` is the REAL UnifiedAgentFactory
+  // (→ real LiveAgentsClient → mocked transport) instead of `mocks.createAgent`.
+  useRealFactory: false,
 }));
-vi.mock('$features/agent/services/agent-factory', () => ({
-  agentFactory: { createAgent: mocks.createAgent },
-}));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$features/agent/services/agent-factory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$features/agent/services/agent-factory')>();
+  return {
+    agentFactory: {
+      createAgent: (...args: Parameters<typeof actual.agentFactory.createAgent>) =>
+        mocks.useRealFactory
+          ? actual.agentFactory.createAgent(...args)
+          : mocks.createAgent(...args),
+    },
+  };
+});
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 vi.mock('$lib/client/live/backend-transport', () => ({ backendRequest: mocks.backendRequest }));
 
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -20,6 +31,17 @@ import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { agentSessionLaunchAgentRequested } from '../../agent-session/agent-session-slice';
 import { openAgentTabRequested } from '../../app-layout/app-layout-slice';
+import {
+  connectionsListReceived,
+  connectionsReducer,
+  initialState as connectionsInitialState,
+} from '../../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../../guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '../../guest-sessions/guest-sessions-types';
 import {
   initialState as specialistsInitialState,
   type FileSpecialist,
@@ -56,20 +78,66 @@ function session(): AgentSession {
   } as AgentSession;
 }
 
+const GUEST_SESSION: GuestSessionRecord = {
+  id: 'guest-1',
+  label: 'studio.local',
+  host: '10.0.0.5',
+  hosts: ['10.0.0.5'],
+  port: 8443,
+  fingerprint: 'AB:CD',
+  tcAddress: null,
+  hostname: 'studio.local',
+  principalId: 'prin-guest',
+  login: 'octocat',
+  tokenEncrypted: true,
+  updatedAt: 1,
+};
+
+// A settled owner window: the guest session list hydrated with no joined host.
+function ownerWindowIdentity() {
+  return {
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+    ),
+  };
+}
+
+// A settled guest window: the window's backend id is a joined host.
+function guestWindowIdentity() {
+  return {
+    connections: connectionsReducer(
+      connectionsInitialState,
+      connectionsListReceived({
+        connections: [],
+        activeId: GUEST_SESSION.id,
+        windowBackendId: GUEST_SESSION.id,
+      }),
+    ),
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+    ),
+  };
+}
+
 function state(
   defaultSpecialistId = '',
   fileSpecialists: FileSpecialist[] = [],
   activeProviderId = 'augment',
   providerModels: Record<string, string> = { augment: 'sonnet' },
+  identity: ReturnType<typeof ownerWindowIdentity> = ownerWindowIdentity(),
 ) {
   const workspace = { id: WS, title: 'Workspace', repositoryPath: '/tmp/repo' } as Workspace;
   const note = { id: NOTE, title: 'Task note', content: 'Do the thing' } as Note;
   return {
+    ...identity,
     workspace: { workspaces: { ids: [WS], map: { [WS]: workspace } } },
     workspaceAgents: { byWorkspaceId: { [WS]: { agentIds: [] } } },
     agentSessions: { byAgentId: {} },
-    model: { providerModels },
-    providerSettings: { activeProviderId },
+    model: { providerModels, defaultProviderId: activeProviderId },
+    providerSettings: {},
     specialists: {
       ...specialistsInitialState,
       defaultSpecialistId,
@@ -101,7 +169,10 @@ function start(getState: () => unknown = state) {
 }
 
 describe('agentCreationSaga', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    mocks.useRealFactory = false;
+    vi.clearAllMocks();
+  });
 
   it('routes the fire-and-forget create trigger through agentFactory with server-minted identity', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
@@ -126,7 +197,7 @@ describe('agentCreationSaga', () => {
   it('pairs a blank agent model with its selected Claude provider', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start(() =>
-      state('', [], 'claude-code', { 'claude-code': 'claude-code:opus-4-1' }),
+      state('', [], 'claude-code', { 'claude-code': 'opus-4-1' }),
     );
     channel.put(createAgentRequested(WS));
     await settle();
@@ -134,7 +205,7 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        model: 'claude-code:opus-4-1',
+        model: 'opus-4-1',
         provider: 'claude-code',
       }),
     );
@@ -145,7 +216,7 @@ describe('agentCreationSaga', () => {
   it('pairs General specialist-picker creation with the selected Claude provider', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start(() =>
-      state('', [], 'claude-code', { 'claude-code': 'claude-code:opus-4-1' }),
+      state('', [], 'claude-code', { 'claude-code': 'opus-4-1' }),
     );
     channel.put(createAgentWithSpecialistRequested(WS, null));
     await settle();
@@ -153,7 +224,7 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        model: 'claude-code:opus-4-1',
+        model: 'opus-4-1',
         provider: 'claude-code',
       }),
     );
@@ -187,7 +258,7 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
-  it('pairs a compound specialist model with its owning provider', async () => {
+  it('splits a legacy compound specialist model into a bare model + owning provider', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const pinned: FileSpecialist = {
       id: 'claude-reviewer',
@@ -207,7 +278,36 @@ describe('agentCreationSaga', () => {
       expect.anything(),
       expect.objectContaining({
         provider: 'claude-code',
-        model: 'claude-code:opus-4-1',
+        model: 'opus-4-1',
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('passes a bare specialist frontmatter model through with its coding agent', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const pinned: FileSpecialist = {
+      id: 'claude-reviewer',
+      name: 'Claude Reviewer',
+      description: 'Pinned to Claude Opus',
+      codingAgent: 'claude-code',
+      model: 'opus-4-1',
+      reasoningEffort: 'high',
+      behaviorPrompt: 'Review changes.',
+      filePath: '/tmp/claude-reviewer.md',
+      source: 'user',
+    };
+    const { channel, task } = start(() => state('', [pinned]));
+    channel.put(createAgentWithSpecialistRequested(WS, 'claude-reviewer'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: 'claude-code',
+        model: 'opus-4-1',
+        reasoningEffort: 'high',
       }),
     );
     task.cancel();
@@ -397,6 +497,35 @@ describe('agentCreationSaga', () => {
         provider: 'augment',
         model: undefined,
         metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'verifier' },
+      }),
+    );
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('passes a pinned specialist reasoning effort through the task-run path', async () => {
+    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+    const pinned: FileSpecialist = {
+      id: 'claude-reviewer',
+      name: 'Claude Reviewer',
+      description: 'Pinned to Claude with an effort level',
+      codingAgent: 'claude-code',
+      model: 'opus-4-1',
+      reasoningEffort: 'low',
+      behaviorPrompt: 'Review changes.',
+      filePath: '/tmp/claude-reviewer.md',
+      source: 'user',
+    };
+    const { channel, task } = start(() => state('claude-reviewer', [pinned]));
+    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+    await settle();
+
+    expect(mocks.createAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        model: 'opus-4-1',
+        reasoningEffort: 'low',
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'claude-reviewer' },
       }),
     );
     task.cancel();
@@ -659,5 +788,155 @@ describe('agentCreationSaga', () => {
     expect(mocks.backendRequest).not.toHaveBeenCalled();
     task.cancel();
     await task.toPromise();
+  });
+
+  describe('collaborator connection (guest window)', () => {
+    const guestState = () => state('', [], 'augment', { augment: 'sonnet' }, guestWindowIdentity());
+
+    it.each([
+      ['createAgentRequested', () => createAgentRequested(WS)],
+      ['createAgentWithSpecialistRequested', () => createAgentWithSpecialistRequested(WS, null)],
+      ['runAgentForNoteRequested', () => runAgentForNoteRequested(WS, NOTE, 'Task note')],
+      [
+        'delegateExistingTaskRequested',
+        () => delegateExistingTaskRequested(WS, NOTE, 'Task note', true),
+      ],
+    ])(
+      'refuses %s before sending anything and renders the not-permitted sentence',
+      async (_name, trigger) => {
+        mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+        mocks.backendRequest.mockResolvedValue({ ok: true, agentId: AGENT });
+        const { channel, dispatched, task } = start(guestState);
+        channel.put(trigger());
+        await settle();
+
+        expect(mocks.createAgent).not.toHaveBeenCalled();
+        expect(mocks.backendRequest).not.toHaveBeenCalled();
+        expect(mocks.toastError).toHaveBeenCalledOnce();
+        expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+        expect(dispatched).not.toContainEqual(
+          expect.objectContaining({ type: 'appLayout/openAgentTabRequested' }),
+        );
+        task.cancel();
+        await task.toPromise();
+      },
+    );
+
+    it('rejects the promise-bearing create with the not-permitted sentence', async () => {
+      const { channel, task } = start(guestState);
+      const action = createAgentFromConfigRequested(WS, {
+        name: 'Refused',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      });
+      channel.put(action);
+
+      await expect(action.promise).rejects.toThrow("You can't create agents in this workspace");
+      expect(mocks.createAgent).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('rejects the launch trigger through the same refusal', async () => {
+      const { channel, task } = start(guestState);
+      const action = agentSessionLaunchAgentRequested(WS, {
+        name: 'Refused',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      });
+      channel.put(action);
+
+      await expect(action.promise).rejects.toThrow("You can't create agents in this workspace");
+      expect(mocks.createAgent).not.toHaveBeenCalled();
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('renders the not-permitted sentence when the daemon itself answers -32003', async () => {
+      mocks.backendRequest.mockRejectedValue(
+        Object.assign(new Error('Forbidden'), { rpcCode: -32003 }),
+      );
+      const { channel, task } = start();
+      channel.put(delegateExistingTaskRequested(WS, NOTE, 'Task note', false));
+      await settle();
+
+      expect(mocks.toastError).toHaveBeenCalledOnce();
+      expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+      task.cancel();
+      await task.toPromise();
+    });
+
+    const forbiddenFactoryResult = () => ({
+      success: false,
+      error: 'forbidden: agent.create',
+      cause: Object.assign(new Error('forbidden: agent.create'), { rpcCode: -32003 }),
+    });
+
+    it.each([
+      ['createAgentRequested', () => createAgentRequested(WS)],
+      ['createAgentWithSpecialistRequested', () => createAgentWithSpecialistRequested(WS, null)],
+      ['runAgentForNoteRequested', () => runAgentForNoteRequested(WS, NOTE, 'Task note')],
+    ])(
+      'renders the not-permitted sentence when agent.create answers -32003 through the factory (%s)',
+      async (_name, trigger) => {
+        mocks.createAgent.mockResolvedValue(forbiddenFactoryResult());
+        const { channel, task } = start();
+        channel.put(trigger());
+        await settle();
+
+        expect(mocks.createAgent).toHaveBeenCalledOnce();
+        expect(mocks.toastError).toHaveBeenCalledOnce();
+        expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+        task.cancel();
+        await task.toPromise();
+      },
+    );
+
+    it('renders the not-permitted sentence end to end: real factory, real agents client, transport answers -32003', async () => {
+      // Only the wire is faked: the real UnifiedAgentFactory calls the real
+      // LiveAgentsClient, whose `agent.create` request the transport refuses
+      // exactly as the daemon does for a collaborator connection.
+      mocks.useRealFactory = true;
+      mocks.backendRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.create') {
+          throw Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+        }
+        return {};
+      });
+      const { channel, task } = start();
+      channel.put(createAgentRequested(WS));
+      await settle();
+      await settle();
+
+      expect(mocks.createAgent).not.toHaveBeenCalled();
+      expect(mocks.backendRequest).toHaveBeenCalledWith(
+        'agent.create',
+        expect.objectContaining({ workspaceId: WS }),
+      );
+      expect(mocks.toastError).toHaveBeenCalledOnce();
+      expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+      task.cancel();
+      await task.toPromise();
+    });
+
+    it('rejects the promise-bearing create with the not-permitted sentence when agent.create answers -32003', async () => {
+      mocks.createAgent.mockResolvedValue(forbiddenFactoryResult());
+      const { channel, task } = start();
+      const action = createAgentFromConfigRequested(WS, {
+        name: 'Refused',
+        workspaceId: WorkspaceId(WS),
+        agentType: createAgentTypeId('chat'),
+        source: 'test',
+      });
+      channel.put(action);
+
+      await expect(action.promise).rejects.toThrow("You can't create agents in this workspace");
+      expect(mocks.toastError).toHaveBeenCalledOnce();
+      expect(mocks.toastError.mock.calls[0][0]).toBe("You can't create agents in this workspace");
+      task.cancel();
+      await task.toPromise();
+    });
   });
 });

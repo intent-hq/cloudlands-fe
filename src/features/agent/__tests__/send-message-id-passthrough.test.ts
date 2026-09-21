@@ -6,16 +6,9 @@
  * wire call so the daemon persists under the same ID the renderer knows.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  createMessageId,
-  isValidMessageId,
-} from '$shared/types/branded-ids';
+import { createMessageId, isValidMessageId } from '$shared/types/branded-ids';
 
 describe('Renderer-side assistant message ID generation', () => {
   describe('sendMessage ID pattern', () => {
@@ -45,5 +38,4 @@ describe('Renderer-side assistant message ID generation', () => {
       expect(payload.assistantMessageId).toMatch(/^msg_/);
     });
   });
-
 });

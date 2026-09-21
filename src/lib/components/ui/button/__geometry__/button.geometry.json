@@ -1,0 +1,101 @@
+{
+  "$meta": {
+    "generatedOn": "linux"
+  },
+  "default": {
+    "420": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 87.97,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "destructive": {
+    "420": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 141.92,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "disabled": {
+    "420": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 101.58,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  },
+  "loading": {
+    "420": {
+      "probes": {
+        "data-slot=button": {
+          "fontSize": 13,
+          "fontWeight": 400,
+          "gap": 6,
+          "height": 32,
+          "lineHeight": 18,
+          "marginBottom": 0,
+          "marginTop": 0,
+          "paddingLeft": 16,
+          "paddingRight": 16,
+          "width": 72.23,
+          "x": 25,
+          "y": 25
+        }
+      },
+      "root": {
+        "height": 82,
+        "width": 420
+      }
+    }
+  }
+}

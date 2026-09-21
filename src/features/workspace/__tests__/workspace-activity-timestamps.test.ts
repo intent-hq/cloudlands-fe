@@ -1,19 +1,10 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { Workspace, WorkspaceId } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
 
-vi.mock('../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: any) => action),
-}));
+vi.mock('../../../store/main/redux-store-bridge', () => ({}));
 
 vi.mock('../../terminal/main/terminal.ipc', () => ({
   createTerminalFromBackend: vi.fn(),
@@ -94,6 +85,7 @@ const backendMocks = vi.hoisted(() => {
 
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: backendMocks.request }),
+  onBackendReconnected: () => () => {},
 }));
 
 describe('workspace activity timestamps', () => {
@@ -169,4 +161,3 @@ describe('workspace activity timestamps', () => {
   // returns without healing.
   it.skip('retired: FE no longer derives lastActivity', () => {});
 });
-

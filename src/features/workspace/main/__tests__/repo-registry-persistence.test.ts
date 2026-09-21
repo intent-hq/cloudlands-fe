@@ -169,9 +169,8 @@ describe('repo-registry ↔ daemon settings.* (PROTOCOL.md §5.12)', () => {
       },
     }));
     vi.resetModules();
-    const { initRepoRegistry, addRepo, __resetRepoRegistryForTesting } = await import(
-      '../repo-registry'
-    );
+    const { initRepoRegistry, addRepo, __resetRepoRegistryForTesting } =
+      await import('../repo-registry');
     __resetRepoRegistryForTesting();
     await initRepoRegistry();
     requestMock.mockClear();

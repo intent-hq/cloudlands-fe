@@ -8,6 +8,8 @@ import { applySettingsChanges } from '$features/settings/settings-hydration-serv
 import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived } from '../settings-events-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import { selectWindowIdentitySettled } from '../../guest-sessions/guest-sessions-selectors';
+import { selectIsCollaboratorOnlyClient } from '../../workspace/workspace-selectors';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 
 const logger = createLogger('SettingsHydrationSaga');
@@ -33,10 +35,21 @@ function isConnectionsListReceived(
  * result, so in the live renderer the failure signal is an empty snapshot,
  * not a throw — the daemon always reports its setting catalog, making empty
  * unambiguous (the same convention the settings panels use). Both signals are
- * retried; a structured daemon error response is a rejection, not a transient
- * failure, and is not. The last delay repeats until the read lands.
+ * retried; a structured daemon error response (including the `-32003
+ * Forbidden` capability refusal) is a rejection, not a transient failure, and
+ * is not. The last delay repeats until the read lands — except on a
+ * collaborator-only client (multiplayer w3), where the daemon withholds the
+ * administrator-only settings catalog for good: once the client is KNOWN to
+ * be collaborator-only an empty snapshot is final. Owner semantics are
+ * untouched: while the window's guest/owner identity is still unsettled the
+ * empty snapshot keeps retrying, so a booting owner never loses its snapshot.
  */
 export const SETTINGS_HYDRATION_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
+
+function* isKnownCollaboratorOnlyClientSaga() {
+  if (!(yield* selectWindowIdentitySettled.effect())) return false;
+  return yield* selectIsCollaboratorOnlyClient.effect();
+}
 
 function* readSettingsSnapshotSaga() {
   let attempt = 0;
@@ -58,6 +71,10 @@ function* readSettingsSnapshotSaga() {
         // The shared apply seam emits hydration actions only. It never calls
         // settings.update, so the boot snapshot cannot echo back into persistence.
         return { changes, revision: snapshot.revision };
+      }
+      if (yield* call(isKnownCollaboratorOnlyClientSaga)) {
+        logger.info('settings hydration withheld from a collaborator-only client');
+        return;
       }
       logger.error('settings hydration returned an empty snapshot, retrying');
     } catch (error) {

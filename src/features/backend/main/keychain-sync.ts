@@ -6,9 +6,14 @@
  * the helper spawn wrapper, and the two-way reconciliation between the synced
  * keychain registry and the local connections store.
  *
- * Model: ONE keychain item per backend under the fixed service
- * `com.cloudlands.intent.backends`, keyed by the normalized `host:port`
- * account (mirrors the local store's dedupe identity). Conflicts resolve
+ * Model: ONE keychain item per backend under a fixed service — the paired
+ * (owner) backends live under `com.cloudlands.intent.backends`, guest
+ * sessions redeemed from an invite under
+ * `com.cloudlands.intent.guest-sessions` — keyed by the normalized
+ * `host:port` account (mirrors the local store's dedupe identity). Each
+ * service is reconciled independently against its own store, so tombstones
+ * are per service: forgetting a guest session never touches an owner
+ * record for the same daemon (and vice versa). Conflicts resolve
  * last-writer-wins by the payload's `updatedAt`. Deletes are TOMBSTONES
  * (`deleted: true`, token scrubbed) rather than raw item deletion, so "item
  * missing" is never ambiguous with "keychain unreadable"; tombstones are
@@ -36,10 +41,22 @@ import { Logger } from '../../../shared/logger';
 import {
   DEFAULT_CONNECTION_ACCENT,
   isConnectionAccent,
+  isDetectedDeviceKind,
+  isDeviceIconChoice,
   type ConnectionAccent,
+  type DetectedDeviceKind,
+  type DeviceIconChoice,
 } from '../../../shared/types/connections';
 
 const logger = new Logger('KeychainSync');
+
+/** Keychain service holding guest sessions (credentials minted by an
+ * `invite.prove` join). Kept apart from the helper's default backends
+ * service (`com.cloudlands.intent.backends`, the only one the iOS companion
+ * reads) so a guest credential can never surface as — or tombstone — an
+ * owner record. */
+// i18n-ignore (keychain service identifier)
+export const KEYCHAIN_SERVICE_GUEST_SESSIONS = 'com.cloudlands.intent.guest-sessions';
 
 /** Current payload schema version. Items with a NEWER `v` (written by a newer
  * app) freeze their account: neither pulled nor overwritten by a push. */
@@ -66,6 +83,8 @@ export interface KeychainSyncRecord {
   label: string;
   /** Optional only for compatibility with payloads written before metadata accents. */
   accent?: ConnectionAccent;
+  detectedDeviceKind?: DetectedDeviceKind | null;
+  deviceIcon?: DeviceIconChoice;
   /** Primary remote host/IP (identity, with `port`). */
   host: string;
   /** Candidate hosts (primary first) — mirrors the store's `hosts` semantics. */
@@ -73,9 +92,25 @@ export interface KeychainSyncRecord {
   port: number;
   fingerprint: string;
   hostname: string | null;
+  /**
+   * tc address of the backend's tailcat tunnel endpoint (PROTOCOL §12.3), or
+   * null when none is known. Additive: payloads written before the field
+   * existed parse as null, and every machine learns the same address from the
+   * same daemon — so syncing it lets a device that can ONLY reach the daemon
+   * through the tunnel inherit the address from a device that paired locally.
+   */
+  tcAddress: string | null;
   detectHosts: boolean;
   /** Bearer token; always `''` on tombstones. */
   token: string;
+  /**
+   * Guest principal identity (guest-sessions service only): the principal id
+   * the daemon minted the credential for and the GitHub login it proved.
+   * Absent on owner-backend payloads — serialization omits the keys, so the
+   * backends service payload is byte-identical to before the field existed.
+   */
+  principalId?: string;
+  login?: string;
   /** Last-writer-wins conflict clock, ms since epoch. */
   updatedAt: number;
   /** Tombstone marker: the backend was forgotten on some machine. */
@@ -111,15 +146,20 @@ export function serializeRecord(record: KeychainSyncRecord): string {
     v: KEYCHAIN_PAYLOAD_VERSION,
     label: record.label,
     accent: record.accent === undefined ? DEFAULT_CONNECTION_ACCENT : record.accent,
+    detectedDeviceKind: record.detectedDeviceKind ?? null,
+    deviceIcon: record.deviceIcon ?? 'auto',
     host: record.host,
     hosts: record.hosts,
     port: record.port,
     fingerprint: record.fingerprint,
     hostname: record.hostname,
+    tcAddress: record.tcAddress,
     detectHosts: record.detectHosts,
     token: record.deleted === true ? '' : record.token,
     updatedAt: record.updatedAt,
   };
+  if (record.principalId !== undefined) payload.principalId = record.principalId;
+  if (record.login !== undefined) payload.login = record.login;
   if (record.deleted === true) {
     payload.deleted = true;
     payload.deletedAt = record.deletedAt ?? record.updatedAt;
@@ -157,6 +197,10 @@ export function parsePayload(payload: string): ParsedPayload {
   const record: KeychainSyncRecord = {
     label: obj.label,
     accent: isConnectionAccent(obj.accent) ? obj.accent : DEFAULT_CONNECTION_ACCENT,
+    detectedDeviceKind: isDetectedDeviceKind(obj.detectedDeviceKind)
+      ? obj.detectedDeviceKind
+      : null,
+    deviceIcon: isDeviceIconChoice(obj.deviceIcon) ? obj.deviceIcon : 'auto',
     host: obj.host,
     hosts:
       Array.isArray(obj.hosts) && obj.hosts.every((h) => typeof h === 'string')
@@ -165,10 +209,16 @@ export function parsePayload(payload: string): ParsedPayload {
     port: obj.port,
     fingerprint: obj.fingerprint,
     hostname: typeof obj.hostname === 'string' ? obj.hostname : null,
+    tcAddress:
+      typeof obj.tcAddress === 'string' && obj.tcAddress.trim() !== '' ? obj.tcAddress : null,
     detectHosts: typeof obj.detectHosts === 'boolean' ? obj.detectHosts : true,
     token: typeof obj.token === 'string' ? obj.token : '',
     updatedAt: obj.updatedAt,
   };
+  if (typeof obj.principalId === 'string' && obj.principalId !== '') {
+    record.principalId = obj.principalId;
+  }
+  if (typeof obj.login === 'string' && obj.login !== '') record.login = obj.login;
   if (obj.deleted === true) {
     record.deleted = true;
     record.deletedAt = typeof obj.deletedAt === 'number' ? obj.deletedAt : record.updatedAt;
@@ -370,13 +420,27 @@ export interface HelperClientOptions {
   platform?: NodeJS.Platform;
   /** Skip candidate probing and use this binary path directly. */
   helperPath?: string;
+  /**
+   * Keychain service the client operates on, passed to the helper as
+   * `--service <name>` ahead of the subcommand. Absent = the helper's default
+   * backends service, which keeps the argv of the owner registry client
+   * unchanged.
+   */
+  service?: string;
 }
 
 /** The real helper-backed client. Never throws — every failure is a result. */
 export function createHelperKeychainClient(options: HelperClientOptions = {}): KeychainClient {
   const platform = options.platform ?? process.platform;
 
-  async function invoke(args: string[], stdinBody?: string): Promise<KeychainClientResult<object>> {
+  // The service is a fixed identifier (not secret) — argv is fine.
+  const serviceArgs = options.service !== undefined ? ['--service', options.service] : [];
+
+  async function invoke(
+    subcommand: string[],
+    stdinBody?: string,
+  ): Promise<KeychainClientResult<object>> {
+    const args = [...serviceArgs, ...subcommand];
     if (platform !== 'darwin') {
       return {
         ok: false,
@@ -691,7 +755,9 @@ export interface ReconcileOptions {
  *
  * Per account (the union of both sides), strictly newer `updatedAt` wins;
  * equal clocks are treated as in-sync (except a live/tombstone tie, where the
- * tombstone wins so every machine converges on the same outcome). Accounts
+ * tombstone wins so every machine converges on the same outcome, and an
+ * equal-clock live pair where exactly one side carries a `tcAddress` — an
+ * additive-field upgrade — where the address-bearing side wins). Accounts
  * whose keychain payload is unparseable or from a newer schema version are
  * frozen — neither pulled nor pushed over.
  *
@@ -995,8 +1061,23 @@ export async function reconcile(
       r.updatedAt !== 0 &&
       r.deleted !== true &&
       l.deleted !== true
-    )
+    ) {
+      // Additive-field upgrade: a tc address captured by an app version that
+      // did not sync the field shares its clock with the field-less keychain
+      // copy, so the plain equal-clock skip would keep it local forever.
+      // Whichever side carries an address the other lacks wins: a local one
+      // is pushed re-stamped strictly newer (so every other machine pulls
+      // it), a remote one is pulled verbatim. Safe: a genuine conclusive
+      // clear always bumps the clock (see setTcAddress), so an equal-clock
+      // null can never be a newer "no tunnel" losing to a stale address.
+      if (l.tcAddress !== null && r.tcAddress === null) {
+        await push(account, { ...l, updatedAt: Math.max(now, l.updatedAt + 1) });
+      } else if (r.tcAddress !== null && l.tcAddress === null) {
+        await adapter.applyRemote(account, r);
+        result.pulled.push(account);
+      }
       continue;
+    }
     const remoteWins =
       r.updatedAt > l.updatedAt || (r.updatedAt === l.updatedAt && r.deleted === true);
 

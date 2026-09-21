@@ -6,8 +6,18 @@
  */
 
 import { z } from 'zod';
-import { AgentStatus, WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatus } from './types';
+import {
+  AgentStatus,
+  MESSAGE_ROLES,
+  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
+  WorkspaceStatus,
+} from './types';
 import { CHIEF_WORKSPACE_ID } from './types/branded-ids';
+import {
+  PLAN_ENTRIES_MAX,
+  PLAN_ENTRY_PRIORITIES,
+  PLAN_ENTRY_STATUSES,
+} from './types/content-block';
 
 /**
  * Custom Validators
@@ -120,6 +130,10 @@ export const WorkspaceSchema = z.object({
   statusImageAssetId: z.string().optional(), // Agent-authored status screenshot asset id (intent-hq/monorepo#997)
   activity: z.enum(['idle', 'agent_running']).optional(), // BE-derived in-flight agent state
   attention: z.enum(['none', 'unread', 'review_required']).optional(), // BE-owned dismissible attention flag (PROTOCOL §5.1 / §9.9)
+  // Membership summary (PROTOCOL §5.1, multiplayer w1); all absent on older daemons.
+  ownerPrincipalId: z.string().optional(),
+  myRole: z.enum(['owner', 'collaborator']).optional(),
+  memberCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   archived: z.boolean().optional(),
@@ -146,6 +160,8 @@ export const WorkspaceSchema = z.object({
   prNumber: z.number().nullable().optional(),
   prStatus: z.string().nullable().optional(),
   pullRequests: z.array(z.any()).optional(),
+  /** Full pool size when a list row's `pullRequests` was capped (PROTOCOL §5.1); omitted when not truncated. */
+  pullRequestsTotal: z.number().int().nonnegative().optional(),
   activePullRequest: z.any().optional(),
   /** Issue/PR context links persisted at create (PROTOCOL §5.1); write-once, omitted when there are none. */
   contextLinks: z.array(ContextLinkSchema).max(20).optional(),
@@ -257,7 +273,7 @@ export const TaskMetadataSchema = z.object({
   startedAt: z.string().datetime().optional(),
   dependsOn: z.array(z.string()).optional(), // Hard ordering edges (task note ids)
   conflictsWith: z.array(z.string()).optional(), // Advisory conflict edges (task note ids)
-  unmetDependsOn: z.array(z.string()).optional(), // Daemon-computed unmet deps (read/push shapes, v6.8)
+  unmetDependsOn: z.array(z.string()).optional(), // Daemon-computed unmet deps (read/push shapes only)
 });
 
 /**
@@ -289,47 +305,66 @@ export const MessageIdSchema = z.string().startsWith('msg_').or(z.string().uuid(
 // runs this schema before saveAgent writes to disk, so any block type the
 // streaming pipeline produces must be listed here — otherwise saves fail and
 // blocks like the proposal cards emitted by ws.app.workspaces.* are dropped.
-export const ContentBlockSchema = z.object({
-  type: z.enum([
-    'text',
-    'code',
-    'tool_use',
-    'tool_result',
-    'thinking',
-    'image',
-    'audio',
-    'file',
-    'nav-link',
-    'proposal',
-  ]),
-  text: z.string().optional(),
-  content: z.string().optional(),
-  language: z.string().optional(),
-  name: z.string().optional(),
-  input: z.any().optional(),
-  tool_use_id: z.string().optional(),
-  id: z.string().optional(),
-  toolName: z.string().optional(),
-  toolCallId: z.string().optional(),
-  is_error: z.boolean().optional(),
-  isError: z.boolean().optional(),
-  output: z.any().optional(),
-  metadata: z.record(z.any()).optional(),
-  // Media-specific fields (image, audio, file)
-  data: z.string().optional(), // Base64 encoded data
-  mimeType: z.string().optional(), // e.g., 'image/png', 'audio/mp3', 'text/plain'
-  transcript: z.string().optional(), // For audio content
-  fileName: z.string().optional(), // For file content
-  // Navigation-link fields
-  target: z.string().optional(), // Internal route/hash target for nav-link
-  label: z.string().optional(), // User-facing label for nav-link
-  // Proposal fields (chat-embedded ProposalCard blocks)
-  kind: z.string().optional(), // 'nav-link' | ProposalKind
-  proposal: z.any().optional(), // Structured Proposal payload
-  payload: z.any().optional(), // Proposal payload when block IS a Proposal
-  preview: z.any().optional(), // Proposal preview when block IS a Proposal
-  applyToolCallId: z.string().optional(), // Tool call ID to invoke on apply
+const PlanEntrySchema = z.object({
+  content: z.string(),
+  priority: z.enum(PLAN_ENTRY_PRIORITIES),
+  status: z.enum(PLAN_ENTRY_STATUSES),
 });
+
+export const ContentBlockSchema = z
+  .object({
+    type: z.enum([
+      'text',
+      'code',
+      'tool_use',
+      'tool_result',
+      'thinking',
+      'image',
+      'audio',
+      'file',
+      'nav-link',
+      'proposal',
+      'plan',
+    ]),
+    text: z.string().optional(),
+    content: z.string().optional(),
+    language: z.string().optional(),
+    name: z.string().optional(),
+    input: z.any().optional(),
+    tool_use_id: z.string().optional(),
+    id: z.string().optional(),
+    toolName: z.string().optional(),
+    toolCallId: z.string().optional(),
+    is_error: z.boolean().optional(),
+    isError: z.boolean().optional(),
+    output: z.any().optional(),
+    metadata: z.record(z.any()).optional(),
+    // Media-specific fields (image, audio, file)
+    data: z.string().optional(), // Base64 encoded data
+    mimeType: z.string().optional(), // e.g., 'image/png', 'audio/mp3', 'text/plain'
+    transcript: z.string().optional(), // For audio content
+    fileName: z.string().optional(), // For file content
+    // Navigation-link fields
+    target: z.string().optional(), // Internal route/hash target for nav-link
+    label: z.string().optional(), // User-facing label for nav-link
+    // Proposal fields (chat-embedded ProposalCard blocks)
+    kind: z.string().optional(), // 'nav-link' | ProposalKind
+    proposal: z.any().optional(), // Structured Proposal payload
+    payload: z.any().optional(), // Proposal payload when block IS a Proposal
+    preview: z.any().optional(), // Proposal preview when block IS a Proposal
+    applyToolCallId: z.string().optional(), // Tool call ID to invoke on apply
+    // Complete bounded execution-plan snapshot
+    entries: z.array(PlanEntrySchema).max(PLAN_ENTRIES_MAX).optional(),
+  })
+  .superRefine((block, context) => {
+    if (block.type === 'plan' && block.entries === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['entries'],
+        message: 'Plan content blocks require entries',
+      });
+    }
+  });
 
 // Tool Call Schema
 export const ToolCallSchema = z.object({
@@ -350,7 +385,7 @@ export const ToolCallSchema = z.object({
 export const AgentMessageSchema = z.object({
   id: MessageIdSchema,
   appMessageId: z.string().optional(),
-  role: z.enum(['user', 'assistant', 'system', 'error']),
+  role: z.enum(MESSAGE_ROLES),
   contentBlocks: z.array(ContentBlockSchema).optional(),
   timestamp: z.union([z.string(), z.date()]),
   turnNumber: z.number().optional(),
@@ -368,6 +403,7 @@ export const AgentSessionSchema = z.object({
   acpSessionId: z.string().optional(),
   sessionId: z.string().nullable().optional(), // Legacy support
   workspaceId: workspaceIdSchema, // Accepts slug format, UUID, or optimistic IDs
+  parentAgentId: z.string().optional(), // Daemon parent linkage (§5.5 `AgentLite.parentAgentId`), omitted when top-level
   threadId: z.string().optional(),
   messages: z.array(AgentMessageSchema),
   name: z.string().optional(),

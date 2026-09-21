@@ -1,22 +1,17 @@
 /** @vitest-environment jsdom */
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import { invoke } from '$lib/electron-bridge';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
-
-const panelTabBarSource = readFileSync(
-  path.resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelTabBar.svelte'),
-  'utf8',
-);
 
 const mocks = vi.hoisted(() => {
   let columnCount = 2;
   const subscribers = new Set<(value: number) => void>();
   return {
     dispatch: vi.fn(),
+    workspaceHostLocal: true,
     panelColumnCount: {
       subscribe(run: (value: number) => void) {
         subscribers.add(run);
@@ -82,7 +77,7 @@ vi.mock('$store/renderer/slices/github-auth/github-auth-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: () => null },
-  selectIsWorkspaceHostLocal: () => readable(true),
+  selectIsWorkspaceHostLocal: () => readable(mocks.workspaceHostLocal),
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: () => readable([]),
@@ -94,6 +89,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
+  selectAgentQueueMessages: Object.assign(() => readable([]), { select: () => [] }),
+}));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => readable(0),
   selectPermissionRequests: () => readable([]),
@@ -101,8 +99,8 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectHudAgentHasPendingQuestion: () => readable(false),
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
@@ -184,6 +182,7 @@ function dragEvent(target: Element) {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.workspaceHostLocal = true;
   mocks.setPanelColumnCount(2);
   setDraggedPane(null);
   Element.prototype.scrollIntoView = vi.fn();
@@ -201,7 +200,8 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await vi.dynamicImportSettled();
   setDraggedPane(null);
   cleanup();
   vi.unstubAllGlobals();
@@ -396,17 +396,85 @@ describe('mounted panel header actions menu', () => {
     expect(screen.getByTestId('content-command-action')).toBeTruthy();
   });
 
-  it('sizes the grouped action menu from content within a viewport cap', async () => {
-    const { container } = renderHeader('note');
+  it.each(panelTypes.filter((type) => type !== 'browser'))(
+    'omits the Open In section on a remote workspace host for the %s panel',
+    async (type) => {
+      mocks.workspaceHostLocal = false;
+      const { container } = renderHeader(type);
+
+      await fireEvent.click(panelTrigger(container));
+
+      const menu = await screen.findByRole('menu');
+      expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeTruthy();
+      expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
+      expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
+      const actionsSection = menu.querySelector('[data-panel-actions-section="actions"]')!;
+      const separators = Array.from(menu.querySelectorAll('[data-slot="menu-separator"]'));
+      expect(separators).toHaveLength(1);
+      expect(separators[0].compareDocumentPosition(actionsSection)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    },
+  );
+
+  it.each([true, false])(
+    'routes the file through the shared Open in section only on a local host (local=%s)',
+    async (isLocal) => {
+      mocks.workspaceHostLocal = isLocal;
+      const fileTab: PanelTab = {
+        id: 'file-tab',
+        type: 'file',
+        title: 'main.ts',
+        filePath: 'src/main.ts',
+        closable: true,
+      };
+      const { container } = renderHeader('note', {
+        tabs: [fileTab],
+        activeTabId: fileTab.id,
+      });
+      const trigger = panelTrigger(container);
+      await fireEvent.click(trigger);
+
+      const menu = await screen.findByRole('menu');
+      if (!isLocal) {
+        expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
+        expect(within(menu).queryByRole('menuitem', { name: 'Open in mock editor' })).toBeNull();
+        return;
+      }
+
+      await vi.dynamicImportSettled();
+      const section = menu.querySelector<HTMLElement>('[data-panel-actions-section="open-in"]')!;
+      const openIn = await within(section).findByText('Open in mock editor');
+      expect(within(menu).getAllByText('Open in mock editor')).toHaveLength(1);
+      expect(openIn.getAttribute('data-file-path')).toBe('src/main.ts');
+      expect(openIn.getAttribute('data-workspace-id')).toBe('workspace-1');
+      await fireEvent.click(openIn);
+      await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
+    },
+  );
+
+  it('keeps Open in browser on a remote workspace host for the browser panel', async () => {
+    mocks.workspaceHostLocal = false;
+    const browserTab = { ...tab('browser'), browserUrl: 'https://example.com/pr/1' };
+    const { container } = renderHeader('browser', {
+      tabs: [browserTab],
+      activeTabId: browserTab.id,
+    });
 
     await fireEvent.click(panelTrigger(container));
-    const menu = await screen.findByRole('menu');
 
-    expect(menu.classList).toContain('w-max');
-    expect(menu.classList).toContain('panel-actions-menu-content');
-    expect(panelTabBarSource).toContain('min-width: min(14rem, calc(100vw - 1rem))');
-    expect(panelTabBarSource).toContain('max-width: calc(100vw - 1rem)');
-    expect(menu.classList).toContain('[&_[data-slot=menu-command-item]>kbd]:text-muted-foreground');
+    const menu = await screen.findByRole('menu');
+    expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
+    const openInBrowser = within(menu).getByRole('menuitem', { name: /open in browser/i });
+    expect(openInBrowser.getAttribute('aria-disabled')).not.toBe('true');
+
+    await fireEvent.click(openInBrowser);
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('shell:openExternal', {
+        url: 'https://example.com/pr/1',
+      }),
+    );
   });
 
   it.each(
@@ -452,6 +520,48 @@ describe('mounted panel header actions menu', () => {
     });
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
     expect(outsideTrigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it.each([
+    {
+      label: 'compact menu when the active tab changes',
+      headerSelector: '[data-panel-tabless-header]',
+      showTabStrip: false,
+      nextActiveTabId: 'note-tab',
+    },
+    {
+      label: 'compact menu when the active tab is removed',
+      headerSelector: '[data-panel-tabless-header]',
+      showTabStrip: false,
+      nextActiveTabId: null,
+    },
+    {
+      label: 'tab-bar menu when the active tab changes',
+      headerSelector: '[data-panel-tab-bar]',
+      showTabStrip: true,
+      nextActiveTabId: 'note-tab',
+    },
+    {
+      label: 'tab-bar menu when the active tab is removed',
+      headerSelector: '[data-panel-tab-bar]',
+      showTabStrip: true,
+      nextActiveTabId: null,
+    },
+  ])('closes the $label', async ({ headerSelector, showTabStrip, nextActiveTabId }) => {
+    const view = renderHeader('agent', {
+      tabs: [tab('agent'), tab('note')],
+      showTabStrip,
+    });
+    const trigger = view.container.querySelector<HTMLButtonElement>(
+      `${headerSelector} [data-testid="panel-actions-trigger"]`,
+    )!;
+
+    await fireEvent.click(trigger);
+    await screen.findByRole('menu');
+
+    await view.rerender({ activeTabId: nextActiveTabId });
+
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   });
 
   it('runs enabled actions once and closes only the active pane', async () => {

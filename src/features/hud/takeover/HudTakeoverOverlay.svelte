@@ -12,6 +12,7 @@
    */
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { hudTakeoverRequestCleared } from '$store/renderer/slices/hud/hud-slice';
@@ -22,7 +23,7 @@
   import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { hydrateTaskAgentAssociationsRequested } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
-  import { watchReducedMotion } from '../right-column/hud-slide.svelte';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import { onTakeoverTrigger } from './hud-takeover-bus';
   import {
     activeTakeoverTrigger,
@@ -73,10 +74,6 @@
     motion: () => !reducedMotion.current,
     needsPan: () => needsPan,
   });
-
-  function handleDismiss() {
-    controller.dismiss();
-  }
 
   // Manual card-click requests arrive via the hud slice; consume + clear.
   const takeoverRequest$ = selectHudTakeoverRequestWorkspaceId();
@@ -276,9 +273,14 @@
               {m.hud_takeover_return_label({ seconds: String(countdown).padStart(2, '0') })}
             </span>
           {/if}
-          <button class="ov-dismiss" onclick={handleDismiss} data-testid="hud-takeover-dismiss">
+          <Button
+            variant="plain"
+            class="ov-dismiss"
+            onclick={() => controller.dismiss()}
+            data-testid="hud-takeover-dismiss"
+          >
             {m.hud_takeover_dismiss_label()}
-          </button>
+          </Button>
         </div>
 
         <div class="ov-main">
@@ -768,19 +770,19 @@
       monospace;
     color: hsl(var(--muted-foreground) / 0.55);
   }
-  .ov-dismiss {
+  :global(.ov-dismiss) {
     cursor: pointer;
     border: 1px solid hsl(var(--border));
     background: transparent;
-    padding: 6px 12px;
+    height: auto;
+    padding: 6px 12px !important;
+    border-radius: 0;
     font:
       600 10px 'JetBrains Mono',
       monospace;
-    letter-spacing: 0.12em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
-  .ov-dismiss:hover {
+  :global(.ov-dismiss:hover) {
     background: hsl(var(--muted) / 0.5);
   }
 
@@ -917,7 +919,7 @@
     flex-direction: column;
     padding: 7px 9px;
     gap: 3px;
-    outline: 2px solid transparent;
+    outline: 1px solid transparent;
     outline-offset: 3px;
   }
   .ov-cell-changed {
@@ -1059,9 +1061,7 @@
       600 10px Inter,
       system-ui,
       sans-serif;
-    letter-spacing: 0.18em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
   .ov-panel-rule {
     flex: 1;
@@ -1173,7 +1173,7 @@
   .ov-no-motion .ov-map-pan {
     transition: none;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .ov-backdrop,
     .ov-fill,
     .ov-edge-h,

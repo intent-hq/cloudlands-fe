@@ -24,6 +24,7 @@ import {
   heartbeatFailed,
   systemStatusSuccess,
 } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+import { selectDaemonConnectionGeneration } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
 import type { SystemStatusWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import type { AgentSession, Workspace, WorkspaceDisplayStatus, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
@@ -51,7 +52,18 @@ function systemStatusPayload(
   };
 }
 
-/** Summary agent entry: status plus optional parentage (§5.1 v2.9). */
+/** Fold a system.status poll result for the current connection. */
+function dispatchSystemStatus(payload: SystemStatusWirePayload, receivedAt: string) {
+  appStore.dispatch(
+    systemStatusSuccess(
+      payload,
+      receivedAt,
+      selectDaemonConnectionGeneration.select(appStore.state),
+    ),
+  );
+}
+
+/** Summary agent entry: status plus optional parentage (§5.1 `parentAgentId`). */
 interface SummaryAgent {
   status: string;
   parentAgentId?: string;
@@ -110,7 +122,9 @@ function failCounter(): HTMLElement {
 
 beforeEach(() => {
   appStore.dispatch(resetWorkspaceState());
-  for (const [workspaceId, agentIds] of Object.entries(appStore.state.agentSessions.agentIdsByWorkspace)) {
+  for (const [workspaceId, agentIds] of Object.entries(
+    appStore.state.agentSessions.agentIdsByWorkspace,
+  )) {
     appStore.dispatch(workspaceDeleted(workspaceId, agentIds));
   }
   appStore.dispatch(connectionStatusChanged('disconnected'));
@@ -130,12 +144,12 @@ describe('HudFooter zones', () => {
   it('shows OFFLINE until the daemon-health slice reports a live connection', async () => {
     render(HudFooter);
     const system = screen.getByTestId('hud-footer-system');
-    expect(system.textContent).toContain('OFFLINE');
+    expect(system.textContent).toContain('Offline');
 
     appStore.dispatch(connectionStatusChanged('connected'));
     await waitFor(() => {
       flushSync();
-      expect(system.textContent).toContain('ONLINE');
+      expect(system.textContent).toContain('Online');
     });
   });
 
@@ -146,13 +160,13 @@ describe('HudFooter zones', () => {
     appStore.dispatch(connectionStatusChanged('connected'));
     await waitFor(() => {
       flushSync();
-      expect(system.textContent).toContain('ONLINE');
+      expect(system.textContent).toContain('Online');
     });
 
     appStore.dispatch(connectionStatusChanged('disconnected'));
     await waitFor(() => {
       flushSync();
-      expect(system.textContent).toContain('OFFLINE');
+      expect(system.textContent).toContain('Offline');
     });
   });
 
@@ -164,7 +178,7 @@ describe('HudFooter zones', () => {
     appStore.dispatch(heartbeatFailed());
     await waitFor(() => {
       flushSync();
-      expect(system.textContent).toContain('ONLINE');
+      expect(system.textContent).toContain('Online');
     });
   });
 
@@ -176,9 +190,7 @@ describe('HudFooter zones', () => {
     expect(versions.textContent).not.toContain('cloudlands-fe');
     expect(versions.textContent).not.toContain('intentd');
 
-    appStore.dispatch(
-      systemStatusSuccess(systemStatusPayload({ version: 'v0.9.1' }), '2026-08-03T00:00:00.000Z'),
-    );
+    dispatchSystemStatus(systemStatusPayload({ version: 'v0.9.1' }), '2026-08-03T00:00:00.000Z');
     await waitFor(() => {
       flushSync();
       expect(versions.textContent).toContain('intentd v0.9.1');
@@ -201,33 +213,29 @@ describe('HudFooter remote daemon hostname', () => {
   it('shows the daemon hostname in parens when connected to a remote daemon', async () => {
     render(HudFooter);
     appStore.dispatch(connectionStatusChanged('connected'));
-    appStore.dispatch(
-      systemStatusSuccess(
-        systemStatusPayload({
-          hostname: 'intent1',
-          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
-        }),
-        '2026-08-03T00:00:00.000Z',
-      ),
+    dispatchSystemStatus(
+      systemStatusPayload({
+        hostname: 'intent1',
+        host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+      }),
+      '2026-08-03T00:00:00.000Z',
     );
     await waitFor(() => {
       flushSync();
       expect(screen.getByTestId('hud-footer-hostname').textContent).toBe('(intent1)');
     });
-    expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+    expect(screen.getByTestId('hud-footer-system').textContent).toContain('Online');
   });
 
   it('renders the SHORT hostname (intent1.local → intent1)', async () => {
     render(HudFooter);
     appStore.dispatch(connectionStatusChanged('connected'));
-    appStore.dispatch(
-      systemStatusSuccess(
-        systemStatusPayload({
-          hostname: 'intent1.local',
-          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
-        }),
-        '2026-08-03T00:00:00.000Z',
-      ),
+    dispatchSystemStatus(
+      systemStatusPayload({
+        hostname: 'intent1.local',
+        host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+      }),
+      '2026-08-03T00:00:00.000Z',
     );
     await waitFor(() => {
       flushSync();
@@ -238,15 +246,13 @@ describe('HudFooter remote daemon hostname', () => {
   it('shows no parens for a local daemon', async () => {
     render(HudFooter);
     appStore.dispatch(connectionStatusChanged('connected'));
-    appStore.dispatch(
-      systemStatusSuccess(
-        systemStatusPayload({ hostname: 'studio.local' }),
-        '2026-08-03T00:00:00.000Z',
-      ),
+    dispatchSystemStatus(
+      systemStatusPayload({ hostname: 'studio.local' }),
+      '2026-08-03T00:00:00.000Z',
     );
     await waitFor(() => {
       flushSync();
-      expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('Online');
     });
     expect(screen.queryByTestId('hud-footer-hostname')).toBeNull();
     expect(screen.getByTestId('hud-footer-system').textContent).not.toContain('(');
@@ -255,17 +261,15 @@ describe('HudFooter remote daemon hostname', () => {
   it('shows no parens when the remote daemon reports no hostname (older daemon)', async () => {
     render(HudFooter);
     appStore.dispatch(connectionStatusChanged('connected'));
-    appStore.dispatch(
-      systemStatusSuccess(
-        systemStatusPayload({
-          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
-        }),
-        '2026-08-03T00:00:00.000Z',
-      ),
+    dispatchSystemStatus(
+      systemStatusPayload({
+        host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+      }),
+      '2026-08-03T00:00:00.000Z',
     );
     await waitFor(() => {
       flushSync();
-      expect(screen.getByTestId('hud-footer-system').textContent).toContain('ONLINE');
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('Online');
     });
     expect(screen.queryByTestId('hud-footer-hostname')).toBeNull();
     expect(screen.getByTestId('hud-footer-system').textContent).not.toContain('(');
@@ -274,14 +278,12 @@ describe('HudFooter remote daemon hostname', () => {
   it('keeps the hostname when the remote connection drops (OFFLINE)', async () => {
     render(HudFooter);
     appStore.dispatch(connectionStatusChanged('connected'));
-    appStore.dispatch(
-      systemStatusSuccess(
-        systemStatusPayload({
-          hostname: 'intent1.local',
-          host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
-        }),
-        '2026-08-03T00:00:00.000Z',
-      ),
+    dispatchSystemStatus(
+      systemStatusPayload({
+        hostname: 'intent1.local',
+        host: { os: 'linux', arch: 'x86_64', hasDisplay: false, locality: 'remote' },
+      }),
+      '2026-08-03T00:00:00.000Z',
     );
     await waitFor(() => {
       flushSync();
@@ -291,7 +293,7 @@ describe('HudFooter remote daemon hostname', () => {
     appStore.dispatch(connectionStatusChanged('disconnected'));
     await waitFor(() => {
       flushSync();
-      expect(screen.getByTestId('hud-footer-system').textContent).toContain('OFFLINE');
+      expect(screen.getByTestId('hud-footer-system').textContent).toContain('Offline');
     });
     expect(screen.getByTestId('hud-footer-hostname').textContent).toBe('(intent1)');
   });

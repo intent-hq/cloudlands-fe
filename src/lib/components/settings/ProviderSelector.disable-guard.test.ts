@@ -28,8 +28,8 @@ vi.mock('$features/pi/pi-models.client', () => ({
   installPiMcpAdapter: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { error: mocks.toastError, success: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: vi.fn() },
 }));
 
 vi.mock('./ProviderPathConfig.svelte', async () => ({
@@ -46,6 +46,8 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 async function buildState(fileSpecialists: object[]) {
+  const { initialState: setupInitialState } =
+    await import('$store/renderer/slices/antigravity-setup/antigravity-setup-slice');
   const { initialState: specialistsInitialState } =
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
@@ -59,17 +61,16 @@ async function buildState(fileSpecialists: object[]) {
   } = await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_PROVIDER_CATALOG } = await import('../../../test/fixtures/provider-catalog.fixture');
   return {
+    antigravitySetup: { ...setupInitialState },
     providerCatalog: providerCatalogReducer(
       providerCatalogInitialState,
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
     ),
     providerSettings: {
-      activeProviderId: 'auggie',
       enabledProviders: { 'claude-code': true, codex: true },
-      defaultProviderId: MOCK_PROVIDER_CATALOG.defaultProviderId,
       nonDisableableProviderIds: [],
     },
-    model: { ...modelInitialState, providerModels: {} },
+    model: { ...modelInitialState, defaultProviderId: 'auggie', providerModels: {} },
     specialists: {
       ...specialistsInitialState,
       fileSpecialists: createCollection('id', fileSpecialists as never[]),
@@ -170,13 +171,17 @@ describe('ProviderSelector disable guard', () => {
       result,
       'Anthropic Claude Code',
     )) as HTMLButtonElement;
-    expect(claudeButton.disabled).toBe(true);
+    expect(claudeButton.getAttribute('aria-disabled')).toBe('true');
+    expect(claudeButton.getAttribute('title')).toBeTruthy();
+    mocks.dispatch.mockClear();
+    await fireEvent.click(claudeButton);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
 
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for Anthropic Claude Code' }),
     );
     const codexButton = (await getDisableButton(result, 'OpenAI Codex')) as HTMLButtonElement;
-    expect(codexButton.disabled).toBe(false);
+    expect(codexButton.getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('still dispatches setProviderEnabled(false) for providers not in use', async () => {
@@ -218,9 +223,9 @@ describe('ProviderSelector default-unavailable honesty', () => {
     mocks.state.current = {
       ...base,
       providerSettings: {
-        activeProviderId: 'codex',
         enabledProviders: { 'claude-code': true, codex: true },
       },
+      model: { ...base.model, defaultProviderId: 'codex' },
       agentAvailability: {
         ...base.agentAvailability,
         providerStatusMap: {
@@ -263,9 +268,9 @@ describe('ProviderSelector default-unavailable honesty', () => {
     mocks.state.current = {
       ...base,
       providerSettings: {
-        activeProviderId: 'auggie',
         enabledProviders: { 'claude-code': true, codex: true },
       },
+      model: { ...base.model, defaultProviderId: 'auggie' },
       agentAvailability: {
         ...base.agentAvailability,
         providerStatusMap: {

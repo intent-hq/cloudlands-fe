@@ -16,7 +16,11 @@ import { access } from 'fs/promises';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import { findBinary } from '../../../shared/main/find-binary';
+import {
+  findBinary,
+  invalidateHostDiscoveryCache,
+  onHostDiscoveryInvalidated,
+} from '../../../shared/main/find-binary';
 
 const logger = new Logger({ category: 'ExternalEditors-IPC' });
 
@@ -29,8 +33,32 @@ export interface DetectedEditor extends EditorDefinition {
 
 // Cache for detected editors (refreshed on demand)
 let cachedEditors: DetectedEditor[] | null = null;
-let cacheTimestamp = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minute cache - editors don't change often
+let cachedEditorsExpiresAt = 0;
+let editorDetectionInFlight: Promise<DetectedEditor[]> | null = null;
+let installedEditorsGeneration = 0;
+let installedEditorsBackendClient: ReturnType<typeof getBackendClient> | null = null;
+export const INSTALLED_EDITORS_POSITIVE_TTL_MS = 5_000;
+export const INSTALLED_EDITORS_NEGATIVE_TTL_MS = 1_000;
+
+function invalidateInstalledEditorsCache(): void {
+  installedEditorsGeneration += 1;
+  cachedEditors = null;
+  cachedEditorsExpiresAt = 0;
+  editorDetectionInFlight = null;
+  flatpakInstalledCache = null;
+  flatpakCacheExpiresAt = 0;
+  flatpakInstalledInFlight = null;
+  installedEditorsBackendClient = null;
+}
+
+function currentInstalledEditorsBackendClient(): ReturnType<typeof getBackendClient> {
+  const client = getBackendClient();
+  if (installedEditorsBackendClient && installedEditorsBackendClient !== client) {
+    invalidateHostDiscoveryCache();
+  }
+  installedEditorsBackendClient = client;
+  return client;
+}
 
 /**
  * Get the Linux binary names for an editor from the registry.
@@ -69,8 +97,10 @@ interface HostFindAppResult {
 
 // Cache for installed Flatpak app IDs (derived from host.listInstalledEditors)
 let flatpakInstalledCache: Set<string> | null = null;
-let flatpakCacheTimestamp = 0;
-const FLATPAK_CACHE_TTL_MS = 60000; // 1 minute cache
+let flatpakCacheExpiresAt = 0;
+let flatpakInstalledInFlight: Promise<Set<string>> | null = null;
+
+onHostDiscoveryInvalidated(invalidateInstalledEditorsCache);
 
 /**
  * Get the set of installed Flatpak application IDs, sourced verbatim from the
@@ -79,50 +109,67 @@ const FLATPAK_CACHE_TTL_MS = 60000; // 1 minute cache
  * workspaces report the BE host's flatpak inventory. On RPC failure we degrade
  * to an empty set rather than fall back to a local probe.
  */
-export async function getInstalledFlatpakApps(): Promise<Set<string>> {
-  const now = Date.now();
-  if (flatpakInstalledCache && now - flatpakCacheTimestamp < FLATPAK_CACHE_TTL_MS) {
+export async function getInstalledFlatpakApps(forceRefresh = false): Promise<Set<string>> {
+  const client = currentInstalledEditorsBackendClient();
+  if (!forceRefresh && flatpakInstalledCache && flatpakCacheExpiresAt > Date.now()) {
     return flatpakInstalledCache;
   }
 
-  try {
-    const result = await getBackendClient().request<HostListInstalledEditorsResult>(
-      'host.listInstalledEditors',
-    );
-    const appIds = new Set<string>();
-    for (const editor of result?.editors ?? []) {
-      if (editor.installed && editor.source === 'flatpak' && editor.flatpakId) {
-        appIds.add(editor.flatpakId);
+  if (flatpakInstalledInFlight) return flatpakInstalledInFlight;
+
+  const generation = installedEditorsGeneration;
+  const request = (async (): Promise<Set<string>> => {
+    try {
+      const result = await client.request<HostListInstalledEditorsResult>(
+        'host.listInstalledEditors',
+      );
+      if (!Array.isArray(result?.editors)) {
+        throw new Error('host.listInstalledEditors returned a malformed response');
       }
+      const appIds = new Set<string>();
+      for (const editor of result.editors) {
+        if (editor.installed && editor.source === 'flatpak' && editor.flatpakId) {
+          appIds.add(editor.flatpakId);
+        }
+      }
+      logger.info(
+        // i18n-ignore (developer log message)
+        `[ExternalEditors] Flatpak (host.listInstalledEditors): found ${appIds.size} installed apps`,
+      );
+      if (generation === installedEditorsGeneration) {
+        flatpakInstalledCache = appIds;
+        flatpakCacheExpiresAt =
+          Date.now() +
+          (appIds.size === 0
+            ? INSTALLED_EDITORS_NEGATIVE_TTL_MS
+            : INSTALLED_EDITORS_POSITIVE_TTL_MS);
+      }
+      return appIds;
+    } catch (error) {
+      logger.info(
+        // i18n-ignore (developer log message)
+        '[ExternalEditors] host.listInstalledEditors failed; treating Flatpak as unavailable',
+        error as Error,
+      );
+      return new Set();
     }
-    logger.info(
-      // i18n-ignore (developer log message)
-      `[ExternalEditors] Flatpak (host.listInstalledEditors): found ${appIds.size} installed apps`,
-    );
-    flatpakInstalledCache = appIds;
-    flatpakCacheTimestamp = now;
-    return appIds;
-  } catch (error) {
-    logger.info(
-      // i18n-ignore (developer log message)
-      '[ExternalEditors] host.listInstalledEditors failed; treating Flatpak as unavailable',
-      error as Error,
-    );
-    flatpakInstalledCache = new Set();
-    flatpakCacheTimestamp = now;
-    return flatpakInstalledCache;
-  }
+  })();
+  flatpakInstalledInFlight = request;
+  void request.finally(() => {
+    if (flatpakInstalledInFlight === request) flatpakInstalledInFlight = null;
+  });
+  return request;
 }
 
 /**
  * Check if an editor is installed via Flatpak
  * Returns the Flatpak app ID if found, null otherwise
  */
-async function findFlatpakAppId(editorId: string): Promise<string | null> {
+async function findFlatpakAppId(editorId: string, forceRefresh = false): Promise<string | null> {
   const flatpakIds = getLinuxFlatpakIds(editorId);
   if (flatpakIds.length === 0) return null;
 
-  const installedApps = await getInstalledFlatpakApps();
+  const installedApps = await getInstalledFlatpakApps(forceRefresh);
   for (const appId of flatpakIds) {
     if (installedApps.has(appId)) {
       logger.info(`[ExternalEditors] Flatpak: found ${editorId} as ${appId}`);
@@ -156,7 +203,10 @@ export async function isAppInstalledMacOS(appName: string): Promise<boolean> {
  * Search common Linux paths for an executable binary matching the given editor ID.
  * Returns the full path to the first found executable, or null if none found.
  */
-async function findExecutableBinary(editorId: string): Promise<string | null> {
+async function findExecutableBinary(
+  editorId: string,
+  forceRefresh = false,
+): Promise<string | null> {
   const binaries = getLinuxBinaries(editorId);
   if (binaries.length === 0) {
     logger.debug(`[ExternalEditors] No Linux binary mapping for editor: ${editorId}`);
@@ -186,6 +236,7 @@ async function findExecutableBinary(editorId: string): Promise<string | null> {
       preferExtensions: [],
       useEnhancedPath: false,
       useLoginShell: false,
+      forceRefresh,
     });
 
     if (!resolvedPath) {
@@ -212,15 +263,15 @@ async function findExecutableBinary(editorId: string): Promise<string | null> {
  * Check if an app is installed on Linux by looking for binaries in common locations
  * and checking Flatpak installations
  */
-async function isAppInstalledLinux(editorId: string): Promise<boolean> {
+async function isAppInstalledLinux(editorId: string, forceRefresh = false): Promise<boolean> {
   // First check for native binaries
-  const binaryPath = await findExecutableBinary(editorId);
+  const binaryPath = await findExecutableBinary(editorId, forceRefresh);
   if (binaryPath) {
     return true;
   }
 
   // Then check Flatpak
-  const flatpakAppId = await findFlatpakAppId(editorId);
+  const flatpakAppId = await findFlatpakAppId(editorId, forceRefresh);
   if (flatpakAppId) {
     logger.info(`[ExternalEditors] Found ${editorId} via Flatpak: ${flatpakAppId}`);
     return true;
@@ -234,12 +285,12 @@ async function isAppInstalledLinux(editorId: string): Promise<boolean> {
  * Find the first available Windows binary for an editor using shared binary lookup.
  * Returns the binary name if found, null otherwise.
  */
-async function findWindowsBinary(editorId: string): Promise<string | null> {
+async function findWindowsBinary(editorId: string, forceRefresh = false): Promise<string | null> {
   const editor = EDITOR_REGISTRY.find((e) => e.id === editorId);
   if (!editor?.platforms?.win32?.binaries) return null;
 
   for (const binary of editor.platforms.win32.binaries) {
-    const resolvedPath = await findBinary(binary);
+    const resolvedPath = await findBinary(binary, { forceRefresh });
     if (resolvedPath) {
       return binary;
     }
@@ -250,20 +301,24 @@ async function findWindowsBinary(editorId: string): Promise<string | null> {
 /**
  * Check if an app is installed on Windows by looking for binaries on PATH.
  */
-async function isAppInstalledWindows(editorId: string): Promise<boolean> {
-  return (await findWindowsBinary(editorId)) !== null;
+async function isAppInstalledWindows(editorId: string, forceRefresh = false): Promise<boolean> {
+  return (await findWindowsBinary(editorId, forceRefresh)) !== null;
 }
 
 /**
  * Check if an app is installed (cross-platform)
  */
-async function isAppInstalled(appName: string, editorId: string): Promise<boolean> {
+async function isAppInstalled(
+  appName: string,
+  editorId: string,
+  forceRefresh = false,
+): Promise<boolean> {
   if (process.platform === 'darwin') {
     return isAppInstalledMacOS(appName);
   } else if (process.platform === 'linux') {
-    return isAppInstalledLinux(editorId);
+    return isAppInstalledLinux(editorId, forceRefresh);
   } else if (process.platform === 'win32') {
-    return isAppInstalledWindows(editorId);
+    return isAppInstalledWindows(editorId, forceRefresh);
   }
   return false;
 }
@@ -331,13 +386,26 @@ async function getAppIconBase64(appName: string): Promise<string | null> {
  * Detect all installed editors from the registry
  */
 async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEditor[]> {
-  const now = Date.now();
-
-  // Return cached result if valid
-  if (!forceRefresh && cachedEditors && now - cacheTimestamp < CACHE_TTL_MS) {
+  currentInstalledEditorsBackendClient();
+  if (!forceRefresh && cachedEditors && cachedEditorsExpiresAt > Date.now()) {
     return cachedEditors;
   }
 
+  if (editorDetectionInFlight) return editorDetectionInFlight;
+
+  const generation = installedEditorsGeneration;
+  const request = detectInstalledEditorsFresh(forceRefresh, generation);
+  editorDetectionInFlight = request;
+  void request.finally(() => {
+    if (editorDetectionInFlight === request) editorDetectionInFlight = null;
+  });
+  return request;
+}
+
+async function detectInstalledEditorsFresh(
+  forceRefresh: boolean,
+  generation: number,
+): Promise<DetectedEditor[]> {
   logger.info(
     // i18n-ignore (developer log message)
     `[ExternalEditors] Detecting installed editors... (platform=${process.platform}, forceRefresh=${forceRefresh})`,
@@ -373,7 +441,7 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
         if (isMacOS || isWindows) {
           installed = true;
         } else if (isLinux) {
-          installed = await isAppInstalled(editor.appName, editor.id);
+          installed = await isAppInstalled(editor.appName, editor.id, forceRefresh);
         }
       } else if (editor.id === 'powershell') {
         // PowerShell is always available on Windows
@@ -381,7 +449,7 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
           installed = true;
         }
       } else {
-        installed = await isAppInstalled(editor.appName, editor.id);
+        installed = await isAppInstalled(editor.appName, editor.id, forceRefresh);
       }
 
       logger.info(
@@ -415,8 +483,14 @@ async function detectInstalledEditors(forceRefresh = false): Promise<DetectedEdi
   // Sort by priority, then filter to only installed
   results.sort((a, b) => a.priority - b.priority);
 
-  cachedEditors = results;
-  cacheTimestamp = now;
+  if (generation === installedEditorsGeneration) {
+    cachedEditors = results;
+    cachedEditorsExpiresAt =
+      Date.now() +
+      (results.some((editor) => editor.installed)
+        ? INSTALLED_EDITORS_POSITIVE_TTL_MS
+        : INSTALLED_EDITORS_NEGATIVE_TTL_MS);
+  }
 
   const installedCount = results.filter((e) => e.installed).length;
   const installedNames = results.filter((e) => e.installed).map((e) => `${e.id}(${e.handlerType})`);

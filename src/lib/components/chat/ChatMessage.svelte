@@ -9,6 +9,7 @@
     faCircleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
@@ -24,7 +25,7 @@
   import { getModelChangeNotice } from './model-change-notice';
   import { getAttentionNotice } from './attention-notice';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
-  import { safeSlide } from '$lib/utils/animations';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import type { ContextItem } from './input/context-api';
   import type { FileBlock, ImageBlock } from '$lib/client/app-client';
   import { openWorkspaceAttachment } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
@@ -49,12 +50,17 @@
   } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
-  import { resolveAttachmentImageUrl } from './attachment-image-url';
-  import { isImageBlock } from '$shared/types/content-block.guards';
+  import { evictAttachmentImageUrl, resolveAttachmentImageUrl } from './attachment-image-url';
+  import { onBackendReconnected } from '$lib/client/live/backend-transport';
+  import { isFileBlock, isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
+  import {
+    getCollaboratorSenderAttribution,
+    singleLineName,
+  } from '$lib/utils/collaborator-sender-attribution';
+  import { getHumanMessageAuthor, getMessageAuthorLabel } from '$lib/utils/message-authorship';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -64,6 +70,7 @@
     SUBSCRIPTION_CARD_CONTAINMENT_CLASS,
     SUBSCRIPTION_CARD_SURFACE_CLASS,
     SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS,
+    SUBSCRIPTION_WAKE_BODY_PADDING_CLASS,
   } from './subscription-disclosure';
   import QuestionsDismissedNotice from './QuestionsDismissedNotice.svelte';
   import { getQuestionsDismissedNotice } from './questions-dismissed-notice';
@@ -81,6 +88,7 @@
     openWorkspaceNote,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { parseFilePathLineSuffix } from '$shared/utils/link-helpers';
 
   const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
 
@@ -90,23 +98,24 @@
     return workspace?.id ? String(workspace.id) : routeWorkspaceId;
   }
 
-  function getPanelOptions(event?: MouseEvent) {
+  function getPanelOptions(event?: MouseEvent, line?: number) {
     const target = event?.target;
     const sourcePanelId =
       target instanceof HTMLElement
         ? target.closest<HTMLElement>('[data-panel-id]')?.dataset.panelId
         : undefined;
     return {
+      ...(line !== undefined ? { line } : {}),
       openInAdjacentPanel: Boolean(event?.metaKey || event?.ctrlKey),
       sourcePanelId,
     };
   }
 
-  function openChatFile(path: string, event?: MouseEvent) {
+  function openChatFile(path: string, event?: MouseEvent, line?: number) {
     if (readOnly) return;
     const workspaceId = getOwningWorkspaceId();
     if (!workspaceId) return;
-    appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event)));
+    appStore.dispatch(openWorkspaceFile(workspaceId, path, getPanelOptions(event, line)));
   }
 
   function openChatNote(noteId: string, event?: MouseEvent) {
@@ -123,6 +132,7 @@
     icon: typeof faFile;
     /** File path for file/diff pills */
     path?: string;
+    line?: number;
     /** Note ID for note pills */
     noteId?: string;
     /** External URL for external references */
@@ -166,6 +176,7 @@
         identifier?: string;
         icon: typeof faFile;
         path?: string;
+        line?: number;
         noteId?: string;
         url?: string;
       };
@@ -188,6 +199,11 @@
     sessionMetadata?: any; // Session metadata containing applied rules
     /** Workspace for SimpleRichInput in edit mode */
     workspace?: Workspace | null;
+    /**
+     * The viewer's own principal (`presence.ownPrincipalId`): their own rows
+     * render no author identity. `null` = not yet known, every author shown.
+     */
+    ownPrincipalId?: string | null;
     /**
      * Called when user wants to edit and resend the message. `blocks`
      * carries the attachment content blocks restored/edited in the edit
@@ -240,6 +256,7 @@
     hideToolCalls = false,
     sessionMetadata,
     workspace = null,
+    ownPrincipalId = null,
     onEditSubmit,
     editModel,
     onRegenerate,
@@ -267,7 +284,7 @@
   // svelte-ignore state_referenced_locally -- intentional initial snapshot; keyed component identity is fixed.
   const storeMessage$ = selectAgentMessageById(agentId ?? '', messageId ?? '');
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock) for user-message attached images: the slim
   // projection may serve them as write-time thumbnails (dataTruncated /
   // dataIsThumbnail), so the lightbox fetches the original on demand.
@@ -378,11 +395,6 @@
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
   let isAgentMessageExpanded = $state(false);
-  let agentMessagePreview = $derived(
-    message
-      ? (role === 'user' ? getPresentedUserMessageText(message) : extractAllContent(message)).trim()
-      : '',
-  );
   let agentMessageBodyId = $derived(`agent-message-body-${message?.id ?? 'pending'}`);
 
   // Queued-delivery info for messages drained from the pending queue
@@ -403,6 +415,47 @@
   );
   let isAutomatedWakeExpanded = $state(false);
   let automatedWakeBodyId = $derived(`automated-wake-body-${message?.id ?? 'pending'}`);
+
+  // Human author identity (multiplayer w2): shown only once the workspace has
+  // more than one member, on plain human rows — agent-to-agent sends and
+  // automated wakes carry their own sender header. Reads the daemon's
+  // serve-time `author` projection verbatim; single-member workspaces, the
+  // viewer's own rows and rows without the projection render unchanged.
+  //
+  // A row whose content starts with the daemon's collaborator sender preamble
+  // (exact match against the text rebuilt from the same projection) always
+  // shows the sender chip with the guest role — the preamble itself is
+  // display-stripped by the presentation boundary, so the chip is the only
+  // place the sender and their role remain visible, for owner and guest alike.
+  // The workspace owner's own rows never qualify (the daemon prepends the
+  // preamble for collaborators only), so an owner-typed lookalike line stays.
+  let collaboratorSender = $derived(
+    role === 'user' && !agentAttribution && !automatedWakePresentation
+      ? getCollaboratorSenderAttribution(message, workspace?.ownerPrincipalId)
+      : null,
+  );
+  let humanAuthor = $derived(
+    collaboratorSender
+      ? collaboratorSender.author
+      : role === 'user' &&
+          (workspace?.memberCount ?? 0) >= 2 &&
+          !agentAttribution &&
+          !automatedWakePresentation
+        ? getHumanMessageAuthor(message, ownPrincipalId)
+        : null,
+  );
+  let humanAuthorLabel = $derived.by(() => {
+    if (!humanAuthor) return null;
+    if (!collaboratorSender) return getMessageAuthorLabel(humanAuthor);
+    // Same shape and sanitizer as the stripped preamble: `@login (Display
+    // Name)`, then `@login`, then the display name alone — control characters
+    // and whitespace runs collapse exactly as the daemon's `single_line_name`.
+    const cleanLogin = singleLineName(humanAuthor.login);
+    const login = cleanLogin ? `@${cleanLogin}` : null;
+    const name = singleLineName(humanAuthor.displayName);
+    // i18n-ignore (handle + name composition, mirrors the daemon preamble)
+    return login && name ? `${login} (${name})` : (login ?? name);
+  });
 
   // Local state
   let messageElement = $state<HTMLDivElement>();
@@ -479,6 +532,7 @@
           foundMatch = true;
           let label: string;
           let path: string | undefined;
+          let line: number | undefined;
           let noteId: string | undefined;
 
           if ('label' in pattern && pattern.label) {
@@ -500,7 +554,9 @@
 
           // Capture path/noteId based on type
           if (pattern.type === 'file' || pattern.type === 'diff') {
-            path = match[1]; // File path
+            const parsedTarget = parseFilePathLineSuffix(match[1]);
+            path = parsedTarget.path;
+            line = parsedTarget.line;
           } else if (pattern.type === 'note') {
             // For notes, the label is the title - we'd need the ID to navigate
             // Store the title as noteId for now (the navigation will need to look it up)
@@ -514,6 +570,7 @@
             label,
             icon: pattern.icon,
             path,
+            line,
             noteId,
           });
           cleanText = cleanText.replace(pattern.regex, '');
@@ -626,16 +683,18 @@
         });
       } else {
         // File/folder mention: @path/to/file.ext
-        const path = captured;
+        const { path, line } = parseFilePathLineSuffix(captured);
         const fileName = path.split('/').pop() || path;
+        const suffix = captured.slice(path.length);
 
         segments.push({
           type: 'mention',
           mentionType: 'file',
-          label: fileName,
+          label: `${fileName}${suffix}`,
           id: path,
           icon: faFile,
           path,
+          line,
         });
       }
 
@@ -719,21 +778,25 @@
       }
       // Handle file references
       else if (refType === 'file') {
+        const parsedTarget = parseFilePathLineSuffix(ref.path || '');
         pills.push({
           type: 'file',
           label: ref.path?.split('/').pop() || ref.title || m.chat_shared_file_fallback(),
           icon: faFile,
-          path: ref.path,
+          path: parsedTarget.path || undefined,
+          line: parsedTarget.line,
           content: ref.content,
         });
       }
       // Handle diff references
       else if (refType === 'diff') {
+        const parsedTarget = parseFilePathLineSuffix(ref.path || '');
         pills.push({
           type: 'diff',
           label: ref.path?.split('/').pop() || m.chat_shared_diff_fallback(),
           icon: faCodeCompare,
-          path: ref.path,
+          path: parsedTarget.path || undefined,
+          line: parsedTarget.line,
           content: ref.content,
         });
       }
@@ -768,10 +831,10 @@
     if (pill.type === 'spec') {
       openChatNote('spec', event);
     } else if (pill.type === 'file' && pill.path) {
-      openChatFile(pill.path, event);
+      openChatFile(pill.path, event, pill.line);
     } else if (pill.type === 'diff' && pill.path) {
       // For diffs, open the file - the diff view would need to be triggered separately
-      openChatFile(pill.path, event);
+      openChatFile(pill.path, event, pill.line);
     } else if (pill.type === 'note' && pill.noteId) {
       // noteId is actually the note title from the context string
       // Look up the actual note ID from the title
@@ -783,7 +846,7 @@
         openChatNote(matchingNote.id, event);
       }
     } else if (pill.type === 'selection' && pill.path) {
-      openChatFile(pill.path, event);
+      openChatFile(pill.path, event, pill.line);
     }
   }
 
@@ -812,7 +875,8 @@
       $hydratedBlocks$,
     ).filter(
       (block: any) =>
-        block.type === 'image' && ((block.data && block.mimeType) || block.attachmentId),
+        block.type === 'image' &&
+        ((block.data && block.mimeType) || block.attachmentId || block.dataTruncated === true),
     );
   });
 
@@ -821,12 +885,31 @@
   // once (module-level cache dedupes across messages); a failed resolve
   // leaves the key unset and the thumbnail renders a placeholder.
   let referenceImageUrls = $state<Record<string, string>>({});
+  // Attachment ids whose resolved <img> failed to load in this instance: they
+  // keep the placeholder here (no resolve/fail loop), while the evicted
+  // module cache lets the next render elsewhere retry.
+  let failedReferenceImages = $state<Record<string, true>>({});
+  // A backend drop fails every thumbnail read closed (no retry window), so
+  // once the window's backend reconnects, forget the failures and let the
+  // resolve effect below fetch those attachments again.
+  $effect(() =>
+    onBackendReconnected(() => {
+      if (Object.keys(failedReferenceImages).length === 0) return;
+      failedReferenceImages = {};
+    }),
+  );
   $effect(() => {
     const wsId = getOwningWorkspaceId();
     if (!wsId) return;
     for (const block of imageBlocks) {
       const attachmentId = (block as ContentBlock).attachmentId;
-      if (!attachmentId || referenceImageUrls[attachmentId] !== undefined) continue;
+      if (
+        !attachmentId ||
+        referenceImageUrls[attachmentId] !== undefined ||
+        failedReferenceImages[attachmentId]
+      ) {
+        continue;
+      }
       void resolveAttachmentImageUrl(wsId, attachmentId).then((url) => {
         if (url) referenceImageUrls = { ...referenceImageUrls, [attachmentId]: url };
       });
@@ -835,9 +918,26 @@
 
   /** Renderable src for an image block: inline data URL or resolved reference URL. */
   function imageBlockSrc(block: ContentBlock): string | null {
-    if (block.attachmentId) return referenceImageUrls[block.attachmentId] ?? null;
+    if (block.attachmentId) {
+      if (failedReferenceImages[block.attachmentId]) return null;
+      return referenceImageUrls[block.attachmentId] ?? null;
+    }
     if (block.data && block.mimeType) return `data:${block.mimeType};base64,${block.data}`;
     return null;
+  }
+
+  // A resolved reference thumbnail failed to load (the protocol handler
+  // refused the read, e.g. its backend is disconnected): fall back to the
+  // placeholder tile and evict the URL so the next render re-resolves.
+  function handleReferenceImageError(block: ContentBlock, src: string) {
+    const attachmentId = block.attachmentId;
+    if (!attachmentId) return;
+    logger.warn('Attachment thumbnail failed to load', { attachmentId, url: src });
+    const wsId = getOwningWorkspaceId();
+    if (wsId) evictAttachmentImageUrl(wsId, attachmentId);
+    const { [attachmentId]: _dropped, ...rest } = referenceImageUrls;
+    referenceImageUrls = rest;
+    failedReferenceImages = { ...failedReferenceImages, [attachmentId]: true };
   }
 
   // Truncated attachment awaiting hydration before its lightbox opens.
@@ -847,7 +947,7 @@
     blockId: string;
     openerElement: HTMLButtonElement;
     index: number;
-    thumbnailBlock: ContentBlock & { data: string; mimeType: string };
+    thumbnailBlock: ContentBlock;
   } | null>(null);
 
   function isAttachmentHydrationLoading(blockId: string | undefined): boolean {
@@ -878,9 +978,9 @@
       lightboxOpen = true;
       return;
     }
-    if (!isImageBlock(imageBlock)) return;
     const hydrationMessageId = message?.id ?? messageId;
     if (imageBlock.dataTruncated === true && agentId && hydrationMessageId && imageBlock.id) {
+      if (pendingLightboxHydration?.blockId === imageBlock.id) return;
       pendingLightboxHydration = {
         blockId: imageBlock.id,
         openerElement,
@@ -890,6 +990,7 @@
       appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id));
       return;
     }
+    if (!isImageBlock(imageBlock) || !imageBlock.data) return;
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
@@ -933,6 +1034,9 @@
       );
     }
     pendingLightboxHydration = null;
+    // Legacy slim images have no thumbnail to fall back to. Keep the tile
+    // actionable for retry rather than opening an empty data URL on failure.
+    if (!isImageBlock(block) || !block.data) return;
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
@@ -941,19 +1045,17 @@
     lightboxOpen = true;
   });
 
-  // Extract file blocks from contentBlocks — both the legacy inline-data
-  // variant (data + mimeType) and attachment-reference blocks (attachmentId,
-  // no bytes; PROTOCOL §5.5 v6.12).
+  // Extract attachment-reference file blocks from contentBlocks (attachmentId,
+  // no bytes; PROTOCOL §5.5). A file block without an attachmentId is served
+  // as text by the daemon (`degrade_inline_file_blocks`) and never renders as a chip.
   const fileBlocks = $derived.by(() => {
     if (!message?.contentBlocks || !Array.isArray(message.contentBlocks)) {
       return [];
     }
-    return message.contentBlocks.filter(
-      (block: any) => block.type === 'file' && (block.data || block.attachmentId) && block.fileName,
-    );
+    return message.contentBlocks.filter(isFileBlock);
   });
 
-  // Secondary text for a file chip: size and/or mime from the block's inline
+  // Secondary text for a file chip: size and/or mime from the block's
   // metadata; empty string when neither is present.
   function fileChipSecondaryText(block: ContentBlock): string {
     const parts: string[] = [];
@@ -974,24 +1076,12 @@
     appStore.dispatch(openWorkspaceAttachment(wsId, block.attachmentId, block.fileName ?? ''));
   }
 
-  // Download a legacy inline-data file block via a data URL.
-  function downloadInlineFileBlock(block: ContentBlock, index: number) {
-    if (readOnly) return;
-    const dataUrl = `data:${block.mimeType || 'application/octet-stream'};base64,${block.data}`;
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = block.fileName || `file-${index}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
   // Parse context and get clean text for user messages
   const parsedMessage = $derived.by(() => {
     const rawText =
       automatedWakePresentation?.bodyText ??
       (role === 'user' && message
-        ? getPresentedUserMessageText(message)
+        ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
         : extractTextFromMessage());
     if (role === 'user') {
       const parsed = parseContextFromMessage(rawText);
@@ -1077,7 +1167,7 @@
 
     // Extract text and tool blocks from contentBlocks
     if (role === 'user' && message) {
-      const presentedText = getPresentedUserMessageText(message);
+      const presentedText = getPresentedUserMessageText(message, workspace?.ownerPrincipalId);
       if (presentedText.trim()) parts.push(presentedText);
     }
     if (message?.contentBlocks && Array.isArray(message.contentBlocks)) {
@@ -1156,7 +1246,9 @@
   function handleStartEdit() {
     // Presentation-only delivery notes stay out of edit/retry text while the
     // canonical stored content remains unchanged.
-    const rawText = message ? getPresentedUserMessageText(message) : getMessageText();
+    const rawText = message
+      ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
+      : getMessageText();
     const parsed = parseStoredMessage(rawText);
     editValue = parsed.userMessage;
 
@@ -1191,7 +1283,7 @@
             imageData: block.data,
             imageMimeType: block.mimeType,
           });
-        } else if (block.type === 'file' && block.attachmentId && block.fileName) {
+        } else if (isFileBlock(block)) {
           // Attachment-reference block: restore as a placed-attachment item
           // (UUID + metadata only) so the re-send builds the same reference.
           contextItemsForEdit.push({
@@ -1202,15 +1294,6 @@
             attachmentId: block.attachmentId,
             attachmentMimeType: block.mimeType,
             attachmentSize: block.size,
-          });
-        } else if (block.type === 'file' && block.data && block.fileName) {
-          contextItemsForEdit.push({
-            id: `file-${message.id}-${index}`,
-            type: 'file',
-            label: block.fileName,
-            description: block.mimeType || m.chat_shared_file_fallback(),
-            fileData: block.data,
-            fileMimeType: block.mimeType,
           });
         }
       });
@@ -1355,9 +1438,9 @@
   <!-- Agent Q&A is wizard-only: question-only turns render no bubble -->{:else}
   <div
     bind:this={messageElement}
-    class="group group/message transition-transform duration-200 ease-out {role === 'user'
+    class="{role === 'user'
       ? 'user-message'
-      : 'relative assistant-message'}"
+      : 'relative assistant-message'} group group/message transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
     data-message-id={ownsMessageIdentity ? message?.id : undefined}
     data-message-role={ownsMessageIdentity ? role : undefined}
     inert={readOnly}
@@ -1365,7 +1448,7 @@
     {#if role === 'user'}
       {#if isEditing}
         <!-- Edit mode - use SimpleRichInput for rich editing experience -->
-        <div class="rounded-xs" transition:safeSlide={{ axis: 'y', duration: 200 }}>
+        <div class="rounded-xs" transition:safeDisclosureTransition={{ tier: 'moderate' }}>
           <SimpleRichInput
             bind:value={editValue}
             bind:contextItems={editContextItems}
@@ -1390,7 +1473,7 @@
             ? 'automated-wake-card'
             : undefined}
           class="{agentAttribution
-            ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+            ? `relative ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
@@ -1407,7 +1490,7 @@
             handleStartEdit()}
         >
           <!-- Actions -->
-          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded}
+          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded || (automatedWakePresentation && isAutomatedWakeExpanded && queueInfo)}
             <MessageActions
               role="user"
               onCopy={handleCopy}
@@ -1415,7 +1498,10 @@
               {onScrollToPrevious}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
-              class="absolute right-1 z-10 {agentAttribution ? 'bottom-1' : 'top-1'}"
+              {queueInfo}
+              class="absolute right-1 z-10 {agentAttribution || automatedWakePresentation
+                ? 'bottom-1'
+                : 'top-1'}"
             />
           {/if}
 
@@ -1423,7 +1509,6 @@
           {#if agentAttribution}
             <AgentMessageAttributionHeader
               attribution={agentAttribution}
-              preview={agentMessagePreview}
               expanded={isAgentMessageExpanded}
               controlsId={agentMessageBodyId}
               ontoggle={() => (isAgentMessageExpanded = !isAgentMessageExpanded)}
@@ -1438,6 +1523,50 @@
             />
           {/if}
 
+          <!-- Human author identity in multi-member workspaces, and the
+               collaborator (guest) sender chip on preamble-carrying rows -->
+          {#if humanAuthor && !isSticky}
+            <div
+              class="type-caption mb-1 flex min-w-0 items-center gap-1.5 text-subtle"
+              data-testid="user-message-author"
+              data-principal-id={humanAuthor.principalId}
+              data-sender-role={collaboratorSender ? 'collaborator' : undefined}
+              aria-label={collaboratorSender
+                ? m.chat_chatMessage_collaboratorAuthor_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                  })
+                : m.chat_chatMessage_author_ariaLabel({
+                    name: humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label(),
+                  })}
+            >
+              {#if humanAuthor.avatarUrl}
+                <img
+                  src={humanAuthor.avatarUrl}
+                  alt=""
+                  class="size-4 shrink-0 rounded-full"
+                  referrerpolicy="no-referrer"
+                  data-testid="user-message-author-avatar"
+                />
+              {:else}
+                <span
+                  aria-hidden="true"
+                  class="type-caption flex size-4 shrink-0 items-center justify-center rounded-full bg-muted font-medium leading-none text-muted-foreground"
+                  data-testid="user-message-author-avatar-fallback"
+                  >{(humanAuthorLabel ?? '?').slice(0, 1).toUpperCase()}</span
+                >
+              {/if}
+              <span class="truncate" data-testid="user-message-author-name"
+                >{humanAuthorLabel ?? m.chat_chatMessage_authorUnknown_label()}</span
+              >
+              {#if collaboratorSender}
+                <span aria-hidden="true" class="shrink-0">·</span>
+                <span class="shrink-0" data-testid="user-message-author-role"
+                  >{m.chat_chatMessage_collaboratorRole_label()}</span
+                >
+              {/if}
+            </div>
+          {/if}
+
           {#if (!agentAttribution || isAgentMessageExpanded) && (!automatedWakePresentation || isAutomatedWakeExpanded)}
             <div
               id={agentAttribution
@@ -1446,7 +1575,7 @@
                   ? automatedWakeBodyId
                   : undefined}
               class={agentAttribution || automatedWakePresentation
-                ? 'w-full min-w-0 max-w-full overflow-hidden border-t border-border px-3 py-2'
+                ? `w-full min-w-0 max-w-full overflow-hidden border-t border-border ${automatedWakePresentation ? SUBSCRIPTION_WAKE_BODY_PADDING_CLASS : 'px-3 py-2'}`
                 : 'contents'}
               data-testid={agentAttribution
                 ? 'agent-message-expanded-body'
@@ -1455,15 +1584,10 @@
                   : undefined}
               transition:safeSubscriptionSlide
             >
-              <!-- Queued-delivery notice for messages drained from the pending queue -->
-              {#if queueInfo}
-                <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
-              {/if}
-
               <div
                 class="type-body select-text text-pretty {agentAttribution ||
                 automatedWakePresentation
-                  ? 'font-medium! text-foreground'
+                  ? 'font-medium text-foreground'
                   : USER_MESSAGE_TEXT_CLASS} {agentAttribution
                   ? ''
                   : isSticky
@@ -1509,8 +1633,9 @@
                     pill.url ||
                     pill.type === 'spec'
                   )}
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                     title={pill.content || pill.path || pill.noteId || pill.label}
                     onclick={(e) => {
@@ -1523,7 +1648,7 @@
                     <span class="truncate font-medium" style="max-width: 180px;" title={pill.label}
                       >{pill.label}</span
                     >
-                  </button>
+                  </Button>
                 {/each}
                 <!-- Render text with inline @mentions as chips -->
                 {#each parsedMessage.segments as segment, i (i)}
@@ -1554,8 +1679,9 @@
                       segment.mentionType === 'spec' ||
                       segment.url
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="plain"
                       class="type-caption mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-muted/60 px-1.5 py-1 align-middle font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                       title={segment.path ||
                         segment.noteId ||
@@ -1573,7 +1699,7 @@
                             });
                           }
                         } else if (segment.path) {
-                          openChatFile(segment.path, e);
+                          openChatFile(segment.path, e, segment.line);
                         } else if (segment.noteId) {
                           if (segment.mentionType === 'spec') {
                             openChatNote('spec', e);
@@ -1599,7 +1725,7 @@
                       <span class="truncate" style="max-width: 180px;" title={segment.label}
                         >{segment.label}</span
                       >
-                    </button>
+                    </Button>
                   {/if}
                 {/each}
               </div>
@@ -1608,13 +1734,18 @@
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each imageBlocks as imageBlock, i (i)}
                     {@const src = imageBlockSrc(imageBlock)}
-                    <button
+                    <Button
                       type="button"
-                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
-                      class:animate-pulse={isAttachmentHydrationLoading(imageBlock.id)}
+                      variant="plain"
+                      wrapContent={false}
+                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 rounded {isAttachmentHydrationLoading(
+                        imageBlock.id,
+                      )
+                        ? 'animate-pulse'
+                        : ''}"
                       aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
                       onclick={(e) => {
-                        openImageLightbox(imageBlock, e.currentTarget, i);
+                        openImageLightbox(imageBlock, e.currentTarget as HTMLButtonElement, i);
                       }}
                       onkeydown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1634,45 +1765,44 @@
                             number: formatInteger(i + 1),
                           })}
                           class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
+                          onerror={() => handleReferenceImageError(imageBlock, src)}
                         />
                       {:else}
-                        <!-- Reference still resolving (or its file is gone):
-                         neutral placeholder tile instead of a broken img. -->
-                        <div class="w-full h-full rounded border border-border bg-muted/50"></div>
+                        <!-- Reference still resolving, failed to load, or its
+                         file is gone: neutral placeholder tile instead of a
+                         broken img. -->
+                        <div
+                          class="w-full h-full rounded border border-border bg-muted/50"
+                          data-testid="chat-message-image-placeholder"
+                        ></div>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
 
               <!-- Attached files: attachment-reference chips open the file in a
-               tab (resolved by attachmentId); legacy inline-data chips keep
-               the data-URL download behavior. -->
+               tab (resolved by attachmentId). -->
               {#if fileBlocks.length > 0 && !isSticky}
                 <div class="flex flex-wrap gap-1.5 mt-2">
                   {#each fileBlocks as fileBlock, i (i)}
                     {@const secondary = fileChipSecondaryText(fileBlock)}
-                    <button
+                    <Button
                       type="button"
+                      variant="plain"
                       data-testid="chat-message-file-chip"
                       class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onclick={() => {
-                        if (fileBlock.attachmentId) {
-                          openAttachmentReference(fileBlock);
-                        } else {
-                          downloadInlineFileBlock(fileBlock, i);
-                        }
-                      }}
-                      title={fileBlock.attachmentId
-                        ? m.chat_chatMessage_openAttachment_title({ name: `${fileBlock.fileName}` })
-                        : m.chat_chatMessage_download_title({ name: `${fileBlock.fileName}` })}
+                      onclick={() => openAttachmentReference(fileBlock)}
+                      title={m.chat_chatMessage_openAttachment_title({
+                        name: `${fileBlock.fileName}`,
+                      })}
                     >
                       <Fa icon={faFile} class="w-3 h-3" />
                       <span class="truncate" style="max-width: 150px;">{fileBlock.fileName}</span>
                       {#if secondary}
-                        <span class="opacity-60 shrink-0">{secondary}</span>
+                        <span class="shrink-0">{secondary}</span>
                       {/if}
-                    </button>
+                    </Button>
                   {/each}
                 </div>
               {/if}
@@ -1680,7 +1810,7 @@
               <!-- Send failure indicator for optimistic user messages -->
               {#if message?.error}
                 <div
-                  class="type-caption mt-2 flex items-center gap-2 font-medium text-destructive"
+                  class="type-caption mt-2 flex items-center gap-2 font-medium text-danger"
                   title={message.error}
                 >
                   <Fa icon={faCircleExclamation} class="size-2.5 mt-px" />
@@ -1698,7 +1828,7 @@
           content={combinedContent}
           {isStreaming}
           {hideToolCalls}
-          workspaceId={workspace?.id ? String(workspace.id) : undefined}
+          workspaceId={getOwningWorkspaceId()}
           {agentId}
           messageId={message?.id ?? messageId}
           {isLastConversationMessage}

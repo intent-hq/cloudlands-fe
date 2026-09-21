@@ -117,35 +117,35 @@
 <div class="flex h-full overflow-hidden">
   <!-- Version list -->
   <div class="version-list">
-    <button
-      class="version-item"
-      class:selected={selectedVersionIndex === null}
+    <Button
+      variant="ghost"
+      class="version-item {selectedVersionIndex === null ? 'selected' : ''}"
       onclick={() => (selectedVersionIndex = null)}
     >
       <span class="text-ui font-mono font-medium"
         >{m.workspace_noteVersionHistory_current_label()}</span
       >
-    </button>
+    </Button>
 
     {#if loading}
       <div class="px-2.5 py-1.5 text-ui text-subtle">
         {m.workspace_noteVersionHistory_loading_label()}
       </div>
     {:else if error}
-      <div class="px-2.5 py-1.5 text-ui text-error-foreground">
+      <div class="px-2.5 py-1.5 text-ui text-danger">
         {m.workspace_noteVersionHistory_error_label()}
       </div>
     {:else}
       {#each versions as version, index (version.versionId)}
-        <button
-          class="version-item"
-          class:selected={selectedVersionIndex === index}
+        <Button
+          variant="ghost"
+          class="version-item {selectedVersionIndex === index ? 'selected' : ''}"
           onclick={() => (selectedVersionIndex = index)}
         >
           <span class="size-[5px] rounded-full shrink-0 {getAuthorDotColor(version)}"></span>
           <span class="text-ui font-mono font-medium">V{version.versionNumber}</span>
           <span class="text-ui text-subtle ml-auto">{formatRelativeTime(version.createdAt)}</span>
-        </button>
+        </Button>
       {/each}
     {/if}
   </div>

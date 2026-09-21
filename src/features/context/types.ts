@@ -22,12 +22,7 @@ export type ContextProvider = 'linear' | 'github' | 'sentry' | 'browser' | 'inte
  * Type identifiers for context items
  */
 export type ContextItemType =
-  | 'note'
-  | 'linear-issue'
-  | 'github-issue'
-  | 'github-pr'
-  | 'sentry-issue'
-  | 'browser-url';
+  'note' | 'linear-issue' | 'github-issue' | 'github-pr' | 'sentry-issue' | 'browser-url';
 
 /**
  * Mapping of item types to their providers

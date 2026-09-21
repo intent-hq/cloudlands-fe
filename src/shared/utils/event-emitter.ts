@@ -9,7 +9,6 @@ import { Logger } from '../logger';
 
 const logger = new Logger('EventEmitter');
 
- 
 type EventListener = (...args: any[]) => void;
 
 export class EventEmitter {
@@ -41,7 +40,6 @@ export class EventEmitter {
     return this;
   }
 
-   
   emit(event: string, ...args: any[]): boolean {
     const listeners = this.listeners.get(event);
     if (listeners && listeners.size > 0) {
@@ -78,7 +76,6 @@ export class EventEmitter {
     return 10;
   }
 
-   
   setMaxListeners(_n: number): this {
     // No-op for compatibility
     return this;

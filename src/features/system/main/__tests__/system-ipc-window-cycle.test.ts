@@ -5,6 +5,7 @@ type Handler = (...args: unknown[]) => unknown;
 const electronMocks = vi.hoisted(() => ({
   handle: vi.fn(),
   fromWebContents: vi.fn(),
+  getFocusedWindow: vi.fn(),
   getAllWindows: vi.fn((): unknown[] => []),
   nativeTheme: {
     themeSource: 'system',
@@ -18,7 +19,7 @@ vi.mock('electron', () => ({
   BrowserWindow: {
     getAllWindows: electronMocks.getAllWindows,
     fromId: vi.fn(),
-    getFocusedWindow: vi.fn(),
+    getFocusedWindow: electronMocks.getFocusedWindow,
     fromWebContents: electronMocks.fromWebContents,
   },
   clipboard: { writeText: vi.fn() },
@@ -57,6 +58,7 @@ function makeWindow(
     isMinimized: () => opts.minimized ?? false,
     restore: vi.fn(),
     focus: vi.fn(),
+    close: vi.fn(),
     on: vi.fn(),
     webContents: {
       isDestroyed: () => false,
@@ -73,6 +75,7 @@ async function cycleFrom(sender: unknown) {
 beforeEach(() => {
   electronMocks.handle.mockReset();
   electronMocks.fromWebContents.mockReset();
+  electronMocks.getFocusedWindow.mockReset();
   electronMocks.getAllWindows.mockReset().mockReturnValue([]);
   _resetHudWindowRefForTests();
   setupSystemIPC();
@@ -190,5 +193,39 @@ describe('WINDOW_CHANNELS.CYCLE_FOCUS', () => {
     expect(result).toEqual({ cycled: true, windowCount: 2 });
     expect(w2.restore).toHaveBeenCalled();
     expect(w2.focus).toHaveBeenCalled();
+  });
+});
+
+describe('WINDOW_CHANNELS.CLOSE', () => {
+  it('closes the window that sent the request, not the focused one', async () => {
+    const [sender, focused] = [makeWindow(), makeWindow()];
+    electronMocks.fromWebContents.mockReturnValue(sender);
+    electronMocks.getFocusedWindow.mockReturnValue(focused);
+
+    const result = await handlerFor(WINDOW_CHANNELS.CLOSE)({ sender: {} });
+
+    expect(result).toEqual({ success: true });
+    expect(sender.close).toHaveBeenCalledTimes(1);
+    expect(focused.close).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the focused window when the sender has no window', async () => {
+    const focused = makeWindow();
+    electronMocks.fromWebContents.mockReturnValue(null);
+    electronMocks.getFocusedWindow.mockReturnValue(focused);
+
+    const result = await handlerFor(WINDOW_CHANNELS.CLOSE)({ sender: {} });
+
+    expect(result).toEqual({ success: true });
+    expect(focused.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when neither a sender nor a focused window exists', async () => {
+    electronMocks.fromWebContents.mockReturnValue(null);
+    electronMocks.getFocusedWindow.mockReturnValue(null);
+
+    await expect(handlerFor(WINDOW_CHANNELS.CLOSE)({ sender: {} })).resolves.toEqual({
+      success: true,
+    });
   });
 });

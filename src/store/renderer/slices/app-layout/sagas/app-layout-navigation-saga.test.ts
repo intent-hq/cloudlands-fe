@@ -5,11 +5,14 @@ import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agent
 import {
   emptyWorkspaceState,
   openTabInRightmostColumn,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
 } from '../../panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
 import type { OpenAgentTabDetail } from '../app-layout-types';
 import { focusBrowserTabRequested, openAgentTabRequested } from '../app-layout-slice';
 import { appLayoutNavigationSaga } from './app-layout-navigation-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const settle = async () => {
   await Promise.resolve();

@@ -21,8 +21,8 @@
  * `{ success: false, error }`, never a throw. Handlers are registered at
  * import time (host-bridge idiom).
  *
- * `hasUnpushed` reads the `git.status` upstream-tracking fields (v9.0,
- * monorepo#4058): with an upstream ref it is the exact `upstream..HEAD`
+ * `hasUnpushed` reads the `git.status` upstream-tracking fields
+ * (monorepo#4058): with an upstream ref it is the exact `upstream..HEAD`
  * count (`unpushedCount`); without one (never-pushed branch) all commits
  * ahead of the base are unpushed — full legacy parity.
  *
@@ -45,11 +45,11 @@ interface GitStatusResult {
   ahead?: number;
   behind?: number;
   files?: { path: string }[];
-  /** Additive truncation markers (v8.4): `files` caps at 5000 entries. */
+  /** Additive truncation markers: `files` caps at 5000 entries. */
   filesTruncated?: boolean;
   totalFiles?: number;
   /**
-   * Additive upstream-tracking fields (v9.0, monorepo#4058): `hasUpstream`
+   * Additive upstream-tracking fields (monorepo#4058): `hasUpstream`
    * says whether `refs/remotes/origin/<branch>` exists; `unpushedCount` is
    * the `upstream..HEAD` count, omitted entirely when there is no upstream.
    * Both are absent on pre-#4058 daemons.
@@ -105,7 +105,7 @@ registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.GET_DIFF_SUMMARY, async (arg) => {
   try {
     const status = await backendRequest<GitStatusResult>('git.status', { workspaceId });
     const files = Array.isArray(status?.files) ? status.files : [];
-    // Truncated status (v8.4: files caps at 5000) carries the true count in
+    // Truncated status (`filesTruncated`: files caps at 5000) carries the true count in
     // totalFiles; otherwise count the deduped paths (legacy parity).
     const totalFiles =
       status?.filesTruncated === true && typeof status.totalFiles === 'number'
@@ -200,7 +200,7 @@ registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.GET_GIT_SUMMARY, async (arg) => {
         : Promise.resolve([]),
     ]);
 
-    // Unpushed probe: with the v9.0 upstream-tracking fields (monorepo#4058),
+    // Unpushed probe: with the upstream-tracking fields (monorepo#4058),
     // an upstream ref means the exact `upstream..HEAD` count and no upstream
     // (never-pushed branch) means all commits ahead of the base are unpushed
     // (legacy parity). A pre-#4058 daemon (`hasUpstream` absent) falls back to

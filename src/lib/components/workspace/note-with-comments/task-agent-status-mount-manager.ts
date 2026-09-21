@@ -1,7 +1,4 @@
-import {
-  mount,
-  unmount,
-} from 'svelte';
+import { mount, unmount } from 'svelte';
 import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
 
 export interface TaskAgentStatusMountManagerOptions {

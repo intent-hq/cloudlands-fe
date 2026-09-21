@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { safeLocalStorage } from '../safe-storage';
 import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';

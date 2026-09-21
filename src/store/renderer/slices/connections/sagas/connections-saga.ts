@@ -74,6 +74,9 @@ import {
   loadConnectionsRequested,
   loadKeychainSyncStateRequested,
   openConnectionRequested,
+  openOperationFailed,
+  openOperationSettled,
+  openOperationStarted,
   protocolMismatchReceived,
   rotateConnectionSecretRequested,
   setKeychainSyncEnabledRequested,
@@ -217,18 +220,18 @@ async function invokeUpdateBackend(params: UpdateBackendParams): Promise<UpdateB
  * (same pattern as the boot-fallback toast) keep the saga module light.
  */
 async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
   if (result.ok) {
-    toast.success(m.layout_daemonStatus_updateRequested_toast());
+    notify.success(m.layout_daemonStatus_updateRequested_toast());
   } else if (result.reason === 'unsupported') {
-    toast.error(m.layout_daemonStatus_updateUnsupported_toast());
+    notify.error(m.layout_daemonStatus_updateUnsupported_toast());
   } else if (result.reason === 'not-connected') {
-    toast.error(m.layout_daemonStatus_updateNotConnected_toast());
+    notify.error(m.layout_daemonStatus_updateNotConnected_toast());
   } else {
-    toast.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
+    notify.error(m.layout_daemonStatus_updateFailed_toast({ message: result.message ?? '' }));
   }
 }
 
@@ -238,11 +241,11 @@ async function showUpdateBackendToast(result: UpdateBackendResult): Promise<void
  * not user-oriented, unlike daemon-side 'failed' messages.
  */
 async function showUpdateBackendRequestErrorToast(): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
-  toast.error(m.layout_daemonStatus_updateRequestError_toast());
+  notify.error(m.layout_daemonStatus_updateRequestError_toast());
 }
 
 type UpdateBackendAction = ReturnType<typeof updateBackendRequested>;
@@ -259,11 +262,11 @@ async function showDaemonBehindPinToast(
   pinnedVersion: string,
   onUpdate: () => void,
 ): Promise<void> {
-  const [{ toast }, { m }] = await Promise.all([
-    import('svelte-sonner'),
+  const [{ notify }, { m }] = await Promise.all([
+    import('$lib/components/patterns/notify'),
     import('$shared/paraglide/messages.js'),
   ]);
-  toast.warning(
+  notify.warning(
     m.layout_daemonStatus_daemonBehind_toast({
       // The local entry's persisted label is an English fallback — use the
       // localized label, same as DeviceRow and the daemon-status menu.
@@ -286,8 +289,8 @@ async function showDaemonBehindPinToast(
 
 /** Dismiss a behind-pin toast previously raised for `connectionId`. */
 async function dismissDaemonBehindPinToast(connectionId: string): Promise<void> {
-  const { toast } = await import('svelte-sonner');
-  toast.dismiss(`connections-daemon-behind-${connectionId}`);
+  const { notify } = await import('$lib/components/patterns/notify');
+  notify.dismiss(`connections-daemon-behind-${connectionId}`);
 }
 
 /**
@@ -549,22 +552,23 @@ function* rotateConnectionSecret(
 }
 
 function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
+  const id = action.payload[0];
   let settled = false;
-  yield* put(connectOperationStarted());
+  yield* put(openOperationStarted(id));
   try {
-    const result = yield* call(invokeOpenConnection, { id: action.payload[0] });
-    yield* put(connectOperationSettled());
+    const result = yield* call(invokeOpenConnection, { id });
+    yield* put(openOperationSettled(id));
     yield* put(action.success(result));
     settled = true;
   } catch (error) {
     const resolved = toError(error);
-    yield* put(connectOperationFailed(resolved.message));
+    yield* put(openOperationFailed(id, resolved.message));
     yield* put(action.failure(resolved));
     settled = true;
   } finally {
     if (!settled && (yield* cancelled())) {
       const resolved = new Error('Connection open was cancelled');
-      yield* put(connectOperationFailed(resolved.message));
+      yield* put(openOperationFailed(id, resolved.message));
       yield* put(action.failure(resolved));
     }
   }
@@ -660,7 +664,10 @@ function* watchConnectionsActions(
     takeEvery(updateConnectionRequested, updateConnection),
     takeEvery(testConnectionRequested, testConnection),
     takeEvery(rotateConnectionSecretRequested, rotateConnectionSecret),
-    takeLeading(openConnectionRequested, openConnection),
+    // takeEvery, not takeLeading: each open targets one backend id and main
+    // serializes the work, so a second open dispatched while the first is in
+    // flight must still invoke and settle its own promise.
+    takeEvery(openConnectionRequested, openConnection),
     takeLeading(forgetConnectionRequested, forgetConnection),
     // takeEvery, not takeLeading: each action targets one backend id, and
     // multiple connected remotes can be updated back-to-back — takeLeading

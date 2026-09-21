@@ -1,12 +1,5 @@
 import { buffers } from 'redux-saga';
-import {
-  actionChannel,
-  call,
-  flush,
-  put,
-  take,
-  type SagaGenerator,
-} from 'typed-redux-saga';
+import { actionChannel, call, flush, put, take, type SagaGenerator } from 'typed-redux-saga';
 
 import { createLogger } from '$lib/utils/client-logger';
 import {
@@ -14,7 +7,7 @@ import {
   streamTurnCorrelation,
 } from '$lib/utils/stream-lifecycle-telemetry';
 import { hasStandingChatSubscription } from '$features/agent/utils/chat-subscription-registry';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, MessageMetadata } from '$shared/types';
 import { streamCompleted, streamTimedOut } from '../../chat-state/chat-state-slice';
 import { selectChatAgentState } from '../../chat-state/chat-state-selectors';
 import {
@@ -29,21 +22,59 @@ import {
   isStaleFinalizedAssistantStream,
 } from '../utils/stream-target-state';
 
+/**
+ * Applies the legacy `agent:*` firehose stream dispatches
+ * (`agentStreamUpdateReceived`) to the agent-session store.
+ *
+ * CONTRACT: the firehose is BOOKKEEPING-ONLY. Transcript rows come only from
+ * the standing `chat.subscribe` stream (PROTOCOL §7.1) and from
+ * `agents.getConversation` hydration — never from this saga.
+ *
+ * - Agent WITHOUT a standing subscription (out of view, never opened, or
+ *   still acquiring): no `addMessage` / `updateMessage` at all. Writing rows
+ *   here would leave incomplete firehose-built copies (tool blocks only, no
+ *   text, no user rows) in the session store, which the seq-0 resume anchor
+ *   (`sinceMessageId`) could then land on and skip daemon-canonical messages.
+ *   Only the session-level duties run: `streamCompleted` / `streamTimedOut`
+ *   chat-state resets on a terminal payload plus lifecycle reporting.
+ * - Agent WITH a standing subscription: the subscription owns message CONTENT,
+ *   so payload blocks are never applied; the saga only maintains streaming
+ *   flags and stamps terminal `complete` metadata (interrupted / finishReason)
+ *   on the target row — on an empty-content placeholder when the terminal
+ *   payload races ahead of the §7.1 reconcile, which then replaces it by id.
+ */
 const logger = createLogger('AgentStreamSaga');
 
 function isStreamUpdateAction(
   action: unknown,
 ): action is ReturnType<typeof agentStreamUpdateReceived> {
-  return !!action && typeof action === 'object' && 'type' in action &&
-    action.type === agentStreamUpdateReceived.type;
+  return (
+    !!action &&
+    typeof action === 'object' &&
+    'type' in action &&
+    action.type === agentStreamUpdateReceived.type
+  );
 }
 
+/**
+ * Interrupted-row metadata for a terminal `complete` carrying
+ * `stopReason: "interrupted"` (PROTOCOL §7.2): the `interrupted` marker plus
+ * the wire's `interruptReason` / `interruptedBy` when present, so the live
+ * Stopped label resolves to the same reason-specific variant the persisted
+ * row renders after a reload. Absent wire fields stay absent — never `null`.
+ */
 function interruptedMetadata(
   payload: AgentStreamUpdatePayload,
-): { interrupted: true; stopReason: string } | undefined {
-  return payload.eventType === 'complete' && payload.stopReason === 'interrupted'
-    ? { interrupted: true, stopReason: payload.stopReason }
-    : undefined;
+):
+  | Pick<MessageMetadata, 'interrupted' | 'stopReason' | 'interruptReason' | 'interruptedBy'>
+  | undefined {
+  if (payload.eventType !== 'complete' || payload.stopReason !== 'interrupted') return undefined;
+  return {
+    interrupted: true,
+    stopReason: payload.stopReason,
+    ...(payload.interruptReason ? { interruptReason: payload.interruptReason } : {}),
+    ...(payload.interruptedBy ? { interruptedBy: payload.interruptedBy } : {}),
+  };
 }
 
 /**
@@ -52,9 +83,7 @@ function interruptedMetadata(
  * (PROTOCOL §7.3 — refusal / max_tokens / max_turn_requests notice). Mirrors
  * what the daemon persists on the row, so live and reloaded transcripts agree.
  */
-function finalizedMetadata(
-  payload: AgentStreamUpdatePayload,
-): Record<string, unknown> | undefined {
+function finalizedMetadata(payload: AgentStreamUpdatePayload): Record<string, unknown> | undefined {
   const interrupted = interruptedMetadata(payload);
   const finishReason =
     payload.eventType === 'complete' && payload.finishReason
@@ -116,16 +145,24 @@ function* reportAppliedStoreState(
 function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<void> {
   const { agentId, eventType, assistantMessageId, assistantAppMessageId } = payload;
   if (!agentId) return;
-  // SOLE-WRITER INVARIANT (PROTOCOL §7.1): while a standing chat.subscribe
-  // registration covers the agent, the subscription owns message CONTENT —
-  // drop the firehose payload's blocks and keep only the bookkeeping writes
-  // (streaming flags, interrupted/finishReason metadata, session flag
-  // clearing). The bridge already omits blocks at dispatch time; this
-  // apply-time re-check covers dispatches buffered across a registration
-  // install (e.g. the terminal flush in the saga's finally block), so a stale
-  // accumulator set can never replace the reconciled transcript.
-  const contentBlocks = hasStandingChatSubscription(agentId) ? undefined : payload.contentBlocks;
   const isFinalize = eventType === 'complete' || eventType === 'error' || eventType === 'timeout';
+  // No standing chat.subscribe registration → no transcript row writes (see
+  // the module contract above). Session-level bookkeeping still runs so
+  // out-of-view agents' chat state resets on a terminal payload.
+  if (!hasStandingChatSubscription(agentId)) {
+    if (isFinalize) yield* call(clearSessionStreaming, agentId, eventType);
+    yield* reportAppliedStoreState(payload, 'update-ignored');
+    return;
+  }
+  // SOLE-WRITER INVARIANT (PROTOCOL §7.1): the standing subscription owns
+  // message CONTENT — the firehose payload's blocks are never applied
+  // (`resolveStreamContentBlocks` below always receives `undefined` incoming
+  // blocks); only the bookkeeping writes remain (streaming flags,
+  // interrupted/finishReason metadata, session flag clearing). The bridge
+  // already omits blocks at dispatch time; this apply-time drop covers
+  // dispatches buffered across a registration install (e.g. the terminal
+  // flush in the saga's finally block), so a stale accumulator set can never
+  // replace the reconciled transcript.
   const session: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
   const existing = findStreamTargetAssistantMessage(
     session,
@@ -133,9 +170,17 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
     assistantMessageId,
   );
 
+  // Every settle below is the firehose's, not the §7.1 terminal frame's, so
+  // the row is marked `provisional` until the transcript replaces it by id.
   if (eventType === 'error' || eventType === 'timeout') {
     if (existing) {
-      yield* put(updateMessage(agentId, existing.id, { isStreaming: false, streamingComplete: true }));
+      yield* put(
+        updateMessage(agentId, existing.id, {
+          isStreaming: false,
+          streamingComplete: true,
+          provisional: true,
+        }),
+      );
     }
     yield* call(clearSessionStreaming, agentId, eventType);
     yield* reportAppliedStoreState(payload, 'update-applied');
@@ -163,10 +208,11 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
       id: assistantMessageId,
       ...(assistantAppMessageId ? { appMessageId: assistantAppMessageId } : {}),
       role: 'assistant',
-      contentBlocks: resolveStreamContentBlocks(undefined, contentBlocks, eventType) ?? [],
+      contentBlocks: resolveStreamContentBlocks(undefined, undefined, eventType) ?? [],
       timestamp: new Date(payload.timestamp ?? Date.now()).toISOString(),
       isStreaming: eventType !== 'complete',
       streamingComplete: eventType === 'complete',
+      provisional: true,
       ...(metadata ? { metadata } : {}),
     };
     yield* put(addMessage(agentId, placeholder));
@@ -175,9 +221,13 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
     return;
   }
 
-  const nextBlocks = resolveStreamContentBlocks(existing.contentBlocks, contentBlocks, eventType);
+  const nextBlocks = resolveStreamContentBlocks(existing.contentBlocks, undefined, eventType);
   if (eventType === 'complete') {
-    const updates: Partial<AgentMessage> = { isStreaming: false, streamingComplete: true };
+    const updates: Partial<AgentMessage> = {
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    };
     if (nextBlocks && nextBlocks !== existing.contentBlocks) updates.contentBlocks = nextBlocks;
     const metadata = finalizedMetadata(payload);
     if (metadata) updates.metadata = { ...existing.metadata, ...metadata };
@@ -188,7 +238,9 @@ function* applyStreamPayload(payload: AgentStreamUpdatePayload): SagaGenerator<v
   }
 
   if (nextBlocks && nextBlocks !== existing.contentBlocks) {
-    yield* put(updateMessage(agentId, existing.id, { contentBlocks: nextBlocks, isStreaming: true }));
+    yield* put(
+      updateMessage(agentId, existing.id, { contentBlocks: nextBlocks, isStreaming: true }),
+    );
     yield* reportAppliedStoreState(payload, 'update-applied');
     return;
   }

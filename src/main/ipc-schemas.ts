@@ -9,7 +9,12 @@ import { z } from 'zod';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
-import { CONNECTION_ACCENTS } from '../shared/types/connections';
+import {
+  CONNECTION_ACCENTS,
+  DETECTED_DEVICE_KINDS,
+  DEVICE_KINDS,
+  type DeviceKind,
+} from '../shared/types/connections';
 // IPC allow-list of workspace event-type strings.
 //
 // Mirrors the runtime values declared in `features/events/types.ts`
@@ -645,6 +650,7 @@ export const TerminalCreateWithCommandSchema = z.object({
    * Defaults to `false` (existing auto-run behavior).
    */
   pasteOnly: z.boolean().optional(),
+  interactive: z.boolean().optional(),
 });
 
 export const AgentContextUpdateSchema = z.object({
@@ -700,6 +706,7 @@ export const WindowCreateSchema = z.object({
 
 export const WindowOpenNewSchema = z.object({
   route: z.string().optional(),
+  requestId: z.string().min(1).max(256).optional(),
 });
 
 export const WindowSetThemeSchema = z.object({
@@ -804,6 +811,13 @@ export const XcodeOpenSchema = z.union([
 ]);
 
 // USER_MCP_CHANNELS schemas
+export const UserMcpAuthenticateSchema = z.object({
+  serverId: z.string().min(1, 'Server ID is required'),
+  // Advisory only: the handler resolves the OAuth URL from the daemon record
+  // by `serverId` and rejects a renderer URL that disagrees with it.
+  url: z.string().url('A valid MCP server URL is required').optional(),
+});
+
 export const UserMcpCheckAuthSchema = z.object({
   url: z.string().min(1, 'URL is required'),
   name: z.string().optional(), // Server name for OAuth token lookup
@@ -1021,6 +1035,10 @@ export const SpecialistWriteSchema = z
     modelOptions: z
       .array(
         z.object({
+          provider: z
+            .string()
+            .refine((value) => value.trim() !== '', 'Provider must be non-empty when present')
+            .optional(),
           model: z.string().min(1, 'Model is required'),
           hint: z.string(),
           reasoningEffort: z.string().optional(),
@@ -1077,19 +1095,57 @@ export const VoiceTranscribeLocalSchema = z.object({
 
 export const ConnectionsListSchema = EmptySchema;
 
+/** `guest-sessions:list`: no params; the result never carries a token. */
+export const GuestSessionsListSchema = EmptySchema;
+
+/** `guest-sessions:leave`: the guest session id to revoke on the host and forget locally. */
+export const GuestSessionsLeaveSchema = z.object({
+  id: z.string().min(1, 'Guest session id is required'),
+});
+
+/** `guest-sessions:leave-workspace`: leave one workspace on a joined host and drop it locally. */
+export const GuestSessionsLeaveWorkspaceSchema = z.object({
+  id: z.string().min(1, 'Guest session id is required'),
+  workspaceId: z.string().min(1, 'Workspace id is required'),
+});
+
+/**
+ * `presence:report`: one window's focus set + typing target (multiplayer w5),
+ * merged per backend in main into a single `presence.update`.
+ */
+export const PresenceReportSchema = z.object({
+  focus: z.array(
+    z.object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      agentId: z.string().min(1).optional(),
+      noteId: z.string().min(1).optional(),
+    }),
+  ),
+  typing: z
+    .object({ agentId: z.string().min(1, 'Agent id is required') })
+    .nullable()
+    .optional(),
+});
+
 export const ConnectionsCaptureFingerprintSchema = z.object({
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
   token: z.string().min(1, 'Token is required'),
 });
 
+const DeviceIconKindSchema: z.ZodType<DeviceKind> = z.enum(DEVICE_KINDS);
+
 export const ConnectionsAddSchema = z.object({
   label: z.string().min(1, 'Label is required'),
   accent: z.enum(CONNECTION_ACCENTS).nullable().optional(),
+  detectedDeviceKind: z.enum(DETECTED_DEVICE_KINDS).nullable().optional(),
+  deviceIcon: z.union([z.literal('auto'), DeviceIconKindSchema]).optional(),
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
   fingerprint: z.string().min(1, 'Fingerprint is required'),
   token: z.string().min(1, 'Token is required'),
+  /** tc address from the pairing URI's `tc=` (PROTOCOL §12.3); absent = none. */
+  tcAddress: z.string().trim().min(1).optional(),
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts: z.boolean().optional(),
   /** Per-backend keychain-sync opt-out (spec Phase 2); absent = synced. */
@@ -1101,9 +1157,13 @@ export const ConnectionsUpdateSchema = z
     id: z.string().min(1, 'Connection ID is required'),
     label: z.string().trim().min(1, 'Label is required'),
     accent: z.enum(CONNECTION_ACCENTS).nullable(),
+    detectedDeviceKind: z.enum(DETECTED_DEVICE_KINDS).nullable().optional(),
+    deviceIcon: z.union([z.literal('auto'), DeviceIconKindSchema]).optional(),
     host: z.string().trim().min(1, 'Host is required').optional(),
     port: z.number().int().min(1).max(65_535).optional(),
     confirmedFingerprint: z.string().trim().min(1).optional(),
+    detectHosts: z.boolean().optional(),
+    syncExcluded: z.boolean().optional(),
   })
   .refine((value) => (value.host === undefined) === (value.port === undefined), {
     message: 'Host and port must be supplied together',
@@ -1166,4 +1226,37 @@ export const QuitConfirmationAckSchema = z.object({
 export const QuitConfirmationResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
   proceed: z.boolean(),
+});
+
+// ============================================================================
+// Invite Consent Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite GitHub identity
+// prompt. The payload contract (all four channels) is documented in
+// `src/shared/ipc/invite-consent.ts`.
+// ============================================================================
+
+export const InviteConsentAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteConsentResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  action: z.enum(['open', 'cancel']),
+});
+
+// ============================================================================
+// Invite Notice Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite failure /
+// plaintext-credential notice. The payload contract (all four channels) is
+// documented in `src/shared/ipc/invite-notice.ts`.
+// ============================================================================
+
+export const InviteNoticeAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteNoticeResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
 });

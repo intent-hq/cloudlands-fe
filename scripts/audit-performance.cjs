@@ -104,7 +104,7 @@ function auditPerformance() {
 
     console.log(`  ${featureFound ? '✅' : '❌'} ${feature}`);
     console.log(
-      `     Score: ${score.toFixed(1)}/10 (${matchCount}/${config.patterns.length} patterns found)`
+      `     Score: ${score.toFixed(1)}/10 (${matchCount}/${config.patterns.length} patterns found)`,
     );
     console.log('');
 
@@ -125,7 +125,7 @@ function auditPerformance() {
   console.log(`  Overall Score: ${totalScore.toFixed(1)}/${maxScore} (${percentage.toFixed(1)}%)`);
   console.log(`  Files Checked: ${filesToAudit.length}`);
   console.log(
-    `  Features Implemented: ${results.filter((r) => r.implemented).length}/${results.length}`
+    `  Features Implemented: ${results.filter((r) => r.implemented).length}/${results.length}`,
   );
 
   // Performance grade

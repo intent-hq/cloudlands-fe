@@ -60,7 +60,7 @@ function loadCdpHelpers(): void {
     logToStderr('ERROR', `Failed to load CDP helpers: ${error.message}`);
     logToStderr(
       'ERROR',
-      `Attempted path: ${path.join(path.dirname(__filename), 'cdp-helpers.js')}`
+      `Attempted path: ${path.join(path.dirname(__filename), 'cdp-helpers.js')}`,
     );
     throw error;
   }
@@ -82,7 +82,7 @@ async function connectCDP(): Promise<void> {
       (t: any) =>
         t.type === 'page' &&
         !t.url.startsWith('devtools://') &&
-        !t.title.toLowerCase().includes('devtools')
+        !t.title.toLowerCase().includes('devtools'),
     );
 
     if (appTarget) {
@@ -112,7 +112,7 @@ async function connectCDP(): Promise<void> {
   } catch (error: any) {
     logToStderr('ERROR', `Failed to connect to CDP: ${error.message}`);
     throw new Error(
-      `Cannot connect to Electron app. Is it running with --remote-debugging-port=${port}?`
+      `Cannot connect to Electron app. Is it running with --remote-debugging-port=${port}?`,
     );
   }
 }
@@ -200,7 +200,7 @@ async function ensureCDPConnected(): Promise<void> {
       `Last error: ${lastError?.message}\n\n` +
       `Please ensure the Electron app is running with CDP enabled:\n` +
       `  pnpm run dev:cdp\n` +
-      `Or start Electron with --remote-debugging-port=${port}`
+      `Or start Electron with --remote-debugging-port=${port}`,
   );
 }
 
@@ -937,7 +937,7 @@ async function handleCdpRunScript(args: any): Promise<any> {
     throw new Error(
       `Script execution failed: ${errorMessage}\n` +
         `Line: ${error.lineNumber}, Column: ${error.columnNumber}\n\n` +
-        `Script:\n${script}`
+        `Script:\n${script}`,
     );
   }
 
@@ -949,7 +949,7 @@ async function handleCdpRunScript(args: any): Promise<any> {
     throw new Error(
       `Script error: ${value.message}\n\n` +
         `Stack trace:\n${value.stack}\n\n` +
-        `Script:\n${script}`
+        `Script:\n${script}`,
     );
   }
 

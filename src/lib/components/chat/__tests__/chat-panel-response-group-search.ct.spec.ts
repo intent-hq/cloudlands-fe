@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
@@ -16,7 +16,7 @@ test('search reveals a completed response group and restores only search-owned s
 
   const disclosure = group.getByTestId('response-group-disclosure');
   await disclosure.focus();
-  await disclosure.press('Meta+f');
+  await disclosure.press('ControlOrMeta+f');
   const findBar = component.getByRole('search', { name: 'Find in panel' });
   const input = findBar.getByRole('textbox');
   await input.fill('Nested prose alignment reference');
@@ -26,7 +26,7 @@ test('search reveals a completed response group and restores only search-owned s
   await expect(group).toHaveAttribute('data-chat-search-expanded', 'false');
 
   await disclosure.click();
-  await disclosure.press('Meta+f');
+  await disclosure.press('ControlOrMeta+f');
   await findBar.getByRole('textbox').fill('Nested prose alignment reference');
   await findBar.getByRole('textbox').press('Escape');
   await expect(group).toHaveAttribute('data-chat-search-expanded', 'true');
@@ -57,7 +57,7 @@ test('search treats headingless reasoning as inline content and preserves titled
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
 
   await inlineMessage.getByText('Inline headingless search target remains visible').focus();
-  await page.keyboard.press('Meta+f');
+  await page.keyboard.press('ControlOrMeta+f');
   const findBar = component.getByRole('search', { name: 'Find in panel' });
   const input = findBar.getByRole('textbox');
   await input.fill('Inline headingless search target');
@@ -65,7 +65,7 @@ test('search treats headingless reasoning as inline content and preserves titled
   await input.press('Escape');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'false');
 
-  await page.keyboard.press('Meta+f');
+  await page.keyboard.press('ControlOrMeta+f');
   await findBar.getByRole('textbox').fill('Hidden titled reasoning search target');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'true');
   await findBar.getByRole('textbox').press('Escape');
@@ -73,7 +73,7 @@ test('search treats headingless reasoning as inline content and preserves titled
 
   await titledDisclosure.click();
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'true');
-  await titledDisclosure.press('Meta+f');
+  await titledDisclosure.press('ControlOrMeta+f');
   await findBar.getByRole('textbox').fill('Hidden titled reasoning search target');
   await findBar.getByRole('textbox').press('Escape');
   await expect(titledDisclosure).toHaveAttribute('aria-expanded', 'true');
@@ -92,7 +92,7 @@ test('search reveals a grouped orphan result and restores manual disclosure stat
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 
   await disclosure.focus();
-  await disclosure.press('Meta+f');
+  await disclosure.press('ControlOrMeta+f');
   const findBar = component.getByRole('search', { name: 'Find in panel' });
   await findBar.getByRole('textbox').fill('grouped-search-orphan-tool-marker');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
@@ -101,7 +101,7 @@ test('search reveals a grouped orphan result and restores manual disclosure stat
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
 
   await disclosure.click();
-  await disclosure.press('Meta+f');
+  await disclosure.press('ControlOrMeta+f');
   await findBar.getByRole('textbox').fill('grouped-search-orphan-tool-marker');
   await findBar.getByRole('textbox').press('Escape');
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
@@ -116,7 +116,7 @@ test('search highlights a result query in the standalone payload instead of its 
     props: { theme: 'light', zoom: 1, width: 560, groupedOrphanSearchOnly: true },
   });
   await component.getByText('Continue after grouped orphan search').focus();
-  await page.keyboard.press('Meta+f');
+  await page.keyboard.press('ControlOrMeta+f');
   await component.getByRole('search', { name: 'Find in panel' }).getByRole('textbox').fill('tool');
 
   await expect

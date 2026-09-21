@@ -70,6 +70,8 @@ describe('buildReplaceAgentHandoffMessage', () => {
   it('escapes quotes in agent names so the call shape stays valid', () => {
     const message = buildReplaceAgentHandoffMessage({ agentName: 'The "Fixer"' });
 
-    expect(message).toContain('ws.agent.create("The \\"Fixer\\"", kickoffMessage, { topLevel: true })');
+    expect(message).toContain(
+      'ws.agent.create("The \\"Fixer\\"", kickoffMessage, { topLevel: true })',
+    );
   });
 });

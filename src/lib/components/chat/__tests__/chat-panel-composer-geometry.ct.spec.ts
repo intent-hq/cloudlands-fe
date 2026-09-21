@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 import {
   applyAuroraPaintProbe,
@@ -71,9 +71,9 @@ for (const state of states) {
       const actionBox = action.getBoundingClientRect();
       const style = getComputedStyle(node);
       const probe = document.createElement('div');
-      probe.className = 'bg-sidebar';
+      probe.className = 'bg-surface-2';
       document.body.append(probe);
-      const sidebarBackground = getComputedStyle(probe).backgroundColor;
+      const surfaceBackground = getComputedStyle(probe).backgroundColor;
       probe.remove();
       return {
         box: [box.left, box.top, box.right, box.bottom],
@@ -81,7 +81,7 @@ for (const state of states) {
         prompt: [promptBox.left, promptBox.top, promptBox.right, promptBox.bottom],
         lane: [laneBox.left, laneBox.top, laneBox.right, laneBox.bottom],
         background: style.backgroundColor,
-        sidebarBackground,
+        surfaceBackground,
         borders: [
           style.borderTopWidth,
           style.borderRightWidth,
@@ -96,7 +96,7 @@ for (const state of states) {
       };
     });
 
-    expect(geometry.background).toBe(geometry.sidebarBackground);
+    expect(geometry.background).toBe(geometry.surfaceBackground);
     expect(geometry.borders).toEqual(['0px', '0px', '0px', '0px']);
     expect(geometry.radii[0]).toBe(geometry.radii[1]);
     expect(Number.parseFloat(geometry.radii[0])).toBeGreaterThan(0);
@@ -214,6 +214,34 @@ test('keeps the regular Aurora clipped during reduced-motion streaming transitio
 
   await component.update({ props });
   await expect(aurora).toHaveCount(0);
+});
+
+test('separates suggestions from the composer while resizing into compact mode', async ({
+  mount,
+}) => {
+  const props = { width: 720, height: 960, suggestions: true };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const suggestions = component.getByTestId('suggested-prompts-surface');
+  const list = component.getByTestId('suggested-prompts-list');
+  const input = component.getByTestId('message-input');
+  const gap = async () => {
+    const [promptsBox, inputBox] = await Promise.all([
+      suggestions.boundingBox(),
+      input.boundingBox(),
+    ]);
+    return inputBox!.y - promptsBox!.y - promptsBox!.height;
+  };
+
+  await expect(suggestions).toBeVisible();
+  await expect(list).toHaveAttribute('data-compact', 'false');
+  await expect.poll(gap).toBeCloseTo(12, 1);
+  await component.update({ props: { ...props, height: 480 } });
+  await expect(list).toHaveAttribute('data-compact', 'true');
+  await expect.poll(gap).toBeCloseTo(8, 1);
+
+  await suggestions.getByRole('button', { name: 'Edit in input' }).first().click();
+  await expect(input.locator('.tiptap-editor')).toContainText('Review the layout.');
+  await expect.poll(gap).toBeCloseTo(8, 1);
 });
 
 test('keeps attachments, controls, tab order, and resize behavior inside the nested surface', async ({

@@ -9,22 +9,20 @@
    * The toast shows progress during download and an install button when ready.
    */
 
-  import UpdateToast from '$lib/components/ui/toast/UpdateToast.svelte';
   import { onMount } from 'svelte';
-  import { toast } from 'svelte-sonner';
-
+  import { notify } from '$lib/components/patterns/notify';
 
   import {
-  selectAutoUpdateToastVisible,
-  selectAutoUpdateStatus,
-  selectAutoUpdateDismissedAt,
-} from '$store/renderer/slices/auto-update/auto-update-selectors';
+    selectAutoUpdateToastVisible,
+    selectAutoUpdateStatus,
+    selectAutoUpdateDismissedAt,
+  } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
-  hideToast,
-  showToast,
-  dismissDownloadedToast,
-  initAutoUpdate,
-} from '$store/renderer/slices/auto-update/auto-update-slice';
+    hideToast,
+    showToast,
+    dismissDownloadedToast,
+    initAutoUpdate,
+  } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const toastVisible$ = selectAutoUpdateToastVisible();
@@ -45,7 +43,7 @@
 
   function dismissToastInternally(toastId: string | number) {
     internallyDismissedIds.add(toastId);
-    toast.dismiss(toastId);
+    notify.dismiss(toastId);
   }
 
   function showUpdateToast() {
@@ -55,32 +53,14 @@
     }
 
     // Show the update toast with custom component
-    currentToastId = toast.custom(UpdateToast, {
-      duration: Infinity, // Don't auto-dismiss for progress states
-      onDismiss: (dismissed) => {
-        // Sonner's built-in dismiss (swipe, close button, programmatic)
-        if (internallyDismissedIds.delete(dismissed.id)) {
-          // Internal programmatic dismiss — not a user action
-          return;
-        }
-        if (currentToastId === dismissed.id) {
-          currentToastId = undefined;
-        }
-        const currentStatus = selectAutoUpdateStatus.select(appStore.state);
-        if (currentStatus === 'downloaded') {
-          // Allow dismissal but track the time so we can re-prompt after 24h
-          appStore.dispatch(dismissDownloadedToast(Date.now()));
-          return;
-        }
-        appStore.dispatch(hideToast());
-      },
-      componentProps: {
+    currentToastId = notify.update(
+      {
         onDismiss: () => {
           // UpdateToast's close button — an explicit user dismissal. The raw
-          // toast.dismiss routes through the sonner-level onDismiss above,
+          // notify.dismiss routes through the sonner-level onDismiss below,
           // which arms the 24h cooldown when the status is 'downloaded'.
           if (currentToastId !== undefined) {
-            toast.dismiss(currentToastId);
+            notify.dismiss(currentToastId);
             currentToastId = undefined;
           }
           appStore.dispatch(hideToast());
@@ -94,7 +74,27 @@
           appStore.dispatch(hideToast());
         },
       },
-    });
+      {
+        duration: Infinity, // Don't auto-dismiss for progress states
+        onDismiss: (dismissed) => {
+          // Sonner's built-in dismiss (swipe, close button, programmatic)
+          if (internallyDismissedIds.delete(dismissed.id)) {
+            // Internal programmatic dismiss — not a user action
+            return;
+          }
+          if (currentToastId === dismissed.id) {
+            currentToastId = undefined;
+          }
+          const currentStatus = selectAutoUpdateStatus.select(appStore.state);
+          if (currentStatus === 'downloaded') {
+            // Allow dismissal but track the time so we can re-prompt after 24h
+            appStore.dispatch(dismissDownloadedToast(Date.now()));
+            return;
+          }
+          appStore.dispatch(hideToast());
+        },
+      },
+    );
   }
 
   function dismissToast() {

@@ -16,8 +16,34 @@ import { getAgentFileEdits, propagateAgentEditsToParents } from '$lib/utils/agen
 import { stripWorkspacePrefix } from '$lib/utils/file-utils';
 import type { FileGitStatus, FileNode } from '$shared/types';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { takeLatestByContext } from '../../../utils/context-saga-effects';
 import { selectFileExplorerState } from '../file-explorer-selectors';
-import { addExpandedPath, addLoadingPath, expandAllRequested, expandToPathRequested, hydrateFileExplorerRequested, incrementTreeVersion, initializeFileExplorer, refreshDirectoryRequested, refreshFileExplorer, removeAgentFileEditsEntries, removeExpandedPath, removeLoadingPath, setBulkOperation, setChildrenAtPathAction, setFileExplorerFileCount, setFileExplorerError, setFileExplorerInitialized, setFileExplorerLoading, setFileExplorerWorkspacePath, setGitStatusMap, setRootNode, syncGitStatusFromStoresRequested, toggleDirectoryRequested, updateAgentFileEditsEntries } from '../file-explorer-slice';
+import {
+  addExpandedPath,
+  addLoadingPath,
+  expandAllRequested,
+  expandToPathRequested,
+  hydrateFileExplorerRequested,
+  incrementTreeVersion,
+  initializeFileExplorer,
+  refreshDirectoryRequested,
+  refreshFileExplorer,
+  removeAgentFileEditsEntries,
+  removeExpandedPath,
+  removeLoadingPath,
+  setBulkOperation,
+  setChildrenAtPathAction,
+  setFileExplorerFileCount,
+  setFileExplorerError,
+  setFileExplorerInitialized,
+  setFileExplorerLoading,
+  setFileExplorerWorkspacePath,
+  setGitStatusMap,
+  setRootNode,
+  syncGitStatusFromStoresRequested,
+  toggleDirectoryRequested,
+  updateAgentFileEditsEntries,
+} from '../file-explorer-slice';
 
 const logger = createLogger('FileExplorerSaga');
 
@@ -170,9 +196,9 @@ function* initializeExplorer(action: ReturnType<typeof initializeFileExplorer>) 
   yield* call(loadAgentFileEdits, wsId);
 }
 
-function* hydrateExplorer(wsId: string) {
+function* hydrateExplorer(wsId: string, force = false) {
   const existing = yield* selectFileExplorerState.effect(wsId);
-  if (existing.isInitialized || existing.isLoading) return;
+  if (!force && (existing.isInitialized || existing.isLoading)) return;
   yield* put(setFileExplorerLoading(wsId, true));
   let completed = false;
   try {
@@ -363,10 +389,10 @@ function* refreshExplorerWorker(action: ReturnType<typeof refreshFileExplorer>) 
 }
 
 function* hydrateExplorerWorker(action: ReturnType<typeof hydrateFileExplorerRequested>) {
-  const [wsId] = action.payload;
+  const [wsId, force] = action.payload;
   if (!wsId) return;
   yield* race({
-    hydrate: call(hydrateExplorer, wsId),
+    hydrate: call(hydrateExplorer, wsId, force),
     cleanup: take((cleanup: ObservedAction) => isWorkspaceCleanup(cleanup, wsId)),
   });
 }
@@ -395,10 +421,15 @@ export function* fileExplorerSaga() {
   yield* takeLatest(expandToPathRequested, expandToPathWorker);
   yield* takeLatest(expandAllRequested, expandAllWorker);
   yield* takeLeading(refreshFileExplorer, refreshExplorerWorker);
-  yield* takeLeading(hydrateFileExplorerRequested, hydrateExplorerWorker);
-  yield* takeLeading(refreshDirectoryRequested, refreshDirectoryWorker);
-  yield* takeLeading(
-    [syncGitStatusFromStoresRequested],
-    refreshAgentEditsWorker,
+  yield* takeLatestByContext(
+    hydrateFileExplorerRequested,
+    (action) => ({
+      context: action.payload[0],
+      force: action.payload[1],
+      generation: action.payload[2] ?? 0,
+    }),
+    hydrateExplorerWorker,
   );
+  yield* takeLeading(refreshDirectoryRequested, refreshDirectoryWorker);
+  yield* takeLeading([syncGitStatusFromStoresRequested], refreshAgentEditsWorker);
 }

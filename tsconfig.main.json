@@ -34,6 +34,7 @@
     "src/store/main/**/*.ts",
     "src/store/utils/**/*.ts",
     "src/shared/**/*.ts",
+    "src/features/*/main/**/*.ts",
     "src/features/**/*.ipc.ts",
     "src/features/**/*.service.ts",
     "src/features/ipc/**/*.ts",

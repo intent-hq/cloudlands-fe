@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 
@@ -49,6 +49,7 @@ async function shellStyles(panel: Locator, page: Page, expectedBackgroundClass =
       ownsEmptySurface: element.getAttribute('data-empty-panel-surface'),
       focused: element.getAttribute('data-focused'),
       focusBorderVisible: element.getAttribute('data-focus-border-visible'),
+      shadow: style.boxShadow,
     };
   }, expected);
 }
@@ -98,7 +99,9 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(handle).toBeVisible();
         expect(await handle.evaluate((node) => getComputedStyle(node).width)).toBe('16px');
         expect(
-          await handle.locator('xpath=..').evaluate((node) => getComputedStyle(node).width),
+          await handle
+            .locator('xpath=ancestor::*[contains(@class, "panel-split-handle-wrapper")][1]')
+            .evaluate((node) => getComputedStyle(node).width),
         ).toBe('8px');
       });
     }
@@ -106,6 +109,62 @@ for (const theme of ['light', 'dark'] as const) {
 }
 
 for (const theme of ['light', 'dark'] as const) {
+  for (const pristine of [true, false]) {
+    test(`preserves empty header and content geometry through keyboard and pointer focus in ${theme}, pristine=${pristine}`, async ({
+      mount,
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1100, height: 600 });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.evaluate(
+        (dark) => document.documentElement.classList.toggle('dark', dark),
+        theme === 'dark',
+      );
+      const component = await mount(PanelWorkspaceColumnClipHarness, {
+        props: { sidebarWidth: 120, canvasWidth: 800, pristine },
+      });
+      const panels = component.locator('.panel');
+      const children = component.locator(
+        '[data-panel-header], .panel-content, [data-panel-empty-state]',
+      );
+      await expect(panels).toHaveCount(2);
+      await expect(children).toHaveCount(6);
+      await page.evaluate(() => document.fonts.ready);
+      const bounds = () =>
+        children.evaluateAll(async (nodes) => {
+          // Container-query layout settles on the next render after focus styles change.
+          await new Promise<number>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          );
+          return nodes.map((node) => {
+            const { x, y, width, height } = node.getBoundingClientRect();
+            return { x, y, width, height };
+          });
+        });
+      await panels.first().click({ position: { x: 20, y: 90 } });
+      await expect(panels.first()).toHaveAttribute('data-focused', 'true');
+      await component.locator('.panel-split-handle').focus();
+      const before = await bounds();
+      await page.keyboard.press('Tab');
+      await expect(panels.nth(1).locator('[data-add-panel-column]')).toBeFocused();
+      await expect(panels.nth(1)).toHaveAttribute('data-focused', 'true');
+      expect(await bounds()).toEqual(before);
+      for (const [index, panel] of (await panels.all()).entries()) {
+        const style = await shellStyles(panel, page);
+        expect(style.borders).toEqual(['1px', '1px', '1px', '1px']);
+        expect(new Set(style.borderColors)).toEqual(
+          new Set([index === 1 ? style.expectedBorder : 'rgba(0, 0, 0, 0)']),
+        );
+        expect(style.background).toBe(style.expectedBackground);
+        expect(style.emptyStateBackground).toBe(style.expectedBackground);
+        expect(style.shadow).toBe('none');
+      }
+      await panels.first().click({ position: { x: 20, y: 90 } });
+      await expect(panels.first()).toHaveAttribute('data-focused', 'true');
+      expect(await bounds()).toEqual(before);
+    });
+  }
+
   test(`keeps populated panels on the approved surface in ${theme} at 200% zoom`, async ({
     mount,
     page,

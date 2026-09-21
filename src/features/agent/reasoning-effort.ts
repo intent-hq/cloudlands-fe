@@ -1,10 +1,11 @@
 /**
  * Session-level reasoning-effort writer for the chat-input effort control.
  *
- * Keeps the versioned wire mutation out of the component: protocol 5.2+ uses
- * the first-class `agent.update` field, while older daemons use their cataloged
- * `{model}/{effort}` variants through `agent.setModel`. A rejection reverts the
- * optimistic field and surfaces a toast.
+ * Keeps the versioned wire mutation out of the component: a daemon whose
+ * `agent.update` accepts the first-class `reasoningEffort` field gets that,
+ * while older daemons use their cataloged `{model}/{effort}` variants through
+ * `agent.setModel`. A rejection reverts the optimistic field and surfaces a
+ * toast.
  */
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
@@ -71,8 +72,8 @@ export async function applyReasoningEffort(
   if (current === effort) {
     appStore.dispatch(updateSession(agentId, { reasoningEffort: previousEffort }));
   }
-  const { toast } = await import('svelte-sonner');
-  toast.error(result.error ?? m.chat_effortPicker_updateFailed_error());
+  const { notify } = await import('$lib/components/patterns/notify');
+  notify.error(result.error ?? m.chat_effortPicker_updateFailed_error());
   return false;
 }
 

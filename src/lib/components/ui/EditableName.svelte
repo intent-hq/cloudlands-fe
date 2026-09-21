@@ -11,6 +11,8 @@
    */
   import { tick } from 'svelte';
   import { cn } from '$lib/utils';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -117,10 +119,10 @@
   }
 </script>
 
-<div class={cn('inline-flex items-center min-w-0 shrink whitespace-nowrap', className)}>
+<div class={cn('relative inline-flex items-center min-w-0 shrink whitespace-nowrap', className)}>
   {#if isEditing}
-    <input
-      bind:this={inputRef}
+    <Input
+      bind:ref={inputRef}
       type="text"
       bind:value={editedValue}
       onblur={save}
@@ -131,18 +133,20 @@
       }}
       class={cn(
         textClass,
-        'bg-transparent border-none outline-none px-0',
-        'focus:ring-0! focus:outline-none! focus:ring-transparent!',
+        'edit-input relative z-10 bg-transparent border-none outline-none px-0',
+        'focus:outline-none!',
         'min-w-[60px]',
       )}
+      noFocusStyle
       {placeholder}
       style="width: {getInputWidth(editedValue)}px; max-width: {maxWidth}px"
     />
   {:else}
-    <button
+    <Button
+      variant="plain"
       class={cn(
         textClass,
-        'bg-transparent border-none cursor-pointer text-left',
+        'relative z-10 bg-transparent border-none cursor-text text-left',
         'truncate transition-opacity hover:opacity-80',
         disabled && 'cursor-default opacity-50',
       )}
@@ -152,6 +156,21 @@
       {title}
     >
       {value || placeholder}
-    </button>
+    </Button>
   {/if}
+  <span
+    aria-hidden="true"
+    class={cn(
+      'pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
+      isEditing
+        ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+        : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent',
+    )}
+  ></span>
 </div>
+
+<style>
+  input.edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>

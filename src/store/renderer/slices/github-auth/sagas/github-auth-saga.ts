@@ -1,5 +1,5 @@
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
-import type { GitHubDeviceFlow, GitHubUser } from '$features/github-auth/types';
+import type { GitHubDeviceFlow, GitHubUser, StartAuthOptions } from '$features/github-auth/types';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -108,7 +108,10 @@ function* initialize(): SagaGenerator<void> {
         oauthUrl: state.oauthUrl ?? null,
       }),
     );
-    if (!state.isAuthenticated && validPendingFlow(state.deviceFlow)) {
+    // A pending flow is resumed whether or not a token is configured: a
+    // reconnect (intent#5206) keeps the old token valid while the user
+    // authorizes, and a settings remount must not drop the in-flight code.
+    if (validPendingFlow(state.deviceFlow)) {
       yield* put(setAuthenticating(true));
       yield* put(
         setDeviceFlowInfo({
@@ -130,13 +133,13 @@ function* initialize(): SagaGenerator<void> {
   }
 }
 
-function* start(): SagaGenerator<void> {
+function* start(options?: StartAuthOptions): SagaGenerator<void> {
   yield* put(setAuthenticating(true));
   try {
-    const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call([
-      githubAuthClient,
-      githubAuthClient.startAuth,
-    ]);
+    const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call(
+      [githubAuthClient, githubAuthClient.startAuth],
+      options,
+    );
     if (!result.success) {
       yield* put(setGitHubAuthError(result.error || m.githubAuth_service_startFailed_error()));
       return;
@@ -226,8 +229,9 @@ function* initializeGitHubAuthWorker(
   yield* call(initialize);
 }
 
-function* startGitHubAuthWorker(_action: ReturnType<typeof startGitHubAuth>): SagaGenerator<void> {
-  yield* call(start);
+function* startGitHubAuthWorker(action: ReturnType<typeof startGitHubAuth>): SagaGenerator<void> {
+  const [options] = action.payload ?? [];
+  yield* call(start, options);
 }
 
 function* checkGitHubAuthStatusWorker(

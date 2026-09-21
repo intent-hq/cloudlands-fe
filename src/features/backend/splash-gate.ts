@@ -114,6 +114,13 @@ export function startSplashGate(
   };
 }
 
+/** Fade out and remove the static splash element once its transition completes. */
+export function dismissSplashElement(splash: HTMLElement | null): void {
+  if (!splash) return;
+  splash.classList.add('mounted');
+  splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+}
+
 /**
  * Wires the `#splash` DOM element's fade-out/removal to {@link startSplashGate}.
  *
@@ -127,9 +134,5 @@ export function wireSplashGate(
   options?: StartSplashGateOptions,
 ): () => void {
   if (!splash) return () => {};
-  return startSplashGate(() => {
-    splash.classList.add('mounted');
-    // Remove from DOM after fade-out transition completes
-    splash.addEventListener('transitionend', () => splash.remove(), { once: true });
-  }, options);
+  return startSplashGate(() => dismissSplashElement(splash), options);
 }

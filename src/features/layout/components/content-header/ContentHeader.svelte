@@ -15,6 +15,7 @@
   import Fa from 'svelte-fa';
   import { faXmark, faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import type { Snippet } from 'svelte';
   import { tick } from 'svelte';
@@ -119,19 +120,17 @@
     <div class="flex items-center min-w-0 px-2 gap-2">
       {#each breadcrumbs as crumb, i (`crumb-${i}-${crumb.label}`)}
         {#if crumb.onClick}
-          <button
+          <Button
             onclick={crumb.onClick}
-            class="flex items-center gap-1.5 text-ui font-medium tracking-wide uppercase text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            class="flex items-center gap-1.5 text-ui font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             {#if crumb.icon}
               <Fa icon={crumb.icon} class="w-3 h-3 opacity-50" />
             {/if}
             <span class="truncate max-w-24">{crumb.label}</span>
-          </button>
+          </Button>
         {:else}
-          <span
-            class="flex items-center gap-1.5 text-ui font-medium tracking-wide uppercase text-muted-foreground"
-          >
+          <span class="flex items-center gap-1.5 text-ui font-medium text-muted-foreground">
             {#if crumb.icon}
               <Fa icon={crumb.icon} class="w-3 h-3 opacity-50" />
             {/if}
@@ -148,28 +147,36 @@
       <!-- Title -->
       <div class="flex items-center gap-1.5 min-w-0">
         <!-- <Fa icon={faChevronLeft} class="w-2.5! h-2.5! text-ghost opacity-50 shrink-0" /> -->
-        {#if isEditingTitle}
-          <input
-            bind:this={titleInputRef}
-            type="text"
-            bind:value={editedTitle}
-            onblur={saveTitle}
-            onkeydown={handleTitleKeydown}
-            class="text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
-            style="field-sizing: content;"
-          />
-        {:else}
-          <button
-            class="text-sm font-medium truncate text-left hover:opacity-80 transition-opacity {editableTitle
-              ? 'cursor-text'
-              : 'cursor-default'}"
-            onclick={startEditingTitle}
-            disabled={!editableTitle}
-            title={editableTitle ? m.ui_contentHeader_clickToEdit_tooltip() : title}
-          >
-            {title}
-          </button>
-        {/if}
+        <div class="relative inline-flex min-w-0 items-center">
+          {#if isEditingTitle}
+            <Input
+              bind:ref={titleInputRef}
+              type="text"
+              bind:value={editedTitle}
+              onblur={saveTitle}
+              onkeydown={handleTitleKeydown}
+              class="edit-input relative z-10 text-sm font-medium bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
+              style="field-sizing: content;"
+            />
+          {:else}
+            <Button
+              class="relative z-10 text-sm font-medium truncate text-left hover:opacity-80 transition-opacity {editableTitle
+                ? 'cursor-text'
+                : 'cursor-default'}"
+              onclick={startEditingTitle}
+              disabled={!editableTitle}
+              title={editableTitle ? m.ui_contentHeader_clickToEdit_tooltip() : title}
+            >
+              {title}
+            </Button>
+          {/if}
+          <span
+            aria-hidden="true"
+            class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+              ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+              : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+          ></span>
+        </div>
         {#if subtitle}
           <span class="text-xs text-subtle truncate">{subtitle}</span>
         {/if}
@@ -241,3 +248,9 @@
     {/if}
   </div>
 </div>
+
+<style>
+  input.edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+</style>

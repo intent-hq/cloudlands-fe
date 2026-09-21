@@ -40,6 +40,11 @@ export function parseWorkspaceFileImageUrl(url: string): WorkspaceFileImage | nu
   return { workspaceId, path: decoded.join('/') };
 }
 
+/** Whether an image source is a remote HTTPS URL with a shareable link. */
+export function isHttpsImageUrl(url: string): boolean {
+  return /^https:\/\//i.test(url);
+}
+
 /** Parsed base64 `data:` URL. */
 export interface Base64DataUrl {
   mimeType: string;

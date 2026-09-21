@@ -1,83 +1,78 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { parseUiComponentMetadata } from '../component-metadata';
 import Toggle from './toggle.svelte';
-import { toggleCompatibilityModes, toggleMetadata } from './toggle.meta';
+import { toggleMetadata } from './toggle.meta';
 
 afterEach(() => cleanup());
 
 describe('Toggle', () => {
-  it('uses only button aria-pressed semantics in canonical single mode', async () => {
+  it('forwards rest attributes and binds the underlying control ref', async () => {
+    const binding = { ref: null as HTMLButtonElement | null };
+    const target = document.createElement('div');
+    document.body.append(target);
+    const component = mount(Toggle, {
+      target,
+      props: {
+        'data-testid': 'forwarded-control',
+        'aria-label': 'Forwarded control',
+        get ref() {
+          return binding.ref;
+        },
+        set ref(value) {
+          binding.ref = value;
+        },
+      },
+    });
+    try {
+      await tick();
+      const control = target.querySelector('[data-testid="forwarded-control"]');
+      expect(control).not.toBeNull();
+      expect(binding.ref).toBe(control);
+      expect(control?.getAttribute('aria-label')).toBe('Forwarded control');
+      binding.ref?.focus();
+      expect(document.activeElement).toBe(control);
+    } finally {
+      await unmount(component);
+      target.remove();
+    }
+    expect(binding.ref).toBeNull();
+  });
+
+  it('uses button aria-pressed semantics and reports pressed changes', async () => {
     const onChange = vi.fn();
+    const onPressedChange = vi.fn();
     const { getByRole } = render(Toggle, {
-      props: { ariaLabel: 'Pin item', pressed: false, onChange },
+      props: { ariaLabel: 'Pin item', pressed: false, onChange, onPressedChange },
     });
     const toggle = getByRole('button', { name: 'Pin item' });
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     expect(toggle.getAttribute('role')).not.toBe('switch');
     await fireEvent.click(toggle);
     expect(onChange).toHaveBeenLastCalledWith(true);
+    expect(onPressedChange).toHaveBeenLastCalledWith(true);
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    await fireEvent.click(toggle);
+    expect(onChange).toHaveBeenLastCalledWith(false);
+    expect(onPressedChange).toHaveBeenLastCalledWith(false);
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('retains tested switch and indicator compatibility behavior', async () => {
-    for (const variant of ['switch', 'indicator'] as const) {
-      const onChange = vi.fn();
-      const { getByRole, unmount } = render(Toggle, {
-        props: {
-          variant,
-          ariaLabel: `${variant} mode`,
-          ariaDescribedby: `${variant}-description`,
-          onChange,
-        },
-      });
-      const control = getByRole('switch', { name: `${variant} mode` });
-      expect(control.getAttribute('aria-describedby')).toBe(`${variant}-description`);
-      await fireEvent.click(control);
-      expect(onChange).toHaveBeenLastCalledWith(true);
-      unmount();
-    }
-  });
-
-  it('retains tested group compatibility behavior', async () => {
+  it('does not change while disabled', async () => {
     const onChange = vi.fn();
     const { getByRole } = render(Toggle, {
-      props: {
-        variant: 'group',
-        value: 'light',
-        options: [
-          { value: 'light', label: 'Light' },
-          { value: 'dark', label: 'Dark' },
-        ],
-        onChange,
-      },
+      props: { ariaLabel: 'Pinned', disabled: true, onChange },
     });
-    await fireEvent.click(getByRole('button', { name: 'Dark' }));
-    expect(onChange).toHaveBeenLastCalledWith('dark');
+    const toggle = getByRole('button', { name: 'Pinned' });
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('uses semantic editorial presentation for canonical and compatibility modes', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/ui/toggle/toggle.svelte'),
-      'utf8',
-    );
-    expect(source).toContain('type-body');
-    expect(source).toContain('border-border');
-    expect(source).toContain('hover:border-input');
-    expect(source).toContain('rounded-(--radius-medium)');
-    expect(source).toContain('shadow-(--elevation-raised)');
-    expect(source).toContain('data-[state=on]:bg-accent');
-    expect(source).toContain('motion-reduce:transition-none');
-    expect(source).not.toMatch(/bg-white|border-t-white|border-b-black|rgba\(|gradient/);
-  });
-
-  it('publishes replacements and measurable removal gates for old modes', () => {
+  it('publishes only the canonical toggle fixture', () => {
     expect(() => parseUiComponentMetadata(toggleMetadata)).not.toThrow();
-    expect(toggleCompatibilityModes.group.replacement).toBe('$lib/components/ui/toggle-group');
-    expect(toggleCompatibilityModes.switch.replacement).toBe('$lib/components/ui/switch');
-    expect(toggleCompatibilityModes.indicator.removalGate).toContain('reach zero');
+    expect(toggleMetadata.fixtures.map((fixture) => fixture.id)).toEqual(['toggle-state-matrix']);
   });
 });

@@ -92,7 +92,7 @@ describe('Spaces panel options menu', () => {
     expect(trigger.className).toContain('h-8');
     expect(trigger.className).toContain('w-8');
     expect(trigger.className).toContain('focus-visible:bg-muted/50');
-    expect(trigger.className).not.toMatch(/focus-visible:(?:ring-[1-9]|ring-offset|shadow-)/);
+    expect(trigger.className).toContain('focus-visible:ring-0');
 
     await openOptionsWithPointer();
     expect(trigger.getAttribute('aria-expanded')).toBe('true');

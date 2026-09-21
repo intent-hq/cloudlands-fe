@@ -1,0 +1,145 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// Renderer source must reference daemon protocol features by method or field name,
+// never by a protocol-version literal. Protocol numbers are provisional until merge
+// (docs/protocol/versioning.md): a concurrent protocol PR forces a renumber, and no FE
+// constant centralises the version, so literals go stale silently — cloudlands-fe#2447
+// shipped five "v9.14" strings after the feature was renumbered to 10.1.
+export const ESCAPE_TOKEN = 'protocol-version-ok';
+// A file-level directive within the first FILE_ESCAPE_LINES lines exempts the whole
+// file (fixture-heavy tests carrying non-protocol product versions).
+export const FILE_ESCAPE_TOKEN = `${ESCAPE_TOKEN}-file`;
+export const FILE_ESCAPE_LINES = 10;
+export const SCANNED_EXTENSIONS = new Set(['.ts', '.svelte', '.js', '.mjs']);
+export const REMEDIATION_HINT = [
+  'Name the protocol method or field (e.g. `agent.getMessageBlock`, or `git.status` returning `hasUpstream`)',
+  'or describe the capability instead of a protocol version number.',
+  `For a deliberate exception, add a \`// ${ESCAPE_TOKEN}: <reason>\` (or \`/* ${ESCAPE_TOKEN}: <reason> */\`)`,
+  'comment to the line, or put',
+  `\`// ${FILE_ESCAPE_TOKEN}: <reason>\` in the first ${FILE_ESCAPE_LINES} lines of a fixture-heavy file.`,
+  'The escape must be a comment with a non-empty reason; a bare token, or one inside a string, does not exempt.',
+].join('\n');
+
+const SCAN_ROOT = 'src';
+// `paraglide` is the gitignored compiled i18n bundle; `src/preload/index.ts` is
+// generated from its sibling template, which is scanned in its place.
+const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
+const GENERATED_FILES = new Set(['src/preload/index.ts']);
+
+// A `v`-prefixed literal (`v10.1`) is a hit on any line; a bare one (`10.1`) only
+// when the line also names the protocol or the daemon. Word-bounded on purpose:
+// camelCase identifiers (`protocolVersion = '9.13'`, `daemonHealth`) are not keywords,
+// so version-gate fixtures in tests stay legal.
+const KEYWORD_PATTERN = /\b(?:protocol|intentd|daemons?)\b/i;
+// Two segments of one or two digits, optionally `v`-prefixed. The lookarounds keep
+// three-part semver (`2.17.0`, `0.1.0`) and `§`-anchored section references out
+// while still matching a literal that ends a sentence (`protocol 10.1.`); a
+// preceding word character rules out identifiers and longer numbers.
+const VERSION_LITERAL_PATTERN = /(?<![\w.§])[vV]?\d{1,2}\.\d{1,2}(?!\d)(?!\.\d)/g;
+const V_PREFIXED_PATTERN = /^[vV]/;
+// Shapes that carry a two-segment number but never a protocol version (section
+// references and ranges, JSON-RPC 2.0, elapsed times). They are blanked before the
+// literal scan so the surrounding line is still checked.
+const NON_VERSION_SHAPES = [
+  /§\s*\d{1,2}\.\d{1,2}(?:\s*[-–—]\s*\d{1,2}\.\d{1,2})?/g,
+  /\bJSON-RPC\s+2\.0\b/gi,
+  /(?<![\w.])~?\d{1,2}\.\d{1,2}\s?(?:ms|s|sec|seconds?|m|min|minutes?|h|hours?)\b/g,
+];
+// An escape only counts as a comment carrying a reason: `// token: <reason>` or
+// `/* token: <reason> */` (the file directive also as a JSDoc `* token: <reason>`
+// line). The reason is at least one non-whitespace character that does not close the
+// block comment, so a bare token, `token:` alone, or the token inside a string does not
+// exempt — every exemption stays auditable.
+const escapePattern = (token, openers) => new RegExp(`(?:${openers})\\s*${token}:\\s*(?!\\*/)\\S`);
+const LINE_ESCAPE_PATTERN = escapePattern(ESCAPE_TOKEN, '//|/\\*');
+const FILE_ESCAPE_PATTERN = escapePattern(FILE_ESCAPE_TOKEN, '//|/\\*|^\\s*\\*');
+
+const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
+
+const isScannedPath = (filePath) =>
+  SCANNED_EXTENSIONS.has(path.posix.extname(filePath)) && !GENERATED_FILES.has(filePath);
+
+export function findProtocolVersionLiterals(text) {
+  if (LINE_ESCAPE_PATTERN.test(text)) return [];
+  const stripped = NON_VERSION_SHAPES.reduce(
+    (line, shape) => line.replace(shape, (match) => ' '.repeat(match.length)),
+    text,
+  );
+  const hasKeyword = KEYWORD_PATTERN.test(text);
+  const literals = [...stripped.matchAll(VERSION_LITERAL_PATTERN)]
+    .map((match) => match[0])
+    .filter((literal) => hasKeyword || V_PREFIXED_PATTERN.test(literal));
+  return [...new Set(literals)];
+}
+
+const hasFileEscape = (lines) =>
+  lines.slice(0, FILE_ESCAPE_LINES).some((line) => FILE_ESCAPE_PATTERN.test(line));
+
+// One hit per offending line: `{ path, line, matches, text }`.
+export function findProtocolVersionLiteralHits(files) {
+  const hits = [];
+  for (const file of files) {
+    const filePath = normalize(file.path);
+    if (!isScannedPath(filePath)) continue;
+    const lines = file.content.split('\n');
+    if (hasFileEscape(lines)) continue;
+    lines.forEach((text, index) => {
+      const matches = findProtocolVersionLiterals(text);
+      if (matches.length)
+        hits.push({ path: filePath, line: index + 1, matches, text: text.trim() });
+    });
+  }
+  return hits;
+}
+
+export const formatHit = ({ path: filePath, line, matches, text }) =>
+  `${filePath}:${line}: ${matches.join(', ')}\n    ${text}`;
+
+export function collectSourceFiles(root, directory = path.join(root, SCAN_ROOT)) {
+  const files = [];
+  if (!fs.existsSync(directory)) return files;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (!SKIPPED_DIRECTORIES.has(entry.name)) files.push(...collectSourceFiles(root, absolute));
+    } else if (entry.isFile()) {
+      const relative = normalize(path.relative(root, absolute));
+      if (isScannedPath(relative)) {
+        files.push({ path: relative, content: fs.readFileSync(absolute, 'utf8') });
+      }
+    }
+  }
+  return files;
+}
+
+export function main(argv = process.argv.slice(2), root = process.cwd()) {
+  const unknown = argv.filter((argument) => argument !== '--print-hits');
+  if (unknown.length) {
+    console.error(
+      `Unknown argument(s): ${unknown.join(' ')}\nUsage: node scripts/check-protocol-version-literals.mjs [--print-hits]`,
+    );
+    return 2;
+  }
+  const files = collectSourceFiles(root);
+  const hits = findProtocolVersionLiteralHits(files);
+  if (hits.length) {
+    console.error(
+      [
+        `Protocol version literals in ${SCAN_ROOT}/ (${hits.length}):`,
+        ...hits.map(formatHit),
+        REMEDIATION_HINT,
+      ].join('\n'),
+    );
+    return 1;
+  }
+  console.log(
+    `Protocol version literals valid: ${files.length} ${SCAN_ROOT}/ files reference protocol features by name.`,
+  );
+  return 0;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exit(main());
+}

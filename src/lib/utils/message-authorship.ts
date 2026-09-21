@@ -10,8 +10,10 @@
  * `fromAgentId`, or `source: 'system'` (PROTOCOL §5.5). Benign fields that
  * can appear on user messages (`model`, `userAppMessageId`, `queueInfo`) do
  * not mark a message as non-user. Absent or malformed metadata means
- * user-authored (fail open). Dependency-light on purpose: no imports.
+ * user-authored (fail open). Dependency-light on purpose: type-only imports.
  */
+
+import type { MessageAuthor, MessageRole } from '$shared/types/agent-message';
 
 /**
  * True when a metadata object marks its message as user-authored. A message
@@ -35,4 +37,114 @@ export function isUserAuthoredMetadata(metadata: unknown): boolean {
   if (typeof md.fromAgentId === 'string' && md.fromAgentId.trim() !== '') return false;
   if (md.source === 'system') return false;
   return true;
+}
+
+/**
+ * The human author of a transcript row, or null. The daemon attaches its
+ * serve-time `author` projection to every `user` row of a workspace
+ * (PROTOCOL §5.5, intent-hq/intentd#1869) — including agent-to-agent sends
+ * and automated wakes, which fall back to the workspace owner — so a row
+ * counts as human-authored only when its role is `user`, its metadata passes
+ * `isUserAuthoredMetadata`, and the projection carries a principal id.
+ * Optimistic local rows and rows from older daemons carry no `author`.
+ *
+ * `ownPrincipalId` is the viewer's own principal (`presence.ownPrincipalId`):
+ * the viewer's own rows yield null, so they render as in a single-member
+ * workspace. While it is still unknown (`null` / omitted) nobody can be told
+ * apart from the viewer and every author is kept.
+ */
+export function getHumanMessageAuthor(
+  message: { role: MessageRole; author?: unknown; metadata?: unknown } | null | undefined,
+  ownPrincipalId?: string | null,
+): MessageAuthor | null {
+  if (!message || message.role !== 'user') return null;
+  if (!isUserAuthoredMetadata(message.metadata)) return null;
+  return withoutOwnAuthor(asMessageAuthor(message.author), ownPrincipalId);
+}
+
+/** The value as a `MessageAuthor` when it carries a principal id, else null. */
+function asMessageAuthor(value: unknown): MessageAuthor | null {
+  if (!value || typeof value !== 'object') return null;
+  const { principalId } = value as { principalId?: unknown };
+  if (typeof principalId !== 'string' || principalId.length === 0) return null;
+  return value as MessageAuthor;
+}
+
+/** `author`, or null when it is the viewer's own principal (an unknown own principal keeps it). */
+function withoutOwnAuthor(
+  author: MessageAuthor | null,
+  ownPrincipalId: string | null | undefined,
+): MessageAuthor | null {
+  if (!author || !ownPrincipalId) return author;
+  return author.principalId === ownPrincipalId ? null : author;
+}
+
+/**
+ * Display label for a message author: `displayName`, else `login`, else null
+ * (the principal row is gone — the caller renders its own placeholder).
+ */
+export function getMessageAuthorLabel(author: MessageAuthor): string | null {
+  if (typeof author.displayName === 'string' && author.displayName.trim() !== '') {
+    return author.displayName;
+  }
+  if (typeof author.login === 'string' && author.login.trim() !== '') return author.login;
+  return null;
+}
+
+/**
+ * The `author` projections the transcript already carries, keyed by
+ * `principalId` (later rows win). The queue surface falls back to this map
+ * for entries from a daemon that stamps `messageMetadata.fromPrincipalId`
+ * but does not yet serve an `author` projection on queue entries.
+ */
+export function collectMessageAuthors(
+  messages: ReadonlyArray<{ role: MessageRole; author?: unknown; metadata?: unknown }>,
+): Map<string, MessageAuthor> {
+  const authors = new Map<string, MessageAuthor>();
+  for (const message of messages) {
+    const author = getHumanMessageAuthor(message);
+    if (author) authors.set(author.principalId, author);
+  }
+  return authors;
+}
+
+/**
+ * The authors the queue surface may attribute against, or null when the
+ * surface is off: attribution lights up only once the workspace has more
+ * than one member (`memberCount >= 2`; absent on older daemons = off).
+ */
+export function getQueueSurfaceAuthors(
+  memberCount: number | null | undefined,
+  messages: ReadonlyArray<{ role: MessageRole; author?: unknown; metadata?: unknown }>,
+): Map<string, MessageAuthor> | null {
+  return (memberCount ?? 0) >= 2 ? collectMessageAuthors(messages) : null;
+}
+
+/**
+ * The human author of a queue entry, or null. `authors === null` means the
+ * surface is off (see `getQueueSurfaceAuthors`). Otherwise the entry must
+ * pass `isUserAuthoredMetadata`; its own `author` projection (served by the
+ * daemon next to the `fromPrincipalId` stamp) is authoritative: a valid
+ * projection is used and an explicit `null` means "no author" (the principal
+ * row is gone) with no fallback. Only an ABSENT field (older daemon) resolves
+ * the stamp against `authors`; a malformed non-null value is treated as
+ * absent. Unstamped entries and unresolvable principals yield null — the
+ * caller renders no attribution rather than a placeholder. The viewer's own
+ * entries yield null too (`ownPrincipalId`, as in `getHumanMessageAuthor`).
+ */
+export function getQueuedMessageAuthor(
+  queued: { messageMetadata?: unknown; author?: unknown } | null | undefined,
+  authors: ReadonlyMap<string, MessageAuthor> | null | undefined,
+  ownPrincipalId?: string | null,
+): MessageAuthor | null {
+  if (!queued || !authors) return null;
+  const metadata = queued.messageMetadata;
+  if (!isUserAuthoredMetadata(metadata)) return null;
+  if (queued.author === null) return null;
+  const own = asMessageAuthor(queued.author);
+  if (own) return withoutOwnAuthor(own, ownPrincipalId);
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const { fromPrincipalId } = metadata as { fromPrincipalId?: unknown };
+  if (typeof fromPrincipalId !== 'string' || fromPrincipalId.length === 0) return null;
+  return withoutOwnAuthor(authors.get(fromPrincipalId) ?? null, ownPrincipalId);
 }

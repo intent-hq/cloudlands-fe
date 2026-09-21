@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * Wire-contract tests for the MCP connection test (PROTOCOL.md §5.22.2).
  *
  * `mcp-connection-test.ts` no longer fetches user-supplied MCP URLs from the
- * FE; the probe is delegated to the daemon via `mcp.testConnection` (v7.3).
+ * FE; the probe is delegated to the daemon via `mcp.testConnection`.
  * These tests assert the exact request shape sent on the wire and feed back
  * PROTOCOL-shaped mock responses. RPC-level failures (daemon unreachable,
  * -32602) map to a local `{ status: 'error' }` result; probe outcomes are

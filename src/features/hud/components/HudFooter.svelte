@@ -158,7 +158,7 @@
     font-size: 15px;
   }
   .hud-stat-run {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-stat-attn {
     color: hsl(var(--warning));
@@ -178,10 +178,10 @@
     color: hsl(var(--ring));
   }
   .hud-stat-fail {
-    color: hsl(var(--error-foreground));
+    color: hsl(var(--danger));
   }
   .hud-stat-completed {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-stat-blink {
     animation: hudblink 1.6s step-end infinite;
@@ -204,7 +204,7 @@
     height: 12px;
     background: hsl(var(--border));
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-stat-blink {
       animation: none;
     }

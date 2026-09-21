@@ -28,14 +28,13 @@ function mapProject(source: SentryProject): SentryProject {
 
 function* initialize(): SagaGenerator<void> {
   try {
-    const state: Awaited<ReturnType<typeof sentryAuthClient.getAuthState>> = yield* call(
-      [sentryAuthClient, sentryAuthClient.getAuthState],
+    const state: Awaited<ReturnType<typeof sentryAuthClient.getAuthState>> = yield* call([
+      sentryAuthClient,
+      sentryAuthClient.getAuthState,
+    ]);
+    yield* put(
+      setSentryAuthState(state.isAuthenticated, state.organization ?? null, state.error ?? null),
     );
-    yield* put(setSentryAuthState(
-      state.isAuthenticated,
-      state.organization ?? null,
-      state.error ?? null,
-    ));
   } catch (error) {
     logger.error('Failed to initialize Sentry auth', error);
   }
@@ -58,9 +57,10 @@ function* connect(organization: string, apiToken: string): SagaGenerator<void> {
     yield* put(setSentryConnected(organization));
     yield* put(setSentryLoadingProjects(true));
     try {
-      const projects: Awaited<ReturnType<typeof sentryAuthClient.fetchProjects>> = yield* call(
-        [sentryAuthClient, sentryAuthClient.fetchProjects],
-      );
+      const projects: Awaited<ReturnType<typeof sentryAuthClient.fetchProjects>> = yield* call([
+        sentryAuthClient,
+        sentryAuthClient.fetchProjects,
+      ]);
       yield* put(setSentryProjects(projects.map(mapProject)));
     } catch (error) {
       logger.error('Failed to fetch Sentry projects', error);
@@ -68,9 +68,11 @@ function* connect(organization: string, apiToken: string): SagaGenerator<void> {
       yield* put(setSentryLoadingProjects(false));
     }
   } catch (error) {
-    yield* put(setSentryError(
-      error instanceof Error ? error.message : m.sentryAuth_service_connectFailed_error(),
-    ));
+    yield* put(
+      setSentryError(
+        error instanceof Error ? error.message : m.sentryAuth_service_connectFailed_error(),
+      ),
+    );
     yield* put(setSentryConnecting(false));
   }
 }
@@ -90,15 +92,11 @@ function* initializeSentryWorker(
   yield* call(initialize);
 }
 
-function* connectSentryWorker(
-  action: ReturnType<typeof connectSentry>,
-): SagaGenerator<void> {
+function* connectSentryWorker(action: ReturnType<typeof connectSentry>): SagaGenerator<void> {
   yield* call(connect, action.payload[0], action.payload[1]);
 }
 
-function* logoutSentryWorker(
-  _action: ReturnType<typeof logoutSentry>,
-): SagaGenerator<void> {
+function* logoutSentryWorker(_action: ReturnType<typeof logoutSentry>): SagaGenerator<void> {
   yield* call(logout);
 }
 

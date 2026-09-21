@@ -168,12 +168,10 @@ describe('diff-ipc-batcher (daemon wire)', () => {
       files: { '/workspace/packages/sub/src/a.ts': 'new a' },
     });
 
-    const promise = batchedGitDiff(
-      'ws-1',
-      false,
-      '/workspace/packages/sub/src/a.ts',
-      { gitRootId: 'root-9', gitRootPath: '/workspace/packages/sub' },
-    );
+    const promise = batchedGitDiff('ws-1', false, '/workspace/packages/sub/src/a.ts', {
+      gitRootId: 'root-9',
+      gitRootPath: '/workspace/packages/sub',
+    });
     await vi.runAllTimersAsync();
 
     await expect(promise).resolves.toMatchObject({ file: 'src/a.ts' });
@@ -510,7 +508,7 @@ describe('diff-ipc-batcher (daemon wire)', () => {
     });
   });
 
-  it('dedupedShowFile forwards gitRootId exactly when set and keys the dedupe on it (v6.15)', async () => {
+  it('dedupedShowFile forwards gitRootId exactly when set and keys the dedupe on it', async () => {
     mockDaemon({ showFiles: { 'HEAD:a.ts': 'head a' } });
 
     // Same (workspace, ref, path) but different gitRootId → distinct wire

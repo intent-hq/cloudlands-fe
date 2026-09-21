@@ -4,13 +4,7 @@
  * the menu (via onClickOutside — the parent removes the component).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import SidebarContextMenu from '../sidebar-context-menu/SidebarContextMenu.svelte';
 
 describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
@@ -62,5 +56,39 @@ describe('SidebarContextMenu Escape handling (escape-layer stack)', () => {
     expect(onClickOutside).not.toHaveBeenCalled();
     // No layer left on the stack — the event must not be consumed
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('tracks keyboard focus through the proximity state shared by its rows', async () => {
+    render(SidebarContextMenu, {
+      props: {
+        x: 10,
+        y: 10,
+        items: [
+          { id: 'rename', label: 'Rename', onClick: () => {} },
+          { id: 'archive', label: 'Archive', onClick: () => {} },
+        ],
+      },
+    });
+
+    const archive = await screen.findByRole('menuitem', { name: 'Archive' });
+    archive.focus();
+    await waitFor(() => expect(archive.getAttribute('data-proximity-active')).toBe('true'));
+    archive.blur();
+    await waitFor(() => expect(archive.getAttribute('data-proximity-active')).toBe('false'));
+  });
+  it('keeps menu actions responsive after the pointer enters the menu', async () => {
+    const onClick = vi.fn();
+    render(SidebarContextMenu, {
+      props: {
+        x: 10,
+        y: 10,
+        items: [{ id: 'rename', label: 'Rename', onClick }],
+      },
+    });
+    const menu = await screen.findByRole('menu');
+    const rename = screen.getByRole('menuitem', { name: 'Rename' });
+    await fireEvent.pointerMove(menu, { clientX: 12, clientY: 12 });
+    await fireEvent.click(rename);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

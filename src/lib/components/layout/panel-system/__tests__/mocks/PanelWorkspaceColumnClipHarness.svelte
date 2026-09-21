@@ -30,6 +30,8 @@
     panelSizes = null,
     pristine = false,
     followPersistedCanvas = false,
+    nested = false,
+    panelCount = 2,
   }: {
     mode?: 'contained' | 'uncontained';
     /** Root split direction: horizontal columns or a vertical stack. */
@@ -48,6 +50,9 @@
     panelSizes?: number[] | null;
     pristine?: boolean;
     followPersistedCanvas?: boolean;
+    /** Exercise a legacy nested stack inside the first root column. */
+    nested?: boolean;
+    panelCount?: number;
   } = $props();
 
   let widthAdjustment = $state(0);
@@ -64,7 +69,7 @@
   };
   const startsWithAgent = scenario === 'restore-agent';
   const startsWithPair = scenario === 'pair' || panelTypes !== null;
-  const initialPanelCount = panelTypes?.length ?? (startsWithPair ? 2 : 1);
+  const initialPanelCount = nested ? 3 : (panelTypes?.length ?? (startsWithPair ? panelCount : 1));
   const initialPanelIds = Array.from({ length: initialPanelCount }, (_, index) => `p${index + 1}`);
 
   appStore.dispatch(
@@ -73,11 +78,23 @@
         ? {
             type: 'split',
             direction,
-            sizes: panelSizes ?? initialPanelIds.map(() => 100 / initialPanelCount),
-            children: initialPanelIds.map((panelId) => ({
-              type: 'panel' as const,
-              panelId,
-            })),
+            sizes: nested
+              ? [50, 50]
+              : (panelSizes ?? initialPanelIds.map(() => 100 / initialPanelCount)),
+            children: nested
+              ? [
+                  {
+                    type: 'split' as const,
+                    direction: 'vertical' as const,
+                    sizes: [50, 50],
+                    children: ['p1', 'p2'].map((panelId) => ({ type: 'panel' as const, panelId })),
+                  },
+                  { type: 'panel' as const, panelId: 'p3' },
+                ]
+              : initialPanelIds.map((panelId) => ({
+                  type: 'panel' as const,
+                  panelId,
+                })),
           }
         : { type: 'panel', panelId: 'p1' },
       panels: Object.fromEntries(

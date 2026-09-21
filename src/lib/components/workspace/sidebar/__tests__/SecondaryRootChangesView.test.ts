@@ -1,10 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
 import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
@@ -14,10 +8,7 @@ type RootGitTestState = {
   status: GitStatus | null;
   commits: CommitInfo[];
   nextToken?: string;
-  commitFiles: Record<
-    string,
-    Array<{ path: string; additions: number; deletions: number }> | null
-  >;
+  commitFiles: Record<string, Array<{ path: string; additions: number; deletions: number }> | null>;
   loading: boolean;
   error: string | null;
 };
@@ -110,6 +101,14 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice'
     type: 'workspaceNavigation/openWorkspaceCommitChangeset',
     payload: args,
   })),
+  openWorkspaceDiff: vi.fn((...args: unknown[]) => ({
+    type: 'workspaceNavigation/openWorkspaceDiff',
+    payload: args,
+  })),
+}));
+
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectFocusedPanelId: { select: vi.fn(() => 'panel-focused') },
 }));
 
 vi.mock('$lib/utils/clipboard', () => ({
@@ -120,8 +119,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte')).default }));
@@ -152,11 +151,12 @@ function makeEntry(
   branch: string | undefined,
   rootId = 'root-1',
   registeredCommitSha?: string,
+  path = 'packages/sub',
 ): WorkspaceGitRootEntry {
   return {
     key: rootId,
     isPrimary: false,
-    path: 'packages/sub',
+    path,
     branch,
     gitRoot: { id: rootId, ...(registeredCommitSha ? { registeredCommitSha } : {}) },
   } as WorkspaceGitRootEntry;
@@ -430,7 +430,12 @@ describe('SecondaryRootChangesView', () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: status });
     mocks.getHistory.mockResolvedValue({
       ok: true,
-      data: { items: [makeCommit('aaaa111', 'feat: transient detail miss'), makeCommit('bound111', 'boundary')] },
+      data: {
+        items: [
+          makeCommit('aaaa111', 'feat: transient detail miss'),
+          makeCommit('bound111', 'boundary'),
+        ],
+      },
     });
     mocks.commitDetails.mockImplementation(async (_wsId, hash) =>
       hash === 'aaaa111' ? null : { files: [], fileDetails: [] },
@@ -438,16 +443,179 @@ describe('SecondaryRootChangesView', () => {
 
     const { getByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
     await waitFor(() =>
-      expect(getByTestId('secondary-root-all-changes').textContent).toContain('1 file changed in Workspace'),
+      expect(getByTestId('secondary-root-all-changes').textContent).toContain(
+        '1 file changed in Workspace',
+      ),
     );
+  });
+
+  describe('changed-file rows', () => {
+    function diffActions() {
+      return mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceNavigation/openWorkspaceDiff');
+    }
+
+    async function renderRows() {
+      const status = makeStatus('main');
+      status.files = [
+        { path: 'src/unstaged.ts', status: 'M', staged: false },
+        { path: 'src/staged.ts', status: 'A', staged: true },
+      ];
+      mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+      const view = await renderView(makeEntry('main', 'root-9', undefined, '/repo/packages/sub'));
+      const rows = await waitFor(() => {
+        const found = view.getAllByTestId('secondary-root-file-open');
+        expect(found).toHaveLength(2);
+        return found;
+      });
+      return { ...view, rows };
+    }
+
+    it('opens a root-scoped unstaged diff with the root-relative path and absolute file', async () => {
+      const { rows } = await renderRows();
+      expect(rows[0].tagName).toBe('BUTTON');
+
+      await fireEvent.click(rows[0]);
+
+      const [action] = diffActions();
+      expect(action.payload[0]).toBe('ws-1');
+      expect(action.payload[1]).toMatchObject({
+        id: 'root-root-9-unstaged-src/unstaged.ts',
+        file: '/repo/packages/sub/src/unstaged.ts',
+        relativePath: 'src/unstaged.ts',
+        stage: 'unstaged',
+        status: 'modified',
+        stats: { additions: 0, deletions: 0 },
+        attribution: { manual: true },
+      });
+      expect(action.payload[2]).toEqual({
+        gitRootId: 'root-9',
+        gitRootPath: '/repo/packages/sub',
+        filePath: '/repo/packages/sub/src/unstaged.ts',
+        changeId: 'root-root-9-unstaged-src/unstaged.ts',
+        openInAdjacentPanel: false,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('opens a staged file as a Staged change with the porcelain status mapped', async () => {
+      const { rows } = await renderRows();
+
+      await fireEvent.click(rows[1]);
+
+      const [action] = diffActions();
+      expect(action.payload[1]).toMatchObject({
+        relativePath: 'src/staged.ts',
+        stage: 'staged',
+        status: 'added',
+      });
+      expect(action.payload[2]).toMatchObject({
+        gitRootId: 'root-9',
+        gitRootPath: '/repo/packages/sub',
+        changeId: 'root-root-9-staged-src/staged.ts',
+      });
+    });
+
+    it('keeps the changeId stable across re-clicks so the existing tab is focused', async () => {
+      const { rows } = await renderRows();
+
+      await fireEvent.click(rows[0]);
+      await fireEvent.click(rows[0]);
+
+      const [first, second] = diffActions();
+      expect(second.payload[2].changeId).toBe(first.payload[2].changeId);
+      expect(second.payload[1].id).toBe(first.payload[1].id);
+    });
+
+    it('opens in the adjacent panel on a platform modifier click', async () => {
+      const { rows } = await renderRows();
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+
+      await fireEvent.click(rows[0], isMac ? { metaKey: true } : { ctrlKey: true });
+
+      const [action] = diffActions();
+      expect(action.payload[2]).toMatchObject({
+        openInAdjacentPanel: true,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('opens in the adjacent panel on a platform modifier Enter and prevents the default', async () => {
+      const { rows } = await renderRows();
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+
+      const notPrevented = await fireEvent.keyDown(
+        rows[0],
+        isMac ? { key: 'Enter', metaKey: true } : { key: 'Enter', ctrlKey: true },
+      );
+
+      expect(notPrevented).toBe(false);
+      const actions = diffActions();
+      expect(actions).toHaveLength(1);
+      expect(actions[0].payload[2]).toMatchObject({
+        gitRootId: 'root-9',
+        openInAdjacentPanel: true,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('carries git.status gitlink metadata for a nested submodule row only', async () => {
+      const status = makeStatus('main');
+      status.files = [
+        {
+          path: 'vendor/nested',
+          status: 'M',
+          staged: false,
+          mode: '160000',
+          oldSha: 'a'.repeat(40),
+          newSha: 'b'.repeat(40),
+        },
+        { path: 'src/exec.sh', status: 'M', staged: false, mode: '100755' },
+      ];
+      mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+      const { getAllByTestId } = await renderView(makeEntry('main', 'root-9'));
+      const rows = await waitFor(() => {
+        const found = getAllByTestId('secondary-root-file-open');
+        expect(found).toHaveLength(2);
+        return found;
+      });
+
+      await fireEvent.click(rows[0]);
+      await fireEvent.click(rows[1]);
+
+      const [gitlinkAction, fileAction] = diffActions();
+      expect(gitlinkAction.payload[1].gitlink).toEqual({
+        mode: '160000',
+        oldSha: 'a'.repeat(40),
+        newSha: 'b'.repeat(40),
+      });
+      expect(fileAction.payload[1]).not.toHaveProperty('gitlink');
+    });
+
+    it('leaves a plain Enter keydown to the native button activation', async () => {
+      const { rows } = await renderRows();
+
+      const notPrevented = await fireEvent.keyDown(rows[0], { key: 'Enter' });
+
+      expect(notPrevented).toBe(true);
+      expect(diffActions()).toHaveLength(0);
+    });
+
+    it('renders no staging or revert affordances on the read-only rows', async () => {
+      const { queryByTestId, queryAllByRole } = await renderRows();
+
+      expect(queryByTestId('stage-btn')).toBeNull();
+      expect(queryByTestId('unstage-btn')).toBeNull();
+      expect(queryByTestId('revert-btn')).toBeNull();
+      expect(queryAllByRole('button', { name: /^(un)?stage\b|^revert\b/i })).toHaveLength(0);
+    });
   });
 
   it('keeps an empty root in the no-changes state without a summary affordance', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
 
-    const { container, queryByTestId } = await renderView(
-      makeEntry('main', 'root-9', 'bound111'),
-    );
+    const { container, queryByTestId } = await renderView(makeEntry('main', 'root-9', 'bound111'));
 
     await waitFor(() => expect(container.textContent).toContain('No changes'));
     expect(queryByTestId('secondary-root-all-changes')).toBeNull();
@@ -463,9 +631,7 @@ describe('SecondaryRootChangesView', () => {
     ];
     mocks.getStatus.mockResolvedValueOnce({ ok: true, data: initial });
     mocks.getStatus.mockResolvedValueOnce({ ok: true, data: refreshed });
-    const { getByTestId, getByTitle } = await renderView(
-      makeEntry('main', 'root-9', 'bound111'),
-    );
+    const { getByTestId, getByTitle } = await renderView(makeEntry('main', 'root-9', 'bound111'));
     await waitFor(() =>
       expect(getByTestId('secondary-root-all-changes').textContent).toContain(
         '1 file changed in Workspace',
@@ -501,9 +667,7 @@ describe('SecondaryRootChangesView', () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({ ok: false, error: 'daemon error' });
     const { container } = await renderView(makeEntry('main'));
-    await waitFor(() =>
-      expect(container.textContent).toContain('Failed to load git root state'),
-    );
+    await waitFor(() => expect(container.textContent).toContain('Failed to load git root state'));
     expect(container.textContent).not.toContain('No commits');
   });
 
@@ -575,7 +739,7 @@ describe('SecondaryRootChangesView', () => {
     expect(container.textContent).not.toContain('stale-branch');
   });
 
-  it('splits the list at registeredCommitSha: divider + dimmed older commits behind the expander', async () => {
+  it('splits the list at registeredCommitSha with older commits behind the expander', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({
       ok: true,
@@ -606,10 +770,9 @@ describe('SecondaryRootChangesView', () => {
     await fireEvent.click(toggle);
     await waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('true'));
     const older = getByTestId('secondary-root-older-commits');
-    // Boundary commit renders inside the dimmed older section (inclusive).
+    // Boundary commit renders inside the older section (inclusive).
     expect(older.textContent).toContain('chore: at registration');
     expect(older.textContent).toContain('feat: before registration');
-    expect(older.className).toContain('opacity-60');
 
     // Collapse again
     await fireEvent.click(toggle);
@@ -637,9 +800,7 @@ describe('SecondaryRootChangesView', () => {
       ok: true,
       data: { items: [makeCommit('aaaa111', 'feat: one')] },
     });
-    const { container, queryByTestId } = await renderView(
-      makeEntry('main', 'root-1', 'gone9999'),
-    );
+    const { container, queryByTestId } = await renderView(makeEntry('main', 'root-1', 'gone9999'));
 
     await waitFor(() => expect(container.textContent).toContain('feat: one'));
     expect(queryByTestId('secondary-root-boundary-toggle')).toBeNull();
@@ -658,9 +819,7 @@ describe('SecondaryRootChangesView', () => {
         items: [makeCommit('bound111', 'chore: at registration')],
       },
     });
-    const { container, queryByTestId } = await renderView(
-      makeEntry('main', 'root-1', 'bound111'),
-    );
+    const { container, queryByTestId } = await renderView(makeEntry('main', 'root-1', 'bound111'));
 
     // The boundary page is loaded eagerly so the summary cannot expose a
     // partial or pre-registration count.
@@ -692,12 +851,13 @@ describe('SecondaryRootChangesView', () => {
     mocks.getHistory.mockResolvedValueOnce({
       ok: true,
       data: {
-        items: [makeCommit('bbbb222', 'fix: two'), makeCommit('bound111', 'chore: at registration')],
+        items: [
+          makeCommit('bbbb222', 'fix: two'),
+          makeCommit('bound111', 'chore: at registration'),
+        ],
       },
     });
-    const { container, getByTestId } = await renderView(
-      makeEntry('main', 'root-1', 'bound111'),
-    );
+    const { container, getByTestId } = await renderView(makeEntry('main', 'root-1', 'bound111'));
 
     // Duplicate hash filtered on append (a duplicate key would crash the
     // keyed {#each}); the boundary from the appended page still applies.
@@ -714,7 +874,9 @@ describe('SecondaryRootChangesView', () => {
       data: {
         items: [
           makeCommit('aaaa111', 'feat: human commit'),
-          makeCommit('bbbb222', 'feat: agent commit', { agentId: 'agent-1' } as Partial<CommitInfo>),
+          makeCommit('bbbb222', 'feat: agent commit', {
+            agentId: 'agent-1',
+          } as Partial<CommitInfo>),
         ],
       },
     });
@@ -869,9 +1031,7 @@ describe('SecondaryRootChangesView', () => {
       fileDetails: [{ path: 'src/stale.ts', additions: 9, deletions: 9 }],
     });
     await waitFor(() =>
-      expect(queryAllByTestId('file-row')[0]?.getAttribute('data-file-path')).toBe(
-        'src/fresh.ts',
-      ),
+      expect(queryAllByTestId('file-row')[0]?.getAttribute('data-file-path')).toBe('src/fresh.ts'),
     );
   });
 });

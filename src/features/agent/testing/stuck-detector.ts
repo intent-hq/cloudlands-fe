@@ -233,7 +233,7 @@ export class StuckDetector {
     totalDelegations: number;
     elapsedTime: number;
     timeSinceLastAction: number;
-    } {
+  } {
     return {
       totalActions: this.actions.length,
       totalDelegations: this.delegations.length,

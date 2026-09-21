@@ -75,7 +75,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: hsl(var(--error-foreground));
+    background: hsl(var(--danger));
   }
   .hud-system-dot-online {
     background: hsl(var(--primary));
@@ -88,13 +88,13 @@
     flex: 1;
   }
   .hud-system-online {
-    color: hsl(var(--primary));
+    color: hsl(var(--primary-ink));
   }
   .hud-system-offline {
-    color: hsl(var(--error-foreground));
+    color: hsl(var(--danger));
     animation: hudblink 1.6s step-end infinite;
   }
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .hud-system-dot-online,
     .hud-system-offline {
       animation: none;

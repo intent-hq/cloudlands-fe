@@ -49,7 +49,9 @@
       {#each ranked as m, i (m.model)}
         <div class="row" class:row-last={i === ranked.length - 1}>
           <span class="row-name">{m.model}</span>
-          <span class="row-amt">{formatTokens(m.tokens)} · <span class="row-pct">{formatShare(m.share)}</span></span>
+          <span class="row-amt"
+            >{formatTokens(m.tokens)} · <span class="row-pct">{formatShare(m.share)}</span></span
+          >
         </div>
       {:else}
         <div class="row row-last row-empty">{msg.stats_modelsCard_empty_label()}</div>
@@ -59,7 +61,10 @@
       <div class="callout-label">{msg.stats_modelsCard_mostUsed_label()}</div>
       <div class="callout-model">{top?.model ?? '—'}</div>
       <div class="callout-sub">
-        {#if top}{msg.stats_modelsCard_calloutSub_label({ tokens: formatTokens(top.tokens), runs: formatInt(top.runs) })}{:else}—{/if}
+        {#if top}{msg.stats_modelsCard_calloutSub_label({
+            tokens: formatTokens(top.tokens),
+            runs: formatInt(top.runs),
+          })}{:else}—{/if}
       </div>
     </div>
   </div>

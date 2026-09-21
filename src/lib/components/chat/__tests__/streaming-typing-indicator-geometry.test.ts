@@ -60,7 +60,7 @@ function expectClasses(element: Element, contract: string) {
 }
 
 describe('StreamingTypingIndicator geometry matches operational rows', () => {
-  it('uses the shared row geometry and a 16px five-arm currentColor mark', () => {
+  it('uses the shared row geometry and a 16px accessible mark', () => {
     const { container } = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
@@ -77,8 +77,8 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     expect(mark.getAttribute('data-playing')).toBe('true');
     expect(mark.getAttribute('width')).toBe('16');
     expect(mark.getAttribute('height')).toBe('16');
-    expect(mark.getAttribute('viewBox')).toBe('0 0 256 208');
-    expect(mark.querySelectorAll('[data-mark-arm]')).toHaveLength(5);
+    expect(mark.getAttribute('role')).toBe('status');
+    expect(mark.getAttribute('aria-label')).toBeTruthy();
     expect(container.innerHTML).not.toContain('legacy-spinner');
     expect(container.innerHTML).not.toContain('--color');
   });
@@ -113,17 +113,48 @@ describe('StreamingTypingIndicator geometry matches operational rows', () => {
     expect(animationRecords).toHaveLength(0);
   });
 
+  it('retains accessible status and lifecycle updates when the generic label is visually suppressed', async () => {
+    const view = render(StreamingTypingIndicator, {
+      props: {
+        visible: true,
+        showMessage: false,
+        message: 'Thinking',
+        lifecycleMessage: 'Sent prompt…',
+      },
+    });
+    const mark = view.getByRole('status', { name: 'Loading' });
+    expect(view.getByText('Thinking')).toBeTruthy();
+    expect(view.getByText('Sent prompt…')).toBeTruthy();
+
+    await view.rerender({ lifecycleMessage: 'Receiving response…' });
+    expect(view.queryByText('Sent prompt…')).toBeNull();
+    expect(view.getByText('Receiving response…')).toBeTruthy();
+    expect(view.getByRole('status', { name: 'Loading' })).toBe(mark);
+
+    await view.rerender({ lifecycleMessage: null });
+    expect(view.queryByText('Receiving response…')).toBeNull();
+    expect(view.getByText('Thinking')).toBeTruthy();
+    expect(view.getByRole('status', { name: 'Loading' })).toBe(mark);
+  });
+
   it('cancels all motion on removal and supports rapid reactivation', async () => {
     const view = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },
     });
     animationRecords[0].finish();
+    const arms = Array.from(view.container.querySelectorAll<SVGPathElement>('[data-mark-arm]'));
+    expect(arms).toHaveLength(5);
+    expect(arms.every((arm) => arm.style.transform !== '')).toBe(true);
     expect(animationRecords.filter(({ options }) => options.iterations === Infinity)).toHaveLength(
-      5,
+      0,
     );
 
+    const cancelFrame = vi.spyOn(globalThis, 'cancelAnimationFrame');
     view.unmount();
+    expect(cancelFrame).toHaveBeenCalledOnce();
+    cancelFrame.mockRestore();
     expect(animationRecords.every(({ cancel }) => cancel.mock.calls.length > 0)).toBe(true);
+    expect(arms.every((arm) => !arm.isConnected)).toBe(true);
 
     const reactivated = render(StreamingTypingIndicator, {
       props: { visible: true, message: 'Thinking' },

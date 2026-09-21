@@ -104,7 +104,11 @@ export function feedKindLabel(kind: string, agentStatus?: string): string {
  * `cardStateKey`); unknown wire values render nothing rather than leaking.
  * Every other kind keeps its wire-derived `text` (identifiers, i18n-exempt).
  */
-export function feedDetailText(item: { kind: string; text: string; displayStatus?: string }): string {
+export function feedDetailText(item: {
+  kind: string;
+  text: string;
+  displayStatus?: string;
+}): string {
   if (item.kind === 'workspace:displayStatus-changed') {
     const stateKey = item.displayStatus ? displayStatusCardStateKey(item.displayStatus) : null;
     return stateKey ? cardStateLabel(stateKey) : '';

@@ -43,9 +43,9 @@
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import FileViewer from '$lib/components/editor/FileViewer.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
-  import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import {
     selectLineWrapping,
     selectDiffIndicators,
@@ -138,17 +138,18 @@
 
   // Track the last processed timestamp to detect new navigation requests
   let lastJumpTimestamp = $state<number | undefined>(undefined);
+  let markdownPreview = $state(true); // default to rich text for markdown files
 
   // Extract line from tab.data when tab changes
   // Uses jumpTimestamp to detect changes even when navigating to the same line
   $effect(() => {
     const line = tab.data?.line as number | undefined;
     const timestamp = tab.data?.jumpTimestamp as number | undefined;
-    // Only process if this is a new navigation request (new timestamp)
-    if (line && timestamp && timestamp !== lastJumpTimestamp) {
-      lastJumpTimestamp = timestamp;
-      jumpToLine = { line };
-    }
+    if (!line || (timestamp !== undefined && timestamp === lastJumpTimestamp)) return;
+
+    lastJumpTimestamp = timestamp;
+    jumpToLine = { line };
+    markdownPreview = false;
   });
 
   $effect(() => {
@@ -229,7 +230,6 @@
   );
   const fileLanguage = $derived(tab.filePath ? getLanguageFromPath(tab.filePath) : 'plaintext');
   const isMarkdownFile = $derived(fileLanguage === 'markdown');
-  let markdownPreview = $state(true); // default to rich text for markdown files
 
   // Media cannot use the UTF-8 file.read fallback. Confirm the exact contained
   // path first, then use the existing bounded ignored-artifact resolver. Hold
@@ -537,13 +537,6 @@
       onclick={handleDeleteFile}
       destructive
     />
-    <OpenComboButton
-      filePath={tab.filePath}
-      {workspaceId}
-      isDirectory={false}
-      embedded
-      workspaceFolderPath={repoPath ?? undefined}
-    />
   {/if}
 {/snippet}
 
@@ -576,7 +569,7 @@
       </div>
     {:else if fileError}
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-        <p class="text-error-foreground">{m.layout_fileTab_errorLoading_label()}</p>
+        <p class="text-danger">{m.layout_fileTab_errorLoading_label()}</p>
         <p class="text-xs">{fileError}</p>
         <p class="text-xs font-mono">{tab.filePath}</p>
         {#if fileNotFoundCandidates.length > 0}
@@ -584,13 +577,14 @@
           <ul class="flex flex-col items-center gap-1">
             {#each fileNotFoundCandidates as candidate (candidate)}
               <li>
-                <button
-                  type="button"
-                  class="text-xs font-mono text-primary cursor-pointer hover:underline"
+                <Button
+                  variant="link"
+                  size="compact"
+                  class="h-auto p-0 font-mono text-xs"
                   onclick={() => openNotFoundCandidate(candidate)}
                 >
                   {candidate}
-                </button>
+                </Button>
               </li>
             {/each}
           </ul>

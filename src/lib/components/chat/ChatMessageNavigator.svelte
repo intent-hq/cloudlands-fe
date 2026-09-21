@@ -4,11 +4,15 @@
   import { Input } from '$lib/components/ui/input';
   import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon';
   import { Button } from '$lib/components/ui/button';
+  import { DROPDOWN_SURFACE_CLASS } from '$lib/components/ui/dropdown-surface';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { Spinner } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
+  import { OPTION_LIST_ROW_CLASS } from '$lib/styles/option-list-row';
   import { m } from '$shared/paraglide/messages.js';
   import ScrollToBottomButton from './ScrollToBottomButton.svelte';
+  import { CHAT_ICON_SIZE } from './chat-icon-size';
   import type { UserMessageNavigationItem } from './chat-message-navigation';
 
   interface Props {
@@ -131,7 +135,7 @@
   function handleTriggerKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    if (!open) handleOpenChange(true);
+    handleOpenChange(!open);
   }
 
   function handleOpenAutoFocus(event: Event) {
@@ -201,6 +205,7 @@
           size="icon-sm"
           aria-label={m.chat_messageNavigator_open_ariaLabel()}
           tooltip={m.chat_messageNavigator_open_ariaLabel()}
+          tooltipDisabled={open}
           tooltipSide="bottom"
           tooltipDelayDuration={300}
           aria-expanded={open}
@@ -208,10 +213,11 @@
           data-testid="chat-message-navigator-trigger"
         >
           <ChatTextIcon
-            size={14}
-            mirrored
+            size={CHAT_ICON_SIZE.compact}
+            weight="regular"
+            mirrored={false}
             aria-hidden="true"
-            class="size-3.5!"
+            class="size-4!"
             data-chat-message-navigator-chat-icon
           />
         </Button>
@@ -232,7 +238,7 @@
         onCloseAutoFocus={handleCloseAutoFocus}
         onFocusOutside={handleFocusOutside}
         data-chat-message-navigator-content={navigatorId}
-        class="z-(--layer-popover) flex min-w-0 max-h-[var(--bits-popover-content-available-height)] w-[28rem] max-w-[min(calc(100vw-var(--space-4)),calc(var(--bits-popover-content-available-width)-var(--space-2)))] flex-col overflow-hidden rounded-(--radius-medium) border border-border bg-popover p-[var(--space-1)] text-popover-foreground shadow-(--elevation-overlay) outline-none"
+        class="{DROPDOWN_SURFACE_CLASS} w-[28rem]"
       >
         <div
           class="flex min-h-0 min-w-0 max-h-full flex-1 flex-col overflow-hidden"
@@ -251,7 +257,7 @@
             aria-activedescendant={activeOptionId}
             autocomplete="off"
             placeholder={m.chat_messageNavigator_search_placeholder()}
-            class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/70"
+            class="type-caption h-(--control-height-medium) w-full min-w-0 shrink-0 rounded-(--radius-small) border border-border bg-card px-[var(--space-2)] text-foreground caret-foreground outline-none placeholder:text-muted-foreground"
             data-testid="chat-message-navigator-search"
           />
           <!-- Persistent live region: announcements only fire for content
@@ -268,7 +274,7 @@
                 class="type-caption flex items-center gap-[var(--space-2)] px-[var(--space-2)] py-[var(--space-1)] text-muted-foreground"
                 data-testid="chat-message-navigator-loading"
               >
-                <Spinner />
+                <IntentMarkLoader size={16} />
                 <span>{m.chat_messageNavigator_loading_label()}</span>
               </div>
             {/if}
@@ -290,14 +296,18 @@
                   class="block h-(--control-height-large) w-full min-w-0 max-w-full"
                   contentClass="max-w-[min(28rem,calc(100vw-var(--space-4)))] break-words text-left"
                 >
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
+                    labelClass="overflow-hidden whitespace-nowrap text-left text-ellipsis"
                     id={`${listboxId}-option-${index}`}
                     role="option"
-                    tabindex="-1"
+                    tabindex={-1}
                     aria-selected={index === activeIndex}
                     class={cn(
-                      'type-caption flex h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) w-full min-w-0 max-w-full cursor-pointer items-center overflow-hidden rounded-(--radius-small) px-[var(--space-2)] text-left font-normal text-muted-foreground outline-none transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 motion-reduce:transition-none',
+                      menuItem(),
+                      OPTION_LIST_ROW_CLASS,
+                      'h-(--control-height-large) min-h-(--control-height-large) max-h-(--control-height-large) max-w-full cursor-pointer overflow-hidden font-normal text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40',
                       index === activeIndex && 'bg-accent text-accent-foreground',
                     )}
                     onclick={() => void selectMessage(message.id)}
@@ -318,13 +328,13 @@
                     >
                       {message.text}
                     </span>
-                  </button>
+                  </Button>
                 </Tooltip>
               {/each}
             </div>
           {:else if !isLoadingIndex}
             <div
-              class="type-caption px-2 py-6 text-center text-muted-foreground"
+              class="type-caption px-2 py-6 text-left text-muted-foreground"
               data-testid="chat-message-navigator-empty"
             >
               {m.chat_messageNavigator_empty_label()}

@@ -5,72 +5,80 @@
  * through the `AppClient` terminals seam (the live client owns the base64
  * framing, asserted in live-terminals-client.test.ts).
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // FAKE AppClient seam: no daemon IPC ever fires. Each test asserts the seam
 // call the bridge makes and how it maps the result back to the legacy
 // renderer envelope + mock events.
-vi.mock("$lib/client", () => ({
+vi.mock('$lib/client', () => ({
   appClient: {
     terminals: {
       create: vi.fn(),
       write: vi.fn(),
+      kill: vi.fn(),
       subscribeEvents: vi.fn(),
     },
   },
 }));
 
-import { appClient } from "$lib/client";
-import { addMockIpcListener, mockInvoke } from "$shared/ipc-mock-router";
-import type { TerminalEventHandlers } from "$lib/client/app-client";
+import { appClient } from '$lib/client';
+import { addMockIpcListener, mockInvoke } from '$shared/ipc-mock-router';
+import type { TerminalEventHandlers } from '$lib/client/app-client';
 
 const terminals = vi.mocked(appClient.terminals);
 
-describe("terminals-scripts-seeder terminal bridges", () => {
+describe('terminals-scripts-seeder terminal bridges', () => {
   beforeAll(async () => {
     // Importing the seeder runs its `registerMockIpcHandler` side effects.
-    await import("./terminals-scripts-seeder");
+    await import('./terminals-scripts-seeder');
+  });
+
+  beforeEach(() => {
+    terminals.write.mockResolvedValue({ success: true });
+    terminals.kill.mockResolvedValue({ success: true });
+    terminals.subscribeEvents.mockReturnValue(() => {});
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("terminal:createWithCommand → terminal.create (§5.13)", () => {
-    it("creates a PTY running the command and returns {ok, terminalId} with the daemon id", async () => {
-      terminals.create.mockResolvedValueOnce({ success: true, id: "term-42" });
+  describe('terminal:createWithCommand → terminal.create (§5.13)', () => {
+    it('creates a login shell, submits the command as input, and returns the daemon id', async () => {
+      terminals.create.mockResolvedValueOnce({ success: true, id: 'term-42' });
       terminals.subscribeEvents.mockReturnValueOnce(() => {});
 
       const createdEvents: unknown[] = [];
-      const offCreated = addMockIpcListener("terminal:created", (payload) =>
+      const offCreated = addMockIpcListener('terminal:created', (payload) =>
         createdEvents.push(payload),
       );
 
-      const response = await mockInvoke("terminal:createWithCommand", {
-        workspaceId: "ws-1",
-        command: "pnpm test",
-        cwd: "/repo",
-        title: "Command: pnpm test",
+      const response = await mockInvoke('terminal:createWithCommand', {
+        workspaceId: 'ws-1',
+        command: 'pnpm test',
+        cwd: '/repo',
+        title: 'Command: pnpm test',
+        interactive: true,
       });
       offCreated();
 
       expect(terminals.create).toHaveBeenCalledWith({
-        workspaceId: "ws-1",
+        workspaceId: 'ws-1',
         cols: 80,
         rows: 24,
-        cwd: "/repo",
-        command: "pnpm test",
+        cwd: '/repo',
       });
-      expect(response).toEqual({ ok: true, terminalId: "term-42" });
+      expect(terminals.write).toHaveBeenCalledExactlyOnceWith('term-42', 'pnpm test\r');
+      expect(response).toEqual({ ok: true, terminalId: 'term-42' });
       // PanelLayout listens for `terminal:created` and reloads the workspace's
       // terminal list from the daemon.
       expect(createdEvents).toEqual([
-        { terminalId: "term-42", workspaceId: "ws-1", background: true },
+        { terminalId: 'term-42', workspaceId: 'ws-1', background: true },
       ]);
     });
 
-    it("forwards the daemon terminal:exit to terminal:professional:exit:<id> and unsubscribes", async () => {
-      terminals.create.mockResolvedValueOnce({ success: true, id: "term-9" });
+    it('forwards the daemon terminal:exit to terminal:professional:exit:<id> and unsubscribes', async () => {
+      terminals.create.mockResolvedValueOnce({ success: true, id: 'term-9' });
       const unsubscribe = vi.fn();
       let handlers: TerminalEventHandlers | undefined;
       terminals.subscribeEvents.mockImplementationOnce((_id, h) => {
@@ -79,20 +87,28 @@ describe("terminals-scripts-seeder terminal bridges", () => {
       });
 
       const exitCodes: unknown[] = [];
-      const offExit = addMockIpcListener("terminal:professional:exit:term-9", (payload) =>
+      const offExit = addMockIpcListener('terminal:professional:exit:term-9', (payload) =>
         exitCodes.push(payload),
       );
 
-      await mockInvoke("terminal:createWithCommand", {
-        workspaceId: "ws-1",
-        command: "false",
+      await mockInvoke('terminal:createWithCommand', {
+        workspaceId: 'ws-1',
+        command: 'false',
       });
 
+      expect(terminals.create).toHaveBeenCalledWith({
+        workspaceId: 'ws-1',
+        cols: 80,
+        rows: 24,
+        command: 'false',
+      });
+      expect(terminals.write).not.toHaveBeenCalled();
+
       expect(terminals.subscribeEvents).toHaveBeenCalledWith(
-        "term-9",
+        'term-9',
         expect.objectContaining({ onExit: expect.any(Function) }),
       );
-      handlers?.onExit?.({ terminalId: "term-9", exitCode: 1 });
+      handlers?.onExit?.({ terminalId: 'term-9', exitCode: 1 });
       offExit();
 
       // CliBlock and the changes/commit panels read the raw exit code payload.
@@ -100,52 +116,94 @@ describe("terminals-scripts-seeder terminal bridges", () => {
       expect(unsubscribe).toHaveBeenCalledTimes(1);
     });
 
-    it("maps a daemon create failure to {ok:false, error} without emitting events", async () => {
-      terminals.create.mockResolvedValueOnce({ success: false, error: "spawn failed" });
+    it('maps a daemon create failure to {ok:false, error} without emitting events', async () => {
+      terminals.create.mockResolvedValueOnce({ success: false, error: 'spawn failed' });
 
       const createdEvents: unknown[] = [];
-      const offCreated = addMockIpcListener("terminal:created", (payload) =>
+      const offCreated = addMockIpcListener('terminal:created', (payload) =>
         createdEvents.push(payload),
       );
-      const response = await mockInvoke("terminal:createWithCommand", {
-        workspaceId: "ws-1",
-        command: "pnpm test",
+      const response = await mockInvoke('terminal:createWithCommand', {
+        workspaceId: 'ws-1',
+        command: 'pnpm test',
       });
       offCreated();
 
-      expect(response).toEqual({ ok: false, error: "spawn failed" });
+      expect(response).toEqual({ ok: false, error: 'spawn failed' });
       expect(terminals.subscribeEvents).not.toHaveBeenCalled();
       expect(createdEvents).toEqual([]);
     });
 
-    it("rejects missing workspaceId/command without calling the daemon", async () => {
-      const response = await mockInvoke<{ ok: boolean }>("terminal:createWithCommand", {
-        workspaceId: "ws-1",
+    it('rejects missing workspaceId/command without calling the daemon', async () => {
+      const response = await mockInvoke<{ ok: boolean }>('terminal:createWithCommand', {
+        workspaceId: 'ws-1',
       });
       expect(response.ok).toBe(false);
       expect(terminals.create).not.toHaveBeenCalled();
     });
+
+    it('pastes a command without executing when pasteOnly is requested', async () => {
+      terminals.create.mockResolvedValueOnce({ success: true, id: 'paste-terminal' });
+      await mockInvoke('terminal:createWithCommand', {
+        workspaceId: '__root__',
+        command: 'claude auth login',
+        pasteOnly: true,
+      });
+      expect(terminals.write).toHaveBeenCalledExactlyOnceWith(
+        'paste-terminal',
+        'claude auth login',
+      );
+    });
+
+    it.each(['failure', 'rejection'])(
+      'cleans up the hidden terminal after a write %s',
+      async (failure) => {
+        terminals.create.mockResolvedValueOnce({ success: true, id: 'failed-terminal' });
+        if (failure === 'failure') {
+          terminals.write.mockResolvedValueOnce({ success: false, error: 'write failed' });
+        } else {
+          terminals.write.mockRejectedValueOnce(new Error('write failed'));
+        }
+        const unsubscribe = vi.fn();
+        terminals.subscribeEvents.mockReturnValueOnce(unsubscribe);
+        const created = vi.fn();
+        const offCreated = addMockIpcListener('terminal:created', created);
+        try {
+          const response = await mockInvoke('terminal:createWithCommand', {
+            workspaceId: '__root__',
+            command: 'claude auth login',
+            interactive: true,
+          });
+          expect(response).toEqual({ ok: false, error: 'write failed' });
+          expect(created).not.toHaveBeenCalled();
+          expect(unsubscribe).toHaveBeenCalledOnce();
+          expect(terminals.kill).toHaveBeenCalledExactlyOnceWith('failed-terminal');
+        } finally {
+          offCreated();
+        }
+      },
+    );
   });
 
-  describe("terminal:professional:write → terminal.write (§5.13)", () => {
-    it("forwards {terminalId, data} through the terminals seam", async () => {
+  describe('terminal:professional:write → terminal.write (§5.13)', () => {
+    it('forwards {terminalId, data} through the terminals seam', async () => {
       terminals.write.mockResolvedValueOnce({ success: true });
 
-      const response = await mockInvoke("terminal:professional:write", {
-        terminalId: "term-42",
-        data: "brew install rtk\n",
+      const response = await mockInvoke('terminal:professional:write', {
+        terminalId: 'term-42',
+        data: 'brew install rtk\n',
       });
 
-      expect(terminals.write).toHaveBeenCalledWith("term-42", "brew install rtk\n");
+      expect(terminals.write).toHaveBeenCalledWith('term-42', 'brew install rtk\n');
       expect(response).toEqual({ success: true });
     });
 
     it("rejects on a daemon write failure so callers' catch blocks run", async () => {
-      terminals.write.mockResolvedValueOnce({ success: false, error: "terminal not found" });
+      terminals.write.mockResolvedValueOnce({ success: false, error: 'terminal not found' });
 
       await expect(
-        mockInvoke("terminal:professional:write", { terminalId: "gone", data: "x" }),
-      ).rejects.toThrow("terminal not found");
+        mockInvoke('terminal:professional:write', { terminalId: 'gone', data: 'x' }),
+      ).rejects.toThrow('terminal not found');
     });
   });
 });

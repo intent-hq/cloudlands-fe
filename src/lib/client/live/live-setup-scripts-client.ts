@@ -8,24 +8,21 @@
  * (SetupScriptAgent.svelte) — the daemon returns an AI-assisted draft that is
  * NOT auto-saved; callers persist it via `save`.
  */
-import type {
-  SetupScriptsClient,
-  WorkspaceSetupScript,
-} from "../app-client";
-import { backendRequest } from "./backend-transport";
+import type { SetupScriptsClient, WorkspaceSetupScript } from '../app-client';
+import { backendRequest } from './backend-transport';
 
 /** Unwrap the `{ setupScript }` envelope the §5.25 methods return. */
 function unwrapSetupScript(result: unknown): WorkspaceSetupScript | null {
-  if (!result || typeof result !== "object") return null;
+  if (!result || typeof result !== 'object') return null;
   const record = (result as { setupScript?: unknown }).setupScript;
-  if (!record || typeof record !== "object") return null;
+  if (!record || typeof record !== 'object') return null;
   return record as WorkspaceSetupScript;
 }
 
 export class LiveSetupScriptsClient implements SetupScriptsClient {
   async get(workspaceId: string): Promise<WorkspaceSetupScript | null> {
     try {
-      const result = await backendRequest("workspace.getSetupScript", { workspaceId });
+      const result = await backendRequest('workspace.getSetupScript', { workspaceId });
       return unwrapSetupScript(result);
     } catch {
       return null;
@@ -34,7 +31,7 @@ export class LiveSetupScriptsClient implements SetupScriptsClient {
 
   async save(workspaceId: string, script: string): Promise<WorkspaceSetupScript | null> {
     try {
-      const result = await backendRequest("workspace.saveSetupScript", { workspaceId, script });
+      const result = await backendRequest('workspace.saveSetupScript', { workspaceId, script });
       return unwrapSetupScript(result);
     } catch {
       return null;
@@ -44,10 +41,10 @@ export class LiveSetupScriptsClient implements SetupScriptsClient {
   async detectProjectType(workspaceId: string): Promise<string | null> {
     try {
       const result = await backendRequest<{ projectType?: unknown }>(
-        "workspace.detectProjectType",
+        'workspace.detectProjectType',
         { workspaceId },
       );
-      return typeof result?.projectType === "string" ? result.projectType : null;
+      return typeof result?.projectType === 'string' ? result.projectType : null;
     } catch {
       return null;
     }
@@ -55,7 +52,7 @@ export class LiveSetupScriptsClient implements SetupScriptsClient {
 
   async generate(workspaceId: string): Promise<WorkspaceSetupScript | null> {
     try {
-      const result = await backendRequest("workspace.generateSetupScript", { workspaceId });
+      const result = await backendRequest('workspace.generateSetupScript', { workspaceId });
       return unwrapSetupScript(result);
     } catch {
       return null;

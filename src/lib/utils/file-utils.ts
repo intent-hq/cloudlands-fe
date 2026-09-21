@@ -1,4 +1,3 @@
-
 /**
  * Get the language identifier for syntax highlighting based on file extension
  */

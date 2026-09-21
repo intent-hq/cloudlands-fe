@@ -1,8 +1,5 @@
 import { logger } from '$lib/utils/client-logger';
-import {
-  mount,
-  unmount,
-} from 'svelte';
+import { mount, unmount } from 'svelte';
 import EnhancedMentionList from './EnhancedMentionList.svelte';
 
 class MentionSuggestionRenderer {
@@ -126,11 +123,15 @@ class MentionSuggestionRenderer {
     // Get container dimensions
     const containerRect = this.inputContainer.getBoundingClientRect();
     const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    const viewportMargin = 8;
+    const anchorGap = 4;
 
     // Set position to fixed, anchored to container
     this.popup.style.position = 'fixed';
-    this.popup.style.left = `${containerRect.left}px`;
-    this.popup.style.width = `${containerRect.width}px`;
+    this.popup.style.width = `${Math.min(containerRect.width, viewportWidth - viewportMargin * 2)}px`;
+    const popupWidth = this.popup.getBoundingClientRect().width;
+    this.popup.style.left = `${Math.max(viewportMargin, Math.min(containerRect.left, viewportWidth - popupWidth - viewportMargin))}px`;
     this.popup.style.zIndex = '1000';
 
     // Calculate available space
@@ -140,15 +141,19 @@ class MentionSuggestionRenderer {
 
     // Determine if we should position above or below
     const shouldPositionAbove = spaceBelow < estimatedPopupHeight && spaceAbove > spaceBelow;
+    this.popup.style.setProperty(
+      '--mention-available-height',
+      `${Math.max(0, (shouldPositionAbove ? spaceAbove : spaceBelow) - anchorGap - viewportMargin)}px`,
+    );
 
     if (shouldPositionAbove) {
       // Position above: popup bottom aligns with container top
       this.popup.style.top = 'auto';
-      this.popup.style.bottom = `${viewportHeight - containerRect.top + 4}px`;
+      this.popup.style.bottom = `${viewportHeight - containerRect.top + anchorGap}px`;
     } else {
       // Position below: popup top aligns with container bottom
       this.popup.style.bottom = 'auto';
-      this.popup.style.top = `${containerRect.bottom + 4}px`;
+      this.popup.style.top = `${containerRect.bottom + anchorGap}px`;
     }
 
     logger.info('[MentionSuggestionRenderer] Popup positioned at:', {
@@ -180,7 +185,10 @@ class MentionSuggestionRenderer {
     // If neither popup nor component exist, initialize everything (onStart was skipped
     // due to async item resolution timing, e.g. when typing "@a" quickly)
     if (!this.popup && !this.component) {
-      logger.info('[MentionSuggestionRenderer] Initializing popup and component in onUpdate (onStart was skipped)');
+      logger.info(
+        // i18n-ignore (developer log message)
+        '[MentionSuggestionRenderer] Initializing popup and component in onUpdate (onStart was skipped)',
+      );
       this.onStart(props);
       return;
     }

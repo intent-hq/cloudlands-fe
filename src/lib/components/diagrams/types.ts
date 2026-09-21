@@ -26,7 +26,7 @@ export interface NodeStyleConfig {
   labelLineHeight: number;
   /** Font size for the kind/type label in pixels */
   kindFontSize: number;
-  /** Character width ratio for kind (accounts for uppercase + letter-spacing) */
+  /** Conservative character width ratio for sentence-case kind labels */
   kindCharWidthRatio: number;
   /** Line height for kind */
   kindLineHeight: number;

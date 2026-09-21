@@ -4,10 +4,7 @@
  * Custom TipTap node for diagram primitives
  */
 
-import {
-  Node,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { DiagramPrimitive } from '../../../shared/types/notes-primitives';
 import DiagramBlock from '../../components/notes/primitives/DiagramBlock.svelte';
@@ -85,34 +82,34 @@ export const DiagramBlockNode = Node.create<DiagramBlockOptions>({
     return {
       insertDiagramBlock:
         (primitive: DiagramPrimitive) =>
-          ({ commands }) =>
-            commands.insertContent({
-              type: this.name,
-              attrs: {
-                id: primitive.id,
-                data: primitive,
-              },
-            }),
+        ({ commands }) =>
+          commands.insertContent({
+            type: this.name,
+            attrs: {
+              id: primitive.id,
+              data: primitive,
+            },
+          }),
       updateDiagramBlock:
         (id: string, updates: Partial<DiagramPrimitive>) =>
-          ({ tr, state }) => {
-            const { doc } = state;
-            let updated = false;
+        ({ tr, state }) => {
+          const { doc } = state;
+          let updated = false;
 
-            doc.descendants((node, pos) => {
-              if (node.type.name === this.name && node.attrs.id === id) {
-                const newData = { ...node.attrs.data, ...updates };
-                tr.setNodeMarkup(pos, undefined, {
-                  ...node.attrs,
-                  data: newData,
-                });
-                updated = true;
-                return false;
-              }
-            });
+          doc.descendants((node, pos) => {
+            if (node.type.name === this.name && node.attrs.id === id) {
+              const newData = { ...node.attrs.data, ...updates };
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                data: newData,
+              });
+              updated = true;
+              return false;
+            }
+          });
 
-            return updated;
-          },
+          return updated;
+        },
     };
   },
 

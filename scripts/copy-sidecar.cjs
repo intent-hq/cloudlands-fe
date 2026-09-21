@@ -11,29 +11,29 @@
  * hook (scripts/notarize.js) along with the rest of the app bundle. No separate signing
  * step is required here.
  */
-const fs = require("fs");
-const path = require("path");
+const fs = require('fs');
+const path = require('path');
 
-const FE_DIR = path.resolve(__dirname, "..");
-const MONOREPO_DIR = path.resolve(FE_DIR, "../..");
+const FE_DIR = path.resolve(__dirname, '..');
+const MONOREPO_DIR = path.resolve(FE_DIR, '../..');
 
 // Source: packages/intentd/target/release/intentd (or INTENTD_BIN override)
 const defaultSourceBin = path.join(
   MONOREPO_DIR,
-  "packages/intentd/target/release",
-  process.platform === "win32" ? "intentd.exe" : "intentd"
+  'packages/intentd/target/release',
+  process.platform === 'win32' ? 'intentd.exe' : 'intentd',
 );
 const sourceBin = process.env.INTENTD_BIN?.trim() || defaultSourceBin;
 
 // Destination: packages/cloudlands-fe/resources/sidecar/intentd (staging dir, gitignored)
-const destDir = path.join(FE_DIR, "resources/sidecar");
-const ext = process.platform === "win32" ? ".exe" : "";
+const destDir = path.join(FE_DIR, 'resources/sidecar');
+const ext = process.platform === 'win32' ? '.exe' : '';
 const destBin = path.join(destDir, `intentd${ext}`);
 
 if (!fs.existsSync(sourceBin)) {
   console.error(`Error: intentd binary not found at ${sourceBin}`);
-  console.error("Build it first: cd packages/intentd && cargo build --release");
-  console.error("Or fetch the pinned release: node scripts/fetch-sidecar.cjs");
+  console.error('Build it first: cd packages/intentd && cargo build --release');
+  console.error('Or fetch the pinned release: node scripts/fetch-sidecar.cjs');
   process.exit(1);
 }
 
@@ -46,7 +46,7 @@ const isSameFile = (a, b) => {
   try {
     let ra = fs.realpathSync.native(a);
     let rb = fs.realpathSync.native(b);
-    if (process.platform === "win32") {
+    if (process.platform === 'win32') {
       ra = ra.toLowerCase();
       rb = rb.toLowerCase();
     }
@@ -67,7 +67,7 @@ fs.mkdirSync(destDir, { recursive: true });
 fs.copyFileSync(sourceBin, destBin);
 
 // Make executable on Unix
-if (process.platform !== "win32") {
+if (process.platform !== 'win32') {
   fs.chmodSync(destBin, 0o755);
 }
 

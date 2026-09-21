@@ -3,14 +3,16 @@
    * SetupScriptModal - Modal wrapper around SetupScriptEditor
    * Uses local state so changes only apply on Done, and Cancel discards them.
    */
-  import Modal from './Modal.svelte';
-  import SetupScriptEditor from '$lib/components/workspace/initializer/SetupScriptEditor.svelte';
+  import { FormDialog } from '$lib/components/patterns/confirm';
+  import type { Snippet } from 'svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import type { ProjectType, SetupScriptNameSource } from '$features/setup-scripts';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
     open?: boolean;
+    static?: boolean;
+    editor?: Snippet<[string, (value: string) => void]>;
     repoPath?: string;
     /** Source URL for GitHub selections (last-used keys on path + URL). */
     githubUrl?: string | null;
@@ -27,6 +29,8 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
+    editor,
     repoPath = '',
     githubUrl = null,
     projectType = undefined,
@@ -44,6 +48,7 @@
   let localScriptNameSource = $state<SetupScriptNameSource>('named');
   let localIsCustomScript = $state(false);
   let editorExpanded = $state(true);
+  let escapeKeydownBehavior = $state<'close' | 'ignore'>('close');
   const localHasUnsavedChanges = $derived(
     localValue !== value ||
       localScriptName !== scriptName ||
@@ -78,29 +83,59 @@
     open = false;
     onClose?.();
   }
+
+  function handleFocusIn(event: FocusEvent) {
+    const target = event.target;
+    escapeKeydownBehavior =
+      target instanceof HTMLElement &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.closest('.monaco-editor') !== null)
+        ? 'ignore'
+        : 'close';
+  }
 </script>
 
-<Modal bind:open title={m.modals_setupScript_title()} contentClass="p-0" onClose={handleCancel}>
-  <SetupScriptEditor
-    {repoPath}
-    {githubUrl}
-    {projectType}
-    {repoConfigScript}
-    bind:value={localValue}
-    bind:expanded={editorExpanded}
-    bind:scriptName={localScriptName}
-    bind:scriptNameSource={localScriptNameSource}
-    bind:isCustomScript={localIsCustomScript}
-    contentOnly={true}
-  />
-  <div class="flex items-center justify-end gap-3 px-6 py-3 border-t border-border shrink-0">
+<FormDialog
+  bind:open
+  static={staticPosition}
+  title={m.modals_setupScript_title()}
+  showCloseButton={false}
+  {escapeKeydownBehavior}
+  onfocusin={handleFocusIn}
+  enterKey="ignore"
+  modEnter="ignore"
+  class="max-w-6xl grid-cols-1 [&>form]:min-w-0 [&>form]:grid-cols-1"
+  onSubmit={handleDone}
+  onCancel={handleCancel}
+>
+  {#if editor}
+    {@render editor(localValue, (next) => (localValue = next))}
+  {:else}
+    {#await import('$lib/components/workspace/initializer/SetupScriptEditor.svelte') then { default: SetupScriptEditor }}
+      <SetupScriptEditor
+        {repoPath}
+        {githubUrl}
+        {projectType}
+        {repoConfigScript}
+        bind:value={localValue}
+        bind:expanded={editorExpanded}
+        bind:scriptName={localScriptName}
+        bind:scriptNameSource={localScriptNameSource}
+        bind:isCustomScript={localIsCustomScript}
+        contentOnly={true}
+        contentClass="h-[min(34rem,calc(100dvh-12rem))] min-h-80"
+      />
+    {/await}
+  {/if}
+  {#snippet footer()}
     <Button variant="ghost" onclick={handleCancel}>{m.modals_setupScript_cancel_label()}</Button>
     {#if localHasUnsavedChanges}
-      <Button variant="default" onclick={handleSaveAndDone}>
+      <Button variant="primary" onclick={handleSaveAndDone}>
         {m.modals_setupScript_saveAndDone_label()}
       </Button>
     {:else}
-      <Button variant="default" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
+      <Button variant="primary" onclick={handleDone}>{m.modals_setupScript_done_label()}</Button>
     {/if}
-  </div>
-</Modal>
+  {/snippet}
+</FormDialog>

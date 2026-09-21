@@ -124,7 +124,7 @@
           >
             {#if progressFraction != null}
               <div
-                class="h-full bg-primary transition-[width] duration-300"
+                class="h-full bg-primary transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
                 style="width: {Math.round(progressFraction * 100)}%"
               ></div>
             {:else}
@@ -161,7 +161,7 @@
           {/if}
         {:else}
           <p class="flex items-center gap-2 text-sm" data-testid="import-result-failed">
-            <Fa icon={faCircleXmark} class="text-error-foreground shrink-0" />
+            <Fa icon={faCircleXmark} class="text-danger shrink-0" />
             <span class="font-semibold">{m.workspace_import_result_failed_title()}</span>
           </p>
           <p class="text-xs text-subtle" data-testid="import-failed-reason">
@@ -181,7 +181,7 @@
             {m.workspace_transfer_done_label()}
           </Button>
           <Button
-            variant="default"
+            variant="primary"
             onclick={() => onOpenWorkspace?.()}
             data-testid="import-open-button"
           >
@@ -191,7 +191,7 @@
           <Button variant="ghost" onclick={() => onCancel?.()}>
             {m.workspace_transfer_close_label()}
           </Button>
-          <Button variant="default" onclick={() => onRetry?.()} data-testid="import-retry-button">
+          <Button variant="primary" onclick={() => onRetry?.()} data-testid="import-retry-button">
             {m.workspace_transfer_retry_label()}
           </Button>
         {/if}

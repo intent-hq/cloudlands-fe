@@ -1,7 +1,21 @@
 import type { FileGitStatus, FileNode } from '$shared/types';
 import { getItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
-import { addExpandedPath, emptyFileExplorerWorkspaceState, fileExplorerReducer, initialState, refreshDirectoryRequested, removeAgentFileEditsEntries, setChildrenAtPathAction, setFileExplorerError, setFileExplorerLoading, setFileExplorerWorkspacePath, setGitStatusMap, setRootNode, updateAgentFileEditsEntries } from './file-explorer-slice';
+import {
+  addExpandedPath,
+  emptyFileExplorerWorkspaceState,
+  fileExplorerReducer,
+  initialState,
+  refreshDirectoryRequested,
+  removeAgentFileEditsEntries,
+  setChildrenAtPathAction,
+  setFileExplorerError,
+  setFileExplorerLoading,
+  setFileExplorerWorkspacePath,
+  setGitStatusMap,
+  setRootNode,
+  updateAgentFileEditsEntries,
+} from './file-explorer-slice';
 
 const WS_ID = 'ws-1';
 const WS_PATH = '/a/repo';

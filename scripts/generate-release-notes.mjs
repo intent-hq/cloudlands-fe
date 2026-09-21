@@ -24,11 +24,7 @@
  */
 
 import { writeFileSync } from 'fs';
-import {
-  parseCommitMessage,
-  shouldSkipCommit,
-  renderRepoNotes,
-} from './release-notes-lib.mjs';
+import { parseCommitMessage, shouldSkipCommit, renderRepoNotes } from './release-notes-lib.mjs';
 import {
   buildIntentdSectionWithDelta,
   fetchCommits,
@@ -100,14 +96,20 @@ async function main() {
   console.log(`Generating release notes for Intent v${args.version}...\n`);
 
   console.log(`Fetching cloudlands-fe commits (${args['fe-base']}...${args['fe-head']})...`);
-  const feCommits = await fetchCommits('intent-hq', 'cloudlands-fe', args['fe-base'], args['fe-head'], feToken);
+  const feCommits = await fetchCommits(
+    'intent-hq',
+    'cloudlands-fe',
+    args['fe-base'],
+    args['fe-head'],
+    feToken,
+  );
   console.log(`  Found ${feCommits.length} commits\n`);
 
   // Parse and filter commits
   // Extract first line of commit message (GitHub API returns full message with body)
   const parsedFeCommits = feCommits
-    .map(c => parseCommitMessage(c.commit.message.split('\n')[0]))
-    .filter(c => c && !shouldSkipCommit(c));
+    .map((c) => parseCommitMessage(c.commit.message.split('\n')[0]))
+    .filter((c) => c && !shouldSkipCommit(c));
 
   // Build the intentd section. When the previous pin is known and moved, the shared
   // helper fetches the commit delta from the intentd compare API; any failure falls

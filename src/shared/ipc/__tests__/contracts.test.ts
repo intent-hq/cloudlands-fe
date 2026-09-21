@@ -4,11 +4,7 @@
  * Tests for IPC type contracts and validation
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { AgentIpc, WorkspaceIpc, FileIpc, TerminalIpc, IpcResponse } from '../contracts';
 import {
   AgentCancelSubscriptionsRequestSchema,
@@ -26,10 +22,10 @@ import {
   validateIpcRequest,
   tryValidateIpcRequest,
 } from '../request-validation';
-import {
-  AgentId,
-  WorkspaceId,
-} from '../../types/branded-ids';
+import { POWER_CHANNELS } from '../channels';
+import { getAllowedChannelsList } from '../validation';
+import { IpcContracts } from '../../type-system/contracts';
+import { AgentId, WorkspaceId } from '../../types/branded-ids';
 
 describe('IPC Contracts', () => {
   describe('Agent IPC Contracts', () => {
@@ -289,6 +285,25 @@ describe('IPC Contracts', () => {
 
       const result = tryValidateIpcRequest('agent:create', request);
       expect(result).toBeNull();
+    });
+  });
+
+  describe('Power IPC Contracts', () => {
+    it('exposes the battery wire names and allowlists the push channel', () => {
+      expect(POWER_CHANNELS.GET_BATTERY_STATE).toBe('power:get-battery-state');
+      expect(POWER_CHANNELS.BATTERY_CHANGED).toBe('power:battery-changed');
+      const allowed = getAllowedChannelsList();
+      expect(allowed).toContain('power:get-battery-state');
+      expect(allowed).toContain('power:battery-changed');
+    });
+
+    it('validates the get-battery-state request and { onBattery } response', () => {
+      const contract = IpcContracts['power:get-battery-state'];
+      expect(contract.request.parse({})).toEqual({});
+      expect(contract.response.parse({ onBattery: true })).toEqual({ onBattery: true });
+      expect(contract.response.parse({ onBattery: false })).toEqual({ onBattery: false });
+      expect(() => contract.response.parse({})).toThrow();
+      expect(() => contract.response.parse({ onBattery: 'yes' })).toThrow();
     });
   });
 

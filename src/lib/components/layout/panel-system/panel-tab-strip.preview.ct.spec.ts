@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import PanelTabStripPreview from './panel-tab-strip.preview.svelte';
 

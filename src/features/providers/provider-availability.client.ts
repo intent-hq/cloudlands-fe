@@ -44,6 +44,7 @@ export interface ProviderAvailabilityResult {
     droid: ProviderStatus;
     grok: ProviderStatus;
     unsloth: ProviderStatus;
+    antigravity?: ProviderStatus;
   };
   /**
    * Provider IDs hidden by env-var / feature-code gating. Absent = gating

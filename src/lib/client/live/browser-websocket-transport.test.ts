@@ -102,6 +102,16 @@ describe('resolveBrowserWsUrl', () => {
     expect(resolveBrowserWsUrl(' ws://localhost:9100/rpc ')).toBe('ws://localhost:9100/rpc');
   });
 
+  it('resolves a same-origin path using the page host', () => {
+    vi.stubGlobal('location', { protocol: 'http:', host: '127.0.0.1:64197' });
+    expect(resolveBrowserWsUrl('/intentd/ws')).toBe('ws://127.0.0.1:64197/intentd/ws');
+  });
+
+  it('uses a secure WebSocket for an HTTPS page', () => {
+    vi.stubGlobal('location', { protocol: 'https:', host: 'localhost:8443' });
+    expect(resolveBrowserWsUrl('/intentd/ws')).toBe('wss://localhost:8443/intentd/ws');
+  });
+
   it('accepts wss:// URLs with a token query param', () => {
     expect(resolveBrowserWsUrl('wss://daemon.example/rpc?token=abc')).toBe(
       'wss://daemon.example/rpc?token=abc',
@@ -361,6 +371,37 @@ describe('BrowserWebSocketTransport', () => {
     await expect(after).resolves.toEqual([]);
     transport.dispose();
   });
+
+  it.each(['close', 'timeout'])(
+    'replays startup work after an initial connect %s',
+    async (failure) => {
+      vi.useFakeTimers();
+      const { transport, socket } = createHarness({ connectTimeoutMs: 100, reconnectDelayMs: 100 });
+      const recovered = vi.fn(() => transport.request('workspace.list', {}));
+      transport.onReconnected(recovered);
+      const failed = transport
+        .request('workspace.list', {})
+        .catch((error: BackendError) => error.code);
+      if (failure === 'close') socket().drop();
+      else await vi.advanceTimersByTimeAsync(100);
+      expect(await failed).toBe('TRANSPORT_ERROR');
+      expect(recovered).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(100);
+      socket().open();
+      await flush();
+      expect(recovered).toHaveBeenCalledOnce();
+      expect(socket().lastFrame()).toEqual({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'workspace.list',
+        params: {},
+      });
+      socket().receive({ jsonrpc: '2.0', id: 2, result: { workspaces: [] } });
+      await expect(recovered.mock.results[0].value).resolves.toEqual({ workspaces: [] });
+      transport.dispose();
+    },
+  );
 
   it('queues requests behind an armed backoff timer instead of connecting immediately', async () => {
     vi.useFakeTimers();

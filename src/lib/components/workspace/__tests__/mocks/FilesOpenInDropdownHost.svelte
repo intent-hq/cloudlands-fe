@@ -33,15 +33,14 @@
   style={`width: ${width}px; zoom: ${zoom}; padding: 20px;`}
   data-theme={theme}
 >
-  <div class="test-surface" data-testid="outside-area" style="min-height: 400px; background: var(--color-background); padding: 100px 20px;">
+  <div
+    class="test-surface"
+    data-testid="outside-area"
+    style="min-height: 400px; background: var(--color-background); padding: 100px 20px;"
+  >
     <DropdownMenu bind:open align="end" portal={true} side="bottom">
       {#snippet trigger({ props })}
-        <button
-          type="button"
-          data-testid="files-open-in-trigger"
-          class="trigger-button"
-          {...props}
-        >
+        <button type="button" data-testid="files-open-in-trigger" class="trigger-button" {...props}>
           <Fa icon={faArrowUpRightFromSquare} size="sm" />
           <span>Open in</span>
         </button>
@@ -65,7 +64,10 @@
 
 <style>
   .test-container {
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family:
+      system-ui,
+      -apple-system,
+      sans-serif;
   }
 
   .test-container[data-theme='dark'] {

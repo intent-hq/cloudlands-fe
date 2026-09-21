@@ -30,6 +30,8 @@
     agentId?: string;
     workspaceId?: string;
     disabled?: boolean;
+    /** A commit is in flight; announced on the trigger without disabling it, so focus is kept. */
+    busy?: boolean;
     class?: string;
     mode?: 'popover' | 'embedded';
     effortLevels?: readonly string[];
@@ -42,6 +44,7 @@
     agentId,
     workspaceId,
     disabled = false,
+    busy = false,
     class: className = '',
     mode = 'popover',
     effortLevels = [],
@@ -125,6 +128,7 @@
   const selectedLevelIndex = $derived(selectedOption?.levelIndex ?? -1);
   let selectOpen = $state(false);
   let pickerRoot = $state<HTMLDivElement | null>(null);
+  const contentId = $props.id();
 
   $effect(() => {
     selectedOptionValue = persistedOptionValue;
@@ -195,6 +199,8 @@
         <Select.Trigger
           class="h-7 gap-1 px-2 text-xs"
           aria-label={m.chat_effortPicker_trigger_ariaLabel({ level: selectedLabel })}
+          aria-controls={selectOpen ? contentId : undefined}
+          aria-busy={busy || undefined}
           data-testid="effort-picker-trigger"
         >
           <span class="min-w-0 flex-1 truncate text-left">
@@ -214,7 +220,13 @@
             {/if}
           </span>
         </Select.Trigger>
-        <Select.Content portal={!embedded} dropUp={!embedded}>
+        <!-- Dropdown's portal is at z-index 100; its nested popup must sit above it. -->
+        <Select.Content
+          wrapperId={contentId}
+          portal
+          dropUp={!embedded}
+          class={cn('effort-picker-content', embedded && 'z-[101]!')}
+        >
           {#each options as option (option.value)}
             <Select.Item value={option.value} label={option.label}>{option.label}</Select.Item>
           {/each}
@@ -223,3 +235,9 @@
     </div>
   </div>
 {/if}
+
+<style>
+  :global(.effort-picker-content) {
+    max-height: min(15rem, var(--bits-select-content-available-height)) !important;
+  }
+</style>

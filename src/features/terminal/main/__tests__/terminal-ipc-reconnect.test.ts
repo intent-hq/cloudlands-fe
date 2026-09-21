@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
   remoteBackendRequest: vi.fn(),
   backendId: { value: 'local' },
   clientOn: vi.fn(),
-  mainDispatch: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -55,9 +54,7 @@ vi.mock('$features/workspace/main/workspace-path.service', () => ({
   getWorkspacePath: vi.fn(async () => null),
 }));
 
-vi.mock('../../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: mocks.mainDispatch,
-}));
+vi.mock('../../../../store/main/redux-store-bridge', () => ({}));
 
 const WS = 'amber-forest';
 const CWD = os.tmpdir();

@@ -48,7 +48,9 @@ function harness(requests: PermissionRequest[] = [request('request-1')]) {
     (state, item) => permissionReducer(state, permissionRequestReceived(item)),
     initialState,
   );
-  const dispatch = vi.fn((action) => { permission = permissionReducer(permission, action); });
+  const dispatch = vi.fn((action) => {
+    permission = permissionReducer(permission, action);
+  });
   const task = runSaga(
     { channel, dispatch, getState: () => ({ permission }) },
     permissionResponseSaga,
@@ -67,7 +69,10 @@ describe('permissionResponseSaga', () => {
   it('maps all four outcomes exactly and runs takeEvery workers concurrently', async () => {
     const resolvers: Array<(value: unknown) => void> = [];
     mocks.respondPermission.mockImplementation(
-      () => new Promise((resolve) => { resolvers.push(resolve); }),
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
     );
     const run = harness();
     run.channel.put(approvePermission('request-1'));
@@ -128,14 +133,16 @@ describe('permissionResponseSaga', () => {
     run.channel.put(selectPermissionOption('request-1', 'allow-custom'));
     await settle();
 
-    expect(mocks.respondPermission).toHaveBeenCalledWith(
-      'request-1',
-      { outcome: 'selected', optionId: 'allow-custom' },
-    );
+    expect(mocks.respondPermission).toHaveBeenCalledWith('request-1', {
+      outcome: 'selected',
+      optionId: 'allow-custom',
+    });
     expect(run.hasRequest('request-1')).toBe(false);
-    expect(run.dispatch.mock.calls.filter(
-      ([action]) => action.type === 'permission/removePermissionRequest',
-    )).toHaveLength(1);
+    expect(
+      run.dispatch.mock.calls.filter(
+        ([action]) => action.type === 'permission/removePermissionRequest',
+      ),
+    ).toHaveLength(1);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -151,9 +158,11 @@ describe('permissionResponseSaga', () => {
 
     expect(run.hasRequest('unsuccessful')).toBe(true);
     expect(run.hasRequest('thrown')).toBe(true);
-    expect(run.dispatch.mock.calls.filter(
-      ([action]) => action.type === 'permission/removePermissionRequest',
-    )).toHaveLength(0);
+    expect(
+      run.dispatch.mock.calls.filter(
+        ([action]) => action.type === 'permission/removePermissionRequest',
+      ),
+    ).toHaveLength(0);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -173,7 +182,9 @@ describe('permissionResponseSaga', () => {
   it('retains the request when an in-flight response is cancelled', async () => {
     let resolveResponse!: (value: unknown) => void;
     mocks.respondPermission.mockReturnValue(
-      new Promise((resolve) => { resolveResponse = resolve; }),
+      new Promise((resolve) => {
+        resolveResponse = resolve;
+      }),
     );
     const run = harness();
     run.channel.put(cancelPermission('request-1'));
@@ -184,8 +195,10 @@ describe('permissionResponseSaga', () => {
     await settle();
 
     expect(run.hasRequest('request-1')).toBe(true);
-    expect(run.dispatch.mock.calls.filter(
-      ([action]) => action.type === 'permission/removePermissionRequest',
-    )).toHaveLength(0);
+    expect(
+      run.dispatch.mock.calls.filter(
+        ([action]) => action.type === 'permission/removePermissionRequest',
+      ),
+    ).toHaveLength(0);
   });
 });

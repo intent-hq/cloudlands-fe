@@ -1,4 +1,11 @@
-import type { Author, Note, NoteMetadata, NoteVersion, Reference, TaskMetadata } from '$shared/types';
+import type {
+  Author,
+  Note,
+  NoteMetadata,
+  NoteVersion,
+  Reference,
+  TaskMetadata,
+} from '$shared/types';
 import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
 
 function copyAuthor(author: Author): Author {

@@ -1,38 +1,89 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import LiveResponseGroupHost from './LiveResponseGroupHost.svelte';
 import StreamingResponseGroupLifecycleHost from './StreamingResponseGroupLifecycleHost.svelte';
 
-test('keeps one current row until click opens the full live history', async ({ mount }) => {
+test('preserves the header seam and alignment through live disclosure changes', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(LiveResponseGroupHost);
   const trigger = component.getByTestId('response-group-disclosure');
+  const row = component.locator('[data-operational-disclosure-row]');
+  // The host's mounted root is the response group, not a wrapper around it.
+  const readSeam = () =>
+    component.evaluate((node) => {
+      const rect = (selector: string) => node.querySelector(selector)!.getBoundingClientRect();
+      const row = rect('[data-operational-disclosure-row]');
+      const scroller = rect('.cylinder-scroller');
+      const summary = rect('[data-testid="response-group-name"]');
+      const line = rect('[data-testid="live-stream-line"]');
+      const icon = rect('[data-response-group-disclosure-icon] svg');
+      const guide = rect('[data-operational-expanded-guide]');
+      return {
+        gap: scroller.top - row.bottom,
+        contentOffset: line.x - summary.x,
+        guideOffset: guide.x + guide.width / 2 - icon.x - icon.width / 2,
+      };
+    });
+  const previewSeam = { gap: 8, contentOffset: 0, guideOffset: 0 };
+  await expect.poll(readSeam).toEqual(previewSeam);
+  const headerBox = await row.boundingBox();
+
+  await trigger.press('Enter');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(readSeam).toEqual({ ...previewSeam, gap: 16 });
+  expect(await row.boundingBox()).toEqual(headerBox);
+
+  await trigger.press('Space');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(readSeam).toEqual(previewSeam);
+  await component.update({ props: { chunk: 'more live content', lineCount: 12 } });
+  await expect
+    .poll(() => component.locator('.cylinder-scroller').evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(0);
+  await expect.poll(readSeam).toEqual(previewSeam);
+  expect(await row.boundingBox()).toEqual(headerBox);
+
+  await component.update({ props: { isStreaming: false } });
+  await expect(component.locator('.cylinder-scroller')).toHaveCount(0);
+  const groupBox = await component.boundingBox();
+  expect(groupBox!.height).toBe(headerBox!.height);
+});
+
+test('keeps all live rows in the cylinder and the expanded history', async ({ mount }) => {
+  const component = await mount(LiveResponseGroupHost);
+  const trigger = component.getByTestId('response-group-disclosure');
+  const preview = component.locator('[data-operational-preview-content]');
+  const expanded = component.locator('[data-operational-expanded-content]');
 
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  await expect(component.getByTestId('live-current-child')).toHaveText('current chunk');
-  await expect(component.getByTestId('live-history-child')).toHaveCount(0);
+  await expect(preview.getByTestId('live-current-child')).toHaveText('current chunk');
+  await expect(preview.getByTestId('live-history-child')).toHaveCount(2);
 
   await component.update({ props: { chunk: 'new current chunk', isStreaming: true } });
-  await expect(component.getByTestId('live-current-child')).toHaveText('new current chunk');
+  await expect(preview.getByTestId('live-current-child')).toHaveText('new current chunk');
 
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(component.getByTestId('live-current-child')).toHaveCount(0);
-  await expect(component.getByTestId('live-history-child')).toHaveCount(2);
+  await expect(expanded.getByTestId('live-current-child')).toHaveCount(1);
+  await expect(expanded.getByTestId('live-history-child')).toHaveCount(2);
 
   await component.update({ props: { chunk: 'latest chunk', isStreaming: true } });
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(component.getByTestId('live-history-child').last()).toHaveText('latest chunk');
+  await expect(expanded.getByTestId('live-history-child').last()).toHaveText('latest chunk');
 
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  await expect(component.getByTestId('live-current-child')).toHaveText('latest chunk');
-  await expect(component.getByTestId('live-history-child')).toHaveCount(0);
+  await expect(preview.getByTestId('live-current-child')).toHaveText('latest chunk');
+  await expect(preview.getByTestId('live-history-child')).toHaveCount(2);
 
   await component.update({ props: { chunk: 'latest chunk', isStreaming: false } });
   await expect(component.getByTestId('live-current-child')).toHaveCount(0);
   await expect(component.getByTestId('response-group-snippet')).toContainText('earlier chunk');
 });
 
-test('caps and follows a tall current row as a streaming cylinder', async ({ mount, page }) => {
+test('caps and follows tall live rows as a streaming cylinder', async ({ mount, page }) => {
   const component = await mount(LiveResponseGroupHost, {
     props: { chunk: 'streaming line', lineCount: 12, isStreaming: true },
   });
@@ -85,45 +136,18 @@ test('caps and follows a tall current row as a streaming cylinder', async ({ mou
   expect(guideBox!.x + guideBox!.width / 2 - contentBox!.x).toBeCloseTo(18, 0);
 });
 
-test('settles a keyed current-child swap on the new child', async ({ mount }) => {
-  const component = await mount(LiveResponseGroupHost, {
-    props: { chunk: 'first chunk', chunkKey: 'child-a' },
-  });
-  const child = component.getByTestId('live-current-child');
-  await expect(child).toHaveText('first chunk');
-
-  await component.update({
-    props: { chunk: 'second chunk', chunkKey: 'child-b', isStreaming: true },
-  });
-  // Svelte's keyed-block anchoring inserts the incoming child after the
-  // outgoing one mid-swap, so .last() targets the new child; the
-  // toHaveCount(1) below keeps the test sound if that DOM order ever changes.
-  await expect(child.last()).toHaveText('second chunk');
-  await expect(child).toHaveCount(1);
-  await expect(child).toHaveText('second chunk');
-});
-
-test('swaps the current child instantly under reduced motion', async ({ mount, page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(LiveResponseGroupHost, {
-    props: { chunk: 'first chunk', chunkKey: 'child-a' },
-  });
-  const child = component.getByTestId('live-current-child');
-  await expect(child).toHaveText('first chunk');
-
-  await component.update({
-    props: { chunk: 'second chunk', chunkKey: 'child-b', isStreaming: true },
-  });
-  await expect(child).toHaveCount(1);
-  await expect(child).toHaveText('second chunk');
-});
-
 test('reconciles a tag-first streaming group through explicit close and completion', async ({
   mount,
 }) => {
   const component = await mount(StreamingResponseGroupLifecycleHost);
   const trigger = component.getByTestId('response-group-disclosure');
   const visibleChildren = component.locator('[data-response-group-child]');
+  const previewChildren = component.locator(
+    '[data-operational-preview-content] [data-response-group-child]',
+  );
+  const expandedChildren = component.locator(
+    '[data-operational-expanded-content] [data-response-group-child]',
+  );
 
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(component.getByTestId('response-group-name')).toHaveText('Thinking...');
@@ -131,12 +155,16 @@ test('reconciles a tag-first streaming group through explicit close and completi
   await component.update({ props: { phase: 'live', isStreaming: true } });
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
   await expect(component.getByTestId('response-group-name')).toHaveText('Reasoning');
-  await expect(visibleChildren).toHaveCount(1);
-  await expect(visibleChildren).toHaveAttribute('data-message-content-block', 'tool_use');
+  await expect(previewChildren).toHaveCount(5);
+  await expect(
+    component.locator(
+      '[data-operational-preview-content] [data-response-group-child][data-message-content-block="tool_use"]',
+    ),
+  ).toHaveCount(2);
 
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-  await expect(visibleChildren).toHaveCount(5);
+  await expect(expandedChildren).toHaveCount(5);
   await expect(
     component.getByText(
       'I will set the workspace title. Then I will read the current spec and inspect the screenshot context.',
@@ -154,8 +182,7 @@ test('reconciles a tag-first streaming group through explicit close and completi
 
   await trigger.click();
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  await expect(visibleChildren).toHaveCount(1);
-  await expect(visibleChildren).toHaveAttribute('data-message-content-block', 'tool_use');
+  await expect(previewChildren).toHaveCount(5);
 
   await component.update({ props: { phase: 'closed', isStreaming: false } });
   await expect(trigger).toHaveAttribute('aria-expanded', 'false');

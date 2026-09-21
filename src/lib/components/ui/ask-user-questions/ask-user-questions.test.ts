@@ -1,0 +1,295 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseUiComponentMetadata } from '../component-metadata';
+import AskUserQuestions from './ask-user-questions.svelte';
+import { askUserQuestionsFixtures } from './ask-user-questions.fixtures';
+import { askUserQuestionsMetadata } from './ask-user-questions.meta';
+import type { AskUserAnswer, AskUserQuestion } from './types';
+
+afterEach(() => cleanup());
+
+const options = [
+  { id: 'speed', title: 'Speed' },
+  { id: 'quality', title: 'Quality' },
+];
+
+const twoQuestions: AskUserQuestion[] = [
+  { id: 'priority', title: 'Choose a priority', options },
+  { id: 'audience', title: 'Choose an audience', options },
+];
+
+describe('AskUserQuestions', () => {
+  it('advances a single-select answer and supports digit shortcuts', async () => {
+    const onAnswersChange = vi.fn();
+    const onCurrentIndexChange = vi.fn();
+    const view = render(AskUserQuestions, {
+      props: { questions: twoQuestions, onAnswersChange, onCurrentIndexChange },
+    });
+
+    await fireEvent.keyDown(document.body, { key: '2' });
+
+    expect(onCurrentIndexChange).toHaveBeenCalledWith(1);
+    expect(onAnswersChange).toHaveBeenLastCalledWith({
+      priority: {
+        questionId: 'priority',
+        selectedIds: ['quality'],
+        otherText: undefined,
+        skipped: false,
+      },
+    });
+    expect(view.getByText('Choose an audience')).toBeTruthy();
+  });
+
+  it('toggles multi-select answers and submits Continue then Finish', async () => {
+    const onComplete = vi.fn();
+    const questions = twoQuestions.map((question) => ({ ...question, multiSelect: true }));
+    const view = render(AskUserQuestions, { props: { questions, onComplete } });
+
+    await fireEvent.click(view.getByRole('checkbox', { name: /Speed/ }));
+    await fireEvent.click(view.getByRole('button', { name: /Continue/ }));
+    await waitFor(() => expect(view.queryByText('Choose a priority')).toBeNull());
+    await fireEvent.click(view.getByRole('checkbox', { name: /Quality/ }));
+    await fireEvent.click(view.getByRole('button', { name: /Finish/ }));
+
+    expect(onComplete).toHaveBeenCalledWith({
+      priority: expect.objectContaining({ selectedIds: ['speed'] }),
+      audience: expect.objectContaining({ selectedIds: ['quality'] }),
+    });
+  });
+
+  it('submits an allowOther answer with Enter but preserves Shift+Enter', async () => {
+    const onComplete = vi.fn();
+    const view = render(AskUserQuestions, {
+      props: {
+        questions: [{ id: 'direction', title: 'Choose a direction', options, allowOther: true }],
+        onComplete,
+      },
+    });
+    const input = view.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'A third path' } });
+    await fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(onComplete).not.toHaveBeenCalled();
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).toHaveBeenCalledWith({
+      direction: expect.objectContaining({ otherText: 'A third path' }),
+    });
+  });
+
+  it('disables free text and prevents wrapper focus until enabled', async () => {
+    const view = render(AskUserQuestions, {
+      props: {
+        questions: [{ id: 'name', title: 'Name the project', freeText: true }],
+        disabled: true,
+      },
+    });
+    const input = view.getByRole('textbox', { name: 'Name the project' });
+    const wrapper = view.getByRole('group', { name: 'Name the project' });
+
+    expect(input.hasAttribute('disabled')).toBe(true);
+    await fireEvent.pointerDown(wrapper);
+    expect(document.activeElement).not.toBe(input);
+
+    await view.rerender({ disabled: false });
+    expect(input.hasAttribute('disabled')).toBe(false);
+    await fireEvent.pointerDown(wrapper);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('blocks invalid free text, clears the error on edit, and then submits', async () => {
+    const onComplete = vi.fn();
+    const view = render(AskUserQuestions, {
+      props: {
+        questions: [
+          {
+            id: 'name',
+            title: 'Name the project',
+            freeText: true,
+            freeTextMultiline: false,
+            freeTextValidate: (value) =>
+              value.length < 3 ? 'Use at least three characters.' : null,
+          },
+        ],
+        onComplete,
+      },
+    });
+    const input = view.getByRole('textbox', { name: 'Name the project' });
+    await fireEvent.input(input, { target: { value: 'No' } });
+    await fireEvent.click(view.getByRole('button', { name: /Finish/ }));
+    expect(view.getByRole('alert').textContent).toContain('three characters');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(onComplete).not.toHaveBeenCalled();
+
+    await fireEvent.input(input, { target: { value: 'Nova' } });
+    expect(view.queryByRole('alert')).toBeNull();
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).toHaveBeenCalledWith({
+      name: expect.objectContaining({ otherText: 'Nova' }),
+    });
+  });
+
+  it('records skip and advances to the next question', async () => {
+    const onSkip = vi.fn();
+    const onAnswersChange = vi.fn();
+    const view = render(AskUserQuestions, {
+      props: { questions: twoQuestions, onSkip, onAnswersChange },
+    });
+    await fireEvent.click(view.getByRole('button', { name: /Skip/ }));
+    expect(onSkip).toHaveBeenCalledWith('priority', 0);
+    expect(onAnswersChange).toHaveBeenCalledWith({
+      priority: expect.objectContaining({ skipped: true }),
+    });
+    expect(view.getByText('Choose an audience')).toBeTruthy();
+  });
+
+  it('places chips on the configured side and exposes optional Back navigation', async () => {
+    const onBack = vi.fn();
+    const view = render(AskUserQuestions, {
+      props: {
+        questions: [twoQuestions[0], { ...twoQuestions[1], chipPosition: 'left' }],
+        currentIndex: 1,
+        showBack: true,
+        onBack,
+      },
+    });
+    expect(view.getByRole('radio', { name: /Speed/ }).getAttribute('data-chip-position')).toBe(
+      'left',
+    );
+    await fireEvent.click(view.getByRole('button', { name: /Back/ }));
+    expect(onBack).toHaveBeenCalledWith(1);
+  });
+
+  it('keeps stable inset metadata while the keyed content and footer swap together', async () => {
+    const view = render(AskUserQuestions, { props: { questions: twoQuestions } });
+    const metadata = view.container.querySelector('[data-slot="ask-user-questions-metadata"]');
+    expect(metadata?.textContent).toContain('Question 1 of 2');
+
+    await fireEvent.click(view.getByRole('radio', { name: /Speed/ }));
+
+    expect(view.container.querySelector('[data-slot="ask-user-questions-metadata"]')).toBe(
+      metadata,
+    );
+    expect(metadata?.textContent).toContain('Question 2 of 2');
+    const targets = view.container.querySelectorAll('[data-animated-height-target]');
+    const incoming = targets.item(targets.length - 1);
+    expect(incoming.textContent).toContain('Choose an audience');
+    expect(incoming.querySelector('button')).toBeTruthy();
+  });
+
+  it('honors controlled index and answer state while emitting requested changes', async () => {
+    const onCurrentIndexChange = vi.fn();
+    const onAnswersChange = vi.fn();
+    const answers: Record<string, AskUserAnswer> = {
+      priority: { questionId: 'priority', selectedIds: ['quality'] },
+    };
+    const view = render(AskUserQuestions, {
+      props: {
+        questions: twoQuestions,
+        currentIndex: 0,
+        answers,
+        onCurrentIndexChange,
+        onAnswersChange,
+      },
+    });
+    expect(view.getByRole('radio', { name: /Quality/ }).getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(view.getByRole('radio', { name: /Speed/ }));
+    expect(onCurrentIndexChange).toHaveBeenCalledWith(1);
+    expect(onAnswersChange).toHaveBeenCalledWith({
+      priority: expect.objectContaining({ selectedIds: ['speed'] }),
+    });
+    expect(view.getByText('Choose a priority')).toBeTruthy();
+  });
+
+  it('advances one step per Ctrl+Enter when the next answer is already filled', async () => {
+    const onCurrentIndexChange = vi.fn();
+    const onComplete = vi.fn();
+    const questions = twoQuestions.map((question) => ({ ...question, multiSelect: true }));
+    const view = render(AskUserQuestions, {
+      props: {
+        questions,
+        defaultAnswers: {
+          priority: { questionId: 'priority', selectedIds: ['speed'] },
+          audience: { questionId: 'audience', selectedIds: ['quality'] },
+        },
+        globalKeyboardShortcuts: true,
+        onCurrentIndexChange,
+        onComplete,
+      },
+    });
+
+    await fireEvent.keyDown(view.getByRole('checkbox', { name: /Speed/ }), {
+      key: 'Enter',
+      ctrlKey: true,
+    });
+
+    expect(onCurrentIndexChange).toHaveBeenCalledTimes(1);
+    expect(onCurrentIndexChange).toHaveBeenCalledWith(1);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('ignores global shortcuts dispatched from inside a foreign modal dialog', async () => {
+    const onCurrentIndexChange = vi.fn();
+    render(AskUserQuestions, {
+      props: { questions: twoQuestions, globalKeyboardShortcuts: true, onCurrentIndexChange },
+    });
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    const confirm = document.createElement('button');
+    dialog.appendChild(confirm);
+    document.body.appendChild(dialog);
+    try {
+      confirm.focus();
+      await fireEvent.keyDown(confirm, { key: '1' });
+      expect(onCurrentIndexChange).not.toHaveBeenCalled();
+    } finally {
+      dialog.remove();
+    }
+  });
+
+  it('submits a checked multi-select answer from an empty Other field with otherEnterSubmits', async () => {
+    const onComplete = vi.fn();
+    const view = render(AskUserQuestions, {
+      props: {
+        questions: [
+          {
+            id: 'scope',
+            title: 'Choose a scope',
+            options,
+            multiSelect: true,
+            allowOther: true,
+            otherEnterSubmits: true,
+          },
+        ],
+        onComplete,
+      },
+    });
+    const input = view.getByRole('textbox');
+
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).not.toHaveBeenCalled();
+
+    await fireEvent.click(view.getByRole('checkbox', { name: /Speed/ }));
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledWith({
+      scope: expect.objectContaining({ selectedIds: ['speed'] }),
+    });
+  });
+
+  it('publishes the ten reference fixtures and valid metadata', () => {
+    expect(() => parseUiComponentMetadata(askUserQuestionsMetadata)).not.toThrow();
+    expect(askUserQuestionsFixtures.map(({ title }) => title)).toEqual([
+      'Playground',
+      'Multiple questions',
+      'Multi-select',
+      'With other',
+      'Free text',
+      'Free text validation',
+      'Skippable',
+      'Chip on left',
+      'Stacked layout',
+      'Controlled',
+    ]);
+  });
+});

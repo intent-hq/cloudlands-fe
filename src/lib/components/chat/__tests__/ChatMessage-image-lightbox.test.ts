@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { ChatTranscriptReconciler } from '$lib/client/live/live-chat-client';
 
 const dispatchMock = vi.hoisted(() => vi.fn());
@@ -52,6 +53,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
 }));
 
 import ChatMessage from '../ChatMessage.svelte';
+import ChatMessageRouteContextHarness from './ChatMessageRouteContextHarness.test.svelte';
 import { store as mockStore } from '$store/renderer/store';
 
 describe('ChatMessage image lightbox', () => {
@@ -130,51 +132,81 @@ describe('ChatMessage image lightbox', () => {
     });
   });
 
-  it('renders an image block delivered by a live chat delta', () => {
-    const reconciler = new ChatTranscriptReconciler();
-    reconciler.applySnapshot(0, {
-      agentId: 'agent-image',
-      messages: [],
-      truncated: false,
-      totalMessages: 0,
-    });
-    expect(
-      reconciler.applyDelta(1, {
-        added: [
-          {
-            messageId: 'msg-live-image',
-            role: 'assistant',
-            block: {
-              type: 'image',
-              id: 'msg-live-image:0',
-              data: mockImageData,
-              mimeType: mockImageMimeType,
+  it.each(['user', 'assistant'] as const)(
+    'renders a %s image block delivered by a live chat delta',
+    (role) => {
+      const reconciler = new ChatTranscriptReconciler();
+      reconciler.applySnapshot(0, {
+        agentId: 'agent-image',
+        messages: [],
+        truncated: false,
+        totalMessages: 0,
+      });
+      expect(
+        reconciler.applyDelta(1, {
+          added: [
+            {
+              messageId: 'msg-live-image',
+              role,
+              block: {
+                type: 'image',
+                id: 'msg-live-image:0',
+                data: mockImageData,
+                mimeType: mockImageMimeType,
+              },
             },
-          },
-        ],
-        updated: [],
-        removedIds: [],
-      }),
-    ).toBe('applied');
+          ],
+          updated: [],
+          removedIds: [],
+        }),
+      ).toBe('applied');
 
-    const message = reconciler.transcript().messages[0];
-    expect(message.contentBlocks?.[0]).toMatchObject({
-      type: 'image',
-      data: mockImageData,
-      mimeType: mockImageMimeType,
-    });
-    render(ChatMessage, { props: { message } });
+      const message = reconciler.transcript().messages[0];
+      expect(message.contentBlocks?.[0]).toMatchObject({
+        type: 'image',
+        data: mockImageData,
+        mimeType: mockImageMimeType,
+      });
+      render(ChatMessage, { props: { message } });
 
-    expect(screen.getByRole('img', { name: 'Image from agent' }).getAttribute('src')).toBe(
-      `data:${mockImageMimeType};base64,${mockImageData}`,
-    );
-  });
+      expect(
+        screen
+          .getByRole('img', {
+            name: role === 'assistant' ? 'Image from agent' : 'Attached image 1',
+          })
+          .getAttribute('src'),
+      ).toBe(`data:${mockImageMimeType};base64,${mockImageData}`);
+    },
+  );
 
   it('renders protocol-shaped image content returned by an agent tool', () => {
     render(ChatMessage, { props: { message: createAssistantMessageWithToolImage() } });
 
     const image = screen.getByRole('img', { name: 'Attached image 1' });
     expect(image.getAttribute('src')).toBe(`data:${mockImageMimeType};base64,${mockImageData}`);
+  });
+
+  it('resolves assistant workspace image links from the route when no workspace prop is given', async () => {
+    const { container } = render(ChatMessageRouteContextHarness, {
+      props: {
+        workspaceId: WorkspaceId('ws-1'),
+        message: {
+          id: 'msg-agent-workspace-image',
+          role: 'assistant',
+          contentBlocks: [
+            { type: 'text', text: '![chart](intent://local/file/charts/bridge_tracking.png)' },
+          ],
+          timestamp: new Date('2024-01-01T12:00:00Z'),
+        } satisfies AgentMessage,
+      },
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('img[src^="workspace-file://ws-1/charts/bridge_tracking.png?v="]'),
+      ).toBeTruthy();
+    });
+    expect(container.querySelector('img[src^="intent://"]')).toBeNull();
   });
 
   it('opens lightbox when image thumbnail is clicked', async () => {
@@ -429,9 +461,8 @@ describe('ChatMessage image lightbox', () => {
     expect(screen.getByRole('button', { name: /reset zoom/i })).toBeTruthy();
   });
 
-  describe('lazy attachment hydration (§5.5 slim → v7.2 agent.getMessageBlock)', () => {
-    const thumbnailData =
-      'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  describe('lazy attachment hydration (§5.5 slim → agent.getMessageBlock)', () => {
+    const thumbnailData = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     const fullImageData =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
@@ -453,6 +484,115 @@ describe('ChatMessage image lightbox', () => {
         timestamp: new Date('2024-01-01T12:00:00Z'),
       } as AgentMessage;
     }
+
+    it.each(['user', 'assistant'] as const)(
+      'keeps a snapshot-ingressed %s legacy slim placeholder actionable for hydration',
+      async (role) => {
+        const reconciler = new ChatTranscriptReconciler('agent-1');
+        const placeholder = {
+          type: 'image',
+          id: 'msg-legacy-slim:0',
+          mimeType: mockImageMimeType,
+          dataTruncated: true,
+          dataBytes: 8192,
+        };
+        reconciler.applySnapshot(0, {
+          agentId: 'agent-1',
+          messages: [
+            {
+              id: 'msg-legacy-slim',
+              agentId: 'agent-1',
+              role,
+              timestamp: '2026-09-07T00:00:00.000Z',
+              contentBlocks: [placeholder],
+            },
+          ],
+          truncated: false,
+          totalMessages: 1,
+        });
+        const message = reconciler.transcript().messages[0];
+        mockStoreMessage.value = message;
+        render(ChatMessage, {
+          props: { message, agentId: 'agent-1', messageId: 'msg-legacy-slim' },
+        });
+
+        await fireEvent.click(
+          role === 'assistant'
+            ? screen.getByTestId('chat-image-placeholder')
+            : screen.getByRole('button', { name: /view attached image 1 of 1 full size/i }),
+        );
+
+        expect(dispatchMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'chatState/messageBlockHydrationRequested',
+            payload: ['agent-1', 'msg-legacy-slim', 'msg-legacy-slim:0'],
+          }),
+        );
+      },
+    );
+
+    it('retains a sent image without thumbnail through failed hydration, retry and full-image load', async () => {
+      const message = createTruncatedMessage();
+      delete message.contentBlocks[1].data;
+      delete message.contentBlocks[1].dataIsThumbnail;
+      mockStoreMessage.value = message;
+      function setHydration(entry: Record<string, unknown>) {
+        mockStoreState.value = {
+          chatState: {
+            byAgentId: {
+              'agent-1': {
+                hydratedBlocks: { 'msg-slim|msg-slim:1': entry },
+              },
+            },
+          },
+        };
+        (mockStore as unknown as { emitState: () => void }).emitState();
+      }
+      dispatchMock.mockImplementation((action) => {
+        if (action.type === 'chatState/messageBlockHydrationRequested') {
+          setHydration({ status: 'loading', seq: 1 });
+        }
+      });
+      render(ChatMessage, { props: { message, agentId: 'agent-1', messageId: 'msg-slim' } });
+      const button = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
+      await fireEvent.click(button);
+      await fireEvent.click(button);
+      expect(
+        dispatchMock.mock.calls.filter(
+          ([action]) => action.type === 'chatState/messageBlockHydrationRequested',
+        ),
+      ).toHaveLength(1);
+      expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
+      setHydration({ status: 'error', seq: 1, error: 'offline' });
+      await waitFor(() => expect(button.getAttribute('aria-busy')).toBe('false'));
+      expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
+      expect(screen.getByTestId('chat-message-image-placeholder')).toBeTruthy();
+      await fireEvent.click(button);
+      setHydration({
+        status: 'loaded',
+        seq: 2,
+        block: {
+          type: 'image',
+          id: 'msg-slim:1',
+          data: fullImageData,
+          mimeType: mockImageMimeType,
+        },
+      });
+      await waitFor(() => {
+        const dialog = screen.getByRole('dialog', { name: /image preview/i });
+        expect(within(dialog).getByRole('img').getAttribute('src')).toBe(
+          `data:${mockImageMimeType};base64,${fullImageData}`,
+        );
+        expect(button.querySelector('img')?.getAttribute('src')).toBe(
+          `data:${mockImageMimeType};base64,${fullImageData}`,
+        );
+      });
+      expect(
+        dispatchMock.mock.calls.filter(
+          ([action]) => action.type === 'chatState/messageBlockHydrationRequested',
+        ),
+      ).toHaveLength(2);
+    });
 
     it('clicking a truncated attachment dispatches a hydration request instead of opening', async () => {
       const message = createTruncatedMessage();
@@ -590,7 +730,7 @@ describe('ChatMessage image lightbox', () => {
       await fireEvent.click(imageButton);
       expect(screen.queryByRole('dialog', { name: /image preview/i })).toBeNull();
 
-      // The fetch settles: the full block (PROTOCOL v7.2 agent.getMessageBlock
+      // The fetch settles: the full block (the PROTOCOL `agent.getMessageBlock`
       // shape — original data, no slim flags) lands in the cache.
       mockStoreState.value = {
         chatState: {

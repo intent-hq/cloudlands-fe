@@ -3,9 +3,9 @@
   Shows first ~5 lines of content with markdown formatting preserved
 -->
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import { faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
+  import { createWorkspaceFileVersion } from '$lib/utils/workspace-file-image';
   import type { NoteId } from '$shared/types';
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -19,6 +19,10 @@
   }
 
   let { workspaceId, noteId, class: className = '' }: Props = $props();
+
+  // One cache-busting token per preview instance: re-rendering on note
+  // updates keeps workspace image URLs stable.
+  const workspaceFileVersion = createWorkspaceFileVersion();
 
   const workspaceId$ = toStore(() => workspaceId);
   const noteId$ = toStore(() => noteId);
@@ -40,7 +44,12 @@
     let destroyed = false;
     const md = contentPreviewData.markdown;
     if (md) {
-      processMarkdownToHTML(md, { allowEmpty: true, processPrimitives: false }).then((html) => {
+      processMarkdownToHTML(md, {
+        allowEmpty: true,
+        processPrimitives: false,
+        workspaceId,
+        workspaceFileVersion,
+      }).then((html) => {
         if (destroyed) return;
         renderedHtml = html;
       });
@@ -54,11 +63,14 @@
   });
 </script>
 
+<!-- Primitive exception: this component is a content-only preview body embedded by a
+     parent-owned hover trigger. Tooltip/TooltipRich own their trigger and provider, so
+     wrapping this body would create a nested trigger and change its always-rendered API. -->
 <div class="w-72 bg-popover border border-border shadow {className}" role="tooltip">
   <div class="pt-3.5 px-5">
     {#if !note}
       <div class="flex items-center gap-2 text-subtle text-sm">
-        <Fa icon={faSpinner} class="animate-spin" />
+        <IntentMarkLoader size={16} />
         <span>{m.tiptap_taskNotePreview_loading_label()}</span>
       </div>
     {:else}
@@ -79,7 +91,7 @@
                    [&_pre]:text-xs [&_pre]:bg-muted [&_pre]:p-2 [&_pre]:rounded [&_pre]:my-0.5
                    [&_strong]:font-semibold [&_strong]:text-foreground
                    [&_em]:italic
-                   [&_a]:text-primary [&_a]:underline
+                   [&_a]:text-primary-ink [&_a]:underline
                    overflow-wrap-anywhere"
           >
             {@html renderedHtml}

@@ -6,9 +6,11 @@ import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import {
   isBrowserEmulatedSize,
+  isBrowserTabViewport,
   isWorkspaceCommandPayload,
   type BrowserCloseTabPayload,
   type BrowserEmulatedSize,
+  type BrowserTabViewport,
   type BrowserFocusTabPayload,
   type BrowserListTabsRequestPayload,
   type BrowserOpenTabPayload,
@@ -22,6 +24,7 @@ import {
   selectAllTabs,
   selectHiddenTabs,
   selectPanelLayoutWorkspaces,
+  selectPanels,
 } from '../../panel-layout/panel-layout-selectors';
 import {
   hydrateWorkspaceLayout,
@@ -29,6 +32,7 @@ import {
 } from '../../panel-layout/sagas/panel-layout-saga';
 import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
 import {
+  activateVisibleTab,
   closeTab,
   openHiddenTab,
   openTab,
@@ -40,6 +44,7 @@ import {
 } from '../../panel-layout/panel-layout-slice';
 import type { PanelTab } from '../../panel-layout/panel-layout-types';
 import { selectWorkspaceTabOrder } from '../../tab-state/tab-state-selectors';
+import { requestBrowserTabRecovery } from '../../tab-state/tab-state-slice';
 import { focusBrowserTabRequested } from '../app-layout-slice';
 
 let running = false;
@@ -53,6 +58,9 @@ function browserTab(
   emulatedSize?: BrowserEmulatedSize,
   ownerAgentName?: string,
 ): Omit<PanelTab, 'id'> {
+  const viewport: BrowserTabViewport = emulatedSize
+    ? { mode: 'custom', ...emulatedSize }
+    : { mode: 'fit' };
   return {
     type: 'browser',
     title: 'Browser',
@@ -70,6 +78,7 @@ function browserTab(
     // Persist the emulated viewport alongside the owner so the tab
     // rehydrates at its actual size after restart (monorepo#2857).
     ...(emulatedSize === undefined ? {} : { emulatedSize }),
+    viewport,
   };
 }
 
@@ -83,7 +92,17 @@ function tabOwnerAction(
   ownerAgentId: string,
   emulatedSize?: BrowserEmulatedSize,
   ownerAgentName?: string,
+  viewport?: BrowserTabViewport,
 ): ReturnType<typeof setTabOwnerAgent> {
+  if (viewport !== undefined)
+    return setTabOwnerAgent(
+      workspaceId,
+      tabId,
+      ownerAgentId,
+      emulatedSize,
+      ownerAgentName,
+      viewport,
+    );
   if (ownerAgentName !== undefined)
     return setTabOwnerAgent(workspaceId, tabId, ownerAgentId, emulatedSize, ownerAgentName);
   if (emulatedSize !== undefined)
@@ -243,6 +262,16 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
       // focus — the adopted tab keeps its place, only its URL changed
       // (monorepo#3045). Adoption never hides a visible tab.
       if (hiddenOpen) return;
+      // An agent visible replace activates the adopted tab in whichever
+      // panel holds it without moving focus — the same preserveFocus contract
+      // as every other agent-driven visible open (monorepo#3045). setActiveTab
+      // only searches the focused panel and records focus history, so it is
+      // reserved for user replaces.
+      if (ownerAgentId) {
+        yield* put(activateVisibleTab(workspaceId, existing.id));
+        yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, existing.id);
+        return;
+      }
       yield* put(setActiveTab(workspaceId, existing.id));
       return;
     }
@@ -296,6 +325,9 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     yield* put(openAction);
     return;
   }
+  // An agent-driven visible open activates the tab in the focused panel
+  // without moving focus — the same preserveFocus contract as the adjacent
+  // branch (monorepo#3045).
   const openAction = openTab(
     workspaceId,
     browserTab(data.url, requestedUrl, ownerAgentId, emulatedSize, ownerAgentName),
@@ -304,6 +336,7 @@ function* openBrowser(data: BrowserOpenTabPayload | null): SagaGenerator<void> {
     undefined,
     undefined,
     allowDuplicate,
+    ownerAgentId !== undefined ? true : undefined,
   );
   yield* put(openAction);
   if (ownerAgentId !== undefined) {
@@ -399,11 +432,16 @@ function* showBrowser(data: BrowserShowTabPayload | null): SagaGenerator<void> {
     yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, data.tabId);
     return;
   }
-  // Already visible: idempotent — focus: true still activates the tab and
-  // focuses its panel (reusing the focusTab path); focus: false is a no-op.
+  // Already in a panel: focus: true activates the tab and focuses its panel
+  // (reusing the focusTab path); focus: false activates it in place without
+  // moving panel focus, so a visible-but-inactive tab is displayed
+  // (monorepo#3045). Both are idempotent on an already-active tab.
   if (focus) {
     yield* put(focusBrowserTabRequested(workspaceId, data.tabId, undefined, true));
+    return;
   }
+  yield* put(activateVisibleTab(workspaceId, data.tabId));
+  yield* dropRevealIfWorkspaceNotDisplayed(workspaceId, data.tabId);
 }
 
 function* tabNavigated(data: BrowserTabNavigatedPayload | null): SagaGenerator<void> {
@@ -479,9 +517,27 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
   // are alive offscreen and their owner must keep seeing them
   // (monorepo#2857). They carry `hidden: true` so main can project the
   // listTabs `visibility` field and guard focusTab (monorepo#3045).
+  // Panel-mounted tabs that are their panel's active tab carry
+  // `active: true`: a mounted-but-inactive tab renders nothing in the
+  // tabless UI, so main projects `displayed` from it and agents can tell a
+  // front tab from one that merely sits behind a sibling in its panel. The
+  // check is per panel — the tab must be the active tab of the panel that
+  // holds it — so a stale activeTabId on another panel can never mark a
+  // tab sitting behind a sibling as displayed.
+  const panels = yield* selectPanels.effect(workspaceId);
+  const activeTabIds = new Set(
+    Object.values(panels)
+      .filter(
+        (panel) =>
+          typeof panel.activeTabId === 'string' &&
+          panel.tabs.some((tab) => tab.id === panel.activeTabId),
+      )
+      .map((panel) => panel.activeTabId as string),
+  );
   const toReplyTab = (tab: PanelTab, hidden: boolean) => ({
     tabId: tab.id,
     url: tab.browserUrl || '',
+    ...(tab.browserRequestedUrl === undefined ? {} : { requestedUrl: tab.browserRequestedUrl }),
     title: tab.title || m.layout_panelLayout_browser_fallback(),
     closable: tab.closable !== false,
     // Persisted owner so main's ownership registry can rehydrate after a
@@ -494,7 +550,9 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
           ...(isBrowserEmulatedSize(tab.emulatedSize) ? { emulatedSize: tab.emulatedSize } : {}),
         }
       : {}),
+    ...(isBrowserTabViewport(tab.viewport) ? { viewport: tab.viewport } : {}),
     ...(hidden ? { hidden: true } : {}),
+    ...(!hidden && activeTabIds.has(tab.id) ? { active: true } : {}),
   });
   const browserTabs = [
     ...(yield* selectAllTabs.effect(workspaceId))
@@ -504,6 +562,14 @@ function* listBrowserTabs(data: BrowserListTabsRequestPayload | null): SagaGener
       .filter((tab) => tab.type === 'browser')
       .map((tab) => toReplyTab(tab, true)),
   ];
+
+  if (
+    requestId &&
+    typeof data.recoverTabId === 'string' &&
+    browserTabs.some((tab) => tab.tabId === data.recoverTabId)
+  ) {
+    yield* put(requestBrowserTabRecovery(data.recoverTabId, requestId));
+  }
 
   // Echo the requestId back so main resolves the matching pending request
   // (concurrent requests must not consume each other's replies).
@@ -553,6 +619,7 @@ function* tabOwnerChanged(data: BrowserTabOwnerChangedPayload | null): SagaGener
       data.ownerAgentId,
       isBrowserEmulatedSize(data.emulatedSize) ? data.emulatedSize : undefined,
       ownerAgentName,
+      isBrowserTabViewport(data.viewport) ? data.viewport : undefined,
     ),
   );
 }

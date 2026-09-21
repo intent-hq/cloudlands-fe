@@ -20,7 +20,7 @@
 <div
   data-slot="list-empty"
   class={cn(
-    'type-body flex min-h-28 items-center justify-center px-4 py-8 text-center text-muted-foreground',
+    'type-caption flex min-h-28 items-center justify-start px-4 py-8 text-left text-muted-foreground',
     className,
   )}
   {...restProps}

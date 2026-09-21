@@ -1,5 +1,7 @@
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { describe, expect, it } from 'vitest';
 import {
+  collectBrowserTabs,
   selectFocusedPanelTargetsByWorkspaceId,
   selectPanelCanvasWidthsByWorkspaceId,
   selectPanelColumnCount,
@@ -7,8 +9,11 @@ import {
   selectPanelIds,
   selectPanelNavigatorItems,
   selectPanelRestoreStatusesByWorkspaceId,
+  selectMostRecentAgentTab,
+  selectWorkspaceHasBrowserTabs,
 } from './panel-layout-selectors';
 import { emptyWorkspaceState } from './panel-layout-slice';
+import type { PanelTab } from './panel-layout-types';
 
 describe('panel layout selectors', () => {
   it('counts horizontal panel columns rather than vertical panels, tabs, or stale records', () => {
@@ -105,5 +110,125 @@ describe('panel layout selectors', () => {
       populated: 'restored',
       vertical: 'pending',
     });
+  });
+
+  it('selects the most recently focused live agent tab behind later browser focus', () => {
+    const state = {
+      panelLayout: {
+        byWorkspaceId: {
+          workspace: {
+            ...emptyWorkspaceState,
+            panels: {
+              chat: {
+                id: 'chat',
+                activeTabId: 'agent-new',
+                tabs: [
+                  {
+                    id: 'agent-old',
+                    type: 'agent' as const,
+                    title: 'Old',
+                    closable: true,
+                    agentId: 'agent-old',
+                  },
+                  {
+                    id: 'agent-new',
+                    type: 'agent' as const,
+                    title: 'New',
+                    closable: true,
+                    agentId: 'agent-new',
+                  },
+                ],
+              },
+              browser: {
+                id: 'browser',
+                activeTabId: 'browser-tab',
+                tabs: [
+                  { id: 'browser-tab', type: 'browser' as const, title: 'Web', closable: true },
+                ],
+              },
+            },
+            focusHistory: [
+              { panelId: 'chat', tabId: 'agent-old', timestamp: 1 },
+              { panelId: 'missing', tabId: 'stale-agent', timestamp: 2 },
+              { panelId: 'chat', tabId: 'agent-new', timestamp: 3 },
+              { panelId: 'browser', tabId: 'browser-tab', timestamp: 4 },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(selectMostRecentAgentTab.select(state as any, 'workspace')).toMatchObject({
+      id: 'agent-new',
+      agentId: 'agent-new',
+    });
+    expect(selectMostRecentAgentTab.select(state as any, 'missing')).toBeUndefined();
+  });
+
+  it('reports browser tabs whether they sit in a panel, are mirrored, or are hidden', () => {
+    const browserTab = (id: string, hostClientId?: string) => ({
+      id,
+      type: 'browser' as const,
+      title: 'Web',
+      closable: true,
+      ...(hostClientId ? { hostClientId } : {}),
+    });
+    const noteTab = { id: 'note', type: 'note' as const, title: 'Note', closable: true };
+    const layout = (panelTabs: ReturnType<typeof browserTab>[], hidden = [] as PanelTab[]) => ({
+      ...emptyWorkspaceState,
+      panels: { main: { id: 'main', activeTabId: null, tabs: [noteTab, ...panelTabs] } },
+      hiddenTabs: createCollection('id', hidden),
+    });
+    const state = {
+      panelLayout: {
+        byWorkspaceId: {
+          none: layout([]),
+          visible: layout([browserTab('b1')]),
+          mirror: layout([browserTab('b2', 'client-elsewhere')]),
+          hidden: layout([], [browserTab('b3')]),
+          legacy: { ...layout([]), hiddenTabs: undefined },
+        },
+      },
+    };
+
+    expect(selectWorkspaceHasBrowserTabs.select(state as any, 'none')).toBe(false);
+    expect(selectWorkspaceHasBrowserTabs.select(state as any, 'visible')).toBe(true);
+    expect(selectWorkspaceHasBrowserTabs.select(state as any, 'mirror')).toBe(true);
+    expect(selectWorkspaceHasBrowserTabs.select(state as any, 'hidden')).toBe(true);
+    expect(selectWorkspaceHasBrowserTabs.select(state as any, 'legacy')).toBe(false);
+    expect(selectWorkspaceHasBrowserTabs.select(state as any, 'missing')).toBe(false);
+    expect(collectBrowserTabs(state.panelLayout.byWorkspaceId.hidden)).toEqual([
+      { tab: browserTab('b3'), visibility: 'hidden', displayed: false },
+    ]);
+  });
+
+  it('collectBrowserTabs marks a visible tab displayed only when it is its panel active tab', () => {
+    const browserTab = (id: string) => ({
+      id,
+      type: 'browser' as const,
+      title: 'Web',
+      closable: true,
+    });
+    const layout = {
+      ...emptyWorkspaceState,
+      panels: {
+        left: { id: 'left', activeTabId: 'b1', tabs: [browserTab('b1'), browserTab('b2')] },
+        right: { id: 'right', activeTabId: null, tabs: [browserTab('b3')] },
+      },
+      hiddenTabs: createCollection('id', [browserTab('b4')]),
+    };
+
+    expect(
+      collectBrowserTabs(layout).map(({ tab, visibility, displayed }) => [
+        tab.id,
+        visibility,
+        displayed,
+      ]),
+    ).toEqual([
+      ['b1', 'visible', true],
+      ['b2', 'visible', false],
+      ['b3', 'visible', false],
+      ['b4', 'hidden', false],
+    ]);
   });
 });

@@ -84,7 +84,7 @@ class MCPTestClient {
         }
       });
 
-      this.process.stdin.write(`${JSON.stringify(request)  }\n`);
+      this.process.stdin.write(`${JSON.stringify(request)}\n`);
     });
   }
 

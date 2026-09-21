@@ -14,6 +14,7 @@ import { isCombinedWorkspacePanelItem } from './sidebar-nav-types';
 export const PINNED_WORKSPACES_KEY = 'intent:pinned-workspaces';
 export const VIEW_MODE_KEY = 'intent:all-spaces-view-mode';
 export const SHOW_ARCHIVED_KEY = 'intent:all-spaces-show-archived';
+export const COLLAPSED_REPO_GROUPS_KEY = 'intent:all-spaces-collapsed-repo-groups';
 export const COLLAPSED_STATUS_GROUPS_KEY = 'intent:all-spaces-collapsed-status-groups';
 export const CHIEF_COLLAPSED_KEY = 'intent:sidebar-chief-collapsed';
 export const PANEL_WIDTH_KEY = 'intent:sidebar-panel-width';
@@ -43,6 +44,7 @@ export const initialState: SidebarNavState = {
   allSpacesViewMode: 'recent',
   showArchivedWorkspaces: false,
   collapsedStatusGroupIds: [],
+  collapsedRepoGroupKeys: [],
   isChiefCollapsed: false,
   pinnedWorkspaceIds: [],
   multiSelectTabOrder: [],
@@ -107,6 +109,9 @@ export const toggleShowArchivedWorkspaces = showArchivedWorkspacesPreference.tog
 export const toggleStatusGroupCollapsed = createAction<[groupId: string]>(
   'sidebarNav/toggleStatusGroupCollapsed',
 );
+export const toggleRepoGroupCollapsed = createAction<[groupKey: string]>(
+  'sidebarNav/toggleRepoGroupCollapsed',
+);
 const chiefCollapsedPreference = createBooleanPreference<SidebarNavState>({
   sliceName: 'sidebarNav',
   field: 'isChiefCollapsed',
@@ -159,6 +164,7 @@ type SidebarNavHydrationState = Partial<
       | 'allSpacesViewMode'
       | 'showArchivedWorkspaces'
       | 'collapsedStatusGroupIds'
+      | 'collapsedRepoGroupKeys'
       | 'isChiefCollapsed'
       | 'pinnedWorkspaceIds'
       | 'multiSelectTabOrder'
@@ -228,6 +234,12 @@ sidebarNavReducer.with(toggleStatusGroupCollapsed, (state, { payload: [groupId] 
   collapsedStatusGroupIds: state.collapsedStatusGroupIds.includes(groupId)
     ? state.collapsedStatusGroupIds.filter((id) => id !== groupId)
     : [...state.collapsedStatusGroupIds, groupId],
+}));
+sidebarNavReducer.with(toggleRepoGroupCollapsed, (state, { payload: [groupKey] }) => ({
+  ...state,
+  collapsedRepoGroupKeys: state.collapsedRepoGroupKeys.includes(groupKey)
+    ? state.collapsedRepoGroupKeys.filter((id) => id !== groupKey)
+    : [...state.collapsedRepoGroupKeys, groupKey],
 }));
 sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
   if (state.pinnedWorkspaceIds.includes(id)) {

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte';
   import { cn } from '$lib/utils';
+  import { Button } from '$lib/components/ui/button';
+  import { onReducedMotionChange, prefersReducedMotion } from '$lib/utils/reduced-motion';
   import {
     clampSurfaceGeometry,
     interpolateSurfaceGeometry,
@@ -49,7 +51,7 @@
   let pressOffset = $state(0);
   let reducedMotion = $state(false);
 
-  const tabButtons = new Map<string, HTMLButtonElement>();
+  let tabButtons = $state<Record<string, HTMLButtonElement | null>>({});
   let resizeObserver: ResizeObserver | null = null;
   let surfaceAnimationFrame: number | null = null;
   let pressAnimationFrame: number | null = null;
@@ -68,26 +70,15 @@
   );
 
   function isReducedMotion() {
-    return reducedMotion || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return reducedMotion || prefersReducedMotion();
   }
 
   function easeOutCubic(progress: number) {
     return 1 - (1 - progress) ** 3;
   }
 
-  function registerTabButton(node: HTMLButtonElement, tabId: string) {
-    tabButtons.set(tabId, node);
-    resizeObserver?.observe(node);
-
-    return {
-      destroy() {
-        tabButtons.delete(tabId);
-      },
-    };
-  }
-
   function measureHover(tabId: string) {
-    const button = tabButtons.get(tabId);
+    const button = tabButtons[tabId];
     const tabList = tabListRef;
     if (!button || !tabList) return;
     const buttonRect = button.getBoundingClientRect();
@@ -100,7 +91,7 @@
   function getTargetGeometry(): SurfaceGeometry | null {
     const root = rootRef;
     const tabList = tabListRef;
-    const button = tabButtons.get(activeId);
+    const button = tabButtons[activeId];
     if (!root || !tabList || !button) return null;
 
     const rootRect = root.getBoundingClientRect();
@@ -151,7 +142,9 @@
   function measure() {
     const next = getTargetGeometry();
     if (next) animateSurface(next);
-    for (const tabId of tabButtons.keys()) resizeObserver?.observe(tabButtons.get(tabId)!);
+    for (const button of Object.values(tabButtons)) {
+      if (button) resizeObserver?.observe(button);
+    }
   }
 
   function scheduleMeasure() {
@@ -197,7 +190,7 @@
     onTabChange?.(tabId);
     scheduleVisualActive(tabId);
 
-    const button = tabButtons.get(tabId);
+    const button = tabButtons[tabId];
     button?.scrollIntoView?.({
       behavior: isReducedMotion() ? 'auto' : 'smooth',
       block: 'nearest',
@@ -221,7 +214,7 @@
     if (nextIndex !== null) {
       event.preventDefault();
       const nextTab = enabledTabs[nextIndex];
-      tabButtons.get(nextTab.id)?.focus();
+      tabButtons[nextTab.id]?.focus();
       activateTab(nextTab.id);
       return;
     }
@@ -251,21 +244,21 @@
   });
 
   onMount(() => {
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => (reducedMotion = mediaQuery.matches);
     const fontsReady = document.fonts?.ready;
-    updateMotionPreference();
-    mediaQuery.addEventListener('change', updateMotionPreference);
+    reducedMotion = prefersReducedMotion();
+    const stopWatchingMotion = onReducedMotionChange((reduced) => (reducedMotion = reduced));
 
     resizeObserver = new ResizeObserver(scheduleMeasure);
     if (rootRef) resizeObserver.observe(rootRef);
     if (tabListRef) resizeObserver.observe(tabListRef);
-    for (const button of tabButtons.values()) resizeObserver.observe(button);
+    for (const button of Object.values(tabButtons)) {
+      if (button) resizeObserver.observe(button);
+    }
     scheduleMeasure();
     fontsReady?.then(scheduleMeasure);
 
     return () => {
-      mediaQuery.removeEventListener('change', updateMotionPreference);
+      stopWatchingMotion();
       resizeObserver?.disconnect();
       resizeObserver = null;
       if (surfaceAnimationFrame !== null) cancelAnimationFrame(surfaceAnimationFrame);
@@ -294,7 +287,7 @@
     >
       <div
         class={cn(
-          'pointer-events-none absolute bottom-1 top-2 rounded-lg bg-card/10 transition-[left,width,opacity] duration-200 ease-out',
+          'pointer-events-none absolute bottom-1 top-2 rounded-lg bg-card/10 transition-[left,width,opacity] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none',
           (hoveredTabId === null || hoveredTabId === activeId) && 'opacity-0',
         )}
         style:left={`${hoverX}px`}
@@ -302,8 +295,9 @@
         aria-hidden="true"
       ></div>
       {#each tabs as tab (tab.id)}
-        <button
-          use:registerTabButton={tab.id}
+        <Button
+          bind:ref={tabButtons[tab.id]}
+          variant="plain"
           id={`${surfacePathId}-tab-${tab.id}`}
           type="button"
           role="tab"
@@ -312,7 +306,7 @@
           tabindex={tab.id === activeId ? 0 : -1}
           disabled={tab.disabled}
           class={cn(
-            'relative z-10 min-w-max rounded-lg px-4 py-2.5 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50',
+            'relative z-10 min-w-max rounded-lg px-4 py-2.5 text-sm font-medium transition-colors duration-spring-moderate ease-spring-moderate motion-reduce:transition-none focus-visible:-outline-offset-1 disabled:cursor-not-allowed disabled:opacity-50',
             tab.id === visualActiveId ? 'text-card-foreground' : 'text-muted-foreground',
           )}
           data-smart-corner-tab={tab.id}
@@ -325,7 +319,7 @@
           onpointercancel={() => animatePress(0)}
         >
           {tab.label}
-        </button>
+        </Button>
       {/each}
     </div>
   </div>

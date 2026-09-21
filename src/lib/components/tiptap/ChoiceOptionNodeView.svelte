@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * ChoiceOption NodeView Component
    *
@@ -10,10 +11,7 @@
    * are passed directly as reactive props via $props().
    */
   import type { NodeViewProps } from '@tiptap/core';
-  import {
-  NodeViewWrapper,
-  NodeViewContent,
-} from '$lib/utils/tiptap/svelte-node-view';
+  import { NodeViewWrapper, NodeViewContent } from '$lib/utils/tiptap/svelte-node-view';
 
   // Props are passed directly from SvelteNodeViewRenderer and are reactive via $state
   let { node, editor, getPos }: NodeViewProps = $props();
@@ -101,8 +99,9 @@
 >
   <!-- Selection button (radio indicator) - clickable to toggle selection -->
   <!-- Keep .selection-button class for test compatibility -->
-  <button
+  <Button
     type="button"
+    variant="ghost"
     class="selection-button choice-option-marker cursor-pointer bg-transparent border-none p-0 text-inherit"
     onclick={(e) => {
       e.stopPropagation();
@@ -113,7 +112,7 @@
     aria-pressed={selected}
   >
     {selected ? '●' : '○'}
-  </button>
+  </Button>
 
   <!-- Editable text content -->
   <!-- This is the key: NodeViewContent provides contentDOM for inline editing -->

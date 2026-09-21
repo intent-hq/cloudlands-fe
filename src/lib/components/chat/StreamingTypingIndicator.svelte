@@ -6,14 +6,9 @@
 -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { fade } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fade } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
-  import {
-    IntentMarkLoader,
-    intentMarkMotionTiming,
-    type IntentMarkVariant,
-  } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader, type IntentMarkVariant } from '$lib/components/ui/indicators';
   import {
     CHAT_OPERATIONAL_LEADING_CLASS,
     CHAT_OPERATIONAL_ROW_CLASS,
@@ -23,31 +18,43 @@
   interface Props {
     visible?: boolean;
     message?: string;
+    /** Keep the generic status available to assistive technology without repeating it visually. */
+    showMessage?: boolean;
     lifecycleMessage?: string | null;
     elapsed?: string | null;
+    /**
+     * Called with `true` while the pointer is over the row and `false` when it
+     * leaves or the row hides, so the owner can refresh the hover-only elapsed
+     * text only while it can be seen.
+     */
+    onHoverChange?: (hovered: boolean) => void;
     variant?: IntentMarkVariant;
     class?: string;
-    /** Compact mode - shows only spinner without message */
+    /** Compact mode - shows only the loading mark without message */
     compact?: boolean;
-    /** Seed for spinner colors (e.g., agent ID) */
-    seed?: string;
   }
 
   let {
     visible = false,
     message = m.chat_streamingStatus_thinking_label(),
+    showMessage = true,
     lifecycleMessage = null,
     elapsed = null,
+    onHoverChange,
     variant = 'bloom',
     class: className = '',
     compact = false,
-    seed: _seed = 'default',
   }: Props = $props();
 
-  const hideMs = 150;
-  const settlementHoldMs = intentMarkMotionTiming.settleMs + 20;
   let rendered = $state(false);
   let hideTimer: number | undefined;
+  let hovered = false;
+
+  function setHovered(next: boolean) {
+    if (hovered === next) return;
+    hovered = next;
+    onHoverChange?.(next);
+  }
 
   $effect.pre(() => {
     if (visible) {
@@ -62,16 +69,14 @@
     }
   });
 
-  onDestroy(() => {
-    if (hideTimer !== undefined) window.clearTimeout(hideTimer);
+  $effect(() => {
+    if (!rendered) setHovered(false);
   });
 
-  function settleAndFade(node: Element) {
-    return fade(node, {
-      duration: settlementHoldMs,
-      easing: (progress) => cubicOut(Math.min(1, (progress * settlementHoldMs) / hideMs)),
-    });
-  }
+  onDestroy(() => {
+    if (hideTimer !== undefined) window.clearTimeout(hideTimer);
+    setHovered(false);
+  });
 </script>
 
 {#if rendered}
@@ -79,8 +84,10 @@
     class="{CHAT_OPERATIONAL_ROW_CLASS} group font-family-child font-normal text-muted-foreground {className}"
     data-streaming-typing-row
     aria-hidden={!visible}
-    in:fade={{ duration: 200, easing: cubicOut }}
-    out:settleAndFade
+    onpointerenter={() => setHovered(true)}
+    onpointerleave={() => setHovered(false)}
+    in:fade={{ tier: 'moderate' }}
+    out:fade={{ tier: 'moderate' }}
   >
     <div class={CHAT_OPERATIONAL_LEADING_CLASS} data-operational-leading>
       <IntentMarkLoader {variant} size={16} playing={visible} />
@@ -97,7 +104,7 @@
           class="inline-flex min-w-0 max-w-full items-baseline gap-[0.5ch]"
           data-testid="streaming-status-copy"
           ><span
-            class="shrink-0 font-normal text-foreground"
+            class={showMessage ? 'shrink-0 font-normal text-foreground' : 'sr-only'}
             data-testid="streaming-status-thinking-label">{message}</span
           >{#if lifecycleMessage}<span
               class="min-w-0 truncate font-normal text-muted-foreground"

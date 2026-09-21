@@ -1,0 +1,18 @@
+{
+  // Lint-only view of the preload project for eslint.config.js's type-aware
+  // block. The shipped src/preload/index.ts is generated and gitignored (so
+  // ESLint never sees it), and tsconfig.preload.json excludes the tracked
+  // template so the build does not emit it. This project type-checks the
+  // template instead, on a cold checkout, without emitting anything.
+  "extends": "./tsconfig.preload.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "tsBuildInfoFile": null,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/preload/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

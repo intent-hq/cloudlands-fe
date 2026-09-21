@@ -55,6 +55,42 @@ afterEach(() => {
 });
 
 describe('ResizablePanel reactive defaults', () => {
+  it.each(['horizontal', 'vertical'] as const)(
+    'removes the %s interaction without changing controlled sizing',
+    async (orientation) => {
+      const onResizeEnd = vi.fn();
+      const props = {
+        orientation,
+        defaultWidth: 480,
+        defaultHeight: 320,
+        onResizeEnd,
+        resizable: true,
+      };
+      const view = render(ResizablePanel, { props });
+      const panel = view.container.firstElementChild as HTMLElement;
+      const size = orientation === 'horizontal' ? 'width' : 'height';
+      const before = panel.style[size];
+      expect(view.queryByRole('button')).not.toBeNull();
+
+      await view.rerender({ ...props, resizable: false });
+      expect(view.queryByRole('button')).toBeNull();
+      await fireEvent.mouseDown(panel, { clientX: 480, clientY: 320 });
+      await fireEvent.mouseMove(document, { clientX: 580, clientY: 420 });
+      await fireEvent.mouseUp(document);
+      await fireEvent.keyDown(panel, { key: 'ArrowRight' });
+      expect(panel.style[size]).toBe(before);
+      expect(onResizeEnd).not.toHaveBeenCalled();
+
+      await view.rerender(props);
+      const handle = view.getByRole('button');
+      await fireEvent.mouseDown(handle, { clientX: 480, clientY: 320 });
+      await fireEvent.mouseMove(document, { clientX: 520, clientY: 360 });
+      await fireEvent.mouseUp(document);
+      expect(panel.style[size]).not.toBe(before);
+      expect(onResizeEnd).toHaveBeenCalledOnce();
+    },
+  );
+
   it('collapses and restores a workspace sidebar with scoped storage keys', async () => {
     const { container } = render(ResizablePanel, {
       props: {

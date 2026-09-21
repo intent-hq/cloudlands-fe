@@ -1,4 +1,4 @@
-import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
   ChatAgentState,
@@ -8,7 +8,9 @@ import type {
   LastAttemptedMessage,
   LiveStreamPhase,
   ModelUnavailableInfo,
+  QuotaExceededInfo,
   QueuedRetryRecord,
+  QueuedMessageSendOutcome,
   SendMessagePayload,
   InitializeChatOptions,
   PendingProposalRecovery,
@@ -51,6 +53,7 @@ export const emptyChatAgentState: ChatAgentState = {
   lastAttemptedMessage: null,
   queuedRetryRecords: {},
   modelUnavailable: null,
+  quotaExceeded: null,
   statusEvents: [],
   trackedWorkspaceId: null,
   isRebinding: false,
@@ -360,6 +363,7 @@ function reduceQueueProcessing(
     queuedRetryRecords: remaining,
     error: null,
     modelUnavailable: null,
+    quotaExceeded: null,
   });
 }
 
@@ -434,6 +438,7 @@ function reduceAgentStreamUpdate(
     return updateAgent(state, payload.agentId, {
       error: null,
       modelUnavailable: null,
+      quotaExceeded: null,
       lastChunkTime: timestamp,
       receivedFirstChunk: false,
       statusEvents: [],
@@ -475,6 +480,7 @@ function reduceAgentStreamUpdate(
           ? null
           : getAgent(state, payload.agentId).lastAttemptedMessage,
       modelUnavailable,
+      quotaExceeded: null,
       error: failureMessage,
     });
   }
@@ -483,6 +489,7 @@ function reduceAgentStreamUpdate(
       streamingStartTime: null,
       statusEvents: [],
       modelUnavailable: null,
+      quotaExceeded: null,
       error: getStreamFailureMessage(payload) || m.chat_state_interrupted_error(),
     });
   }
@@ -598,10 +605,22 @@ export const chatQueuedRetryRecordsCleared = createAction<[agentId: string]>(
  * failed turn's record may still be parked (its requeued entry has a new id,
  * so no drain-start event under this client's key ever promoted it).
  */
-export const chatSendFailed =
-  createAction<
-    [agentId: string, error: string, turnId?: string, failureCorrelation?: StreamFailureCorrelation]
-  >('chatState/sendFailed');
+export const chatSendFailed = createAction<
+  [
+    agentId: string,
+    error: string,
+    turnId?: string,
+    failureCorrelation?: StreamFailureCorrelation,
+    /**
+     * Present only when the daemon classified the failure as a provider
+     * usage/quota exhaustion (`errorCode: "quota-exceeded"`). Drives the
+     * retry-on-another-provider banner; absent for every other failure, so
+     * older daemons (which never send the code) simply keep today's
+     * behavior.
+     */
+    quotaExceeded?: QuotaExceededInfo,
+  ]
+>('chatState/sendFailed');
 
 /**
  * `agent:queue:processing` drain-start signal (PROTOCOL §6.5): the daemon
@@ -740,25 +759,12 @@ export const chatLiveStreamPhaseChanged = createAction<
 >('chatState/liveStreamPhaseChanged');
 
 /**
- * Bounded fallback for the transcript reveal gates: the subscribe saga's
- * timer elapsed with the switch-back snapshot gate and/or the utility-footer
- * gate still armed, so BOTH clear and the transcript reveals (without the
- * footer, which pops in later — today's behavior) instead of an indefinite
- * skeleton. A no-op when neither gate is armed (snapshot applied and footer
- * ready, subscription closed, or a stale timer from a superseded switch).
+ * Bounded fallback for the switch-back transcript reveal gate. If the fresh
+ * seq-0 snapshot never arrives, reveal the retained transcript rather than
+ * leaving an indefinite skeleton. A no-op after a snapshot or teardown.
  */
 export const chatSwitchBackRevealTimedOut = createAction<[agentId: string]>(
   'chatState/switchBackRevealTimedOut',
-);
-
-/**
- * The subscribe saga observed the utility-footer data sources settle
- * (`isUtilityFooterReady` composed true for the agent's workspace) — clear
- * the footer reveal gate so transcript and footer flip in the same paint.
- * A no-op when the gate is not armed.
- */
-export const chatUtilityFooterReady = createAction<[agentId: string]>(
-  'chatState/utilityFooterReady',
 );
 
 // --- Initialize chat saga trigger (no reducer state change) ---
@@ -771,6 +777,15 @@ export const initializeChatRequested = createAction(
     ...payload,
   }),
 );
+
+/**
+ * Declare the exact child transcripts needed by one mounted subscription-list
+ * owner. The chat subscribe saga reference-counts owners, opens only the listed
+ * agent streams, and releases them when the owner updates or unmounts.
+ */
+export const retainedChatTranscriptsSet = createAction<
+  [ownerId: string, wsId: string, agentIds: string[]]
+>('chatState/retainedChatTranscriptsSet');
 
 /** Request transcript reconciliation from a daemon event or reconnect path. */
 export const refreshChatTranscriptRequested = createAction<[wsId: string, agentId: string]>(
@@ -910,7 +925,7 @@ export const scrollbackContinuationReset = createAction<[agentId: string]>(
   'chatState/scrollbackContinuationReset',
 );
 
-// --- Lazy block hydration (§5.5 slim projection → v7.2 agent.getMessageBlock) ---
+// --- Lazy block hydration (§5.5 slim projection → agent.getMessageBlock) ---
 
 /**
  * Saga trigger + single-flight marker: the user expanded a truncated tool row
@@ -941,6 +956,12 @@ export const sendMessage = createAction(
   (agentId: string, payload: SendMessagePayload & { wsId: string }) => ({ agentId, payload }),
 );
 
+/** Acknowledged atomic send-now: never copies or removes the queued payload locally. */
+export const sendQueuedMessageNowRequested = createAsyncAction<
+  [agentId: string, wsId: string, messageId: string],
+  QueuedMessageSendOutcome
+>('chatState/sendQueuedMessageNow', 'chatState/sendQueuedMessageNowRequested');
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -955,13 +976,19 @@ chatStateReducer.with(chatInitialized, (state, { payload: [agentId, data] }) =>
   }),
 );
 chatStateReducer.with(chatInitFailed, (state, { payload: [agentId, error] }) =>
-  updateAgent(state, agentId, { error, failureCorrelation: undefined, modelUnavailable: null }),
+  updateAgent(state, agentId, {
+    error,
+    failureCorrelation: undefined,
+    modelUnavailable: null,
+    quotaExceeded: null,
+  }),
 );
 chatStateReducer.with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
   updateAgent(state, agentId, {
     error: null,
     failureCorrelation: undefined,
     modelUnavailable: null,
+    quotaExceeded: null,
     streamingStartTime: timestamp,
     lastMessageTime: timestamp,
     lastChunkTime: null,
@@ -1032,7 +1059,7 @@ chatStateReducer.with(chatQueueProcessingReceived, (state, { payload: [agentId, 
 );
 chatStateReducer.with(
   chatSendFailed,
-  (state, { payload: [agentId, error, turnId, failureCorrelation] }) => {
+  (state, { payload: [agentId, error, turnId, failureCorrelation, quotaExceeded] }) => {
     // monorepo#1057: when the failure names a turn whose record is still
     // PARKED (e.g. an agent.retry redrive that failed again — its requeued
     // entry has a new id, so no processing event promoted it under this
@@ -1049,6 +1076,7 @@ chatStateReducer.with(
         error,
         failureCorrelation,
         modelUnavailable: null,
+        quotaExceeded: quotaExceeded ?? null,
         lastAttemptedMessage: agent.queuedRetryRecords[key].record,
         queuedRetryRecords: remaining,
       });
@@ -1058,6 +1086,7 @@ chatStateReducer.with(
       error,
       failureCorrelation,
       modelUnavailable: null,
+      quotaExceeded: quotaExceeded ?? null,
     });
   },
 );
@@ -1069,8 +1098,15 @@ chatStateReducer.with(chatInterrupted, (state, { payload: [agentId] }) =>
 chatStateReducer.with(chatModelUnavailableCleared, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { modelUnavailable: null }),
 );
+// `quotaExceeded` (#4455) only qualifies a non-null `error` — it is set by the
+// same chatSendFailed that sets the error — so every recovery path that clears
+// the error (enqueue-success in chat-send-saga, the daemon-side redrive status
+// edge in the events bridge, the agent.retry toast) must drop it too, or
+// StreamingStatus keeps offering the provider buttons over the replacement
+// turn. Failed-turn idle reconciliation never dispatches this, so the banner
+// still survives a reload/reconcile like `modelUnavailable` does.
 chatStateReducer.with(chatErrorCleared, (state, { payload: [agentId] }) =>
-  updateAgent(state, agentId, { error: null, failureCorrelation: undefined }),
+  updateAgent(state, agentId, { error: null, failureCorrelation: undefined, quotaExceeded: null }),
 );
 chatStateReducer.with(chatStopInitiated, (state, { payload: [agentId] }) =>
   updateAgent(state, agentId, { isInterrupting: true }),
@@ -1148,18 +1184,10 @@ chatStateReducer.with(transcriptHydrationStarted, (state, { payload: [agentId] }
   updateAgent(state, agentId, { agentId, transcriptHydration: 'loading' }),
 );
 chatStateReducer.with(transcriptHydrationSettled, (state, { payload: [agentId] }) => {
-  const agent = getAgent(state, agentId);
   return updateAgent(state, agentId, {
     agentId,
     transcriptHydration: 'settled',
     transcriptHydratedOnce: true,
-    // First settle only (latch rising edge): hold the reveal until the
-    // utility-footer data sources settle too, so transcript and footer flip
-    // in the same paint. The subscribe saga clears it (footer ready) or its
-    // bounded fallback does — never wedges. Refresh re-hydrations keep the
-    // transcript visible and must not re-arm.
-    awaitingUtilityFooter:
-      agent.transcriptHydratedOnce === true ? agent.awaitingUtilityFooter : true,
   });
 });
 chatStateReducer.with(transcriptHydrationFailed, (state, { payload: [agentId] }) =>
@@ -1249,9 +1277,6 @@ chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, p
       liveStreamPhase: null,
       transcriptSnapshot: undefined,
       awaitingSwitchBackSnapshot: false,
-      // No open/opening subscription means no pending reveal either — a
-      // backgrounded panel must not re-skeleton for footer readiness.
-      awaitingUtilityFooter: false,
     });
   }
   return updateAgent(state, agentId, { agentId, liveStreamPhase: phase });
@@ -1264,35 +1289,18 @@ chatStateReducer.with(chatLiveStreamPhaseChanged, (state, { payload: [agentId, p
 // its existing skeleton logic) and holds no snapshot from a current
 // subscription (an already-open live subscription keeps rendering). Never
 // materializes chat state for an agent whose chat was never opened.
-// The utility-footer gate arms alongside it (same preconditions) so the
-// re-view reveals transcript AND footer in one paint; when the footer data
-// is already settled in the store the subscribe saga clears it in the same
-// dispatch cascade, before any frame paints.
 chatStateReducer.with(markAgentAsViewed, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];
   if (!agent) return state;
   if (agent.transcriptHydratedOnce !== true) return state;
   if (agent.transcriptSnapshot !== undefined) return state;
   if (agent.awaitingSwitchBackSnapshot === true) return state;
-  return updateAgent(state, agentId, {
-    awaitingSwitchBackSnapshot: true,
-    awaitingUtilityFooter: true,
-  });
+  return updateAgent(state, agentId, { awaitingSwitchBackSnapshot: true });
 });
 chatStateReducer.with(chatSwitchBackRevealTimedOut, (state, { payload: [agentId] }) => {
   const agent = state.byAgentId[agentId];
-  if (agent?.awaitingSwitchBackSnapshot !== true && agent?.awaitingUtilityFooter !== true) {
-    return state;
-  }
-  return updateAgent(state, agentId, {
-    awaitingSwitchBackSnapshot: false,
-    awaitingUtilityFooter: false,
-  });
-});
-chatStateReducer.with(chatUtilityFooterReady, (state, { payload: [agentId] }) => {
-  const agent = state.byAgentId[agentId];
-  if (agent?.awaitingUtilityFooter !== true) return state;
-  return updateAgent(state, agentId, { awaitingUtilityFooter: false });
+  if (agent?.awaitingSwitchBackSnapshot !== true) return state;
+  return updateAgent(state, agentId, { awaitingSwitchBackSnapshot: false });
 });
 chatStateReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (event.type !== 'agent:idle') return state;

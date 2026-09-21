@@ -42,7 +42,14 @@ export function shouldVirtualizeWorkspaceAgentRows(rows: FlatWorkspaceAgentRow[]
   return topLevelForegroundCount > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD;
 }
 
+/**
+ * The wire `parentAgentId` (§5.5 — the daemon's bin partition key) wins;
+ * `metadata.createdByAgentId` remains the fallback for older rows.
+ */
 function getParentAgentId(agent: AgentSession): AgentSession['id'] | undefined {
+  if (typeof agent.parentAgentId === 'string' && agent.parentAgentId.length > 0) {
+    return agent.parentAgentId;
+  }
   return typeof agent.metadata?.createdByAgentId === 'string'
     ? (agent.metadata.createdByAgentId as AgentSession['id'])
     : undefined;

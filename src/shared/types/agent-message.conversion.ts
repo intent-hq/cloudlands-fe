@@ -113,6 +113,7 @@ export function normalizeAgentMessage(msg: any): AgentMessage {
   if (msg.errorCode) normalized.errorCode = msg.errorCode;
   if (msg.isStreaming !== undefined) normalized.isStreaming = msg.isStreaming;
   if (msg.streamingComplete !== undefined) normalized.streamingComplete = msg.streamingComplete;
+  if (msg.author) normalized.author = msg.author;
   if (msg.metadata) normalized.metadata = msg.metadata;
 
   return normalized;

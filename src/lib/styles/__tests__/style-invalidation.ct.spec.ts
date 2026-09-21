@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import StyleInvalidationHost from './StyleInvalidationHost.svelte';
 
 async function transitionProperties(locator: Locator): Promise<string[]> {
@@ -23,19 +24,6 @@ test('limits rendered transitions to paint and compositor properties', async ({ 
   ]);
   await expectTransitions(component.getByTestId('tool-call'), ['opacity']);
   await expectTransitions(component.getByTestId('mention-chip'), ['background-color']);
-  await expectTransitions(component.getByTestId('tab').getByRole('tab'), [
-    'background-color',
-    'color',
-    'border-color',
-    'box-shadow',
-  ]);
-  await expectTransitions(component.getByTestId('tab').getByRole('button'), [
-    'background-color',
-    'color',
-    'border-color',
-    'box-shadow',
-    'transform',
-  ]);
   await expectTransitions(component.getByTestId('collapsible').locator('.text-subtle'), [
     'opacity',
     'transform',

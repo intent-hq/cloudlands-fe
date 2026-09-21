@@ -5,6 +5,7 @@
 import { store } from '../../store';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
+import type { PrMonitorSnapshotStatus } from './pr-monitor-slice';
 
 /** All live-subscribed monitors for a workspace (active + completed), in seed order. */
 export const selectPrMonitors = store.createSelector(
@@ -29,13 +30,7 @@ export const selectAgentPrMonitors = store.createSelector(
     selectPrMonitors.select(state, workspaceId).filter((m) => m.agentId === agentId),
 );
 
-/**
- * Utility-footer readiness: true once the workspace's initial `prMonitor.list`
- * seed has been delivered (the service emits its cached list on a failed seed
- * too — failure counts as ready-with-empty, so this never wedges the
- * transcript reveal).
- */
-export const selectPrMonitorsSnapshotDelivered = store.createSelector(
-  (state, workspaceId: string): boolean =>
-    state.prMonitor?.byWorkspaceId?.[workspaceId] !== undefined,
+export const selectPrMonitorsSnapshotStatus = store.createSelector(
+  (state, workspaceId: string): PrMonitorSnapshotStatus =>
+    state.prMonitor?.byWorkspaceId?.[workspaceId]?.snapshotStatus ?? 'loading',
 );

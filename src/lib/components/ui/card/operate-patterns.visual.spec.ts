@@ -12,6 +12,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from '../../../../../test/vite-harness-cache.mjs';
 
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const artifactDir = path.resolve('.demo-artifacts/20260722-012e-overlays');
@@ -28,6 +29,7 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     appType: 'mpa',
+    cacheDir: viteHarnessCacheDir('operate-patterns-visual'),
     plugins: [svelte()],
     resolve: {
       alias: {

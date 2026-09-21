@@ -4,10 +4,7 @@
  * Custom TipTap node for CLI command primitives
  */
 
-import {
-  Node,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { SvelteNodeViewRenderer } from 'svelte-tiptap';
 import type { CliPrimitive } from '../../../shared/types/notes-primitives';
 import CliBlock from '../../components/notes/primitives/CliBlock.svelte';
@@ -173,43 +170,43 @@ export const CliBlockNode = Node.create<CliBlockOptions>({
     return {
       insertCliBlock:
         (primitive: CliPrimitive) =>
-          ({ commands }) =>
-            commands.insertContent({
-              type: this.name,
-              attrs: {
-                id: primitive.id,
-                data: primitive,
-              },
-            }),
+        ({ commands }) =>
+          commands.insertContent({
+            type: this.name,
+            attrs: {
+              id: primitive.id,
+              data: primitive,
+            },
+          }),
 
       updateCliBlock:
         (id: string, updates: Partial<CliPrimitive>) =>
-          ({ state, dispatch }) => {
-            const { doc, tr } = state;
-            let found = false;
+        ({ state, dispatch }) => {
+          const { doc, tr } = state;
+          let found = false;
 
-            doc.descendants((node, pos) => {
-              if (node.type.name === this.name && node.attrs.id === id) {
-                const currentData = node.attrs.data as CliPrimitive;
-                const updatedData = { ...currentData, ...updates };
+          doc.descendants((node, pos) => {
+            if (node.type.name === this.name && node.attrs.id === id) {
+              const currentData = node.attrs.data as CliPrimitive;
+              const updatedData = { ...currentData, ...updates };
 
-                tr.setNodeMarkup(pos, undefined, {
-                  ...node.attrs,
-                  data: updatedData,
-                });
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                data: updatedData,
+              });
 
-                found = true;
-                return false; // Stop searching
-              }
-            });
-
-            if (found && dispatch) {
-              dispatch(tr);
-              return true;
+              found = true;
+              return false; // Stop searching
             }
+          });
 
-            return false;
-          },
+          if (found && dispatch) {
+            dispatch(tr);
+            return true;
+          }
+
+          return false;
+        },
     };
   },
 

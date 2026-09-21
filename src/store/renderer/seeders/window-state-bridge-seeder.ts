@@ -1,8 +1,9 @@
 /**
  * Window workspace-state invoke bridge — forwards `window:set-in-workspace`,
  * `window:set-open-workspace-tabs`, `window:set-theme`, `window:set-title`,
- * and `window:set-browser-focused` to the real Electron preload bridge
- * (`window.electronAPI.invoke`) when present.
+ * `window:set-browser-focused`, `window:set-full-screen`,
+ * `window:get-full-screen`, `window:cycle-focus`, and `window:close` to the
+ * real Electron preload bridge (`window.electronAPI.invoke`) when present.
  *
  * The generated `invoke()` routes ALL legacy renderer invokes through the
  * mock router in every build, including the packaged app. The workspace-state
@@ -146,6 +147,25 @@ export function registerWindowCycleFocusBridge(): void {
 }
 
 /**
+ * Forward the window-close invoke (`window:close` — the Cmd+W cascade's window
+ * step once no workspace tab remains, and the guest-offline overlay's "Close
+ * window") to the registered main-process handler (system.ipc.ts — closes the
+ * SENDER window, opening a local window first when it is the app's last live
+ * window). Resolves undefined without a bridge (browser dev build): the layout
+ * only passes `closeWindow` into the cascade when the Electron bridge is
+ * present, so the web build never reaches this path. Idempotent.
+ */
+export function registerWindowCloseBridge(): void {
+  registerMockIpcHandler(IPC_CHANNELS.WINDOW.CLOSE, async (payload?: unknown) => {
+    const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+    if (bridge && typeof bridge.invoke === 'function') {
+      return bridge.invoke(IPC_CHANNELS.WINDOW.CLOSE, payload);
+    }
+    return undefined;
+  });
+}
+
+/**
  * Forward the Electron app-version read (`app:get-version`) to the registered
  * main-process handler (system.ipc.ts, `app.getVersion()`). No production
  * renderer caller remains today (the analytics common-properties reader was
@@ -169,4 +189,5 @@ registerWindowThemeBridge();
 registerWindowFullScreenBridge();
 registerWindowFullScreenEventRelay();
 registerWindowCycleFocusBridge();
+registerWindowCloseBridge();
 registerAppVersionBridge();

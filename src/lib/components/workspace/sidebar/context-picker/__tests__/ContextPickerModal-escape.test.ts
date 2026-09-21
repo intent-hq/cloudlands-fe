@@ -2,42 +2,18 @@
  * ContextPickerModal.svelte Escape handling via the escape-layer stack.
  * Migrated from a `svelte:window` Escape listener.
  */
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterEach,
-} from 'vitest';
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  cleanup,
-} from '@testing-library/svelte';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 
 // Stub the heavy provider pickers — the escape layer lives on the modal shell.
 vi.mock('../LinearPicker.svelte', async () => ({
-  default: (
-    await import(
-      '../../../initializer/__tests__/mocks/MockComponent.svelte'
-    )
-  ).default,
+  default: (await import('../../../initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
 vi.mock('../SentryPicker.svelte', async () => ({
-  default: (
-    await import(
-      '../../../initializer/__tests__/mocks/MockComponent.svelte'
-    )
-  ).default,
+  default: (await import('../../../initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
 vi.mock('../BrowserUrlPicker.svelte', async () => ({
-  default: (
-    await import(
-      '../../../initializer/__tests__/mocks/MockComponent.svelte'
-    )
-  ).default,
+  default: (await import('../../../initializer/__tests__/mocks/MockComponent.svelte')).default,
 }));
 
 import ContextPickerModal from '../ContextPickerModal.svelte';

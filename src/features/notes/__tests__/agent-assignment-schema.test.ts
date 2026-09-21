@@ -3,11 +3,7 @@
  * Phase 1C - Increment 1: Agent Assignment Data Model
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { TaskMetadataSchema } from '$shared/schemas';
 import { createAgentId } from '$shared/types/branded-ids';

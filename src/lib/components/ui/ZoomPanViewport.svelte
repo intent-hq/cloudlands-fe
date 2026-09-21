@@ -18,6 +18,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Button from './button/button.svelte';
+  import { Slider } from '$lib/components/ui/slider';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
 
@@ -49,9 +50,7 @@
   let dragDistance = 0;
   let suppressNextClick = false;
 
-  const zoomPercent = $derived(
-    formatNumber(scale, { style: 'percent', maximumFractionDigits: 0 })
-  );
+  const zoomPercent = $derived(formatNumber(scale, { style: 'percent', maximumFractionDigits: 0 }));
 
   function clampScale(value: number): number {
     return Math.min(maxZoom, Math.max(minZoom, value));
@@ -229,18 +228,19 @@
     >
       <Fa icon={faMagnifyingGlassMinus} />
     </Button>
-    <input
-      type="range"
-      class="w-36 accent-white"
-      min={minZoom}
-      max={maxZoom}
-      step="0.01"
-      value={scale}
-      oninput={handleSliderInput}
-      aria-label={m.ui_zoomPanViewport_zoomSlider_ariaLabel()}
-      title={m.ui_zoomPanViewport_zoomSlider_ariaLabel()}
-      data-testid="zoom-pan-slider"
-    />
+    <div class="w-36">
+      <Slider
+        class="accent-white"
+        min={minZoom}
+        max={maxZoom}
+        step="0.01"
+        value={scale}
+        oninput={handleSliderInput}
+        aria-label={m.ui_zoomPanViewport_zoomSlider_ariaLabel()}
+        title={m.ui_zoomPanViewport_zoomSlider_ariaLabel()}
+        data-testid="zoom-pan-slider"
+      />
+    </div>
     <Button
       variant="ghost"
       size="icon-sm"

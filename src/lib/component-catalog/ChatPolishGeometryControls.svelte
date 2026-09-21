@@ -136,10 +136,9 @@
     {formatChatPolishGeometry(geometry)}
   </output>
   <div class="save-actions">
-    <Button class="save-button" disabled={!hydrated || !dirty} onclick={save}>
-      Save tweaks
-    </Button>
-    <Button variant="outline" class="reset-button" onclick={reset}>Reset production defaults</Button>
+    <Button class="save-button" disabled={!hydrated || !dirty} onclick={save}>Save tweaks</Button>
+    <Button variant="outline" class="reset-button" onclick={reset}>Reset production defaults</Button
+    >
   </div>
   <p class:dirty class="save-feedback" role="status" aria-label="Save status" aria-live="polite">
     {feedback}
@@ -188,7 +187,7 @@
     cursor: pointer;
   }
   .save-button {
-    border-color: hsl(var(--primary));
+    border-color: hsl(var(--primary-ink));
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
   }
@@ -198,7 +197,7 @@
   }
   .save-button:focus-visible,
   .reset-button:focus-visible {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1px solid hsl(var(--ring));
     outline-offset: 2px;
   }
   .range-grid {

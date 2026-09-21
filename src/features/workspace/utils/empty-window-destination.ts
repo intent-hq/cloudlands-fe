@@ -27,7 +27,7 @@ export interface EmptyWindowDestinationWorkspace {
  * @param excludedWorkspaceId - A workspace being removed right now, whose
  *   status may not yet reflect the removal in store state
  */
-export function hasAvailableWorkspace(
+function hasAvailableWorkspace(
   workspaces: readonly EmptyWindowDestinationWorkspace[],
   excludedWorkspaceId?: string,
 ): boolean {

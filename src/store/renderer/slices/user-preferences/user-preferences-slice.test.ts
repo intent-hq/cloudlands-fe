@@ -9,6 +9,7 @@ import {
   resetAllShortcutOverrides,
   resetShortcutOverride,
   saveActivityLogPreset,
+  setChatAuroraEnabled,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
@@ -18,7 +19,9 @@ import {
   setLanguagePreference,
   setShowArchived,
   setSpellcheckEnabled,
+  setReduceMotionOnBattery,
   setShowReasoningBlocks,
+  setShellTransparencyEnabled,
   setShortcutOverride,
   setSoundEnabled,
   setSoundPath,
@@ -30,8 +33,11 @@ import {
   type AgentFontStyle,
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
+  toggleChatAurora,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
+  toggleShellTransparency,
   setUpdateChannel,
   toggleSpellcheck,
   type UserPreferencesState,
@@ -41,6 +47,7 @@ import {
   selectAgentFontStyle,
   selectAgentFontStyleLabel,
   selectActivityLogPresets,
+  selectChatAuroraEnabled,
   selectCodeFontFamily,
   selectCodeFontFamilyCSS,
   selectCodeFontFamilyLabel,
@@ -56,7 +63,9 @@ import {
   selectNotificationEnabled,
   selectNotificationVolume,
   selectShowArchived,
+  selectReduceMotionOnBattery,
   selectShowReasoningBlocks,
+  selectShellTransparencyEnabled,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
 } from './user-preferences-selectors';
@@ -361,6 +370,35 @@ describe('userPreferencesReducer', () => {
     });
   });
 
+  describe('appearance preference actions', () => {
+    it('defaults aurora and shell transparency to enabled and reduceMotionOnBattery to disabled', () => {
+      expect(initialState.chatAuroraEnabled).toBe(true);
+      expect(initialState.shellTransparencyEnabled).toBe(true);
+      expect(initialState.reduceMotionOnBattery).toBe(false);
+    });
+
+    it('sets and toggles reduceMotionOnBattery', () => {
+      const enabled = userPreferencesReducer(initialState, setReduceMotionOnBattery(true));
+      const disabled = userPreferencesReducer(enabled, toggleReduceMotionOnBattery());
+      expect(enabled.reduceMotionOnBattery).toBe(true);
+      expect(disabled.reduceMotionOnBattery).toBe(false);
+    });
+
+    it('sets and toggles chatAuroraEnabled', () => {
+      const disabled = userPreferencesReducer(initialState, setChatAuroraEnabled(false));
+      const enabled = userPreferencesReducer(disabled, toggleChatAurora());
+      expect(disabled.chatAuroraEnabled).toBe(false);
+      expect(enabled.chatAuroraEnabled).toBe(true);
+    });
+
+    it('sets and toggles shellTransparencyEnabled', () => {
+      const disabled = userPreferencesReducer(initialState, setShellTransparencyEnabled(false));
+      const enabled = userPreferencesReducer(disabled, toggleShellTransparency());
+      expect(disabled.shellTransparencyEnabled).toBe(false);
+      expect(enabled.shellTransparencyEnabled).toBe(true);
+    });
+  });
+
   describe('language preference actions', () => {
     it('defaults to the system preference', () => {
       expect(initialState.languagePreference).toBe('system');
@@ -423,6 +461,27 @@ describe('userPreferencesReducer', () => {
         } as any),
       ).toBe(true);
       expect(selectShowReasoningBlocks.select({} as any)).toBe(false);
+    });
+
+    it('selects appearance preferences with their default fallbacks', () => {
+      expect(
+        selectChatAuroraEnabled.select({
+          userPreferences: { ...initialState, chatAuroraEnabled: false },
+        } as any),
+      ).toBe(false);
+      expect(
+        selectShellTransparencyEnabled.select({
+          userPreferences: { ...initialState, shellTransparencyEnabled: false },
+        } as any),
+      ).toBe(false);
+      expect(
+        selectReduceMotionOnBattery.select({
+          userPreferences: { ...initialState, reduceMotionOnBattery: true },
+        } as any),
+      ).toBe(true);
+      expect(selectChatAuroraEnabled.select({} as any)).toBe(true);
+      expect(selectShellTransparencyEnabled.select({} as any)).toBe(true);
+      expect(selectReduceMotionOnBattery.select({} as any)).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

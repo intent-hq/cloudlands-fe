@@ -27,8 +27,8 @@ const mockToast = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: mockToast,
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: mockToast,
 }));
 
 describe('WorkspaceApiSettings', () => {
@@ -38,6 +38,8 @@ describe('WorkspaceApiSettings', () => {
     mocks.mockSettingsList.mockResolvedValue([
       { path: 'workspaceApi.maxOutputChars', value: 100000 },
       { path: 'workspaceApi.toonOutput', value: true },
+      { path: 'agents.historyReplayToolContentChars', value: 4000 },
+      { path: 'agents.toolPayloadRetentionDays', value: 0 },
     ]);
   });
 
@@ -79,6 +81,22 @@ describe('WorkspaceApiSettings', () => {
       expect(mockToast.error).toHaveBeenCalled();
     });
     // Toggle remains checked (rolled back to true)
+    await waitFor(() =>
+      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true'),
+    );
+  });
+
+  it('shows toast.error and reverts toggle when settings.update omits the toggled path', async () => {
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+
+    render(WorkspaceApiSettings);
+
+    const toggle = await waitFor(() => screen.getByRole('switch'));
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mockToast.error).toHaveBeenCalled();
+    });
     expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
   });
 
@@ -93,7 +111,7 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '250000' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save'));
+    const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
     await fireEvent.click(saveButton);
 
     // Assert: settings.update was called with exact payload
@@ -113,9 +131,41 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '500' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save') as HTMLButtonElement);
+    const saveButton = await waitFor(
+      () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+    );
     expect(saveButton.disabled).toBe(true);
     expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('treats a blank max output chars input as invalid instead of 0 (unlimited)', async () => {
+    render(WorkspaceApiSettings);
+
+    const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
+
+    await fireEvent.input(input, { target: { value: '' } });
+
+    const saveButton = await waitFor(
+      () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+    );
+    expect(saveButton.disabled).toBe(true);
+    await fireEvent.click(saveButton);
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('shows toast.error and reverts input when settings.update omits the max output chars path', async () => {
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+
+    render(WorkspaceApiSettings);
+
+    const input = await waitFor(() => screen.getByDisplayValue('100000') as HTMLInputElement);
+
+    await fireEvent.input(input, { target: { value: '250000' } });
+    await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
+
+    await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+    await waitFor(() => expect(input.value).toBe('100000'));
+    expect(mockToast.success).not.toHaveBeenCalled();
   });
 
   it('accepts 0 as unlimited and sends it on Save', async () => {
@@ -129,7 +179,7 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '0' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save'));
+    const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
     await fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -150,7 +200,7 @@ describe('WorkspaceApiSettings', () => {
 
     await fireEvent.input(input, { target: { value: '250000' } });
 
-    const saveButton = await waitFor(() => screen.getByText('Save'));
+    const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
     await fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -162,6 +212,305 @@ describe('WorkspaceApiSettings', () => {
     // Input reverts to the persisted value
     await waitFor(() => {
       expect(screen.getByDisplayValue('100000')).toBeTruthy();
+    });
+  });
+
+  describe('agents.historyReplayToolContentChars', () => {
+    const REPLAY_ARIA = /tool output characters per block/i;
+
+    it('loads the daemon value and clicking Save sends the exact settings.update request', async () => {
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agents.historyReplayToolContentChars', value: 8000 },
+      ]);
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('4000'));
+
+      await fireEvent.input(input, { target: { value: '8000' } });
+
+      const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
+      await fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'agents.historyReplayToolContentChars', value: 8000 },
+        ]);
+      });
+      await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('disables Save for values outside 500..100000', async () => {
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('4000'));
+
+      await fireEvent.input(input, { target: { value: '499' } });
+      let saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
+      expect(saveButton.disabled).toBe(true);
+
+      await fireEvent.input(input, { target: { value: '100001' } });
+      saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
+      expect(saveButton.disabled).toBe(true);
+
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('shows toast.error and reverts to the daemon value when settings.update returns a rolled-back value', async () => {
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agents.historyReplayToolContentChars', value: 4000 },
+      ]);
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('4000'));
+
+      await fireEvent.input(input, { target: { value: '8000' } });
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
+
+      await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      await waitFor(() => expect(input.value).toBe('4000'));
+      expect(mockToast.success).not.toHaveBeenCalled();
+    });
+
+    it('shows toast.error and reverts input when settings.update omits the path (older daemon)', async () => {
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('4000'));
+
+      await fireEvent.input(input, { target: { value: '8000' } });
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
+
+      await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      await waitFor(() => expect(input.value).toBe('4000'));
+      expect(mockToast.success).not.toHaveBeenCalled();
+    });
+
+    it('treats a blank input as invalid and disables Save', async () => {
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('4000'));
+
+      await fireEvent.input(input, { target: { value: '' } });
+
+      const saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
+      expect(saveButton.disabled).toBe(true);
+      await fireEvent.click(saveButton);
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('shows toast.error with the daemon message and reverts input when settings.update rejects', async () => {
+      mocks.mockSettingsUpdate.mockRejectedValueOnce(
+        new Error('agents.historyReplayToolContentChars must be between 500 and 100000'),
+      );
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: REPLAY_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('4000'));
+
+      await fireEvent.input(input, { target: { value: '8000' } });
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith(
+          expect.stringContaining('agents.historyReplayToolContentChars must be between 500'),
+        );
+      });
+      await waitFor(() => expect(input.value).toBe('4000'));
+    });
+  });
+
+  describe('agents.toolPayloadRetentionDays', () => {
+    const RETENTION_ARIA = /tool payload retention in days/i;
+
+    it('loads the daemon value and clicking Save sends the exact settings.update request', async () => {
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agents.toolPayloadRetentionDays', value: 30 },
+      ]);
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('0'));
+
+      await fireEvent.input(input, { target: { value: '30' } });
+
+      const saveButton = await waitFor(() => screen.getByRole('button', { name: 'Save' }));
+      await fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'agents.toolPayloadRetentionDays', value: 30 },
+        ]);
+      });
+      await waitFor(() => expect(mockToast.success).toHaveBeenCalled());
+      expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('accepts 0 as keep-forever and sends it on Save', async () => {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'workspaceApi.maxOutputChars', value: 100000 },
+        { path: 'workspaceApi.toonOutput', value: true },
+        { path: 'agents.historyReplayToolContentChars', value: 4000 },
+        { path: 'agents.toolPayloadRetentionDays', value: 30 },
+      ]);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agents.toolPayloadRetentionDays', value: 0 },
+      ]);
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('30'));
+
+      await fireEvent.input(input, { target: { value: '0' } });
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
+
+      await waitFor(() => {
+        expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'agents.toolPayloadRetentionDays', value: 0 },
+        ]);
+      });
+    });
+
+    it('disables Save for negative or above-3650 values', async () => {
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('0'));
+
+      await fireEvent.input(input, { target: { value: '-1' } });
+      let saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
+      expect(saveButton.disabled).toBe(true);
+
+      await fireEvent.input(input, { target: { value: '3651' } });
+      saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
+      expect(saveButton.disabled).toBe(true);
+
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('shows toast.error and reverts to the daemon value when settings.update returns a rolled-back value', async () => {
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agents.toolPayloadRetentionDays', value: 0 },
+      ]);
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('0'));
+
+      await fireEvent.input(input, { target: { value: '30' } });
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
+
+      await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      await waitFor(() => expect(input.value).toBe('0'));
+      expect(mockToast.success).not.toHaveBeenCalled();
+    });
+
+    it('shows toast.error and reverts input when settings.update omits the path (older daemon)', async () => {
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([]);
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('0'));
+
+      await fireEvent.input(input, { target: { value: '30' } });
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
+
+      await waitFor(() => expect(mockToast.error).toHaveBeenCalled());
+      await waitFor(() => expect(input.value).toBe('0'));
+      expect(mockToast.success).not.toHaveBeenCalled();
+    });
+
+    it('treats a blank input as invalid instead of saving 0 (keep forever)', async () => {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'workspaceApi.maxOutputChars', value: 100000 },
+        { path: 'workspaceApi.toonOutput', value: true },
+        { path: 'agents.historyReplayToolContentChars', value: 4000 },
+        { path: 'agents.toolPayloadRetentionDays', value: 30 },
+      ]);
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('30'));
+
+      await fireEvent.input(input, { target: { value: '' } });
+
+      const saveButton = await waitFor(
+        () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement,
+      );
+      expect(saveButton.disabled).toBe(true);
+      await fireEvent.click(saveButton);
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('shows toast.error with the daemon message and reverts input when settings.update rejects', async () => {
+      mocks.mockSettingsUpdate.mockRejectedValueOnce(
+        new Error('agents.toolPayloadRetentionDays must be between 0 and 3650'),
+      );
+
+      render(WorkspaceApiSettings);
+
+      const input = await waitFor(
+        () => screen.getByRole('spinbutton', { name: RETENTION_ARIA }) as HTMLInputElement,
+      );
+      await waitFor(() => expect(input.value).toBe('0'));
+
+      await fireEvent.input(input, { target: { value: '30' } });
+      await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Save' })));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledWith(
+          expect.stringContaining('agents.toolPayloadRetentionDays must be between 0'),
+        );
+      });
+      await waitFor(() => expect(input.value).toBe('0'));
     });
   });
 });

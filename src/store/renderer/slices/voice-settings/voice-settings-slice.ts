@@ -1,16 +1,16 @@
-import type { VoiceOpenAiModel, VoiceProvider } from "$features/voice/voice-settings-service";
-import { VOICE_VOCABULARY_TERM_MAX_LENGTH } from "$features/voice/voice-settings-constants";
-import type { VoiceEngine } from "$features/voice/voice-engine-preference";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
-import type { VoiceInputDevice, VoiceSettingsSliceState } from "./voice-settings-types";
+import type { VoiceOpenAiModel, VoiceProvider } from '$features/voice/voice-settings-service';
+import { VOICE_VOCABULARY_TERM_MAX_LENGTH } from '$features/voice/voice-settings-constants';
+import type { VoiceEngine } from '$features/voice/voice-engine-preference';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
+import type { VoiceInputDevice, VoiceSettingsSliceState } from './voice-settings-types';
 
 export const initialState: VoiceSettingsSliceState = {
   isLoading: true,
   available: false,
-  engine: "daemon",
+  engine: 'daemon',
   osEngineAvailable: false,
-  provider: "elevenlabs",
+  provider: 'elevenlabs',
   keyConfigured: { elevenlabs: false, openai: false },
   vocabulary: null,
   openaiModel: null,
@@ -25,37 +25,32 @@ export const initialState: VoiceSettingsSliceState = {
 // --- Actions ---
 
 /** Trigger: load voice settings from the daemon (store-service reads the seam) */
-export const initializeVoiceSettings = createAction("voiceSettings/initialize");
+export const initializeVoiceSettings = createAction('voiceSettings/initialize');
 
 /** Trigger: persist the provider selection through `settings.update` */
 export const changeVoiceProvider = createAction<[provider: VoiceProvider]>(
-  "voiceSettings/changeProvider",
+  'voiceSettings/changeProvider',
 );
 
 /** Trigger: switch the transcription engine (store-service persists locally) */
-export const changeVoiceEngine = createAction<[engine: VoiceEngine]>(
-  "voiceSettings/changeEngine",
-);
+export const changeVoiceEngine = createAction<[engine: VoiceEngine]>('voiceSettings/changeEngine');
 
 /** Set the (already persisted) engine value */
 export const setVoiceEngineValue = createAction<[engine: VoiceEngine]>(
-  "voiceSettings/setEngineValue",
+  'voiceSettings/setEngineValue',
 );
 
 /** Set whether the local OS dictation engine is available on this host */
 export const setVoiceOsEngineAvailable = createAction<[available: boolean]>(
-  "voiceSettings/setOsEngineAvailable",
+  'voiceSettings/setOsEngineAvailable',
 );
 
 /** Trigger: store a pasted API key under the provider's secrets-file path */
-export const saveVoiceKey = createAction<[provider: VoiceProvider, apiKey: string]>(
-  "voiceSettings/saveKey",
-);
+export const saveVoiceKey =
+  createAction<[provider: VoiceProvider, apiKey: string]>('voiceSettings/saveKey');
 
 /** Trigger: clear a stored API key (`settings.reset` deletes the secrets-file entry) */
-export const clearVoiceKey = createAction<[provider: VoiceProvider]>(
-  "voiceSettings/clearKey",
-);
+export const clearVoiceKey = createAction<[provider: VoiceProvider]>('voiceSettings/clearKey');
 
 /**
  * Trigger + optimistic reducer: append a vocabulary term. Trimmed; blank,
@@ -63,22 +58,22 @@ export const clearVoiceKey = createAction<[provider: VoiceProvider]>(
  * store-service persists the resulting array through `settings.update`.
  */
 export const addVoiceVocabularyTerm = createAction<[term: string]>(
-  "voiceSettings/addVocabularyTerm",
+  'voiceSettings/addVocabularyTerm',
 );
 
 /** Trigger + optimistic reducer: remove a vocabulary term (exact match). */
 export const removeVoiceVocabularyTerm = createAction<[term: string]>(
-  "voiceSettings/removeVocabularyTerm",
+  'voiceSettings/removeVocabularyTerm',
 );
 
 /** Set the vocabulary value directly (hydrate or rollback after a failed write) */
 export const setVoiceVocabularyValue = createAction<[vocabulary: string[] | null]>(
-  "voiceSettings/setVocabularyValue",
+  'voiceSettings/setVocabularyValue',
 );
 
 /** Hydrate from the daemon snapshot */
 export const setVoiceSettingsSnapshot = createAction(
-  "voiceSettings/setSnapshot",
+  'voiceSettings/setSnapshot',
   (
     available: boolean,
     provider: VoiceProvider,
@@ -100,91 +95,87 @@ export const setVoiceSettingsSnapshot = createAction(
 
 /** Trigger: persist the OpenAI transcription model through `settings.update` */
 export const changeVoiceOpenAiModel = createAction<[model: VoiceOpenAiModel]>(
-  "voiceSettings/changeOpenAiModel",
+  'voiceSettings/changeOpenAiModel',
 );
 
 /** Set the OpenAI model value directly (optimistic apply or rollback) */
 export const setVoiceOpenAiModelValue = createAction<[model: VoiceOpenAiModel | null]>(
-  "voiceSettings/setOpenAiModelValue",
+  'voiceSettings/setOpenAiModelValue',
 );
 
 /** Trigger: persist the language hint through `settings.update` (`""` = auto-detect) */
-export const changeVoiceLanguage = createAction<[language: string]>(
-  "voiceSettings/changeLanguage",
-);
+export const changeVoiceLanguage = createAction<[language: string]>('voiceSettings/changeLanguage');
 
 /** Set the language value directly (optimistic apply or rollback) */
 export const setVoiceLanguageValue = createAction<[language: string | null]>(
-  "voiceSettings/setLanguageValue",
+  'voiceSettings/setLanguageValue',
 );
 
 /** Trigger: persist the workspace-vocabulary cap through `settings.update` (0..=100, `0` = off) */
 export const changeVoiceWorkspaceVocabularyMaxTerms = createAction<[maxTerms: number]>(
-  "voiceSettings/changeWorkspaceVocabularyMaxTerms",
+  'voiceSettings/changeWorkspaceVocabularyMaxTerms',
 );
 
 /** Set the workspace-vocabulary cap value directly (optimistic apply or rollback) */
-export const setVoiceWorkspaceVocabularyMaxTermsValue = createAction<
-  [maxTerms: number | null]
->("voiceSettings/setWorkspaceVocabularyMaxTermsValue");
+export const setVoiceWorkspaceVocabularyMaxTermsValue = createAction<[maxTerms: number | null]>(
+  'voiceSettings/setWorkspaceVocabularyMaxTermsValue',
+);
 
 /** Set the (already persisted) provider value */
 export const setVoiceProviderValue = createAction<[provider: VoiceProvider]>(
-  "voiceSettings/setProviderValue",
+  'voiceSettings/setProviderValue',
 );
 
 /** Trigger: switch the microphone input device (store-service persists locally) */
 export const changeVoiceInputDevice = createAction<[deviceId: string | null]>(
-  "voiceSettings/changeInputDevice",
+  'voiceSettings/changeInputDevice',
 );
 
 /** Set the (already persisted) input-device value (`null` = system default) */
 export const setVoiceInputDeviceValue = createAction<[deviceId: string | null]>(
-  "voiceSettings/setInputDeviceValue",
+  'voiceSettings/setInputDeviceValue',
 );
 
 /** Hydrate the enumerated audio-input device list */
 export const setVoiceInputDevices = createAction<[devices: VoiceInputDevice[]]>(
-  "voiceSettings/setInputDevices",
+  'voiceSettings/setInputDevices',
 );
 
 /** Set one provider's key-configured flag */
-export const setVoiceKeyConfigured = createAction<
-  [provider: VoiceProvider, configured: boolean]
->("voiceSettings/setKeyConfigured");
+export const setVoiceKeyConfigured = createAction<[provider: VoiceProvider, configured: boolean]>(
+  'voiceSettings/setKeyConfigured',
+);
 
 /** Set the provider with an in-flight key operation */
 export const setVoiceBusyProvider = createAction<[provider: VoiceProvider | null]>(
-  "voiceSettings/setBusyProvider",
+  'voiceSettings/setBusyProvider',
 );
 
 /** Set the surfaced error */
-export const setVoiceSettingsError = createAction<[error: string | null]>(
-  "voiceSettings/setError",
-);
+export const setVoiceSettingsError = createAction<[error: string | null]>('voiceSettings/setError');
 
 // --- Reducer ---
 
 export const voiceSettingsReducer = createReducer<VoiceSettingsSliceState>(initialState);
 voiceSettingsReducer.with(setVoiceSettingsSnapshot, (state, { payload }) => ({
-    ...state,
-    isLoading: false,
-    available: payload.available,
-    provider: payload.provider,
-    keyConfigured: payload.keyConfigured,
-    vocabulary: payload.vocabulary,
-    openaiModel: payload.openaiModel,
-    language: payload.language,
-    workspaceVocabularyMaxTerms: payload.workspaceVocabularyMaxTerms,
-  }));
+  ...state,
+  isLoading: false,
+  available: payload.available,
+  provider: payload.provider,
+  keyConfigured: payload.keyConfigured,
+  vocabulary: payload.vocabulary,
+  openaiModel: payload.openaiModel,
+  language: payload.language,
+  workspaceVocabularyMaxTerms: payload.workspaceVocabularyMaxTerms,
+}));
 voiceSettingsReducer.with(setVoiceOpenAiModelValue, (state, { payload: [model] }) => ({
-    ...state,
-    openaiModel: model,
-  }));
+  ...state,
+  openaiModel: model,
+}));
 voiceSettingsReducer.with(setVoiceLanguageValue, (state, { payload: [language] }) => ({
-    ...state,
-    language,
-  }));
+  ...state,
+  language,
+}));
 voiceSettingsReducer.with(
   setVoiceWorkspaceVocabularyMaxTermsValue,
   (state, { payload: [maxTerms] }) => ({
@@ -193,50 +184,50 @@ voiceSettingsReducer.with(
   }),
 );
 voiceSettingsReducer.with(setVoiceProviderValue, (state, { payload: [provider] }) => ({
-    ...state,
-    provider,
-  }));
+  ...state,
+  provider,
+}));
 voiceSettingsReducer.with(setVoiceInputDeviceValue, (state, { payload: [deviceId] }) => ({
-    ...state,
-    inputDeviceId: deviceId,
-  }));
+  ...state,
+  inputDeviceId: deviceId,
+}));
 voiceSettingsReducer.with(setVoiceInputDevices, (state, { payload: [devices] }) => ({
-    ...state,
-    inputDevices: devices,
-  }));
+  ...state,
+  inputDevices: devices,
+}));
 voiceSettingsReducer.with(setVoiceEngineValue, (state, { payload: [engine] }) => ({
-    ...state,
-    engine,
-  }));
+  ...state,
+  engine,
+}));
 voiceSettingsReducer.with(setVoiceOsEngineAvailable, (state, { payload: [available] }) => ({
-    ...state,
-    osEngineAvailable: available,
-  }));
+  ...state,
+  osEngineAvailable: available,
+}));
 voiceSettingsReducer.with(addVoiceVocabularyTerm, (state, { payload: [term] }) => {
-    if (state.vocabulary === null) return state;
-    const trimmed = term.trim();
-    if (!trimmed || trimmed.length > VOICE_VOCABULARY_TERM_MAX_LENGTH) return state;
-    const lower = trimmed.toLowerCase();
-    if (state.vocabulary.some((existing) => existing.toLowerCase() === lower)) return state;
-    return { ...state, vocabulary: [...state.vocabulary, trimmed] };
-  });
+  if (state.vocabulary === null) return state;
+  const trimmed = term.trim();
+  if (!trimmed || trimmed.length > VOICE_VOCABULARY_TERM_MAX_LENGTH) return state;
+  const lower = trimmed.toLowerCase();
+  if (state.vocabulary.some((existing) => existing.toLowerCase() === lower)) return state;
+  return { ...state, vocabulary: [...state.vocabulary, trimmed] };
+});
 voiceSettingsReducer.with(removeVoiceVocabularyTerm, (state, { payload: [term] }) => {
-    if (state.vocabulary === null || !state.vocabulary.includes(term)) return state;
-    return { ...state, vocabulary: state.vocabulary.filter((entry) => entry !== term) };
-  });
+  if (state.vocabulary === null || !state.vocabulary.includes(term)) return state;
+  return { ...state, vocabulary: state.vocabulary.filter((entry) => entry !== term) };
+});
 voiceSettingsReducer.with(setVoiceVocabularyValue, (state, { payload: [vocabulary] }) => ({
-    ...state,
-    vocabulary,
-  }));
+  ...state,
+  vocabulary,
+}));
 voiceSettingsReducer.with(setVoiceKeyConfigured, (state, { payload: [provider, configured] }) => ({
-    ...state,
-    keyConfigured: { ...state.keyConfigured, [provider]: configured },
-  }));
+  ...state,
+  keyConfigured: { ...state.keyConfigured, [provider]: configured },
+}));
 voiceSettingsReducer.with(setVoiceBusyProvider, (state, { payload: [provider] }) => ({
-    ...state,
-    busyProvider: provider,
-  }));
+  ...state,
+  busyProvider: provider,
+}));
 voiceSettingsReducer.with(setVoiceSettingsError, (state, { payload: [error] }) => ({
-    ...state,
-    error,
-  }));
+  ...state,
+  error,
+}));

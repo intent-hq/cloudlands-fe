@@ -1,18 +1,18 @@
-import type { TaskStatus, Workspace, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import type { TaskStatus, Workspace, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
   getItem,
   updateItem,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+} from '@augmentcode/themis/utils/collections/collection-utils';
+import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import {
   removeWorkspaceEntity,
   replaceWorkspaceList,
   setWorkspaceEntity,
-} from "../workspace/workspace-slice";
-import type { WorkspaceTasksState, WorkspaceTasksWorkspaceState } from "./workspace-tasks-types";
+} from '../workspace/workspace-slice';
+import type { WorkspaceTasksState, WorkspaceTasksWorkspaceState } from './workspace-tasks-types';
 
 export type { WorkspaceTasksState, WorkspaceTasksWorkspaceState };
 
@@ -24,7 +24,7 @@ export const emptyWorkspaceTaskStats: WorkspaceTaskStats = {
 };
 
 export const emptyWorkspaceTasksState: WorkspaceTasksWorkspaceState = {
-  tasks: createCollection<WorkspaceTask, "id">("id"),
+  tasks: createCollection<WorkspaceTask, 'id'>('id'),
   stats: emptyWorkspaceTaskStats,
   loading: false,
   error: null,
@@ -44,7 +44,7 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 
 /** Saga trigger: fetch the canonical task list for a workspace. */
 export const loadWorkspaceTasksRequested = createAction<[workspaceId: string]>(
-  "workspaceTasks/loadWorkspaceTasksRequested"
+  'workspaceTasks/loadWorkspaceTasksRequested',
 );
 
 /**
@@ -53,7 +53,7 @@ export const loadWorkspaceTasksRequested = createAction<[workspaceId: string]>(
  * rows/hover surfaces; 'workspace:tasks-changed' keeps loaded state fresh.
  */
 export const ensureWorkspaceTasksLoaded = createAction<[workspaceId: string]>(
-  "workspaceTasks/ensureWorkspaceTasksLoaded"
+  'workspaceTasks/ensureWorkspaceTasksLoaded',
 );
 
 /**
@@ -63,20 +63,20 @@ export const ensureWorkspaceTasksLoaded = createAction<[workspaceId: string]>(
  */
 export const loadWorkspaceTasksSucceeded = createAction<
   [workspaceId: string, tasks: WorkspaceTask[], stats: WorkspaceTaskStats]
->("workspaceTasks/loadWorkspaceTasksSucceeded");
+>('workspaceTasks/loadWorkspaceTasksSucceeded');
 
 export const loadWorkspaceTasksFailed = createAction<[workspaceId: string, error: string]>(
-  "workspaceTasks/loadWorkspaceTasksFailed"
+  'workspaceTasks/loadWorkspaceTasksFailed',
 );
 
 /** Optimistically apply a task status change ahead of the tasks-changed refresh. */
 export const applyTaskStatusChanged = createAction<
   [workspaceId: string, taskId: string, newStatus: TaskStatus]
->("workspaceTasks/applyTaskStatusChanged");
+>('workspaceTasks/applyTaskStatusChanged');
 
 /** Clear all task state for a workspace. */
 export const clearWorkspaceTasks = createAction<[workspaceId: string]>(
-  "workspaceTasks/clearWorkspaceTasks"
+  'workspaceTasks/clearWorkspaceTasks',
 );
 
 // ---------------------------------------------------------------------------
@@ -85,50 +85,58 @@ export const clearWorkspaceTasks = createAction<[workspaceId: string]>(
 
 export const workspaceTasksReducer = createReducer<WorkspaceTasksState>(initialState);
 workspaceTasksReducer.with(loadWorkspaceTasksRequested, (state, { payload: [workspaceId] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (ws.loading && ws.error === null) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      loading: true,
-      error: null,
-    });
+  const ws = getWorkspaceState(state, workspaceId);
+  if (ws.loading && ws.error === null) return state;
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    loading: true,
+    error: null,
   });
-workspaceTasksReducer.with(loadWorkspaceTasksSucceeded, (state, { payload: [workspaceId, tasks, stats] }) => {
+});
+workspaceTasksReducer.with(
+  loadWorkspaceTasksSucceeded,
+  (state, { payload: [workspaceId, tasks, stats] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
-      tasks: createCollection<WorkspaceTask, "id">("id", tasks),
+      tasks: createCollection<WorkspaceTask, 'id'>('id', tasks),
       stats,
       loading: false,
       error: null,
       initialized: true,
     });
-  });
+  },
+);
 workspaceTasksReducer.with(loadWorkspaceTasksFailed, (state, { payload: [workspaceId, error] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (!ws.loading && ws.error === error) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      loading: false,
-      error,
-    });
+  const ws = getWorkspaceState(state, workspaceId);
+  if (!ws.loading && ws.error === error) return state;
+  return setWorkspaceState(state, workspaceId, {
+    ...ws,
+    loading: false,
+    error,
   });
-workspaceTasksReducer.with(applyTaskStatusChanged, (state, { payload: [workspaceId, taskId, newStatus] }) => {
+});
+workspaceTasksReducer.with(
+  applyTaskStatusChanged,
+  (state, { payload: [workspaceId, taskId, newStatus] }) => {
     const ws = state.byWorkspaceId[workspaceId];
     if (!ws?.initialized) return state;
 
-    const task = getItem(ws.tasks, taskId as WorkspaceTask["id"]);
+    const task = getItem(ws.tasks, taskId as WorkspaceTask['id']);
     if (!task || task.status === newStatus) return state;
 
     return setWorkspaceState(state, workspaceId, {
       ...ws,
       tasks: updateItem(ws.tasks, { id: task.id, status: newStatus }),
     });
-  });
+  },
+);
 workspaceTasksReducer.with(clearWorkspaceTasks, (state, { payload: [workspaceId] }) =>
-    clearWorkspaceState(state, workspaceId)
-  );
-workspaceTasksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
+  clearWorkspaceState(state, workspaceId),
+);
+workspaceTasksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =>
+  clearWorkspaceState(state, wsId),
+);
 
 /**
  * Seed `stats` from a workspace list row's `taskStats` rollup (PROTOCOL §5.1)
@@ -136,7 +144,10 @@ workspaceTasksReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) =
  * `task.list` stays authoritative: a seed never touches an `initialized`
  * workspace and never marks one `initialized`.
  */
-function seedStatsFromListRow(state: WorkspaceTasksState, workspace: Workspace): WorkspaceTasksState {
+function seedStatsFromListRow(
+  state: WorkspaceTasksState,
+  workspace: Workspace,
+): WorkspaceTasksState {
   const stats = workspace.taskStats;
   if (!stats) return state;
 
@@ -154,9 +165,8 @@ function seedStatsFromListRow(state: WorkspaceTasksState, workspace: Workspace):
 }
 
 workspaceTasksReducer.with(replaceWorkspaceList, (state, { payload: [workspaces] }) =>
-    workspaces.reduce(seedStatsFromListRow, state)
-  );
+  workspaces.reduce(seedStatsFromListRow, state),
+);
 workspaceTasksReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) =>
-    seedStatsFromListRow(state, workspace)
-  );
-
+  seedStatsFromListRow(state, workspace),
+);

@@ -18,8 +18,8 @@
 <Fa
   icon={faTriangleExclamation}
   class={compact
-    ? 'h-3 w-3 text-warning-foreground shrink-0 mt-0.5'
-    : 'h-3.5 w-3.5 text-warning-foreground shrink-0 mt-0.5'}
+    ? 'h-3 w-3 text-warning-ink shrink-0 mt-0.5'
+    : 'h-3.5 w-3.5 text-warning-ink shrink-0 mt-0.5'}
 />
 <div class={compact ? 'min-w-0 leading-tight' : 'flex-1 min-w-0'}>
   {#if compact}

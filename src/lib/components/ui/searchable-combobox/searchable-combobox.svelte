@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Combobox, { type ComboboxOption } from '../combobox';
+  import { Input } from '$lib/components/ui/input';
   import Tooltip from '../tooltip/Tooltip.svelte';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
@@ -109,7 +110,7 @@
 
 {#snippet canonicalOptionDescription(option: ComboboxOption)}
   {#if renamingOptionValue === option.value}
-    <input
+    <Input
       aria-label={m.ui_searchableCombobox_renameOption_ariaLabel({ name: option.label })}
       bind:value={renameValue}
       onclick={(event) => event.stopPropagation()}
@@ -119,6 +120,7 @@
         else if (event.key === 'Escape') itemActionContext(option as Option).cancelRename();
       }}
       class="min-w-0 flex-1 border-b border-accent bg-transparent text-sm outline-none"
+      noFocusStyle
     />
   {:else}
     {@render optionDescription?.(option as Option)}

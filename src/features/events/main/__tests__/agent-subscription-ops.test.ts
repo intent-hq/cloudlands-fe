@@ -14,7 +14,6 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 vi.mock('../../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: unknown) => action),
   initMainStoreBridge: vi.fn(),
 }));
 

@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Input } from '$lib/components/ui/input';
   export { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
 </script>
 
@@ -19,8 +20,7 @@
    */
   import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
   import { onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { slide } from '$lib/motion';
   import {
     selectIsTerminalOverlayOpenForWorkspace,
     selectTerminalOverlayHeight,
@@ -38,7 +38,7 @@
     type TerminalTab,
   } from '$store/renderer/slices/terminals/terminals-slice';
   import { appClient } from '$lib/client';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   // RootQuakeTerminalOverlay uses ROOT_WORKSPACE_ID as its workspace ID
 
   import Terminal from './Terminal.svelte';
@@ -67,7 +67,7 @@
 
   // Store bindings
   const isOpen = selectIsTerminalOverlayOpenForWorkspace(ROOT_WORKSPACE_ID);
-  const height = selectTerminalOverlayHeight();
+  const height = selectTerminalOverlayHeight(ROOT_WORKSPACE_ID);
   const activeTerminalId = selectActiveTerminalIdForWorkspace(ROOT_WORKSPACE_ID);
   const terminals = selectTerminalsForWorkspace(ROOT_WORKSPACE_ID);
 
@@ -205,7 +205,7 @@
         rows: 24,
       });
       if (!result.success || !result.id) {
-        toast.error(m.terminal_adapter_openFailed_error());
+        notify.error(m.terminal_adapter_openFailed_error());
         return;
       }
       appStore.dispatch(
@@ -224,7 +224,7 @@
         overlayContainer?.focus();
       });
     } catch {
-      toast.error(m.terminal_adapter_openFailed_error());
+      notify.error(m.terminal_adapter_openFailed_error());
     } finally {
       isCreatingTerminal = false;
     }
@@ -288,7 +288,8 @@
     getHeight: () => $height,
     setPreviewHeight: (height) => (resizePreviewHeight = height),
     setResizing: (resizing) => (isResizing = resizing),
-    commitHeight: (height) => appStore.dispatch(setTerminalOverlayHeight(height)),
+    commitHeight: (height) =>
+      appStore.dispatch(setTerminalOverlayHeight(ROOT_WORKSPACE_ID, height)),
   });
 
   onDestroy(stopResize);
@@ -376,7 +377,7 @@
       class="terminal-panel relative flex flex-col bg-sidebar border-t border-border shadow-2xl w-full"
       class:is-resizing={isResizing}
       style="height: {renderedHeight}vh;"
-      transition:slide={{ axis: 'y', duration: 200, easing: cubicOut }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
       <!-- Resize Handle -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -395,29 +396,38 @@
         <!-- Title (click to edit) -->
         <div class="flex items-center gap-2">
           <Fa icon={faTerminal} class="w-3.5 h-3.5 opacity-60" />
-          {#if isEditingHeaderName}
-            <input
-              type="text"
-              data-edit-header-terminal
-              bind:value={headerEditValue}
-              onblur={finishEditingHeaderName}
-              onkeydown={handleHeaderEditKeydown}
-              class="text-sm font-medium bg-transparent border-0 outline-none focus:outline-none! focus:ring-0! px-0 w-40 text-muted-foreground"
-              placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
-            />
-          {:else}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="relative inline-flex min-w-0 items-center">
+            {#if isEditingHeaderName}
+              <Input
+                type="text"
+                data-edit-header-terminal
+                bind:value={headerEditValue}
+                onblur={finishEditingHeaderName}
+                onkeydown={handleHeaderEditKeydown}
+                class="inline-edit-input relative z-10 w-40 border-0 bg-transparent px-0 text-sm font-medium text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
+                placeholder={m.terminal_quakeOverlay_terminalName_placeholder()}
+              />
+            {:else}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <span
+                class="relative z-10 cursor-text text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                onclick={startEditingHeaderName}
+                ondblclick={startEditingHeaderName}
+                title={m.terminal_quakeOverlay_renameTerminal_tooltip()}
+              >
+                {terminalDisplayName(
+                  $terminals.find((t: TerminalTab) => t.id === $activeTerminalId) ?? {},
+                )}
+              </span>
+            {/if}
             <span
-              class="text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
-              onclick={startEditingHeaderName}
-              ondblclick={startEditingHeaderName}
-              title={m.terminal_quakeOverlay_renameTerminal_tooltip()}
-            >
-              {terminalDisplayName(
-                $terminals.find((t: TerminalTab) => t.id === $activeTerminalId) ?? {},
-              )}
-            </span>
-          {/if}
+              aria-hidden="true"
+              class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingHeaderName
+                ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
+                : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+            ></span>
+          </div>
         </div>
 
         <!-- Clear and Collapse Buttons -->
@@ -473,7 +483,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class={cn(
-                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-subtle cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap border-x border-border -ml-px group/tab',
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-subtle cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none min-w-0 max-w-90 whitespace-nowrap border-x border-border -ml-px group/tab',
                 'hover:text-foreground hover:bg-muted/80',
                 isActive && 'text-foreground bg-background shadow-sm',
               )}
@@ -484,31 +494,44 @@
               tabindex="0"
               aria-selected={isActive}
             >
-              {#if editingTerminalId === term.id}
-                <input
-                  type="text"
-                  data-edit-terminal={term.id}
-                  bind:value={editingValue}
-                  onblur={finishEditing}
-                  onkeydown={handleEditKeydown}
-                  onclick={(e) => e.stopPropagation()}
-                  placeholder={m.terminal_quakeOverlay_name_placeholder()}
-                  class="w-60 p-0 border-none bg-transparent font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
-                />
-              {:else}
-                <span class="overflow-hidden text-ellipsis whitespace-nowrap"
-                  >{getTabDisplayName(term)}</span
-                >
-              {/if}
+              <div class="relative inline-flex min-w-0 items-center">
+                {#if editingTerminalId === term.id}
+                  <Input
+                    type="text"
+                    data-edit-terminal={term.id}
+                    bind:value={editingValue}
+                    onblur={finishEditing}
+                    onkeydown={handleEditKeydown}
+                    onclick={(e) => e.stopPropagation()}
+                    placeholder={m.terminal_quakeOverlay_name_placeholder()}
+                    class="inline-edit-input relative z-10 w-60 border-none bg-transparent p-0 font-inherit text-inherit outline-none focus:outline-none! focus:ring-0!"
+                  />
+                {:else}
+                  <span
+                    class="relative z-10 cursor-text overflow-hidden text-ellipsis whitespace-nowrap"
+                    >{getTabDisplayName(term)}</span
+                  >
+                {/if}
+                <span
+                  aria-hidden="true"
+                  class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingTerminalId ===
+                  term.id
+                    ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
+                    : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                ></span>
+              </div>
 
-              <button
+              <Button
+                variant="ghost"
+                size="icon-compact"
+                iconOnly
                 type="button"
-                class="ml-0.5 p-1 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                class="ml-0.5 text-muted-foreground hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
                 aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
               >
                 <Fa icon={faXmark} size="xs" />
-              </button>
+              </Button>
             </div>
           {/each}
 
@@ -517,14 +540,17 @@
             side="top"
             delayDuration={300}
           >
-            <button
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              iconOnly
               type="button"
-              class="flex items-center justify-center w-7 h-7 ml-1 border-none rounded-md bg-transparent text-muted-foreground cursor-pointer transition-all duration-150 hover:bg-muted/80 hover:text-foreground"
+              class="ml-1 text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-muted/80 hover:text-foreground"
               onclick={createNewTerminal}
               aria-label={m.terminal_quakeOverlay_newTerminal_ariaLabel()}
             >
-              <Fa icon={faPlus} class="w-3.5 h-3.5" />
-            </button>
+              <Fa icon={faPlus} />
+            </Button>
           </Tooltip>
         </div>
 
@@ -546,6 +572,10 @@
 {/if}
 
 <style>
+  input.inline-edit-input::selection {
+    background: hsl(var(--ring) / 0.3);
+  }
+
   .terminal-panel.is-resizing {
     user-select: none;
     pointer-events: none;

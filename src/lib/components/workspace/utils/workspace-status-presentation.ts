@@ -2,9 +2,10 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
   faCircleCheck,
   faCircleQuestion,
-  faClock,
   faCodeMerge,
   faCodePullRequest,
+  faHourglass,
+  faHourglassHalf,
   faTriangleExclamation,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons';
@@ -44,14 +45,14 @@ const VISUALS: Record<
   Pick<WorkspaceStatusPresentation, 'visual' | 'icon' | 'className'>
 > = {
   failed: { visual: 'icon', icon: faTriangleExclamation, className: 'text-foreground' },
-  blocked: { visual: 'icon', icon: faXmark, className: 'text-destructive' },
-  needs_attention: { visual: 'icon', icon: faCircleQuestion, className: 'text-warning' },
+  blocked: { visual: 'icon', icon: faXmark, className: 'text-danger' },
+  needs_attention: { visual: 'icon', icon: faCircleQuestion, className: 'text-warning-ink' },
   in_progress: {
     visual: 'dot',
     icon: null,
     className: 'workspace-status-color-active',
   },
-  waiting: { visual: 'icon', icon: faClock, className: 'text-muted-foreground' },
+  waiting: { visual: 'icon', icon: faHourglass, className: 'text-muted-foreground' },
   unread: {
     visual: 'dot',
     icon: null,
@@ -60,6 +61,7 @@ const VISUALS: Record<
   not_started: { visual: 'dot', icon: null, className: 'text-muted-foreground/35' },
   idle: { visual: 'dot', icon: null, className: 'text-muted-foreground/35' },
   complete: { visual: 'icon', icon: faCircleCheck, className: 'text-success' },
+  pr_queued: { visual: 'icon', icon: faHourglassHalf, className: 'text-info' },
   pr_ready: { visual: 'icon', icon: faCodePullRequest, className: 'text-success' },
   pr_open: { visual: 'icon', icon: faCodePullRequest, className: 'text-info' },
   pr_merged: { visual: 'icon', icon: faCodeMerge, className: 'text-purple-500' },
@@ -85,6 +87,8 @@ function labelFor(state: WorkspaceStatusPresentationState): string {
       return m.workspace_statusIcon_idle_label();
     case 'complete':
       return m.workspace_statusIcon_complete_label();
+    case 'pr_queued':
+      return m.workspace_statusIcon_prQueued_label();
     case 'pr_ready':
       return m.workspace_statusIcon_prReady_label();
     case 'pr_open':

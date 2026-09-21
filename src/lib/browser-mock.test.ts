@@ -190,6 +190,94 @@ describe('browser-mock DEV gate', () => {
 });
 
 /**
+ * Regression tests for intent-hq/monorepo#3606: a dev Electron window must
+ * never install the browser mock over the preload bridge, even when
+ * window.electronAPI is absent at the moment the mock module evaluates
+ * (bridge presence at import time is not a safe signal). The Electron check
+ * is synchronous (user agent + build target), so preload state cannot change
+ * the outcome. The web build inside the app's own <webview> (Loop A) shares
+ * the Electron UA but never gets a preload, so it must keep the mock.
+ */
+describe('browser-mock never shadows the Electron preload bridge (monorepo#3606)', () => {
+  const ELECTRON_UA =
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Cloudlands/2.3.0 Chrome/136.0.7103.115 Electron/36.4.0 Safari/537.36';
+  const originalElectronAPI = (window as any).electronAPI;
+
+  /** Own-property override of the prototype getter; deleted in afterEach to restore jsdom's UA. */
+  function setUserAgent(value: string) {
+    Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
+  }
+
+  beforeEach(() => {
+    delete (window as any).electronAPI;
+    vi.stubEnv('DEV', true);
+    vi.stubEnv('VITE_ENABLE_BROWSER_MOCK', '');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    delete (window.navigator as any).userAgent;
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    (window as any).electronAPI = originalElectronAPI;
+  });
+
+  it('DEV Electron renderer with no bridge yet: import does not install the mock, and the late preload bridge wins', async () => {
+    setUserAgent(ELECTRON_UA);
+    expect((window as any).electronAPI).toBeUndefined();
+
+    const { installBrowserMock, isBrowserMockEnabled } = await importBrowserMock();
+
+    // The DEV gate is open, yet the auto-install on import must not have fired.
+    expect(isBrowserMockEnabled()).toBe(true);
+    expect((window as any).electronAPI).toBeUndefined();
+    expect(installBrowserMock()).toBe(false);
+    expect((window as any).electronAPI).toBeUndefined();
+
+    // The real bridge, whenever it lands, is installed unopposed and stays
+    // the bridge.
+    const realBridge = { invoke: vi.fn(), versions: { electron: '36.4.0' } };
+    (window as any).electronAPI = realBridge;
+    expect(installBrowserMock()).toBe(false);
+    expect((window as any).electronAPI).toBe(realBridge);
+  });
+
+  it('explicit VITE_ENABLE_BROWSER_MOCK opt-in does not override the Electron guard', async () => {
+    setUserAgent(ELECTRON_UA);
+    vi.stubEnv('DEV', false);
+    vi.stubEnv('VITE_ENABLE_BROWSER_MOCK', 'true');
+
+    const { installBrowserMock } = await importBrowserMock();
+
+    expect(installBrowserMock()).toBe(false);
+    expect((window as any).electronAPI).toBeUndefined();
+  });
+
+  it('plain browser (no Electron UA) with no bridge still installs the mock in DEV', async () => {
+    setUserAgent(
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+    );
+
+    await importBrowserMock();
+
+    const api = (window as any).electronAPI;
+    expect(api).toBeDefined();
+    expect(api.versions.electron).toBe('0.0.0-browser');
+  });
+
+  it('web build loaded inside the app <webview> (Electron UA, no preload) still installs the mock', async () => {
+    setUserAgent(ELECTRON_UA);
+    vi.stubEnv('INTENT_BUILD_TARGET', 'web');
+
+    await importBrowserMock();
+
+    const api = (window as any).electronAPI;
+    expect(api).toBeDefined();
+    expect(api.versions.electron).toBe('0.0.0-browser');
+  });
+});
+
+/**
  * Regression tests for the `backend:*` transport envelope (STAB entry: mock
  * boots hit an unhandled BackendError).
  *
@@ -232,6 +320,12 @@ describe('browser-mock backend:* transport envelope', () => {
     const settings = await api.invoke('backend:request', { method: 'settings.list' });
     expect(settings.ok).toBe(true);
     expect(Array.isArray(settings.result?.settings)).toBe(true);
+    expect(settings.result.revision).toBe(0);
+    expect(settings.result.settings.map(({ path }: { path: string }) => path)).toEqual([
+      'workspaceInitializer.state',
+      'hardwareConsole.state',
+      'rtk.enabled',
+    ]);
 
     const repos = await api.invoke('backend:request', { method: 'repo.list' });
     expect(repos.ok).toBe(true);
@@ -246,6 +340,57 @@ describe('browser-mock backend:* transport envelope', () => {
     const sub = await api.invoke('backend:request', { method: 'events.subscribe' });
     expect(sub.ok).toBe(true);
     expect(typeof sub.result?.subscriptionId).toBe('string');
+  });
+
+  it('serves protocol-shaped settings bags and unavailable host capabilities for product hydration', async () => {
+    const initializer = await api.invoke('backend:request', {
+      method: 'settings.get',
+      params: { path: 'workspaceInitializer.state' },
+    });
+    expect(initializer).toEqual({
+      ok: true,
+      result: {
+        path: 'workspaceInitializer.state',
+        value: { hydrated: true },
+        definition: {
+          path: 'workspaceInitializer.state',
+          label: 'Workspace initializer state',
+          description: 'Browser-preview workspace initializer state.',
+          category: 'workspace',
+          type: 'object',
+          defaultValue: {},
+        },
+        revision: 0,
+      },
+    });
+
+    const hardware = await api.invoke('backend:request', {
+      method: 'settings.get',
+      params: { path: 'hardwareConsole.state' },
+    });
+    expect(hardware.ok).toBe(true);
+    expect(hardware.result.value).toEqual({});
+    expect(hardware.result.definition.type).toBe('object');
+
+    const availability = await api.invoke('backend:request', {
+      method: 'host.toolAvailability',
+      params: { tools: ['claude', 'codex'] },
+    });
+    expect(availability).toEqual({
+      ok: true,
+      result: {
+        tools: { claude: { available: false }, codex: { available: false } },
+      },
+    });
+    await expect(
+      api.invoke('backend:request', { method: 'host.checkAuggie', params: {} }),
+    ).resolves.toEqual({ ok: true, result: { available: false } });
+    await expect(
+      api.invoke('backend:request', { method: 'host.providerAuthStatus', params: {} }),
+    ).resolves.toEqual({ ok: true, result: { providers: [] } });
+    await expect(
+      api.invoke('backend:request', { method: 'host.providerDiscovery', params: {} }),
+    ).resolves.toEqual({ ok: true, result: { providers: [] } });
   });
 
   it('backend:request workspace.get resolves the workspace by id as { ok: true, result: { workspace } } (monorepo#2605)', async () => {
@@ -311,7 +456,7 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(scripts.ok).toBe(true);
     expect(Array.isArray(scripts.result?.scripts)).toBe(true);
 
-    // v4.0 envelope: { terminals, daemonBootId } — never the bare array.
+    // `terminal.list` envelope: { terminals, daemonBootId } — never the bare array.
     const terminals = await api.invoke('backend:request', {
       method: 'terminal.list',
       params: { workspaceId: 'mock-ws-1' },
@@ -363,6 +508,40 @@ describe('browser-mock backend:* transport envelope', () => {
     });
     expect(commits.ok).toBe(true);
     expect(commits.result).toEqual({ commits: [], boundarySha: null, nextToken: null });
+  });
+
+  it('serves the protocol-shaped terminal happy path through the live client', async () => {
+    const invokeSpy = vi.spyOn(api, 'invoke');
+    const { LiveAppClient } = await import('./client');
+    const terminals = new LiveAppClient().terminals;
+
+    const created = await terminals.create({ workspaceId: 'mock-ws-1', cols: 80, rows: 24 });
+    expect(created).toEqual({ success: true, id: 'browser-mock-terminal-1' });
+    const terminalId = created.id!;
+
+    await expect(terminals.write(terminalId, 'ls\n')).resolves.toEqual({ success: true });
+    await expect(terminals.resize(terminalId, 100, 30)).resolves.toEqual({ success: true });
+    await expect(terminals.getBuffer(terminalId)).resolves.toBe('');
+    await expect(terminals.output('mock-ws-1', terminalId)).resolves.toBe('');
+    await expect(terminals.kill(terminalId)).resolves.toEqual({ success: true });
+
+    expect(invokeSpy.mock.calls).toEqual([
+      [
+        'backend:request',
+        { method: 'terminal.create', params: { workspaceId: 'mock-ws-1', cols: 80, rows: 24 } },
+      ],
+      ['backend:request', { method: 'terminal.write', params: { terminalId, data: 'bHMK' } }],
+      [
+        'backend:request',
+        { method: 'terminal.resize', params: { terminalId, cols: 100, rows: 30 } },
+      ],
+      ['backend:request', { method: 'terminal.getBuffer', params: { terminalId } }],
+      [
+        'backend:request',
+        { method: 'terminal.readOutput', params: { workspaceId: 'mock-ws-1', terminalId } },
+      ],
+      ['backend:request', { method: 'terminal.kill', params: { terminalId } }],
+    ]);
   });
 
   it('resolves workspaces.get through the live client (workspace open path)', async () => {

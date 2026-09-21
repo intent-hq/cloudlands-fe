@@ -1,17 +1,6 @@
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
-import {
-  ContentType,
-  NoteVisibility,
-  type Note,
-} from "$shared/types";
-import {
-  getItem,
-  getItems,
-} from "@augmentcode/themis/utils/collections/collection-utils";
+import { describe, expect, it } from 'vitest';
+import { ContentType, NoteVisibility, type Note } from '$shared/types';
+import { getItem, getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import {
   applyNoteCreated,
   applyNoteDeleted,
@@ -25,16 +14,16 @@ import {
   loadWorkspaceNotesSucceeded,
   setWorkspaceNotesLoading,
   workspaceNotesReducer,
-} from "./workspace-notes-slice";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
+} from './workspace-notes-slice';
+import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
-const WS_1 = "ws-1";
-const WS_2 = "ws-2";
+const WS_1 = 'ws-1';
+const WS_2 = 'ws-2';
 
 function mockNote(id: string, workspaceId = WS_1, overrides: Partial<Note> = {}): Note {
   return {
-    id: id as Note["id"],
-    workspaceId: workspaceId as Note["workspaceId"],
+    id: id as Note['id'],
+    workspaceId: workspaceId as Note['workspaceId'],
     title: `Note ${id}`,
     content: `Content ${id}`,
     contentType: ContentType.Markdown,
@@ -42,33 +31,36 @@ function mockNote(id: string, workspaceId = WS_1, overrides: Partial<Note> = {})
     isPinned: false,
     isArchived: false,
     visibility: NoteVisibility.Private,
-    createdAt: "2026-03-24T00:00:00.000Z",
-    updatedAt: "2026-03-24T00:00:00.000Z",
+    createdAt: '2026-03-24T00:00:00.000Z',
+    updatedAt: '2026-03-24T00:00:00.000Z',
     ...overrides,
   };
 }
 
-describe("workspaceNotesReducer", () => {
-  it("returns the initial state", () => {
-    expect(workspaceNotesReducer(undefined, { type: "@@INIT" })).toEqual(initialState);
+describe('workspaceNotesReducer', () => {
+  it('returns the initial state', () => {
+    expect(workspaceNotesReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it("stores notes and per-workspace flags after a successful load", () => {
+  it('stores notes and per-workspace flags after a successful load', () => {
     const notesByWorkspace = {
-      [WS_1]: [mockNote("note-1")],
+      [WS_1]: [mockNote('note-1')],
       [WS_2]: [],
     };
 
     expect(
-      workspaceNotesReducer(initialState, loadWorkspaceNotesSucceeded([WS_1, WS_2], notesByWorkspace))
+      workspaceNotesReducer(
+        initialState,
+        loadWorkspaceNotesSucceeded([WS_1, WS_2], notesByWorkspace),
+      ),
     ).toEqual({
       byWorkspaceId: {
         [WS_1]: {
           ...emptyWorkspaceNotesState,
           notes: {
-            idField: "id",
-            ids: ["note-1"],
-            map: { "note-1": mockNote("note-1") },
+            idField: 'id',
+            ids: ['note-1'],
+            map: { 'note-1': mockNote('note-1') },
             refsCount: {},
           },
           initialized: true,
@@ -77,7 +69,7 @@ describe("workspaceNotesReducer", () => {
         [WS_2]: {
           ...emptyWorkspaceNotesState,
           notes: {
-            idField: "id",
+            idField: 'id',
             ids: [],
             map: {},
             refsCount: {},
@@ -89,122 +81,122 @@ describe("workspaceNotesReducer", () => {
     });
   });
 
-  it("keeps cached full content when a slim re-list row (same rev) arrives without content", () => {
-    const full = mockNote("note-1", WS_1, { content: "Full body", rev: 3 });
-    const slim = mockNote("note-1", WS_1, {
-      content: "",
-      contentPreview: "Full bo",
+  it('keeps cached full content when a slim re-list row (same rev) arrives without content', () => {
+    const full = mockNote('note-1', WS_1, { content: 'Full body', rev: 3 });
+    const slim = mockNote('note-1', WS_1, {
+      content: '',
+      contentPreview: 'Full bo',
       contentLength: 9,
       rev: 3,
     });
     const seeded = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] }),
     );
     const relisted = workspaceNotesReducer(
       seeded,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] }),
     );
 
-    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
-    expect(merged?.content).toBe("Full body");
-    expect(merged?.contentPreview).toBe("Full bo");
+    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, 'note-1' as Note['id']);
+    expect(merged?.content).toBe('Full body');
+    expect(merged?.contentPreview).toBe('Full bo');
   });
 
-  it("lets a slim row with a strictly newer rev replace outdated cached content", () => {
-    const full = mockNote("note-1", WS_1, { content: "Old body", rev: 3 });
-    const slim = mockNote("note-1", WS_1, {
-      content: "",
-      contentPreview: "New bo",
+  it('lets a slim row with a strictly newer rev replace outdated cached content', () => {
+    const full = mockNote('note-1', WS_1, { content: 'Old body', rev: 3 });
+    const slim = mockNote('note-1', WS_1, {
+      content: '',
+      contentPreview: 'New bo',
       contentLength: 8,
       rev: 4,
     });
     const seeded = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] }),
     );
     const relisted = workspaceNotesReducer(
       seeded,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] }),
     );
 
-    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
-    expect(merged?.content).toBe("");
+    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, 'note-1' as Note['id']);
+    expect(merged?.content).toBe('');
     expect(merged?.contentLength).toBe(8);
   });
 
-  it("lets a slim row win when either rev is missing (cached body cannot be proven current)", () => {
-    const full = mockNote("note-1", WS_1, { content: "Cached body", rev: 3 });
-    const revlessSlim = mockNote("note-1", WS_1, {
-      content: "",
-      contentPreview: "New bo",
+  it('lets a slim row win when either rev is missing (cached body cannot be proven current)', () => {
+    const full = mockNote('note-1', WS_1, { content: 'Cached body', rev: 3 });
+    const revlessSlim = mockNote('note-1', WS_1, {
+      content: '',
+      contentPreview: 'New bo',
       contentLength: 8,
       rev: undefined,
     });
     const seeded = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [full] }),
     );
     const relisted = workspaceNotesReducer(
       seeded,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [revlessSlim] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [revlessSlim] }),
     );
 
     // The stale marker stays intact so content surfaces refetch on demand,
     // instead of grafting a possibly-outdated body under new preview markers.
-    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
-    expect(merged?.content).toBe("");
+    const merged = getItem(relisted.byWorkspaceId[WS_1].notes, 'note-1' as Note['id']);
+    expect(merged?.content).toBe('');
     expect(merged?.contentLength).toBe(8);
   });
 
-  it("stores slim rows as-is when nothing is cached for the note", () => {
-    const slim = mockNote("note-new", WS_1, {
-      content: "",
-      contentPreview: "Preview",
+  it('stores slim rows as-is when nothing is cached for the note', () => {
+    const slim = mockNote('note-new', WS_1, {
+      content: '',
+      contentPreview: 'Preview',
       contentLength: 42,
     });
     const state = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [slim] }),
     );
 
-    const stored = getItem(state.byWorkspaceId[WS_1].notes, "note-new" as Note["id"]);
-    expect(stored?.content).toBe("");
+    const stored = getItem(state.byWorkspaceId[WS_1].notes, 'note-new' as Note['id']);
+    expect(stored?.content).toBe('');
     expect(stored?.contentLength).toBe(42);
   });
 
-  it("bumps notesVersion on loadWorkspaceNotesSucceeded so mount-time hydration ticks version-gated selectors", () => {
+  it('bumps notesVersion on loadWorkspaceNotesSucceeded so mount-time hydration ticks version-gated selectors', () => {
     const first = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1')] }),
     );
     const second = workspaceNotesReducer(
       first,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1"), mockNote("note-2")] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1'), mockNote('note-2')] }),
     );
 
     expect(first.byWorkspaceId[WS_1].notesVersion).toBe(1);
     expect(second.byWorkspaceId[WS_1].notesVersion).toBe(2);
   });
 
-  it("tracks loading and errors per workspace", () => {
+  it('tracks loading and errors per workspace', () => {
     let state = workspaceNotesReducer(initialState, setWorkspaceNotesLoading([WS_1], true));
-    state = workspaceNotesReducer(state, loadWorkspaceNotesFailed([WS_1], "boom"));
+    state = workspaceNotesReducer(state, loadWorkspaceNotesFailed([WS_1], 'boom'));
 
     expect(state.byWorkspaceId[WS_1]).toEqual({
       ...emptyWorkspaceNotesState,
       loading: false,
-      error: "boom",
+      error: 'boom',
     });
   });
 
-  it("clears only the requested workspace snapshots", () => {
+  it('clears only the requested workspace snapshots', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
       loadWorkspaceNotesSucceeded([WS_1, WS_2], {
-        [WS_1]: [mockNote("note-1")],
-        [WS_2]: [mockNote("note-2", WS_2)],
-      })
+        [WS_1]: [mockNote('note-1')],
+        [WS_2]: [mockNote('note-2', WS_2)],
+      }),
     );
 
     expect(workspaceNotesReducer(loadedState, clearWorkspaceNotesForWorkspaces([WS_1]))).toEqual({
@@ -214,120 +206,128 @@ describe("workspaceNotesReducer", () => {
     });
   });
 
-  it("updates task status for tracked task notes", () => {
-    const taskNote = mockNote("task-1", WS_1, {
-      metadata: { task: { status: "not_started" } },
+  it('updates task status for tracked task notes', () => {
+    const taskNote = mockNote('task-1', WS_1, {
+      metadata: { task: { status: 'not_started' } },
     });
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [taskNote] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [taskNote] }),
     );
 
     const nextState = workspaceNotesReducer(
       loadedState,
-      applyTaskStatusChanged(WS_1, "task-1", "complete")
+      applyTaskStatusChanged(WS_1, 'task-1', 'complete'),
     );
 
-    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "task-1" as Note["id"])?.metadata?.task?.status).toBe(
-      "complete"
-    );
+    expect(
+      getItem(nextState.byWorkspaceId[WS_1].notes, 'task-1' as Note['id'])?.metadata?.task?.status,
+    ).toBe('complete');
     expect(nextState.byWorkspaceId[WS_1].notesVersion).toBe(
-      loadedState.byWorkspaceId[WS_1].notesVersion + 1
+      loadedState.byWorkspaceId[WS_1].notesVersion + 1,
     );
   });
 
-  it("does not bump notesVersion on applyTaskStatusChanged for uninitialized or non-task notes", () => {
+  it('does not bump notesVersion on applyTaskStatusChanged for uninitialized or non-task notes', () => {
     const uninitializedState = workspaceNotesReducer(
       initialState,
-      applyTaskStatusChanged(WS_1, "task-1", "complete")
+      applyTaskStatusChanged(WS_1, 'task-1', 'complete'),
     );
     expect(uninitializedState).toBe(initialState);
 
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("plain-1")] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('plain-1')] }),
     );
     const noTaskState = workspaceNotesReducer(
       loadedState,
-      applyTaskStatusChanged(WS_1, "plain-1", "complete")
+      applyTaskStatusChanged(WS_1, 'plain-1', 'complete'),
     );
     expect(noTaskState).toBe(loadedState);
   });
 
-  it("appends created notes only for tracked workspaces", () => {
+  it('appends created notes only for tracked workspaces', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1')] }),
     );
 
-    const trackedState = workspaceNotesReducer(loadedState, applyNoteCreated(WS_1, mockNote("note-2")));
-    const untrackedState = workspaceNotesReducer(loadedState, applyNoteCreated(WS_2, mockNote("note-3", WS_2)));
+    const trackedState = workspaceNotesReducer(
+      loadedState,
+      applyNoteCreated(WS_1, mockNote('note-2')),
+    );
+    const untrackedState = workspaceNotesReducer(
+      loadedState,
+      applyNoteCreated(WS_2, mockNote('note-3', WS_2)),
+    );
 
     expect(getItems(trackedState.byWorkspaceId[WS_1].notes).map((note) => note.id)).toEqual([
-      "note-1",
-      "note-2",
+      'note-1',
+      'note-2',
     ]);
     expect(trackedState.byWorkspaceId[WS_1].notesVersion).toBe(
-      loadedState.byWorkspaceId[WS_1].notesVersion + 1
+      loadedState.byWorkspaceId[WS_1].notesVersion + 1,
     );
     expect(untrackedState).toBe(loadedState);
   });
 
-  it("removes deleted notes from the tracked workspace", () => {
+  it('removes deleted notes from the tracked workspace', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
       loadWorkspaceNotesSucceeded([WS_1], {
-        [WS_1]: [mockNote("note-1"), mockNote("note-2")],
-      })
+        [WS_1]: [mockNote('note-1'), mockNote('note-2')],
+      }),
     );
 
-    const nextState = workspaceNotesReducer(loadedState, applyNoteDeleted(WS_1, "note-1"));
+    const nextState = workspaceNotesReducer(loadedState, applyNoteDeleted(WS_1, 'note-1'));
 
-    expect(getItems(nextState.byWorkspaceId[WS_1].notes).map((note) => note.id)).toEqual(["note-2"]);
+    expect(getItems(nextState.byWorkspaceId[WS_1].notes).map((note) => note.id)).toEqual([
+      'note-2',
+    ]);
     expect(nextState.byWorkspaceId[WS_1].notesVersion).toBe(
-      loadedState.byWorkspaceId[WS_1].notesVersion + 1
+      loadedState.byWorkspaceId[WS_1].notesVersion + 1,
     );
   });
 
-  it("does not bump notesVersion on applyNoteDeleted when the note is absent", () => {
+  it('does not bump notesVersion on applyNoteDeleted when the note is absent', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1')] }),
     );
 
-    const nextState = workspaceNotesReducer(loadedState, applyNoteDeleted(WS_1, "note-missing"));
+    const nextState = workspaceNotesReducer(loadedState, applyNoteDeleted(WS_1, 'note-missing'));
 
     expect(nextState).toBe(loadedState);
   });
 
-  it("replaces updated notes when a full note payload is available", () => {
+  it('replaces updated notes when a full note payload is available', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1')] }),
     );
-    const updatedNote = mockNote("note-1", WS_1, { title: "Updated title" });
+    const updatedNote = mockNote('note-1', WS_1, { title: 'Updated title' });
 
     const nextState = workspaceNotesReducer(
       loadedState,
-      applyNoteUpdated(WS_1, "note-1", updatedNote)
+      applyNoteUpdated(WS_1, 'note-1', updatedNote),
     );
 
-    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.title).toBe(
-      "Updated title"
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, 'note-1' as Note['id'])?.title).toBe(
+      'Updated title',
     );
   });
 
-  it("caches updated notes before workspace notes finish initializing", () => {
-    const updatedSpec = mockNote("spec", WS_1, { content: "# Coordinator plan" });
+  it('caches updated notes before workspace notes finish initializing', () => {
+    const updatedSpec = mockNote('spec', WS_1, { content: '# Coordinator plan' });
 
     const nextState = workspaceNotesReducer(
       initialState,
-      applyNoteUpdated(WS_1, "spec", updatedSpec)
+      applyNoteUpdated(WS_1, 'spec', updatedSpec),
     );
 
     expect(nextState.byWorkspaceId[WS_1].initialized).toBe(false);
-    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "spec" as Note["id"])?.content).toBe(
-      "# Coordinator plan"
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, 'spec' as Note['id'])?.content).toBe(
+      '# Coordinator plan',
     );
   });
 
@@ -336,117 +336,119 @@ describe("workspaceNotesReducer", () => {
   // state was already applied (or after advanceNoteRev recorded a daemon ack).
   // A strictly-lower rev is definitively stale and must not revert content.
 
-  it("drops applyNoteUpdated carrying a strictly-lower rev than the stored note", () => {
+  it('drops applyNoteUpdated carrying a strictly-lower rev than the stored note', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1", WS_1, { rev: 5, content: "newer" })] })
+      loadWorkspaceNotesSucceeded([WS_1], {
+        [WS_1]: [mockNote('note-1', WS_1, { rev: 5, content: 'newer' })],
+      }),
     );
-    const staleNote = mockNote("note-1", WS_1, { rev: 4, content: "older" });
+    const staleNote = mockNote('note-1', WS_1, { rev: 4, content: 'older' });
 
     const nextState = workspaceNotesReducer(
       loadedState,
-      applyNoteUpdated(WS_1, "note-1", staleNote)
+      applyNoteUpdated(WS_1, 'note-1', staleNote),
     );
 
     expect(nextState).toBe(loadedState);
-    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.content).toBe(
-      "newer"
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, 'note-1' as Note['id'])?.content).toBe(
+      'newer',
     );
   });
 
-  it("applies applyNoteUpdated with an equal rev (same-rev refetch is not stale)", () => {
+  it('applies applyNoteUpdated with an equal rev (same-rev refetch is not stale)', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1", WS_1, { rev: 5 })] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1', WS_1, { rev: 5 })] }),
     );
-    const sameRevNote = mockNote("note-1", WS_1, { rev: 5, content: "refetched" });
+    const sameRevNote = mockNote('note-1', WS_1, { rev: 5, content: 'refetched' });
 
     const nextState = workspaceNotesReducer(
       loadedState,
-      applyNoteUpdated(WS_1, "note-1", sameRevNote)
+      applyNoteUpdated(WS_1, 'note-1', sameRevNote),
     );
 
-    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.content).toBe(
-      "refetched"
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, 'note-1' as Note['id'])?.content).toBe(
+      'refetched',
     );
   });
 
-  it("applies applyNoteUpdated with a higher rev", () => {
+  it('applies applyNoteUpdated with a higher rev', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1", WS_1, { rev: 5 })] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1', WS_1, { rev: 5 })] }),
     );
-    const newerNote = mockNote("note-1", WS_1, { rev: 6, content: "advanced" });
+    const newerNote = mockNote('note-1', WS_1, { rev: 6, content: 'advanced' });
 
     const nextState = workspaceNotesReducer(
       loadedState,
-      applyNoteUpdated(WS_1, "note-1", newerNote)
+      applyNoteUpdated(WS_1, 'note-1', newerNote),
     );
 
-    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.rev).toBe(6);
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, 'note-1' as Note['id'])?.rev).toBe(6);
   });
 
-  it("applies applyNoteUpdated when either rev is missing (older daemons, last-writer-wins)", () => {
+  it('applies applyNoteUpdated when either rev is missing (older daemons, last-writer-wins)', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1", WS_1, { rev: 5 })] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1', WS_1, { rev: 5 })] }),
     );
-    const revlessNote = mockNote("note-1", WS_1, { content: "no rev" });
+    const revlessNote = mockNote('note-1', WS_1, { content: 'no rev' });
 
     const nextState = workspaceNotesReducer(
       loadedState,
-      applyNoteUpdated(WS_1, "note-1", revlessNote)
+      applyNoteUpdated(WS_1, 'note-1', revlessNote),
     );
 
-    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"])?.content).toBe(
-      "no rev"
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, 'note-1' as Note['id'])?.content).toBe(
+      'no rev',
     );
   });
 
-  it("returns state unchanged when note workspace ID does not match action workspace ID", () => {
+  it('returns state unchanged when note workspace ID does not match action workspace ID', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1')] }),
     );
-    const noteFromDifferentWorkspace = mockNote("note-2", WS_2, { title: "Wrong workspace" });
+    const noteFromDifferentWorkspace = mockNote('note-2', WS_2, { title: 'Wrong workspace' });
 
     const nextState = workspaceNotesReducer(
       loadedState,
-      applyNoteUpdated(WS_1, "note-2", noteFromDifferentWorkspace)
+      applyNoteUpdated(WS_1, 'note-2', noteFromDifferentWorkspace),
     );
 
     expect(nextState).toBe(loadedState);
-    expect(getItem(nextState.byWorkspaceId[WS_1].notes, "note-2" as Note["id"])).toBeUndefined();
+    expect(getItem(nextState.byWorkspaceId[WS_1].notes, 'note-2' as Note['id'])).toBeUndefined();
   });
 
-  it("drops non-string local content/title/source updates before storing notes", () => {
+  it('drops non-string local content/title/source updates before storing notes', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
-      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote('note-1')] }),
     );
 
     const nextState = workspaceNotesReducer(
       loadedState,
-      applyLocalNoteUpdate(WS_1, "note-1", {
-        content: { slice: "not-a-function" },
+      applyLocalNoteUpdate(WS_1, 'note-1', {
+        content: { slice: 'not-a-function' },
         title: 42,
         source: { invalid: true },
-      } as unknown as Partial<Note>)
+      } as unknown as Partial<Note>),
     );
 
-    const note = getItem(nextState.byWorkspaceId[WS_1].notes, "note-1" as Note["id"]);
-    expect(note?.content).toBe("Content note-1");
-    expect(note?.title).toBe("Note note-1");
+    const note = getItem(nextState.byWorkspaceId[WS_1].notes, 'note-1' as Note['id']);
+    expect(note?.content).toBe('Content note-1');
+    expect(note?.title).toBe('Note note-1');
     expect((note as any).source).toBeUndefined();
   });
 
-  it("clears workspace state on workspaceUnmounted", () => {
+  it('clears workspace state on workspaceUnmounted', () => {
     const loadedState = workspaceNotesReducer(
       initialState,
       loadWorkspaceNotesSucceeded([WS_1, WS_2], {
-        [WS_1]: [mockNote("note-1")],
-        [WS_2]: [mockNote("note-2", WS_2)],
-      })
+        [WS_1]: [mockNote('note-1')],
+        [WS_2]: [mockNote('note-2', WS_2)],
+      }),
     );
 
     const nextState = workspaceNotesReducer(loadedState, workspaceUnmounted(WS_1));

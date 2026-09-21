@@ -6,6 +6,10 @@
  * `chatSubscribeSaga()` observes the concrete subscription lifecycle actions:
  *  - `initializeChatRequested` opens one standing subscription for that agent
  *    (deduped per agent id; skipped while a soft-hidden deletion is pending).
+ *  - `retainedChatTranscriptsSet` reference-counts the exact child-agent set
+ *    shown by mounted subscription lists. First coverage loads the AgentLite
+ *    shell through the existing read saga and opens the standing transcript;
+ *    final release closes it unless a normal agent panel still owns it.
  *  - `markAgentAsViewed` swaps subscriptions on agent switch: it closes every
  *    other agent's subscription and (re)opens the viewed agent's when its
  *    session exists — so switching chats never leaks registrations. The swap
@@ -126,34 +130,23 @@ import {
   chatSwitchBackRevealTimedOut,
   chatTranscriptSnapshotApplied,
   chatTranscriptSnapshotRerequested,
-  chatUtilityFooterReady,
   initializeChatRequested,
+  retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationSettled,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   selectAwaitingSwitchBackSnapshot,
-  selectAwaitingUtilityFooter,
   selectTranscriptHydration,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
-import {
-  setSubscriptionSnapshot,
-  subscriptionSnapshotFetchFailed,
-} from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
-import { selectSubscriptionSnapshotFetched } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors';
-import { backgroundHooksUpdated } from '$store/renderer/slices/background-hooks/background-hooks-slice';
-import { selectBackgroundHooksSnapshotDelivered } from '$store/renderer/slices/background-hooks/background-hooks-selectors';
-import { prMonitorsUpdated } from '$store/renderer/slices/pr-monitor/pr-monitor-slice';
-import { selectPrMonitorsSnapshotDelivered } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
-import { isUtilityFooterReady } from '$lib/components/chat/chat-panel-visibility';
 import {
   bulkUpsertSessions,
   clearAllSessions,
   removeSession,
   removeWorkspaceSessions,
   replaceMessages,
+  restoreStoredSessions,
   updateSession,
-  upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -161,9 +154,9 @@ import {
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { createLogger } from '$lib/utils/client-logger';
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   clearChatSubscriptionAcquiring,
   clearStandingChatSubscription,
@@ -172,6 +165,10 @@ import {
   setReplayableChatSnapshot,
 } from '$features/agent/utils/chat-subscription-registry';
 import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
+import {
+  reportStreamLifecycle,
+  streamTurnCorrelation,
+} from '$lib/utils/stream-lifecycle-telemetry';
 import {
   hasChatInterestLease,
   onLastChatInterestLeaseReleased,
@@ -255,17 +252,16 @@ interface SubscriptionCoordinator {
    */
   leaseReleases: Channel<string>;
   /**
-   * Agents spared from a sweep — the viewed-agent swap's, an applied
-   * clear's close-all, or a scoped clear's own-slot close — because a live
-   * consumer held a chat interest lease at sweep time (a mounted ChatPanel
-   * instance, an in-flight chat-read hydration; monorepo#3295, replacing
-   * the heuristic loading/acquiring/panel-tab spares of the
-   * #2864/#2917/#3073/#3185 family). Revisited when the agent's LAST lease
-   * releases (watchLeaseReleases): with nothing depending on it and no
-   * re-view, the deferred close runs then instead of leaking the
-   * subscription. The spare defers the close, it never cancels it.
+   * Agents whose close was deferred because a live consumer held a chat
+   * interest lease. The close can come from a viewed-agent sweep, an applied
+   * or scoped clear, or the final retained-transcript owner release. Revisited
+   * when the agent's LAST lease releases (watchLeaseReleases): with no other
+   * retention and no re-view, the deferred close runs then instead of leaking
+   * the subscription.
    */
   pendingSweepCloses: Set<string>;
+  retainedTranscriptOwners: Map<string, { wsId: string; agentIds: Set<string> }>;
+  retainedTranscriptAgents: Map<string, { wsId: string; ownerIds: Set<string> }>;
 }
 
 function createCompletion(): TransitionCompletion {
@@ -405,7 +401,15 @@ function* applyTranscript(
   discardStoreOnly = false,
 ): SagaGenerator<void> {
   const session = yield* selectAgentSession.effect(agentId);
-  if (!isCurrentSubscription(coordinator, agentId, entry)) return;
+  if (!isCurrentSubscription(coordinator, agentId, entry)) {
+    // A supersede landing across the select yield above: the drop is correct,
+    // but a dropped snapshot must not vanish unlogged (see reportSnapshotGuard).
+    reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
+    return;
+  }
+  // Read before the flag reconcile below consumes the marker: a snapshot that
+  // may predate a locally-started turn is not authoritative about liveness.
+  const racesLocalStart = coordinator.locallyStartedTurns.has(agentId);
   if (session) {
     const transcriptIds = new Set<string>();
     for (const message of transcript.messages) {
@@ -419,12 +423,34 @@ function* applyTranscript(
             !(typeof message.id === 'string' && transcriptIds.has(message.id)) &&
             !(typeof message.appMessageId === 'string' && transcriptIds.has(message.appMessageId)),
         );
+    // A snapshot is the authoritative newest page with the in-flight turn
+    // MERGED INTO IT (§7.1), so a retained row the page does not cover cannot
+    // still be in flight — settle its streaming flags, exactly as the
+    // close-time teardown does (flags only; content is never touched).
+    // Otherwise a partial row evicted from the served window (the slim page
+    // budget re-mints `truncated` after the live-turn merge) keeps rendering
+    // as a live turn beside the daemon's real one, and the firehose cannot
+    // clear it while this registration is the sole writer.
+    // Trade-off of the `racesLocalStart` exemption: a snapshot pending since
+    // before a local send may predate the turn the renderer just started, so
+    // it must not settle the optimistic in-flight row — but skipping the
+    // settle also spares a frozen PRIOR-turn row, and when that snapshot is
+    // itself `isStreaming: true` the flag reconcile below consumes the
+    // marker, so the frozen row persists until some LATER snapshot arrives
+    // (which a healthy standing registration may never emit). Protecting the
+    // optimistic row matters more than closing that residual window.
+    const retained =
+      transcript.fromSnapshot === true && !racesLocalStart
+        ? storeOnly.map((message) => (claimsLiveness(message) ? settleStreaming(message) : message))
+        : storeOnly;
     const merged =
-      storeOnly.length === 0
+      retained.length === 0
         ? transcript.messages
-        : deduplicateAgentMessages([...storeOnly, ...transcript.messages]);
+        : deduplicateAgentMessages([...retained, ...transcript.messages]);
     if (isCurrentSubscription(coordinator, agentId, entry)) {
       yield* put(replaceMessages(agentId, merged));
+    } else {
+      reportSnapshotGuard(transcript, 'snapshot-dropped-superseded-mid-apply', 'ignored');
     }
   }
 
@@ -453,6 +479,20 @@ function* applyTranscript(
   }
 }
 
+/** True while a row still presents itself as mid-stream. */
+function claimsLiveness(message: AgentMessage): boolean {
+  return message.isStreaming === true || message.streamingComplete === false;
+}
+
+/**
+ * The same row with its streaming flags settled; content untouched. The
+ * settle is the renderer's, not a §7.1 terminal delivery, so the row is
+ * `provisional` until a snapshot/delta replaces it by id.
+ */
+function settleStreaming(message: AgentMessage): AgentMessage {
+  return { ...message, isStreaming: false, streamingComplete: true, provisional: true };
+}
+
 /**
  * Clear stale message-level streaming flags left behind when a standing
  * subscription closes mid-turn. Message content is untouched; a re-view's
@@ -462,16 +502,43 @@ function* clearStaleStreamingMessageFlags(agentId: string): SagaGenerator<void> 
   const session = yield* selectAgentSession.effect(agentId);
   const messages = session?.messages;
   if (!messages?.length) return;
-  const hasStale = messages.some(
-    (message) => message.isStreaming === true || message.streamingComplete === false,
-  );
-  if (!hasStale) return;
+  if (!messages.some(claimsLiveness)) return;
   const normalized = messages.map((message) =>
-    message.isStreaming === true || message.streamingComplete === false
-      ? { ...message, isStreaming: false, streamingComplete: true }
-      : message,
+    claimsLiveness(message) ? settleStreaming(message) : message,
   );
   yield* put(replaceMessages(agentId, normalized));
+}
+
+/**
+ * One `stream-lifecycle` breadcrumb for a snapshot a guard below drops or
+ * holds. A snapshot is the only emit that can displace a stale in-flight turn
+ * (§7.1 serves the newest page with the live turn merged in), so each guard
+ * names itself — a distinct event per structurally distinct guard — instead
+ * of returning silently: the next stuck-transcript report is then
+ * diagnosable from the log. The transcript's own liveness is implied by
+ * `pushKind: 'snapshot'` plus the `turnCorrelation`/`blockCount` presence;
+ * `storeStreamState` is deliberately omitted — its other producers report
+ * the store's actual state, which this callback cannot cheaply read.
+ * Content-free: the correlation is the hashed message id, never its text.
+ */
+function reportSnapshotGuard(
+  transcript: ChatTranscript,
+  event: string,
+  callbackResult: 'ignored' | 'buffered',
+): void {
+  if (transcript.fromSnapshot !== true) return;
+  const inFlight = transcript.messages.find(
+    (message) => message.role === 'assistant' && message.isStreaming === true,
+  );
+  reportStreamLifecycle({
+    stage: 'subscription',
+    event,
+    ...(inFlight ? { turnCorrelation: streamTurnCorrelation(inFlight.id) } : {}),
+    correlationBasis: inFlight ? 'assistant-message' : 'unjoinable',
+    pushKind: 'snapshot',
+    ...(inFlight?.contentBlocks ? { blockCount: inFlight.contentBlocks.length } : {}),
+    callbackResult,
+  });
 }
 
 function* handleSubscriptionEvent(
@@ -479,8 +546,24 @@ function* handleSubscriptionEvent(
   event: ChatSubscriptionEvent,
 ): SagaGenerator<void> {
   const entry = coordinator.subscriptions.get(event.agentId);
-  if (!entry || entry.token !== event.token) return;
-  if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
+  if (!entry || entry.token !== event.token) {
+    if (event.kind === 'transcript') {
+      // A queued event whose registration rotated before the saga drained it
+      // (vs `-emit`: a wire callback outliving its registration).
+      reportSnapshotGuard(
+        event.transcript,
+        'snapshot-dropped-stale-registration-queued',
+        'ignored',
+      );
+    }
+    return;
+  }
+  if (!isCurrentSubscription(coordinator, event.agentId, entry)) {
+    if (event.kind === 'transcript') {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-superseded-registration', 'ignored');
+    }
+    return;
+  }
   try {
     if (event.kind === 'phase') {
       if (isCurrentSubscription(coordinator, event.agentId, entry)) {
@@ -488,8 +571,14 @@ function* handleSubscriptionEvent(
       }
       return;
     }
-    if (yield* call(isAgentDeletionPending, event.agentId)) return;
-    if (!isCurrentSubscription(coordinator, event.agentId, entry)) return;
+    if (yield* call(isAgentDeletionPending, event.agentId)) {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-deletion-pending', 'ignored');
+      return;
+    }
+    if (!isCurrentSubscription(coordinator, event.agentId, entry)) {
+      reportSnapshotGuard(event.transcript, 'snapshot-dropped-superseded-registration', 'ignored');
+      return;
+    }
     entry.hasEmitted = true;
     entry.lastTranscript = event.transcript;
     // Pre-session seq-0 race: `initializeChatRequested` starts this saga and
@@ -505,6 +594,7 @@ function* handleSubscriptionEvent(
       if (!preSession) {
         entry.pendingSnapshot = event.transcript;
         setReplayableChatSnapshot(event.agentId, true);
+        reportSnapshotGuard(event.transcript, 'snapshot-held-pre-session', 'buffered');
         return;
       }
       entry.pendingSnapshot = undefined;
@@ -576,11 +666,20 @@ function* handleSubscriptionEvent(
  */
 const resumeAnchors = new Map<string, string>();
 
-/** The newest fully-persisted message id, or undefined when none exists. */
+/**
+ * The newest fully-persisted message id, or undefined when none exists.
+ * Partial rows (still streaming) and `provisional` rows are skipped: a
+ * provisional row was settled by the renderer (covered-path terminal
+ * placeholder, firehose-settled row, close-time normalize) and the §7.1
+ * reconcile has not replaced it yet — anchoring on it would make the reopen
+ * skip that message's daemon-canonical contents. Anchoring one row earlier
+ * only refetches more, never less.
+ */
 function newestPersistedMessageId(messages: AgentMessage[]): string | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message.isStreaming === true || message.streamingComplete === false) continue;
+    if (message.provisional === true) continue;
     if (typeof message.id === 'string' && message.id.length > 0) return message.id;
   }
   return undefined;
@@ -632,7 +731,19 @@ function* openSubscription(
   const pending: ChatSubscriptionEvent[] = [];
   let ready = false;
   const emit = (event: ChatSubscriptionEvent) => {
-    if (slot.desiredToken !== transition.token) return;
+    if (slot.desiredToken !== transition.token) {
+      // A superseded registration still holding the wire callback: the drop
+      // is correct, but a dropped SNAPSHOT is the one emit that could have
+      // displaced a stale in-flight turn, so it leaves a breadcrumb.
+      if (event.kind === 'transcript') {
+        reportSnapshotGuard(
+          event.transcript,
+          'snapshot-dropped-stale-registration-emit',
+          'ignored',
+        );
+      }
+      return;
+    }
     if (ready) coordinator.events.put(event);
     else pending.push(event);
   };
@@ -923,6 +1034,92 @@ function closeMatchingSlots(
   return completions;
 }
 
+function isTranscriptRetained(coordinator: SubscriptionCoordinator, agentId: string): boolean {
+  return coordinator.retainedTranscriptAgents.has(agentId);
+}
+
+function removeRetainedAgent(coordinator: SubscriptionCoordinator, agentId: string): void {
+  const retained = coordinator.retainedTranscriptAgents.get(agentId);
+  if (!retained) return;
+  coordinator.retainedTranscriptAgents.delete(agentId);
+  for (const ownerId of retained.ownerIds) {
+    const owner = coordinator.retainedTranscriptOwners.get(ownerId);
+    owner?.agentIds.delete(agentId);
+    if (owner?.agentIds.size === 0) coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+}
+
+function removeRetainedWorkspace(coordinator: SubscriptionCoordinator, wsId: string): void {
+  for (const [ownerId, owner] of [...coordinator.retainedTranscriptOwners.entries()]) {
+    if (owner.wsId !== wsId) continue;
+    for (const agentId of owner.agentIds) {
+      const retained = coordinator.retainedTranscriptAgents.get(agentId);
+      retained?.ownerIds.delete(ownerId);
+      if (retained?.ownerIds.size === 0) coordinator.retainedTranscriptAgents.delete(agentId);
+    }
+    coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+}
+
+function* releaseRetainedTranscriptIfUnused(
+  coordinator: SubscriptionCoordinator,
+  agentId: string,
+): SagaGenerator<void> {
+  if (isTranscriptRetained(coordinator, agentId)) return;
+  if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
+  if (yield* call(hasChatInterestLease, agentId)) {
+    coordinator.pendingSweepCloses.add(agentId);
+    return;
+  }
+  enqueueClose(coordinator, agentId);
+}
+
+function* setRetainedChatTranscripts(
+  coordinator: SubscriptionCoordinator,
+  ownerId: string,
+  wsId: string,
+  agentIds: string[],
+): SagaGenerator<void> {
+  if (!ownerId || !wsId) return;
+  const previous = coordinator.retainedTranscriptOwners.get(ownerId);
+  const previousIds = previous?.agentIds ?? new Set<string>();
+  const nextIds = new Set(agentIds.filter(Boolean));
+  const released: string[] = [];
+  const added: string[] = [];
+
+  for (const agentId of previousIds) {
+    if (previous?.wsId === wsId && nextIds.has(agentId)) continue;
+    const retained = coordinator.retainedTranscriptAgents.get(agentId);
+    retained?.ownerIds.delete(ownerId);
+    if (retained?.ownerIds.size === 0) {
+      coordinator.retainedTranscriptAgents.delete(agentId);
+      released.push(agentId);
+    }
+  }
+
+  for (const agentId of nextIds) {
+    if (previous?.wsId === wsId && previousIds.has(agentId)) continue;
+    const retained = coordinator.retainedTranscriptAgents.get(agentId);
+    if (retained) {
+      retained.ownerIds.add(ownerId);
+    } else {
+      coordinator.retainedTranscriptAgents.set(agentId, { wsId, ownerIds: new Set([ownerId]) });
+      added.push(agentId);
+    }
+  }
+
+  if (nextIds.size > 0) {
+    coordinator.retainedTranscriptOwners.set(ownerId, { wsId, agentIds: nextIds });
+  } else {
+    coordinator.retainedTranscriptOwners.delete(ownerId);
+  }
+
+  for (const agentId of added) {
+    yield* put(initializeChatRequested(agentId, { wsId }));
+  }
+  for (const agentId of released) yield* releaseRetainedTranscriptIfUnused(coordinator, agentId);
+}
+
 /**
  * Bounded fallback for the switch-back transcript reveal gate. Margin for the
  * healed registration's fresh snapshot to arrive and apply (mirrors the
@@ -944,101 +1141,35 @@ export const SWITCH_BACK_REVEAL_WAIT_MS =
   SNAPSHOT_TIMEOUT_MS + INITIAL_RETRY_DELAY_MS + SWITCH_BACK_REVEAL_MARGIN_MS;
 
 /**
- * Composed utility-footer readiness for one (workspace, agent): the agent's
- * `agent.getSubscriptions` read plus the workspace's `hook.list` and
- * `prMonitor.list` seeds have all settled (success or failure both latch —
- * a failed read renders the same as empty). The chief virtual workspace is
- * EXEMPT (always ready): its footer seeds come only from the two
- * active-workspace watchers keyed on `currentTabId`, and the Chief panel is
- * a standing surface outside the tab strip — the seeds would never arrive
- * ahead of the card mount, so gating a chief thread on them could only ever
- * resolve via the bounded fallback (a full-length skeleton on every open).
- * Chief threads keep the pre-gate behavior: reveal on transcript readiness,
- * with the footer populating from the card's own mount-time fetches. The
- * same short-circuit is deliberately NOT applied to ordinary non-active-tab
- * workspaces (multi-panel layouts): their entries seed on tab activation and
- * are retained across the swap (pr-monitors on reconcile, hooks stale-marked
- * on lease release), so the gate still converges without the fallback in the
- * common case.
- */
-function* isFooterReadyForReveal(wsId: string, agentId: string): SagaGenerator<boolean> {
-  if (wsId === CHIEF_WORKSPACE_ID) return true;
-  const subscriptionSnapshotFetched = yield* selectSubscriptionSnapshotFetched.effect(
-    wsId,
-    agentId,
-  );
-  const backgroundHooksSnapshotDelivered =
-    yield* selectBackgroundHooksSnapshotDelivered.effect(wsId);
-  const prMonitorsSnapshotDelivered = yield* selectPrMonitorsSnapshotDelivered.effect(wsId);
-  return isUtilityFooterReady({
-    subscriptionSnapshotFetched,
-    backgroundHooksSnapshotDelivered,
-    prMonitorsSnapshotDelivered,
-  });
-}
-
-/**
- * Saga-owned watcher for the armed transcript reveal gates (the switch-back
- * snapshot gate and/or the utility-footer gate — both first open and
- * switch-back share it). One bounded timer per agent: it clears the footer
- * gate (`chatUtilityFooterReady`) the moment the footer data sources are all
- * settled, exits once every gate is clear (snapshot applied / subscription
- * closed already clear their gates in the reducer), and on timeout with any
- * gate STILL armed dispatches the fallback clear — the transcript reveals
- * without the footer (today's behavior) rather than an indefinite skeleton.
+ * Saga-owned watcher for the switch-back transcript snapshot gate. One bounded
+ * timer per agent exits when the fresh snapshot applies (or the subscription
+ * closes), and clears the gate on timeout so recovery cannot wedge reveal.
  * `startRevealGateWatcher` cancels a superseded watcher before forking a
  * fresh one, so exactly one runs per agent instead of duplicates racing; the
  * reducer additionally no-ops a stale timeout dispatch, so a superseded
  * watcher can never re-clear a re-armed gate.
  */
-function* revealGateWatcher(agentId: string, wsId: string): SagaGenerator<void> {
-  const mayChangeGates = (action: { type: string; payload?: unknown }): boolean => {
+function* revealGateWatcher(agentId: string): SagaGenerator<void> {
+  const mayChangeGate = (action: { type: string; payload?: unknown }): boolean => {
     switch (action.type) {
       case chatTranscriptSnapshotApplied.type:
       case chatLiveStreamPhaseChanged.type:
       case chatSwitchBackRevealTimedOut.type:
-      case chatUtilityFooterReady.type:
         return Array.isArray(action.payload) && action.payload[0] === agentId;
-      case setSubscriptionSnapshot.type: {
-        const payload = action.payload as { workspaceId?: string; agentId?: string } | undefined;
-        return payload?.workspaceId === wsId && payload?.agentId === agentId;
-      }
-      case subscriptionSnapshotFetchFailed.type:
-        return (
-          Array.isArray(action.payload) &&
-          action.payload[0] === wsId &&
-          action.payload[1] === agentId
-        );
-      case backgroundHooksUpdated.type:
-      case prMonitorsUpdated.type:
-        return Array.isArray(action.payload) && action.payload[0] === wsId;
       default:
         return false;
     }
   };
-  function* gatesSettled(): SagaGenerator<void> {
-    while (true) {
-      if (
-        (yield* selectAwaitingUtilityFooter.effect(agentId)) &&
-        (yield* isFooterReadyForReveal(wsId, agentId))
-      ) {
-        yield* put(chatUtilityFooterReady(agentId));
-      }
-      const snapshotArmed = yield* selectAwaitingSwitchBackSnapshot.effect(agentId);
-      const footerArmed = yield* selectAwaitingUtilityFooter.effect(agentId);
-      if (!snapshotArmed && !footerArmed) return;
-      yield* take(mayChangeGates);
+  function* snapshotSettled(): SagaGenerator<void> {
+    while (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) {
+      yield* take(mayChangeGate);
     }
   }
   const { timedOut } = yield* race({
-    settled: call(gatesSettled),
+    settled: call(snapshotSettled),
     timedOut: delay(SWITCH_BACK_REVEAL_WAIT_MS),
   });
-  if (
-    timedOut &&
-    ((yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) ||
-      (yield* selectAwaitingUtilityFooter.effect(agentId)))
-  ) {
+  if (timedOut && (yield* selectAwaitingSwitchBackSnapshot.effect(agentId))) {
     yield* put(chatSwitchBackRevealTimedOut(agentId));
   }
 }
@@ -1048,21 +1179,11 @@ function* startRevealGateWatcher(
   coordinator: SubscriptionCoordinator,
   agentId: string,
 ): SagaGenerator<void> {
-  const wsId =
-    coordinator.slots.get(agentId)?.wsId ??
-    coordinator.subscriptions.get(agentId)?.wsId ??
-    (yield* selectAgentSession.effect(agentId))?.workspaceId;
-  if (!wsId) {
-    // No workspace to watch footer readiness for — fail OPEN (clear both
-    // gates immediately) rather than leaving an armed gate with no watcher.
-    yield* put(chatSwitchBackRevealTimedOut(agentId));
-    return;
-  }
   const existing = coordinator.revealGateWatchers.get(agentId);
   if (existing?.isRunning()) yield* cancel(existing);
   const task = yield* fork(function* runWatcher(): SagaGenerator<void> {
     try {
-      yield* call(revealGateWatcher, agentId, wsId);
+      yield* call(revealGateWatcher, agentId);
     } finally {
       // Self-prune on completion (settled, timed out, or cancelled) so the
       // map holds only live watchers; a superseded watcher's cancellation
@@ -1120,6 +1241,7 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
     (otherId, slot) =>
       otherId !== agentId &&
       (slot.wsId === CHIEF_WORKSPACE_ID) === viewedIsChief &&
+      !isTranscriptRetained(coordinator, otherId) &&
       !spared.has(otherId),
   );
   const session = yield* selectAgentSession.effect(agentId);
@@ -1129,8 +1251,8 @@ function* handleViewed(coordinator: SubscriptionCoordinator, agentId: string): S
 }
 
 /**
- * Revisit an agent spared from a sweep because a lease was held, now that
- * its LAST lease has released (every panel instance destroyed, every
+ * Revisit an agent whose close was deferred because a lease was held, now
+ * that its LAST lease has released (every panel instance destroyed, every
  * hydration settled/failed/cancelled). A re-viewed agent stays: the view is
  * an authoritative keep the swap will retire on the next switch. A tab
  * persisted in a panel layout without a live lease holds nothing open — an
@@ -1146,6 +1268,7 @@ function* runDeferredSweepCloseIfUnleased(
   if (!coordinator.pendingSweepCloses.has(agentId)) return;
   if (yield* call(hasChatInterestLease, agentId)) return;
   coordinator.pendingSweepCloses.delete(agentId);
+  if (isTranscriptRetained(coordinator, agentId)) return;
   if ((yield* selectCurrentlyViewedAgentId.effect()) === agentId) return;
   enqueueClose(coordinator, agentId);
 }
@@ -1248,14 +1371,15 @@ function* emitOrCycleSnapshot(
 
 type ChatSubscribeAction =
   | ReturnType<typeof initializeChatRequested>
+  | ReturnType<typeof retainedChatTranscriptsSet>
   | ReturnType<typeof chatSendStarted>
   | ReturnType<typeof markAgentAsViewed>
   | ReturnType<typeof transcriptHydrationSettled>
   | ReturnType<typeof refreshChatTranscriptRequested>
   | ReturnType<typeof chatTranscriptSnapshotRerequested>
   | ReturnType<typeof clearCurrentlyViewedAgent>
-  | ReturnType<typeof upsertSession>
   | ReturnType<typeof bulkUpsertSessions>
+  | ReturnType<typeof restoreStoredSessions>
   | ReturnType<typeof removeSession>
   | ReturnType<typeof removeWorkspaceSessions>
   | ReturnType<typeof workspaceDeleted>
@@ -1270,33 +1394,26 @@ function* routeLifecycleAction(
       typeof initializeChatRequested
     >['payload'];
     if (agentId) yield* enqueueOpen(coordinator, agentId, wsId);
+  } else if (action.type === retainedChatTranscriptsSet.type) {
+    const [ownerId, wsId, agentIds] = action.payload as ReturnType<
+      typeof retainedChatTranscriptsSet
+    >['payload'];
+    yield* setRetainedChatTranscripts(coordinator, ownerId, wsId, agentIds);
   } else if (action.type === chatSendStarted.type) {
     const { agentId } = action.payload as ReturnType<typeof chatSendStarted>['payload'];
     if (coordinator.slots.has(agentId)) coordinator.locallyStartedTurns.add(agentId);
   } else if (action.type === markAgentAsViewed.type) {
     const [agentId] = action.payload as ReturnType<typeof markAgentAsViewed>['payload'];
-    // The reducer armed the switch-back reveal gates synchronously with this
+    // The reducer armed the switch-back snapshot gate synchronously with this
     // action (when the transcript hydrated before and no current-subscription
-    // snapshot exists); own their bounded fallback here so a snapshot or
-    // footer seed that never arrives cannot leave an indefinite skeleton.
-    if (
-      (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) ||
-      (yield* selectAwaitingUtilityFooter.effect(agentId))
-    ) {
+    // snapshot exists); own its bounded fallback here so a missing snapshot
+    // cannot leave an indefinite skeleton.
+    if (yield* selectAwaitingSwitchBackSnapshot.effect(agentId)) {
       yield* startRevealGateWatcher(coordinator, agentId);
     }
     yield* handleViewed(coordinator, agentId);
   } else if (action.type === transcriptHydrationSettled.type) {
     const [agentId] = action.payload as ReturnType<typeof transcriptHydrationSettled>['payload'];
-    // The FIRST settle armed the utility-footer reveal gate (same-paint
-    // reveal of transcript + footer on first open); own its bounded wait
-    // unless a switch-back watcher already runs for this agent.
-    if (
-      (yield* selectAwaitingUtilityFooter.effect(agentId)) &&
-      !coordinator.revealGateWatchers.get(agentId)?.isRunning()
-    ) {
-      yield* startRevealGateWatcher(coordinator, agentId);
-    }
     enqueueHydrationSettled(coordinator, agentId);
   } else if (action.type === refreshChatTranscriptRequested.type) {
     const [wsId, agentId] = action.payload as ReturnType<
@@ -1313,7 +1430,7 @@ function* routeLifecycleAction(
       typeof clearCurrentlyViewedAgent
     >['payload'];
     if (scopeAgentId && (yield* isChiefChatAgent(coordinator, scopeAgentId))) {
-      enqueueClose(coordinator, scopeAgentId);
+      if (!isTranscriptRetained(coordinator, scopeAgentId)) enqueueClose(coordinator, scopeAgentId);
     } else if ((yield* selectCurrentlyViewedAgentId.effect()) === null) {
       // Same-agent remount hole in the monorepo#1215 guard (monorepo#2864):
       // on a ChatPanel remount for the SAME agent, the new instance's
@@ -1343,7 +1460,10 @@ function* routeLifecycleAction(
       }
       closeMatchingSlots(
         coordinator,
-        (agentId, slot) => slot.wsId !== CHIEF_WORKSPACE_ID && !leased.has(agentId),
+        (agentId, slot) =>
+          slot.wsId !== CHIEF_WORKSPACE_ID &&
+          !isTranscriptRetained(coordinator, agentId) &&
+          !leased.has(agentId),
       );
     } else if (scopeAgentId) {
       // Another agent is still viewed, so this scoped clear was a reducer
@@ -1360,26 +1480,35 @@ function* routeLifecycleAction(
       // contract while a lease is still held (a cached-but-mounted
       // deactivated panel, a remounting instance, or an in-flight
       // hydration).
-      if (!(yield* call(hasChatInterestLease, scopeAgentId))) {
+      if (isTranscriptRetained(coordinator, scopeAgentId)) {
+        coordinator.pendingSweepCloses.delete(scopeAgentId);
+      } else if (!(yield* call(hasChatInterestLease, scopeAgentId))) {
         enqueueClose(coordinator, scopeAgentId);
       } else {
         coordinator.pendingSweepCloses.add(scopeAgentId);
       }
     }
-  } else if (action.type === upsertSession.type) {
-    const [session] = action.payload as [AgentSession];
-    replayPendingSnapshot(coordinator, session.id);
-  } else if (action.type === bulkUpsertSessions.type) {
+  } else if (
+    action.type === bulkUpsertSessions.type ||
+    action.type === restoreStoredSessions.type
+  ) {
+    // Reducers commit the entire session batch before saga observers receive
+    // this action. It is the sole shell-ready signal for pending snapshots;
+    // membership-only per-agent upserts must not replay against a missing shell.
+    // A stored-snapshot restore reinstates the shell the same way.
     const [sessions] = action.payload as [AgentSession[]];
     for (const session of sessions) replayPendingSnapshot(coordinator, session.id);
   } else if (action.type === removeSession.type) {
     const [agentId] = action.payload as ReturnType<typeof removeSession>['payload'];
+    removeRetainedAgent(coordinator, agentId);
     enqueueClose(coordinator, agentId, true);
   } else if (action.type === removeWorkspaceSessions.type) {
     const [wsId] = action.payload as ReturnType<typeof removeWorkspaceSessions>['payload'];
+    removeRetainedWorkspace(coordinator, wsId);
     closeMatchingSlots(coordinator, (_agentId, slot) => slot.wsId === wsId, true);
   } else if (action.type === workspaceDeleted.type) {
     const [wsId, agentIds] = action.payload as ReturnType<typeof workspaceDeleted>['payload'];
+    removeRetainedWorkspace(coordinator, wsId);
     for (const agentId of agentIds) resumeAnchors.delete(agentId);
     closeMatchingSlots(
       coordinator,
@@ -1387,6 +1516,8 @@ function* routeLifecycleAction(
       true,
     );
   } else {
+    coordinator.retainedTranscriptOwners.clear();
+    coordinator.retainedTranscriptAgents.clear();
     closeMatchingSlots(coordinator, () => true, true);
   }
 }
@@ -1432,6 +1563,8 @@ function disposeCoordinator(coordinator: SubscriptionCoordinator): string[] {
   // retires them; only the bookkeeping map needs clearing.
   coordinator.revealGateWatchers.clear();
   coordinator.pendingSweepCloses.clear();
+  coordinator.retainedTranscriptOwners.clear();
+  coordinator.retainedTranscriptAgents.clear();
   return agentIds;
 }
 
@@ -1445,6 +1578,8 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
     revealGateWatchers: new Map(),
     leaseReleases: createChannel(buffers.expanding<string>()),
     pendingSweepCloses: new Set(),
+    retainedTranscriptOwners: new Map(),
+    retainedTranscriptAgents: new Map(),
   };
   const unsubscribeLeaseReleases = onLastChatInterestLeaseReleased((agentId) =>
     coordinator.leaseReleases.put(agentId),
@@ -1452,14 +1587,15 @@ export function* chatSubscribeSaga(): SagaGenerator<void> {
   const lifecycleActions = yield* actionChannel(
     [
       initializeChatRequested,
+      retainedChatTranscriptsSet,
       chatSendStarted,
       markAgentAsViewed,
       transcriptHydrationSettled,
       refreshChatTranscriptRequested,
       chatTranscriptSnapshotRerequested,
       clearCurrentlyViewedAgent,
-      upsertSession,
       bulkUpsertSessions,
+      restoreStoredSessions,
       removeSession,
       removeWorkspaceSessions,
       workspaceDeleted,

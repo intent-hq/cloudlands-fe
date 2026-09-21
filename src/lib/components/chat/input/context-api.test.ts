@@ -64,7 +64,13 @@ describe('context-api', () => {
       mockBackendRequest.mockResolvedValueOnce({
         requestId: 'srch-2',
         matches: [
-          { symbol: 'MyClass', kind: 'class', file: 'src/my-class.ts', line: 12, preview: 'class MyClass {' },
+          {
+            symbol: 'MyClass',
+            kind: 'class',
+            file: 'src/my-class.ts',
+            line: 12,
+            preview: 'class MyClass {',
+          },
         ],
       });
 
@@ -94,8 +100,6 @@ describe('context-api', () => {
     });
   });
 
-
-
   describe('dead note readers', () => {
     it('no longer exports the legacy notes:* readers', () => {
       expect((contextApi as any).getNotes).toBeUndefined();
@@ -104,7 +108,7 @@ describe('context-api', () => {
     });
   });
 
-  describe('placeAttachment (file.placeAttachment, PROTOCOL §5.9, v6.5)', () => {
+  describe('placeAttachment (file.placeAttachment, PROTOCOL §5.9)', () => {
     it('sends the base64 data variant on the wire and returns the daemon result', async () => {
       mockBackendRequest.mockResolvedValueOnce({
         ok: true,

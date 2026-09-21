@@ -2,9 +2,12 @@ import { buffers, type EventChannel } from 'redux-saga';
 import {
   actionChannel,
   call,
+  cancel,
   delay,
   fork,
+  join,
   put,
+  race,
   take,
   takeEvery,
   takeLeading,
@@ -16,12 +19,18 @@ import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
+import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
 import {
+  agentMemoryBreakdownClosed,
+  agentMemoryBreakdownOpened,
+  agentMemoryUsageFailed,
+  agentMemoryUsageRequested,
+  agentMemoryUsageSucceeded,
+  closeWindowRequested,
   connectionStatusChanged,
   fetchSidecarRunLogFailed,
   fetchSidecarRunLogRequested,
   fetchSidecarRunLogSucceeded,
-  heartbeatFailed,
   pollSystemStatus,
   pollUnslothStatus,
   openLocalAndSpawnRequested,
@@ -36,9 +45,10 @@ import {
   unslothStatusFailure,
   unslothStatusSuccess,
 } from '../daemon-health-slice';
-import { selectDaemonHealth } from '../daemon-health-selectors';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
+  DaemonStatusCheckFailureKind,
   SidecarRunLog,
   SystemStatusWirePayload,
   UnslothStatusWirePayload,
@@ -46,6 +56,7 @@ import type {
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 const POLL_INTERVAL_MS = 10_000;
+const AGENT_MEMORY_REFRESH_INTERVAL_MS = 5_000;
 const INITIAL_DISCONNECTED_BACKOFF_MS = 1_000;
 const MAX_DISCONNECTED_BACKOFF_MS = 5_000;
 
@@ -57,6 +68,15 @@ interface BackendStatusPayload {
   reason?: string;
   /** Reconnect attempts since the last successful connect (#1750). */
   reconnectAttempts?: number;
+  /** The last connect attempt was refused by the host's guest connection cap (HTTP 503). */
+  connectionLimited?: boolean;
+  /** The wait main scheduled before its next attempt while `connectionLimited`. */
+  connectionLimitRetryAfterMs?: number | null;
+  /**
+   * Epoch ms of the first drop main observed while a user-requested daemon
+   * update is outstanding for this backend.
+   */
+  daemonUpdateDisconnectedAt?: number;
 }
 
 interface BackendStatusSnapshot extends BackendStatusPayload {
@@ -80,6 +100,12 @@ async function invokeOpenLocalAndSpawn() {
     { ok: boolean; spawned: boolean; reason?: string; error?: { message?: string } } | undefined;
 }
 
+async function invokeCloseWindow() {
+  if (!window.electronAPI) throw new Error('electronAPI is not available');
+  return (await window.electronAPI.invoke(IPC_CHANNELS.WINDOW.CLOSE)) as
+    { success: boolean } | undefined;
+}
+
 async function invokeSidecarRunLog(): Promise<SidecarRunLog> {
   if (!window.electronAPI) throw new Error('electronAPI is not available');
   return (await window.electronAPI.invoke(BACKEND.GET_SIDECAR_RUN_LOG)) as SidecarRunLog;
@@ -87,11 +113,11 @@ async function invokeSidecarRunLog(): Promise<SidecarRunLog> {
 
 async function notifyVersionMismatch(transport: BackendTransportInfo): Promise<boolean> {
   try {
-    const { toast } = await import('$lib/components/ui/toast');
+    const { notify } = await import('$lib/components/patterns/notify');
     const daemonVersion = transport.daemonVersion
       ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
       : '';
-    toast.warning(m.daemonStatus_versionMismatch_warning({ version: daemonVersion }), {
+    notify.warning(m.daemonStatus_versionMismatch_warning({ version: daemonVersion }), {
       duration: 15_000,
     });
     return true;
@@ -128,16 +154,16 @@ async function notifyOrphanedSidecar(
   notifyState: OrphanNotifyState,
 ): Promise<boolean> {
   try {
-    const { toast } = await import('$lib/components/ui/toast');
+    const { notify } = await import('$lib/components/patterns/notify');
     const daemonVersion = transport.daemonVersion
       ? ` (v${transport.daemonVersion.replace(/^v/, '')})`
       : '';
     const onRestartFailed = async () => {
       notifyState.notified = false;
-      const { toast: toastLib } = await import('$lib/components/ui/toast');
+      const { notify: toastLib } = await import('$lib/components/patterns/notify');
       toastLib.error(m.daemonStatus_orphanRestartFailed_error());
     };
-    toast.warning(m.daemonStatus_orphanedSidecar_warning({ version: daemonVersion }), {
+    notify.warning(m.daemonStatus_orphanedSidecar_warning({ version: daemonVersion }), {
       duration: 30_000,
       action: {
         label: m.daemonStatus_orphanedSidecar_restart_action(),
@@ -164,6 +190,9 @@ function statusAction(payload: BackendStatusPayload, snapshot: boolean) {
       ? (payload as BackendStatusSnapshot).sidecarStartupFailedReason
       : payload.reason,
     reconnectAttempts: payload.reconnectAttempts,
+    connectionLimited: payload.connectionLimited,
+    connectionLimitRetryAfterMs: payload.connectionLimitRetryAfterMs,
+    daemonUpdateDisconnectedAt: payload.daemonUpdateDisconnectedAt,
   });
 }
 
@@ -232,6 +261,11 @@ function* daemonStatusSaga() {
     } catch {
       // Push events and system.status polling still converge the state.
     }
+    // Polling starts once the boot snapshot has settled either way: a
+    // successful snapshot binds the first poll to that connection, and a
+    // failed one must not leave the app without any poll until main happens
+    // to push a status.
+    yield* fork(systemPollingLoop);
 
     yield* takeWithBackoff(
       channel,
@@ -257,17 +291,45 @@ function* daemonStatusSaga() {
   }
 }
 
+/**
+ * Reduce a failed poll to a safe category at the effect boundary. Only a
+ * transport-tagged `TIMEOUT` (browser WebSocket transport) is a known
+ * timeout; the Electron IPC path reports timeouts as a generic
+ * `TRANSPORT_ERROR`, so those stay generic rather than being guessed from
+ * the message. Raw errors never reach the store.
+ */
+function classifyStatusCheckFailure(error: unknown): DaemonStatusCheckFailureKind {
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  return code === 'TIMEOUT' ? 'timeout' : 'status-check-failed';
+}
+
 export function* pollSystemStatusSaga() {
+  // Snapshot the connection generation before the request: the reducer
+  // discards the terminal action when a connection lifecycle change happened
+  // meanwhile, so a slow poll can never report on a connection it did not
+  // observe.
+  const connectionGeneration = yield* selectDaemonConnectionGeneration.effect();
   try {
     const status = yield* call(backendRequest<SystemStatusWirePayload>, 'system.status');
-    yield* put(systemStatusSuccess(status, new Date().toISOString()));
-  } catch {
-    yield* put(systemStatusFailure());
-    const health = yield* selectDaemonHealth.effect();
-    if (health === 'healthy') yield* put(heartbeatFailed());
+    yield* put(systemStatusSuccess(status, new Date().toISOString(), connectionGeneration));
+  } catch (error) {
+    yield* put(
+      systemStatusFailure(
+        {
+          kind: classifyStatusCheckFailure(error),
+          failedAt: new Date().toISOString(),
+        },
+        connectionGeneration,
+      ),
+    );
   }
 }
 
+/**
+ * Fixed-cadence poll trigger, forked by `daemonStatusSaga` once the boot
+ * snapshot has settled so the first poll is bound to a known connection
+ * lifecycle rather than racing the snapshot (which would only discard it).
+ */
 function* systemPollingLoop() {
   yield* put(pollSystemStatus());
   while (true) {
@@ -276,8 +338,45 @@ function* systemPollingLoop() {
   }
 }
 
+/**
+ * Run one poll to completion unless the connection generation changes
+ * underneath it. Status notifications that leave the generation alone
+ * (same-connection metadata refreshes) keep waiting on the same request — the
+ * transport cannot abort it, so re-issuing would only fan out requests.
+ * Returns whether the new lifecycle should be polled right away.
+ */
+function* runPollBoundToConnection() {
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  const poll = yield* fork(pollSystemStatusSaga);
+  while (true) {
+    const { lifecycle } = yield* race({
+      settled: join(poll),
+      lifecycle: take(connectionStatusChanged),
+    });
+    if (!lifecycle) return false;
+    const current = yield* selectDaemonConnectionGeneration.effect();
+    if (current === generation) continue;
+    yield* cancel(poll);
+    return lifecycle.payload[0] === 'connected';
+  }
+}
+
+/**
+ * One poll in flight at a time (triggers during a poll are dropped, as with
+ * takeLeading). A connection lifecycle change cancels the in-flight poll —
+ * its result belongs to the previous connection — and, when the new
+ * lifecycle is connected, polls it right away instead of leaving its stats
+ * to the next interval.
+ */
 function* watchSystemStatusPolls() {
-  yield* takeLeading(pollSystemStatus, pollSystemStatusSaga);
+  while (true) {
+    yield* take(pollSystemStatus);
+    let poll = true;
+    while (poll) {
+      poll = yield* call(runPollBoundToConnection);
+      if (poll) yield* put(pollSystemStatus());
+    }
+  }
 }
 
 function* pollUnslothStatusSaga() {
@@ -345,6 +444,15 @@ function* openLocalAndSpawnSaga() {
   }
 }
 
+function* closeWindowSaga() {
+  try {
+    yield* call(invokeCloseWindow);
+  } catch {
+    // Main owns the close; a bridge failure leaves the window (and its
+    // overlay) as they are.
+  }
+}
+
 function* fetchSidecarRunLogSaga() {
   try {
     const log = yield* call(invokeSidecarRunLog);
@@ -354,18 +462,61 @@ function* fetchSidecarRunLogSaga() {
   }
 }
 
+function* fetchAgentMemoryUsageSaga() {
+  try {
+    const usage = yield* call(backendRequest<AgentMemoryUsageWirePayload>, 'agent.memoryUsage');
+    yield* put(agentMemoryUsageSucceeded(usage));
+  } catch {
+    yield* put(agentMemoryUsageFailed());
+  }
+}
+
+/**
+ * One open-dialog session: a single-flight request watcher plus the refresh
+ * cadence (request now, then on a fixed interval). The watcher is
+ * `takeLeading`, so a tick landing while a fetch is still in flight is dropped
+ * rather than fanned out. It is forked inside the session so that cancelling
+ * the session also cancels the watcher and any in-flight fetch — a request
+ * started in one session can never complete into the next.
+ */
+function* agentMemoryBreakdownSession() {
+  yield* takeLeading(agentMemoryUsageRequested, fetchAgentMemoryUsageSaga);
+  while (true) {
+    yield* put(agentMemoryUsageRequested());
+    yield* delay(AGENT_MEMORY_REFRESH_INTERVAL_MS);
+  }
+}
+
+/**
+ * A session runs only between an `agentMemoryBreakdownOpened` and the next
+ * `agentMemoryBreakdownClosed`; there is no background polling. Each open
+ * starts a fresh session with an immediate fetch.
+ */
+function* watchAgentMemoryBreakdown() {
+  while (true) {
+    yield* take(agentMemoryBreakdownOpened);
+    yield* race({
+      session: call(agentMemoryBreakdownSession),
+      closed: take(agentMemoryBreakdownClosed),
+    });
+  }
+}
+
 function* watchDaemonControls() {
   yield* takeEvery(spawnSidecarRequested, spawnSidecarSaga);
   yield* takeEvery(openLocalAndSpawnRequested, openLocalAndSpawnSaga);
+  yield* takeEvery(closeWindowRequested, closeWindowSaga);
   yield* takeEvery(fetchSidecarRunLogRequested, fetchSidecarRunLogSaga);
   yield* takeLeading(stopUnslothRequested, stopUnslothSaga);
 }
 
 export function* daemonHealthSaga() {
   if (typeof window === 'undefined' || !window.electronAPI) return;
-  yield* fork(daemonStatusSaga);
+  // The poll watcher is forked first so the boot poll issued by the status
+  // saga's polling loop always has a listener.
   yield* fork(watchSystemStatusPolls);
+  yield* fork(daemonStatusSaga);
   yield* fork(watchUnslothStatusPolls);
+  yield* fork(watchAgentMemoryBreakdown);
   yield* fork(watchDaemonControls);
-  yield* call(systemPollingLoop);
 }

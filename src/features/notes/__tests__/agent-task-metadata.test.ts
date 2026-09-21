@@ -3,11 +3,7 @@
  * Phase 1C - Increment 3: Store Task ID in Agent Session Metadata
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import type { AgentMetadata } from '$shared/types';
 import { NoteId } from '$shared/types/branded-ids';

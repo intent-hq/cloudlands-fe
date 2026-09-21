@@ -1,7 +1,7 @@
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
-import { withToastCountdown } from '$lib/components/ui/toast';
+import { withToastCountdown } from '$lib/components/patterns/notify';
 
 const logger = new Logger('ReversibleActions');
 
@@ -41,7 +41,7 @@ class ReversibleActionManager {
 
         const onUndo = config.onUndo;
         if (onUndo) {
-          const toastId = toast.warning(
+          const toastId = notify.warning(
             config.message,
             withToastCountdown(
               {
@@ -54,14 +54,14 @@ class ReversibleActionManager {
                       await onUndo();
                       this.completedActions.delete(actionId);
                       // Just dismiss the toast, don't show a new one
-                      toast.dismiss(toastId);
+                      notify.dismiss(toastId);
                     } catch (error) {
                       logger.error(
                         // i18n-ignore (developer log message)
                         'Failed to undo action:',
                         error instanceof Error ? error : new Error(String(error)),
                       );
-                      toast.error(m.ui_reversibleActions_undoFailed_error());
+                      notify.error(m.ui_reversibleActions_undoFailed_error());
                     }
                   },
                 },
@@ -70,7 +70,7 @@ class ReversibleActionManager {
             ),
           );
         } else {
-          toast.success(config.message);
+          notify.success(config.message);
         }
 
         // Clean up completed action after duration and call onExpire if not undone
@@ -96,7 +96,7 @@ class ReversibleActionManager {
           'Failed to execute action:',
           error instanceof Error ? error : new Error(String(error)),
         );
-        toast.error(
+        notify.error(
           m.ui_reversibleActions_failed_error({
             message:
               error instanceof Error ? error.message : m.ui_reversibleActions_unknownError_label(),
@@ -117,7 +117,7 @@ class ReversibleActionManager {
 
           try {
             await config.action();
-            toast.success(m.ui_reversibleActions_completed_message({ message: config.message }));
+            notify.success(m.ui_reversibleActions_completed_message({ message: config.message }));
             resolve(true);
           } catch (error) {
             logger.error(
@@ -125,7 +125,7 @@ class ReversibleActionManager {
               'Failed to execute action:',
               error instanceof Error ? error : new Error(String(error)),
             );
-            toast.error(
+            notify.error(
               m.ui_reversibleActions_failed_error({
                 message:
                   error instanceof Error
@@ -141,7 +141,7 @@ class ReversibleActionManager {
           clearTimeout(timeout);
           clearInterval(countdownInterval);
           this.pendingActions.delete(actionId);
-          toast.info(m.ui_reversibleActions_cancelled_message());
+          notify.info(m.ui_reversibleActions_cancelled_message());
           resolve(false);
         };
 
@@ -155,7 +155,7 @@ class ReversibleActionManager {
         );
 
         // Show initial toast with countdown
-        const toastId = toast.warning(
+        const toastId = notify.warning(
           m.ui_reversibleActions_countdown_message({
             message: config.message,
             seconds: remainingTime,
@@ -175,7 +175,7 @@ class ReversibleActionManager {
         countdownInterval = setInterval(() => {
           remainingTime--;
           if (remainingTime > 0) {
-            toast.warning(
+            notify.warning(
               m.ui_reversibleActions_countdown_message({
                 message: config.message,
                 seconds: remainingTime,
@@ -208,7 +208,7 @@ class ReversibleActionManager {
           this.pendingActions.delete(actionId);
           try {
             await config.action();
-            toast.success(m.ui_reversibleActions_completed_message({ message: config.message }));
+            notify.success(m.ui_reversibleActions_completed_message({ message: config.message }));
             resolve(true);
           } catch (error) {
             logger.error(
@@ -216,7 +216,7 @@ class ReversibleActionManager {
               'Failed to execute action:',
               error instanceof Error ? error : new Error(String(error)),
             );
-            toast.error(
+            notify.error(
               m.ui_reversibleActions_failed_error({
                 message:
                   error instanceof Error
@@ -231,7 +231,7 @@ class ReversibleActionManager {
         const cancel = () => {
           clearTimeout(timeout);
           this.pendingActions.delete(actionId);
-          toast.info(m.ui_reversibleActions_cancelled_message());
+          notify.info(m.ui_reversibleActions_cancelled_message());
           resolve(false);
         };
 
@@ -246,12 +246,12 @@ class ReversibleActionManager {
               error instanceof Error ? error : new Error(String(error)),
             );
           }
-          toast.info(m.ui_reversibleActions_expired_message());
+          notify.info(m.ui_reversibleActions_expired_message());
           resolve(false);
         };
 
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const toastId = toast.info(
+        const toastId = notify.info(
           `${config.message}`,
           withToastCountdown(
             {
@@ -278,7 +278,7 @@ class ReversibleActionManager {
     if (pending) {
       clearTimeout(pending.timeout);
       this.pendingActions.delete(actionId);
-      toast.info(m.ui_reversibleActions_cancelled_message());
+      notify.info(m.ui_reversibleActions_cancelled_message());
       return true;
     }
     return false;
@@ -294,7 +294,7 @@ class ReversibleActionManager {
     }
     this.pendingActions.clear();
     if (this.pendingActions.size > 0) {
-      toast.info(m.ui_reversibleActions_allCancelled_message());
+      notify.info(m.ui_reversibleActions_allCancelled_message());
     }
   }
 

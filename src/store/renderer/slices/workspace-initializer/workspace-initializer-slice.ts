@@ -1,10 +1,10 @@
-import { createAction } from "@augmentcode/themis/utils/store/create-action";
-import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
+import { createAction } from '@augmentcode/themis/utils/store/create-action';
+import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import {
   createCollection,
   removeItem,
   upsertItem,
-} from "@augmentcode/themis/utils/collections/collection-utils";
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type {
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerAgentSettings,
@@ -15,9 +15,9 @@ import type {
   WorkspaceInitializerRepoSelection,
   WorkspaceInitializerState,
   WorkspaceInitializerOnboardingFormState,
-} from "./workspace-initializer-types";
+} from './workspace-initializer-types';
 
-export const DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH = "~/Developer";
+export const DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH = '~/Developer';
 const MAX_RECENT_REPOS = 9;
 
 export const initialState: WorkspaceInitializerState = {
@@ -27,82 +27,83 @@ export const initialState: WorkspaceInitializerState = {
   lastSelectedRepo: null,
   branchByRepo: {},
   defaultParentPath: DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
-  recentRepos: createCollection<WorkspaceInitializerRecentRepo, "path">("path"),
-  remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, "id">("id"),
+  recentRepos: createCollection<WorkspaceInitializerRecentRepo, 'path'>('path'),
+  remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id'),
   lastSubmittedAgent: null,
   pendingGitHubPrefill: null,
 };
 
-export const hydrateWorkspaceInitializer = createAction<[
-  state: WorkspaceInitializerHydrationState,
-]>("workspaceInitializer/hydrateWorkspaceInitializer");
+export const hydrateWorkspaceInitializer = createAction<
+  [state: WorkspaceInitializerHydrationState]
+>('workspaceInitializer/hydrateWorkspaceInitializer');
 
-export const setCompactWorkspaceInitializerFormState = createAction<[
-  formState: CompactWorkspaceInitializerFormState | null,
-]>("workspaceInitializer/setCompactFormState");
+export const setCompactWorkspaceInitializerFormState = createAction<
+  [formState: CompactWorkspaceInitializerFormState | null]
+>('workspaceInitializer/setCompactFormState');
 
-export const setWorkspaceInitializerOnboardingFormState = createAction<[
-  formState: WorkspaceInitializerOnboardingFormState | null,
-]>("workspaceInitializer/setOnboardingFormState");
+export const setWorkspaceInitializerOnboardingFormState = createAction<
+  [formState: WorkspaceInitializerOnboardingFormState | null]
+>('workspaceInitializer/setOnboardingFormState');
 
-export const debounceWorkspaceInitializerOnboardingFormState = createAction<[
-  formState: WorkspaceInitializerOnboardingFormState,
-]>("workspaceInitializer/debounceOnboardingFormState");
+export const debounceWorkspaceInitializerOnboardingFormState = createAction<
+  [formState: WorkspaceInitializerOnboardingFormState]
+>('workspaceInitializer/debounceOnboardingFormState');
 
 export const cancelWorkspaceInitializerOnboardingFormStateDebounce = createAction(
-  "workspaceInitializer/cancelOnboardingFormStateDebounce",
+  'workspaceInitializer/cancelOnboardingFormStateDebounce',
 );
 
-export const setWorkspaceInitializerLastSelectedRepo = createAction<[
-  repo: WorkspaceInitializerRepoSelection | null,
-]>("workspaceInitializer/setLastSelectedRepo");
+export const setWorkspaceInitializerLastSelectedRepo = createAction<
+  [repo: WorkspaceInitializerRepoSelection | null]
+>('workspaceInitializer/setLastSelectedRepo');
 
-export const setWorkspaceInitializerBranchForRepo = createAction<[
-  repoPath: string,
-  branch: string,
-]>("workspaceInitializer/setBranchForRepo");
+export const setWorkspaceInitializerBranchForRepo = createAction<
+  [repoPath: string, branch: string]
+>('workspaceInitializer/setBranchForRepo');
 
-export const setWorkspaceInitializerDefaultParentPath = createAction<[
-  path: string,
-]>("workspaceInitializer/setDefaultParentPath");
+export const setWorkspaceInitializerDefaultParentPath = createAction<[path: string]>(
+  'workspaceInitializer/setDefaultParentPath',
+);
 
-export const setWorkspaceInitializerRecentRepos = createAction<[
-  repos: WorkspaceInitializerRecentRepo[],
-]>("workspaceInitializer/setRecentRepos");
+export const setWorkspaceInitializerRecentRepos = createAction<
+  [repos: WorkspaceInitializerRecentRepo[]]
+>('workspaceInitializer/setRecentRepos');
 
-export const setWorkspaceInitializerRemoteSetups = createAction<[
-  setups: WorkspaceInitializerRemoteSetup[],
-]>("workspaceInitializer/setRemoteSetups");
+export const setWorkspaceInitializerRemoteSetups = createAction<
+  [setups: WorkspaceInitializerRemoteSetup[]]
+>('workspaceInitializer/setRemoteSetups');
 
-export const upsertWorkspaceInitializerRemoteSetup = createAction<[
-  setup: WorkspaceInitializerRemoteSetup,
-]>("workspaceInitializer/upsertRemoteSetup");
+export const upsertWorkspaceInitializerRemoteSetup = createAction<
+  [setup: WorkspaceInitializerRemoteSetup]
+>('workspaceInitializer/upsertRemoteSetup');
 
-export const removeWorkspaceInitializerRemoteSetup = createAction<[
-  id: string,
-]>("workspaceInitializer/removeRemoteSetup");
+export const removeWorkspaceInitializerRemoteSetup = createAction<[id: string]>(
+  'workspaceInitializer/removeRemoteSetup',
+);
 
-export const setWorkspaceInitializerLastSubmittedAgent = createAction<[
-  settings: WorkspaceInitializerAgentSettings | null,
-]>("workspaceInitializer/setLastSubmittedAgent");
+export const setWorkspaceInitializerLastSubmittedAgent = createAction<
+  [settings: WorkspaceInitializerAgentSettings | null]
+>('workspaceInitializer/setLastSubmittedAgent');
 
-export const setWorkspaceInitializerPendingGitHubPrefill = createAction<[
-  prefill: WorkspaceInitializerPendingGitHubPrefill,
-]>("workspaceInitializer/setPendingGitHubPrefill");
+export const setWorkspaceInitializerPendingGitHubPrefill = createAction<
+  [prefill: WorkspaceInitializerPendingGitHubPrefill]
+>('workspaceInitializer/setPendingGitHubPrefill');
 
 export const clearWorkspaceInitializerPendingGitHubPrefill = createAction(
-  "workspaceInitializer/clearPendingGitHubPrefill",
+  'workspaceInitializer/clearPendingGitHubPrefill',
 );
 
 function recentReposCollection(repos: WorkspaceInitializerRecentRepo[]) {
-  return createCollection<WorkspaceInitializerRecentRepo, "path">(
-    "path",
+  return createCollection<WorkspaceInitializerRecentRepo, 'path'>(
+    'path',
     repos.filter((repo) => repo.path).slice(0, MAX_RECENT_REPOS),
   );
 }
 
 export const workspaceInitializerReducer = createReducer<WorkspaceInitializerState>(initialState);
-workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload: [hydration] }) => ({
+workspaceInitializerReducer.with(
+  hydrateWorkspaceInitializer,
+  (state, { payload: [hydration] }) => ({
     ...state,
     hydrated: true,
     compactFormState: hydration.compactFormState ?? state.compactFormState,
@@ -114,23 +115,35 @@ workspaceInitializerReducer.with(hydrateWorkspaceInitializer, (state, { payload:
       ? recentReposCollection(hydration.recentRepos)
       : state.recentRepos,
     remoteSetups: hydration.remoteSetups
-      ? createCollection<WorkspaceInitializerRemoteSetup, "id">("id", hydration.remoteSetups)
+      ? createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id', hydration.remoteSetups)
       : state.remoteSetups,
     lastSubmittedAgent: hydration.lastSubmittedAgent ?? state.lastSubmittedAgent,
-  }));
-workspaceInitializerReducer.with(setCompactWorkspaceInitializerFormState, (state, { payload: [compactFormState] }) => ({
+  }),
+);
+workspaceInitializerReducer.with(
+  setCompactWorkspaceInitializerFormState,
+  (state, { payload: [compactFormState] }) => ({
     ...state,
     compactFormState,
-  }));
-workspaceInitializerReducer.with(setWorkspaceInitializerOnboardingFormState, (state, { payload: [onboardingFormState] }) => ({
+  }),
+);
+workspaceInitializerReducer.with(
+  setWorkspaceInitializerOnboardingFormState,
+  (state, { payload: [onboardingFormState] }) => ({
     ...state,
     onboardingFormState,
-  }));
-workspaceInitializerReducer.with(setWorkspaceInitializerLastSelectedRepo, (state, { payload: [lastSelectedRepo] }) => ({
+  }),
+);
+workspaceInitializerReducer.with(
+  setWorkspaceInitializerLastSelectedRepo,
+  (state, { payload: [lastSelectedRepo] }) => ({
     ...state,
     lastSelectedRepo,
-  }));
-workspaceInitializerReducer.with(setWorkspaceInitializerBranchForRepo, (state, { payload: [repoPath, branch] }) => {
+  }),
+);
+workspaceInitializerReducer.with(
+  setWorkspaceInitializerBranchForRepo,
+  (state, { payload: [repoPath, branch] }) => {
     if (!repoPath) return state;
     return {
       ...state,
@@ -139,36 +152,58 @@ workspaceInitializerReducer.with(setWorkspaceInitializerBranchForRepo, (state, {
         [repoPath]: branch,
       },
     };
-  });
-workspaceInitializerReducer.with(setWorkspaceInitializerDefaultParentPath, (state, { payload: [defaultParentPath] }) => ({
+  },
+);
+workspaceInitializerReducer.with(
+  setWorkspaceInitializerDefaultParentPath,
+  (state, { payload: [defaultParentPath] }) => ({
     ...state,
     defaultParentPath: defaultParentPath || DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH,
-  }));
-workspaceInitializerReducer.with(setWorkspaceInitializerRecentRepos, (state, { payload: [recentRepos] }) => ({
+  }),
+);
+workspaceInitializerReducer.with(
+  setWorkspaceInitializerRecentRepos,
+  (state, { payload: [recentRepos] }) => ({
     ...state,
     recentRepos: recentReposCollection(recentRepos),
-  }));
-workspaceInitializerReducer.with(setWorkspaceInitializerRemoteSetups, (state, { payload: [remoteSetups] }) => ({
+  }),
+);
+workspaceInitializerReducer.with(
+  setWorkspaceInitializerRemoteSetups,
+  (state, { payload: [remoteSetups] }) => ({
     ...state,
-    remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, "id">("id", remoteSetups),
-  }));
-workspaceInitializerReducer.with(upsertWorkspaceInitializerRemoteSetup, (state, { payload: [setup] }) => ({
+    remoteSetups: createCollection<WorkspaceInitializerRemoteSetup, 'id'>('id', remoteSetups),
+  }),
+);
+workspaceInitializerReducer.with(
+  upsertWorkspaceInitializerRemoteSetup,
+  (state, { payload: [setup] }) => ({
     ...state,
     remoteSetups: upsertItem(state.remoteSetups, setup),
-  }));
-workspaceInitializerReducer.with(removeWorkspaceInitializerRemoteSetup, (state, { payload: [id] }) => ({
+  }),
+);
+workspaceInitializerReducer.with(
+  removeWorkspaceInitializerRemoteSetup,
+  (state, { payload: [id] }) => ({
     ...state,
     remoteSetups: removeItem(state.remoteSetups, id),
-  }));
-workspaceInitializerReducer.with(setWorkspaceInitializerLastSubmittedAgent, (state, { payload: [lastSubmittedAgent] }) => ({
+  }),
+);
+workspaceInitializerReducer.with(
+  setWorkspaceInitializerLastSubmittedAgent,
+  (state, { payload: [lastSubmittedAgent] }) => ({
     ...state,
     lastSubmittedAgent,
-  }));
-workspaceInitializerReducer.with(setWorkspaceInitializerPendingGitHubPrefill, (state, { payload: [pendingGitHubPrefill] }) => ({
+  }),
+);
+workspaceInitializerReducer.with(
+  setWorkspaceInitializerPendingGitHubPrefill,
+  (state, { payload: [pendingGitHubPrefill] }) => ({
     ...state,
     pendingGitHubPrefill,
-  }));
+  }),
+);
 workspaceInitializerReducer.with(clearWorkspaceInitializerPendingGitHubPrefill, (state) => ({
-    ...state,
-    pendingGitHubPrefill: null,
-  }));
+  ...state,
+  pendingGitHubPrefill: null,
+}));

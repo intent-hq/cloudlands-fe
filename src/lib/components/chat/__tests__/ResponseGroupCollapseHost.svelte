@@ -52,18 +52,17 @@
     <div class="h-20" aria-hidden="true"></div>
     {#each positions as position}
       <div data-testid="response-group-{position}">
-        {#snippet currentChild()}
-          <button type="button" data-testid="response-group-current-{position}">{chunk}</button>
-        {/snippet}
         <ResponseGroup
           name={`${position} group`}
           isStreaming={activePosition === undefined ? streaming : activePosition === position}
           isTerminal={terminalPosition === position}
           isLastConversationMessage={lastConversationMessage}
-          {blocks}
-          currentChild={livePreview && activePosition === undefined ? currentChild : undefined}
+          blocks={livePreview && activePosition === undefined ? blocks : []}
         >
-          <div class="py-2" data-testid="response-group-body-{position}">
+          <div data-response-group-child data-testid="response-group-child-{position}">
+            earlier chunk
+          </div>
+          <div class="py-2" data-response-group-child data-testid="response-group-body-{position}">
             <button type="button" data-testid="response-group-focus-{position}">
               Focusable {position} detail for {chunk}
             </button>

@@ -16,6 +16,7 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     /** Whether the target model belongs to a different provider. */
     isProviderChange?: boolean;
     fromModelLabel?: string;
@@ -28,6 +29,7 @@
 
   let {
     open = false,
+    static: staticPosition = false,
     isProviderChange = false,
     fromModelLabel = '',
     toModelLabel = '',
@@ -38,7 +40,6 @@
   }: Props = $props();
 
   let confirmButtonRef: HTMLButtonElement | null = $state(null);
-  let confirmHasFocus = $state(false);
 
   function handleOpenAutoFocus(event: Event) {
     event.preventDefault();
@@ -46,7 +47,7 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={(nextOpen) => !nextOpen && onCancel?.()}>
+<Dialog.Root {open} {staticPosition} onOpenChange={(nextOpen) => !nextOpen && onCancel?.()}>
   <Dialog.Content
     class="max-w-md gap-0 overflow-hidden p-0"
     closeLabel={m.chat_modelSwitchDialog_close_ariaLabel()}
@@ -83,14 +84,7 @@
       <Button variant="ghost-light" onclick={() => onCancel?.()}>
         {m.chat_modelSwitchDialog_cancel_label()}
       </Button>
-      <Button
-        variant="default"
-        bind:ref={confirmButtonRef}
-        class={confirmHasFocus ? 'ring-ring/50 ring-[3px]' : undefined}
-        onfocus={() => (confirmHasFocus = true)}
-        onblur={() => (confirmHasFocus = false)}
-        onclick={() => onConfirm?.()}
-      >
+      <Button variant="default" bind:ref={confirmButtonRef} onclick={() => onConfirm?.()}>
         {isProviderChange
           ? m.chat_modelSwitchDialog_switchProvider_label()
           : m.chat_modelSwitchDialog_switchModel_label()}

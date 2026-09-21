@@ -5,15 +5,8 @@
  * elements like headings, lists, code blocks, etc.
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import {
-  processMarkdownToHTML,
-  processHTMLToMarkdown,
-} from '$lib/utils/markdown-processor';
+import { describe, it, expect } from 'vitest';
+import { processMarkdownToHTML, processHTMLToMarkdown } from '$lib/utils/markdown-processor';
 
 describe('Comment Anchors and Markdown Syntax', () => {
   describe('Heading Syntax', () => {

@@ -21,6 +21,9 @@
     attachMouseHistoryNavigation,
     handleHistoryNavigateIpc,
   } from '$lib/utils/history-navigation';
+  import { isElectronPlatform } from '$lib/utils/platform-capabilities';
+  import { pauseWindowAnimations } from '$lib/actions/pause-window-animations';
+  import { isHudWindowRenderer } from '$lib/utils/navigation.client';
 
   let { children }: { children?: Snippet } = $props();
 
@@ -37,6 +40,40 @@
   const resolvedLocale$ = selectResolvedLocale();
 
   onMount(() => {
+    const setWindowBlurred = (blurred: boolean) => {
+      document.documentElement.toggleAttribute('data-window-blurred', blurred);
+    };
+    const handleWindowBlur = () => setWindowBlurred(true);
+    const handleWindowFocus = () => setWindowBlurred(false);
+
+    // `data-window-blurred` pauses ambient motion (looping app.css keyframes via
+    // pauseWindowAnimations below, the shared frame clock, aurora, mark motion);
+    // one-shot entrances and flashes keep running. The HUD pop-out is a monitoring
+    // surface watched on a second display while another window holds focus, so
+    // it never sets the attribute: its takeover choreography must play unfocused,
+    // and any attribute already present on <html> is cleared on mount.
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous route check, no data fetch
+    const pausesMotionOnBlur = !isHudWindowRenderer();
+    const electronApi = window.electronAPI;
+    const usesNativeWindowFocus = isElectronPlatform();
+    let windowFocusListenerId: string | undefined;
+    if (!pausesMotionOnBlur) {
+      setWindowBlurred(false);
+    } else {
+      setWindowBlurred(!document.hasFocus());
+      if (usesNativeWindowFocus) {
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- root native window lifecycle bridge
+        windowFocusListenerId = electronApi?.on?.('window:focus', (focused: boolean) => {
+          setWindowBlurred(!focused);
+        });
+      } else {
+        window.addEventListener('blur', handleWindowBlur);
+        window.addEventListener('focus', handleWindowFocus);
+      }
+    }
+
+    const windowAnimations = pauseWindowAnimations(document.documentElement);
+
     // eslint-disable-next-line intent/no-component-async-data-fetch -- root DOM splash lifecycle wiring does not own domain state.
     const stopSplashGate = wireSplashGate(document.getElementById('splash'));
     document.getElementById('app-drag-region')?.remove();
@@ -50,6 +87,15 @@
     );
 
     return () => {
+      windowAnimations.destroy();
+      if (windowFocusListenerId) {
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- paired native window listener cleanup
+        electronApi.offById('window:focus', windowFocusListenerId);
+      } else if (pausesMotionOnBlur && !usesNativeWindowFocus) {
+        window.removeEventListener('blur', handleWindowBlur);
+        window.removeEventListener('focus', handleWindowFocus);
+      }
+      document.documentElement.removeAttribute('data-window-blurred');
       stopSplashGate();
       cleanupMouseHistoryNavigation();
       if (historyNavigateListenerId) {

@@ -1,6 +1,7 @@
 /**
  * Release-notes service tests — the startup version-diff decision matrix, the
  * pref-advances-only-after-showing semantics, and fail-soft fetching.
+ * protocol-version-ok-file: release tags are app product versions, not protocol versions.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,7 +26,7 @@ vi.mock('electron', () => ({
       ipcHandlers.set(channel, handler);
     },
   },
-  BrowserWindow: class {},
+  BrowserWindow: { getAllWindows: () => [] },
 }));
 
 const PREF_KEY = 'lastSeenReleaseNotesVersion';
@@ -383,7 +384,7 @@ describe('release-notes service', () => {
       // Regression (intent-hq/monorepo#3054): the startup check used to be
       // gated on the main window existing, which usually lost the startup
       // race — no notes were fetched and the pref never advanced. With no
-      // window the notes must park for the renderer's get-pending claim and
+      // window the notes must park for the renderers' get-pending path and
       // the pref must still advance.
       ipcHandlers.clear();
       await writePref('2.0.0');
@@ -392,7 +393,7 @@ describe('release-notes service', () => {
         await import('../release-notes.ipc');
       setupReleaseNotesIPC();
 
-      await initializeReleaseNotesOnStartup(() => null);
+      await initializeReleaseNotesOnStartup();
 
       const getPending = ipcHandlers.get('release-notes:get-pending');
       expect(getPending).toBeDefined();

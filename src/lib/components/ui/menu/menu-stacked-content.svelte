@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { DropdownMenu as MenuPrimitive } from 'bits-ui';
-  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { cn } from '$lib/utils.js';
   import CommandItem from './menu-command-item.svelte';
   import Content from './menu-content.svelte';
@@ -9,6 +8,7 @@
   import SubTrigger from './menu-sub-trigger.svelte';
   import { DropdownMenu } from 'bits-ui';
   import type { StackedMenuGroup, StackedMenuItem } from './menu-stacked-content.types';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
 
   let {
     groups,
@@ -25,21 +25,21 @@
 
 {#snippet renderItems(items: StackedMenuItem[])}
   {#each items as item (item.id)}
-    {#if item.items?.length}
+    {#if item.items?.length || item.content}
       <DropdownMenu.Sub>
-        <SubTrigger disabled={item.disabled} class={item.class}>
-          {#if item.icon}
-            <Fa icon={item.icon} size="xs" class="w-4 shrink-0 text-muted-foreground opacity-70" />
-          {/if}
+        <SubTrigger icon={item.icon} disabled={item.disabled} class={item.class}>
           <span class="min-w-0 flex-1 truncate">{item.label}</span>
           {#if item.shortcut}
-            <kbd class="type-caption ml-5 shrink-0 text-muted-foreground" aria-hidden="true">
-              {item.shortcut}
-            </kbd>
+            <span class="ml-5" aria-hidden="true"><ShortcutChip>{item.shortcut}</ShortcutChip></span
+            >
           {/if}
         </SubTrigger>
         <SubContent class={submenuClass}>
-          {@render renderItems(item.items)}
+          {#if item.content}
+            {@render item.content()}
+          {:else if item.items}
+            {@render renderItems(item.items)}
+          {/if}
         </SubContent>
       </DropdownMenu.Sub>
     {:else}

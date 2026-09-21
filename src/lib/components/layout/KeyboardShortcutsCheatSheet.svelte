@@ -6,7 +6,7 @@
    * Triggered by Mod+/ or ? key
    */
 
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly } from '$lib/motion';
   import { faTimes } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -63,16 +63,16 @@
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
     onclick={handleBackdropClick}
-    transition:fade={{ duration: 150 }}
+    transition:fade={{ tier: 'moderate' }}
   >
     <div
       class="cheat-sheet bg-popover shadow-2xl max-w-4xl max-h-[80vh] overflow-hidden flex flex-col"
-      transition:fly={{ y: 20, duration: 200 }}
+      transition:fly={{ axis: 'y', distance: 20, tier: 'moderate' }}
     >
       <!-- Header -->
       <div class="flex items-center justify-between px-9 pr-7 pt-6">
         <div class="flex items-center gap-3">
-          <!-- <Fa icon={faKeyboard} class="text-primary" /> -->
+          <!-- <Fa icon={faKeyboard} class="text-primary-ink" /> -->
           <span class="text-lg font-semibold">{m.layout_cheatSheet_title()}</span>
           {#if $context !== 'global'}
             <span class="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full capitalize">

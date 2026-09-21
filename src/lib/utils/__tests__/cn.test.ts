@@ -2,11 +2,7 @@
  * Tests for cn (class name) utility
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { cn } from '../cn';
 
 describe('cn', () => {
@@ -26,6 +22,12 @@ describe('cn', () => {
   it('should merge conflicting Tailwind classes', () => {
     expect(cn('px-4', 'px-8')).toBe('px-8');
     expect(cn('text-red-500', 'text-blue-500')).toBe('text-blue-500');
+  });
+
+  it('lets the last canonical typography role replace earlier font-size utilities', () => {
+    expect(cn('type-caption type-body')).toBe('type-body');
+    expect(cn('text-xs type-title')).toBe('type-title');
+    expect(cn('type-code text-ui-sm')).toBe('text-ui-sm');
   });
 
   it('should handle arrays', () => {

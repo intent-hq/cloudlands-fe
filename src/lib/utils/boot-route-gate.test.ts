@@ -142,9 +142,9 @@ describe('decideBootRoute', () => {
   });
 
   it("holds until the workspace list loads when the gate is 'none'", () => {
-    expect(
-      decideBootRoute(input({ setupGate: 'none', workspaceHasLoaded: false })),
-    ).toEqual({ kind: 'hold' });
+    expect(decideBootRoute(input({ setupGate: 'none', workspaceHasLoaded: false }))).toEqual({
+      kind: 'hold',
+    });
   });
 
   it("holds until the active backend's persisted tabs are hydrated (tab-rehydration race)", () => {
@@ -283,7 +283,12 @@ describe('decideBootRoute', () => {
 
     it("still honors a settled 'redirect' after the timeout", () => {
       const decision = decideBootRoute(
-        input({ bootPathname: '/', currentPathname: '/', setupGate: 'redirect', holdTimedOut: true }),
+        input({
+          bootPathname: '/',
+          currentPathname: '/',
+          setupGate: 'redirect',
+          holdTimedOut: true,
+        }),
       );
       expect(decision).toEqual({
         kind: 'resolve',
@@ -293,9 +298,9 @@ describe('decideBootRoute', () => {
     });
 
     it('does not affect an already-resolved gate', () => {
-      expect(
-        decideBootRoute(input({ gateResolved: true, holdTimedOut: true })),
-      ).toEqual({ kind: 'inapplicable' });
+      expect(decideBootRoute(input({ gateResolved: true, holdTimedOut: true }))).toEqual({
+        kind: 'inapplicable',
+      });
     });
   });
 });

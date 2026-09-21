@@ -1,0 +1,34 @@
+@import 'katex/dist/katex.min.css';
+
+.markdown-viewer .math-inline {
+  display: inline;
+  white-space: nowrap;
+}
+
+.markdown-viewer .math-inline .katex {
+  font-size: 1.05em;
+}
+
+.markdown-viewer .math-display {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.25rem;
+  scrollbar-width: thin;
+}
+
+.markdown-viewer .math-display .katex-display {
+  min-width: max-content;
+  margin-block: 0.5rem;
+}
+
+.markdown-viewer .katex {
+  color: inherit;
+}
+
+.markdown-viewer .katex-error {
+  color: hsl(var(--danger)) !important;
+  font-family: var(--font-code);
+  overflow-wrap: anywhere;
+}

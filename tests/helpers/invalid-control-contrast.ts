@@ -51,7 +51,7 @@ function contrastRatio(first: string, second: string): number {
 export function invalidControlContrastCases() {
   const css = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
   return themeModes.flatMap((mode) => {
-    const invalidBoundary = themeColor(css, mode, 'destructive-foreground');
+    const invalidBoundary = themeColor(css, mode, 'danger');
     return adjacentSurfaces.map((surface) => ({
       label: `${mode} invalid boundary on ${surface}`,
       ratio: contrastRatio(invalidBoundary, themeColor(css, mode, surface)),

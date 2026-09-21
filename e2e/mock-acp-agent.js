@@ -55,10 +55,10 @@ function handleAuthenticate(id) {
 async function handleSessionNew(id, params) {
   // Capture workspace path from metadata or cwd fallback
   workspacePath =
-    (params && params.metadata && params.metadata.workspacePath) ||
-    (params && params.cwd) ||
-    null;
-  process.stderr.write(`[mock-agent] session/new: workspacePath=${workspacePath}, metadata.workspacePath=${params?.metadata?.workspacePath}, cwd=${params?.cwd}\n`);
+    (params && params.metadata && params.metadata.workspacePath) || (params && params.cwd) || null;
+  process.stderr.write(
+    `[mock-agent] session/new: workspacePath=${workspacePath}, metadata.workspacePath=${params?.metadata?.workspacePath}, cwd=${params?.cwd}\n`,
+  );
   // Simulate realistic provider timing — give frontend time to finish setup
   await new Promise((resolve) => setTimeout(resolve, 3000));
   return jsonrpcResult(id, { sessionId });
@@ -78,7 +78,9 @@ async function handleSessionPrompt(id) {
     behavior = { response: 'Mock agent received prompt.' };
   }
 
-  process.stderr.write(`[mock-agent] session/prompt: workspacePath=${workspacePath}, hasFiles=${!!behavior.files}, behaviorKeys=${Object.keys(behavior).join(',')}\n`);
+  process.stderr.write(
+    `[mock-agent] session/prompt: workspacePath=${workspacePath}, hasFiles=${!!behavior.files}, behaviorKeys=${Object.keys(behavior).join(',')}\n`,
+  );
 
   // 1. Write files if requested
   if (behavior.files && workspacePath) {
@@ -89,7 +91,9 @@ async function handleSessionPrompt(id) {
       process.stderr.write(`[mock-agent] wrote file: ${fullPath}\n`);
     }
   } else if (behavior.files && !workspacePath) {
-    process.stderr.write(`[mock-agent] WARNING: behavior.files set but workspacePath is null — skipping file writes\n`);
+    process.stderr.write(
+      `[mock-agent] WARNING: behavior.files set but workspacePath is null — skipping file writes\n`,
+    );
   }
 
   // 2. Delay before streaming to give the app time to finish chat initialization
@@ -194,9 +198,7 @@ rl.on('line', async (line) => {
     }
   } catch (err) {
     // Invalid JSON — send parse error
-    process.stdout.write(
-      jsonrpcError(null, -32700, 'Parse error: ' + err.message) + '\n'
-    );
+    process.stdout.write(jsonrpcError(null, -32700, 'Parse error: ' + err.message) + '\n');
   } finally {
     pendingHandlers--;
     exitIfDone();
@@ -207,4 +209,3 @@ rl.on('close', () => {
   stdinClosed = true;
   exitIfDone();
 });
-

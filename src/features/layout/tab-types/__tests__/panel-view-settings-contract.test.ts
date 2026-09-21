@@ -1,3 +1,8 @@
+// @verify-changed-triggers: ../FileTabType.svelte, ../DiffTabType.svelte, ../ActivityChangesTabType.svelte,
+//   ../LocalChangesTabType.svelte, ../ChangesTabType.svelte, ../NoteTabType.svelte, ../AgentTabType.svelte,
+//   ../BrowserTabType.svelte, ../TerminalTabType.svelte, ../NoteViewSettingsDropdown.svelte,
+//   ../AgentViewSettingsDropdown.svelte
+
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
@@ -57,7 +62,7 @@ describe('panel header view settings consolidation', () => {
       const contents = source(fileName);
       expect(contents).not.toContain('bg-muted/35');
       expect(contents).toContain('data-[state=on]:bg-transparent');
-      expect(contents).toContain('data-[state=on]:border-primary');
+      expect(contents).toContain('data-[state=on]:border-primary-ink');
       expect(contents).toContain('type-title');
       expect(contents).toContain('icon={faCheck}');
       expect(contents).not.toContain('ui_viewSettings_options_label');

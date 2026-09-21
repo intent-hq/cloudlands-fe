@@ -115,14 +115,21 @@ function cmdSummary() {
   console.log('=== Memory Events Summary ===\n');
   const events = loadEvents();
   const heaps = events.map((event) => numberValue(event.heapUsedMB)).filter(isNumber);
-  const growth = events.reduce((sum, event) => sum + Math.max(numberValue(event.deltaMB) || 0, 0), 0);
-  printRows([{
-    total_events: events.length,
-    min_heap_mb: heaps.length ? Math.min(...heaps) : undefined,
-    max_heap_mb: heaps.length ? Math.max(...heaps) : undefined,
-    avg_heap_mb: heaps.length ? heaps.reduce((sum, value) => sum + value, 0) / heaps.length : undefined,
-    total_growth_mb: growth,
-  }]);
+  const growth = events.reduce(
+    (sum, event) => sum + Math.max(numberValue(event.deltaMB) || 0, 0),
+    0,
+  );
+  printRows([
+    {
+      total_events: events.length,
+      min_heap_mb: heaps.length ? Math.min(...heaps) : undefined,
+      max_heap_mb: heaps.length ? Math.max(...heaps) : undefined,
+      avg_heap_mb: heaps.length
+        ? heaps.reduce((sum, value) => sum + value, 0) / heaps.length
+        : undefined,
+      total_growth_mb: growth,
+    },
+  ]);
 
   console.log('\n=== Events by Type ===\n');
   const byType = new Map<string, { count: number; deltaTotal: number; deltaCount: number }>();
@@ -137,21 +144,25 @@ function cmdSummary() {
     }
     byType.set(key, current);
   }
-  printRows([...byType.entries()]
-    .map(([event, stats]) => ({
-      event,
-      count: stats.count,
-      avg_delta_mb: stats.deltaCount ? stats.deltaTotal / stats.deltaCount : undefined,
-    }))
-    .sort((a, b) => Number(b.count) - Number(a.count)));
+  printRows(
+    [...byType.entries()]
+      .map(([event, stats]) => ({
+        event,
+        count: stats.count,
+        avg_delta_mb: stats.deltaCount ? stats.deltaTotal / stats.deltaCount : undefined,
+      }))
+      .sort((a, b) => Number(b.count) - Number(a.count)),
+  );
 }
 
 function cmdTrend() {
   let cumulative = 0;
-  printRows(loadEvents().map(({ ts, event, heapUsedMB, deltaMB }) => {
-    cumulative += numberValue(deltaMB) || 0;
-    return { ts, event, heapUsedMB, deltaMB, cumulative_delta_mb: cumulative };
-  }));
+  printRows(
+    loadEvents().map(({ ts, event, heapUsedMB, deltaMB }) => {
+      cumulative += numberValue(deltaMB) || 0;
+      return { ts, event, heapUsedMB, deltaMB, cumulative_delta_mb: cumulative };
+    }),
+  );
 }
 
 function cmdByAgent() {
@@ -165,31 +176,35 @@ function cmdByAgent() {
     current.growth += Math.max(numberValue(event.deltaMB) || 0, 0);
     byAgent.set(event.agentId, current);
   }
-  printRows([...byAgent.entries()]
-    .map(([agentId, stats]) => ({
-      agentId,
-      events: stats.events,
-      min_heap: stats.heaps.length ? Math.min(...stats.heaps) : undefined,
-      max_heap: stats.heaps.length ? Math.max(...stats.heaps) : undefined,
-      growth_mb: stats.growth,
-    }))
-    .sort((a, b) => Number(b.growth_mb) - Number(a.growth_mb)));
+  printRows(
+    [...byAgent.entries()]
+      .map(([agentId, stats]) => ({
+        agentId,
+        events: stats.events,
+        min_heap: stats.heaps.length ? Math.min(...stats.heaps) : undefined,
+        max_heap: stats.heaps.length ? Math.max(...stats.heaps) : undefined,
+        growth_mb: stats.growth,
+      }))
+      .sort((a, b) => Number(b.growth_mb) - Number(a.growth_mb)),
+  );
 }
 
 function cmdLeaks(threshold = 1) {
   console.log(`Showing events with delta > ${threshold}MB:\n`);
-  printRows(loadEvents()
-    .filter((event) => (numberValue(event.deltaMB) || 0) > threshold)
-    .sort((a, b) => (numberValue(b.deltaMB) || 0) - (numberValue(a.deltaMB) || 0))
-    .slice(0, 50)
-    .map(({ ts, event, agentId, heapUsedMB, deltaMB, context }) => ({
-      ts,
-      event,
-      agentId,
-      heapUsedMB,
-      deltaMB,
-      context,
-    })));
+  printRows(
+    loadEvents()
+      .filter((event) => (numberValue(event.deltaMB) || 0) > threshold)
+      .sort((a, b) => (numberValue(b.deltaMB) || 0) - (numberValue(a.deltaMB) || 0))
+      .slice(0, 50)
+      .map(({ ts, event, agentId, heapUsedMB, deltaMB, context }) => ({
+        ts,
+        event,
+        agentId,
+        heapUsedMB,
+        deltaMB,
+        context,
+      })),
+  );
 }
 
 function cmdAround(eventType: string) {
@@ -240,7 +255,7 @@ function cmdRaw(count = 20) {
     return;
   }
   const lines = fs.readFileSync(EVENTS_PATH, 'utf-8').split('\n').filter(Boolean);
-  lines.slice(-count).forEach(line => console.log(line));
+  lines.slice(-count).forEach((line) => console.log(line));
 }
 
 function cmdCustom(query: string) {
@@ -248,7 +263,7 @@ function cmdCustom(query: string) {
 }
 
 // Parse args
-const [,, cmd = 'recent', ...rest] = process.argv;
+const [, , cmd = 'recent', ...rest] = process.argv;
 const flags: Record<string, any> = {};
 const args: string[] = [];
 
@@ -268,17 +283,39 @@ for (let i = 0; i < rest.length; i++) {
 }
 
 switch (cmd) {
-  case 'recent': cmdRecent(Number(flags.count || flags.n || 20)); break;
-  case 'summary': cmdSummary(); break;
-  case 'trend': cmdTrend(); break;
-  case 'by-agent': cmdByAgent(); break;
-  case 'leaks': cmdLeaks(Number(flags.threshold || 1)); break;
-  case 'around': cmdAround(args[0] || 'agent_turn_complete'); break;
-  case 'clear': cmdClear(!!flags.confirm); break;
-  case 'path': cmdPath(); break;
-  case 'raw': cmdRaw(Number(flags.count || 20)); break;
-  case 'duckdb': cmdCustom(args.join(' ')); break;
+  case 'recent':
+    cmdRecent(Number(flags.count || flags.n || 20));
+    break;
+  case 'summary':
+    cmdSummary();
+    break;
+  case 'trend':
+    cmdTrend();
+    break;
+  case 'by-agent':
+    cmdByAgent();
+    break;
+  case 'leaks':
+    cmdLeaks(Number(flags.threshold || 1));
+    break;
+  case 'around':
+    cmdAround(args[0] || 'agent_turn_complete');
+    break;
+  case 'clear':
+    cmdClear(!!flags.confirm);
+    break;
+  case 'path':
+    cmdPath();
+    break;
+  case 'raw':
+    cmdRaw(Number(flags.count || 20));
+    break;
+  case 'duckdb':
+    cmdCustom(args.join(' '));
+    break;
   default:
     console.log('Unknown command:', cmd);
-    console.log('Commands: recent, summary, trend, by-agent, leaks, around, clear, path, raw, duckdb');
+    console.log(
+      'Commands: recent, summary, trend, by-agent, leaks, around, clear, path, raw, duckdb',
+    );
 }

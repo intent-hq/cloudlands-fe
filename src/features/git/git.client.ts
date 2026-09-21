@@ -76,7 +76,7 @@ class GitClient {
   }
 
   // `git.status` (PROTOCOL §5.6) returns the working-tree summary directly in
-  // the renderer `GitStatus` shape. Optional `gitRootId` (v6.15, monorepo#2053)
+  // the renderer `GitStatus` shape. Optional `gitRootId` (monorepo#2053)
   // scopes the read to a registered secondary git root.
   async getStatus(
     workspaceId: WorkspaceId,
@@ -184,7 +184,7 @@ class GitClient {
   // `CommitInfo` shape (hash/sha/author/email/date/message/files). The
   // pagination envelope is threaded through: `opts.nextToken` resumes a
   // previous page and the result carries `nextToken` when more pages exist
-  // (omitted on the last page). Optional `gitRootId` (v6.15) scopes the
+  // (omitted on the last page). Optional `gitRootId` scopes the
   // read to a registered root.
   async getHistory(
     workspaceId: WorkspaceId,

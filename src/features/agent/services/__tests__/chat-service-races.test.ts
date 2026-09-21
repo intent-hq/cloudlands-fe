@@ -1,13 +1,11 @@
-import {
-  existsSync,
-  readFileSync,
-} from 'node:fs';
+// @verify-changed-triggers: ../chat.service.ts, src/lib/components/chat/ChatPanel.svelte,
+//   src/store/renderer/slices/chat-state/chat-state-types.ts,
+//   src/store/renderer/slices/chat-state/chat-state-slice.ts,
+//   src/store/renderer/slices/chat-state/chat-state-selectors.ts
+
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('retired chat service boundary', () => {
   it('keeps chat service orchestration retired from production code', () => {

@@ -92,8 +92,6 @@
     fill: hsl(var(--muted-foreground) / 0.8);
     font-size: 11px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     pointer-events: none;
   }
 </style>

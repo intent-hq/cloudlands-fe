@@ -33,21 +33,27 @@ import {
   initialState,
   saveActivityLogPreset,
   setAgentFontStyle,
+  setChatAuroraEnabled,
   setCodeFontFamily,
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
+  setReduceMotionOnBattery,
   setShowArchived,
   setShowReasoningBlocks,
+  setShellTransparencyEnabled,
   setShortcutOverride,
   setSpellcheckEnabled,
   setSystemFonts,
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
+  toggleChatAurora,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
+  toggleShellTransparency,
   toggleSpellcheck,
   userPreferencesReducer,
 } from '../user-preferences-slice';
@@ -166,6 +172,9 @@ describe('userPreferencesPersistenceSaga', () => {
       'workspace-list:groupByRepo': false,
       'workspace-list:completedProviderSetup': true,
       'chat:showReasoningBlocks': true,
+      'chat:auroraEnabled': false,
+      'appearance:shellTransparencyEnabled': false,
+      'appearance:reduceMotionOnBattery': false,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -187,6 +196,9 @@ describe('userPreferencesPersistenceSaga', () => {
       [setGroupByRepo(false)],
       [setHasCompletedProviderSetup(true)],
       [setShowReasoningBlocks(true)],
+      [setChatAuroraEnabled(false)],
+      [setShellTransparencyEnabled(false)],
+      [setReduceMotionOnBattery(false)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -196,6 +208,24 @@ describe('userPreferencesPersistenceSaga', () => {
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
+
+  it.each([true, false])(
+    'hydrates a persisted appearance:reduceMotionOnBattery = %s over the default',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'appearance:reduceMotionOnBattery' ? stored : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+
+      expect(dispatch.mock.calls).toEqual([[setReduceMotionOnBattery(stored)]]);
+      const hydrated = dispatch.mock.calls.reduce(
+        (state, [action]) => userPreferencesReducer(state, action),
+        initialState,
+      );
+      expect(hydrated.reduceMotionOnBattery).toBe(stored);
+    },
+  );
 
   it('persists an agent font action and restores it in a fresh store', async () => {
     const stored: Record<string, unknown> = {};
@@ -312,6 +342,9 @@ describe('userPreferencesPersistenceSaga', () => {
         groupByRepo: false,
         hasCompletedProviderSetup: true,
         showReasoningBlocks: true,
+        chatAuroraEnabled: false,
+        shellTransparencyEnabled: false,
+        reduceMotionOnBattery: false,
         agentFontStyle: 'monospace',
         noteFontStyle: 'sans',
         codeFontFamily: 'Monaco',
@@ -340,6 +373,12 @@ describe('userPreferencesPersistenceSaga', () => {
       toggleHasCompletedProviderSetup(),
       setShowReasoningBlocks(true),
       toggleShowReasoningBlocks(),
+      setChatAuroraEnabled(false),
+      toggleChatAurora(),
+      setShellTransparencyEnabled(false),
+      toggleShellTransparency(),
+      setReduceMotionOnBattery(false),
+      toggleReduceMotionOnBattery(),
       setAgentFontStyle('monospace'),
       setNoteFontStyle('sans'),
       cycleNoteFontStyle(),
@@ -365,6 +404,12 @@ describe('userPreferencesPersistenceSaga', () => {
       ['workspace-list:completedProviderSetup', true],
       ['chat:showReasoningBlocks', true],
       ['chat:showReasoningBlocks', true],
+      ['chat:auroraEnabled', false],
+      ['chat:auroraEnabled', false],
+      ['appearance:shellTransparencyEnabled', false],
+      ['appearance:shellTransparencyEnabled', false],
+      ['appearance:reduceMotionOnBattery', false],
+      ['appearance:reduceMotionOnBattery', false],
       ['agent-font-settings', { fontStyle: 'monospace' }],
       ['note-font-settings', { fontStyle: 'sans' }],
       ['note-font-settings', { fontStyle: 'sans' }],

@@ -125,16 +125,16 @@ describe('Fonts & Colors settings migration', () => {
     const recorder = installDispatchRecorder();
     try {
       renderFontsColors();
-      const light = screen.getByRole('button', { name: 'Light' });
-      const dark = screen.getByRole('button', { name: 'Dark' });
-      expect(light.getAttribute('aria-pressed')).toBe('true');
+      const light = screen.getByRole('radio', { name: 'Light' });
+      const dark = screen.getByRole('radio', { name: 'Dark' });
+      expect(light.getAttribute('aria-checked')).toBe('true');
       await fireEvent.click(dark);
 
       await fireEvent.click(
-        within(document.getElementById('note-font')!).getByRole('button', { name: 'Mono' }),
+        within(document.getElementById('note-font')!).getByRole('radio', { name: 'Mono' }),
       );
       await fireEvent.click(
-        within(document.getElementById('agent-chat-font')!).getByRole('button', { name: 'Mono' }),
+        within(document.getElementById('agent-chat-font')!).getByRole('radio', { name: 'Mono' }),
       );
 
       const codeFont = document.querySelector<HTMLElement>('[data-select-trigger]')!;
@@ -167,4 +167,49 @@ describe('Fonts & Colors settings migration', () => {
       recorder.restore();
     }
   });
+
+  it.each([
+    ['theme', () => screen.getByRole('radio', { name: 'Light' })],
+    [
+      'note font',
+      () =>
+        within(document.getElementById('note-font')!).getByRole('radio', { name: 'Sans-serif' }),
+    ],
+    [
+      'agent chat font',
+      () =>
+        within(document.getElementById('agent-chat-font')!).getByRole('radio', {
+          name: 'Sans-serif',
+        }),
+    ],
+  ])(
+    'reselecting the active %s keeps it selected and dispatches no preference',
+    async (_label, getActive) => {
+      const recorder = installDispatchRecorder();
+      try {
+        renderFontsColors();
+        const active = getActive();
+        expect(active.getAttribute('aria-checked')).toBe('true');
+
+        await fireEvent.click(active);
+        await waitFor(() => expect(getActive().getAttribute('aria-checked')).toBe('true'));
+
+        await fireEvent.keyDown(getActive(), { key: 'Enter' });
+        await waitFor(() => expect(getActive().getAttribute('aria-checked')).toBe('true'));
+        await fireEvent.keyDown(getActive(), { key: ' ' });
+        await waitFor(() => expect(getActive().getAttribute('aria-checked')).toBe('true'));
+
+        const relevantTypes = new Set([
+          'theme/requestThemePreferenceChange',
+          'fontSettings/setNoteFontStyle',
+          'fontSettings/setAgentFontStyle',
+        ]);
+        expect(
+          recorder.calls.filter((action) => relevantTypes.has((action as { type: string }).type)),
+        ).toEqual([]);
+      } finally {
+        recorder.restore();
+      }
+    },
+  );
 });

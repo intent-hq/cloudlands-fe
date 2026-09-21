@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as m from '$shared/paraglide/messages.js';
   /**
    * Test page for RichTextarea component in a compact layout.
    * Tests mention dropdown positioning and functionality
@@ -128,6 +129,7 @@
     <div class="editor-container normal">
       <h3>Type @ to test mention dropdown</h3>
       <RichTextarea
+        ariaLabel={m.ui_richTextarea_prompt_ariaLabel()}
         bind:this={richTextarea}
         bind:value
         workspace={mockWorkspace}
@@ -145,6 +147,7 @@
     <div class="editor-container bottom">
       <h3>Editor at bottom - dropdown should appear above</h3>
       <RichTextarea
+        ariaLabel={m.ui_richTextarea_prompt_ariaLabel()}
         bind:this={richTextarea}
         bind:value
         workspace={mockWorkspace}
@@ -163,6 +166,7 @@
         <h3>Modal Dialog Test</h3>
         <p>Dropdown should appear correctly within modal</p>
         <RichTextarea
+          ariaLabel={m.ui_richTextarea_prompt_ariaLabel()}
           bind:this={richTextarea}
           bind:value
           workspace={mockWorkspace}

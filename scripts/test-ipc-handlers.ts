@@ -8,7 +8,18 @@ import { z } from 'zod';
 // Test that our schemas are working
 const EventFilterSchema = z.object({
   field: z.string(),
-  operator: z.enum(['equals', 'not_equals', 'greater_than', 'less_than', 'starts_with', 'ends_with', 'contains', 'matches', 'in', 'not_in']),
+  operator: z.enum([
+    'equals',
+    'not_equals',
+    'greater_than',
+    'less_than',
+    'starts_with',
+    'ends_with',
+    'contains',
+    'matches',
+    'in',
+    'not_in',
+  ]),
   value: z.any(),
 });
 
@@ -78,4 +89,6 @@ try {
 }
 
 console.log('\n✅ All schema tests passed successfully!');
-console.log('The IPC handlers have been successfully updated to use object destructuring with validation.');
+console.log(
+  'The IPC handlers have been successfully updated to use object destructuring with validation.',
+);

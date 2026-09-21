@@ -220,6 +220,72 @@ describe('global panel-tab close shortcut handling', () => {
   });
 });
 
+describe('terminal-focused shortcut handling', () => {
+  it('only fires shortcuts that opt in while preserving normal button behavior', () => {
+    const blockedAction = vi.fn();
+    const allowedAction = vi.fn();
+    const manager = new KeyboardShortcutManager();
+    managers.push(manager);
+    manager.register({
+      key: 'n',
+      ctrl: true,
+      alt: true,
+      description: 'Blocked in terminal',
+      action: blockedAction,
+    });
+    manager.register({
+      key: 'b',
+      ctrl: true,
+      alt: true,
+      description: 'Allowed in terminal',
+      action: allowedAction,
+      allowInTerminal: true,
+    });
+    manager.attach();
+    const terminal = document.createElement('textarea');
+    terminal.classList.add('xterm-helper-textarea');
+    const button = document.createElement('button');
+    document.body.append(terminal, button);
+
+    const blockedTerminalEvent = dispatchShortcut(terminal, {
+      key: 'n',
+      code: 'KeyN',
+      ctrlKey: true,
+      altKey: true,
+    });
+    const allowedTerminalEvent = dispatchShortcut(terminal, {
+      key: 'b',
+      code: 'KeyB',
+      ctrlKey: true,
+      altKey: true,
+    });
+
+    expect(blockedTerminalEvent.defaultPrevented).toBe(false);
+    expect(blockedAction).not.toHaveBeenCalled();
+    expect(allowedTerminalEvent.defaultPrevented).toBe(true);
+    expect(allowedAction).toHaveBeenCalledOnce();
+
+    expect(
+      dispatchShortcut(button, {
+        key: 'n',
+        code: 'KeyN',
+        ctrlKey: true,
+        altKey: true,
+      }).defaultPrevented,
+    ).toBe(true);
+    expect(
+      dispatchShortcut(button, {
+        key: 'b',
+        code: 'KeyB',
+        ctrlKey: true,
+        altKey: true,
+      }).defaultPrevented,
+    ).toBe(true);
+    expect(blockedAction).toHaveBeenCalledOnce();
+    expect(allowedAction).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('effective shortcut bindings', () => {
   it('resolves a changed binding for every keydown without re-registering', () => {
     const action = vi.fn();

@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   getLastSelectedRepoHydrationAction,
   getInitialRepoKey,
@@ -148,11 +144,15 @@ describe('getLastSelectedRepoHydrationAction', () => {
   });
 
   it('waits for prefill data to be consumed', () => {
-    expect(getLastSelectedRepoHydrationAction({ ...readyInput, hasPrefillData: true })).toBe('wait');
+    expect(getLastSelectedRepoHydrationAction({ ...readyInput, hasPrefillData: true })).toBe(
+      'wait',
+    );
   });
 
   it('waits when already handled', () => {
-    expect(getLastSelectedRepoHydrationAction({ ...readyInput, alreadyHandled: true })).toBe('wait');
+    expect(getLastSelectedRepoHydrationAction({ ...readyInput, alreadyHandled: true })).toBe(
+      'wait',
+    );
   });
 
   it('restores lastSelectedRepo when available and no repo has been selected', () => {
@@ -164,13 +164,21 @@ describe('getLastSelectedRepoHydrationAction', () => {
       { path: '/home/user/recent-repo', type: 'local' as const, name: 'recent-repo' },
     ];
     expect(
-      getLastSelectedRepoHydrationAction({ ...readyInput, hasLastSelectedRepo: false, recentRepos }),
+      getLastSelectedRepoHydrationAction({
+        ...readyInput,
+        hasLastSelectedRepo: false,
+        recentRepos,
+      }),
     ).toBe('restore-recent');
   });
 
   it('waits forever when neither lastSelectedRepo nor recentRepos are available', () => {
     expect(
-      getLastSelectedRepoHydrationAction({ ...readyInput, hasLastSelectedRepo: false, recentRepos: [] }),
+      getLastSelectedRepoHydrationAction({
+        ...readyInput,
+        hasLastSelectedRepo: false,
+        recentRepos: [],
+      }),
     ).toBe('wait');
   });
 
@@ -181,9 +189,9 @@ describe('getLastSelectedRepoHydrationAction', () => {
   });
 
   it('skips when current form state already has a repo', () => {
-    expect(
-      getLastSelectedRepoHydrationAction({ ...readyInput, currentRepoPath: '/typed' }),
-    ).toBe('skip');
+    expect(getLastSelectedRepoHydrationAction({ ...readyInput, currentRepoPath: '/typed' })).toBe(
+      'skip',
+    );
   });
 
   it('prefers recent repo over waiting when lastSelectedRepo is unset', () => {

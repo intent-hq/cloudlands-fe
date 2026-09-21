@@ -6,6 +6,16 @@
 
 import { m } from '$shared/paraglide/messages.js';
 import { looksLikeAgentId } from '$shared/utils/agent-name-utils';
+import { extractAllContent, type AgentMessage } from '$shared/types';
+
+/** Match both current subscription metadata and restored legacy wake messages. */
+export function isEventWakeMessage(message?: AgentMessage): boolean {
+  if (!message) return false;
+  return (
+    message.metadata?.type === 'event_notification' ||
+    extractAllContent(message).trim().startsWith('[WORKSPACE EVENTS]')
+  );
+}
 
 /** First value that is a non-empty (non-whitespace) string, if any. */
 export function firstNonEmptyString(...values: unknown[]): string | undefined {

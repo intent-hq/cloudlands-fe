@@ -147,9 +147,7 @@ describe('ActiveWorkspacesCard unread-row activation', () => {
   });
 
   it('does not focus an unread agent when Enter activates a non-unread row', async () => {
-    const { container } = renderWith([
-      makeWorkspace('ws-wait', 'Waiting WS', { waiting: true }),
-    ]);
+    const { container } = renderWith([makeWorkspace('ws-wait', 'Waiting WS', { waiting: true })]);
 
     await screen.findByText('Waiting WS');
     pressEnterOnCard(container);

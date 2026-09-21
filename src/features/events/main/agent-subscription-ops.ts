@@ -7,8 +7,6 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
-import { createWorkspaceEvent } from '../types';
-import type { CanonicalAgentStatusFields } from '../types';
 import {
   agentSubscriptionState,
   getAgentSubscriptions,
@@ -20,60 +18,9 @@ import type {
   AgentEventFilter,
   AgentSubscriptionRecord,
 } from '../../../store/main/slices/agent-subscriptions/types';
-import { mainDispatch } from '../../../store/main/redux-store-bridge';
-import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { notifyPendingWorkClearedForAgent } from '../../agent/main/agent-process-registry';
 
 const logger = new Logger('AgentSubscriptionOps');
-
-function canonicalFieldsForStatus(
-  status: import('../../../store/main/slices/agent-subscriptions/types').AgentStatus,
-): CanonicalAgentStatusFields {
-  switch (status) {
-    case 'responding':
-      return {
-        status,
-        activationState: 'active',
-        isActive: true,
-        isStreaming: true,
-        isProcessing: true,
-        isResponding: true,
-        stopReason: null,
-      };
-    case 'waiting':
-      return {
-        status,
-        activationState: 'active',
-        isActive: true,
-        isStreaming: false,
-        isProcessing: true,
-        isResponding: false,
-        stopReason: null,
-      };
-    case 'idle':
-    case 'completed':
-    case 'failed':
-      return {
-        status,
-        activationState: status === 'failed' ? 'error' : null,
-        isActive: false,
-        isStreaming: false,
-        isProcessing: false,
-        isResponding: false,
-        stopReason: status === 'idle' ? null : status,
-      };
-    default:
-      return {
-        status,
-        activationState: null,
-        isActive: null,
-        isStreaming: null,
-        isProcessing: null,
-        isResponding: null,
-        stopReason: null,
-      };
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Write operations (dispatch + side effects)
@@ -189,16 +136,6 @@ export function agentUnsubscribe(
   const sub = ws.subscriptions[subscriptionId];
   if (!sub) return false;
   agentSubscriptionState.remove(workspaceId, subscriptionId);
-  mainDispatch(
-    reduxEmitWorkspaceEvent(
-      createWorkspaceEvent(
-        'agent:unsubscribed',
-        workspaceId,
-        { type: 'agent', id: sub.agentId, name: sub.agentName },
-        { agentId: sub.agentId, agentName: sub.agentName, subscriptionId, reason, groupId },
-      ),
-    ),
-  );
   logger.info('Agent unsubscribed', { subscriptionId, agentId: sub.agentId, reason, groupId });
 
   // If agent has no remaining subscriptions, notify process registry
@@ -232,33 +169,13 @@ export function agentUnsubscribeAll(workspaceId: string, agentId: string): numbe
   return count;
 }
 
-/** Update agent status and emit status-changed event if changed. */
+/** Update agent status in the local subscription snapshot. */
 export function updateAgentStatus(
   workspaceId: string,
   agentId: string,
   status: import('../../../store/main/slices/agent-subscriptions/types').AgentStatus,
-  canonicalFields: Partial<CanonicalAgentStatusFields> = {},
 ): void {
   const prev = getAgentSubscriptionStatus(workspaceId, agentId);
   agentSubscriptionState.setStatus(workspaceId, agentId, status);
   logger.debug('Agent status updated', { agentId, previousStatus: prev, status });
-  if (prev !== status) {
-    const data = {
-      agentId,
-      previousStatus: prev,
-      ...canonicalFieldsForStatus(status),
-      ...canonicalFields,
-      status,
-    };
-    mainDispatch(
-      reduxEmitWorkspaceEvent(
-        createWorkspaceEvent(
-          'agent:status-changed',
-          workspaceId,
-          { type: 'agent', id: agentId },
-          data,
-        ),
-      ),
-    );
-  }
 }

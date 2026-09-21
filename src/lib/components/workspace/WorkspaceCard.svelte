@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { page } from '$app/state';
   import {
     faArrowUpRightFromSquare,
@@ -22,7 +23,7 @@
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
   } from './utils/workspace-status-presentation';
-  import { WORKSPACE_HOVER_CARD_OPEN_DELAY_MS } from './utils/workspace-hover-card-intent';
+  import { workspaceHoverCardIntentSession } from './utils/workspace-hover-card-intent';
   import TaskProgressBar from './TaskProgressBar.svelte';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -57,7 +58,10 @@
   import { AGENT_KEY_COUNT } from '$features/hardware-console/assignment/key-assignment';
   import { microConnectedReadable } from '$features/hardware-console/device/connection-status';
   import MicroKeySlotBadge from '$lib/components/workspace/MicroKeySlotBadge.svelte';
-  import { selectWorkspaceActivePullRequest } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesOwnerWorkspaceActions,
+    selectWorkspaceActivePullRequest,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectPrMonitors } from '$store/renderer/slices/pr-monitor/pr-monitor-selectors';
   import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
   import {
@@ -79,6 +83,7 @@
     workspace?: Workspace;
     phase?: WorkspacePhaseInfo;
     stats?: WorkspacePhaseStats;
+    showTime?: boolean;
     variant?: 'compact' | 'expanded' | 'header' | 'row';
     /** @deprecated Status visuals resolve from the workspace status contract. */
     isRunning?: boolean;
@@ -121,6 +126,8 @@
     highlightId?: string;
     /** Whether to suppress hover styling (when keyboard navigation is active) */
     suppressHover?: boolean;
+    /** Scope hover/focus action reveals to this card instead of an ancestor group. */
+    isolateHoverReveal?: boolean;
     class?: string;
     actions?: Snippet;
   }
@@ -130,6 +137,7 @@
     phase,
     stats,
     variant = 'compact',
+    showTime = true,
     isRunning: _isRunning = false,
     isUnread = false,
     isWaiting: _isWaiting,
@@ -152,6 +160,7 @@
     selected = false,
     highlightId,
     suppressHover = false,
+    isolateHoverReveal = false,
     class: className,
     actions,
   }: Props = $props();
@@ -169,6 +178,11 @@
   const microConnected$ = microConnectedReadable();
   const workspaceKeySlot$ = selectWorkspaceResolvedKeySlot(workspaceIdStore);
 
+  // Owner-only actions (Transfer/Download, Archive, Delete) are refused by the
+  // daemon for collaborators (`require_owner`), so a collaborator row hides
+  // them instead of offering a failing action.
+  const hidesOwnerActions$ = selectHidesOwnerWorkspaceActions(workspaceIdStore);
+
   // Load canonical tasks for progress display (no-op once initialized).
   $effect(() => {
     const workspaceId = workspace?.id;
@@ -184,6 +198,50 @@
   let hoverCardId = $derived(workspace ? `workspace-hover-card-${workspace.id}` : undefined);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
+  let phaseRowButtonRef: HTMLButtonElement | null = $state(null);
+
+  $effect(() => {
+    if (!phaseRowButtonRef) return;
+    const action = highlightTarget(phaseRowButtonRef, { id: highlightId });
+    return () => action.destroy();
+  });
+  let titleElement: HTMLSpanElement | null = $state(null);
+  let titleTextElement: HTMLSpanElement | null = $state(null);
+  let actionsElement: HTMLDivElement | null = $state(null);
+  let titleOverflowPx = $state(0);
+  let titleActionsCoveredPx = $state(0);
+  let titleMarqueeDistancePx = $derived(
+    titleOverflowPx + (titleActionsCoveredPx > 0 ? titleActionsCoveredPx + 4 : 0),
+  );
+
+  function measureTitleOverflow() {
+    const title = titleElement;
+    const actionCluster = actionsElement;
+    titleOverflowPx = title ? Math.max(0, title.scrollWidth - title.clientWidth) : 0;
+    titleActionsCoveredPx =
+      title && actionCluster && actionCluster.getClientRects().length > 0
+        ? Math.max(
+            0,
+            title.getBoundingClientRect().right - actionCluster.getBoundingClientRect().left,
+          )
+        : 0;
+  }
+
+  $effect(() => {
+    const clip = titleElement;
+    const text = titleTextElement;
+    const actionCluster = actionsElement;
+    if (!clip || !text) return;
+
+    measureTitleOverflow();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(measureTitleOverflow);
+    observer.observe(clip);
+    observer.observe(text);
+    if (actionCluster) observer.observe(actionCluster);
+    return () => observer.disconnect();
+  });
 
   // Hover-intent delay before mounting the hover card. Mounting
   // WorkspaceHoverCard is expensive (7 store selector subscriptions plus
@@ -193,6 +251,21 @@
   let hoverCardOpenTimer: ReturnType<typeof setTimeout> | null = null;
   let pointerWithinRow = false;
   let focusWithinRow = false;
+  let hoverCardOpenedFromPointer = false;
+  let hoverCardDismissalActive = $state(false);
+  let hoverCardFocusOpenSuppressed = false;
+  let hoverCardFocusSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
+  // The card is portaled beside the row with a small gap, and it carries
+  // controls (Share, Remove). Crossing that gap fires the row's mouseleave, so
+  // closing is deferred by a short grace period the card's own pointerenter
+  // cancels; pointer or focus inside the card keeps it open like the row does.
+  const HOVER_CARD_LEAVE_GRACE_MS = 150;
+  let hoverCardEl: HTMLElement | null = $state(null);
+  let pointerWithinCard = false;
+  let focusWithinCard = false;
+  let hoverCardCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  let undeferHoverCardClose: (() => void) | null = null;
+  let hoverCardFocusRelocationTimer: ReturnType<typeof setTimeout> | undefined;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -200,6 +273,137 @@
       hoverCardOpenTimer = null;
     }
   }
+
+  function clearHoverCardCloseTimer() {
+    if (hoverCardCloseTimer !== null) {
+      clearTimeout(hoverCardCloseTimer);
+      hoverCardCloseTimer = null;
+    }
+    undeferHoverCardClose?.();
+    undeferHoverCardClose = null;
+  }
+
+  function openHoverCardFromPointer() {
+    clearHoverCardCloseTimer();
+    hoverCardDismissalActive = true;
+    hoverCardVisible = true;
+    if (hoverCardOpenedFromPointer) return;
+    hoverCardOpenedFromPointer = true;
+    workspaceHoverCardIntentSession.notifyOpened();
+  }
+
+  function closeHoverCard() {
+    clearHoverCardCloseTimer();
+    clearTimeout(hoverCardFocusRelocationTimer);
+    hoverCardDismissalActive = false;
+    hoverCardVisible = false;
+    pointerWithinCard = false;
+    focusWithinCard = false;
+    if (!hoverCardOpenedFromPointer) return;
+    hoverCardOpenedFromPointer = false;
+    workspaceHoverCardIntentSession.notifyClosed();
+  }
+
+  function hoverCardEngaged() {
+    return pointerWithinRow || pointerWithinCard || focusWithinRow || focusWithinCard;
+  }
+
+  function closeHoverCardUnlessEngaged() {
+    if (!hoverCardVisible) {
+      closeHoverCard();
+      return;
+    }
+    clearHoverCardCloseTimer();
+    hoverCardCloseTimer = setTimeout(() => {
+      hoverCardCloseTimer = null;
+      if (!hoverCardEngaged()) closeHoverCard();
+    }, HOVER_CARD_LEAVE_GRACE_MS);
+    undeferHoverCardClose = workspaceHoverCardIntentSession.deferClose(closeHoverCard);
+  }
+
+  function handleHoverCardPointerEnter() {
+    pointerWithinCard = true;
+    clearHoverCardCloseTimer();
+  }
+
+  function handleHoverCardPointerLeave() {
+    pointerWithinCard = false;
+    if (!focusWithinRow && !focusWithinCard) closeHoverCardUnlessEngaged();
+  }
+
+  function handleHoverCardFocusIn() {
+    focusWithinCard = true;
+    clearTimeout(hoverCardFocusRelocationTimer);
+    clearHoverCardCloseTimer();
+  }
+
+  // Focus flags describe where focus actually is: a cross-surface move clears
+  // the departing surface's flag, so a later close cannot mistake stale row
+  // focus for engagement (or suppress the pointer reopening the card).
+  function handleHoverCardFocusOut(event: FocusEvent) {
+    const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (related && hoverCardEl?.contains(related)) return;
+    focusWithinCard = false;
+    if (related && rowElement?.contains(related)) return;
+    if (related) {
+      if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+      return;
+    }
+    // A null relatedTarget is also what unmounting the focused control
+    // (Remove → confirm / cancel) reports; the card re-homes focus after the
+    // DOM settles, so judge that loss then. Genuine departures still close.
+    const departed = event.target;
+    clearTimeout(hoverCardFocusRelocationTimer);
+    hoverCardFocusRelocationTimer = setTimeout(() => {
+      const active = document.activeElement;
+      const inside = hoverCardEl?.contains(active) || rowElement?.contains(active);
+      if (active && active !== departed && inside) return;
+      if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+    }, 0);
+  }
+
+  function suppressHoverCardFocusOpenForPointerSequence() {
+    if (hoverCardFocusSuppressionTimer !== null) {
+      clearTimeout(hoverCardFocusSuppressionTimer);
+    }
+    hoverCardFocusOpenSuppressed = true;
+    hoverCardFocusSuppressionTimer = setTimeout(() => {
+      hoverCardFocusOpenSuppressed = false;
+      hoverCardFocusSuppressionTimer = null;
+    }, 0);
+  }
+
+  function dismissHoverCardFromInteraction(event: Event) {
+    if (
+      event.type === 'scroll' &&
+      rowElement &&
+      event.target instanceof Node &&
+      !event.target.contains(rowElement)
+    ) {
+      return;
+    }
+    // Interacting with the card's own controls is not an outside dismissal.
+    if (
+      event.type === 'pointerdown' &&
+      event.target instanceof Node &&
+      hoverCardEl?.contains(event.target)
+    ) {
+      return;
+    }
+    if (event.type === 'pointerdown') suppressHoverCardFocusOpenForPointerSequence();
+    clearHoverCardOpenTimer();
+    closeHoverCard();
+  }
+
+  $effect(() => {
+    if (!hoverCardDismissalActive) return;
+    window.addEventListener('pointerdown', dismissHoverCardFromInteraction, true);
+    window.addEventListener('scroll', dismissHoverCardFromInteraction, true);
+    return () => {
+      window.removeEventListener('pointerdown', dismissHoverCardFromInteraction, true);
+      window.removeEventListener('scroll', dismissHoverCardFromInteraction, true);
+    };
+  });
 
   const activePullRequest = $derived.by(() => {
     if (!workspace) return null;
@@ -236,6 +440,9 @@
       getDisplayTitle: (pr) => pr.title,
     });
   });
+  // Rows are sorted earliest-in-flow first (draft → open → merged → closed);
+  // the compact row shows only that PR so the sidebar stays scannable.
+  const primaryPr = $derived<WorkspacePRPresentationRow | undefined>(workspacePrRows[0]);
   function getWorkspacePrLabel(pr: WorkspacePRPresentationRow): string {
     const identity = pr.repo
       ? m.workspace_card_prBadge_repoLine_tooltip({ repo: pr.repo, number: pr.number })
@@ -248,38 +455,48 @@
 
   function handleMouseEnter() {
     pointerWithinRow = true;
+    clearHoverCardCloseTimer();
+    workspaceHoverCardIntentSession.settleDeferredCloses();
+    measureTitleOverflow();
     onHover?.();
     if (workspace && !suppressHover && !focusWithinRow) {
       clearHoverCardOpenTimer();
+      hoverCardDismissalActive = true;
       hoverCardOpenTimer = setTimeout(() => {
         hoverCardOpenTimer = null;
-        hoverCardVisible = true;
-      }, WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
+        openHoverCardFromPointer();
+      }, workspaceHoverCardIntentSession.currentOpenDelay);
     }
   }
 
   function handleMouseLeave() {
     pointerWithinRow = false;
     clearHoverCardOpenTimer();
-    if (!focusWithinRow) hoverCardVisible = false;
+    if (!focusWithinRow && !focusWithinCard) closeHoverCardUnlessEngaged();
   }
 
   function handleFocusIn() {
     focusWithinRow = true;
     clearHoverCardOpenTimer();
-    if (workspace && !suppressHover) hoverCardVisible = true;
+    if (hoverCardFocusOpenSuppressed) return;
+    if (workspace && !suppressHover) {
+      hoverCardDismissalActive = true;
+      hoverCardVisible = true;
+    }
   }
 
   function handleFocusOut(event: FocusEvent) {
-    if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
+    const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (related && rowElement?.contains(related)) return;
     focusWithinRow = false;
-    if (!pointerWithinRow) hoverCardVisible = false;
+    if (related && hoverCardEl?.contains(related)) return;
+    if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
   }
 
   $effect(() => {
     if (suppressHover) {
       clearHoverCardOpenTimer();
-      hoverCardVisible = false;
+      closeHoverCard();
     }
   });
 
@@ -292,6 +509,10 @@
     e.preventDefault();
     e.stopPropagation();
     overflowMenuOpen = false;
+    if (getContextMenuItems().length === 0) {
+      contextMenu = null;
+      return;
+    }
     contextMenu = { x: e.clientX, y: e.clientY };
   }
 
@@ -314,6 +535,12 @@
 
   onDestroy(() => {
     clearHoverCardOpenTimer();
+    clearHoverCardCloseTimer();
+    if (hoverCardFocusSuppressionTimer !== null) {
+      clearTimeout(hoverCardFocusSuppressionTimer);
+      hoverCardFocusSuppressionTimer = null;
+    }
+    closeHoverCard();
     if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
@@ -366,6 +593,8 @@
         submenu: assignSubmenu,
       });
     }
+
+    if ($hidesOwnerActions$) return items;
 
     items.push({
       id: 'transfer',
@@ -479,7 +708,8 @@
   <div
     bind:this={rowElement}
     class={cn(
-      'wc-root group relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
+      'wc-root relative mx-1 flex w-auto cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-normal transition-colors',
+      isolateHoverReveal ? 'group/wc' : 'group',
       isCurrent
         ? 'bg-background/60'
         : highlighted
@@ -518,8 +748,12 @@
     ></Button>
 
     <div class="relative z-10 flex shrink-0 items-center gap-1.5">
-      {#if $microConnected$ && $workspaceKeySlot$ !== null}
-        <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+      {#if $microConnected$}
+        <span class="flex size-4 shrink-0 items-center justify-center">
+          {#if $workspaceKeySlot$ !== null}
+            <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+          {/if}
+        </span>
       {/if}
       <Tooltip content={workspaceStatusPresentation.tooltip} side="bottom" sideOffset={4}>
         <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
@@ -531,16 +765,27 @@
 
     <div class="relative z-10 flex min-w-0 flex-1 items-center gap-2">
       <span class="flex min-w-0 flex-1 items-center gap-1" data-workspace-card-title-group>
+        <!-- The fade + marquee assume LTR overflow (negative X translate and right-edge mask/action coverage); all registered locales are LTR, so pin the title LTR until logical-edge measurement and mirrored translate/mask support RTL. -->
         <span
+          bind:this={titleElement}
+          dir="ltr"
           class="wc-title type-body min-w-0 truncate font-normal!
           {isCurrent
             ? 'text-foreground'
             : workspace.title
               ? 'text-foreground'
               : 'text-muted-foreground'}"
+          data-overflowing={titleOverflowPx > 0}
+          data-marquee-enabled={titleOverflowPx > 0 && !highlighted && !suppressHover}
+          style="--wc-title-marquee-distance: {titleMarqueeDistancePx}px; --wc-title-marquee-duration: {Math.max(
+            0.4,
+            titleMarqueeDistancePx / 35,
+          ).toFixed(2)}s;"
           data-workspace-card-title
         >
-          {workspace.title || m.workspace_links_untitled_label()}
+          <span bind:this={titleTextElement} class="wc-title-text">
+            {workspace.title || m.workspace_links_untitled_label()}
+          </span>
         </span>
         {#if isPinned}
           <span
@@ -550,7 +795,9 @@
                 ? 'opacity-0'
                 : suppressHover
                   ? ''
-                  : 'group-hover:opacity-0 group-focus-within:opacity-0'
+                  : isolateHoverReveal
+                    ? 'group-hover/wc:opacity-0 group-focus-within/wc:opacity-0'
+                    : 'group-hover:opacity-0 group-focus-within:opacity-0'
               : ''}"
             data-workspace-card-pin-indicator
             aria-hidden="true"
@@ -572,86 +819,107 @@
         </span>
       {/if}
 
-      {#if workspacePrRows.length > 0}
+      {#if primaryPr}
+        {@const pr = primaryPr}
         <span
-          class="wc-pr-list flex min-w-0 max-w-11/20 shrink items-center gap-0.5 overflow-x-auto"
+          class="flex shrink-0 items-center"
           aria-label={m.workspace_hoverCard_pullRequest_label()}
           data-workspace-card-pr-list
         >
-          {#each workspacePrRows as pr (pr.identity)}
-            <Tooltip content={getWorkspacePrLabel(pr)} side="bottom" sideOffset={4}>
-              {#if pr.url}
-                <Button
-                  variant="plain"
-                  class="size-5 shrink-0 rounded-sm !p-0 {pr.backgroundClass} {pr.foregroundClass}"
-                  aria-label={getWorkspacePrLabel(pr)}
-                  data-workspace-card-pr-item
-                  data-pr-identity={pr.identity}
-                  data-pr-status={pr.status}
-                  onclick={(event) => {
-                    event.stopPropagation();
-                    const workspaceId = workspace.id;
-                    void import('$features/navigation/link-handler').then(({ handleLink }) =>
-                      handleLink(pr.url, { workspaceId, event }),
-                    );
-                  }}
-                >
-                  <Fa icon={pr.statusIcon} size="xs" />
-                </Button>
-              {:else}
-                <span
-                  class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm {pr.backgroundClass} {pr.foregroundClass}"
-                  aria-label={getWorkspacePrLabel(pr)}
-                  data-workspace-card-pr-item
-                  data-pr-identity={pr.identity}
-                  data-pr-status={pr.status}
-                >
-                  <Fa icon={pr.statusIcon} size="xs" />
-                </span>
-              {/if}
-            </Tooltip>
-          {/each}
+          <Tooltip content={getWorkspacePrLabel(pr)} side="bottom" sideOffset={4}>
+            {#if pr.url}
+              <Button
+                variant="plain"
+                size="icon-compact"
+                iconOnly
+                class="size-5 shrink-0 rounded-sm {pr.foregroundClass}"
+                aria-label={getWorkspacePrLabel(pr)}
+                data-workspace-card-pr-item
+                data-pr-identity={pr.identity}
+                data-pr-status={pr.status}
+                onclick={(event) => {
+                  event.stopPropagation();
+                  const workspaceId = workspace.id;
+                  void import('$features/navigation/link-handler').then(({ handleLink }) =>
+                    handleLink(pr.url, { workspaceId, event }),
+                  );
+                }}
+              >
+                <Fa icon={pr.statusIcon} size={14} />
+              </Button>
+            {:else}
+              <span
+                class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm {pr.foregroundClass}"
+                aria-label={getWorkspacePrLabel(pr)}
+                data-workspace-card-pr-item
+                data-pr-identity={pr.identity}
+                data-pr-status={pr.status}
+              >
+                <Fa icon={pr.statusIcon} size={14} />
+              </span>
+            {/if}
+          </Tooltip>
         </span>
       {/if}
 
-      <span
-        class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
-          ? highlighted
-            ? 'opacity-0'
-            : suppressHover
-              ? ''
-              : 'group-hover:opacity-0 group-hover/message:opacity-0'
-          : ''}"
-        data-workspace-card-time
-      >
-        {#if getWorkspaceActivityDisplayTime(workspace) > 0}
-          <RelativeTime
-            date={getWorkspaceActivityDisplayTime(workspace)}
-            class="type-caption whitespace-nowrap tabular-nums text-muted-foreground"
-            compact
-          />
-        {/if}
-      </span>
+      {#if showTime}
+        <span
+          class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
+            ? highlighted
+              ? 'opacity-0'
+              : suppressHover
+                ? ''
+                : isolateHoverReveal
+                  ? 'group-hover/wc:opacity-0 group-hover/message:opacity-0'
+                  : 'group-hover:opacity-0 group-hover/message:opacity-0'
+            : ''}"
+          data-workspace-card-time
+        >
+          {#if getWorkspaceActivityDisplayTime(workspace) > 0}
+            <RelativeTime
+              date={getWorkspaceActivityDisplayTime(workspace)}
+              class="type-caption whitespace-nowrap tabular-nums text-muted-foreground"
+              compact
+            />
+          {/if}
+        </span>
+      {/if}
     </div>
 
     {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
       <div
-        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100 group-focus-within:opacity-100
+        bind:this={actionsElement}
+        class="wc-actions absolute right-1 top-1/2 z-20 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-accent/95 px-0.5 focus-within:opacity-100
+          {isolateHoverReveal
+          ? 'group-focus-within/wc:opacity-100'
+          : 'group-focus-within:opacity-100'}
           {highlighted
           ? 'opacity-100'
           : suppressHover
             ? 'opacity-0'
-            : 'opacity-0 group-hover:opacity-100'}"
+            : isolateHoverReveal
+              ? 'opacity-0 group-hover/wc:opacity-100'
+              : 'opacity-0 group-hover:opacity-100'}"
       >
-        {#if onOpenInNewWindow}
-          <SidebarOverflowMenu
-            bind:open={overflowMenuOpen}
-            items={getContextMenuItems()}
-            ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
-            class="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
-          />
+        {#if onTogglePin}
+          <Button
+            variant="plain"
+            size="icon-xs"
+            iconOnly
+            class="transition-all hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0
+              {isPinned ? 'text-primary-ink' : 'text-muted-foreground'}"
+            onclick={(event) => {
+              event.stopPropagation();
+              onTogglePin?.(event);
+            }}
+            aria-label={isPinned
+              ? m.workspace_card_unpin_ariaLabel()
+              : m.workspace_card_pin_ariaLabel()}
+            title={isPinned ? m.workspace_card_unpin_tooltip() : m.workspace_card_pin_tooltip()}
+          >
+            <span aria-hidden="true"><Fa icon={faThumbtack} size="xs" /></span>
+          </Button>
         {/if}
-        {@render actions?.()}
         {#if isUnread && onMarkAsRead}
           <Button
             variant="plain"
@@ -668,24 +936,14 @@
             <Fa icon={faCheck} size="xs" />
           </Button>
         {/if}
-        {#if onTogglePin}
-          <Button
-            variant="plain"
-            size="icon-xs"
-            iconOnly
-            class="transition-all hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0
-              {isPinned ? 'text-primary' : 'text-muted-foreground'}"
-            onclick={(event) => {
-              event.stopPropagation();
-              onTogglePin?.(event);
-            }}
-            aria-label={isPinned
-              ? m.workspace_card_unpin_ariaLabel()
-              : m.workspace_card_pin_ariaLabel()}
-            title={isPinned ? m.workspace_card_unpin_tooltip() : m.workspace_card_pin_tooltip()}
-          >
-            <span aria-hidden="true"><Fa icon={faThumbtack} size="xs" /></span>
-          </Button>
+        {@render actions?.()}
+        {#if onOpenInNewWindow}
+          <SidebarOverflowMenu
+            bind:open={overflowMenuOpen}
+            items={getContextMenuItems()}
+            ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
+            class="flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:outline-none"
+          />
         {/if}
       </div>
     {/if}
@@ -699,23 +957,35 @@
       anchorElement={rowElement}
       class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
     >
-      <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        bind:this={hoverCardEl}
+        data-workspace-card-hover-surface
+        onpointerenter={handleHoverCardPointerEnter}
+        onpointerleave={handleHoverCardPointerLeave}
+        onfocusin={handleHoverCardFocusIn}
+        onfocusout={handleHoverCardFocusOut}
+      >
+        <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
+      </div>
     </HoverCard>
   {/if}
 
   {#if contextMenu}
-    <SidebarContextMenu
-      x={contextMenu.x}
-      y={contextMenu.y}
-      items={getContextMenuItems()}
-      onClickOutside={closeContextMenu}
-    />
+    {@const contextMenuItems = getContextMenuItems()}
+    {#if contextMenuItems.length > 0}
+      <SidebarContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={contextMenuItems}
+        onClickOutside={closeContextMenu}
+      />
+    {/if}
   {/if}
 {:else if phase && stats && variant === 'row'}
-  <button
-    type="button"
+  <div
     class={cn(
-      'flex items-center gap-2 w-full min-w-0 text-left text-sm py-1',
+      'relative flex items-center gap-2 w-full min-w-0 text-left text-sm py-1',
       onClick && 'cursor-pointer transition-colors rounded',
       !onClick && 'cursor-default',
       highlighted && 'bg-sidebar',
@@ -723,10 +993,20 @@
       className,
     )}
     data-highlight-id={highlightId}
-    use:highlightTarget={{ id: highlightId }}
-    onclick={onClick}
-    disabled={!onClick}
   >
+    {#if onClick}
+      <Button
+        bind:ref={phaseRowButtonRef}
+        variant="plain"
+        type="button"
+        class="absolute inset-0 z-0 h-auto w-auto rounded focus-visible:bg-sidebar"
+        aria-label={_title || phase.label}
+        onclick={(event) => {
+          event.stopPropagation();
+          onClick?.(event);
+        }}
+      ></Button>
+    {/if}
     <WorkspacePhaseIndicator
       phase={phase.phase}
       progress={statusBuildProgress}
@@ -736,8 +1016,12 @@
     <span class="font-medium truncate">{phase.label}</span>
     <span class="shrink-0 text-muted-foreground">·</span>
     <span class="truncate text-xs text-muted-foreground">{statusSubtitle}</span>
-    {@render actions?.()}
-  </button>
+    {#if actions}
+      <div class="relative z-10 flex shrink-0 items-center">
+        {@render actions()}
+      </div>
+    {/if}
+  </div>
 {:else if phase && stats && variant === 'header'}
   <div
     class={cn(
@@ -777,22 +1061,31 @@
     {@render actions?.()}
   </div>
 {:else if phase && stats}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'rounded-lg border border-border bg-sidebar text-left w-full',
+      'relative rounded-lg border border-border bg-sidebar text-left w-full',
       onClick && 'cursor-pointer hover:bg-sidebar/80 transition-colors',
-      highlighted && 'ring-1 ring-primary/40',
+      highlighted && 'ring-1 ring-primary-ink/40',
       selected && 'bg-primary/5 ring-1 ring-primary/30',
       className,
     )}
     data-highlight-id={highlightId}
     use:highlightTarget={{ id: highlightId }}
-    onclick={onClick}
-    onkeydown={handleKeydown}
-    role="button"
-    tabindex={onClick ? 0 : undefined}
+    role="group"
   >
+    {#if onClick}
+      <Button
+        variant="plain"
+        type="button"
+        class="absolute inset-0 z-0 h-auto w-auto rounded-lg focus-visible:bg-sidebar/80"
+        aria-label={_title || phase.label}
+        data-workspace-phase-card-trigger
+        onclick={(event) => {
+          event.stopPropagation();
+          onClick?.(event);
+        }}
+      ></Button>
+    {/if}
     <div class="flex items-start gap-2.5 px-3 pt-3 pb-2">
       <WorkspacePhaseIndicator
         phase={phase.phase}
@@ -825,7 +1118,7 @@
             >
             <span class="tabular-nums">
               <span class="text-success">+{stats.files.additions}</span>
-              <span class="ml-1 text-error-foreground">-{stats.files.deletions}</span>
+              <span class="ml-1 text-danger">-{stats.files.deletions}</span>
             </span>
           </div>
         {/if}
@@ -850,11 +1143,11 @@
     {/if}
 
     {#if actions}
-      <div class="flex items-center gap-1.5 px-2 pb-2">
+      <div class="relative z-10 flex items-center gap-1.5 px-2 pb-2">
         {@render actions()}
       </div>
     {:else if onAction}
-      <div class="flex items-center gap-1.5 px-2 pb-2">
+      <div class="relative z-10 flex items-center gap-1.5 px-2 pb-2">
         <Button
           class="flex-1 h-7 text-xs"
           variant="outline"
@@ -879,24 +1172,58 @@
 {/if}
 
 <style>
-  /* Interactive PR items are Button primitives whose base carries
-     `type-body`; that unlayered role class is declared after `.type-caption`
-     in app.css and would win the cascade, so the caption role is re-applied
-     here with scoped (higher-specificity) selectors to keep the pill's
-     typography identical to its non-interactive sibling. */
-  .wc-pr-list :global([data-slot='button']) {
-    font-size: var(--text-caption-size);
-    line-height: var(--text-caption-line-height);
-    font-weight: var(--text-caption-weight);
-    letter-spacing: var(--text-caption-tracking);
+  .wc-title {
+    --wc-title-marquee-distance: 0px;
+    --wc-title-marquee-duration: 0.4s;
+
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
   }
 
-  .wc-pr-list {
-    scrollbar-width: none;
+  .wc-title[data-overflowing='true'] {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black 0,
+      black calc(100% - 1.5rem),
+      transparent 100%
+    );
+    mask-image: linear-gradient(to right, black 0, black calc(100% - 1.5rem), transparent 100%);
   }
 
-  .wc-pr-list::-webkit-scrollbar {
-    display: none;
+  .wc-title-text {
+    display: inline-block;
+    min-width: max-content;
+    transform: translateX(0);
+    transition: transform var(--motion-standard) var(--ease-standard);
+  }
+
+  .wc-root:hover .wc-title[data-marquee-enabled='true'] {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black 100%);
+    mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black 100%);
+  }
+
+  .wc-root:hover .wc-title[data-marquee-enabled='true'] .wc-title-text {
+    transform: translateX(calc(-1 * var(--wc-title-marquee-distance)));
+    transition-duration: var(--wc-title-marquee-duration);
+    transition-timing-function: linear;
+  }
+
+  @container style(--motion-reduced: 1) {
+    .wc-title-text {
+      transform: none !important;
+      transition: none;
+    }
+
+    .wc-root:hover .wc-title[data-marquee-enabled='true'] {
+      -webkit-mask-image: linear-gradient(
+        to right,
+        black 0,
+        black calc(100% - 1.5rem),
+        transparent 100%
+      );
+      mask-image: linear-gradient(to right, black 0, black calc(100% - 1.5rem), transparent 100%);
+    }
   }
 
   @container (max-width: 220px) {

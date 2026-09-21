@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
+import { fileURLToPath } from 'node:url';
+import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import WorkspaceHoverCardPreview from './workspace-hover-card.preview.svelte';
 import {
   workspaceHoverCardPreview,
@@ -15,44 +17,58 @@ function fixture(stateName: string, cardKey?: string): WorkspaceHoverCardPreview
   return { ...state.props, cards: [card], setupData: true };
 }
 
-const landscapeRows = [
-  { count: 1, state: 'attention', card: 'attention-four-questions' },
-  { count: 2, state: 'working', card: 'working' },
-  { count: 3, state: 'attention', card: 'attention-priority' },
-  { count: 4, state: 'agents', card: 'agents-active' },
+const stackedRows = [
+  { count: 1, state: 'attention', card: 'attention-four-questions', hasPr: false },
+  { count: 2, state: 'working', card: 'working', hasPr: true },
+  { count: 3, state: 'attention', card: 'attention-priority', hasPr: false },
+  { count: 4, state: 'agents', card: 'agents-active', hasPr: false },
 ] as const;
 
-for (const scene of landscapeRows) {
-  test(`keeps a 640px host landscape with ${scene.count} activity rows`, async ({
-    mount,
-    page,
-  }) => {
-    await page.setViewportSize({ width: 640, height: 640 });
+for (const scene of stackedRows) {
+  test(`keeps a 560px stacked card with ${scene.count} activity rows`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 720, height: 640 });
     const preview = await mount(WorkspaceHoverCardPreview, {
       props: fixture(scene.state, scene.card),
     });
     const card = preview.locator('[data-workspace-hover-card]');
     const header = card.locator('[data-workspace-hover-card-header]');
-    const identity = card.locator('[data-workspace-hover-card-identity]');
+    const title = card.locator('[data-workspace-hover-card-title]');
+    const status = card.locator('[data-workspace-hover-card-status]');
+    const columns = card.locator('[data-workspace-hover-card-columns]');
     const activity = card.locator('[data-workspace-hover-card-activity]');
+    const pullRequests = card.locator('[data-workspace-hover-card-pr-column]');
     const rows = card.locator('[data-workspace-hover-card-agent-row]');
 
     await expect(rows).toHaveCount(scene.count);
-    const [cardBox, identityBox, activityBox] = await Promise.all([
+    await expect(pullRequests).toHaveCount(scene.hasPr ? 1 : 0);
+    const [cardBox, activityBox, pullRequestsBox, titleBox, statusBox] = await Promise.all([
       card.boundingBox(),
-      identity.boundingBox(),
       activity.boundingBox(),
+      scene.hasPr ? pullRequests.boundingBox() : Promise.resolve(null),
+      title.boundingBox(),
+      status.boundingBox(),
     ]);
     expect(cardBox).not.toBeNull();
-    expect(identityBox).not.toBeNull();
     expect(activityBox).not.toBeNull();
-    expect(cardBox!.width).toBeCloseTo(576, 0);
-    expect(cardBox!.width / cardBox!.height).toBeGreaterThanOrEqual(1.5);
+    expect(cardBox!.width).toBeCloseTo(560, 0);
+    expect(titleBox).not.toBeNull();
+    expect(statusBox).not.toBeNull();
     expect(cardBox!.x).toBeGreaterThanOrEqual(8);
-    expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(632);
-    expect(identityBox!.width / cardBox!.width).toBeCloseTo(0.5, 1);
-    expect(activityBox!.width / cardBox!.width).toBeCloseTo(0.5, 1);
-    expect(await header.evaluate((node) => getComputedStyle(node).flexDirection)).toBe('row');
+    expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(712);
+    expect(
+      await columns.evaluate(
+        (node) => getComputedStyle(node).gridTemplateColumns.split(' ').length,
+      ),
+    ).toBe(1);
+    if (scene.hasPr) {
+      expect(pullRequestsBox).not.toBeNull();
+      expect(activityBox!.width).toBeCloseTo(pullRequestsBox!.width, 0);
+      expect(activityBox!.x).toBeCloseTo(pullRequestsBox!.x, 0);
+      expect(pullRequestsBox!.y - (activityBox!.y + activityBox!.height)).toBeCloseTo(12, 0);
+    } else {
+      expect(pullRequestsBox).toBeNull();
+    }
+    expect(Math.abs(titleBox!.y - statusBox!.y)).toBeLessThanOrEqual(3);
     expect(await header.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
     expect(
       await activity.evaluate((node) => {
@@ -64,7 +80,7 @@ for (const scene of landscapeRows) {
   });
 }
 
-test('stacks only in the explicit narrow fixture without horizontal clipping', async ({
+test('keeps the narrow stacked fixture inside the viewport without clipping', async ({
   mount,
   page,
 }) => {
@@ -75,7 +91,12 @@ test('stacks only in the explicit narrow fixture without horizontal clipping', a
   const card = preview.locator('[data-workspace-hover-card]');
   const columns = card.locator('[data-workspace-hover-card-columns]');
   const activity = card.locator('[data-workspace-hover-card-activity]');
-  const bounds = await card.boundingBox();
+  const pullRequests = card.locator('[data-workspace-hover-card-pr-column]');
+  const [bounds, activityBox, pullRequestsBox] = await Promise.all([
+    card.boundingBox(),
+    activity.boundingBox(),
+    pullRequests.boundingBox(),
+  ]);
 
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(8);
@@ -83,19 +104,316 @@ test('stacks only in the explicit narrow fixture without horizontal clipping', a
   expect(
     await columns.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(' ').length),
   ).toBe(1);
-  expect(await activity.evaluate((node) => getComputedStyle(node).borderLeftWidth)).toBe('0px');
-  expect(await activity.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('1px');
+  expect(await pullRequests.evaluate((node) => getComputedStyle(node).borderLeftWidth)).toBe('0px');
+  expect(await pullRequests.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe('0px');
+  expect(activityBox).not.toBeNull();
+  expect(pullRequestsBox).not.toBeNull();
+  expect(pullRequestsBox!.y - (activityBox!.y + activityBox!.height)).toBeCloseTo(12, 0);
   await expect(card.locator('[data-workspace-hover-card-agent-time]')).toBeVisible();
   await expect(card.locator('[data-workspace-hover-card-agent-context]')).toBeVisible();
   expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
 });
 
-for (const theme of ['light', 'dark'] as const) {
-  test(`keeps the lowest three ${theme} cards opaque and distinct from dock plates`, async ({
+test('uses the workspace row medium corner radius', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 720, height: 520 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('working'),
+  });
+  const card = preview.locator('[data-workspace-hover-card]');
+
+  const radii = await card.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      card: style.borderTopLeftRadius,
+      workspaceRow: style.getPropertyValue('--radius-medium').trim(),
+    };
+  });
+  expect(radii.card).toBe(radii.workspaceRow);
+});
+
+test('uses an even vertical rhythm across the header metadata', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 720, height: 640 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('working'),
+  });
+  const card = preview.locator('[data-workspace-hover-card]');
+  const [titleBox, repoBox, summaryBox] = await Promise.all([
+    card.locator('[data-workspace-hover-card-title]').boundingBox(),
+    card.locator('[data-workspace-hover-card-repo]').boundingBox(),
+    card.locator('[data-workspace-hover-card-summary]').boundingBox(),
+  ]);
+
+  expect(titleBox).not.toBeNull();
+  expect(repoBox).not.toBeNull();
+  expect(summaryBox).not.toBeNull();
+  const titleToRepo = repoBox!.y - (titleBox!.y + titleBox!.height);
+  const repoToSummary = summaryBox!.y - (repoBox!.y + repoBox!.height);
+  expect(titleToRepo).toBeCloseTo(4, 0);
+  expect(repoToSummary).toBeCloseTo(4, 0);
+  expect(Math.abs(titleToRepo - repoToSummary)).toBeLessThanOrEqual(1);
+});
+
+test('places the status indicator after its right-aligned label', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 720, height: 640 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('working'),
+  });
+  const card = preview.locator('[data-workspace-hover-card]');
+  const header = card.locator('[data-workspace-hover-card-header]');
+  const status = card.locator('[data-workspace-hover-card-status]');
+  const label = status.locator('[data-workspace-hover-card-status-label]');
+  const indicator = status.locator('[data-workspace-status]');
+  const [headerBox, statusBox, labelBox, indicatorBox] = await Promise.all([
+    header.boundingBox(),
+    status.boundingBox(),
+    label.boundingBox(),
+    indicator.boundingBox(),
+  ]);
+
+  expect(headerBox).not.toBeNull();
+  expect(statusBox).not.toBeNull();
+  expect(labelBox).not.toBeNull();
+  expect(indicatorBox).not.toBeNull();
+  expect(indicatorBox!.x).toBeGreaterThanOrEqual(labelBox!.x + labelBox!.width + 5);
+  const headerPaddingRight = await header.evaluate((node) =>
+    Number.parseFloat(getComputedStyle(node).paddingRight),
+  );
+  expect(statusBox!.x + statusBox!.width).toBeCloseTo(
+    headerBox!.x + headerBox!.width - headerPaddingRight,
+    0,
+  );
+  expect(await status.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+});
+
+test('uses compact bottom-row typography while preserving the header body title', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 640 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('working'),
+  });
+  const card = preview.locator('[data-workspace-hover-card]');
+  await expect(card.locator('[data-workspace-hover-card-agent-time]').first()).toBeVisible();
+  await expect(card.locator('[data-workspace-hover-card-pr-status]').first()).toBeVisible();
+  const typography = await card.evaluate((node) => {
+    const read = (selector: string) => {
+      const element = node.querySelector(selector);
+      if (!(element instanceof HTMLElement))
+        throw new Error(`Missing typography target: ${selector}`);
+      const style = getComputedStyle(element);
+      return { fontSize: style.fontSize, lineHeight: style.lineHeight };
+    };
+    const tokenStyle = (role: 'caption' | 'body') => {
+      const tokens =
+        role === 'caption'
+          ? {
+              fontSize: 'var(--text-caption-size)',
+              lineHeight: 'var(--text-caption-line-height)',
+            }
+          : {
+              fontSize: 'var(--text-body-size)',
+              lineHeight: 'var(--text-body-line-height)',
+            };
+      const probe = document.createElement('span');
+      probe.style.fontSize = tokens.fontSize;
+      probe.style.lineHeight = tokens.lineHeight;
+      node.append(probe);
+      const style = getComputedStyle(probe);
+      const value = { fontSize: style.fontSize, lineHeight: style.lineHeight };
+      probe.remove();
+      return value;
+    };
+    return {
+      caption: tokenStyle('caption'),
+      body: tokenStyle('body'),
+      metadata: [
+        '[data-workspace-hover-card-status]',
+        '[data-workspace-hover-card-repo]',
+        '[data-workspace-hover-card-summary]',
+        '[data-workspace-hover-card-agent-time]',
+        '[data-workspace-hover-card-agent-detail]',
+        '[data-workspace-hover-card-pr-status]',
+        '[data-workspace-hover-card-pr-number]',
+        '[data-workspace-hover-card-agent-name]',
+        '[data-workspace-hover-card-pr-title]',
+      ].map(read),
+      title: read('[data-workspace-hover-card-title]'),
+    };
+  });
+
+  expect(typography.metadata).toEqual(Array(9).fill(typography.caption));
+  expect(typography.title).toEqual(typography.body);
+  expect(Number.parseFloat(typography.caption.fontSize)).toBeLessThan(
+    Number.parseFloat(typography.title.fontSize),
+  );
+});
+
+for (const { state, width } of [
+  { state: 'working', width: 720 },
+  { state: 'landscape-question', width: 720 },
+  { state: 'landscape-question', width: 420 },
+]) {
+  test(`aligns compact leading graphics and text columns for ${state} at ${width}px`, async ({
     mount,
     page,
   }) => {
-    await page.setViewportSize({ width: 640, height: 1280 });
+    await page.setViewportSize({ width, height: 720 });
+    const preview = await mount(WorkspaceHoverCardPreview, { props: fixture(state) });
+    const card = preview.locator('[data-workspace-hover-card]');
+    const rows = card.locator('[data-workspace-hover-card-agent-row]');
+    await expect(rows.first()).toBeVisible();
+    const geometry = await card.evaluate((node) => {
+      const bounds = (selector: string, root: Element = node) => {
+        const element = root.querySelector(selector);
+        if (!element) throw new Error(`Missing density target: ${selector}`);
+        return element.getBoundingClientRect().toJSON();
+      };
+      return {
+        card: node.getBoundingClientRect().toJSON(),
+        summary: bounds('[data-workspace-hover-card-summary]'),
+        divider: bounds('[data-workspace-hover-card-divider]'),
+        rows: Array.from(node.querySelectorAll('[data-workspace-hover-card-agent-row]')).map(
+          (row) => ({
+            row: row.getBoundingClientRect().toJSON(),
+            avatar: bounds('[data-agent-avatar-with-state]', row),
+            name: bounds('[data-workspace-hover-card-agent-name]', row),
+            context: bounds('[data-workspace-hover-card-agent-context]', row),
+            time: bounds('[data-workspace-hover-card-agent-time]', row),
+          }),
+        ),
+        pr: bounds('[data-workspace-hover-card-pr-row]'),
+        prIcon: bounds('[data-workspace-hover-card-pr-row] svg'),
+        prTitle: bounds('[data-workspace-hover-card-pr-title]'),
+        overflows: node.scrollWidth > node.clientWidth,
+      };
+    });
+
+    expect(geometry.rows.length).toBe(state === 'working' ? 2 : 1);
+    expect(geometry.overflows).toBe(false);
+    expect(geometry.card.x).toBeGreaterThanOrEqual(8);
+    expect(geometry.card.right).toBeLessThanOrEqual(width - 8);
+    expect(geometry.divider.y - geometry.summary.bottom).toBeCloseTo(12, 0);
+    expect(geometry.rows[0].row.y - geometry.divider.bottom).toBeCloseTo(12, 0);
+    for (const [index, row] of geometry.rows.entries()) {
+      expect(row.avatar.width).toBeCloseTo(16, 0);
+      expect(row.avatar.height).toBeCloseTo(16, 0);
+      expect(row.avatar.x).toBeCloseTo(geometry.summary.x, 0);
+      expect(row.avatar.y + row.avatar.height / 2).toBeCloseTo(row.name.y + row.name.height / 2, 0);
+      expect(row.name.x - row.avatar.right).toBeCloseTo(8, 0);
+      expect(row.context.x).toBeCloseTo(row.name.x, 0);
+      expect(row.context.y).toBeCloseTo(row.name.bottom, 0);
+      expect(row.name.height).toBeCloseTo(18, 0);
+      expect(row.time.y).toBeCloseTo(row.name.y, 0);
+      expect(row.time.right).toBeLessThanOrEqual(row.row.right + 1);
+      expect(row.row.height).toBeCloseTo(36, 0);
+      if (index > 0) {
+        expect(row.row.y - geometry.rows[index - 1].row.bottom).toBeCloseTo(8, 0);
+      }
+    }
+    expect(geometry.pr.y - geometry.rows.at(-1)!.row.bottom).toBeCloseTo(12, 0);
+    expect(geometry.prIcon.width).toBeCloseTo(16, 0);
+    expect(geometry.prIcon.height).toBeCloseTo(16, 0);
+    expect(geometry.prIcon.x).toBeCloseTo(geometry.summary.x, 0);
+    expect(geometry.prTitle.x).toBeCloseTo(geometry.rows[0].name.x, 0);
+    expect(geometry.prTitle.height).toBeCloseTo(18, 0);
+    if (width === 420) {
+      const context = card.locator('[data-workspace-hover-card-agent-context]');
+      expect(await context.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+      await expect(card.locator('[data-workspace-hover-card-question-meta]')).toHaveAccessibleName(
+        'Question 1 of 4',
+      );
+    }
+  });
+}
+
+test('uses accessible muted foreground for secondary metadata', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 720, height: 520 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('working'),
+  });
+  const card = preview.locator('[data-workspace-hover-card]');
+  await expect(card.locator('[data-workspace-hover-card-agent-time]').first()).toBeVisible();
+  const styles = await card.evaluate((node) => {
+    const renderedColor = (color: string) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Canvas color normalization is unavailable');
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    };
+    const read = (selector: string) => {
+      const element = node.querySelector(selector);
+      if (!(element instanceof HTMLElement)) throw new Error(`Missing metadata: ${selector}`);
+      const style = getComputedStyle(element);
+      return { color: renderedColor(style.color), fontSize: style.fontSize };
+    };
+    const probe = document.createElement('span');
+    probe.style.color = 'hsl(var(--muted-foreground))';
+    node.append(probe);
+    const mutedForeground = renderedColor(getComputedStyle(probe).color);
+
+    const relativeLuminance = ([red, green, blue]: number[]) => {
+      const [r, g, b] = [red, green, blue].map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const background = renderedColor(getComputedStyle(node).backgroundColor);
+    const foregroundLuminance = relativeLuminance(mutedForeground);
+    const backgroundLuminance = relativeLuminance(background);
+    const contrastRatio =
+      (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
+      (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+    probe.remove();
+    return {
+      mutedForeground,
+      contrastRatio,
+      repo: read('[data-workspace-hover-card-repo]'),
+      timestamp: read('[data-workspace-hover-card-agent-time]'),
+      prStatus: read('[data-workspace-hover-card-pr-status]'),
+      workspaceStatus: read('[data-workspace-hover-card-status]'),
+      agentDetail: read('[data-workspace-hover-card-agent-detail]'),
+      prNumber: read('[data-workspace-hover-card-pr-number]'),
+    };
+  });
+  expect(styles.repo.color).toEqual(styles.mutedForeground);
+  expect(styles.timestamp.color).toEqual(styles.mutedForeground);
+  expect(styles.prStatus.color).toEqual(styles.mutedForeground);
+  expect(styles.prNumber.color).toEqual(styles.mutedForeground);
+  expect(styles.contrastRatio).toBeGreaterThanOrEqual(4.5);
+  expect(styles.repo.fontSize).toBe(styles.workspaceStatus.fontSize);
+  await expect(
+    card.locator('[data-workspace-hover-card-status] [data-workspace-status]'),
+  ).toHaveCount(1);
+});
+
+test('extends only the header divider to both card edges', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 720, height: 640 });
+  const preview = await mount(WorkspaceHoverCardPreview, {
+    props: fixture('working'),
+  });
+  const card = preview.locator('[data-workspace-hover-card]');
+  const divider = card.locator('[data-workspace-hover-card-divider]');
+  const [cardBox, dividerBox] = await Promise.all([card.boundingBox(), divider.boundingBox()]);
+
+  await expect(divider).toHaveCount(1);
+  expect(cardBox).not.toBeNull();
+  expect(dividerBox).not.toBeNull();
+  expect(dividerBox!.x).toBeCloseTo(cardBox!.x, 0);
+  expect(dividerBox!.width).toBeCloseTo(cardBox!.width, 0);
+});
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`keeps the lowest three ${theme} cards on the application background`, async ({
+    mount,
+    page,
+  }) => {
+    await page.setViewportSize({ width: 720, height: 1280 });
     const state = workspaceHoverCardPreview.states[`landscape-${theme}`];
     if (!state) throw new Error(`Missing landscape ${theme} fixture`);
     const preview = await mount(WorkspaceHoverCardPreview, {
@@ -124,22 +442,36 @@ for (const theme of ['light', 'dark'] as const) {
     );
     expect(new Set(surfaces.map(({ card }) => card)).size).toBe(1);
     for (const surface of surfaces) {
+      // Batch 18-F makes popovers match the page/card surface in both themes.
       expect(surface.card).toBe(surface.elevated);
-      expect(surface.card).not.toBe(surface.dockPlate);
+      expect(surface.card).toBe(surface.dockPlate);
       expect(surface.card).not.toBe('rgba(0, 0, 0, 0)');
     }
   });
 }
 
-test('keeps the landscape loading skeleton at the target width', async ({ mount, page }) => {
-  await page.setViewportSize({ width: 640, height: 520 });
+test('keeps the loading skeleton stacked at the target width', async ({ mount, page }) => {
+  await page.setViewportSize({ width: 720, height: 520 });
   const preview = await mount(WorkspaceHoverCardPreview, {
     props: fixture('landscape-loading'),
   });
   const card = preview.locator('[data-workspace-hover-card]');
+  const columns = card.locator('[data-workspace-hover-card-columns]');
+  const activity = card.locator('[data-workspace-hover-card-activity]');
+  const pullRequests = card.locator('[data-workspace-hover-card-pr-column]');
 
-  await expect(card.locator('[data-slot="skeleton"]')).toHaveCount(5);
-  expect((await card.boundingBox())?.width).toBeCloseTo(576, 0);
+  await expect(card.locator('[data-slot="skeleton"]')).toHaveCount(6);
+  expect((await card.boundingBox())?.width).toBeCloseTo(560, 0);
+  expect(
+    await columns.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(' ').length),
+  ).toBe(1);
+  const [activityBox, pullRequestsBox] = await Promise.all([
+    activity.boundingBox(),
+    pullRequests.boundingBox(),
+  ]);
+  expect(activityBox).not.toBeNull();
+  expect(pullRequestsBox).not.toBeNull();
+  expect(pullRequestsBox!.y - (activityBox!.y + activityBox!.height)).toBeCloseTo(12, 0);
   await expect(card.locator('[data-workspace-hover-card-title]')).toHaveCount(0);
 });
 
@@ -183,23 +515,51 @@ test('shows the real first question and its total count in the landscape activit
   expect(detailBox!.y).toBeGreaterThanOrEqual(
     Math.max(nameBox!.y + nameBox!.height, timestampBox!.y + timestampBox!.height) - 1,
   );
-  expect(await question.evaluate((node) => getComputedStyle(node).webkitLineClamp)).toBe('2');
+  expect(await question.evaluate((node) => getComputedStyle(node).whiteSpace)).toBe('nowrap');
 });
 
-test('uses spacing instead of internal activity divider lines', async ({ mount, page }) => {
-  await page.setViewportSize({ width: 640, height: 520 });
+test('keeps sections accessible without visible headings or internal row dividers', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 720, height: 520 });
   const preview = await mount(WorkspaceHoverCardPreview, {
     props: fixture('landscape-wide'),
   });
-  const heading = preview.locator('[data-agent-group] h3').first();
-
-  await expect(heading).toBeVisible();
-  expect(await heading.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
-    'rgba(0, 0, 0, 0)',
+  await expect(preview.locator('[data-workspace-hover-card] h3')).toHaveCount(0);
+  await expect(preview.locator('[data-workspace-hover-card-activity]')).toHaveAccessibleName(
+    'Agents',
   );
-  expect(await heading.evaluate((node) => getComputedStyle(node).borderBottomWidth)).toBe('0px');
+  await expect(preview.locator('[data-workspace-hover-card-pr-column]')).toHaveAccessibleName(
+    'Pull requests',
+  );
+  await expect(preview.locator('[data-agent-group]')).toHaveCount(0);
   const rowBorders = await preview
     .locator('[data-workspace-hover-card-agent-row]')
     .evaluateAll((rows) => rows.map((row) => getComputedStyle(row).borderBottomWidth));
   expect(rowBorders.every((width) => width === '0px')).toBe(true);
+});
+
+test.describe('workspace hover-card snapshots with a fixed clock', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-09-07T00:00:00.000Z'));
+    await page.reload();
+  });
+
+  defineGeometrySnapshotSuite({
+    scene: 'workspace-hover-card',
+    component: WorkspaceHoverCardPreview,
+    states: [
+      'working',
+      'attention',
+      'dense',
+      'landscape-wide',
+      'landscape-narrow',
+      'landscape-loading',
+    ],
+    widths: [720],
+    snapshotPath: fileURLToPath(
+      new URL('./__geometry__/workspace-hover-card.geometry.json', import.meta.url),
+    ),
+  });
 });

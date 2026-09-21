@@ -200,34 +200,6 @@ export interface ParsedToolResult {
   error?: string;
 }
 
-/**
- * Represents a parsed task in task diff displays
- */
-export interface ParsedTask {
-  uuid: string;
-  name: string;
-  state: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETE' | 'CANCELLED';
-  description?: string;
-}
-
-/**
- * Counts of task changes by category
- */
-export interface TaskDiffCounts {
-  created: number;
-  updated: number;
-  deleted: number;
-}
-
-/**
- * Task changes grouped by category for diff rendering
- */
-export interface TaskDiffSections {
-  created: ParsedTask[];
-  updated: ParsedTask[];
-  deleted: ParsedTask[];
-}
-
 // Language detection from file extension
 const LANGUAGE_MAP: Record<string, string> = {
   js: 'javascript',

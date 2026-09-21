@@ -10,7 +10,9 @@ describe('localizeDaemonTerminalName', () => {
   });
 
   it('localizes the daemon "Terminal" fallback name', () => {
-    expect(localizeDaemonTerminalName('Terminal')).toBe(m.terminal_quakeOverlay_terminal_fallback());
+    expect(localizeDaemonTerminalName('Terminal')).toBe(
+      m.terminal_quakeOverlay_terminal_fallback(),
+    );
   });
 
   it('returns unknown names unchanged (e.g. future daemon names, or already-localized values)', () => {

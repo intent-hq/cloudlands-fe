@@ -413,3 +413,68 @@ describe('inspectChannelFanoutSubscribers', () => {
     expect(inspectChannelFanoutSubscribers()).toEqual({});
   });
 });
+
+describe('electron-ipc-transport param serialization (structured clone)', () => {
+  /**
+   * `ipcRenderer.invoke` structured-clones its arguments, and Svelte 5
+   * `$state` values reach the transport as Proxy objects, which structured
+   * clone rejects with "An object could not be cloned". The fake enforces the
+   * same boundary so the regression (proxied `settings.update` params from
+   * the listen-target selector) fails without the transport's JSON pass.
+   */
+  function installCloningApi() {
+    const api = installFakeApi();
+    const received: unknown[] = [];
+    api.invoke.mockImplementation(async (_channel: string, payload: unknown) => {
+      received.push(structuredClone(payload));
+      return { ok: true, result: undefined };
+    });
+    return { api, received };
+  }
+
+  /** Stand-in for a Svelte `$state` proxy: structuredClone throws on it. */
+  const proxied = <T extends object>(value: T): T => new Proxy(value, {});
+
+  it('request(): proxied params survive the IPC structured-clone boundary as plain JSON', async () => {
+    const { received } = installCloningApi();
+    const transport = createElectronIpcBackendTransport();
+
+    const params = proxied([
+      { path: 'server.bindAddress', value: proxied(['192.168.1.2']) },
+      { path: 'server.tunnel.enabled', value: true },
+      { path: 'server.tunnel.only', value: false },
+    ]);
+    expect(() => structuredClone(params)).toThrow(); // the regression precondition
+
+    await transport.request('settings.update', params);
+
+    expect(received).toEqual([
+      {
+        method: 'settings.update',
+        params: [
+          { path: 'server.bindAddress', value: ['192.168.1.2'] },
+          { path: 'server.tunnel.enabled', value: true },
+          { path: 'server.tunnel.only', value: false },
+        ],
+      },
+    ]);
+  });
+
+  it('request(): omitted params stay undefined', async () => {
+    const { received } = installCloningApi();
+    const transport = createElectronIpcBackendTransport();
+
+    await transport.request('system.status');
+
+    expect(received).toEqual([{ method: 'system.status', params: undefined }]);
+  });
+
+  it('subscribe(): proxied params survive the IPC structured-clone boundary', async () => {
+    const { received } = installCloningApi();
+    const transport = createElectronIpcBackendTransport();
+
+    await transport.subscribe(proxied({ events: proxied(['task:*']) }));
+
+    expect(received).toEqual([{ events: ['task:*'] }]);
+  });
+});

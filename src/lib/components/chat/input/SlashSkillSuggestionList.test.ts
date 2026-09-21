@@ -45,7 +45,7 @@ describe('SlashSkillSuggestionList', () => {
 
     const reviewOption = screen.getByRole('option', { name: 'review' });
     expect(reviewOption.textContent?.trim()).toBe('review');
-    const reviewLabel = reviewOption.querySelector('span');
+    const reviewLabel = reviewOption.querySelector('[data-slot="button-content"] > span');
     expect(reviewLabel?.className).toContain('type-body');
     expect(reviewLabel?.className).not.toContain('type-code');
     expect(screen.queryByText('Review a change')).toBeNull();

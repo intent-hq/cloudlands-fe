@@ -4,7 +4,6 @@
     SETTINGS_STATE_FIXTURE_CONTEXT,
     type SettingsStateFixtureContext,
   } from '../settings-page.fixtures';
-  import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
 
   interface Props {
     activeView?: { type: string; id?: string };
@@ -62,9 +61,6 @@
     >
       {workspaceId ?? 'none'}
     </p>
-    {#if activeView.type === 'system-prompt'}
-      <DefaultAgentModelSettings testId="global-instructions-default-model-row" />
-    {/if}
   {/if}
 
   {#if owner.state === 'loading'}

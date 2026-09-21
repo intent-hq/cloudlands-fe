@@ -14,7 +14,7 @@ import type {
   ScriptRuntimeState,
   ScriptWithState,
   WorkspaceScript,
-} from "$store/renderer/slices/scripts/scripts-types";
+} from '$store/renderer/slices/scripts/scripts-types';
 import type {
   MutationResult,
   ScriptCreateInput,
@@ -23,14 +23,14 @@ import type {
   ScriptsClient,
   SubscriptionHandler,
   Unsubscribe,
-} from "../app-client";
-import { backendRequest } from "./backend-transport";
-import { runMutation } from "./live-support";
+} from '../app-client';
+import { backendRequest } from './backend-transport';
+import { runMutation } from './live-support';
 
 export class LiveScriptsClient implements ScriptsClient {
   async list(workspaceId: string): Promise<ScriptWithState[]> {
     try {
-      const result = await backendRequest<{ scripts?: unknown[] }>("script.list", {
+      const result = await backendRequest<{ scripts?: unknown[] }>('script.list', {
         workspaceId,
       });
       return Array.isArray(result?.scripts) ? (result.scripts as ScriptWithState[]) : [];
@@ -41,7 +41,7 @@ export class LiveScriptsClient implements ScriptsClient {
 
   async create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult> {
     try {
-      const script = await backendRequest<WorkspaceScript>("script.create", {
+      const script = await backendRequest<WorkspaceScript>('script.create', {
         workspaceId,
         name: input.name,
         command: input.command,
@@ -52,7 +52,7 @@ export class LiveScriptsClient implements ScriptsClient {
         ...(input.autoStart !== undefined ? { autoStart: input.autoStart } : {}),
         ...(input.scriptId !== undefined ? { scriptId: input.scriptId } : {}),
       });
-      const id = typeof script?.id === "string" ? script.id : undefined;
+      const id = typeof script?.id === 'string' ? script.id : undefined;
       return { success: true, ...(id ? { id } : {}), ...(script ? { script } : {}) };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -60,42 +60,42 @@ export class LiveScriptsClient implements ScriptsClient {
   }
 
   async remove(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation("script.remove", { workspaceId, scriptId });
+    return runMutation('script.remove', { workspaceId, scriptId });
   }
 
   async start(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation("script.start", { workspaceId, scriptId });
+    return runMutation('script.start', { workspaceId, scriptId });
   }
 
   async stop(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation("script.stop", { workspaceId, scriptId });
+    return runMutation('script.stop', { workspaceId, scriptId });
   }
 
   async restart(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation("script.restart", { workspaceId, scriptId });
+    return runMutation('script.restart', { workspaceId, scriptId });
   }
 
   async output(workspaceId: string, scriptId: string, maxLines?: number): Promise<string> {
     try {
       // `script.output` returns the output-buffer text as a bare JSON string (§5.8).
-      const result = await backendRequest<unknown>("script.output", {
+      const result = await backendRequest<unknown>('script.output', {
         workspaceId,
         scriptId,
         ...(maxLines !== undefined ? { maxLines } : {}),
       });
-      return typeof result === "string" ? result : "";
+      return typeof result === 'string' ? result : '';
     } catch {
-      return "";
+      return '';
     }
   }
 
   async status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null> {
     try {
-      const result = await backendRequest<ScriptRuntimeState>("script.status", {
+      const result = await backendRequest<ScriptRuntimeState>('script.status', {
         workspaceId,
         scriptId,
       });
-      return result && typeof result === "object" ? result : null;
+      return result && typeof result === 'object' ? result : null;
     } catch {
       return null;
     }
@@ -107,7 +107,7 @@ export class LiveScriptsClient implements ScriptsClient {
     options?: { maxLines?: number; timeoutSeconds?: number },
   ): Promise<ScriptRunResult | null> {
     try {
-      const result = await backendRequest<ScriptRunResult>("script.run", {
+      const result = await backendRequest<ScriptRunResult>('script.run', {
         workspaceId,
         scriptId,
         ...(options?.maxLines !== undefined ? { maxLines: options.maxLines } : {}),
@@ -115,7 +115,7 @@ export class LiveScriptsClient implements ScriptsClient {
           ? { timeoutSeconds: options.timeoutSeconds }
           : {}),
       });
-      return result && typeof result === "object" ? result : null;
+      return result && typeof result === 'object' ? result : null;
     } catch {
       return null;
     }

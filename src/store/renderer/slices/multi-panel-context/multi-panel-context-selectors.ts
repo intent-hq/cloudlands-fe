@@ -1,15 +1,10 @@
-import { store } from "../../store";
-import {
-  getItems,
-  type Collection,
-} from "@augmentcode/themis/utils/collections/collection-utils";
-import type { PanelContextItem, SelectionContextItem } from "./multi-panel-context-slice";
+import { store } from '../../store';
+import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { PanelContextItem, SelectionContextItem } from './multi-panel-context-slice';
 
-const selectPanelsCollection = store.createSelector(
-  (state): Collection<PanelContextItem, "id"> => {
-    return state.multiPanelContext.panels;
-  }
-);
+const selectPanelsCollection = store.createSelector((state): Collection<PanelContextItem, 'id'> => {
+  return state.multiPanelContext.panels;
+});
 
 export const selectPanels = store.createSelector((state) => {
   return getItems(selectPanelsCollection.select(state));
@@ -20,9 +15,9 @@ export const selectCheckedPanels = store.createSelector((state) => {
 });
 
 const selectSelectionsCollection = store.createSelector(
-  (state): Collection<SelectionContextItem, "id"> => {
+  (state): Collection<SelectionContextItem, 'id'> => {
     return state.multiPanelContext.selections;
-  }
+  },
 );
 
 export const selectSelections = store.createSelector((state) => {
@@ -32,4 +27,3 @@ export const selectSelections = store.createSelector((state) => {
 export const selectCheckedSelections = store.createSelector((state) => {
   return selectSelections.select(state).filter((s) => s.checked);
 });
-

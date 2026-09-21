@@ -15,4 +15,3 @@ export const MCP_SERVER_NAME_REGEX = /^[a-zA-Z0-9._-]+$/;
 
 /** Maximum length for MCP server names */
 export const MCP_SERVER_NAME_MAX_LENGTH = 64;
-

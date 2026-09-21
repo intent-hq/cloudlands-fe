@@ -1,13 +1,18 @@
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, AgentSession, QueuedMessage } from '$shared/types';
 import { getQuestionFromResourceBlock, type Question } from '$shared/types/question-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
+import { isQuestionMessageDismissed } from '$shared/utils/question-dismissal';
+import { getAnsweredQuestionsMessageId } from './answer-message';
 
 /**
  * Pending Agent Q&A questions for the composer-slot wizard. The daemon's
  * three-state pending marker is authoritative when present: an empty string
- * clears the slot, while a message id permits only that question-bearing row.
- * Legacy sessions without the marker use the daemon's transcript-tail fallback.
- * Dependency-light on purpose — no stores or components.
+ * clears the slot, while a message id permits only that question-bearing row
+ * — and keeps it pending across later automatic/user turns until the daemon
+ * clears it (answer or dismissal). Legacy sessions without the marker use the
+ * daemon's transcript-tail fallback. Dependency-light on purpose — no stores
+ * or components.
  */
 
 export interface PendingQuestionSet {
@@ -36,23 +41,62 @@ function questionsOf(message: AgentMessage): Question[] {
 }
 
 /**
+ * True when a user row in `messages` carries the wizard's answer tag naming
+ * `messageId`. Bridges the window between the user hitting Send (the
+ * optimistic row mirrors the tag) and the daemon's `agent:updated` clearing
+ * the marker, so an answered set never pops back in.
+ */
+export function isQuestionSetAnswered(
+  messages: readonly AgentMessage[],
+  messageId: string,
+): boolean {
+  return messages.some(
+    (message) => message.role === 'user' && getAnsweredQuestionsMessageId(message) === messageId,
+  );
+}
+
+/**
+ * True when a queued (not yet delivered) message carries the wizard's answer
+ * tag naming `messageId`. An answer sent while the agent is mid-turn rides
+ * the daemon queue with its `messageMetadata`; the set counts as answered
+ * from the moment it is queued, so the wizard does not stay up until drain.
+ */
+export function isQuestionSetAnsweredInQueue(
+  queuedMessages: readonly QueuedMessage[],
+  messageId: string,
+): boolean {
+  return queuedMessages.some(
+    (queued) => getAnsweredQuestionsMessageId({ metadata: queued.messageMetadata }) === messageId,
+  );
+}
+
+/**
  * Derive the pending question set, or null when there is none.
  *
- * Null whenever the agent's OWN turn is still active (`isTurnActive` mirrors
- * the canonical `selectAgentIsResponding` gate — NOT the broader
+ * With the daemon marker set, the marked question-bearing row stays pending
+ * regardless of `isTurnActive`: the marker is only written once the asking
+ * turn has ended, and later automatic/user turns must not hide the wizard.
+ * It is null only while that row is still streaming, once a tagged answer
+ * row names it (in the transcript or still in `queuedMessages`), or while an
+ * optimistic pending user bubble is shown.
+ *
+ * Without the marker (legacy daemon) the transcript-tail fallback applies and
+ * is additionally null whenever the agent's OWN turn is active (`isTurnActive`
+ * mirrors the canonical `selectAgentIsResponding` gate — NOT the broader
  * `selectAgentIsRunning`, which stays true while the agent merely waits on
- * delegated agents and must not suppress the wizard), an optimistic pending
- * user bubble is shown, or the question-bearing message is still streaming.
- * When the marker is absent, trailing system rows are transparent and only a
- * question-bearing assistant row at the non-system tail is pending.
+ * delegated agents and must not suppress the wizard): trailing system rows
+ * are transparent and only a question-bearing assistant row at the
+ * non-system tail is pending, and a tagged answer for it still in
+ * `queuedMessages` hides it just as on the marker path.
  */
 export function derivePendingQuestions(
   messages: readonly AgentMessage[],
   isTurnActive: boolean,
   showingPendingUserMessage = false,
   pendingQuestionsMessageId?: string,
+  queuedMessages: readonly QueuedMessage[] = [],
 ): PendingQuestionSet | null {
-  if (isTurnActive || showingPendingUserMessage || messages.length === 0) {
+  if (showingPendingUserMessage || messages.length === 0) {
     return null;
   }
   const marker = classifyPendingQuestionMarker(pendingQuestionsMessageId);
@@ -61,9 +105,13 @@ export function derivePendingQuestions(
   if (marker.kind === 'set') {
     const marked = messages.find((message) => message.id === marker.messageId);
     if (!marked || marked.role !== 'assistant' || marked.isStreaming) return null;
+    if (isQuestionSetAnswered(messages, marker.messageId)) return null;
+    if (isQuestionSetAnsweredInQueue(queuedMessages, marker.messageId)) return null;
     const questions = questionsOf(marked);
     return questions.length > 0 ? { messageId: marked.id, questions } : null;
   }
+
+  if (isTurnActive) return null;
 
   // Match the daemon's pre-marker fallback: trailing system rows are
   // transparent, but the first non-system row must itself be a
@@ -72,8 +120,48 @@ export function derivePendingQuestions(
     const msg = messages[i];
     if (msg.role === 'system') continue;
     if (msg.role !== 'assistant' || msg.isStreaming) return null;
+    if (isQuestionSetAnsweredInQueue(queuedMessages, msg.id)) return null;
     const questions = questionsOf(msg);
     return questions.length > 0 ? { messageId: msg.id, questions } : null;
   }
   return null;
+}
+
+/**
+ * The pending, non-dismissed question set of a session, or null. THE way
+ * avatar surfaces derive the question set from a session: marker classified
+ * from `metadata.pendingQuestionsMessageId`, turn-active from the canonical
+ * `isAgentRunningState(toAgentRuntimeStateInput(session))` (only affects the
+ * legacy no-marker fallback), and the daemon's dismissal marker applied via
+ * `isQuestionMessageDismissed`. Store-free.
+ */
+export function sessionPendingQuestions(session: AgentSession): PendingQuestionSet | null {
+  const pending = derivePendingQuestions(
+    session.messages ?? [],
+    isAgentRunningState(toAgentRuntimeStateInput(session)),
+    false,
+    session.metadata?.pendingQuestionsMessageId,
+  );
+  if (!pending || isQuestionMessageDismissed(session.metadata, pending.messageId)) return null;
+  return pending;
+}
+
+/**
+ * Whether a session has an unanswered, non-dismissed question. THE way avatar
+ * surfaces derive `hasQuestion` — every surface must agree on this signal.
+ *
+ * Beyond `sessionPendingQuestions`, a set marker whose message is not in the
+ * loaded tail is fail-closed: it counts as pending unless a tagged answer row
+ * names it or the dismissal marker matches. This mirrors the chat panel's
+ * fail-closed composer, so a question the daemon still holds open never
+ * disappears from an avatar just because its row was paged out.
+ */
+export function sessionHasPendingQuestion(session: AgentSession): boolean {
+  if (sessionPendingQuestions(session) !== null) return true;
+  const marker = classifyPendingQuestionMarker(session.metadata?.pendingQuestionsMessageId);
+  if (marker.kind !== 'set') return false;
+  const messages = session.messages ?? [];
+  if (messages.some((message) => message.id === marker.messageId)) return false;
+  if (isQuestionSetAnswered(messages, marker.messageId)) return false;
+  return !isQuestionMessageDismissed(session.metadata, marker.messageId);
 }

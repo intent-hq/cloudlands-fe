@@ -56,9 +56,7 @@ export function clearRendererStoreBridge(expectedStore?: RendererStoreBridge): b
  */
 export function getRendererStore(): RendererStoreBridge {
   if (!storeBridge) {
-    throw new Error(
-      'Renderer store bridge not initialized. Call initAppStore() first.',
-    );
+    throw new Error('Renderer store bridge not initialized. Call initAppStore() first.');
   }
   return storeBridge;
 }

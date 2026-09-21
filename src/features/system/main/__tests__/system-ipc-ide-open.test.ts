@@ -1,12 +1,5 @@
 import { EventEmitter } from 'events';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Regression tests for monorepo#672: IPC-provided file paths in the VSCode
@@ -25,13 +18,12 @@ const electronMocks = vi.hoisted(() => ({
   appOn: vi.fn(),
 }));
 
-const { mockSpawn, mockExecAsync, mockExecFileAsync, mockFindVSCodeAsync } =
-  vi.hoisted(() => ({
-    mockSpawn: vi.fn(),
-    mockExecAsync: vi.fn(),
-    mockExecFileAsync: vi.fn(),
-    mockFindVSCodeAsync: vi.fn(),
-  }));
+const { mockSpawn, mockExecAsync, mockExecFileAsync, mockFindVSCodeAsync } = vi.hoisted(() => ({
+  mockSpawn: vi.fn(),
+  mockExecAsync: vi.fn(),
+  mockExecFileAsync: vi.fn(),
+  mockFindVSCodeAsync: vi.fn(),
+}));
 
 vi.mock('electron', () => ({
   app: {
@@ -86,10 +78,7 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 }));
 
 import { setupSystemIPC } from '../system.ipc';
-import {
-  JETBRAINS_CHANNELS,
-  VSCODE_CHANNELS,
-} from '../../../../shared/ipc/channels';
+import { JETBRAINS_CHANNELS, VSCODE_CHANNELS } from '../../../../shared/ipc/channels';
 
 function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find((c) => c[0] === channel);
@@ -249,9 +238,7 @@ describe('JETBRAINS_CHANNELS.OPEN — fallback loop uses argv, not shell strings
     };
 
     expect(mockExecFileAsync).toHaveBeenCalledTimes(5);
-    expect(
-      mockExecFileAsync.mock.calls.map(([cmd, args]) => [cmd, args]),
-    ).toEqual([
+    expect(mockExecFileAsync.mock.calls.map(([cmd, args]) => [cmd, args])).toEqual([
       ['idea', [TRICKY_PATH]],
       ['pycharm', [TRICKY_PATH]],
       ['webstorm', [TRICKY_PATH]],

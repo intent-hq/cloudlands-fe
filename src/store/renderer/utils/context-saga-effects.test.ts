@@ -5,12 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   takeEveryByContextFIFO,
+  takeLatestByContext,
   takeLatestInContext,
   takeLeadingInContext,
   takeSingleFlightInContext,
 } from './context-saga-effects';
 
-type WorkMessage = { context: string; id: string; cancel?: boolean };
+type WorkMessage = { context: string; id: string; cancel?: boolean; generation?: number };
 type WorkAction = Action<'work'> & WorkMessage;
 
 const isWorkAction = (action: Action): action is WorkAction => action.type === 'work';
@@ -90,6 +91,41 @@ describe('context-scoped saga effects', () => {
     await task.toPromise();
     expect(harness.canceled).toEqual(['a1', 'a3']);
     a1.resolve();
+  });
+
+  it('deduplicates active generations and replaces them only with newer context work', async () => {
+    const input = stdChannel();
+    const harness = createWorkerHarness();
+    harness.addGate('a1');
+    harness.addGate('a1-duplicate');
+    harness.addGate('a0');
+    harness.addGate('b1');
+    harness.addGate('a2');
+    const task = runSaga({ channel: input, dispatch: vi.fn(), getState: () => ({}) }, function* () {
+      yield* takeLatestByContext(
+        isWorkAction,
+        (action) => ({ context: action.context, generation: action.generation ?? 0 }),
+        harness.worker,
+        'run',
+      );
+    });
+    await settle();
+
+    input.put({ type: 'work', context: 'a', id: 'a1', generation: 1 });
+    await settle();
+    input.put({ type: 'work', context: 'a', id: 'a1-duplicate', generation: 1 });
+    input.put({ type: 'work', context: 'a', id: 'a0', generation: 0 });
+    input.put({ type: 'work', context: 'b', id: 'b1', generation: 1 });
+    await settle();
+    input.put({ type: 'work', context: 'a', id: 'a2', generation: 2 });
+    await settle();
+
+    expect(harness.started).toEqual(['run:a1', 'run:b1', 'run:a2']);
+    expect(harness.canceled).toEqual(['a1']);
+
+    task.cancel();
+    await task.toPromise();
+    expect(harness.canceled).toEqual(['a1', 'b1', 'a2']);
   });
 
   it('drops leading work only while the same context is running', async () => {

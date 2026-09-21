@@ -92,6 +92,17 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     });
   });
 
+  it('sets and clears the quick-action default without changing action overrides', async () => {
+    mocks.typeOverrides.value = { commit: 'pinned-commit', pr: '', review: '', fast: '' };
+    render(BackgroundAgentSettings);
+    await fireEvent.click(screen.getAllByTestId('pick-model')[0]);
+    await fireEvent.click(screen.getAllByTestId('pick-default')[0]);
+    expect(mocks.dispatched).toEqual([
+      { type: 'backgroundAgentSettings/setDefaultModel', payload: ['user-picked-model'] },
+      { type: 'backgroundAgentSettings/setDefaultModel', payload: [''] },
+    ]);
+  });
+
   it("dispatches setTypeOverride with '' when an override row picks the default option", async () => {
     mocks.typeOverrides.value = { commit: '', pr: '', review: '', fast: 'some-model' };
     render(BackgroundAgentSettings);

@@ -53,9 +53,7 @@ export const importRunFailed = createAction<[error: string]>('workspaceImport/ru
 export const importRunCancelled = createAction('workspaceImport/runCancelled');
 
 /** Success screen: open the imported workspace (the saga navigates + closes). */
-export const importOpenWorkspaceRequested = createAction(
-  'workspaceImport/openWorkspaceRequested',
-);
+export const importOpenWorkspaceRequested = createAction('workspaceImport/openWorkspaceRequested');
 
 export const workspaceImportReducer = createReducer<WorkspaceImportState>(initialState);
 workspaceImportReducer.with(importStartRequested, (state) => {

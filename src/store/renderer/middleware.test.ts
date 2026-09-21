@@ -7,16 +7,19 @@ const mocks = vi.hoisted(() => {
     vi.fn(() => (next: (action: unknown) => unknown) => (action: unknown) => next(action));
   const storeGuardMiddleware = passthrough();
   const batchingMiddleware = passthrough();
+  const actionRingBufferMiddleware = passthrough();
   const refCheckMiddleware = passthrough();
   const structuredCloneMiddleware = passthrough();
 
   return {
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
+    createActionRingBufferMiddleware: vi.fn(() => actionRingBufferMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
     storeGuardMiddleware,
     batchingMiddleware,
+    actionRingBufferMiddleware,
     refCheckMiddleware,
     structuredCloneMiddleware,
   };
@@ -27,6 +30,9 @@ vi.mock('../../store/utils/store-guard-middleware', () => ({
 }));
 vi.mock('./middlewares/batch', () => ({
   createBatchingMiddleware: mocks.createBatchingMiddleware,
+}));
+vi.mock('./middlewares/action-ring-buffer', () => ({
+  createActionRingBufferMiddleware: mocks.createActionRingBufferMiddleware,
 }));
 vi.mock('./middlewares/state-reference-checks', () => ({
   createReferenceChangeDetectorMiddleware: mocks.createReferenceChangeDetectorMiddleware,
@@ -68,10 +74,12 @@ describe('renderer middleware ownership', () => {
     expect(mocks.createStoreGuardMiddleware).toHaveBeenCalledWith('renderer');
     expect(mocks.createBatchingMiddleware).toHaveBeenCalledOnce();
     expect(mocks.createBatchingMiddleware).toHaveBeenCalledWith([]);
+    expect(mocks.createActionRingBufferMiddleware).toHaveBeenCalledOnce();
     expect(mocks.createReferenceChangeDetectorMiddleware).not.toHaveBeenCalled();
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
+      mocks.actionRingBufferMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });
@@ -87,6 +95,7 @@ describe('renderer middleware ownership', () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
+      mocks.actionRingBufferMiddleware,
       mocks.refCheckMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -100,6 +109,7 @@ describe('renderer middleware ownership', () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
+      mocks.actionRingBufferMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });

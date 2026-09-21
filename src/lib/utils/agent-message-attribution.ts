@@ -17,7 +17,7 @@ interface BaseMessageAttribution {
 
 interface AgentSenderAttribution extends BaseMessageAttribution {
   kind: 'agent';
-  /** Display name for the sender ("Agent" fallback, truncated to ~20 chars). */
+  /** Full display name for the sender ("Agent" fallback). */
   displayName: string;
   /**
    * Verbatim sender name from metadata (empty when absent) — untrimmed and
@@ -30,13 +30,13 @@ interface AgentSenderAttribution extends BaseMessageAttribution {
 
 interface ChiefMessageAttribution extends BaseMessageAttribution {
   kind: 'chief';
+  /** Verbatim sender name used to rebuild the daemon's literal sender header. */
+  rawName: string;
   /** Exact source message link when the complete metadata contract is valid. */
   sourceUrl?: string;
 }
 
 export type AgentMessageAttribution = AgentSenderAttribution | ChiefMessageAttribution;
-
-const MAX_NAME_LENGTH = 20;
 
 /**
  * Extract sender attribution from an opaque message metadata object.
@@ -49,6 +49,7 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
   if (!fromAgentId) return null;
 
   if (md.type === 'chief_message') {
+    const rawName = typeof md.fromAgentName === 'string' ? md.fromAgentName : '';
     const fromWorkspaceId = typeof md.fromWorkspaceId === 'string' ? md.fromWorkspaceId.trim() : '';
     const sourceMessageId = typeof md.sourceMessageId === 'string' ? md.sourceMessageId.trim() : '';
     const sourceUrl = typeof md.sourceUrl === 'string' ? md.sourceUrl.trim() : '';
@@ -60,6 +61,7 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
     return {
       kind: 'chief',
       fromAgentId,
+      rawName,
       ...(sourceUrl && sourceUrl === expectedSourceUrl ? { sourceUrl } : {}),
     };
   }
@@ -67,9 +69,7 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
   if (md.type !== 'agent_message') return null;
 
   const rawName = typeof md.fromAgentName === 'string' ? md.fromAgentName : '';
-  const name = rawName.trim() || 'Agent';
-  const displayName =
-    name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 1) + '…' : name;
+  const displayName = rawName.trim() || 'Agent';
 
   return { kind: 'agent', fromAgentId, displayName, rawName };
 }
@@ -101,8 +101,13 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
  */
 const A2A_SENDER_HEADER = /^\[MESSAGE FROM AGENT (?:[^\n]+ )?\(agent-[0-9a-f-]+\)\](?:\n\n?|$)/;
 
-/** Consume the one blank separator line after `prefix`, never body whitespace. */
-function stripLiteralHeader(text: string, prefix: string): string | null {
+/**
+ * Consume an exact daemon-prepended `prefix` plus the one blank separator
+ * line after it, never body whitespace. Returns `null` when `text` does not
+ * start with the exact daemon shape (`prefix`, `prefix\n`, `prefix\n\n…`).
+ * Shared with the collaborator sender preamble strip.
+ */
+export function stripLiteralHeader(text: string, prefix: string): string | null {
   if (!text.startsWith(prefix)) return null;
   const rest = text.slice(prefix.length);
   if (rest === '') return '';
@@ -115,7 +120,7 @@ export function stripAgentMessageHeader(
   text: string,
   attribution?: AgentMessageAttribution | null,
 ): string {
-  if (attribution?.kind === 'agent') {
+  if (attribution) {
     const { rawName, fromAgentId } = attribution;
     const literal = rawName
       ? `[MESSAGE FROM AGENT ${rawName} (${fromAgentId})]`

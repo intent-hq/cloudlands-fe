@@ -946,6 +946,23 @@ describe('misc-ui-events-seeder window:open-new bridge', () => {
     restoreElectronApi();
   });
 
+  it('preserves an app event request identity across the real preload bridge', async () => {
+    const bridgeInvoke = vi.fn().mockResolvedValue({ success: true, windowId: 8 });
+    stashedElectronApi = (window as any).electronAPI;
+    (window as any).electronAPI = { invoke: bridgeInvoke };
+
+    await mockInvoke('window:open-new', {
+      route: '/workspace/ws-1',
+      requestId: 'evt-workspace-open-1',
+    });
+
+    expect(bridgeInvoke).toHaveBeenCalledExactlyOnceWith('window:open-new', {
+      route: '/workspace/ws-1',
+      requestId: 'evt-workspace-open-1',
+    });
+    restoreElectronApi();
+  });
+
   it("re-throws a bridge {success:false} envelope so the callers' catch-fallback navigation runs", async () => {
     const bridgeInvoke = vi.fn().mockResolvedValue({ success: false, error: 'boom' });
     stashedElectronApi = (window as any).electronAPI;

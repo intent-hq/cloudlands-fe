@@ -1,11 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 describe('Memory Management', () => {
   describe('Cleanup Intervals', () => {
@@ -54,7 +47,7 @@ describe('Memory Management', () => {
 
   describe('Timer Cleanup', () => {
     it('should clear search debounce timer on cleanup', async () => {
-      // This tests the pattern we implemented in ActivityLog.svelte
+      // This tests the search debounce cleanup pattern used by workspace components
       let searchDebounceTimer: NodeJS.Timeout | null = null;
 
       // Simulate setting a timer

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import PanelHeaderIdentityHost from './mocks/PanelHeaderIdentityHost.svelte';
 
 const panelTypes = ['agent', 'note', 'file', 'terminal', 'browser', 'settings'] as const;
@@ -97,33 +97,126 @@ test('keeps one larger identity geometry across panel types, themes, widths, and
   expect(measuredStates).toBe(48);
 });
 
-test('uses the same larger leading identity geometry in the empty panel actions', async ({
-  mount,
-}) => {
+test('uses aligned Swiss action rows in the empty panel', async ({ mount }) => {
   const component = await mount(PanelHeaderIdentityHost, {
     props: { identityType: 'empty', theme: 'dark', width: 240, height: 320, zoom: 2 },
   });
-  const cards = component.locator('.creation-card');
-  await expect(cards).toHaveCount(4);
+  const actions = component.locator('.creation-action');
+  await expect(actions).toHaveCount(4);
+  for (const name of ['New Agent', 'New Note', 'New Terminal', 'New Browser']) {
+    await expect(component.getByRole('button', { name })).toBeVisible();
+  }
 
-  const geometry = await cards.evaluateAll((elements) =>
-    elements.map((card) => {
-      const leading = card.querySelector<HTMLElement>(
-        '[data-resource-icon-tile], [data-panel-empty-leading-surface]',
-      )!;
-      const glyph = leading.querySelector<HTMLElement>('svg, [data-resource-icon-glyph]')!;
-      const leadingStyle = getComputedStyle(leading);
+  const geometry = await actions.evaluateAll((elements) =>
+    elements.map((action) => {
+      const row = action as HTMLElement;
+      // Button paints its surface on a leading `button-surface` slot; the
+      // content group is the first non-slot child.
+      const leftGroup = row.querySelector<HTMLElement>(':scope > :not([data-slot])')!;
+      const glyph = leftGroup.querySelector<SVGElement>('svg')!;
+      const label = leftGroup.lastElementChild as HTMLElement;
+      const hint = row.querySelector<HTMLElement>('kbd')!;
+      const rowRect = row.getBoundingClientRect();
+      const glyphRect = glyph.getBoundingClientRect();
+      const labelRect = label.getBoundingClientRect();
+      const hintRect = hint.getBoundingClientRect();
+      const scale = rowRect.width / row.offsetWidth;
       return {
-        leadingWidth: leadingStyle.width,
-        leadingHeight: leadingStyle.height,
-        glyphWidth: getComputedStyle(glyph).width,
+        rowHeight: rowRect.height / scale,
+        fontSize: getComputedStyle(label).fontSize,
+        glyphLeft: (glyphRect.left - rowRect.left) / scale,
+        labelLeft: (labelRect.left - rowRect.left) / scale,
+        labelGlyphGap: (labelRect.left - glyphRect.right) / scale,
+        hintRightInset: (rowRect.right - hintRect.right) / scale,
+        hintTextAlign: getComputedStyle(hint).textAlign,
       };
     }),
   );
 
+  const first = geometry[0];
   for (const item of geometry) {
-    expect(item.leadingWidth).toBe('24px');
-    expect(item.leadingHeight).toBe('24px');
-    expect(item.glyphWidth).toBe('16px');
+    expect(item.rowHeight).toBeCloseTo(28, 1);
+    expect(item.fontSize).toBe('13px');
+    expect(item.glyphLeft).toBeCloseTo(first.glyphLeft, 1);
+    expect(item.labelLeft).toBeCloseTo(first.labelLeft, 1);
+    expect(item.labelGlyphGap).toBeCloseTo(8, 1);
+    expect(item.hintRightInset).toBeCloseTo(8, 1);
+    expect(item.hintTextAlign).toBe('right');
   }
+});
+
+test('shows the complete agent edit border without shifting the header identity', async ({
+  mount,
+}) => {
+  const component = await mount(PanelHeaderIdentityHost, {
+    props: { identityType: 'agent', theme: 'light', width: 560, height: 320 },
+  });
+  const header = component.locator('[data-panel-content-header]');
+
+  const measurePositions = () =>
+    header.evaluate((element) => {
+      const rect = (selector: string) => {
+        const bounds = element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+        return { left: bounds.left, top: bounds.top };
+      };
+      return {
+        avatar: rect('[data-panel-header-leading-surface]'),
+        title: rect('[data-panel-header-title]'),
+        actions: rect('[data-panel-header-actions]'),
+      };
+    });
+
+  const before = await measurePositions();
+  await component.locator('[data-panel-header-title] button').click();
+  await expect(component.locator('[data-panel-header-title] input')).toBeFocused();
+
+  const editing = await header.evaluate((element) => {
+    const decoration = element.querySelector<HTMLElement>(
+      '[data-panel-header-title] span[aria-hidden="true"]',
+    )!;
+    const decorationRect = decoration.getBoundingClientRect();
+    const style = getComputedStyle(decoration);
+    const clippedBy: string[] = [];
+    let ancestor = decoration.parentElement;
+    while (ancestor && ancestor !== element.parentElement) {
+      const ancestorStyle = getComputedStyle(ancestor);
+      const ancestorRect = ancestor.getBoundingClientRect();
+      const clipsX = ancestorStyle.overflowX !== 'visible';
+      const clipsY = ancestorStyle.overflowY !== 'visible';
+      if (
+        (clipsX &&
+          (decorationRect.left < ancestorRect.left || decorationRect.right > ancestorRect.right)) ||
+        (clipsY &&
+          (decorationRect.top < ancestorRect.top || decorationRect.bottom > ancestorRect.bottom))
+      ) {
+        clippedBy.push(
+          ancestor.getAttribute('data-panel-agent-header-identity') === ''
+            ? 'identity'
+            : ancestor.tagName,
+        );
+      }
+      ancestor = ancestor.parentElement;
+    }
+    return {
+      clippedBy,
+      borderWidths: [
+        style.borderTopWidth,
+        style.borderRightWidth,
+        style.borderBottomWidth,
+        style.borderLeftWidth,
+      ],
+      borderStyles: [
+        style.borderTopStyle,
+        style.borderRightStyle,
+        style.borderBottomStyle,
+        style.borderLeftStyle,
+      ],
+    };
+  });
+  const after = await measurePositions();
+
+  expect(editing.clippedBy).toEqual([]);
+  expect(editing.borderWidths).toEqual(['1px', '1px', '1px', '1px']);
+  expect(editing.borderStyles).toEqual(['solid', 'solid', 'solid', 'solid']);
+  expect(after).toEqual(before);
 });

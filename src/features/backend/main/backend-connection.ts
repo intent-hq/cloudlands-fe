@@ -29,6 +29,14 @@ import { Logger } from '$shared/logger';
 import { describeBackendUrl } from './backend-log-descriptor';
 import { resolveIntentdSocketPath } from './intentd-data-dir';
 import { toLocalEndpoint } from './intentd-pipe-name';
+import {
+  createTailcatTunnel,
+  createTunneledSocket,
+  resolveTailcatBinaryPath,
+  type TailcatSpawn,
+  type TailcatTunnel,
+} from './tailcat-tunnel';
+import { isTcAddress } from '$shared/tc-address';
 
 const raceLogger = new Logger('BackendConnection');
 
@@ -73,6 +81,16 @@ export interface BackendConnectionConfig {
    * presented cert against this pin; a mismatch fails with {@link PinMismatchError}.
    */
   fingerprint?: string;
+  /**
+   * tc address of the daemon's tailcat tunnel endpoint (PROTOCOL §12.3, the
+   * pairing URI `tc=` parameter / `system.status.tcAddress`). When present and
+   * the bundled tailcat client binary is available, the connect race gains a
+   * tunnel candidate alongside the direct host candidates: the same pinned
+   * `wss` transport dialed through a local tailcat forwarder (see
+   * `tailcat-tunnel.ts`), so remote daemons stay reachable when no direct
+   * host works. Fail-soft — a missing binary just skips the candidate.
+   */
+  tcAddress?: string;
 }
 
 /** Options for [[resolveBackendConfig]]. */
@@ -168,10 +186,19 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
   }
   if (config.transport === 'wss') {
     const hosts = candidateWssHosts(config);
-    if (hosts.length > 1) {
-      return raceWssSockets(config, hosts);
+    const attempts: RaceAttempt[] = hosts.map((host) => ({
+      host,
+      create: () => createWssSocket({ ...config, host }),
+    }));
+    const tunnelAttempt = tunnelRaceAttempt(config);
+    if (tunnelAttempt) attempts.push(tunnelAttempt);
+    if (attempts.length === 0 && isTcAddress(config.host ?? '')) {
+      throw new Error('tailcat binary unavailable; cannot connect through the tunnel');
     }
-    return createWssSocket(config);
+    if (attempts.length > 1) {
+      return raceDuplexSockets(attempts);
+    }
+    return attempts[0]?.create() ?? createWssSocket(config);
   }
   throw new Error(
     // i18n-ignore (developer-facing config error naming env vars; surfaces in logs, not UI)
@@ -183,25 +210,31 @@ export function createBackendSocket(config: BackendConnectionConfig): Duplex {
 export function describeBackendConfig(config: BackendConnectionConfig): string {
   if (config.transport === 'uds') return `uds:${config.socketPath}`;
   if (config.transport === 'ws') return `ws:${describeBackendUrl(config.wsUrl)}`;
-  // Deliberately omit the token and fingerprint — this string reaches logs.
+  // Tailcat addresses can embed a pre-shared key. Like the token and
+  // fingerprint, they must not reach connection lifecycle logs.
+  const host = isTcAddress(config.host ?? '') ? 'tailcat:REDACTED' : config.host;
   if (config.transport === 'wss') {
     const extra = candidateWssHosts(config).length - 1;
     const suffix = extra > 0 ? ` (+${extra} candidate${extra === 1 ? '' : 's'})` : '';
-    return `wss:${config.host}:${config.port}${suffix}`;
+    return `wss:${host}:${config.port}${suffix}`;
   }
-  return `tcp:${config.host}:${config.port}${config.tls ? ' (tls)' : ''}`;
+  return `tcp:${host}:${config.port}${config.tls ? ' (tls)' : ''}`;
 }
 
 /**
  * Distinct candidate hosts for a `wss` config: the primary `host` first, then
- * the `hosts` extras, trimmed and deduplicated in order.
+ * the `hosts` extras, trimmed and deduplicated in order. Tailcat addresses
+ * are opaque tunnel endpoints, never DNS candidates. No loopback
+ * filtering here — pairing URIs and tests legitimately dial loopback; the
+ * legacy-record sanitize lives in the store's `candidateHosts`, which feeds
+ * synced records into this config.
  */
 export function candidateWssHosts(config: BackendConnectionConfig): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of [config.host ?? '', ...(config.hosts ?? [])]) {
     const host = raw.trim();
-    if (!host || seen.has(host)) continue;
+    if (!host || isTcAddress(host) || seen.has(host)) continue;
     seen.add(host);
     out.push(host);
   }
@@ -269,6 +302,60 @@ export class AuthRejectedError extends Error {
 }
 
 /**
+ * Retry cadence the client falls back to when a 503 cap refusal carries no
+ * usable `Retry-After`: transient but not something a prompt retry resolves —
+ * a seat frees only when another guest connection closes — so bounded and
+ * slow, never tight.
+ */
+export const CONNECTION_LIMIT_RETRY_DEFAULT_MS = 30_000;
+/** Clamp bounds for a daemon-supplied `Retry-After` on the cap refusal. */
+export const CONNECTION_LIMIT_RETRY_MIN_MS = 5_000;
+export const CONNECTION_LIMIT_RETRY_MAX_MS = 300_000;
+
+/**
+ * Raised when a pin-verified `wss` upgrade is refused with HTTP 503 by the
+ * daemon's guest connection cap (`sharing.maxGuestConnections` /
+ * `sharing.maxConnectionsPerGuest`, intent-hq/intentd#1917). Transient —
+ * a seat frees when another guest connection closes — so the client keeps
+ * retrying, but on a slow bounded cadence, and the UI names the cap instead
+ * of the generic reconnect copy.
+ */
+export class ConnectionLimitError extends Error {
+  /**
+   * How long the daemon asked the client to wait before re-presenting the
+   * upgrade (its `Retry-After` header, already clamped by
+   * {@link parseRetryAfterMs}); the default cadence when the header was absent
+   * or unparseable.
+   */
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs: number = CONNECTION_LIMIT_RETRY_DEFAULT_MS) {
+    // i18n-ignore (main-process error message for logs, not renderer copy)
+    super('WebSocket upgrade refused with HTTP 503 (connection limit reached)');
+    this.name = 'ConnectionLimitError';
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/**
+ * Parse the `Retry-After` header of a 503 cap refusal into a retry delay.
+ * Only the delta-seconds form is honored (the daemon never sends an HTTP
+ * date here); the value is clamped to [5, 300] s, and anything absent or
+ * unparseable falls back to {@link CONNECTION_LIMIT_RETRY_DEFAULT_MS}.
+ */
+export function parseRetryAfterMs(header: string | string[] | undefined): number {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (raw === undefined) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  const seconds = Number(trimmed);
+  if (!Number.isFinite(seconds)) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  return Math.min(
+    CONNECTION_LIMIT_RETRY_MAX_MS,
+    Math.max(CONNECTION_LIMIT_RETRY_MIN_MS, seconds * 1000),
+  );
+}
+
+/**
  * Normalize a certificate SHA-256 fingerprint to the daemon's canonical form
  * (PROTOCOL §1.2): colon-separated **uppercase** hex byte pairs. Accepts any
  * mix of case and separators (Node's `fingerprint256` is already colon-hex
@@ -315,8 +402,9 @@ function peerFingerprint(response: IncomingMessage): string {
  * (PROTOCOL §2.1) with a `?token=` query fallback. An upgrade rejected with
  * HTTP 401/403 (bad token / WS API disabled, PROTOCOL §2.1) destroys the
  * stream with a distinct {@link AuthRejectedError} instead of a generic
- * transport error. The `upgrade`/`unexpected-response` pin checks are kept as
- * defense-in-depth behind the handshake-level pin.
+ * transport error, and HTTP 503 (guest connection cap) with a
+ * {@link ConnectionLimitError}. The `upgrade`/`unexpected-response` pin
+ * checks are kept as defense-in-depth behind the handshake-level pin.
  */
 function createWssSocket(config: BackendConnectionConfig): Duplex {
   const { host, port, token, fingerprint } = config;
@@ -362,31 +450,87 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
       duplex.destroy(new AuthRejectedError(statusCode));
       return;
     }
+    if (statusCode === 503) {
+      duplex.destroy(new ConnectionLimitError(parseRetryAfterMs(response.headers['retry-after'])));
+      return;
+    }
     duplex.destroy(new Error(`Unexpected server response: ${statusCode}`));
   });
   return duplex;
 }
 
-/** One racing attempt: a candidate host plus a factory for its socket. */
+/** How a race candidate reaches the daemon: a direct host dial or the tailcat tunnel. */
+export type ConnectedVia = 'direct' | 'tunnel';
+
+/**
+ * One racing attempt: a candidate host plus a factory for its socket. `via`
+ * marks the tunnel candidate explicitly (defaults to `'direct'`) so the
+ * winner classification never depends on the host label — a `wss` config can
+ * legitimately carry a direct host that happens to be named like
+ * {@link TUNNEL_RACE_HOST}.
+ */
 export interface RaceAttempt {
   host: string;
+  via?: ConnectedVia;
   create: () => Duplex;
 }
 
-/** Overall bound on the multi-host race; matches the capture timeout. */
-const RACE_TIMEOUT_MS = 10_000;
+/**
+ * Payload of the race facade's `'connect'` event: the candidate host that won
+ * ({@link TUNNEL_RACE_HOST} when the tunnel candidate won) and how it reached
+ * the daemon. Single-host sockets emit a bare `'connect'`, so consumers must
+ * treat the payload as optional.
+ */
+export interface RaceConnectInfo {
+  host: string;
+  via: ConnectedVia;
+}
 
 /**
- * Race the pinned `wss` transport across all candidate hosts (#1746),
- * mirroring iOS `ConnectionManager.raceHosts`: one socket per candidate, the
- * first to complete the pin-verified connect wins and the losers are torn
- * down. Returns a facade `Duplex` the JSON-RPC client drives exactly like a
- * single-host socket.
+ * Overall bound on the multi-host race; matches the capture timeout. The
+ * tunnel candidate additionally bounds its own connect at
+ * `TUNNEL_CONNECT_TIMEOUT_MS` (`tailcat-tunnel.ts`) so a black-holed tunnel
+ * cannot hold the race open this long on its own.
  */
-function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duplex {
-  return raceDuplexSockets(
-    hosts.map((host) => ({ host, create: () => createWssSocket({ ...config, host }) })),
-  );
+const RACE_TIMEOUT_MS = 10_000;
+
+/** Pseudo-host label for the tunnel candidate in race logs/events. */
+export const TUNNEL_RACE_HOST = 'tailcat-tunnel';
+
+/**
+ * Build the tunnel race attempt for a `wss` config carrying a `tcAddress`,
+ * or `null` when the tunnel cannot be dialed (no tc address, or no bundled
+ * tailcat binary — fail-soft, the direct candidates still race). The attempt
+ * dials the SAME pinned wss transport through a local tailcat forwarder
+ * (`tailcat-tunnel.ts`), so pin + token verification are identical to the
+ * direct candidates; only the TCP path differs. The pin is fingerprint-based
+ * (`servername` is not used for verification), so the loopback hop does not
+ * weaken it. Exported for unit tests.
+ */
+export function tunnelRaceAttempt(config: BackendConnectionConfig): RaceAttempt | null {
+  const { port } = config;
+  // A manually entered/saved host can itself be the tunnel endpoint. Preserve
+  // its case even if an older record has no separate tcAddress field.
+  const tcAddress =
+    config.tcAddress?.trim() || (isTcAddress(config.host ?? '') ? config.host?.trim() : undefined);
+  if (!tcAddress || !port) return null;
+  const binaryPath = resolveTailcatBinaryPath();
+  if (!binaryPath) {
+    raceLogger.debug('tailcat binary unavailable; skipping tunnel race candidate');
+    return null;
+  }
+  return {
+    host: TUNNEL_RACE_HOST,
+    via: 'tunnel',
+    create: () =>
+      createTunneledSocket({
+        tcAddress,
+        remotePort: port,
+        binaryPath,
+        createInner: (localPort) =>
+          createWssSocket({ ...config, host: '127.0.0.1', port: localPort }),
+      }),
+  };
 }
 
 /**
@@ -414,6 +558,9 @@ function raceWssSockets(config: BackendConnectionConfig, hosts: string[]): Duple
  *   the last candidate failure.
  * - A race-wide timeout bounds the whole attempt so a black-hole candidate
  *   set cannot hang the client's connect (the reconnect loop retries).
+ * - The facade's `'connect'` event carries a {@link RaceConnectInfo} naming
+ *   the winning candidate host, so the connection layer can tell a tunnel win
+ *   from a direct one.
  */
 export function raceDuplexSockets(
   attempts: RaceAttempt[],
@@ -424,8 +571,13 @@ export function raceDuplexSockets(
   let settled = false;
   let pendingCount = attempts.length;
   let lastError: Error | null = null;
+  // A typed cap refusal seen on any candidate: the client keys its slow retry
+  // cadence on this class, so it must survive later generic failures (and the
+  // race timeout) from the other candidates.
+  let limitError: ConnectionLimitError | null = null;
   const candidates: Duplex[] = [];
   const candidateHosts = new Map<Duplex, string>();
+  const candidateVias = new Map<Duplex, ConnectedVia>();
   const mismatches: HostCertMismatch[] = [];
   const reportedMismatchHosts = new Set<string>();
 
@@ -500,14 +652,17 @@ export function raceDuplexSockets(
 
   // Prefer surfacing observed cert mismatches over a generic failure when the
   // race produces no winner (#1746): the aggregate carries every per-host
-  // mismatch, with expected/actual mirroring the first one.
-  const preferCertError = (fallback: Error): Error =>
-    mismatches.length > 0
-      ? new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches])
-      : fallback;
+  // mismatch, with expected/actual mirroring the first one. Failing that, a
+  // typed connection-limit refusal beats a generic failure.
+  const preferTypedError = (fallback: Error): Error => {
+    if (mismatches.length > 0) {
+      return new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches]);
+    }
+    return limitError ?? fallback;
+  };
 
   const timer = setTimeout(
-    () => failRace(preferCertError(new Error(`connection race timed out after ${timeoutMs}ms`))),
+    () => failRace(preferTypedError(new Error(`connection race timed out after ${timeoutMs}ms`))),
     timeoutMs,
   );
   timer.unref?.();
@@ -520,11 +675,12 @@ export function raceDuplexSockets(
     if (error instanceof PinMismatchError) {
       recordMismatch(host, error);
     } else {
+      if (error instanceof ConnectionLimitError) limitError ??= error;
       lastError = error;
     }
     pendingCount -= 1;
     if (pendingCount <= 0) {
-      failRace(preferCertError(lastError ?? new Error('no candidate hosts to connect')));
+      failRace(preferTypedError(lastError ?? new Error('no candidate hosts to connect')));
     }
   };
 
@@ -553,7 +709,11 @@ export function raceDuplexSockets(
       if (!facade.destroyed) facade.destroy(error);
     });
     candidate.on('close', () => facade.push(null));
-    facade.emit('connect');
+    const info: RaceConnectInfo = {
+      host: candidateHosts.get(candidate) ?? '',
+      via: candidateVias.get(candidate) ?? 'direct',
+    };
+    facade.emit('connect', info);
   };
 
   for (const attempt of attempts) {
@@ -569,6 +729,7 @@ export function raceDuplexSockets(
     }
     candidates.push(candidate);
     candidateHosts.set(candidate, attempt.host);
+    candidateVias.set(candidate, attempt.via ?? 'direct');
     // A failing candidate can emit `error` AND `close`; count it out only once.
     let counted = false;
     const failOnce = (error: Error): void => {
@@ -694,8 +855,54 @@ export function pinnedTlsConnect(
  * leak to a swapped endpoint (TOCTOU). The mismatch is reported as a
  * structured `fingerprint-mismatch` result carrying the presented
  * fingerprint.
+ *
+ * A `host` that is a tc address (PROTOCOL §12.3, manual tunnel entry) is
+ * captured through a local tailcat forwarder: the wss dial targets the
+ * forwarder's loopback port and tailcat carries it to the daemon, so cert +
+ * token verification are identical to a direct capture. Fails structured
+ * (`connect-failed`) when the bundled tailcat binary is unavailable.
  */
-export function captureFingerprint(
+export async function captureFingerprint(
+  target: { host: string; port: number; token?: string; expectedFingerprint?: string },
+  options: { timeoutMs?: number; tailcatSpawn?: TailcatSpawn } = {},
+): Promise<CaptureFingerprintResult> {
+  if (isTcAddress(target.host)) {
+    const binaryPath = resolveTailcatBinaryPath();
+    if (!binaryPath) {
+      return {
+        ok: false,
+        code: 'connect-failed',
+        error: 'tailcat binary unavailable; cannot capture through the tunnel',
+      };
+    }
+    let tunnel: TailcatTunnel;
+    try {
+      tunnel = await createTailcatTunnel({
+        tcAddress: target.host.trim(),
+        remotePort: target.port,
+        binaryPath,
+        ...(options.tailcatSpawn ? { spawn: options.tailcatSpawn } : {}),
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'connect-failed',
+        error: `tailcat forwarder failed to start: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    try {
+      return await captureFingerprintDirect(
+        { ...target, host: '127.0.0.1', port: tunnel.localPort },
+        options,
+      );
+    } finally {
+      tunnel.close();
+    }
+  }
+  return captureFingerprintDirect(target, options);
+}
+
+function captureFingerprintDirect(
   target: { host: string; port: number; token?: string; expectedFingerprint?: string },
   options: { timeoutMs?: number } = {},
 ): Promise<CaptureFingerprintResult> {

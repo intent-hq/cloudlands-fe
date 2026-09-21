@@ -5,8 +5,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { readable } from 'svelte/store';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { warmImport } from '../../../../test/warm-import';
+import {
+  createAppStoreMock,
+  createStoreMockModule,
+} from '$store/renderer/utils/test-helpers/store-mock';
 
 const dispatch = vi.fn();
+const appStore = createAppStoreMock({ dispatch });
 
 vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
@@ -17,10 +22,11 @@ vi.mock('$store/renderer/slices/external-editors/external-editors-selectors', ()
 vi.mock('$store/renderer/slices/external-editors/external-editors-slice', () => ({
   fetchEditors: () => ({ type: 'externalEditors/fetchEditors' }),
 }));
-vi.mock('$store/renderer/store', () => ({ store: { dispatch } }));
+vi.mock('$store/renderer/store', () => createStoreMockModule(appStore));
 
 warmImport(() => import('../../workspace/sidebar/__tests__/mocks/Fa.svelte'));
 warmImport(() => import('./PullConflictDialogHarness.svelte'));
+warmImport(() => import('../PullConflictDialog.svelte'));
 
 const openDialog = async () => {
   const trigger = screen.getByRole('button', { name: 'Retry pull' });
@@ -110,5 +116,72 @@ describe('PullConflictDialog dismissal', () => {
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(document.querySelector('[data-pull-conflict-dialog]')).toBe(dialog);
     expect(overlay).toBeTruthy();
+  });
+
+  it('marks <body> only while the dialog is mounted so layering rules need no body :has() anchor', async () => {
+    const Harness = (await import('./PullConflictDialogHarness.svelte')).default;
+    render(Harness);
+    expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(false);
+
+    const { trigger, dialog } = await openDialog();
+    expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(true);
+
+    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    await expectDismissedOnce(trigger);
+    await waitFor(() =>
+      expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(false),
+    );
+  });
+
+  it.each([
+    ['first', 0],
+    ['second', 1],
+  ])(
+    'keeps the <body> marker until the last overlapping dialog unmounts (%s unmounts first)',
+    async (_label, unmountFirst) => {
+      const PullConflictDialog = (await import('../PullConflictDialog.svelte')).default;
+      const props = { open: true, error: 'conflict', repoPath: '/tmp/example', branchName: 'main' };
+      const first = render(PullConflictDialog, { props });
+      const second = render(PullConflictDialog, { props });
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(2),
+      );
+      expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(true);
+
+      const [gone, survivor] = unmountFirst === 0 ? [first, second] : [second, first];
+      gone.unmount();
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(1),
+      );
+      expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(true);
+
+      survivor.unmount();
+      await waitFor(() =>
+        expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(0),
+      );
+      expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(false);
+    },
+  );
+
+  it('keeps the <body> marker through one dialog closing (outro) while another stays open', async () => {
+    const PullConflictDialog = (await import('../PullConflictDialog.svelte')).default;
+    const props = { open: true, error: 'conflict', repoPath: '/tmp/example', branchName: 'main' };
+    const first = render(PullConflictDialog, { props });
+    const second = render(PullConflictDialog, { props });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(2),
+    );
+
+    await first.rerender({ ...props, open: false });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(1),
+    );
+    expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(true);
+
+    await second.rerender({ ...props, open: false });
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-pull-conflict-dialog]')).toHaveLength(0),
+    );
+    expect(document.body.hasAttribute('data-pull-conflict-dialog-open')).toBe(false);
   });
 });

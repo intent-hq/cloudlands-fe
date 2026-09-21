@@ -4,14 +4,7 @@
  * Tests to ensure proper cleanup and disposal of resources
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Store } from '@augmentcode/themis/svelte-store';
 
 vi.mock('svelte', async (importOriginal) => ({
@@ -32,7 +25,6 @@ const getTestBridgeStore = () => ({
 });
 
 vi.mock('../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: (action: any) => getTestBridgeStore().dispatch(action),
   getMainState: () => getTestBridgeStore().state,
   getMainStore: () => getTestBridgeStore(),
   initMainStoreBridge: vi.fn(),

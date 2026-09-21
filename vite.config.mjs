@@ -1,10 +1,19 @@
 import { sveltekit } from '@sveltejs/kit/vite';
-import { compile, paraglideVitePlugin } from '@inlang/paraglide-js';
+import { compile } from '@inlang/paraglide-js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
+import { intentdBridgePlugin } from './scripts/vite-plugin-intentd-bridge.mjs';
+import { compactParaglideDevPlugin } from './scripts/vite-plugin-paraglide-dev.mjs';
+import {
+  PARAGLIDE_IS_SERVER,
+  PARAGLIDE_OUTPUT_STRUCTURE,
+  PARAGLIDE_STALE_MESSAGE,
+  compileWithInputsHash,
+  ensureRepoParaglide,
+} from './scripts/paraglide-inputs-hash.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -17,27 +26,27 @@ const paraglideOutdir = join(__dirname, 'src/shared/paraglide');
 const messagesDir = join(__dirname, 'messages');
 const normalizeWatcherPath = (file) => file.replace(/\\/g, '/');
 
-function canReuseGeneratedParaglide() {
-  const outputs = ['messages.js', 'runtime.js'].map((file) => join(paraglideOutdir, file));
-  if (outputs.some((file) => !existsSync(file))) return false;
+const paraglidePaths = {
+  projectDir: paraglideProject,
+  messagesDir,
+  outdir: paraglideOutdir,
+};
 
-  const inputs = [
-    join(paraglideProject, 'settings.json'),
-    ...readdirSync(messagesDir)
-      .filter((file) => file.endsWith('.json'))
-      .map((file) => join(messagesDir, file)),
-  ];
-  const newestInput = Math.max(...inputs.map((file) => statSync(file).mtimeMs));
-  const oldestOutput = Math.min(...outputs.map((file) => statSync(file).mtimeMs));
-  return oldestOutput >= newestInput;
-}
-
-const reuseGeneratedParaglide = () => ({
+// The only Paraglide writer in the Vite path: `buildStart` produces a missing
+// or stale outdir through the locked, staged publisher (content-based — the
+// sidecar hash, not mtimes, decides freshness, intent-hq/intent#4621), and
+// `watchChange` recompiles on catalog edits for HMR. Upstream's
+// `paraglideVitePlugin` is not used: it writes into the outdir on its own,
+// racing the publisher (intent-hq/intent#4565).
+const reuseGeneratedParaglide = ({ ensure = ensureRepoParaglide } = {}) => ({
   name: 'reuse-generated-paraglide',
   enforce: 'pre',
-  buildStart() {
+  async buildStart() {
     this.addWatchFile(messagesDir);
     this.addWatchFile(join(paraglideProject, 'settings.json'));
+    if (!(await ensure({ rootDir: __dirname, ifStale: true }))) {
+      throw new Error(`[generate:i18n] ${PARAGLIDE_STALE_MESSAGE}`);
+    }
   },
   async watchChange(file) {
     const normalizedFile = normalizeWatcherPath(file);
@@ -48,12 +57,20 @@ const reuseGeneratedParaglide = () => ({
     const isProjectSettings = normalizedFile === normalizedProjectSettings;
     if (!isMessage && !isProjectSettings) return;
 
-    await compile({
-      project: paraglideProject,
-      outdir: paraglideOutdir,
-      outputStructure: 'locale-modules',
-      cleanOutdir: false,
-      isServer: "import.meta.env?.SSR ?? typeof window === 'undefined'",
+    // An edit that lands mid-compile leaves no sidecar; it also fires its own
+    // watchChange, which recompiles, so no retry is needed here. The compiler
+    // writes into the staging directory it is handed; the outputs are then
+    // published into paraglideOutdir atomically.
+    await compileWithInputsHash({
+      ...paraglidePaths,
+      compile: ({ outdir }) =>
+        compile({
+          project: paraglideProject,
+          outdir,
+          outputStructure: PARAGLIDE_OUTPUT_STRUCTURE,
+          cleanOutdir: false,
+          isServer: PARAGLIDE_IS_SERVER,
+        }),
     });
   },
 });
@@ -288,7 +305,7 @@ const excludeNodeModules = () => ({
   },
 });
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ command, mode, isPreview }, testOverrides = {}) => {
   // Web profile: `INTENT_BUILD_TARGET=web` (set by the dev:web / build:web
   // scripts) builds the renderer for a plain browser — no Electron main or
   // preload. svelte.config.js switches the adapter output to dist/web for the
@@ -296,7 +313,9 @@ export default defineConfig(({ command, mode }) => {
   // credentials never enter immutable application chunks. VITE_INTENTD_WS_URL
   // remains a dev:web convenience; without either URL the app uses the mock.
   const isWebBuild = process.env.INTENT_BUILD_TARGET === 'web';
-  const isUiPreview = command === 'serve' && process.env.INTENT_UI_PREVIEW === '1';
+  const intentdBridgeRequested =
+    command === 'serve' && !isPreview && isWebBuild && process.env.INTENT_DEV_DAEMON_BRIDGE === '1';
+  const useIntentdBridge = intentdBridgeRequested && process.platform !== 'win32';
   const useBundledMessages = mode === 'production';
   const i18nVirtualMessages = '\0intent-paraglide-messages';
   const i18nVirtualRuntime = '\0intent-paraglide-runtime';
@@ -304,7 +323,8 @@ export default defineConfig(({ command, mode }) => {
 
   const webDefines = {};
   const isProductionWebBuild = isWebBuild && mode === 'production';
-  const hasBuildTimeBrowserWsUrl = !isProductionWebBuild && Boolean(env.VITE_INTENTD_WS_URL);
+  const browserWsUrl = env.VITE_INTENTD_WS_URL || (useIntentdBridge ? '/intentd/ws' : '');
+  const hasBuildTimeBrowserWsUrl = !isProductionWebBuild && Boolean(browserWsUrl);
   if (isWebBuild && !hasBuildTimeBrowserWsUrl && env.VITE_ENABLE_BROWSER_MOCK === undefined) {
     // Production web builds are gated out of the browser mock by default
     // (hooks.client.ts only loads it in DEV or under an explicit opt-in).
@@ -316,13 +336,9 @@ export default defineConfig(({ command, mode }) => {
   }
 
   return {
-    // Plugin order:
-    // 1. paraglideVitePlugin() - compiles messages/{locale}.json into src/shared/paraglide (typed m.* functions)
-    // 2. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
-    // 3. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
-    // 4. sveltekit() - SvelteKit's virtual modules and SSR handling
-    // 5. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
-    // 6. excludeNodeModules() - excludes Node.js-only code from browser bundle
+    // Registration order is not the full execution order: Vite also applies each
+    // plugin's enforce phase. compactParaglideDevPlugin is serve-only and uses
+    // enforce: 'pre' to compact generated translations before normal transforms.
     plugins: [
       {
         name: 'use-production-paraglide-bundle',
@@ -361,17 +377,10 @@ export default defineConfig(({ command, mode }) => {
           return null;
         },
       },
-      isUiPreview && canReuseGeneratedParaglide()
-        ? reuseGeneratedParaglide()
-        : paraglideVitePlugin({
-            project: paraglideProject,
-            outdir: paraglideOutdir,
-            // The app-wide `m` namespace uses nearly the complete catalog. Emitting one
-            // module per message creates 5k+ Rollup nodes without useful tree-shaking;
-            // locale modules keep the same runtime contract with a bounded build graph.
-            outputStructure: 'locale-modules',
-          }),
+      reuseGeneratedParaglide({ ensure: testOverrides.ensureRepoParaglide }),
+      compactParaglideDevPlugin(paraglideOutdir),
       devHealthProbeSilencer(),
+      intentdBridgeRequested && intentdBridgePlugin(),
       preventSvelteKitRegenHMR(),
       sveltekit(),
       handleUnhandledSvelteKitModules(),
@@ -389,6 +398,8 @@ export default defineConfig(({ command, mode }) => {
     },
 
     build: {
+      // Preserve logical assignment in xterm's mode queries (xtermjs/xterm.js#5800).
+      target: 'es2021',
       // Generate sourcemaps: 'hidden' in production (not exposed publicly),
       // true in development for debugging. INTENT_DISABLE_SOURCEMAPS=1
       // (exactly '1') skips them entirely — sourcemap generation multiplies
@@ -455,12 +466,30 @@ export default defineConfig(({ command, mode }) => {
 
       cors: true,
 
-      // Configure HMR for Electron (will use the same port as the server)
-      hmr: {
-        protocol: 'ws',
-        host: '127.0.0.1',
-        // HMR port will auto-match server port when not specified
-      },
+      // Pre-transform the primary SvelteKit entry paths before announcing sandbox readiness.
+      // This avoids sending the first tunneled browser through a cold transform waterfall.
+      ...(isWebBuild
+        ? {
+            warmup: {
+              clientFiles: [
+                'src/routes/+layout.svelte',
+                'src/routes/[(]app[)]/+page.svelte',
+                'src/routes/sandbox/[[]slug]/+page.svelte',
+              ],
+            },
+          }
+        : {}),
+
+      // Electron connects directly to this host. Web clients derive HMR host
+      // and port from the page URL so a daemon-side tunnel also carries HMR.
+      ...(isWebBuild
+        ? {}
+        : {
+            hmr: {
+              protocol: 'ws',
+              host: '127.0.0.1',
+            },
+          }),
 
       fs: {
         allow: ['..'],
@@ -502,8 +531,6 @@ export default defineConfig(({ command, mode }) => {
           // Note: We do NOT ignore the entire ~/.workspaces/ directory because
           // git worktrees for development may be located there
           '**/.workspace/**',
-          // Ignore agent instruction files to prevent HMR when editing via sandbox/rules page
-          '**/features/agent/main/instructions/**',
           // Ignore preload directory - it's Electron-specific and compiled separately
           // Changes here should not trigger HMR (the generate:ipc-channels script writes here)
           '**/src/preload/**',
@@ -543,17 +570,19 @@ export default defineConfig(({ command, mode }) => {
           replacement: join(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
         },
       ],
-      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json', '.svelte'],
+      // Do not list '.svelte' here: knip turns non-default extensions into `src/**/*.<ext>` entries, hiding every unused Svelte component from `pnpm lint:dead-code`.
+      extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
       conditions: ['import', 'module', 'browser', 'default'],
     },
 
     define: {
       'process.env.IS_ELECTRON': JSON.stringify(!isWebBuild),
+      // Renderer-visible build profile: a web build never receives a preload
+      // bridge, even when it is loaded inside the app's own <webview>.
+      'process.env.INTENT_BUILD_TARGET': JSON.stringify(isWebBuild ? 'web' : 'electron'),
       // Never compile production web credentials into versioned static JS.
       // /runtime-config.js is loaded before the application bootstrap instead.
-      'process.env.VITE_INTENTD_WS_URL': JSON.stringify(
-        isProductionWebBuild ? '' : (env.VITE_INTENTD_WS_URL ?? ''),
-      ),
+      'process.env.VITE_INTENTD_WS_URL': JSON.stringify(isProductionWebBuild ? '' : browserWsUrl),
       ...webDefines,
       __APP_VERSION__: JSON.stringify(packageJson.version),
       __DEV_GIT_BRANCH__: JSON.stringify(

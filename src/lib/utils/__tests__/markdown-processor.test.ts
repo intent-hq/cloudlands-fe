@@ -3,16 +3,8 @@
  */
 import { Editor } from '@tiptap/core';
 import { createEditorConfig } from '../editor-config';
-import {
-  describe,
-  it,
-  expect,
-  vi,
-} from 'vitest';
-import {
-  processMarkdownToHTML,
-  processHTMLToMarkdown,
-} from '../markdown-processor';
+import { describe, it, expect, vi } from 'vitest';
+import { processMarkdownToHTML, processHTMLToMarkdown } from '../markdown-processor';
 import { renderTaskBlocksAsReadableMarkdown } from '../tiptap-task-block-extension';
 
 vi.mock('../tiptap-task-block-extension', async (importOriginal) => {
@@ -298,15 +290,73 @@ Some additional notes here.
       expect(html).toContain('data-checked="true"');
     });
 
+    it.each([
+      [
+        'see docs/chl-spec.md:2471 for details',
+        'docs/chl-spec.md:2471',
+        'fullPath',
+        'docs/chl-spec.md',
+        2471,
+      ],
+      ['see @src/a.ts:10 now', 'src/a.ts:10', 'fullPath', 'src/a.ts', 10],
+      ['see README.md:3 now', 'README.md:3', 'filename', 'README.md', 3],
+      ['see src/a.ts#L10-20 now', 'src/a.ts#L10-20', 'fullPath', 'src/a.ts', 10],
+    ])(
+      'captures a line suffix in one file mention chip: %s',
+      async (markdown, label, pathKey, path, line) => {
+        const html = await processMarkdownToHTML(markdown);
+        const container = document.createElement('div');
+        container.innerHTML = html;
+        const mention = container.querySelector<HTMLElement>('[data-mention][data-type="file"]');
+
+        expect(mention?.textContent).toBe(label);
+        expect(JSON.parse(mention?.dataset.meta || '{}')).toEqual({ [pathKey]: path, line });
+        expect(container.textContent).toContain(
+          `${label}${markdown.slice(markdown.indexOf(label) + label.length)}`,
+        );
+      },
+    );
+
+    it('leaves file-like text inside code and pre elements untouched', async () => {
+      const html = await processMarkdownToHTML(
+        '`docs/chl-spec.md:2471`\n\n```text\nsrc/a.ts#L10-20\n```',
+      );
+      const container = document.createElement('div');
+      container.innerHTML = html;
+
+      expect(container.querySelector('[data-mention]')).toBeNull();
+      expect(container.querySelector('code')?.textContent).toBe('docs/chl-spec.md:2471');
+      expect(container.querySelector('pre')?.textContent).toContain('src/a.ts#L10-20');
+    });
+
     it('should preserve intent:// links in markdown', async () => {
-      const markdown =
-        '[Sea Otter Joke](intent://local/note/b0c3bfa5-9ba4-4986-b67e-78494def4687)';
+      const markdown = '[Sea Otter Joke](intent://local/note/b0c3bfa5-9ba4-4986-b67e-78494def4687)';
       const html = await processMarkdownToHTML(markdown);
 
       // Check that the link is preserved in HTML
       expect(html).toContain('<a');
       expect(html).toContain('href="intent://local/note/b0c3bfa5-9ba4-4986-b67e-78494def4687"');
       expect(html).toContain('Sea Otter Joke');
+    });
+
+    it('should resolve short and long workspace image links for the active workspace', async () => {
+      const markdown = [
+        '![short](intent://local/file/docs/short.png)',
+        '![long](intent://local/workspace-1/file/docs/long.png)',
+      ].join('\n\n');
+      const html = await processMarkdownToHTML(markdown, { workspaceId: 'workspace-1' });
+
+      // Image sources carry a cache-busting `?v=` token after the path.
+      expect(html).toMatch(/src="workspace-file:\/\/workspace-1\/docs\/short\.png\?v=[^"&]+"/);
+      expect(html).toMatch(/src="workspace-file:\/\/workspace-1\/docs\/long\.png\?v=[^"&]+"/);
+    });
+
+    it('should preserve workspace asset image sources', async () => {
+      const html = await processMarkdownToHTML('![asset](workspace-asset://asset-1)', {
+        workspaceId: 'workspace-1',
+      });
+
+      expect(html).toContain('src="workspace-asset://asset-1"');
     });
 
     it('should preserve intent:// links with surrounding text', async () => {
@@ -620,7 +670,8 @@ Some additional notes here.
     });
 
     it('should handle nested code blocks with XML tags', async () => {
-      const markdown = 'Here are some XML tags in inline code:\n\n- Use `<div>` for a container element\n- The `<span>` tag is for inline content\n- Self-closing tags like `<br/>` and `<img src="..." />`';
+      const markdown =
+        'Here are some XML tags in inline code:\n\n- Use `<div>` for a container element\n- The `<span>` tag is for inline content\n- Self-closing tags like `<br/>` and `<img src="..." />`';
       const html = await processMarkdownToHTML(markdown);
 
       // All inline code should preserve the tags
@@ -752,8 +803,7 @@ Some additional notes here.
     });
 
     it('should cache the sanitized fallback, not the raw input', async () => {
-      const payload =
-        '<img src=x onerror="alert(1)"><script>alert(2)</script> fallback-cache-test';
+      const payload = '<img src=x onerror="alert(1)"><script>alert(2)</script> fallback-cache-test';
       const mock = vi.mocked(renderTaskBlocksAsReadableMarkdown);
       mock.mockImplementationOnce(() => {
         throw new Error('forced processing failure');

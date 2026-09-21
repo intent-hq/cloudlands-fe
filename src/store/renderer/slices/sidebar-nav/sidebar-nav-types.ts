@@ -58,6 +58,7 @@ export type SidebarNavState = {
   showArchivedWorkspaces: boolean;
   /** Collapsed All Spaces status-group IDs (persisted) */
   collapsedStatusGroupIds: string[];
+  collapsedRepoGroupKeys: string[];
   /** Whether the Chief of Staff section in the combined panel is collapsed (persisted) */
   isChiefCollapsed: boolean;
   /** Pinned workspace IDs (persisted to localStorage) */

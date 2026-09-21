@@ -2,15 +2,11 @@
  * Onboarding Selectors
  */
 
-import { store } from "../../store";
+import { store } from '../../store';
 import type { OnboardingState } from './onboarding-types';
 
-export const selectOnboardingState = store.createSelector((state): OnboardingState => state.onboarding);
-
-export const selectOnboardingStep = store.createSelector(
-  (state) => state.onboarding.step,
+export const selectOnboardingState = store.createSelector(
+  (state): OnboardingState => state.onboarding,
 );
 
-export const selectOnboardingFullFlowRequested = store.createSelector(
-  (state) => state.onboarding.fullFlowRequested,
-);
+export const selectOnboardingStep = store.createSelector((state) => state.onboarding.step);

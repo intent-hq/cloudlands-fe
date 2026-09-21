@@ -31,7 +31,8 @@ function stringifyLoose(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value instanceof Error) return `${value.name}: ${value.message}`;
   const like = toErrorLike(value);
-  if (like?.name || like?.message) return `${like.name ?? ''}${like.name ? ': ' : ''}${like.message ?? ''}`;
+  if (like?.name || like?.message)
+    return `${like.name ?? ''}${like.name ? ': ' : ''}${like.message ?? ''}`;
   try {
     return String(value);
   } catch {
@@ -86,12 +87,15 @@ export function shouldSuppressMonacoUnhandledRejection(reason: unknown): boolean
   const unwrapped = unwrapReason(reason);
   const like = toErrorLike(unwrapped) ?? toErrorLike(reason);
 
-  const errorName = like?.name ?? (isRecord(unwrapped) && typeof unwrapped.name === 'string' ? unwrapped.name : '');
+  const errorName =
+    like?.name ?? (isRecord(unwrapped) && typeof unwrapped.name === 'string' ? unwrapped.name : '');
   const errorMessage =
-    like?.message ?? (isRecord(unwrapped) && typeof unwrapped.message === 'string' ? unwrapped.message : '');
+    like?.message ??
+    (isRecord(unwrapped) && typeof unwrapped.message === 'string' ? unwrapped.message : '');
   const errorStr = `${stringifyLoose(unwrapped)} ${stringifyLoose(reason)}`;
 
-  if (errorStr.includes('Could not find source file') && errorStr.includes('inmemory://')) return true;
+  if (errorStr.includes('Could not find source file') && errorStr.includes('inmemory://'))
+    return true;
 
   if (
     errorStr.includes('GUEST_VIEW_MANAGER_CALL') &&

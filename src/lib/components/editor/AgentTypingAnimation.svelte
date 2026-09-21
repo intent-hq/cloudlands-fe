@@ -7,9 +7,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
-  selectIsFollowing,
-  selectAgentColor,
-} from '$store/renderer/slices/agent-follow/agent-follow-selectors';
+    selectIsFollowing,
+    selectAgentColor,
+  } from '$store/renderer/slices/agent-follow/agent-follow-selectors';
   import { m } from '$shared/paraglide/messages.js';
 
   const isFollowing$ = selectIsFollowing();
@@ -40,8 +40,7 @@
     if (!isActive || !$isFollowing$) return;
 
     const detail = (event as CustomEvent).detail as
-      | { content?: string; isAddition?: boolean; speed?: number }
-      | undefined;
+      { content?: string; isAddition?: boolean; speed?: number } | undefined;
     if (!detail || typeof detail.content !== 'string') return;
     const { content: newContent, isAddition, speed = 30 } = detail;
 

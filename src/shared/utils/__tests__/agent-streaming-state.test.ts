@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { normalizeStreamingState } from '../agent-streaming-state';
 import { AgentStatus, type AgentMessage, type AgentSession } from '$shared/types';
 
-
 function message(overrides: Partial<AgentMessage> = {}): AgentMessage {
   return {
     id: 'm1',
@@ -43,9 +42,7 @@ describe('normalizeStreamingState', () => {
   });
 
   it('does NOT downgrade a session whose message is genuinely streaming', () => {
-    const result = normalizeStreamingState(
-      session({ messages: [message({ isStreaming: true })] }),
-    );
+    const result = normalizeStreamingState(session({ messages: [message({ isStreaming: true })] }));
     expect(result.isStreaming).toBe(true);
     expect(result.isProcessing).toBe(true);
     expect(result.isResponding).toBe(true);
@@ -96,6 +93,4 @@ describe('normalizeStreamingState', () => {
     expect(result.isStreaming).toBe(false);
     expect(result.status).toBe(AgentStatus.Idle);
   });
-
 });
-

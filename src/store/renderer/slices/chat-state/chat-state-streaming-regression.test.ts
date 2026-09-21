@@ -6,11 +6,7 @@
  * 1. OR-latch: isStreaming/isProcessing must always be cleared together
  * 2. RAF interleaving: chunk flush after completion must not revive streaming flags
  */
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   agentSessionReducer,
   initialState as sessionInitialState,

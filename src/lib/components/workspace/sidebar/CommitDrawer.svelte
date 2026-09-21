@@ -5,30 +5,21 @@
    */
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
-  executeBackgroundAgent,
-  cancelExecution,
-} from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
+    executeBackgroundAgent,
+    cancelExecution,
+  } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import { setSidebarCommitWhenReady } from '$store/renderer/slices/changes/changes-slice';
   import { selectSidebarCommitWhenReady } from '$store/renderer/slices/changes/changes-selectors';
 
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Textarea } from '$lib/components/ui/textarea';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import {
-  faCheck,
-  faCodeCommit,
-  faEye,
-  faRobot,
-  faSpinner,
-  faStop,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faCodeCommit, faEye, faRobot, faStop } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import {
-  readable,
-  writable,
-} from 'svelte/store';
+  import { readable, writable } from 'svelte/store';
   import DividerButton from './DividerButton.svelte';
   import DividerPanel from './DividerPanel.svelte';
   import TimelineDivider from './TimelineDivider.svelte';
@@ -55,7 +46,6 @@
     stagedChanges,
     onCommit,
   }: Props = $props();
-
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -103,7 +93,6 @@
       );
     }
   }
-
 </script>
 
 <!-- Divider with Commit button -->
@@ -146,7 +135,7 @@
         minHeight={60}
         maxHeight={150}
         readonly={isGenerating}
-        class="text-sm {isGenerating ? 'border-primary/40 bg-muted/20' : ''}"
+        class="text-sm {isGenerating ? 'border-primary-ink/40 bg-muted/20' : ''}"
       />
     </div>
     <div class="flex items-center gap-2 flex-wrap w-full">
@@ -156,12 +145,10 @@
         size="xs"
         data-testid="commit-submit-button"
         onclick={() => onCommit()}
-        disabled={!commitMessage.trim() ||
-          isCommitting ||
-          (isGenerating && $commitWhenReady$)}
+        disabled={!commitMessage.trim() || isCommitting || (isGenerating && $commitWhenReady$)}
       >
         {#if isCommitting || (isGenerating && $commitWhenReady$)}
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span
             >{isCommitting
               ? m.workspace_commitDrawer_committing_label()
@@ -181,7 +168,7 @@
             class="rounded-r-none border-r-0"
             onclick={handleStopGenerating}
           >
-            <Fa icon={faSpinner} size="xs" class="animate-spin" />
+            <IntentMarkLoader size={12} />
             <span class="mr-1">{m.workspace_prCreator_autoFill_label()}</span>
             <Fa icon={faStop} size="xs" />
           </Button>
@@ -208,7 +195,7 @@
             {#if $commitWhenReady$}
               <Fa icon={faCheck} size="xs" />
             {/if}
-            {m.workspace_commitDrawer_autoCommitWhenDone_label()}
+            {m.workspace_commitDrawer_autoCommit_label()}
           </Button>
         </div>
       {:else}

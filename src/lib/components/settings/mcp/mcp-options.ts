@@ -49,6 +49,17 @@ export const mcpOptions: McpInstallOption[] = [
     authType: 'oauth',
   },
   {
+    // i18n-ignore (stable server-name identifier containing the Figma brand)
+    label: 'Figma Desktop',
+    get description() {
+      return m.settings_mcp_preset_figmaDesktop_description();
+    },
+    iconName: 'figma',
+    type: 'http',
+    url: 'http://127.0.0.1:3845/mcp',
+    authType: 'none',
+  },
+  {
     label: 'Redis',
     get description() {
       return m.settings_mcp_preset_redis_description();

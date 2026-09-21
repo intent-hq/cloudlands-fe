@@ -1,3 +1,4 @@
+import { TC_ADDRESS } from '../../../test/fixtures/tc-address.fixture';
 /**
  * Unit tests for the connection-target resolver and the loopback WebSocket
  * transport (framing adapter + integration with the shared JSON-RPC client).
@@ -7,13 +8,17 @@
  * so the adapter's newline framing + event-push path exercise the same code
  * a live daemon would.
  */
+import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
+import dns from 'node:dns';
+import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import https from 'node:https';
 import { createRequire } from 'node:module';
-import type { AddressInfo } from 'node:net';
+import net, { type AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Duplex } from 'node:stream';
+import { Duplex, PassThrough } from 'node:stream';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -24,19 +29,27 @@ import {
   AuthRejectedError,
   candidateWssHosts,
   captureFingerprint,
+  CONNECTION_LIMIT_RETRY_DEFAULT_MS,
+  CONNECTION_LIMIT_RETRY_MAX_MS,
+  CONNECTION_LIMIT_RETRY_MIN_MS,
+  ConnectionLimitError,
   createBackendSocket,
   defaultSocketPath,
   describeBackendConfig,
   normalizeFingerprint,
+  parseRetryAfterMs,
   PinMismatchError,
   raceDuplexSockets,
   resolveBackendConfig,
+  TUNNEL_RACE_HOST,
+  tunnelRaceAttempt,
   WebSocketDuplex,
 } from './backend-connection';
-import type { HostCertMismatch } from './backend-connection';
+import type { HostCertMismatch, RaceConnectInfo } from './backend-connection';
 import { resolveSocketPath } from './intentd-sidecar';
 import { isWindowsPipePath, toLocalEndpoint, windowsPipeName } from './intentd-pipe-name';
 import { JsonRpcClient } from './json-rpc-client';
+import { createTunneledSocket, TUNNEL_CONNECT_TIMEOUT_MS } from './tailcat-tunnel';
 
 // `ws` is aliased to a browser stub in `vitest.config.ts`; use createRequire to
 // load the real Node implementation (same pattern as `ssh-manager.ts`).
@@ -899,6 +912,8 @@ class RejectingWssDaemon {
   port = 0;
   fingerprint = '';
   statusCode = 401;
+  /** `Retry-After` header value sent with the rejection (503 cap refusals), if any. */
+  retryAfter: string | null = null;
   /** Number of upgrade attempts observed (for reconnect-halt assertions). */
   upgradeAttempts = 0;
   lastAuthHeader: string | undefined;
@@ -911,8 +926,9 @@ class RejectingWssDaemon {
       this.upgradeAttempts += 1;
       this.lastAuthHeader = req.headers.authorization;
       this.lastUpgradeUrl = req.url;
+      const retryAfter = this.retryAfter === null ? '' : `Retry-After: ${this.retryAfter}\r\n`;
       socket.write(
-        `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+        `HTTP/1.1 ${this.statusCode} Rejected\r\nConnection: close\r\n${retryAfter}Content-Length: 0\r\n\r\n`,
       );
       socket.destroy();
     });
@@ -924,6 +940,42 @@ class RejectingWssDaemon {
     await new Promise<void>((res) => this.server.close(() => res()));
   }
 }
+
+// Multiplayer guest caps (intent-hq/intentd#1917): the 503 cap refusal carries
+// `Retry-After: <delta-seconds>`. Only that form is honored, clamped to
+// [5, 300] s; anything else falls back to the default slow cadence.
+describe('parseRetryAfterMs', () => {
+  it('honors a delta-seconds Retry-After within the clamp bounds', () => {
+    expect(parseRetryAfterMs('45')).toBe(45_000);
+    expect(parseRetryAfterMs(' 45 ')).toBe(45_000);
+    expect(parseRetryAfterMs(['45', '90'])).toBe(45_000);
+  });
+
+  it('falls back to the default cadence when absent or unparseable', () => {
+    expect(parseRetryAfterMs(undefined)).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('soon')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('-5')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(parseRetryAfterMs('1.5')).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    // HTTP-date form is not honored here.
+    expect(parseRetryAfterMs('Wed, 21 Oct 2026 07:28:00 GMT')).toBe(
+      CONNECTION_LIMIT_RETRY_DEFAULT_MS,
+    );
+  });
+
+  it('clamps out-of-range values into [5, 300] seconds', () => {
+    expect(parseRetryAfterMs('0')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('1')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('5')).toBe(CONNECTION_LIMIT_RETRY_MIN_MS);
+    expect(parseRetryAfterMs('300')).toBe(CONNECTION_LIMIT_RETRY_MAX_MS);
+    expect(parseRetryAfterMs('3600')).toBe(CONNECTION_LIMIT_RETRY_MAX_MS);
+  });
+
+  it('defaults a ConnectionLimitError built without a value to the default cadence', () => {
+    expect(new ConnectionLimitError().retryAfterMs).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    expect(new ConnectionLimitError(60_000).retryAfterMs).toBe(60_000);
+  });
+});
 
 describe('WSS auth rejection (401/403 upgrade responses)', () => {
   let daemon: RejectingWssDaemon;
@@ -989,6 +1041,45 @@ describe('WSS auth rejection (401/403 upgrade responses)', () => {
     expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
     expect(errors.some((e) => /unexpected server response: 500/i.test(e.message))).toBe(true);
     client.dispose();
+  });
+
+  // Multiplayer guest caps (intent-hq/intentd#1917): the daemon refuses the
+  // upgrade with 503 when its guest connection cap is spent. Transient, so it
+  // is neither an auth rejection (which stops retrying) nor a generic
+  // transport error (which hides the reason).
+  it('surfaces a 503 upgrade rejection as a ConnectionLimitError and flags the client limited', async () => {
+    daemon.statusCode = 503;
+    const client = makeClient();
+    const errors: Error[] = [];
+    client.on('error', (e) => errors.push(e));
+    await expect(client.request('system.status')).rejects.toBeInstanceOf(ConnectionLimitError);
+    expect(errors.some((e) => e instanceof ConnectionLimitError)).toBe(true);
+    expect(errors.some((e) => e instanceof AuthRejectedError)).toBe(false);
+    expect(errors.some((e) => e instanceof PinMismatchError)).toBe(false);
+    expect(client.getStatus()).toBe('disconnected');
+    expect(client.isConnectionLimited()).toBe(true);
+    // No Retry-After on the wire → the default slow cadence.
+    expect(client.getConnectionLimitRetryAfterMs()).toBe(CONNECTION_LIMIT_RETRY_DEFAULT_MS);
+    client.dispose();
+  });
+
+  it('carries the 503 Retry-After (delta-seconds) on the ConnectionLimitError', async () => {
+    daemon.statusCode = 503;
+    daemon.retryAfter = '45';
+    try {
+      const client = makeClient();
+      const errors: Error[] = [];
+      client.on('error', (e) => errors.push(e));
+      await expect(client.request('system.status')).rejects.toBeInstanceOf(ConnectionLimitError);
+      const refusal = errors.find(
+        (e): e is ConnectionLimitError => e instanceof ConnectionLimitError,
+      );
+      expect(refusal?.retryAfterMs).toBe(45_000);
+      expect(client.getConnectionLimitRetryAfterMs()).toBe(45_000);
+      client.dispose();
+    } finally {
+      daemon.retryAfter = null;
+    }
   });
 
   it('classifies a 401 from a cert that fails the pin as PinMismatchError, not auth rejection', async () => {
@@ -1124,6 +1215,16 @@ describe('normalizeFingerprint', () => {
 });
 
 describe('candidateWssHosts', () => {
+  it('keeps Tailcat addresses out of DNS while retaining ordinary tc-prefixed hosts', () => {
+    expect(
+      candidateWssHosts({
+        transport: 'wss',
+        host: TC_ADDRESS,
+        hosts: [TC_ADDRESS, 'tcp-server.local', 'tc-printer', '192.168.1.10'],
+      }),
+    ).toEqual(['tcp-server.local', 'tc-printer', '192.168.1.10']);
+  });
+
   it('keeps the primary host first and deduplicates the extras', () => {
     expect(
       candidateWssHosts({
@@ -1196,6 +1297,53 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     );
     b.push('pong\n');
     expect(await received).toBe('pong\n');
+    facade.destroy();
+  });
+
+  it("the facade's connect event names the winning direct host", async () => {
+    const direct = new FakeCandidate();
+    const tunnel = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: '10.0.0.5', create: () => direct },
+      { host: TUNNEL_RACE_HOST, create: () => tunnel },
+    ]);
+    const winner = new Promise<RaceConnectInfo>((res) =>
+      facade.once('connect', (info: RaceConnectInfo) => res(info)),
+    );
+    direct.emit('connect');
+    expect(await winner).toEqual({ host: '10.0.0.5', via: 'direct' });
+    expect(tunnel.destroyedByRace).toBe(true);
+    facade.destroy();
+  });
+
+  it("the facade's connect event names the tunnel pseudo-host when the tunnel wins", async () => {
+    const direct = new FakeCandidate();
+    const tunnel = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: '10.0.0.5', create: () => direct },
+      { host: TUNNEL_RACE_HOST, via: 'tunnel', create: () => tunnel },
+    ]);
+    const winner = new Promise<RaceConnectInfo>((res) =>
+      facade.once('connect', (info: RaceConnectInfo) => res(info)),
+    );
+    tunnel.emit('secureConnect');
+    expect(await winner).toEqual({ host: TUNNEL_RACE_HOST, via: 'tunnel' });
+    expect(direct.destroyedByRace).toBe(true);
+    facade.destroy();
+  });
+
+  it('classifies a direct candidate as direct even when its host is named like the tunnel pseudo-host', async () => {
+    const lookalike = new FakeCandidate();
+    const other = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: TUNNEL_RACE_HOST, create: () => lookalike },
+      { host: '10.0.0.5', create: () => other },
+    ]);
+    const winner = new Promise<RaceConnectInfo>((res) =>
+      facade.once('connect', (info: RaceConnectInfo) => res(info)),
+    );
+    lookalike.emit('connect');
+    expect(await winner).toEqual({ host: TUNNEL_RACE_HOST, via: 'direct' });
     facade.destroy();
   });
 
@@ -1397,6 +1545,56 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     expect(a.destroyedByRace).toBe(true);
   });
 
+  // Multiplayer guest caps (intent-hq/intentd#1917): the client keys its slow
+  // retry cadence on the typed 503 refusal, so a later generic failure (or the
+  // race timeout) on another candidate must not downgrade it.
+  it('keeps a ConnectionLimitError when a later candidate fails generically', async () => {
+    const capped = new FakeCandidate();
+    const refused = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'capped', create: () => capped },
+      { host: 'refused', create: () => refused },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError(45_000));
+    refused.emit('error', new Error('ECONNREFUSED'));
+    const error = await failed;
+    expect(error).toBeInstanceOf(ConnectionLimitError);
+    // The daemon's Retry-After rides along with the retained refusal.
+    expect((error as ConnectionLimitError).retryAfterMs).toBe(45_000);
+  });
+
+  it('keeps a ConnectionLimitError when the remaining candidate times out', async () => {
+    const capped = new FakeCandidate();
+    const hanging = new FakeCandidate();
+    const facade = raceDuplexSockets(
+      [
+        { host: 'capped', create: () => capped },
+        { host: 'hanging', create: () => hanging },
+      ],
+      { timeoutMs: 50 },
+    );
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError(120_000));
+    const error = await failed;
+    expect(error).toBeInstanceOf(ConnectionLimitError);
+    expect((error as ConnectionLimitError).retryAfterMs).toBe(120_000);
+    expect(hanging.destroyedByRace).toBe(true);
+  });
+
+  it('still prefers a pin mismatch over a ConnectionLimitError', async () => {
+    const capped = new FakeCandidate();
+    const foreign = new FakeCandidate();
+    const facade = raceDuplexSockets([
+      { host: 'capped', create: () => capped },
+      { host: 'foreign', create: () => foreign },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    capped.emit('error', new ConnectionLimitError());
+    foreign.emit('error', new PinMismatchError('AA', 'BB'));
+    expect(await failed).toBeInstanceOf(PinMismatchError);
+  });
+
   it('fails when every attempt factory throws synchronously', async () => {
     const facade = raceDuplexSockets([
       {
@@ -1408,6 +1606,302 @@ describe('raceDuplexSockets (multi-host racing, #1746)', () => {
     ]);
     const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
     expect((await failed).message).toBe('boom');
+  });
+});
+
+describe('tunnelRaceAttempt (tailcat tunnel candidate)', () => {
+  const wssConfig = {
+    transport: 'wss' as const,
+    host: '10.0.0.9',
+    port: 5181,
+    token: 't',
+    fingerprint: 'AB:CD',
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns null without a tcAddress (direct-only race unchanged)', () => {
+    expect(tunnelRaceAttempt(wssConfig)).toBeNull();
+  });
+
+  it('returns null when the tailcat binary is unavailable (fail-soft)', () => {
+    vi.stubEnv('TAILCAT_BIN', path.join(os.tmpdir(), 'definitely-missing-tailcat'));
+    // Force resolution away from any staged dev binary by also making the
+    // packaged/dev probes fail: an empty resourcesPath and a cwd walk from
+    // tmp never find resources/tailcat.
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
+    try {
+      expect(tunnelRaceAttempt({ ...wssConfig, tcAddress: TC_ADDRESS })).toBeNull();
+      // A tunnel-only record must fail locally, not resolve the blob as DNS.
+      expect(() => createBackendSocket({ ...wssConfig, host: TC_ADDRESS })).toThrow(
+        'tailcat binary unavailable',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('builds a tunnel attempt labeled with the pseudo-host when binary + tcAddress exist', () => {
+    // Any existing file satisfies the TAILCAT_BIN existence probe; the
+    // attempt is not dialed in this test.
+    vi.stubEnv('TAILCAT_BIN', __filename);
+    const attempt = tunnelRaceAttempt({ ...wssConfig, tcAddress: TC_ADDRESS });
+    expect(attempt).not.toBeNull();
+    expect(attempt!.host).toBe(TUNNEL_RACE_HOST);
+    expect(attempt!.via).toBe('tunnel');
+    expect(typeof attempt!.create).toBe('function');
+  });
+});
+
+describe('tunnel candidate connect bound in the wss race', () => {
+  // During a remote daemon update the direct host refuses fast while the
+  // tailcat forwarder accepts the loopback connect and the inner handshake
+  // stalls; without a per-candidate bound the race sits in `connecting` until
+  // RACE_TIMEOUT_MS (10 s), which is the whole updating window.
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it('settles at TUNNEL_CONNECT_TIMEOUT_MS when the direct host refuses and the tunnel hangs', async () => {
+    vi.useFakeTimers();
+    const refused = new FakeCandidate();
+    const hangingInner = new FakeCandidate();
+    const tunnel = createTunneledSocket({
+      tcAddress: TC_ADDRESS,
+      remotePort: 5181,
+      binaryPath: '/fake/tailcat',
+      spawn: () => new EventEmitter() as unknown as ChildProcess,
+      createInner: () => hangingInner,
+    });
+    const facade = raceDuplexSockets([
+      { host: '10.0.0.9', create: () => refused },
+      { host: TUNNEL_RACE_HOST, via: 'tunnel', create: () => tunnel },
+    ]);
+    const failed = new Promise<Error>((res) => facade.once('error', (e: Error) => res(e)));
+    refused.emit(
+      'error',
+      Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+    );
+
+    await vi.advanceTimersByTimeAsync(TUNNEL_CONNECT_TIMEOUT_MS - 1);
+    expect(facade.destroyed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const error = await failed;
+    expect(error.message).toMatch(/did not connect within/);
+    expect(error.message).not.toMatch(/race timed out/);
+    expect(tunnel.destroyed).toBe(true);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'createBackendSocket: a black-holed tailcat child errors at the tunnel bound, not the race timeout',
+    async () => {
+      // A real spawn through tunnelRaceAttempt: the "tailcat" binary is a
+      // script that accepts the pipe and never answers, so the pinned wss
+      // handshake through the forwarder can never complete.
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tailcat-hang-'));
+      const script = path.join(tmpDir, 'tailcat');
+      fs.writeFileSync(script, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 });
+      vi.stubEnv('TAILCAT_BIN', script);
+      // A port nothing listens on: the direct candidate refuses immediately.
+      const probe = net.createServer().listen(0, '127.0.0.1');
+      await new Promise<void>((res) => probe.once('listening', res));
+      const refusedPort = (probe.address() as AddressInfo).port;
+      await new Promise<void>((res) => probe.close(() => res()));
+
+      vi.useFakeTimers();
+      const socket = createBackendSocket({
+        transport: 'wss',
+        host: '127.0.0.1',
+        port: refusedPort,
+        token: 'c'.repeat(64),
+        fingerprint: 'AA:BB',
+        tcAddress: TC_ADDRESS,
+      });
+      try {
+        const failed = new Promise<Error>((res) => socket.once('error', (e: Error) => res(e)));
+        await vi.advanceTimersByTimeAsync(TUNNEL_CONNECT_TIMEOUT_MS);
+        const error = await failed;
+        expect(error.message).not.toMatch(/race timed out/);
+        expect(socket.destroyed).toBe(true);
+      } finally {
+        socket.destroy();
+        vi.useRealTimers();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('captureFingerprint through the tailcat tunnel (tc-address host)', () => {
+  let daemon: FakeWssDaemon;
+  const TOKEN = 'c'.repeat(64);
+
+  /**
+   * Fake tailcat child: instead of dialing the tc mesh, relays its stdio to
+   * the FakeWssDaemon's TLS port — the same pipe topology the real client
+   * binary provides, so the forwarder-loopback capture path runs end to end.
+   */
+  class FakeRelayChild extends EventEmitter {
+    stdin = new PassThrough();
+    stdout = new PassThrough();
+    stderr = new PassThrough();
+    killed = false;
+    constructor(remotePort: number) {
+      super();
+      const socket = net.connect(remotePort, '127.0.0.1');
+      this.stdin.pipe(socket);
+      socket.pipe(this.stdout);
+      this.once('exit', () => socket.destroy());
+    }
+    kill(): boolean {
+      this.killed = true;
+      this.emit('exit', 0);
+      return true;
+    }
+  }
+
+  beforeAll(async () => {
+    daemon = new FakeWssDaemon();
+    await daemon.start();
+  });
+
+  afterAll(async () => {
+    await daemon.stop();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.skipIf(process.platform === 'win32').each([undefined, TC_ADDRESS])(
+    'reopens a saved Tailcat host without DNS and preserves spawn bytes (tcAddress: %s)',
+    async (tcAddress) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tailcat-reconnect-'));
+      const script = path.join(tmpDir, 'tailcat');
+      const argsFile = path.join(tmpDir, 'args.jsonl');
+      fs.writeFileSync(
+        script,
+        `#!${process.execPath}
+const fs = require('node:fs');
+const net = require('node:net');
+fs.appendFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+const socket = net.connect(Number(process.argv[3]), '127.0.0.1');
+process.stdin.pipe(socket).pipe(process.stdout);
+socket.on('error', () => process.exit(1));
+`,
+        { mode: 0o755 },
+      );
+      vi.stubEnv('TAILCAT_BIN', script);
+      const lookup = vi.spyOn(dns, 'lookup');
+      try {
+        const config = {
+          transport: 'wss' as const,
+          host: TC_ADDRESS,
+          port: daemon.port,
+          token: TOKEN,
+          fingerprint: daemon.fingerprint,
+          tcAddress,
+        };
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const socket = createBackendSocket(config);
+          try {
+            await new Promise<void>((resolve, reject) => {
+              socket.once('connect', resolve);
+              socket.once('error', reject);
+            });
+          } finally {
+            socket.destroy();
+          }
+        }
+        expect(
+          fs
+            .readFileSync(argsFile, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line)),
+        ).toEqual([
+          [TC_ADDRESS, String(daemon.port)],
+          [TC_ADDRESS, String(daemon.port)],
+        ]);
+        // Node may call lookup for numeric loopback too; no opaque address
+        // may reach the resolver, including a lowercased version of it.
+        expect(lookup.mock.calls.map(([host]) => host)).toEqual(['127.0.0.1', '127.0.0.1']);
+      } finally {
+        lookup.mockRestore();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('fails structured (connect-failed) when the tailcat binary is unavailable', async () => {
+    vi.stubEnv('TAILCAT_BIN', path.join(os.tmpdir(), 'definitely-missing-tailcat'));
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(os.tmpdir());
+    try {
+      const result = await captureFingerprint({ host: TC_ADDRESS, port: daemon.port });
+      expect(result).toEqual({
+        ok: false,
+        code: 'connect-failed',
+        error: expect.stringContaining('tailcat binary unavailable'),
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('captures via the loopback forwarder, preserves the dialed tc address, and closes the tunnel', async () => {
+    vi.stubEnv('TAILCAT_BIN', __filename);
+    const children: FakeRelayChild[] = [];
+    const spawnArgs: string[][] = [];
+    const result = await captureFingerprint(
+      // Trim paste whitespace without changing the case-sensitive payload.
+      { host: `  ${TC_ADDRESS}  `, port: daemon.port, token: TOKEN },
+      {
+        tailcatSpawn: (_command, args) => {
+          spawnArgs.push(args);
+          const child = new FakeRelayChild(daemon.port);
+          children.push(child);
+          return child as unknown as ChildProcess;
+        },
+      },
+    );
+    expect(result).toEqual({
+      ok: true,
+      fingerprint: daemon.fingerprint,
+      connected: true,
+      tokenValid: true,
+    });
+    // The forwarder spawned exactly one relay with the exact address and
+    // the daemon's port, and the finally-block teardown killed it.
+    expect(spawnArgs).toEqual([[TC_ADDRESS, String(daemon.port)]]);
+    expect(children).toHaveLength(1);
+    expect(children[0].killed).toBe(true);
+  });
+
+  it('keeps the pin enforced across the loopback re-target: a mismatch never leaks the token', async () => {
+    vi.stubEnv('TAILCAT_BIN', __filename);
+    daemon.lastAuthHeader = 'sentinel-not-overwritten';
+    const before = daemon.decryptedBytes;
+    const wrong = Array.from({ length: 32 }, () => 'FF').join(':');
+    const result = await captureFingerprint(
+      { host: TC_ADDRESS, port: daemon.port, token: TOKEN, expectedFingerprint: wrong },
+      {
+        tailcatSpawn: () => new FakeRelayChild(daemon.port) as unknown as ChildProcess,
+      },
+    );
+    expect(result).toEqual({
+      ok: false,
+      code: 'fingerprint-mismatch',
+      error: expect.any(String),
+      actualFingerprint: daemon.fingerprint,
+    });
+    // No decrypted application byte — no upgrade request, no Authorization
+    // header — reached the daemon through the tunnel (monorepo#3782 TOCTOU).
+    await new Promise((res) => setTimeout(res, 200));
+    expect(daemon.decryptedBytes).toBe(before);
+    expect(daemon.lastAuthHeader).toBe('sentinel-not-overwritten');
   });
 });
 

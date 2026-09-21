@@ -1,3 +1,6 @@
+// @verify-changed-triggers: src/assets/icons/app-icon/*.png, electron-builder.yml,
+//   .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml
+
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

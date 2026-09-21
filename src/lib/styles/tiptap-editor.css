@@ -71,6 +71,18 @@
   max-width: 100%;
 }
 
+/* Failed renders have no diagram to show: keep the error card (and its
+   expanded source details) aligned with the prose column instead of the
+   wide lane. The wrapper reports the render state, see MermaidBlockNodeView. */
+.tiptap-editor.ProseMirror
+  > .node-mermaidBlock:has(> [data-node-view-wrapper][data-render-state='error']) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
 /* Monospace mode: code blocks don't need breakout since they're already
    styled differently (transparent bg, triple backtick fences) */
 .note-font-monospace .tiptap-editor.ProseMirror > pre {
@@ -234,13 +246,18 @@
   font-size: 0.82em;
 }
 
-/* Linked-task cards are UI chrome, not prose — keep them in the UI font
-   (and slightly smaller) instead of inheriting the serif body font. */
-.note-font-serif .tiptap-editor li[data-type='taskItem'] button[contenteditable='false'],
-.note-font-serif .tiptap-editor li[data-type='taskItem'] div[role='group'] {
-  font-family: var(--font-ui);
-  font-size: 0.9375rem;
-  letter-spacing: normal;
+/* Task titles remain prose in every note font; controls keep their own sizing. */
+.tiptap-editor [data-task-item-row],
+.tiptap-editor [data-task-row-title] {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: normal;
+  line-height: inherit;
+}
+
+.note-font-serif .tiptap-editor [data-task-item-row] {
+  font-size: 1rem;
+  line-height: 1.48;
 }
 
 .note-font-monospace .tiptap-editor {
@@ -328,6 +345,8 @@
   border: none;
   padding: 0;
   position: relative;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .note-font-monospace .tiptap-editor pre::before {
@@ -378,7 +397,7 @@
 }
 
 .mention-chip:focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -398,7 +417,7 @@
 }
 
 .skill-command-chip.ProseMirror-selectednode {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -561,11 +580,11 @@ div.tiptap-editor ol {
 
 .tiptap-editor ul.task-list li.task-item input[type='checkbox']:checked {
   background: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary-ink));
 }
 
 .tiptap-editor ul.task-list li.task-item input[type='checkbox']:hover {
-  border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary-ink));
 }
 
 .tiptap-editor ul.task-list li.task-item[data-checked='true'] > div > p,
@@ -710,7 +729,7 @@ code:has(.is-file-path):hover {
 
 .tiptap-editor code:has(.is-file-path):focus,
 code:has(.is-file-path):focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -742,7 +761,7 @@ code.is-file-path:hover {
 
 .tiptap-editor code.is-file-path:focus,
 code.is-file-path:focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -753,11 +772,11 @@ code.is-file-path:focus {
   color: hsl(var(--muted-foreground));
   border: none;
   border-radius: 0.25rem;
-  padding: 0.8rem 1.3rem;
+  padding: 0.75rem 1rem;
   margin: 1rem 0;
   overflow-x: auto;
-  font-size: 1em;
-  line-height: 1.5;
+  font-size: 0.8125rem;
+  line-height: 20px;
 }
 
 .tiptap-editor pre code {
@@ -804,7 +823,7 @@ code.is-file-path:focus {
 }
 
 .tiptap-editor pre .code-block-copy-btn.copied {
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-ink));
 }
 
 /* Syntax highlighting for code blocks */
@@ -1275,4 +1294,90 @@ code.is-file-path:focus {
 
 .suggestion-tooltip-actions button.reject:hover {
   background: rgba(239, 68, 68, 0.2);
+}
+
+/* Remote cursors (multiplayer): caret widget + selection highlight.
+   The widget is an empty inline span that only marks the caret position; the
+   bar and the name tag are anchor-positioned to it (each widget sets its own
+   `--remote-cursor-anchor` name) and their containing block is the positioned
+   `.ProseMirror` root (`@tiptap/core` injects `.ProseMirror { position:
+   relative }` with its default `injectCSS`; remote-cursor-tag.ct.spec.ts
+   asserts the tag is kept inside that box), so the tag is sized to its
+   content instead of being bounded by the zero-width span and can fall back
+   to the other side of the caret when it would overflow the editor. A name
+   wider than the editor itself is clamped to the editor's width and
+   ellipsized rather than clipped by the note's scroll container. The browser
+   measures the overflow
+   of each placement against the editor's box on every layout (caret move,
+   resize, name change): the tag extends right from the caret, flips to end at
+   the caret when that would leave the right edge, clamps to the editor's left
+   edge when both orientations overflow, and drops below the line only on the
+   first line of the document. */
+@position-try --remote-cursor-tag-start {
+  left: 0;
+  right: auto;
+}
+
+.remote-cursor {
+  display: inline;
+  anchor-name: var(--remote-cursor-anchor);
+  pointer-events: none;
+  user-select: none;
+}
+
+.remote-cursor__bar {
+  position: absolute;
+  position-anchor: var(--remote-cursor-anchor);
+  top: anchor(top);
+  left: calc(anchor(left) - 1px);
+  width: 2px;
+  height: 1.2em;
+  background: var(--remote-cursor-color);
+}
+
+.remote-cursor__tag {
+  position: absolute;
+  position-anchor: var(--remote-cursor-anchor);
+  left: calc(anchor(left) - 1px);
+  bottom: anchor(top);
+  position-try-fallbacks:
+    flip-inline,
+    --remote-cursor-tag-start,
+    flip-block,
+    flip-block flip-inline,
+    --remote-cursor-tag-start flip-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0 0.3rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  background: var(--remote-cursor-color);
+  color: white;
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+.remote-cursor__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remote-cursor__avatar {
+  flex-shrink: 0;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 9999px;
+  object-fit: cover;
+}
+
+.remote-selection {
+  background: color-mix(in srgb, var(--remote-cursor-color) 25%, transparent);
 }

@@ -337,7 +337,10 @@ describe('createRepoConfigProbeScheduler', () => {
       onProbeResult: vi.fn(),
       applyScript: vi.fn(),
     };
-    const select = (identity: RepoIdentity, overrides: Partial<RepoConfigProbeSelectionOptions> = {}) => {
+    const select = (
+      identity: RepoIdentity,
+      overrides: Partial<RepoConfigProbeSelectionOptions> = {},
+    ) => {
       state.identity = identity;
       scheduler.onSelectionChange({
         identity,

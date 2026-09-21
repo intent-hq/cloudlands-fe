@@ -36,9 +36,11 @@ describe('orderProviders', () => {
   });
 
   it('puts the last-used provider first when it is connected', () => {
-    expect(
-      orderProviders(conn({ github: true, linear: true, sentry: true }), 'sentry'),
-    ).toEqual(['sentry', 'github', 'linear']);
+    expect(orderProviders(conn({ github: true, linear: true, sentry: true }), 'sentry')).toEqual([
+      'sentry',
+      'github',
+      'linear',
+    ]);
   });
 
   it('ignores last-used when its provider is not connected', () => {
@@ -52,18 +54,16 @@ describe('orderProviders', () => {
 
 describe('orderSources', () => {
   it('keeps GitHub issues and PRs adjacent, issues first, even when PRs were last used', () => {
-    expect(
-      orderSources(conn({ github: true, linear: true, sentry: true }), 'github-prs'),
-    ).toEqual(['github-issues', 'github-prs', 'linear', 'sentry']);
-  });
-
-  it('fresh install source order is GitHub, Linear, Sentry', () => {
-    expect(orderSources(conn(), null)).toEqual([
+    expect(orderSources(conn({ github: true, linear: true, sentry: true }), 'github-prs')).toEqual([
       'github-issues',
       'github-prs',
       'linear',
       'sentry',
     ]);
+  });
+
+  it('fresh install source order is GitHub, Linear, Sentry', () => {
+    expect(orderSources(conn(), null)).toEqual(['github-issues', 'github-prs', 'linear', 'sentry']);
   });
 });
 

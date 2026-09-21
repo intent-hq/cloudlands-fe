@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatEventGeometryHost from './ChatEventGeometryHost.svelte';
 
 function contrastRatio(foreground: string, background: string): number {
@@ -82,7 +82,7 @@ test('measures the production finished-card turn gap across all required states'
                 };
               });
               expect(measurement.finishedInset).toEqual(measurement.sentInset);
-              expect(measurement.finishedHeight).toBeCloseTo(40 * zoom, 1);
+              expect(measurement.finishedHeight).toBeCloseTo(36 * zoom, 1);
               expect(measurement.surfaceInset).toEqual(['0px', '0px']);
               const topGap = measurement.cardTop - measurement.predecessorBottom;
               const bottomGap = measurement.nextRowTop - measurement.cardBottom;
@@ -144,11 +144,8 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               'box-shadow',
             ];
             const rowProperties = [
-              'height',
               'padding-inline-start',
               'padding-inline-end',
-              'padding-block-start',
-              'padding-block-end',
               'font-family',
               'font-size',
               'line-height',
@@ -167,16 +164,15 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             const agentName = element('agent-message-actor-name');
             const agentActor = element('agent-message-attribution');
             const agentAction = element('agent-message-disclosure-toggle');
-            const eventIcon = eventRow.querySelector('svg')!;
+            const eventIcon = element('event-wakeup-leading-column');
             const eventSummary = element('event-wakeup-summary');
             const eventName = element('event-wakeup-agent-name');
             const eventStatus = element('event-wakeup-status');
             const agentChevron = element('agent-message-chevron-column');
             const eventChevron = element('event-wakeup-chevron-column');
-            const preview = element('agent-message-preview');
-            const senderName = element('agent-message-attribution').querySelector(
-              'span.truncate[title]',
-            )!;
+            const nameRange = document.createRange();
+            nameRange.selectNodeContents(agentName);
+            const rowBounds = agentRow.getBoundingClientRect();
             return {
               agentSurface: style(agentCard, surfaceProperties),
               eventSurface: style(eventCard, surfaceProperties),
@@ -198,21 +194,20 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               eventStatusRect: rect(eventStatus),
               agentChevronRect: rect(agentChevron),
               eventChevronRect: rect(eventChevron),
-              ellipsisStyles: [preview, senderName].map((node) => {
-                const computed = getComputedStyle(node);
-                return {
-                  hasTruncateClass: node.classList.contains('truncate'),
-                  overflowX: computed.overflowX,
-                  textOverflow: computed.textOverflow,
-                  whiteSpace: computed.whiteSpace,
-                };
-              }),
+              senderContained: [...nameRange.getClientRects()].every(
+                (bounds) =>
+                  bounds.left >= rowBounds.left &&
+                  bounds.right <= rowBounds.right &&
+                  bounds.top >= rowBounds.top &&
+                  bounds.bottom <= rowBounds.bottom,
+              ),
+              senderOverflows: agentName.scrollWidth > agentName.clientWidth,
             };
           });
 
           expect(collapsed.agentSurface).toEqual(collapsed.eventSurface);
           expect(collapsed.agentRow).toEqual(collapsed.eventRow);
-          expect(collapsed.agentRowGap).toBe('4px');
+          expect(collapsed.agentRowGap).toBe('8px');
           expect(collapsed.eventRowGap).toBe('8px');
           expect(collapsed.agentRow['justify-content']).toBe('flex-start');
           expect(collapsed.agentNameRect.left - collapsed.agentIconRect.right).toBeCloseTo(
@@ -220,7 +215,7 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             1,
           );
           expect(collapsed.agentActionRect.left - collapsed.agentActorRect.right).toBeCloseTo(
-            4 * zoom,
+            8 * zoom,
             1,
           );
           expect(collapsed.eventSummaryRect.left - collapsed.eventIconRect.right).toBeCloseTo(
@@ -235,18 +230,32 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             12 * zoom,
             1,
           );
-          expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
-            40 * zoom,
-            1,
-          );
-          expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
-            collapsed.eventRowRect.bottom - collapsed.eventRowRect.top,
-            1,
-          );
-          expect(collapsed.agentCardRect.bottom - collapsed.agentCardRect.top).toBeCloseTo(
-            collapsed.eventCardRect.bottom - collapsed.eventCardRect.top,
-            1,
-          );
+          const agentRowHeight = collapsed.agentRowRect.bottom - collapsed.agentRowRect.top;
+          const senderTopInset = collapsed.agentNameRect.top - collapsed.agentRowRect.top;
+          const senderBottomInset = collapsed.agentRowRect.bottom - collapsed.agentNameRect.bottom;
+          expect(senderTopInset).toBeGreaterThanOrEqual(6 * zoom);
+          expect(senderBottomInset).toBeCloseTo(senderTopInset, 1);
+          if (labelLength === 'short') {
+            // Fixed-height event rows and wrapping sender rows have different CSS
+            // padding, but the visible single-line text must have the same inset.
+            expect(senderTopInset).toBeCloseTo(
+              collapsed.eventNameRect.top - collapsed.eventRowRect.top,
+              1,
+            );
+            expect(agentRowHeight).toBeCloseTo(36 * zoom, 1);
+            expect(agentRowHeight).toBeCloseTo(
+              collapsed.eventRowRect.bottom - collapsed.eventRowRect.top,
+              1,
+            );
+            expect(collapsed.agentCardRect.bottom - collapsed.agentCardRect.top).toBeCloseTo(
+              collapsed.eventCardRect.bottom - collapsed.eventCardRect.top,
+              1,
+            );
+          } else {
+            expect(agentRowHeight).toBeGreaterThanOrEqual(36 * zoom);
+          }
+          expect(collapsed.senderContained).toBe(true);
+          expect(collapsed.senderOverflows).toBe(false);
           expect(
             (collapsed.agentIconRect.top + collapsed.agentIconRect.bottom) / 2 -
               (collapsed.agentRowRect.top + collapsed.agentRowRect.bottom) / 2,
@@ -263,17 +272,6 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             collapsed.eventChevronRect.bottom - collapsed.eventChevronRect.top,
             1,
           );
-          if (labelLength === 'long') {
-            for (const ellipsisStyle of collapsed.ellipsisStyles) {
-              expect(ellipsisStyle).toEqual({
-                hasTruncateClass: true,
-                overflowX: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              });
-            }
-          }
-
           const interactionStyle = async (state: 'hover' | 'focus', target: typeof agentToggle) => {
             if (state === 'hover') await target.hover();
             else await target.focus();
@@ -323,7 +321,9 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               event: measure(body('event-wakeup-details'), body('event-wakeup-card')),
             };
           });
-          expect(expanded.agent).toEqual(expanded.event);
+          expect(expanded.agent.borderTop).toBe(expanded.event.borderTop);
+          expect(expanded.agent.padding.slice(1)).toEqual(expanded.event.padding.slice(1));
+          expect(expanded.agent.inlineInsets[1]).toBeCloseTo(expanded.event.inlineInsets[1], 1);
           measuredStates += 1;
         }
       }
@@ -344,7 +344,7 @@ for (const theme of ['light', 'dark'] as const) {
         await component.getByTestId('sticky-scroll').evaluate((node) => node.scrollTo(0, 330));
         await expect(component.getByTestId('pinned-user-prompt')).toBeVisible();
 
-        const styles = await component.evaluate((root) => {
+        const styles = await component.evaluate((root, theme) => {
           const style = (selector: string, pseudo?: string) =>
             getComputedStyle(root.querySelector(selector) as Element, pseudo);
           const resolveToken = (token: string, property: 'backgroundColor' | 'color') => {
@@ -357,6 +357,7 @@ for (const theme of ['light', 'dark'] as const) {
           };
           return {
             surface: resolveToken('--sidebar', 'backgroundColor'),
+            themeSurface: resolveToken(`--theme-${theme}-sidebar`, 'backgroundColor'),
             surfaceForeground: resolveToken('--secondary-foreground', 'color'),
             ordinaryBackground: style('[data-testid="sent-card"]').backgroundColor,
             ordinaryBorderWidth: style('[data-testid="sent-card"]').borderTopWidth,
@@ -375,12 +376,13 @@ for (const theme of ['light', 'dark'] as const) {
               .backgroundColor,
             selectionText: style('[data-testid="pinned-user-prompt-text"]', '::selection').color,
           };
-        });
+        }, theme);
 
+        expect(styles.surface).toBe(styles.themeSurface);
         expect(styles.ordinaryBackground).toBe(styles.surface);
         expect(styles.pinnedBackground).toBe(styles.surface);
-        expect(styles.attributedBackground).not.toBe(styles.surface);
-        expect(styles.eventBackground).not.toBe(styles.surface);
+        expect(styles.attributedBackground).toBe(styles.surface);
+        expect(styles.eventBackground).toBe(styles.surface);
         expect(styles.ordinaryBorderWidth).toBe('0px');
         expect(styles.pinnedBorderWidth).toBe('0px');
         expect(styles.ordinaryText).toBe(styles.surfaceForeground);

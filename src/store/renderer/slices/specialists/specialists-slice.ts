@@ -157,6 +157,7 @@ export const setBundledSpecialistsLoaded = createAction<[loaded: boolean]>(
 export const setDefaultSpecialistId = createAction<[specialistId: string]>(
   'specialists/setDefaultSpecialistId',
 );
+export const refetchSpecialistsRequested = createAction<[]>('specialists/refetchRequested');
 // Async actions: the specialists saga settles the per-dispatch promise with the
 // daemon write outcome so callers (e.g. the proposal lifecycle) can await it.
 export const saveFileSpecialist = createAsyncAction<[specialist: FileSpecialistWritePayload], void>(

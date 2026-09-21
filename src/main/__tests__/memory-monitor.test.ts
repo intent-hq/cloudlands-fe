@@ -66,7 +66,9 @@ function snapshot(overrides: Partial<MemorySnapshot> = {}): MemorySnapshot {
 
 describe('parseProcessTable', () => {
   it('parses pid/ppid/rss rows and converts RSS from KB to bytes', () => {
-    const rows = parseProcessTable(['  100     1  204800 /usr/bin/intentd', '101 100 1024 node'].join('\n'));
+    const rows = parseProcessTable(
+      ['  100     1  204800 /usr/bin/intentd', '101 100 1024 node'].join('\n'),
+    );
 
     expect(rows).toEqual([
       { pid: 100, ppid: 1, rssBytes: 204800 * KB, command: '/usr/bin/intentd' },
@@ -122,7 +124,12 @@ describe('findSidecarProcesses', () => {
   it('does not mistake an "intentd mcp-bridge" agent child for the daemon', () => {
     const table = [
       entry(27861, 1, 400 * 1024, '/Applications/Intent.app/Contents/MacOS/Intent'),
-      entry(27864, 27861, 200 * 1024, '/Applications/Intent.app/Contents/Resources/intentd/intentd'),
+      entry(
+        27864,
+        27861,
+        200 * 1024,
+        '/Applications/Intent.app/Contents/Resources/intentd/intentd',
+      ),
       entry(53253, 27864, 50 * 1024, 'node'),
       entry(53315, 53253, 460 * 1024, '/opt/claude-agent-sdk/claude'),
       entry(53345, 53315, 15 * 1024, '/Applications/Intent.app/Contents/Resources/intentd/intentd'),
@@ -277,9 +284,9 @@ describe('threshold logic', () => {
   });
 
   it('reports every breaching process, largest first', () => {
-    expect(findThresholdBreaches(breaching, DEFAULT_WARN_THRESHOLD_BYTES).map((s) => s.pid)).toEqual([
-      9911, 2,
-    ]);
+    expect(
+      findThresholdBreaches(breaching, DEFAULT_WARN_THRESHOLD_BYTES).map((s) => s.pid),
+    ).toEqual([9911, 2]);
   });
 
   it('formats a greppable WARN naming the process kind, pid and size', () => {
@@ -517,7 +524,12 @@ describe('retained history', () => {
     vi.useRealTimers();
   });
 
-  function processSample(pid: number, kind: ProcessMemorySample['kind'], rssMB: number, name?: string): ProcessMemorySample {
+  function processSample(
+    pid: number,
+    kind: ProcessMemorySample['kind'],
+    rssMB: number,
+    name?: string,
+  ): ProcessMemorySample {
     return { pid, kind, rssBytes: rssMB * MB, ...(name === undefined ? {} : { name }) };
   }
 
@@ -526,18 +538,25 @@ describe('retained history', () => {
       snapshot({
         electron: [processSample(1, 'main', 400), processSample(2, 'renderer', 700)],
         sidecar: [processSample(3, 'sidecar', 300, 'intentd')],
-        agents: Array.from({ length: 8 }, (_, i) => processSample(100 + i, 'agent', 100 + i, 'claude')),
+        agents: Array.from({ length: 8 }, (_, i) =>
+          processSample(100 + i, 'agent', 100 + i, 'claude'),
+        ),
       }),
       '2026-08-12T00:00:00.000Z',
     );
 
     expect(summary.processCount).toBe(11);
-    expect(summary.byKind.agent).toEqual({ count: 8, rssBytes: (100 + 101 + 102 + 103 + 104 + 105 + 106 + 107) * MB });
+    expect(summary.byKind.agent).toEqual({
+      count: 8,
+      rssBytes: (100 + 101 + 102 + 103 + 104 + 105 + 106 + 107) * MB,
+    });
     expect(summary.byKind.main).toEqual({ count: 1, rssBytes: 400 * MB });
     // Only the largest few processes are kept, biggest first
     expect(summary.top).toHaveLength(RETAINED_TOP_PROCESSES);
     expect(summary.top[0]).toMatchObject({ pid: 2, rssBytes: 700 * MB });
-    expect(summary.top.map((p) => p.rssBytes)).toEqual([700, 400, 300, 107, 106].map((mb) => mb * MB));
+    expect(summary.top.map((p) => p.rssBytes)).toEqual(
+      [700, 400, 300, 107, 106].map((mb) => mb * MB),
+    );
   });
 
   it('keeps peaks after the overshoot has drained', () => {
@@ -654,7 +673,11 @@ describe('retained history', () => {
     );
 
     const { peaks } = getMemoryHistory();
-    expect(peaks.total).toEqual({ rssBytes: 1_100 * MB, at: '2026-08-12T00:00:00.000Z', partial: true });
+    expect(peaks.total).toEqual({
+      rssBytes: 1_100 * MB,
+      at: '2026-08-12T00:00:00.000Z',
+      partial: true,
+    });
     expect(peaks.processCount).toEqual({ count: 2, at: '2026-08-12T00:00:00.000Z', partial: true });
     // A per-kind peak cannot be half-counted, so it is never flagged
     expect(peaks.byKind.main).toEqual({ rssBytes: 400 * MB, at: '2026-08-12T00:00:00.000Z' });
@@ -706,7 +729,9 @@ describe('retained history', () => {
       expect(getMemoryHistory().samples).toHaveLength(1);
 
       // No further samples recorded — only the clock moves past the age cap
-      vi.setSystemTime(new Date(Date.parse('2026-08-12T00:00:00.000Z') + MAX_RETAINED_AGE_MS + 60_000));
+      vi.setSystemTime(
+        new Date(Date.parse('2026-08-12T00:00:00.000Z') + MAX_RETAINED_AGE_MS + 60_000),
+      );
 
       const history = getMemoryHistory();
       expect(history.samples).toEqual([]);
@@ -723,7 +748,10 @@ describe('retained history', () => {
     vi.useFakeTimers();
     try {
       const start = Date.parse('2026-08-12T00:00:00.000Z');
-      recordMemorySample(snapshot({ agents: [processSample(1, 'agent', 100)] }), new Date(start).toISOString());
+      recordMemorySample(
+        snapshot({ agents: [processSample(1, 'agent', 100)] }),
+        new Date(start).toISOString(),
+      );
       recordMemorySample(
         snapshot({ agents: [processSample(1, 'agent', 200)] }),
         new Date(start + MAX_RETAINED_AGE_MS - 60_000).toISOString(),

@@ -13,10 +13,7 @@
 <div
   bind:this={ref}
   data-slot="dialog-footer"
-  class={cn(
-    'mt-1 flex flex-col-reverse gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-end',
-    className,
-  )}
+  class={cn('mt-6 flex items-center justify-end gap-2', className)}
   {...restProps}
 >
   {@render children?.()}

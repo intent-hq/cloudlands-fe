@@ -12,21 +12,21 @@
  */
 
 /** Transcription engines: the daemon's cloud providers or local OS dictation. */
-export type VoiceEngine = "daemon" | "os";
+export type VoiceEngine = 'daemon' | 'os';
 
-export const VOICE_ENGINE_STORAGE_KEY = "intent.voice.engine";
+export const VOICE_ENGINE_STORAGE_KEY = 'intent.voice.engine';
 
 export function isVoiceEngine(value: unknown): value is VoiceEngine {
-  return value === "daemon" || value === "os";
+  return value === 'daemon' || value === 'os';
 }
 
 /** Read the persisted engine; malformed/absent values fold to `daemon`. */
 export function loadVoiceEnginePreference(): VoiceEngine {
   try {
     const stored = localStorage.getItem(VOICE_ENGINE_STORAGE_KEY);
-    return isVoiceEngine(stored) ? stored : "daemon";
+    return isVoiceEngine(stored) ? stored : 'daemon';
   } catch {
-    return "daemon";
+    return 'daemon';
   }
 }
 

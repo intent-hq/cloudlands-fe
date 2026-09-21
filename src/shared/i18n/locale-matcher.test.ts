@@ -125,9 +125,7 @@ describe('resolveLocale', () => {
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['de-AT'], CATALOGS, BASE)).toBe('de');
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-SG'], CATALOGS, BASE)).toBe('zh-CN');
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-HK'], CATALOGS, BASE)).toBe('zh-TW');
-    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-TW'], SIMPLIFIED_ONLY, BASE)).toBe(
-      BASE,
-    );
+    expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['zh-TW'], SIMPLIFIED_ONLY, BASE)).toBe(BASE);
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['ja-JP'], WITH_JA_KO, BASE)).toBe('ja');
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['ko-KR'], WITH_JA_KO, BASE)).toBe('ko');
     expect(resolveLocale(SYSTEM_LANGUAGE_PREFERENCE, ['fr-CA'], WITH_EURO, BASE)).toBe('fr');

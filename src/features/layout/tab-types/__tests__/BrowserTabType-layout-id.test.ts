@@ -4,10 +4,14 @@ import {
   updateTabBrowserUrl,
   updateTabFavicon,
   updateTabTitle,
+  updateTabViewport,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import { updateContextItem } from '$store/renderer/slices/context/context-slice';
 
 const dispatch = vi.hoisted(() => vi.fn());
+const mockState = vi.hoisted(() => ({
+  panelLayout: { byWorkspaceId: {} as Record<string, unknown> },
+}));
 
 vi.mock('$lib/components/browser/EmbeddedBrowser.svelte', async () => ({
   default: (await import('./mocks/MockEmbeddedBrowser.svelte')).default,
@@ -15,13 +19,16 @@ vi.mock('$lib/components/browser/EmbeddedBrowser.svelte', async () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ dispatch });
+  return createAppStoreMockModule({ state: () => mockState, dispatch });
 });
 
 import BrowserTabType from '../BrowserTabType.svelte';
 
 describe('BrowserTabType panel layout routing', () => {
-  beforeEach(() => dispatch.mockClear());
+  beforeEach(() => {
+    dispatch.mockClear();
+    mockState.panelLayout.byWorkspaceId = {};
+  });
   afterEach(cleanup);
 
   it('persists browser metadata to the workspace panel layout and context scope', async () => {
@@ -95,4 +102,78 @@ describe('BrowserTabType panel layout routing', () => {
       ).toBe(expected);
     },
   );
+
+  // A focus-preserving reveal (agent openTab { visible: true } into the already
+  // focused / single-column panel, monorepo#3045) must not autofocus the URL bar
+  // even though the tab is active in the focused panel; a reveal for another tab
+  // or a user-driven reveal keeps the default autofocus.
+  it.each([
+    ['browser-tab', true, 'false'],
+    ['browser-tab', undefined, 'true'],
+    ['other-tab', true, 'true'],
+  ])(
+    'suppresses focusUrlBarOnMount for a focus-preserving reveal (revealTab=%s, preserveFocus=%s)',
+    (revealTabId, preserveFocus, expected) => {
+      mockState.panelLayout.byWorkspaceId = {
+        'layout-1': {
+          pendingPanelReveal: {
+            panelId: 'p1',
+            tabId: revealTabId,
+            requestId: 'req-1',
+            ...(preserveFocus === undefined ? {} : { preserveFocus }),
+          },
+        },
+      };
+      render(BrowserTabType, {
+        props: {
+          tab: {
+            id: 'browser-tab',
+            type: 'browser',
+            title: 'Browser',
+            closable: true,
+            browserUrl: 'https://initial.example/',
+          },
+          workspaceId: 'workspace-1',
+          layoutId: 'layout-1',
+          isActive: true,
+          isPanelFocused: true,
+        },
+      });
+      expect(
+        screen.getByTestId('embedded-browser').getAttribute('data-focus-url-bar-on-mount'),
+      ).toBe(expected);
+    },
+  );
+
+  it('passes persisted viewport state through and routes viewport changes', async () => {
+    render(BrowserTabType, {
+      props: {
+        tab: {
+          id: 'browser-tab',
+          type: 'browser',
+          title: 'Browser',
+          closable: true,
+          browserUrl: 'https://initial.example/',
+          viewport: { mode: 'preset', presetId: 'iphone-se', width: 375, height: 667 },
+        },
+        workspaceId: 'workspace-1',
+        layoutId: 'layout-1',
+        isActive: true,
+        isPanelFocused: true,
+      },
+    });
+
+    expect(screen.getByTestId('embedded-browser').getAttribute('data-viewport-mode')).toBe(
+      'preset',
+    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Change viewport' }));
+
+    expect(dispatch).toHaveBeenCalledWith(
+      updateTabViewport('layout-1', 'browser-tab', {
+        mode: 'custom',
+        width: 412,
+        height: 915,
+      }),
+    );
+  });
 });

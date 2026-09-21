@@ -28,7 +28,7 @@ vi.mock('$store/renderer/store', async () => {
       return {
         tabState: { currentTabId },
         scripts: scriptsState,
-        terminals: { height: 30, workspaces: {} },
+        terminals: { height: 30, workspaceHeights: {}, workspaces: {} },
       };
     },
     dispatch: (action: any) => {
@@ -102,8 +102,8 @@ vi.mock('$features/scripts/scripts.client', () => ({
     update: vi.fn(),
   },
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: vi.fn(), clearTerminal: vi.fn() },

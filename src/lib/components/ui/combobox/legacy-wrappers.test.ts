@@ -93,7 +93,7 @@ describe('legacy searchable and grouped compatibility wrappers', () => {
     await fireEvent.focus(input);
     expect(onOpen).toHaveBeenCalledOnce();
     expect(screen.queryByRole('option', { name: /Linus Torvalds/ })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Toggle Others' }));
+    await fireEvent.click(screen.getByRole('option', { name: 'Toggle Others' }));
     expect(screen.getByRole('option', { name: /Linus Torvalds/ })).toBeTruthy();
     await fireEvent.keyDown(input, { key: 'Escape' });
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());

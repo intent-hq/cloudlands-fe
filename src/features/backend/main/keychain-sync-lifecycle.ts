@@ -24,6 +24,8 @@ import { app } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { getLocalPref } from '../../../main/local-prefs';
 import {
+  KEYCHAIN_SERVICE_GUEST_SESSIONS,
+  createHelperKeychainClient,
   reconcile,
   type KeychainSyncStatus,
   type LocalSyncAdapter,
@@ -103,9 +105,36 @@ export interface KeychainSyncLifecycleOptions {
     adapter: LocalSyncAdapter,
     options?: ReconcileOptions,
   ) => ReturnType<typeof reconcile>;
+  /**
+   * Secondary store reconciled against the guest-sessions keychain service
+   * (`com.cloudlands.intent.guest-sessions`) right after the owner registry,
+   * under the same pref gate and debounce. Absent = owner registry only. Its
+   * outcome never feeds {@link KeychainSyncLifecycle.getStatus} — the
+   * settings verdict stays the owner service's — and a failure is logged
+   * without disturbing the owner pass.
+   */
+  guestAdapter?: LocalSyncAdapter;
+  /** Broadcast hook fired after the guest pass pulled/deleted local records. */
+  onGuestRemoteApplied?: () => void | Promise<void>;
+  guestReconcileFn?: (
+    adapter: LocalSyncAdapter,
+    options?: ReconcileOptions,
+  ) => ReturnType<typeof reconcile>;
   isEnabled?: () => Promise<boolean>;
   debounceMs?: number;
   focusMinIntervalMs?: number;
+}
+
+/** Default guest pass: the shared reconcile pointed at the guest-sessions service. */
+function reconcileGuestSessions(
+  adapter: LocalSyncAdapter,
+  options: ReconcileOptions = {},
+): ReturnType<typeof reconcile> {
+  return reconcile(adapter, {
+    ...options,
+    client:
+      options.client ?? createHelperKeychainClient({ service: KEYCHAIN_SERVICE_GUEST_SESSIONS }),
+  });
 }
 
 /** Handle returned by {@link initKeychainSyncLifecycle}. */
@@ -132,6 +161,7 @@ export function initKeychainSyncLifecycle(
   options: KeychainSyncLifecycleOptions = {},
 ): KeychainSyncLifecycle {
   const runReconcile = options.reconcileFn ?? reconcile;
+  const runGuestReconcile = options.guestReconcileFn ?? reconcileGuestSessions;
   const isEnabled = options.isEnabled ?? isKeychainSyncEnabled;
   const debounceMs = options.debounceMs ?? RECONCILE_DEBOUNCE_MS;
   const focusMinIntervalMs = options.focusMinIntervalMs ?? FOCUS_MIN_INTERVAL_MS;
@@ -175,6 +205,20 @@ export function initKeychainSyncLifecycle(
       }
       if (result.pulled.length > 0 || result.deletedLocally.length > 0) {
         await options.onRemoteApplied?.();
+      }
+      if (options.guestAdapter && !disposed && (await isEnabled())) {
+        try {
+          const guest = await runGuestReconcile(options.guestAdapter, {
+            shouldAbort: async () => disposed || !(await isEnabled()),
+          });
+          if (guest.pulled.length > 0 || guest.deletedLocally.length > 0) {
+            await options.onGuestRemoteApplied?.();
+          }
+        } catch (error) {
+          logger.warn('guest sessions keychain sync reconcile failed', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     } catch (error) {
       logger.warn('keychain sync reconcile failed', {

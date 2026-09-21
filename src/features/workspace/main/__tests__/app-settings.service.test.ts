@@ -140,6 +140,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       await import('../app-settings.service');
 
     await initAppSettingsService();
+    await flush();
 
     // Assert the exact wire calls per PROTOCOL.md §5.12 settings.get.
     expect(settingsGetCalls()).toHaveLength(3);
@@ -158,6 +159,51 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
     expect(getSshKeyPath()).toBe('/home/me/.ssh/id_ed25519');
   });
 
+  it('initAppSettingsService resolves before the daemon answers (never gates startup on a round-trip)', async () => {
+    // Hold every daemon request open: on a cold launch the sidecar socket may
+    // not exist yet and the JSON-RPC client queues requests through its
+    // reconnect backoff. Startup must not wait for that.
+    const pending: Array<() => void> = [];
+    requestSpy.mockImplementation(
+      (method: string, params?: Record<string, unknown>) =>
+        new Promise((resolve) => {
+          pending.push(() =>
+            resolve(
+              method === 'events.subscribe'
+                ? { subscriptionId: 'sub-1' }
+                : { path: (params as { path: string }).path, value: 'late/' },
+            ),
+          );
+        }),
+    );
+
+    const { initAppSettingsService, getBranchPrefix } = await import('../app-settings.service');
+    let resolved = false;
+    const initPromise = initAppSettingsService().then(() => {
+      resolved = true;
+    });
+    await flush();
+
+    // Resolved while events.subscribe is still unanswered; getters serve ''.
+    expect(resolved).toBe(true);
+    expect(pending).toHaveLength(1);
+    expect(requestSpy).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['settings:changed'],
+    });
+    expect(settingsGetCalls()).toHaveLength(0);
+    expect(getBranchPrefix()).toBe('');
+
+    // Daemon answers later: subscribe first, then the three fetches land.
+    pending.splice(0).forEach((answer) => answer());
+    await flush();
+    expect(settingsGetCalls()).toHaveLength(3);
+    expect(getBranchPrefix()).toBe('');
+    pending.splice(0).forEach((answer) => answer());
+    await flush();
+    expect(getBranchPrefix()).toBe('late/');
+    await initPromise;
+  });
+
   it('missing / non-string daemon values fall back to ""', async () => {
     requestSpy.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'events.subscribe') return { subscriptionId: 'sub-1' };
@@ -171,6 +217,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       await import('../app-settings.service');
 
     await initAppSettingsService();
+    await flush();
 
     expect(getBranchPrefix()).toBe('');
     expect(getWorktreesLocation()).toBe('');
@@ -187,6 +234,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       await import('../app-settings.service');
 
     await expect(initAppSettingsService()).resolves.toBeUndefined();
+    await flush();
     expect(getBranchPrefix()).toBe('');
     expect(getWorktreesLocation()).toBe('ok');
     expect(loggerSpies.warn).toHaveBeenCalledWith(
@@ -198,12 +246,14 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
     mockDaemon({ 'workspace.branchPrefix': 'feature/' });
     requestSpy.mockClear();
     await initAppSettingsService();
+    await flush();
     expect(settingsGetCalls()).toEqual([{ path: 'workspace.branchPrefix' }]);
     expect(getBranchPrefix()).toBe('feature/');
 
     // Fully hydrated now — further init calls are no-ops.
     requestSpy.mockClear();
     await initAppSettingsService();
+    await flush();
     expect(settingsGetCalls()).toHaveLength(0);
   });
 
@@ -216,6 +266,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
 
     const { initAppSettingsService } = await import('../app-settings.service');
     await Promise.all([initAppSettingsService(), initAppSettingsService()]);
+    await flush();
 
     // 3 daemon paths × 1 hydration cycle = 3 calls, not 6.
     expect(settingsGetCalls()).toHaveLength(3);
@@ -232,6 +283,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       await import('../app-settings.service');
 
     await expect(initAppSettingsService()).resolves.toBeUndefined();
+    await flush();
     expect(getBranchPrefix()).toBe('');
     expect(clientListeners.get('status')?.size ?? 0).toBeGreaterThan(0);
 
@@ -343,6 +395,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
     });
     const { initAppSettingsService, getBranchPrefix } = await import('../app-settings.service');
     await initAppSettingsService();
+    await flush();
     requestSpy.mockClear();
 
     for (const handler of reconnectHandlers) handler('remote-1');
@@ -496,6 +549,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
     // The older fetch result must be discarded as stale, not clobber the delta.
     resolveBranchPrefixGet!({ path: 'workspace.branchPrefix', value: 'stale/' });
     await initPromise;
+    await flush();
     expect(getBranchPrefix()).toBe('hotfix/');
   });
 
@@ -515,6 +569,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       const initPromise = initAppSettingsService();
       await vi.advanceTimersByTimeAsync(0);
       await initPromise;
+      await vi.advanceTimersByTimeAsync(0);
 
       // Hydration succeeded (subscribe failure does not block getters)…
       expect(getBranchPrefix()).toBe('feature/');
@@ -566,6 +621,7 @@ describe('app-settings.service (daemon-backed hydration cache)', () => {
       const initPromise = initAppSettingsService();
       await vi.advanceTimersByTimeAsync(0);
       await initPromise;
+      await vi.advanceTimersByTimeAsync(0);
 
       const subscribeCalls = () =>
         requestSpy.mock.calls.filter(([m]) => m === 'events.subscribe').length;

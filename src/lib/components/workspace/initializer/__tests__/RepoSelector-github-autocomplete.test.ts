@@ -5,9 +5,10 @@
  * repos (client-side filtered) plus deduped global search results, rendered
  * under the `github.com/ owner/repo` input. Covers rendering, dedupe,
  * keyboard selection, the emitted pick detail, and the signed-out state.
+ * Also covers the trigger's GitHub owner avatar (GitHub picks only).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
   const readable = <T>(getter: () => T) => ({
@@ -40,9 +41,8 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
 });
 
@@ -77,22 +77,25 @@ vi.mock('$store/renderer/slices/github-repo-search/github-repo-search-selectors'
   selectGithubRepoSearchResults: mocks.selector(() => mocks.searchResults),
 }));
 
-vi.mock(
-  '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors',
-  () => ({
-    selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
-    selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.recentRepos),
-    selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
-  }),
-);
+vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectWorkspaceInitializerDefaultParentPath: mocks.selector(() => ''),
+  selectWorkspaceInitializerRecentRepos: mocks.selector(() => mocks.recentRepos),
+  selectWorkspaceInitializerRemoteSetups: mocks.selector(() => []),
+}));
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
-  setWorkspaceInitializerDefaultParentPath: (path: string) => ({ type: 'wi/parent', payload: path }),
+  setWorkspaceInitializerDefaultParentPath: (path: string) => ({
+    type: 'wi/parent',
+    payload: path,
+  }),
   setWorkspaceInitializerLastSelectedRepo: (repo: unknown) => ({ type: 'wi/last', payload: repo }),
   setWorkspaceInitializerRecentRepos: (repos: unknown) => ({ type: 'wi/recent', payload: repos }),
   setWorkspaceInitializerRemoteSetups: (s: unknown) => ({ type: 'wi/remote', payload: s }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
-  replaceWorkspaceList: (workspaces: unknown) => ({ type: 'workspace/replace', payload: workspaces }),
+  replaceWorkspaceList: (workspaces: unknown) => ({
+    type: 'workspace/replace',
+    payload: workspaces,
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
   workspaceClient: { list: vi.fn(async () => ({ ok: true, data: [] })) },
@@ -371,9 +374,7 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     const onchange = vi.fn();
     const { input } = await openGithubTab({ onchange });
 
-    expect(
-      screen.getByText('Sign in with GitHub to see repository suggestions'),
-    ).toBeTruthy();
+    expect(screen.getByText('Sign in with GitHub to see repository suggestions')).toBeTruthy();
     expect(suggestions()).toHaveLength(0);
 
     await fireEvent.input(input, { target: { value: 'someone/elsewhere' } });
@@ -384,5 +385,77 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
 
     await fireEvent.keyDown(input, { key: 'Enter' });
     expect(onchange.mock.calls[0][0].detail.path).toBe('someone/elsewhere');
+  });
+});
+
+describe('RepoSelector trigger avatar', () => {
+  beforeEach(() => {
+    mocks.isAuthenticated = true;
+    mocks.reposLoaded = true;
+    mocks.reposError = null;
+    mocks.repos = [
+      { id: 'octo/alpha', owner: 'octo', name: 'alpha' },
+      { id: 'octo/beta', owner: 'octo', name: 'beta' },
+    ];
+    mocks.searchResults = [];
+    mocks.searchLastQuery = '';
+    mocks.recentRepos = [];
+  });
+
+  afterEach(() => {
+    cleanup();
+    mocks.dispatch.mockReset();
+  });
+
+  const triggerAvatar = (container: HTMLElement) =>
+    container.querySelector('button')!.querySelector<HTMLImageElement>('img');
+
+  it('shows the avatar again for the next owner after the previous image failed', async () => {
+    const { container, rerender } = render(RepoSelector, { props: { value: 'octo/alpha' } });
+
+    const failed = triggerAvatar(container)!;
+    expect(failed.src).toContain('/octo.png');
+    await fireEvent.error(failed);
+    expect(triggerAvatar(container)).toBeNull();
+
+    await rerender({ value: 'other/beta' });
+
+    const next = triggerAvatar(container)!;
+    expect(next).not.toBe(failed);
+    expect(next.src).toContain('/other.png');
+    await fireEvent.load(next);
+    expect(triggerAvatar(container)).toBe(next);
+  });
+
+  it('renders the avatar for a restored full GitHub URL value', async () => {
+    const { container } = render(RepoSelector, {
+      props: { value: 'https://github.com/intent-hq/intent', displayValue: 'intent-hq/intent' },
+    });
+
+    expect(triggerAvatar(container)!.src).toContain('/intent-hq.png');
+  });
+
+  it('keeps the avatar decorative so the owner is announced once', () => {
+    const { container } = render(RepoSelector, { props: { value: 'intent-hq/intent' } });
+
+    const trigger = container.querySelector('button')!;
+    expect(triggerAvatar(container)!.getAttribute('aria-hidden')).toBe('true');
+    expect(within(container).getByRole('combobox', { name: 'intent-hq/intent' })).toBe(trigger);
+  });
+
+  it('drops a confirmed pick when the value prop moves to another repo', async () => {
+    const { container, rerender } = await openGithubTab({ onchange: vi.fn() });
+    await waitFor(() => expect(suggestions().length).toBe(2));
+    await fireEvent.click(suggestions()[1]);
+    await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeFalsy());
+    expect(triggerAvatar(container)!.src).toContain('/octo.png');
+
+    await rerender({ value: 'https://github.com/octo/beta' });
+    expect(triggerAvatar(container)!.src).toContain('/octo.png');
+    expect(container.querySelector('button')!.textContent).toContain('octo/beta');
+
+    await rerender({ value: 'other/gamma' });
+    expect(triggerAvatar(container)!.src).toContain('/other.png');
+    expect(container.querySelector('button')!.textContent).toContain('other/gamma');
   });
 });

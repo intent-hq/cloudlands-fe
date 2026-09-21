@@ -3,16 +3,9 @@
  * Phase 1A - Increment 1
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { TaskMetadata, TaskStatus, AgentHistoryEntry } from '../../../shared/types';
-import {
-  TaskMetadataSchema,
-  TaskStatusSchema,
-} from '../../../shared/schemas';
+import { TaskMetadataSchema, TaskStatusSchema } from '../../../shared/schemas';
 
 describe('TaskMetadata types', () => {
   it('should accept valid task metadata', () => {

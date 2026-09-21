@@ -125,7 +125,10 @@ export const scriptsClient = {
         name: existing.name,
         scriptId,
       });
-      return { success: false, error: m.scripts_client_updateRunning_error({ name: existing.name }) };
+      return {
+        success: false,
+        error: m.scripts_client_updateRunning_error({ name: existing.name }),
+      };
     }
     const result = await appClient.scripts.create(workspaceId, {
       scriptId,

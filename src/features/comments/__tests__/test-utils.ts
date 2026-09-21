@@ -6,9 +6,7 @@
 
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import {
-  CommentAnchor,
-} from '$lib/components/tiptap/CommentAnchor';
+import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import type { CommentV2 } from '../comment-types-v2';
 import { store as appStore } from '$store/renderer/store';
 import { loadCommentsAction } from '$store/renderer/slices/comments/comments-slice';

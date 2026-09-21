@@ -20,12 +20,10 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 // providerDisplayName resolves shortName via the providerCatalog slice —
 // provide a hydrated §5.38-shaped mock state instead of booting the store.
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
-  const { initialState, providerCatalogLoaded, providerCatalogReducer } = await import(
-    '$store/renderer/slices/provider-catalog/provider-catalog-slice'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  const { initialState, providerCatalogLoaded, providerCatalogReducer } =
+    await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_PROVIDER_CATALOG } = await import('../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
     initialState,
@@ -99,7 +97,7 @@ describe('ProvidersCard (mock BE)', () => {
 
     render(ProvidersCard, { props: { data, label: 'JUL 2026' } });
 
-    expect(screen.getByText('PROVIDERS')).toBeTruthy();
+    expect(screen.getByText('Providers')).toBeTruthy();
     expect(screen.getByText('JUL 2026')).toBeTruthy();
     // Raw wire ids pretty-printed; `unknown` renders as "Unknown".
     const names = Array.from(document.querySelectorAll('.row-name')).map((n) => n.textContent);
@@ -123,7 +121,7 @@ describe('ProvidersCard (mock BE)', () => {
       tzOffsetMinutes: 0,
     });
 
-    const { container } = render(ProvidersCard, { props: { data, label: 'LAST 24H' } });
+    const { container } = render(ProvidersCard, { props: { data, label: 'Last 24h' } });
 
     expect(screen.getByText('No provider usage in this period')).toBeTruthy();
     expect(document.querySelector('.callout-provider')?.textContent).toBe('—');

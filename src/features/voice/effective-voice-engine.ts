@@ -30,11 +30,11 @@
  * Dependency-light utility per src/lib AGENTS.md — no stores or services.
  */
 
-import type { VoiceProvider } from "./voice-settings-service";
-import type { VoiceEngine } from "./voice-engine-preference";
+import type { VoiceProvider } from './voice-settings-service';
+import type { VoiceEngine } from './voice-engine-preference';
 
 /** What a dictation trigger will actually use: an engine, or nothing. */
-export type EffectiveVoiceEngine = VoiceEngine | "unavailable";
+export type EffectiveVoiceEngine = VoiceEngine | 'unavailable';
 
 /** The slice of voice-settings state the resolution reads (structurally
  *  satisfied by `VoiceSettingsSliceState`). */
@@ -51,8 +51,8 @@ export interface EffectiveVoiceEngineInputs {
 export function resolveEffectiveVoiceEngine(
   inputs: EffectiveVoiceEngineInputs,
 ): EffectiveVoiceEngine {
-  if (inputs.engine === "os") return "os";
-  if (inputs.isLoading) return "daemon";
-  if (inputs.keyConfigured[inputs.provider] === true) return "daemon";
-  return inputs.osEngineAvailable ? "os" : "unavailable";
+  if (inputs.engine === 'os') return 'os';
+  if (inputs.isLoading) return 'daemon';
+  if (inputs.keyConfigured[inputs.provider] === true) return 'daemon';
+  return inputs.osEngineAvailable ? 'os' : 'unavailable';
 }

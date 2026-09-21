@@ -4,10 +4,7 @@
  * IPC handlers for exporting all debug logs as a zip file.
  */
 
-import {
-  ipcMain,
-  dialog,
-} from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { promises as fs } from 'fs';
 import { z } from 'zod';
 import { LOG_CHANNELS } from '../../../shared/ipc/channels';
@@ -19,9 +16,11 @@ import { m } from '../../../shared/paraglide/messages.js';
 const logger = new Logger('DebugExportIPC');
 
 // Schema for optional workspace ID
-const ExportDebugBundleSchema = z.object({
-  workspaceId: z.string().optional(),
-}).optional();
+const ExportDebugBundleSchema = z
+  .object({
+    workspaceId: z.string().optional(),
+  })
+  .optional();
 
 /**
  * Register debug export IPC handlers
@@ -89,4 +88,3 @@ export function registerDebugExportHandlers(): void {
 
   logger.info('Debug export IPC handlers registered');
 }
-

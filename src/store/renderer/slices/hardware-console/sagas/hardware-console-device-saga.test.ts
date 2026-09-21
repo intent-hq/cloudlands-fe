@@ -56,9 +56,8 @@ vi.mock('$features/hardware-console/connection-toast-service', () => ({
   installHardwareConsoleConnectionToasts: mocks.installToasts,
 }));
 vi.mock('$features/hardware-console/console-owner-status', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('$features/hardware-console/console-owner-status')
-  >();
+  const actual =
+    await importOriginal<typeof import('$features/hardware-console/console-owner-status')>();
   return { ...actual, getConsoleOwnerBridge: () => mocks.ownerBridge.current };
 });
 

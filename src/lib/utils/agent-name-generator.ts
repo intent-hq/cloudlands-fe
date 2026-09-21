@@ -7,7 +7,6 @@
  * For agents without a specialist, uses "Agent" as the base name.
  */
 
-
 /**
  * Maximum length for generated agent names
  */

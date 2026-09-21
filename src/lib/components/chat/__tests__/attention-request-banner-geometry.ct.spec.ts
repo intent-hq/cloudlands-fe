@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import AttentionRequestBannerGeometryHost from './AttentionRequestBannerGeometryHost.svelte';
 
 const longLabel =
@@ -56,7 +56,7 @@ for (const kind of ['blocker', 'discussion'] as const) {
             };
           });
 
-          expect(geometry.seam).toBeCloseTo(24 * zoom, 1);
+          expect(geometry.seam).toBeCloseTo(0, 1);
           expect(geometry.label.top).toBeCloseTo(geometry.header.top, 1);
           expect(geometry.timestamp.top).toBeCloseTo(geometry.header.top, 1);
           expect(geometry.label.right).toBeLessThanOrEqual(geometry.timestamp.left);

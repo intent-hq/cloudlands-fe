@@ -3,4 +3,3 @@
 </script>
 
 <span class="fa-icon {props.class ?? ''}" data-icon={props.icon?.iconName ?? ''}></span>
-

@@ -18,10 +18,7 @@ import type {
   ComputedGroup,
   NodeStyleConfig,
 } from './types';
-import {
-  GRAMMAR_CONFIGS,
-  DEFAULT_NODE_STYLE,
-} from './types';
+import { GRAMMAR_CONFIGS, DEFAULT_NODE_STYLE } from './types';
 
 /**
  * Compute layout for a diagram
@@ -275,7 +272,11 @@ function computeGroupBoundsFromNodes(
 /**
  * Helper to compute bounds from nodes (also includes edges for routing tracks)
  */
-function computeBoundsFromNodes(nodes: ComputedNode[], groups?: ComputedGroup[], edges?: ComputedEdge[]) {
+function computeBoundsFromNodes(
+  nodes: ComputedNode[],
+  groups?: ComputedGroup[],
+  edges?: ComputedEdge[],
+) {
   if (nodes.length === 0) {
     return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
   }
@@ -473,10 +474,12 @@ function computeNodePositions(
           const candidateY = row * (height + spacing);
 
           const overlaps = manualNodes.some((mn) => {
-            return !(candidateX + width + spacing * 0.3 < mn.x ||
-                     candidateX > mn.x + mn.width + spacing * 0.3 ||
-                     candidateY + height + spacing * 0.3 < mn.y ||
-                     candidateY > mn.y + mn.height + spacing * 0.3);
+            return !(
+              candidateX + width + spacing * 0.3 < mn.x ||
+              candidateX > mn.x + mn.width + spacing * 0.3 ||
+              candidateY + height + spacing * 0.3 < mn.y ||
+              candidateY > mn.y + mn.height + spacing * 0.3
+            );
           });
 
           if (!overlaps) {
@@ -564,13 +567,27 @@ function computeLayeredLayout(
   // If we have groups, use hierarchical group-based layout
   if (groups && groups.length > 0) {
     return computeHierarchicalGroupLayout(
-      nodes, edges, groups, nodeSizes, nodeToGroup, outgoing, incoming, spacing, isHorizontal,
+      nodes,
+      edges,
+      groups,
+      nodeSizes,
+      nodeToGroup,
+      outgoing,
+      incoming,
+      spacing,
+      isHorizontal,
     );
   }
 
   // No groups - use standard hierarchical layout
   return computeStandardHierarchicalLayout(
-    nodes, edges, nodeSizes, outgoing, incoming, spacing, isHorizontal,
+    nodes,
+    edges,
+    nodeSizes,
+    outgoing,
+    incoming,
+    spacing,
+    isHorizontal,
   );
 }
 
@@ -612,7 +629,7 @@ function computeHierarchicalGroupLayout(
   // Step 2: Build group dependency graph
   const groupOutgoing = new Map<string, Set<string>>();
   const groupIncoming = new Map<string, Set<string>>();
-  const allGroupIds = [...groups.map(g => g.id), UNGROUPED];
+  const allGroupIds = [...groups.map((g) => g.id), UNGROUPED];
   allGroupIds.forEach((gid) => {
     groupOutgoing.set(gid, new Set());
     groupIncoming.set(gid, new Set());
@@ -666,7 +683,10 @@ function computeHierarchicalGroupLayout(
 
   // Step 5: Compute intra-group layered layout for each group
   // For each group, build a sub-graph and run mini Sugiyama-style layout
-  const groupInternalLayouts = new Map<string, { layers: string[][]; nodeLayer: Map<string, number> }>();
+  const groupInternalLayouts = new Map<
+    string,
+    { layers: string[][]; nodeLayer: Map<string, number> }
+  >();
   const groupDimensions = new Map<string, { width: number; height: number }>();
 
   // Build intra-group edge maps
@@ -790,8 +810,12 @@ function computeHierarchicalGroupLayout(
       if (layerIdx > 0) totalPrimary += INTRA_LAYER_SPACING;
     });
 
-    const width = isHorizontal ? totalPrimary + GROUP_PADDING * 2 : maxSecondary + GROUP_PADDING * 2;
-    const height = isHorizontal ? maxSecondary + GROUP_PADDING * 2 : totalPrimary + GROUP_PADDING * 2;
+    const width = isHorizontal
+      ? totalPrimary + GROUP_PADDING * 2
+      : maxSecondary + GROUP_PADDING * 2;
+    const height = isHorizontal
+      ? maxSecondary + GROUP_PADDING * 2
+      : totalPrimary + GROUP_PADDING * 2;
 
     groupDimensions.set(gid, { width, height });
   });
@@ -886,7 +910,8 @@ function computeHierarchicalGroupLayout(
       const groupDim = groupDimensions.get(gid);
       if (!groupDim) return;
       const groupSecondarySize = isHorizontal ? groupDim.height : groupDim.width;
-      let nodeSecondaryOffset = GROUP_PADDING + (groupSecondarySize - GROUP_PADDING * 2 - totalSecondary) / 2;
+      let nodeSecondaryOffset =
+        GROUP_PADDING + (groupSecondarySize - GROUP_PADDING * 2 - totalSecondary) / 2;
 
       let maxLayerPrimary = 0;
 
@@ -971,9 +996,7 @@ function computeStandardHierarchicalLayout(
       const barycenters = new Map<string, number>();
       layer.forEach((nodeId) => {
         const inNodes = incoming.get(nodeId) || [];
-        const positions = inNodes
-          .map((id) => prevLayer.indexOf(id))
-          .filter((pos) => pos !== -1);
+        const positions = inNodes.map((id) => prevLayer.indexOf(id)).filter((pos) => pos !== -1);
 
         if (positions.length > 0) {
           barycenters.set(nodeId, positions.reduce((a, b) => a + b, 0) / positions.length);
@@ -993,9 +1016,7 @@ function computeStandardHierarchicalLayout(
       const barycenters = new Map<string, number>();
       layer.forEach((nodeId) => {
         const outNodes = outgoing.get(nodeId) || [];
-        const positions = outNodes
-          .map((id) => nextLayer.indexOf(id))
-          .filter((pos) => pos !== -1);
+        const positions = outNodes.map((id) => nextLayer.indexOf(id)).filter((pos) => pos !== -1);
 
         if (positions.length > 0) {
           barycenters.set(nodeId, positions.reduce((a, b) => a + b, 0) / positions.length);
@@ -1587,7 +1608,10 @@ function computeForceLayout(
 
   if (componentCount > 1) {
     // Compute bounding box for each component
-    const compBounds = new Map<number, { minX: number; minY: number; maxX: number; maxY: number }>();
+    const compBounds = new Map<
+      number,
+      { minX: number; minY: number; maxX: number; maxY: number }
+    >();
     positions.forEach((p) => {
       const cid = componentOf.get(p.node.id);
       if (cid === undefined) return;
@@ -1800,7 +1824,7 @@ function computeEdgePaths(
   // Dense graphs (high edge-to-node ratio) look terrible with orthogonal routing
   // because every right-angle path consumes channel space. Auto-downgrade to curved.
   const edgeDensity = nodes.length > 0 ? edges.length / nodes.length : 0;
-  const effectiveRouting = (edgeRouting === 'orthogonal' && edgeDensity > 3) ? 'curved' : edgeRouting;
+  const effectiveRouting = edgeRouting === 'orthogonal' && edgeDensity > 3 ? 'curved' : edgeRouting;
 
   if (effectiveRouting === 'orthogonal') {
     return computeOrthogonalEdgePaths(edges, nodes, layout);
@@ -1883,14 +1907,10 @@ function applyPerpendicularOffset(
   return { x: point.x + perpX * offset, y: point.y + perpY * offset };
 }
 
-
 /**
  * Compute edge paths with curved bezier lines
  */
-function computeCurvedEdgePaths(
-  edges: DiagramEdge[],
-  nodes: ComputedNode[],
-): ComputedEdge[] {
+function computeCurvedEdgePaths(edges: DiagramEdge[], nodes: ComputedNode[]): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const biOffsets = buildBidirectionalOffsetMap(edges);
   const selfLoopCounts = new Map<string, number>();
@@ -1974,10 +1994,7 @@ function computeCurvedEdgePaths(
 /**
  * Compute edge paths with simple straight lines
  */
-function computeStraightEdgePaths(
-  edges: DiagramEdge[],
-  nodes: ComputedNode[],
-): ComputedEdge[] {
+function computeStraightEdgePaths(edges: DiagramEdge[], nodes: ComputedNode[]): ComputedEdge[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const biOffsets = buildBidirectionalOffsetMap(edges);
   const selfLoopCounts = new Map<string, number>();
@@ -2084,7 +2101,10 @@ function computeOrthogonalEdgePaths(
   const NODE_GAP = 12; // Gap when turning toward a node
 
   // Find the bounding box of all nodes
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const node of nodes) {
     minX = Math.min(minX, node.x);
     minY = Math.min(minY, node.y);
@@ -2123,8 +2143,8 @@ function computeOrthogonalEdgePaths(
     const { fromSide, toSide } = determineConnectionSides(fromNode, toNode, isVerticalLayout);
 
     const goesBackward = isVerticalLayout
-      ? (fromNode.y + fromNode.height / 2) > (toNode.y + toNode.height / 2)
-      : (fromNode.x + fromNode.width / 2) > (toNode.x + toNode.width / 2);
+      ? fromNode.y + fromNode.height / 2 > toNode.y + toNode.height / 2
+      : fromNode.x + fromNode.width / 2 > toNode.x + toNode.width / 2;
 
     edgeInfos.push({ edge, fromNode, toNode, fromSide, toSide, goesBackward });
   }
@@ -2136,12 +2156,15 @@ function computeOrthogonalEdgePaths(
   // Channel allocation: group edges that share horizontal/vertical segments
 
   // Pre-compute which channel each edge needs
-  const edgeChannelInfo = new Map<string, {
-    needsHorizontalChannel: boolean;
-    needsVerticalChannel: boolean;
-    horizontalY: number;
-    verticalX: number;
-  }>();
+  const edgeChannelInfo = new Map<
+    string,
+    {
+      needsHorizontalChannel: boolean;
+      needsVerticalChannel: boolean;
+      horizontalY: number;
+      verticalX: number;
+    }
+  >();
 
   edgeInfos.forEach((info) => {
     const { fromNode, toNode, fromSide, toSide } = info;
@@ -2209,11 +2232,11 @@ function computeOrthogonalEdgePaths(
 
   // Allocate channels to avoid overlapping
   // Sort edges by their channel position to assign unique tracks
-  const edgesNeedingHorizontal = edgeInfos.filter((e) =>
-    edgeChannelInfo.get(e.edge.id)?.needsHorizontalChannel,
+  const edgesNeedingHorizontal = edgeInfos.filter(
+    (e) => edgeChannelInfo.get(e.edge.id)?.needsHorizontalChannel,
   );
-  const edgesNeedingVertical = edgeInfos.filter((e) =>
-    edgeChannelInfo.get(e.edge.id)?.needsVerticalChannel,
+  const edgesNeedingVertical = edgeInfos.filter(
+    (e) => edgeChannelInfo.get(e.edge.id)?.needsVerticalChannel,
   );
 
   // Sort by natural channel position
@@ -2282,7 +2305,7 @@ function computeOrthogonalEdgePaths(
           }
         }
         if (!foundSlot) {
-          assignedY = baseY + (overlappingChannels.length) * TRACK_SPACING;
+          assignedY = baseY + overlappingChannels.length * TRACK_SPACING;
         }
       }
 
@@ -2330,7 +2353,7 @@ function computeOrthogonalEdgePaths(
           }
         }
         if (!foundSlot) {
-          assignedX = baseX + (overlappingChannels.length) * TRACK_SPACING;
+          assignedX = baseX + overlappingChannels.length * TRACK_SPACING;
         }
       }
 
@@ -2365,26 +2388,41 @@ function computeOrthogonalEdgePaths(
   }
 
   // Assign port indices
-  const portIndex = new Map<string, { srcIdx: number; srcCount: number; tgtIdx: number; tgtCount: number }>();
+  const portIndex = new Map<
+    string,
+    { srcIdx: number; srcCount: number; tgtIdx: number; tgtCount: number }
+  >();
 
   sourceGroups.forEach((group) => {
-    group.sort((a, b) => (a.toNode.x + a.toNode.width/2) - (b.toNode.x + b.toNode.width/2));
+    group.sort((a, b) => a.toNode.x + a.toNode.width / 2 - (b.toNode.x + b.toNode.width / 2));
     group.forEach((info, i) => {
-      const existing = portIndex.get(info.edge.id) || { srcIdx: 0, srcCount: 1, tgtIdx: 0, tgtCount: 1 };
+      const existing = portIndex.get(info.edge.id) || {
+        srcIdx: 0,
+        srcCount: 1,
+        tgtIdx: 0,
+        tgtCount: 1,
+      };
       portIndex.set(info.edge.id, { ...existing, srcIdx: i, srcCount: group.length });
     });
   });
 
   targetGroups.forEach((group) => {
-    group.sort((a, b) => (a.fromNode.x + a.fromNode.width/2) - (b.fromNode.x + b.fromNode.width/2));
+    group.sort(
+      (a, b) => a.fromNode.x + a.fromNode.width / 2 - (b.fromNode.x + b.fromNode.width / 2),
+    );
     group.forEach((info, i) => {
-      const existing = portIndex.get(info.edge.id) || { srcIdx: 0, srcCount: 1, tgtIdx: 0, tgtCount: 1 };
+      const existing = portIndex.get(info.edge.id) || {
+        srcIdx: 0,
+        srcCount: 1,
+        tgtIdx: 0,
+        tgtCount: 1,
+      };
       portIndex.set(info.edge.id, { ...existing, tgtIdx: i, tgtCount: group.length });
     });
   });
 
   // Backward edge track allocation
-  const backwardEdges = edgeInfos.filter(e => e.goesBackward);
+  const backwardEdges = edgeInfos.filter((e) => e.goesBackward);
   backwardEdges.sort((a, b) => {
     const aDistance = isVerticalLayout
       ? Math.abs(a.fromNode.y - a.toNode.y)
@@ -2405,19 +2443,26 @@ function computeOrthogonalEdgePaths(
     const { edge, fromNode, toNode, fromSide, toSide, goesBackward } = info;
 
     // Calculate port positions with spreading
-    let srcT = 0.5, tgtT = 0.5;
+    let srcT = 0.5,
+      tgtT = 0.5;
     const ports = portIndex.get(edge.id);
     if (ports) {
-      srcT = ports.srcCount === 1 ? 0.5 : 0.2 + (0.6 * ports.srcIdx) / Math.max(ports.srcCount - 1, 1);
-      tgtT = ports.tgtCount === 1 ? 0.5 : 0.2 + (0.6 * ports.tgtIdx) / Math.max(ports.tgtCount - 1, 1);
+      srcT =
+        ports.srcCount === 1 ? 0.5 : 0.2 + (0.6 * ports.srcIdx) / Math.max(ports.srcCount - 1, 1);
+      tgtT =
+        ports.tgtCount === 1 ? 0.5 : 0.2 + (0.6 * ports.tgtIdx) / Math.max(ports.tgtCount - 1, 1);
     }
 
     const getPortPosition = (node: ComputedNode, side: Side, t: number) => {
       switch (side) {
-        case 'top': return { x: node.x + node.width * t, y: node.y };
-        case 'bottom': return { x: node.x + node.width * t, y: node.y + node.height };
-        case 'left': return { x: node.x, y: node.y + node.height * t };
-        case 'right': return { x: node.x + node.width, y: node.y + node.height * t };
+        case 'top':
+          return { x: node.x + node.width * t, y: node.y };
+        case 'bottom':
+          return { x: node.x + node.width * t, y: node.y + node.height };
+        case 'left':
+          return { x: node.x, y: node.y + node.height * t };
+        case 'right':
+          return { x: node.x + node.width, y: node.y + node.height * t };
       }
     };
 
@@ -2427,7 +2472,10 @@ function computeOrthogonalEdgePaths(
     // Apply bidirectional offset if needed
     const biOffset = biOffsets.get(edge.id);
     if (biOffset) {
-      const fromCenter = { x: fromNode.x + fromNode.width / 2, y: fromNode.y + fromNode.height / 2 };
+      const fromCenter = {
+        x: fromNode.x + fromNode.width / 2,
+        y: fromNode.y + fromNode.height / 2,
+      };
       const toCenter = { x: toNode.x + toNode.width / 2, y: toNode.y + toNode.height / 2 };
       fromPos = applyPerpendicularOffset(fromPos, fromCenter, toCenter, biOffset);
       toPos = applyPerpendicularOffset(toPos, fromCenter, toCenter, biOffset);
@@ -2476,12 +2524,14 @@ function computeOrthogonalEdgePaths(
       } else {
         const channelY = horizontalChannelY.get(edge.id) ?? (fromPos.y + toPos.y) / 2;
         // Add step-out segments for cleaner routing
-        const stepOutY = fromSide === 'bottom'
-          ? Math.max(fromPos.y + NODE_GAP, channelY)
-          : Math.min(fromPos.y - NODE_GAP, channelY);
-        const stepInY = toSide === 'top'
-          ? Math.min(toPos.y - NODE_GAP, channelY)
-          : Math.max(toPos.y + NODE_GAP, channelY);
+        const stepOutY =
+          fromSide === 'bottom'
+            ? Math.max(fromPos.y + NODE_GAP, channelY)
+            : Math.min(fromPos.y - NODE_GAP, channelY);
+        const stepInY =
+          toSide === 'top'
+            ? Math.min(toPos.y - NODE_GAP, channelY)
+            : Math.max(toPos.y + NODE_GAP, channelY);
 
         // Only add intermediate points if the channel is significantly different
         if (Math.abs(stepOutY - channelY) > 2) {
@@ -2496,12 +2546,14 @@ function computeOrthogonalEdgePaths(
     } else if (!isFromVertical && !isToVertical) {
       // Horizontal to horizontal - use allocated vertical channel
       const channelX = verticalChannelX.get(edge.id) ?? (fromPos.x + toPos.x) / 2;
-      const stepOutX = fromSide === 'right'
-        ? Math.max(fromPos.x + NODE_GAP, channelX)
-        : Math.min(fromPos.x - NODE_GAP, channelX);
-      const stepInX = toSide === 'left'
-        ? Math.min(toPos.x - NODE_GAP, channelX)
-        : Math.max(toPos.x + NODE_GAP, channelX);
+      const stepOutX =
+        fromSide === 'right'
+          ? Math.max(fromPos.x + NODE_GAP, channelX)
+          : Math.min(fromPos.x - NODE_GAP, channelX);
+      const stepInX =
+        toSide === 'left'
+          ? Math.min(toPos.x - NODE_GAP, channelX)
+          : Math.max(toPos.x + NODE_GAP, channelX);
 
       if (Math.abs(stepOutX - channelX) > 2) {
         points.push({ x: stepOutX, y: fromPos.y });
@@ -2571,34 +2623,29 @@ function determineConnectionSides(
   if (isVerticalLayout) {
     if (Math.abs(dy) > 10) {
       // Significant vertical difference
-      return dy > 0
-        ? { fromSide: 'bottom', toSide: 'top' }
-        : { fromSide: 'top', toSide: 'bottom' };
+      return dy > 0 ? { fromSide: 'bottom', toSide: 'top' } : { fromSide: 'top', toSide: 'bottom' };
     }
     // Nearly same level - use horizontal
-    return dx > 0
-      ? { fromSide: 'right', toSide: 'left' }
-      : { fromSide: 'left', toSide: 'right' };
+    return dx > 0 ? { fromSide: 'right', toSide: 'left' } : { fromSide: 'left', toSide: 'right' };
   }
 
   // For horizontal layouts (LR/RL), prefer left/right connections
   if (Math.abs(dx) > 10) {
     // Significant horizontal difference
-    return dx > 0
-      ? { fromSide: 'right', toSide: 'left' }
-      : { fromSide: 'left', toSide: 'right' };
+    return dx > 0 ? { fromSide: 'right', toSide: 'left' } : { fromSide: 'left', toSide: 'right' };
   }
   // Nearly same level - use vertical
-  return dy > 0
-    ? { fromSide: 'bottom', toSide: 'top' }
-    : { fromSide: 'top', toSide: 'bottom' };
+  return dy > 0 ? { fromSide: 'bottom', toSide: 'top' } : { fromSide: 'top', toSide: 'bottom' };
 }
 
 /**
  * Compute a self-loop path for edges where from === to.
  * Exits from the top-right of the node, arcs up and right, returns to the right-top.
  */
-function computeSelfLoopPath(node: ComputedNode, loopIndex: number = 0): { path: string; points: Array<{ x: number; y: number }> } {
+function computeSelfLoopPath(
+  node: ComputedNode,
+  loopIndex: number = 0,
+): { path: string; points: Array<{ x: number; y: number }> } {
   const topY = node.y;
   const rightX = node.x + node.width;
   const cx = node.x + node.width / 2;

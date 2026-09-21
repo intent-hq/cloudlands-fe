@@ -68,7 +68,9 @@
 <!-- No usable label yet (e.g. workspace_api summary still streaming): render nothing -->
 {#if !toolDisplay.hidden}
   <span
-    class="inline-flex w-full min-w-0 items-center {showIcon ? 'gap-1.5' : ''} {className}"
+    class="type-body inline-flex w-full min-w-0 items-center font-normal {showIcon
+      ? 'gap-1.5'
+      : ''} {className}"
     title={label}
   >
     {#if showIcon}

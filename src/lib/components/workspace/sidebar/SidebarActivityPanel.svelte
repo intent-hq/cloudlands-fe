@@ -5,7 +5,7 @@
    * event handling and natural language descriptions.
    */
   import { writable } from 'svelte/store';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
   import {
     faFile,
@@ -37,11 +37,17 @@
   import {
     selectWorkspaceEvents,
     selectEventsLoading,
+    selectOlderEventsEndReached,
+    selectOlderEventsError,
+    selectOlderEventsLoading,
   } from '$store/renderer/slices/workspace-events/workspace-events-selectors';
+  import { loadOlderEventsRequested } from '$store/renderer/slices/workspace-events/workspace-events-slice';
+  import { store as appStore } from '$store/renderer/store';
 
   import { getActivityLabelParts, type StructuredLabel } from '$features/events/activity-labels';
   import { getEventAgentId } from './utils';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { Button } from '$lib/components/ui/button';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -100,6 +106,9 @@
   // Read events and loading state from Redux
   const events$ = selectWorkspaceEvents(workspaceIdStore);
   const loading$ = selectEventsLoading(workspaceIdStore);
+  const loadingOlder$ = selectOlderEventsLoading(workspaceIdStore);
+  const olderError$ = selectOlderEventsError(workspaceIdStore);
+  const endReached$ = selectOlderEventsEndReached(workspaceIdStore);
 
   /**
    * Event types that should be hidden from the activity log.
@@ -281,21 +290,21 @@
     if (type === 'test:completed') {
       const data = event.data as Record<string, unknown> | undefined;
       if (data?.status === 'passed') return 'text-emerald-500/70';
-      if (data?.status === 'failed') return 'text-error-foreground';
+      if (data?.status === 'failed') return 'text-danger';
     }
     if (type === 'build:completed') {
       const data = event.data as Record<string, unknown> | undefined;
       if (data?.status === 'success') return 'text-emerald-500/70';
-      if (data?.status === 'failed') return 'text-error-foreground';
+      if (data?.status === 'failed') return 'text-danger';
     }
 
     // Error states
-    if (type === 'agent:failed') return 'text-error-foreground';
+    if (type === 'agent:failed') return 'text-danger';
     if (type === 'agent:deleted') return 'text-subtle';
 
     // Active/running states
     if (type === 'agent:started' || type === 'agent:created') return 'text-blue-400/70';
-    if (type === 'agent:woken-by-subscription') return 'text-amber-400/70';
+    if (type === 'agent:woken-by-subscription') return 'text-warning-ink';
 
     // Messaging
     if (type === 'agent:message:sent' || type === 'agent:message:received')
@@ -404,6 +413,26 @@
 </script>
 
 <div class="h-full flex flex-col">
+  {#if !$loading$ && !$endReached$}
+    <div class="flex items-center justify-center gap-2 px-5 pt-2">
+      {#if $olderError$}
+        <span class="text-ui text-danger truncate" role="status">{$olderError$}</span>
+      {/if}
+      <Button
+        variant="plain"
+        size="compact"
+        class="!h-auto text-ui text-subtle hover:text-foreground"
+        loading={$loadingOlder$}
+        onclick={() => appStore.dispatch(loadOlderEventsRequested(workspaceId))}
+      >
+        {$loadingOlder$
+          ? m.workspace_activityPanel_loadingOlder_label()
+          : $olderError$
+            ? m.workspace_activityPanel_retryOlder_label()
+            : m.workspace_activityPanel_loadOlder_label()}
+      </Button>
+    </div>
+  {/if}
   {#if $loading$}
     <!-- Loading skeleton -->
     <div class="px-5 py-3 space-y-3">
@@ -417,7 +446,7 @@
     </div>
   {:else if dedupedEvents.length === 0}
     <!-- Empty state -->
-    <div class="flex-1 flex flex-col items-center justify-center text-subtle py-8">
+    <div class="flex flex-1 flex-col items-start justify-center px-5 py-8 text-left text-subtle">
       <Fa icon={faFile} class="text-2xl mb-2 opacity-40" />
       <p class="text-ui">{m.workspace_activityPanel_noActivity_label()}</p>
     </div>
@@ -444,55 +473,57 @@
             ) > 60000}
           {@const clickable = isEventClickable(event)}
 
-          <button
-            type="button"
-            class="relative group flex items-start gap-2 py-1 w-full text-left transition-colors z-10 outline-none {clickable
-              ? 'cursor-pointer'
-              : 'cursor-default'}"
-            onclick={() => handleEventClick(event)}
-            disabled={!clickable}
-            transition:slide={{ axis: 'y', duration: 150 }}
-          >
-            <!-- Icon or Agent Avatar - use h-[1.2rem] to match text line-height for vertical centering -->
-            <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">
-              {#if eventAgentId}
-                <div class="flex items-center justify-center bg-sidebar">
-                  <AgentAvatar size={14} agentId={eventAgentId} />
-                </div>
-              {:else}
-                <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">
-                  <Fa {icon} class="text-ui {statusColor}" />
-                </div>
-              {/if}
-            </div>
+          <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
+            <Button
+              type="button"
+              variant="plain"
+              class="h-auto! rounded-none! relative group flex items-start gap-2 py-1! w-full text-left transition-colors z-10 outline-none {clickable
+                ? 'cursor-pointer'
+                : 'cursor-default'}"
+              onclick={() => handleEventClick(event)}
+              disabled={!clickable}
+            >
+              <!-- Icon or Agent Avatar - use h-[1.2rem] to match text line-height for vertical centering -->
+              <div class="relative flex items-center justify-center w-3.5 h-[1.2rem] shrink-0">
+                {#if eventAgentId}
+                  <div class="flex items-center justify-center bg-sidebar">
+                    <AgentAvatar size={14} agentId={eventAgentId} />
+                  </div>
+                {:else}
+                  <div class="flex items-center justify-center w-3 rounded-sm bg-sidebar">
+                    <Fa {icon} class="text-ui {statusColor}" />
+                  </div>
+                {/if}
+              </div>
 
-            <!-- Content -->
-            <div class="flex-1 min-w-0 flex items-baseline gap-1">
-              <span
-                class="text-ui leading-[1.2rem] truncate text-subtle {clickable
-                  ? 'group-hover:text-foreground'
-                  : ''} transition-colors"
-              >
-                {#each labelParts as part}{#if part.emphasis}<span
-                      class="font-semibold text-foreground">{part.text}</span
-                    >{:else}{part.text}{/if}{/each}
-              </span>
-              {#if changes}
-                <LineChangesBadge
-                  additions={changes.additions}
-                  deletions={changes.deletions}
-                  size="xs"
-                />
-              {/if}
-            </div>
+              <!-- Content -->
+              <div class="flex-1 min-w-0 flex items-baseline gap-1">
+                <span
+                  class="text-ui leading-[1.2rem] truncate text-subtle {clickable
+                    ? 'group-hover:text-foreground'
+                    : ''} transition-colors"
+                >
+                  {#each labelParts as part}{#if part.emphasis}<span
+                        class="font-semibold text-foreground">{part.text}</span
+                      >{:else}{part.text}{/if}{/each}
+                </span>
+                {#if changes}
+                  <LineChangesBadge
+                    additions={changes.additions}
+                    deletions={changes.deletions}
+                    size="xs"
+                  />
+                {/if}
+              </div>
 
-            <!-- Timestamp -->
-            {#if showTimestamp}
-              <span class="text-ui text-subtle shrink-0">
-                <RelativeTime date={new Date(event.timestamp)} compact />
-              </span>
-            {/if}
-          </button>
+              <!-- Timestamp -->
+              {#if showTimestamp}
+                <span class="text-ui text-subtle shrink-0">
+                  <RelativeTime date={new Date(event.timestamp)} compact />
+                </span>
+              {/if}
+            </Button>
+          </div>
         {/each}
       </div>
     </div>

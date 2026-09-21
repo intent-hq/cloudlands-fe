@@ -23,6 +23,7 @@ import {
   getWebDaemonStatusSource,
   onWebDaemonStatusSourceRegistered,
 } from './client/live/web-daemon-status';
+import { expectsElectronPreloadBridge } from './utils/platform-capabilities';
 
 /**
  * Whether the browser mock is allowed to activate: dev builds or explicit
@@ -76,6 +77,74 @@ const MOCK_WORKSPACES = [
   },
 ];
 
+interface MockSetting {
+  path: string;
+  label: string;
+  description: string;
+  category: string;
+  type: 'boolean' | 'object';
+  defaultValue: unknown;
+  value: unknown;
+  origin?: 'default';
+}
+
+const MOCK_SETTINGS: MockSetting[] = [
+  {
+    path: 'workspaceInitializer.state',
+    label: 'Workspace initializer state',
+    description: 'Browser-preview workspace initializer state.',
+    category: 'workspace',
+    type: 'object',
+    defaultValue: {},
+    value: { hydrated: true },
+  },
+  {
+    path: 'hardwareConsole.state',
+    label: 'Hardware console state',
+    description: 'Browser-preview hardware console state.',
+    category: 'hardwareConsole',
+    type: 'object',
+    defaultValue: {},
+    value: {},
+  },
+  {
+    path: 'rtk.enabled',
+    label: 'RTK enabled',
+    description: 'Use RTK compressed command output.',
+    category: 'tools',
+    type: 'boolean',
+    defaultValue: false,
+    value: false,
+    origin: 'default',
+  },
+];
+
+let mockSettingsRevision = 0;
+
+function mockSettingsGet(path: unknown): unknown {
+  const setting = MOCK_SETTINGS.find((entry) => entry.path === path);
+  if (!setting) {
+    return mockError('INVALID_PARAMS', -32602, `Browser mock: setting "${String(path)}" not found`);
+  }
+  const { value, origin, ...definition } = setting;
+  return {
+    path: setting.path,
+    value,
+    definition,
+    ...(origin ? { origin } : {}),
+    revision: mockSettingsRevision,
+  };
+}
+
+function unavailableTools(names: unknown): Record<string, { available: false }> {
+  if (!Array.isArray(names)) return {};
+  return Object.fromEntries(
+    names
+      .filter((name): name is string => typeof name === 'string')
+      .map((name) => [name, { available: false }]),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Backend transport channels (`backend:*`)
 // ---------------------------------------------------------------------------
@@ -87,6 +156,7 @@ const MOCK_WORKSPACES = [
 // `{ success, data }` shape below is only for the non-backend IPC channels.
 
 let subscriptionIdCounter = 0;
+let terminalIdCounter = 0;
 
 /** §5.13 `daemonBootId` is a per-boot UUID; a page load is the mock's boot. */
 const MOCK_DAEMON_BOOT_ID = crypto.randomUUID();
@@ -150,10 +220,23 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
   }
   if (method === 'workspace.getContext') return { items: [] };
   if (method === 'script.list') return { scripts: [] };
-  // §5.13 v4.0 envelope: { terminals, daemonBootId } — never the bare array.
+  // §5.13 `terminal.list` envelope: { terminals, daemonBootId } — never the bare array.
   if (method === 'terminal.list') {
     return { terminals: [], daemonBootId: MOCK_DAEMON_BOOT_ID };
   }
+  // §5.13 interactive terminal surface. Browser previews do not spawn a real
+  // PTY, but the adapter still exercises the daemon-shaped happy path.
+  if (method === 'terminal.create') {
+    return { terminalId: `browser-mock-terminal-${++terminalIdCounter}` };
+  }
+  if (method === 'terminal.write' || method === 'terminal.resize' || method === 'terminal.kill') {
+    return { ok: true };
+  }
+  if (method === 'terminal.getBuffer') {
+    return { terminalId: String(params?.terminalId ?? ''), data: '' };
+  }
+  // §5.9 plaintext convenience read; the mock PTY intentionally emits nothing.
+  if (method === 'terminal.readOutput') return '';
   // Other empty-safe reads hit during workspace open (audit, monorepo#2605).
   if (method === 'agent.listActive') return { streams: [] };
   if (method === 'prMonitor.list') return { monitors: [] };
@@ -168,7 +251,36 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
     return { commits: [], boundarySha: null, nextToken: null };
   }
   if (method === 'repo.list') return { repos: [] };
-  if (method === 'settings.list') return { settings: [] };
+  if (method === 'settings.list') {
+    return { settings: MOCK_SETTINGS, revision: mockSettingsRevision };
+  }
+  if (method === 'settings.get') return mockSettingsGet(params?.path);
+  if (method === 'settings.update') {
+    const changes = Array.isArray(params?.changes) ? params.changes : [];
+    const applied: Array<{ path: string; value: unknown; origin?: 'default' }> = [];
+    for (const change of changes) {
+      if (typeof change !== 'object' || change === null) continue;
+      const { path, value } = change as { path?: unknown; value?: unknown };
+      const setting = MOCK_SETTINGS.find((entry) => entry.path === path);
+      if (!setting) continue;
+      setting.value = value;
+      applied.push({
+        path: setting.path,
+        value,
+        ...(setting.origin ? { origin: setting.origin } : {}),
+      });
+    }
+    if (applied.length > 0) mockSettingsRevision += 1;
+    return { applied, revision: mockSettingsRevision };
+  }
+  if (method === 'host.checkAuggie' || method === 'host.findBinary') {
+    return { available: false };
+  }
+  if (method === 'host.toolAvailability') {
+    return { tools: unavailableTools(params?.tools) };
+  }
+  if (method === 'host.providerAuthStatus') return { providers: [] };
+  if (method === 'host.providerDiscovery') return { providers: [] };
   if (method === 'agent.list') return { agents: [], retiredCount: 0 };
   if (method === 'agent.listInterrupted') return { agents: [] };
   if (method === 'models.list') return { models: [] };
@@ -481,12 +593,28 @@ const browserElectronAPI = {
  * Refuses to install outside dev builds / explicit opt-in (see
  * `isBrowserMockEnabled`), so a packaged run without a bridge fails loudly via
  * `UnbridgedMockIpcChannelError` instead of silently serving mock data.
+ *
+ * Also refuses inside an Electron renderer even when `window.electronAPI` is
+ * not present yet: the preload bridge can be exposed after early renderer
+ * modules evaluate, so bridge presence at import time is not a safe signal.
+ * The Electron check reads the user agent, which is available synchronously.
  */
 export function installBrowserMock(): boolean {
   if (typeof window === 'undefined') return false;
 
   // Dev-only affordance — never activate in packaged/daemon-bridged runs
   if (!isBrowserMockEnabled()) return false;
+
+  // Electron-built renderer in Electron — the preload bridge owns
+  // window.electronAPI; its absence here means the preload has not landed,
+  // not that this is a browser (see intent-hq/monorepo#3606). The web build
+  // inside the app's <webview> is not affected (never has a preload).
+  if (expectsElectronPreloadBridge()) {
+    console.warn(
+      '[BrowserMock] Electron renderer detected — refusing to install the mock over the preload bridge',
+    );
+    return false;
+  }
 
   // Already have a real electronAPI — don't overwrite
   if ((window as any).electronAPI) return false;

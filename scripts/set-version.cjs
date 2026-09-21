@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Filter out '--' separator that some package managers pass
-const args = process.argv.slice(2).filter(arg => arg !== '--');
+const args = process.argv.slice(2).filter((arg) => arg !== '--');
 const version = args[0];
 
 if (!version) {

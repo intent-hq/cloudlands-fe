@@ -82,7 +82,11 @@ describe('FileProvider', () => {
     });
 
     it('should send an empty pattern for an empty query', async () => {
-      mockBackendRequest.mockResolvedValueOnce({ requestId: 'srch-1', files: [], truncated: false });
+      mockBackendRequest.mockResolvedValueOnce({
+        requestId: 'srch-1',
+        files: [],
+        truncated: false,
+      });
 
       const results = await provider.search('', mockContext);
 

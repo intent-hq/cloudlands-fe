@@ -1,4 +1,4 @@
-type VisibilityCallback = (isIntersecting: boolean) => void;
+type VisibilityCallback = (isIntersecting: boolean, isVisible: boolean) => void;
 
 interface ObserverGroup {
   root: HTMLElement | null;
@@ -76,8 +76,19 @@ function createGroup(root: HTMLElement | null): ObserverGroup {
             (group.order.get(b.target) ?? Number.MAX_SAFE_INTEGER)
           );
         });
+        const viewport = root?.getBoundingClientRect();
+        const viewportTop = viewport?.top ?? 0;
+        const viewportBottom = viewport?.bottom ?? globalThis.innerHeight;
         dispatchDelivery(() => {
-          for (const entry of orderedEntries) callbacks.get(entry.target)?.(entry.isIntersecting);
+          for (const entry of orderedEntries) {
+            const rect = entry.boundingClientRect;
+            const isVisible =
+              entry.isIntersecting &&
+              (!rect || !Number.isFinite(rect.top) || !Number.isFinite(rect.bottom)
+                ? true
+                : rect.bottom > viewportTop && rect.top < viewportBottom);
+            callbacks.get(entry.target)?.(entry.isIntersecting, isVisible);
+          }
         });
       },
       // Materialize one viewport before entry so cached-height correction and
@@ -102,7 +113,7 @@ export function observeLazyTurnVisibility(
   callback: VisibilityCallback,
 ): () => void {
   if (typeof IntersectionObserver === 'undefined') {
-    callback(true);
+    callback(true, true);
     return () => {};
   }
   const group = getGroup(root);

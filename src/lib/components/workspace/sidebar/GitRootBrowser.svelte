@@ -11,7 +11,7 @@
    * selection restores today's behavior exactly.
    */
   import { writable } from 'svelte/store';
-  import { untrack } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import {
     selectHasSecondaryGitRoots,
     selectWorkspaceGitRootEntries,
@@ -28,9 +28,10 @@
      * root is selected) so the parent can hide/show the primary changes body
      * and follow the selection in its PR sections (monorepo#2053). */
     onSelectedRootChange?: (entry: WorkspaceGitRootEntry | null) => void;
+    onRefreshActionChange?: (action: Snippet | undefined) => void;
   }
 
-  let { workspaceId, onSelectedRootChange }: Props = $props();
+  let { workspaceId, onSelectedRootChange, onRefreshActionChange }: Props = $props();
 
   // svelte-ignore state_referenced_locally - intentional initial capture; the $effect below syncs later changes
   const workspaceIdStore = writable(workspaceId);
@@ -128,6 +129,6 @@
   {#if isSecondaryRootSelected && selectedRootEntry}
     <!-- Read-only per-root browsing; the workspace-scoped PR sections and all
          mutation affordances stay on the primary root view. -->
-    <SecondaryRootChangesView {workspaceId} entry={selectedRootEntry} />
+    <SecondaryRootChangesView {workspaceId} entry={selectedRootEntry} {onRefreshActionChange} />
   {/if}
 {/if}

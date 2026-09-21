@@ -1,3 +1,12 @@
+// @verify-changed-triggers: ./ResourceIconTile.svelte, ./resource-icon.ts,
+//   ../workspace/MultiSelectTabbedSidebar.svelte, ../workspace/SidebarBrowserLauncher.svelte,
+//   ../workspace/WorkspaceTerminalDock.svelte, ../workspace/SidebarExpandedTabStrip.svelte,
+//   ../workspace/multi-select-sidebar-transitions.css, ../workspace/multi-select-sidebar-tabs.ts,
+//   ../workspace/sidebar/NotesPanel.svelte, ../workspace/sidebar/ContextItemRow.svelte,
+//   ../layout/panel-system/PanelTabBar.svelte, ../layout/panel-system/PanelEmptyState.svelte,
+//   ../chat/ChatMessageNavigator.svelte, ../chat/ScrollToBottomButton.svelte,
+//   ../chat/chat-icon-size.ts, ../../../features/layout/tab-types/register-all.ts
+
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -40,7 +49,7 @@ describe('resource icon tile source contract', () => {
     const tabs = source('../workspace/multi-select-sidebar-tabs.ts');
 
     expect(sidebar).toMatch(/<ResourceIconTile\s+kind="note"/);
-    expect(sidebar).toContain('<ResourceIconTile kind="changes" variant="emphasized" />');
+    // Collapsed Changes interactions and layout are covered by launcher-geometry.ct.spec.ts.
     expect(sidebar).toContain('variant="standard"');
     expect(sidebar).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
     expect(sidebar).not.toContain('$lib/icons/faNote');
@@ -62,7 +71,7 @@ describe('resource icon tile source contract', () => {
     expect(transitions).toContain('background-color: hsl(var(--sidebar))');
   });
 
-  it('migrates panel tabs, compact headers, and empty or recent items', () => {
+  it('migrates panel tabs and compact headers while empty rows use bare glyphs', () => {
     const tabBar = source('../layout/panel-system/PanelTabBar.svelte');
     const empty = source('../layout/panel-system/PanelEmptyState.svelte');
     const navigator = source('../chat/ChatMessageNavigator.svelte');
@@ -77,21 +86,26 @@ describe('resource icon tile source contract', () => {
     expect(tabBar).toContain('data-panel-header-leading-surface');
     expect(tabBar).toContain('size={16}');
     expect(tabBar).toContain('width="14"');
-    expect(tabBar).toContain('<KebabIcon class="pointer-events-none size-3.5!" />');
-    expect(tabBar).toContain('<Fa icon={faXmark} size={14} class="size-3.5!" />');
+    // Rendered action ink, hit targets and keyboard routing are covered by agent-header-icons.ct.spec.ts.
     expect(navigator).toContain("import ChatTextIcon from 'phosphor-svelte/lib/ChatTextIcon'");
-    expect(navigator).toMatch(/<ChatTextIcon[\s\S]*?size=\{14\}[\s\S]*?mirrored/);
+    expect(navigator).toMatch(
+      /<ChatTextIcon[\s\S]*?size=\{CHAT_ICON_SIZE\.compact\}[\s\S]*?mirrored=\{false\}/,
+    );
     expect(navigator).toContain('data-chat-message-navigator-chat-icon');
     expect(navigator).not.toContain('faList');
-    expect(scrollButton).toContain('size={CHAT_ICON_SIZE.compact} class="size-4!"');
+    expect(scrollButton).toMatch(
+      /<ArrowDownIcon[\s\S]*?size=\{CHAT_ICON_SIZE\.compact\}[\s\S]*?class="size-4!"/,
+    );
     expect(chatSizes).toContain('header: 12');
     expect(chatSizes).toContain('compact: 16');
     expect(tabBar).not.toContain('pl-4 pr-2.5 sm:pl-6');
     expect(tabBar).toContain(
       '(var(--panel-header-height) - var(--agent-avatar-emphasized-surface-size)) / 2',
     );
-    expect(empty).toContain('<ResourceIconTile kind={action.resourceKind} variant="emphasized" />');
-    expect(empty).toContain('<ResourceIconTile kind={resourceKind} />');
+    expect(empty).not.toContain('ResourceIconTile');
+    expect(empty).toContain('<Fa icon={action.icon} class="size-[1em]" />');
+    expect(empty).toContain('<Fa icon={row.icon} class="size-[1em]" />');
+    expect(empty).toContain('icon: getTabIcon(item.tab.type)');
   });
 
   it('maps the note and every changes alias to one canonical identity', () => {

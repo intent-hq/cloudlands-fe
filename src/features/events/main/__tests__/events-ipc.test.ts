@@ -235,4 +235,27 @@ describe('events IPC renderer subscription cleanup', () => {
     expect(otherWindow.webContents.send).not.toHaveBeenCalled();
     expect(globalWindow.webContents.send).toHaveBeenCalledTimes(1);
   });
+
+  it('delivers the same app workspace-open event identity to every renderer recipient', () => {
+    const firstWindow = makeWindow();
+    const secondWindow = makeWindow();
+    const event = {
+      ...makeEvent(),
+      id: 'evt-open-shared',
+      workspaceId: undefined,
+      type: 'app:workspace-open',
+      data: { workspaceId: 'ws-open', openInNewWindow: true },
+    } as WorkspaceEvent;
+
+    addRendererSubscription('sub-first', { windowId: 1, filters: [] });
+    addRendererSubscription('sub-second', { windowId: 2, filters: [] });
+    electronMocks.fromId.mockImplementation((id: number) =>
+      id === 1 ? firstWindow : secondWindow,
+    );
+
+    deliverEventToSubscriptions(event);
+
+    expect(firstWindow.webContents.send).toHaveBeenCalledExactlyOnceWith('workspace:event', event);
+    expect(secondWindow.webContents.send).toHaveBeenCalledExactlyOnceWith('workspace:event', event);
+  });
 });

@@ -238,6 +238,13 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'unsloth:get-models',
   },
 
+  // Google Antigravity Integration
+  ANTIGRAVITY: {
+    GET_MODELS: 'antigravity:get-models',
+    SETUP: 'antigravity:setup',
+    CLOSE_SETUP: 'antigravity:close-setup',
+  },
+
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
@@ -324,6 +331,32 @@ export const IPC_CHANNELS = {
     DISMISS: 'quit-confirmation:dismiss',
   },
 
+  // Invite consent (renderer-rendered GitHub identity prompt of an invite join).
+  // Payload contracts live in src/shared/ipc/invite-consent.ts.
+  INVITE_CONSENT: {
+    /** Main → renderer: show the invite-consent modal for a request. */
+    SHOW: 'invite-consent:show',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'invite-consent:ack',
+    /** Renderer → main (invoke): the user's `open` / `cancel` decision. */
+    RESPONSE: 'invite-consent:response',
+    /** Main → renderer: close the modal with the request's outcome. */
+    DISMISS: 'invite-consent:dismiss',
+  },
+
+  // Invite notice (renderer-rendered failure / plaintext-credential notice of
+  // an invite join). Payload contracts live in src/shared/ipc/invite-notice.ts.
+  INVITE_NOTICE: {
+    /** Main → renderer: show the invite-notice modal for a request. */
+    SHOW: 'invite-notice:show',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'invite-notice:ack',
+    /** Renderer → main (invoke): the user acknowledged the notice (OK / Escape / backdrop). */
+    RESPONSE: 'invite-notice:response',
+    /** Main → renderer: close the modal for a superseded request. */
+    DISMISS: 'invite-notice:dismiss',
+  },
+
   // Window Management
   WINDOW: {
     RELOAD: 'window:reload',
@@ -345,6 +378,15 @@ export const IPC_CHANNELS = {
     // destroyed, hidden, and HUD pop-out windows; minimized windows are
     // restored) → { cycled: boolean, windowCount: number }
     CYCLE_FOCUS: 'window:cycle-focus',
+  },
+
+  // Power (Electron powerMonitor → renderer)
+  POWER: {
+    // Renderer → main invoke: current battery state → { onBattery: boolean }
+    GET_BATTERY_STATE: 'power:get-battery-state',
+    // Main → renderer: { onBattery: boolean } on every on-battery / on-ac
+    // transition, and once to each new window after it finishes loading.
+    BATTERY_CHANGED: 'power:battery-changed',
   },
 
   // Terminal
@@ -422,6 +464,7 @@ export const IPC_CHANNELS = {
 
   // User MCP Settings — HTTP/SSE server auth checks.
   USER_MCP: {
+    AUTHENTICATE: 'user-mcp:authenticate', // Run interactive OAuth for a saved hosted server
     CHECK_AUTH: 'user-mcp:check-auth', // Check if URL requires auth and if we have credentials
     TEST_CONNECTION: 'user-mcp:test-connection', // Test connection to HTTP/SSE server, returns status
   },
@@ -497,6 +540,10 @@ export const IPC_CHANNELS = {
     UNREGISTER_TAB: 'browser:unregister-tab',
     /** Report a visible webview element's bounds for viewport scale-to-fit */
     REPORT_TAB_BOUNDS: 'browser:report-tab-bounds',
+    /** Set a browser tab's persisted viewport mode */
+    SET_TAB_VIEWPORT: 'browser:set-tab-viewport',
+    /** Open DevTools for a browser tab and select a panel */
+    OPEN_DEVTOOLS_PANEL: 'browser:open-devtools-panel',
     /** Execute code with access to browser CDP API */
     EXEC: 'browser:exec',
     /** Resolve a URL through the loopback rewrite → probe → tunnel pipeline */
@@ -656,6 +703,7 @@ export const IPC_CHANNELS = {
     CREATE_PULL_REQUEST: 'git-tracking:create-pull-request',
     GET_GITHUB_ISSUES: 'git-tracking:get-github-issues',
     SEARCH_GITHUB_ISSUES: 'git-tracking:search-github-issues',
+    LIST_RELATED_REPOS: 'git-tracking:list-related-repos',
     GET_REMOTE_URL: 'git-tracking:get-remote-url',
     GET_CHECK_RUNS: 'git-tracking:get-check-runs',
     GET_PR_REVIEWS: 'git-tracking:get-pr-reviews',
@@ -673,6 +721,7 @@ export const IPC_CHANNELS = {
     GET_STATUS: 'github-auth:get-status',
     LIST_REPOS: 'github-auth:list-repos',
     SEARCH_REPOS: 'github-auth:search-repos',
+    SEARCH_USERS: 'github-auth:search-users',
   },
 
   // Linear Auth (via daemon API OAuth)
@@ -806,8 +855,10 @@ export const IPC_CHANNELS = {
   RELEASE_NOTES: {
     GET: 'release-notes:get',
     GET_PENDING: 'release-notes:get-pending',
-    // Event channel (main → renderer)
+    DISMISS: 'release-notes:dismiss',
+    // Event channels (main → renderer)
     SHOW: 'release-notes:show',
+    CLOSE: 'release-notes:close',
   },
 
   // Picture-in-Picture Windows
@@ -905,6 +956,28 @@ export const IPC_CHANNELS = {
     // tombstone, so keychain sync propagates the deletion) WITHOUT setting
     // the "do not auto-publish" marker — unlike forgetting the self entry.
     UNPUBLISH_SELF: 'connections:unpublish-self',
+  },
+
+  // Guest sessions (multiplayer): daemons this app joined through an
+  // `intent://invite` link, kept apart from the paired-backend registry above.
+  // Token-free list + a main→renderer push when the list changes (also in
+  // EVENT_CHANNELS). Redemption itself is a main-process deep-link flow.
+  // LEAVE: best-effort `principal.revokeSelf` on the host (5 s), then the
+  // local delete + window teardown regardless.
+  GUEST_SESSIONS: {
+    LIST: 'guest-sessions:list',
+    LEAVE: 'guest-sessions:leave',
+    LEAVE_WORKSPACE: 'guest-sessions:leave-workspace',
+    CHANGED: 'guest-sessions:changed',
+  },
+
+  // Workspace presence (multiplayer w5). The daemon connection is pooled per
+  // backend in main and `presence.update` replaces the CONNECTION's whole
+  // focus set, so each window reports its own focus / typing here and main
+  // merges every window of that backend into one `presence.update`. The
+  // reply carries the connection's opaque `typingSource`.
+  PRESENCE: {
+    REPORT: 'presence:report',
   },
 
   // Workspace transfer relay (main-process, wizard steps 3–4). The renderer
@@ -1035,6 +1108,7 @@ export const EVENT_CHANNELS = [
   'window:blur',
   'window:fullscreen',
   'window:zoom-changed',
+  'power:battery-changed', // Battery ↔ AC transitions (powerMonitor) → renderer
   'navigate-to-settings', // Navigation to settings from menu
   'git:status-changed',
   'file-tracking:changes-updated',
@@ -1068,8 +1142,10 @@ export const EVENT_CHANNELS = [
   'auto-update:error',
   'auto-update:show-toast',
   'auto-update:up-to-date',
-  // Release-notes modal push (startup after an update, or Help menu)
+  // Release-notes modal push (startup after an update, or Help menu) and the
+  // cross-window close broadcast after any window dismisses it
   'release-notes:show',
+  'release-notes:close',
   // Picture-in-Picture events
   'pip:opened',
   'pip:closed',
@@ -1132,6 +1208,8 @@ export const EVENT_CHANNELS = [
   'connections:auth-rejected',
   // Keychain-sync availability changed after a reconcile (T4 settings UI).
   'connections:sync-status-changed',
+  // Guest sessions list changed (invite redeemed, forgotten, or keychain pull).
+  'guest-sessions:changed',
   // Workspace transfer relay progress (main → renderer): byte/chunk counters
   // for the wizard's step-3 progress UI. Never carries archive bytes.
   'transfer:progress',

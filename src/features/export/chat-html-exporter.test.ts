@@ -1,8 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { exportChatToHtml } from './chat-html-exporter';
 import type { AgentMessage } from '$shared/types';
 
@@ -187,9 +183,7 @@ describe('exportChatToHtml', () => {
       {
         id: 'msg-1',
         role: 'assistant',
-        contentBlocks: [
-          { type: 'text', text: null },
-        ],
+        contentBlocks: [{ type: 'text', text: null }],
         timestamp: new Date('2024-01-01T12:00:00Z'),
       },
     ];

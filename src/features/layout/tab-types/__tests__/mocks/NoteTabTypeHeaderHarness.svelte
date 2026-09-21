@@ -11,6 +11,9 @@
 <NoteTabType {tab} {workspaceId} {isActive} {isPanelFocused} />
 
 {#if header.actions.current}
+  <div data-testid="header-primary">
+    {@render header.actions.current.primary?.()}
+  </div>
   <Menu.Root>
     <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
     <Menu.Content portal={false} data-testid="header-actions">

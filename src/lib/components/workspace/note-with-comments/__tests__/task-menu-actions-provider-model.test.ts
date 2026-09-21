@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -17,6 +11,7 @@ const {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   removeOptimisticNoteMock,
   selectSelectedModelMock,
+  hidesAgentLifecycleActionsMock,
 } = vi.hoisted(() => ({
   addOptimisticNoteMock: vi.fn(),
   createAgentMock: vi.fn(),
@@ -26,6 +21,11 @@ const {
   appStoreFactoryMock: vi.fn(),
   removeOptimisticNoteMock: vi.fn(),
   selectSelectedModelMock: vi.fn(),
+  hidesAgentLifecycleActionsMock: vi.fn(() => false),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: { select: hidesAgentLifecycleActionsMock },
 }));
 
 vi.mock('$features/agent/services/agent-factory', () => ({
@@ -63,7 +63,8 @@ vi.mock('$features/notes/utils/task-agent-message-builder', () => ({
 }));
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
 
   return createAppStoreMockModule({
     state: () => appStoreFactoryMock()?.getState?.() ?? {},
@@ -148,6 +149,7 @@ describe('task menu actions provider model', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    hidesAgentLifecycleActionsMock.mockReturnValue(false);
     appStoreFactoryMock.mockReturnValue({ getState: () => legacyState });
     selectSelectedModelMock.mockReturnValue('selector-workspace-model');
     findByIdMock.mockReturnValue({ title: 'Parent note' });
@@ -196,9 +198,32 @@ describe('task menu actions provider model', () => {
     );
     // No client-supplied agentId: the daemon assigns the agent id on create.
     expect(agentsCreateMock.mock.calls[0][0]).not.toHaveProperty('agentId');
-    expect(agentsCreateMock.mock.calls[0][0].model).not.toBe(
-      legacyState.model.selectedModel,
-    );
+    expect(agentsCreateMock.mock.calls[0][0].model).not.toBe(legacyState.model.selectedModel);
+  });
+
+  it('refuses to assign an agent when agent lifecycle actions are hidden (multiplayer w4)', async () => {
+    hidesAgentLifecycleActionsMock.mockReturnValue(true);
+    const storeDispatch = vi.fn();
+    const editor = createEditorWithDuplicateTasks();
+
+    await runAssignAgentTaskMenuAction({
+      editor,
+      workspace,
+      noteId: 'note-1',
+      taskData: { text: 'Ship feature', position: '1' },
+      parentNoteTitle: 'Parent note',
+      model: 'selector-workspace-model',
+      debounceUpdate: vi.fn(),
+      storeDispatch,
+      logger,
+    });
+
+    expect(hidesAgentLifecycleActionsMock).toHaveBeenCalledWith(expect.anything(), 'ws-1');
+    expect(createPrerequisiteMock).not.toHaveBeenCalled();
+    expect(agentsCreateMock).not.toHaveBeenCalled();
+    expect(storeDispatch).not.toHaveBeenCalled();
+    // No optimistic "Spinning up…" marker is left on the task item either.
+    expect(editor.state.doc.nodeAt(1).attrs).not.toHaveProperty('delegatedAgentId');
   });
 
   it('persists menu-assigned duplicate tasks keyed to the daemon-assigned agent id', async () => {

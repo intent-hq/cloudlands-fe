@@ -26,31 +26,31 @@ export const recordPaletteFileMru =
 
 export const paletteReducer = createReducer<PaletteState>(initialState);
 paletteReducer.with(openPalette, (state) => ({
-    ...state,
-    isOpen: true,
-    query: '',
-  }));
+  ...state,
+  isOpen: true,
+  query: '',
+}));
 paletteReducer.with(closePalette, (state) => ({
-    ...state,
-    isOpen: false,
-    query: '',
-  }));
+  ...state,
+  isOpen: false,
+  query: '',
+}));
 paletteReducer.with(openGoToLine, (state) => ({
-    ...state,
-    isOpen: true,
-    query: ':',
-  }));
+  ...state,
+  isOpen: true,
+  query: ':',
+}));
 paletteReducer.with(togglePalette, (state) => {
-    if (state.isOpen) {
-      return { ...state, isOpen: false, query: '' };
-    }
-    return { ...state, isOpen: true, query: '' };
-  });
+  if (state.isOpen) {
+    return { ...state, isOpen: false, query: '' };
+  }
+  return { ...state, isOpen: true, query: '' };
+});
 paletteReducer.with(recordPaletteMruItem, (state, { payload: [type, id, timestamp] }) => ({
-    ...state,
-    ...normalizePaletteMruState([{ type, id, timestamp }, ...getPaletteMruEntries(state)]),
-  }));
+  ...state,
+  ...normalizePaletteMruState([{ type, id, timestamp }, ...getPaletteMruEntries(state)]),
+}));
 paletteReducer.with(recordPaletteFileMru, (state, { payload: [path, timestamp] }) => ({
-    ...state,
-    fileMru: normalizePaletteFileMru({ ...state.fileMru, [path]: timestamp }),
-  }));
+  ...state,
+  fileMru: normalizePaletteFileMru({ ...state.fileMru, [path]: timestamp }),
+}));

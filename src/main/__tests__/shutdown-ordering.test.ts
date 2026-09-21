@@ -14,6 +14,7 @@
  * electron app, IPC registration), so we parse the source with the
  * TypeScript compiler API and walk just the relevant function bodies.
  */
+// @verify-changed-triggers: ../index.ts, ../quit-confirmation.ts
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
@@ -261,11 +262,7 @@ describe('gracefulShutdown call ordering (AST)', () => {
     const sf = parseIndex();
     const cleanup = findShutdownCleanupBody(sf);
     const calls = callsitesIn(cleanup.body!);
-    const required = [
-      'cleanupTerminals',
-      'cleanupAutoUpdater',
-      'app.exit',
-    ];
+    const required = ['cleanupTerminals', 'cleanupAutoUpdater', 'app.exit'];
     for (const name of required) {
       expect(
         calls.some((c) => c.text === name),

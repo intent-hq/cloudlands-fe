@@ -40,7 +40,6 @@ interface HoverCardScenario {
   expected: string;
   workspace: Workspace | null;
   isLoading?: boolean;
-  lineStats?: { additions: number; deletions: number };
   activeAgentIds?: string[];
   tasks?: WorkspaceTask[];
   taskStats?: WorkspaceTaskStats;
@@ -94,7 +93,7 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Semantic status',
-    states: 'all 10 displayStatus values; absent; unknown',
+    states: 'all 11 displayStatus values; absent; unknown',
     expected:
       'Each canonical value uses normally cased product language in the right column only; absent and unknown values fall back to Not started.',
     coverage: 'semantic-status preview; status presentation tests',
@@ -169,10 +168,11 @@ export const workspaceHoverCardStateMatrix: readonly StateMatrixEntry[] = [
   },
   {
     family: 'Layout',
-    states: 'light; dark; two-column; narrow stack; dense; right flip; bottom clamp; scroll/resize',
+    states: 'light; dark; stacked activity; narrow; dense; right flip; bottom clamp; scroll/resize',
     expected:
-      'Theme follows catalog query; the card uses two columns when space permits, stacks when narrow, stays height-bounded, and clamps to the viewport.',
-    coverage: 'dense, narrow, and placement previews; HoverCard tests',
+      'Theme follows catalog query; compact activity and PR graphics align to the header content edge, with labels and context in one text column; content clamps to the viewport.',
+    coverage:
+      'working, landscape-question, dense, narrow, and placement previews; workspace-hover-card geometry and HoverCard tests',
     conflicts: 'The card must not clip beyond collision padding.',
   },
   {
@@ -327,6 +327,7 @@ const statuses = [
   'not_started',
   'idle',
   'complete',
+  'pr_queued',
   'pr_ready',
   'pr_open',
   'pr_merged',
@@ -348,7 +349,7 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
       (() => {
         const ws = workspace('working', {
           displayStatus: 'in_progress',
-          statusMessage: 'Implementing the approved two-column hover-card polish.',
+          statusMessage: 'Implementing the approved stacked hover-card polish.',
           agentSummary: { agentIds: ['working-implementor', 'working-verifier'] },
           activePullRequest: pr(73, {
             title: 'Polish workspace hover cards',
@@ -924,11 +925,8 @@ const scenes: Record<string, WorkspaceHoverCardPreviewProps> = {
         workspace: workspace('changes-none', { lastActivity: undefined, updatedAt: 'invalid' }),
         gitSummary: { ahead: 0, behind: 0, hasUnpushed: false },
       }),
-      scenario('changes-lines', 'Line stats', 'Local line-stat fallback.', {
-        lineStats: { additions: 8, deletions: 3 },
-      }),
+      scenario('changes-lines', 'Line stats', 'Local line-stat fallback.'),
       scenario('changes-diff', 'Detailed diff wins', 'Detailed diff replaces line stats.', {
-        lineStats: { additions: 8, deletions: 3 },
         diffSummary: {
           schemaVersion: 1,
           updatedAt: PREVIEW_FIXTURE_TIMESTAMPS.updatedAt,
@@ -1080,9 +1078,22 @@ scenes['landscape-loading'] = {
 };
 scenes['landscape-question'] = {
   family: 'Landscape question',
-  expected: 'The first real question and its count remain readable in the activity column.',
+  expected: 'The first real question and its count remain readable above the pull request row.',
   theme: 'light',
-  cards: [scenes.attention?.cards[1] ?? firstSceneCard('attention')],
+  cards: [
+    (() => {
+      const card = scenes.attention?.cards[1] ?? firstSceneCard('attention');
+      if (!card.workspace) throw new Error('Missing question workspace fixture');
+      return {
+        ...card,
+        expected: 'The unresolved prompt and question count stay aligned above an open PR.',
+        workspace: {
+          ...card.workspace,
+          activePullRequest: pr(74, { title: 'Preserve migration compatibility' }),
+        },
+      };
+    })(),
+  ],
 };
 
 function clearCards(cards: readonly HoverCardScenario[]) {

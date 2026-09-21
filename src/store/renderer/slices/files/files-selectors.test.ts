@@ -1,15 +1,7 @@
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
-import { createCollection } from "@augmentcode/themis/utils/collections/collection-utils";
-import type { FileContentEntry, FilesState } from "./files-types";
-import {
-  filesReducer,
-  loadFileContentSucceeded,
-  updateFileContent,
-} from "./files-slice";
+import { describe, expect, it } from 'vitest';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import type { FileContentEntry, FilesState } from './files-types';
+import { filesReducer, loadFileContentSucceeded, updateFileContent } from './files-slice';
 import {
   selectAllFileContentEntries,
   selectFileContent,
@@ -22,22 +14,22 @@ import {
   selectFileNotFoundCandidates,
   selectFileSaving,
   selectOriginalFileContent,
-} from "./files-selectors";
+} from './files-selectors';
 
-const WS_ID = "ws-1";
-const PATH = "src/app.ts";
-const ABS_PATH = "/repo/src/app.ts";
+const WS_ID = 'ws-1';
+const PATH = 'src/app.ts';
+const ABS_PATH = '/repo/src/app.ts';
 
 function fileEntry(overrides: Partial<FileContentEntry> = {}): FileContentEntry {
   return {
     path: PATH,
-    absolutePath: "/repo/src/app.ts",
-    originalContent: "original",
-    localContent: "edited",
+    absolutePath: '/repo/src/app.ts',
+    originalContent: 'original',
+    localContent: 'edited',
     lastUpdated: 7,
     loading: true,
     saving: true,
-    error: "boom",
+    error: 'boom',
     isBinary: true,
     truncated: true,
     ...overrides,
@@ -48,84 +40,96 @@ function stateWithFiles(entries: FileContentEntry[] = [fileEntry()]) {
   const filesState: FilesState = {
     byWorkspaceId: {
       [WS_ID]: {
-        files: createCollection<FileContentEntry, "path">("path", entries),
+        files: createCollection<FileContentEntry, 'path'>('path', entries),
       },
     },
   };
   return { files: filesState } as any;
 }
 
-describe("files selectors", () => {
-  it("returns an empty entry list for unknown workspaces", () => {
-    expect(selectAllFileContentEntries.select({ files: { byWorkspaceId: {} } } as any, WS_ID)).toEqual([]);
+describe('files selectors', () => {
+  it('returns an empty entry list for unknown workspaces', () => {
+    expect(
+      selectAllFileContentEntries.select({ files: { byWorkspaceId: {} } } as any, WS_ID),
+    ).toEqual([]);
   });
 
-  it("selects all file entries and a specific entry", () => {
-    const state = stateWithFiles([fileEntry(), fileEntry({ path: "README.md" })]);
+  it('selects all file entries and a specific entry', () => {
+    const state = stateWithFiles([fileEntry(), fileEntry({ path: 'README.md' })]);
 
     expect(selectAllFileContentEntries.select(state, WS_ID).map((entry) => entry.path)).toEqual([
       PATH,
-      "README.md",
+      'README.md',
     ]);
-    expect(selectFileContentEntry.select(state, WS_ID, PATH)?.absolutePath).toBe("/repo/src/app.ts");
+    expect(selectFileContentEntry.select(state, WS_ID, PATH)?.absolutePath).toBe(
+      '/repo/src/app.ts',
+    );
   });
 
-  it("selects file content, flags, and errors", () => {
+  it('selects file content, flags, and errors', () => {
     const state = stateWithFiles();
 
-    expect(selectFileContent.select(state, WS_ID, PATH)).toBe("edited");
-    expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe("original");
+    expect(selectFileContent.select(state, WS_ID, PATH)).toBe('edited');
+    expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe('original');
     expect(selectFileLastUpdated.select(state, WS_ID, PATH)).toBe(7);
     expect(selectFileLoading.select(state, WS_ID, PATH)).toBe(true);
     expect(selectFileSaving.select(state, WS_ID, PATH)).toBe(true);
-    expect(selectFileError.select(state, WS_ID, PATH)).toBe("boom");
+    expect(selectFileError.select(state, WS_ID, PATH)).toBe('boom');
     expect(selectFileIsBinary.select(state, WS_ID, PATH)).toBe(true);
     expect(selectFileIsDirty.select(state, WS_ID, PATH)).toBe(true);
   });
 
-  it("selects not-found candidates when present", () => {
-    const candidates = ["packages/a/src/app.ts", "packages/b/src/app.ts"];
+  it('selects not-found candidates when present', () => {
+    const candidates = ['packages/a/src/app.ts', 'packages/b/src/app.ts'];
     const state = stateWithFiles([fileEntry({ notFoundCandidates: candidates })]);
 
     expect(selectFileNotFoundCandidates.select(state, WS_ID, PATH)).toEqual(candidates);
   });
 
-  it("returns original content for clean files", () => {
-    const state = stateWithFiles([fileEntry({ originalContent: "clean", localContent: "clean" })]);
+  it('returns original content for clean files', () => {
+    const state = stateWithFiles([fileEntry({ originalContent: 'clean', localContent: 'clean' })]);
 
-    expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe("clean");
+    expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe('clean');
   });
 
-  it("returns original content when original content is set", () => {
-    const state = stateWithFiles([fileEntry({ localContent: "edited", originalContent: "original" })]);
+  it('returns original content when original content is set', () => {
+    const state = stateWithFiles([
+      fileEntry({ localContent: 'edited', originalContent: 'original' }),
+    ]);
 
-    expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe("original");
+    expect(selectOriginalFileContent.select(state, WS_ID, PATH)).toBe('original');
   });
 
-  it("tracks dirty state through edit and revert", () => {
+  it('tracks dirty state through edit and revert', () => {
     const loadedFilesState = filesReducer(
       undefined,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, "original", false),
+      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, 'original', false),
     );
-    const editedFilesState = filesReducer(loadedFilesState, updateFileContent(WS_ID, PATH, "edited"));
-    const revertedFilesState = filesReducer(editedFilesState, updateFileContent(WS_ID, PATH, "original"));
+    const editedFilesState = filesReducer(
+      loadedFilesState,
+      updateFileContent(WS_ID, PATH, 'edited'),
+    );
+    const revertedFilesState = filesReducer(
+      editedFilesState,
+      updateFileContent(WS_ID, PATH, 'original'),
+    );
 
     expect(selectFileIsDirty.select({ files: loadedFilesState } as any, WS_ID, PATH)).toBe(false);
     expect(selectFileIsDirty.select({ files: editedFilesState } as any, WS_ID, PATH)).toBe(true);
     expect(selectFileIsDirty.select({ files: revertedFilesState } as any, WS_ID, PATH)).toBe(false);
   });
 
-  it("returns defaults for missing paths", () => {
+  it('returns defaults for missing paths', () => {
     const state = stateWithFiles();
 
-    expect(selectFileContentEntry.select(state, WS_ID, "missing.ts")).toBeUndefined();
-    expect(selectFileContent.select(state, WS_ID, "missing.ts")).toBeNull();
-    expect(selectFileLastUpdated.select(state, WS_ID, "missing.ts")).toBe(0);
-    expect(selectFileLoading.select(state, WS_ID, "missing.ts")).toBe(false);
-    expect(selectFileSaving.select(state, WS_ID, "missing.ts")).toBe(false);
-    expect(selectFileError.select(state, WS_ID, "missing.ts")).toBeNull();
-    expect(selectFileNotFoundCandidates.select(state, WS_ID, "missing.ts")).toBeNull();
-    expect(selectFileIsBinary.select(state, WS_ID, "missing.ts")).toBe(false);
-    expect(selectFileIsDirty.select(state, WS_ID, "missing.ts")).toBe(false);
+    expect(selectFileContentEntry.select(state, WS_ID, 'missing.ts')).toBeUndefined();
+    expect(selectFileContent.select(state, WS_ID, 'missing.ts')).toBeNull();
+    expect(selectFileLastUpdated.select(state, WS_ID, 'missing.ts')).toBe(0);
+    expect(selectFileLoading.select(state, WS_ID, 'missing.ts')).toBe(false);
+    expect(selectFileSaving.select(state, WS_ID, 'missing.ts')).toBe(false);
+    expect(selectFileError.select(state, WS_ID, 'missing.ts')).toBeNull();
+    expect(selectFileNotFoundCandidates.select(state, WS_ID, 'missing.ts')).toBeNull();
+    expect(selectFileIsBinary.select(state, WS_ID, 'missing.ts')).toBe(false);
+    expect(selectFileIsDirty.select(state, WS_ID, 'missing.ts')).toBe(false);
   });
 });

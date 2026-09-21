@@ -6,24 +6,21 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import {
-  formatModelChangeLabel,
-  getModelChangeNotice,
-} from '../model-change-notice';
+import { formatModelChangeLabel, getModelChangeNotice } from '../model-change-notice';
 
 let mockStoreState: Record<string, unknown> = {};
 
 vi.mock('$store/renderer/store', async () => {
-  const { createAppStoreMockModule } = await import(
-    '$store/renderer/utils/test-helpers/store-mock'
-  );
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({ state: () => mockStoreState });
 });
 
 const FALLBACK = 'Model changed';
 
-/** Hydrated provider catalog + model catalog: bare values belong to the
- * default provider ('auggie'), non-default values are provider-prefixed. */
+/** Hydrated provider catalog + model catalog: rows carry bare ids — the
+ * active catalog's provenance lives in `availableModelsProviderId`, other
+ * providers resolve through the provider-models cache. */
 function hydratedState(): Record<string, unknown> {
   return {
     providerCatalog: {
@@ -36,10 +33,19 @@ function hydratedState(): Record<string, unknown> {
     },
     model: {
       defaultProviderId: 'auggie',
+      availableModelsProviderId: 'auggie',
       availableModels: createCollection('value', [
         { value: 'sonnet4.6', label: 'Claude Sonnet 4.6' },
-        { value: 'codex:gpt-5-codex', label: 'GPT-5 Codex' },
       ]),
+    },
+    providerModels: {
+      byProviderId: {
+        codex: {
+          models: [{ value: 'gpt-5-codex', label: 'GPT-5 Codex' }],
+          fetchedAt: '2026-01-01T00:00:00Z',
+        },
+      },
+      clearEpoch: 0,
     },
   };
 }

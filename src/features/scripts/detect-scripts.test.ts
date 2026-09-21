@@ -86,7 +86,13 @@ describe('parsePackageJsonScripts', () => {
     const content = JSON.stringify({ scripts: { dev: 'vite', test: 'vitest run' } });
     const candidates = parsePackageJsonScripts(content, 'pnpm');
     expect(candidates).toEqual([
-      { name: 'dev', command: 'pnpm dev', category: 'dev', mode: 'service', source: 'package.json' },
+      {
+        name: 'dev',
+        command: 'pnpm dev',
+        category: 'dev',
+        mode: 'service',
+        source: 'package.json',
+      },
       {
         name: 'test',
         command: 'pnpm test',
@@ -114,14 +120,18 @@ describe('parseMakefileScripts', () => {
       '%.o: %.c',
       '\tcc -c $<',
     ].join('\n');
-    const names = parseMakefileScripts(content).map((c) => c.name).sort();
+    const names = parseMakefileScripts(content)
+      .map((c) => c.name)
+      .sort();
     expect(names).toEqual(['build', 'dev', 'test']);
   });
 });
 
 describe('parseCargoTomlScripts', () => {
   it('emits build/test/check when Cargo.toml has a [package]', () => {
-    const names = parseCargoTomlScripts('[package]\nname = "x"').map((c) => c.name).sort();
+    const names = parseCargoTomlScripts('[package]\nname = "x"')
+      .map((c) => c.name)
+      .sort();
     expect(names).toEqual(['build', 'check', 'test']);
   });
 
@@ -132,10 +142,15 @@ describe('parseCargoTomlScripts', () => {
 
 describe('parsePyprojectTomlScripts', () => {
   it('emits tool-driven candidates and prefers black over ruff format when both are present', () => {
-    const content = ['[tool.pytest.ini_options]', '[tool.ruff]', '[tool.black]', '[tool.mypy]'].join(
-      '\n',
-    );
-    const names = parsePyprojectTomlScripts(content).map((c) => c.name).sort();
+    const content = [
+      '[tool.pytest.ini_options]',
+      '[tool.ruff]',
+      '[tool.black]',
+      '[tool.mypy]',
+    ].join('\n');
+    const names = parsePyprojectTomlScripts(content)
+      .map((c) => c.name)
+      .sort();
     expect(names).toEqual(['format', 'lint', 'test', 'typecheck']);
     const format = parsePyprojectTomlScripts(content).find((c) => c.name === 'format');
     expect(format?.command).toBe('black .');
@@ -145,9 +160,21 @@ describe('parsePyprojectTomlScripts', () => {
 describe('uniquifyScriptCandidates', () => {
   it('prefixes duplicates with the manifest and suffixes further collisions', () => {
     const result = uniquifyScriptCandidates([
-      { name: 'test', command: 'pnpm test', category: 'test', mode: 'command', source: 'package.json' },
+      {
+        name: 'test',
+        command: 'pnpm test',
+        category: 'test',
+        mode: 'command',
+        source: 'package.json',
+      },
       { name: 'test', command: 'make test', category: 'test', mode: 'command', source: 'Makefile' },
-      { name: 'test', command: 'cargo test', category: 'test', mode: 'command', source: 'Cargo.toml' },
+      {
+        name: 'test',
+        command: 'cargo test',
+        category: 'test',
+        mode: 'command',
+        source: 'Cargo.toml',
+      },
     ]);
     expect(result.map((c) => c.name)).toEqual(['test', 'make:test', 'cargo:test']);
   });

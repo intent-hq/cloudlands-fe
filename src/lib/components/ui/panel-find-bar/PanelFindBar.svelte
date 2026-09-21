@@ -1,11 +1,6 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
-  import {
-  faChevronDown,
-  faChevronUp,
-  faSearch,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faChevronUp, faSearch, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { cn } from '$lib/utils';
@@ -154,8 +149,8 @@
       disabled={disabled || inputDisabled}
       noFocusStyle
       class={cn(
-        'h-6 w-36 border-0 bg-transparent px-0 py-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
-        'placeholder:text-muted-foreground/60',
+        'h-6 w-36 border-0 bg-transparent px-0 py-0 text-sm shadow-none',
+        'placeholder:text-muted-foreground',
         inputClass,
       )}
       aria-label={searchAriaLabel}
@@ -166,7 +161,7 @@
       <span
         class={cn(
           'whitespace-nowrap text-xs tabular-nums',
-          effectiveResultVariant === 'destructive' ? 'text-destructive' : 'text-muted-foreground',
+          effectiveResultVariant === 'destructive' ? 'text-danger' : 'text-muted-foreground',
         )}
       >
         {resultLabel}

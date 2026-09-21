@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Button from '../components/ui/button/button.svelte';
-import { preview as buttonPreview } from '../components/ui/button/button.preview';
+import { preview as buttonPreview } from '../components/ui/button/button.preview.svelte';
 import CatalogScene from './CatalogScene.svelte';
 
 const mocks = vi.hoisted(() => ({
@@ -37,7 +37,11 @@ describe('CatalogScene', () => {
     mocks.loadPreview.mockImplementation(async (slug: string) =>
       slug === 'button' ? loadedButton : undefined,
     );
-    mocks.waitForCaptureStability.mockResolvedValue({ imageCount: 0, reducedMotion: true });
+    mocks.waitForCaptureStability.mockResolvedValue({
+      imageCount: 0,
+      deferredImageCount: 0,
+      reducedMotion: true,
+    });
   });
 
   afterEach(() => cleanup());
@@ -78,8 +82,122 @@ describe('CatalogScene', () => {
     expect(screen.getByRole('button', { name: 'Unavailable' })).not.toBeNull();
   });
 
+  it('renders only the component frame and publishes fit mode when requested', async () => {
+    render(CatalogScene, {
+      props: {
+        slug: 'button',
+        requestedState: 'loading',
+        requestedWidth: 420,
+        requestedFit: 'component',
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.getByTestId('catalog-scene').dataset.previewFit).toBe('component');
+    expect(screen.queryByRole('heading')).toBeNull();
+    expect(screen.queryByRole('navigation')).toBeNull();
+    expect(screen.getAllByTestId('catalog-scene-focus')).toHaveLength(1);
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'loading',
+      width: 420,
+      status: 'ready',
+      fit: 'component',
+    });
+  });
+
+  it('renders every state in declaration order and publishes all-states readiness', async () => {
+    const setupDefault = vi.fn();
+    const setupLoading = vi.fn();
+    const disposeDefault = vi.fn();
+    const disposeLoading = vi.fn();
+    mocks.loadPreview.mockResolvedValueOnce({
+      component: Button,
+      definition: {
+        ...buttonPreview,
+        states: {
+          default: {
+            props: buttonPreview.states.default.props,
+            setup: () => {
+              setupDefault();
+              return disposeDefault;
+            },
+          },
+          loading: {
+            props: buttonPreview.states.loading.props,
+            setup: () => {
+              expect(screen.getByRole('button', { name: 'Continue' })).not.toBeNull();
+              expect(screen.queryByRole('button', { name: 'Saving' })).toBeNull();
+              setupLoading();
+              return disposeLoading;
+            },
+          },
+        },
+      },
+    });
+
+    const scene = render(CatalogScene, {
+      props: { slug: 'button', requestedState: 'all', requestedWidth: 420 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.getAllByTestId('catalog-scene-focus')).toHaveLength(2);
+    expect(
+      screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+    ).toEqual(['State: default', 'State: loading']);
+    expect(screen.getByRole('button', { name: 'Continue' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Saving' })).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'All' }).getAttribute('aria-current')).toBe('page');
+    expect(setupDefault).toHaveBeenCalledTimes(1);
+    expect(setupLoading).toHaveBeenCalledTimes(1);
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'all',
+      width: 420,
+      status: 'ready',
+    });
+
+    scene.unmount();
+    expect(disposeDefault).toHaveBeenCalledTimes(1);
+    expect(disposeLoading).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports all-states mode for a preview with one state', async () => {
+    mocks.loadPreview.mockResolvedValueOnce({
+      component: Button,
+      definition: {
+        ...buttonPreview,
+        states: { default: buttonPreview.states.default },
+      },
+    });
+
+    render(CatalogScene, {
+      props: { slug: 'button', requestedState: 'all', requestedWidth: 420 },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.getAllByTestId('catalog-scene-focus')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Continue' })).not.toBeNull();
+    expect(mocks.setActivePreview).toHaveBeenLastCalledWith({
+      slug: 'button',
+      state: 'all',
+      width: 420,
+      status: 'ready',
+    });
+  });
+
   it('does not publish DOM or API readiness before capture stability resolves', async () => {
-    const stability = deferred<{ imageCount: number; reducedMotion: boolean }>();
+    const stability = deferred<{
+      imageCount: number;
+      deferredImageCount: number;
+      reducedMotion: boolean;
+    }>();
     mocks.waitForCaptureStability.mockReturnValueOnce(stability.promise);
     render(CatalogScene, {
       props: { slug: 'button', requestedState: 'loading', requestedWidth: 420 },
@@ -94,7 +212,7 @@ describe('CatalogScene', () => {
       expect.objectContaining({ status: 'ready' }),
     );
 
-    stability.resolve({ imageCount: 0, reducedMotion: true });
+    stability.resolve({ imageCount: 0, deferredImageCount: 0, reducedMotion: true });
     await waitFor(() =>
       expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
     );
@@ -107,12 +225,21 @@ describe('CatalogScene', () => {
     });
   });
 
-  it('keeps an invalid state visible and does not emit a false ready marker', async () => {
-    render(CatalogScene, { props: { slug: 'button', requestedState: 'missing' } });
+  it('falls back to the interactive fixture for an unavailable named state', async () => {
+    const { container } = render(CatalogScene, {
+      props: { slug: 'button', requestedState: 'missing' },
+    });
 
-    expect((await screen.findByRole('alert')).textContent).toContain('Unknown state “missing”.');
-    expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('false');
-    expect(screen.getByText(/Available states:/).textContent).toContain('loading');
+    expect(await screen.findByText(/No named state “missing” for this component/)).not.toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.getByTestId('catalog-scene').dataset.previewState).toBe('missing');
+    await waitFor(
+      () => expect(container.querySelector('[data-catalog-renderer-fixture]')).not.toBeNull(),
+      { timeout: 10_000 },
+    );
+    expect(screen.getByRole('button', { name: '1. Primary' })).not.toBeNull();
   });
 
   it('shows a terminal error when the preview import rejects', async () => {

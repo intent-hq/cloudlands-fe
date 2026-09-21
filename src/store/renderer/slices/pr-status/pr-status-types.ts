@@ -1,5 +1,3 @@
-
-
 /**
  * Per-workspace PR status state.
  */

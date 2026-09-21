@@ -55,13 +55,7 @@ describe('FileSystemFirstVisitStateRepository', () => {
     const repo = new mod.FileSystemFirstVisitStateRepository();
     await repo.save(wsId, mod.createDefaultFirstVisitState(wsId));
 
-    const expected = path.join(
-      tmpDir,
-      'workspace-state',
-      'local',
-      wsId,
-      'first-visit-state.json',
-    );
+    const expected = path.join(tmpDir, 'workspace-state', 'local', wsId, 'first-visit-state.json');
     await expect(fs.access(expected)).resolves.toBeUndefined();
   });
 
@@ -127,13 +121,7 @@ describe('FileSystemFirstVisitStateRepository', () => {
     await repo.save(wsId, state);
 
     // Overwrite the persisted workspaceId to simulate a stale/foreign file.
-    const filePath = path.join(
-      tmpDir,
-      'workspace-state',
-      'local',
-      wsId,
-      'first-visit-state.json',
-    );
+    const filePath = path.join(tmpDir, 'workspace-state', 'local', wsId, 'first-visit-state.json');
     const raw = JSON.parse(await fs.readFile(filePath, 'utf-8'));
     raw.workspaceId = 'other-forest-b1c2';
     await fs.writeFile(filePath, JSON.stringify(raw), 'utf-8');

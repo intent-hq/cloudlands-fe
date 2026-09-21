@@ -1,8 +1,12 @@
 <script lang="ts" module>
-  import type { Workspace } from '$shared/types';
-  import { WorkspaceStatus } from '$shared/types';
+  import type { PullRequestInfo, Workspace } from '$shared/types';
+  import { PullRequestStatus, WorkspaceStatus } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import {
+    setupSidebarKeySlots,
+    setupSidebarStatusGroups,
+  } from './workspace-sidebar.preview-fixtures';
   import {
     PREVIEW_FIXTURE_IDS,
     PREVIEW_FIXTURE_TIMESTAMPS,
@@ -11,8 +15,10 @@
 
   export interface WorkspaceSidebarPreviewProps {
     loading?: boolean;
+    statusGroups?: boolean;
     width: number;
     workspaces: Workspace[];
+    onSelect?: (workspaceId: string) => void;
   }
 
   const workspaceFixture = definePreviewFixture<Workspace>({
@@ -33,6 +39,18 @@
     ...PREVIEW_FIXTURE_TIMESTAMPS,
   });
 
+  function pr(number: number, overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+    return {
+      id: `preview-pr-${number}`,
+      number,
+      url: `https://github.com/intent-hq/cloudlands-fe/pull/${number}`,
+      title: `Preview pull request ${number}`,
+      status: PullRequestStatus.Open,
+      ...PREVIEW_FIXTURE_TIMESTAMPS,
+      ...overrides,
+    };
+  }
+
   const busyWorkspace = workspaceFixture({
     displayStatus: 'in_progress',
     activity: 'agent_running',
@@ -45,6 +63,8 @@
     branch: 'review-preview-scenes',
     displayStatus: 'needs_attention',
     attention: 'review_required',
+    // Draft + merged: the compact row shows the earliest-in-flow PR (the draft).
+    pullRequests: [pr(45, { status: PullRequestStatus.Merged }), pr(46, { isDraft: true })],
   });
   const longWorkspace = workspaceFixture({
     id: WorkspaceId(`${PREVIEW_FIXTURE_IDS.workspace}-long`),
@@ -52,7 +72,43 @@
     branch: 'long-workspace-title-and-branch-for-overflow-validation',
     displayStatus: 'pr_open',
     statusMessage: 'Waiting for the last visual review before the preview work can ship.',
+    // Open + merged: the compact row shows the open PR.
+    pullRequests: [pr(47, { status: PullRequestStatus.Merged }), pr(48)],
   });
+
+  const keySlotWorkspaces = [
+    busyWorkspace,
+    reviewWorkspace,
+    workspaceFixture({
+      id: WorkspaceId(`${PREVIEW_FIXTURE_IDS.workspace}-waiting`),
+      title: 'Waiting for a long-running fixture check to finish before review',
+      waiting: true,
+    }),
+  ];
+
+  const statusWorkspaces = (
+    [
+      ['blocked', 'Waiting for build access'],
+      ['needs_attention', 'Review the sidebar changes'],
+      ['in_progress', 'Polish workspace navigation'],
+      ['idle', 'Plan the next iteration'],
+    ] as const
+  ).map(([displayStatus, title]) =>
+    workspaceFixture({
+      id: WorkspaceId(`preview-status-${displayStatus}`),
+      title,
+      displayStatus,
+    }),
+  );
+
+  const activityWorkspaces = [
+    longWorkspace,
+    workspaceFixture({
+      id: WorkspaceId(`${PREVIEW_FIXTURE_IDS.workspace}-archived`),
+      title: 'An archived workspace with a long title and retained activity metadata',
+      status: WorkspaceStatus.Archived,
+    }),
+  ];
 
   export const preview = definePreview<WorkspaceSidebarPreviewProps>({
     id: 'workspace-sidebar',
@@ -66,6 +122,18 @@
         props: { width: 420, workspaces: [longWorkspace, busyWorkspace, reviewWorkspace] },
       },
       narrow: { props: { width: 248, workspaces: [longWorkspace, busyWorkspace] } },
+      'key-slots': {
+        props: { width: 360, workspaces: keySlotWorkspaces },
+        setup: () => setupSidebarKeySlots(keySlotWorkspaces),
+      },
+      'status-groups': {
+        props: { width: 320, workspaces: statusWorkspaces, statusGroups: true },
+        setup: () => setupSidebarStatusGroups(statusWorkspaces),
+      },
+      'activity-times': {
+        props: { width: 248, workspaces: activityWorkspaces, statusGroups: true },
+        setup: () => setupSidebarStatusGroups(activityWorkspaces, true),
+      },
     },
   });
 </script>
@@ -74,13 +142,21 @@
   import { m } from '$shared/paraglide/messages.js';
   import SidebarSkeleton from './SidebarSkeleton.svelte';
   import WorkspaceCard from './WorkspaceCard.svelte';
+  import AllWorkspacesCard from '$lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte';
 
-  let { loading = false, width, workspaces }: WorkspaceSidebarPreviewProps = $props();
+  let {
+    loading = false,
+    statusGroups = false,
+    width,
+    workspaces,
+    onSelect,
+  }: WorkspaceSidebarPreviewProps = $props();
 </script>
 
 <section
   class="flex h-[560px] flex-col overflow-hidden rounded-lg border border-border bg-sidebar text-sidebar-foreground"
   style:width={`${width}px`}
+  style:container-type={statusGroups ? 'inline-size' : undefined}
   data-workspace-sidebar-preview
   data-preview-width={width}
 >
@@ -91,13 +167,28 @@
       {m.layout_sidebarNav_allWorkspaces_title()}
     </div>
     <div class="min-h-0 flex-1 overflow-y-auto py-2" data-workspace-preview-list>
-      {#each workspaces as workspace (workspace.id)}
-        <WorkspaceCard {workspace} isPinned={workspace.id === PREVIEW_FIXTURE_IDS.workspace} />
+      {#if statusGroups}
+        <AllWorkspacesCard expanded searchVisible={false} />
       {:else}
-        <p class="px-4 py-8 text-center text-sm text-muted-foreground" data-workspace-preview-empty>
-          {m.layout_allCard_noWorkspaces_label()}
-        </p>
-      {/each}
+        {#each workspaces as workspace (workspace.id)}
+          <WorkspaceCard
+            {workspace}
+            isPinned={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
+            isUnread={workspace.id === PREVIEW_FIXTURE_IDS.workspace}
+            onClick={() => onSelect?.(workspace.id)}
+            onTogglePin={() => {}}
+            onMarkAsRead={() => {}}
+            onOpenInNewWindow={() => {}}
+          />
+        {:else}
+          <p
+            class="px-4 py-8 text-center text-sm text-muted-foreground"
+            data-workspace-preview-empty
+          >
+            {m.layout_allCard_noWorkspaces_label()}
+          </p>
+        {/each}
+      {/if}
     </div>
   {/if}
 </section>

@@ -1,13 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import {
@@ -18,7 +12,6 @@ import {
   findTextNodeForOffset,
 } from '../block-position-resolver';
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
-
 
 describe('Block Position Resolver', () => {
   let editor: Editor | null = null;

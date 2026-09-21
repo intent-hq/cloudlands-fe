@@ -1,7 +1,7 @@
 /**
  * Prompt Loader for Testing
  *
- * Loads agent prompts directly from the instruction files in the codebase.
+ * Loads specialist behavior prompts directly from the constants in the codebase.
  * This ensures tests always use the exact same prompts as production code.
  *
  * Key benefits:
@@ -10,31 +10,7 @@
  * - Validates prompt structure and content
  */
 
-import { getInstructionById, getAgentTypesWithMetadata } from '../main/instructions';
 import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
-
-/**
- * Prompt metadata extracted from instruction content
- */
-export interface PromptMetadata {
-  id: string;
-  label: string;
-  hasToolInstructions: boolean;
-  hasWaveInstructions: boolean;
-  hasDelegationInstructions: boolean;
-  sections: string[];
-  estimatedTokens: number;
-}
-
-/**
- * Load a specific instruction by ID
- *
- * @param id - Instruction ID (e.g., 'debug', 'workspace', 'task-loop')
- * @returns The instruction content
- */
-export function loadInstruction(id: string): string {
-  return getInstructionById(id, false);
-}
 
 /**
  * Get all specialist configurations
@@ -48,41 +24,6 @@ export function getSpecialists(): Specialist[] {
  */
 export function getSpecialist(id: Specialist['id']): Specialist | undefined {
   return SPECIALISTS.find((s) => s.id === id);
-}
-
-/**
- * Analyze a prompt and extract metadata
- *
- * @param content - Prompt content to analyze
- * @param id - Prompt ID for metadata
- * @returns Extracted metadata
- */
-export function analyzePrompt(content: string, id: string): PromptMetadata {
-  const agentTypes = getAgentTypesWithMetadata();
-  const agentType = agentTypes.find((t) => t.id === id);
-
-  // Extract markdown sections (## headers)
-  const sectionMatches = content.match(/^##\s+.+$/gm) || [];
-  const sections = sectionMatches.map((s) => s.replace(/^##\s+/, ''));
-
-  // Estimate tokens (rough approximation: ~4 chars per token)
-  const estimatedTokens = Math.ceil(content.length / 4);
-
-  return {
-    id,
-    label: agentType?.label || id,
-    // Check for tool references like `read_note_workspace-mcp`, `delegate_task(`, or _mcp suffixes
-    hasToolInstructions:
-      /\btool[s]?\b/i.test(content) ||
-      /`[a-z_-]+\(/i.test(content) ||
-      /[a-z_]+_mcp/i.test(content) ||
-      /`[a-z_-]+`/i.test(content),
-    hasWaveInstructions: /wave/i.test(content) || /wait_mode/i.test(content),
-    hasDelegationInstructions:
-      /delegate/i.test(content) || /create_agent/i.test(content) || /wake_or_create/i.test(content),
-    sections,
-    estimatedTokens,
-  };
 }
 
 /**
@@ -164,7 +105,3 @@ export function validateSpecialistPrompt(
     missingPatterns: RegExp[];
   };
 }
-
-/**
- * Check if an agent type is a utility agent
- */

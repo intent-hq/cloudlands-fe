@@ -157,25 +157,31 @@ describe('LiveIntegrationsClient (fake transport)', () => {
 describe('LiveIntegrationsClient.githubBranches (github.branches.list + github.repos.get, §5.27)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("lists remote branch names and the repo's default branch", async () => {
-    // PROTOCOL §5.27: { branches: string[], nextToken? } and { repo: GithubRepo | null }.
-    mockedRequest
-      .mockResolvedValueOnce({ branches: ['main', 'feat/x'], nextToken: null })
-      .mockResolvedValueOnce({ repo: { name: 'intent', defaultBranch: 'main' } });
-    const client = new LiveIntegrationsClient();
+  it.each([
+    { branches: ['main', 'feat/x'], nextToken: null },
+    { branches: ['app-review', 'feat/x'], nextToken: 'opaque-next-page' },
+  ])(
+    "lists a page $branches and the repo's independent default branch",
+    async ({ branches, nextToken }) => {
+      // PROTOCOL §5.27: { branches: string[], nextToken? } and { repo: GithubRepo | null }.
+      mockedRequest
+        .mockResolvedValueOnce({ branches, nextToken })
+        .mockResolvedValueOnce({ repo: { owner: 'octo', name: 'intent', defaultBranch: 'main' } });
+      const client = new LiveIntegrationsClient();
 
-    const listing = await client.githubBranches('octo', 'intent');
+      const listing = await client.githubBranches('octo', 'intent');
 
-    expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
-      owner: 'octo',
-      repo: 'intent',
-    });
-    expect(mockedRequest).toHaveBeenNthCalledWith(2, 'github.repos.get', {
-      owner: 'octo',
-      repo: 'intent',
-    });
-    expect(listing).toEqual({ branches: ['main', 'feat/x'], defaultBranch: 'main' });
-  });
+      expect(mockedRequest).toHaveBeenNthCalledWith(1, 'github.branches.list', {
+        owner: 'octo',
+        repo: 'intent',
+      });
+      expect(mockedRequest).toHaveBeenNthCalledWith(2, 'github.repos.get', {
+        owner: 'octo',
+        repo: 'intent',
+      });
+      expect(listing).toEqual({ branches, defaultBranch: 'main' });
+    },
+  );
 
   it('issues the branch-list and default-branch requests concurrently (both REST-backed)', async () => {
     // Neither response has settled yet — both requests must already be on the
@@ -327,11 +333,11 @@ describe('LiveIntegrationsClient.githubBranchesCached (github.branches.listCache
   });
 });
 
-describe('LiveIntegrationsClient.githubRepoConfig (github.repoConfig.get, §5.27 v2.4)', () => {
+describe('LiveIntegrationsClient.githubRepoConfig (github.repoConfig.get, §5.27)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('sends owner/repo (no ref) and surfaces the committed config', async () => {
-    // PROTOCOL §5.27 v2.4: { config: RepoConfig | null, exists: boolean }.
+    // PROTOCOL §5.27: { config: RepoConfig | null, exists: boolean }.
     mockedRequest.mockResolvedValueOnce({
       config: { setupScript: 'pnpm install', branchPrefix: 'feat' },
       exists: true,
@@ -378,6 +384,205 @@ describe('LiveIntegrationsClient.githubRepoConfig (github.repoConfig.get, §5.27
     const client = new LiveIntegrationsClient();
 
     await expect(client.githubRepoConfig('octo', 'intent')).rejects.toThrow(
+      'GitHub is not configured.',
+    );
+  });
+});
+
+/** PROTOCOL §5.27 `GithubPullRequest` DTO (open, non-draft). */
+const PULL_WIRE = {
+  number: 42,
+  title: 'Add dark mode toggle',
+  body: '',
+  state: 'open',
+  htmlUrl: 'https://github.com/octo/intent/pull/42',
+  createdAt: '2026-01-02T09:00:00Z',
+  updatedAt: '2026-01-02T14:00:00Z',
+  user: { login: 'octocat', avatarUrl: '', htmlUrl: 'https://github.com/octocat' },
+  headRef: 'feat/dark-mode',
+  baseRef: 'main',
+  headSha: 'abc',
+  baseSha: 'def',
+  merged: false,
+  draft: false,
+  labels: [],
+  comments: 0,
+  reviewComments: 0,
+  commits: 1,
+  additions: 10,
+  deletions: 2,
+  changedFiles: 1,
+};
+
+/** PROTOCOL §5.27 `GithubIssue` DTO. */
+const ISSUE_WIRE = {
+  number: 17,
+  title: 'Theme flashes on first paint',
+  state: 'open',
+  htmlUrl: 'https://github.com/octo/intent/issues/17',
+  createdAt: '2026-01-01T08:00:00Z',
+  updatedAt: '2026-01-02T10:00:00Z',
+  user: { login: 'hubot', avatarUrl: '', htmlUrl: 'https://github.com/hubot' },
+  labels: ['bug'],
+  comments: 3,
+  owner: 'octo',
+  repo: 'intent',
+};
+
+describe('LiveIntegrationsClient.githubPullRequest (github.pulls.get, §5.27)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('sends owner/repo/number and normalizes an open PR', async () => {
+    mockedRequest.mockResolvedValueOnce({ pull: PULL_WIRE });
+    const client = new LiveIntegrationsClient();
+
+    const details = await client.githubPullRequest('octo', 'intent', 42);
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith('github.pulls.get', {
+      owner: 'octo',
+      repo: 'intent',
+      number: 42,
+    });
+    expect(details).toEqual({
+      owner: 'octo',
+      repo: 'intent',
+      number: 42,
+      title: 'Add dark mode toggle',
+      state: 'open',
+      author: 'octocat',
+      createdAt: '2026-01-02T09:00:00Z',
+      updatedAt: '2026-01-02T14:00:00Z',
+      url: 'https://github.com/octo/intent/pull/42',
+      headRef: 'feat/dark-mode',
+      baseRef: 'main',
+    });
+  });
+
+  it("collapses merged → 'merged' (merged PRs are 'closed' on the wire)", async () => {
+    mockedRequest.mockResolvedValueOnce({ pull: { ...PULL_WIRE, state: 'closed', merged: true } });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('merged');
+  });
+
+  it("collapses draft → 'draft'", async () => {
+    mockedRequest.mockResolvedValueOnce({ pull: { ...PULL_WIRE, draft: true } });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('draft');
+  });
+
+  it("keeps a closed, unmerged PR as 'closed'", async () => {
+    mockedRequest.mockResolvedValueOnce({ pull: { ...PULL_WIRE, state: 'closed' } });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('closed');
+  });
+
+  it("collapses a closed, unmerged draft → 'closed' (GitHub keeps draft: true after close)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      pull: { ...PULL_WIRE, state: 'closed', draft: true, merged: false },
+    });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('closed');
+  });
+
+  it("collapses an open, non-draft PR with mergeableState 'queued' → 'queued'", async () => {
+    mockedRequest.mockResolvedValueOnce({ pull: { ...PULL_WIRE, mergeableState: 'queued' } });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('queued');
+  });
+
+  it.each([
+    ['merged', { state: 'closed', merged: true }],
+    ['closed', { state: 'closed' }],
+    ['draft', { draft: true }],
+  ] as const)("'%s' wins over mergeableState 'queued'", async (expected, overrides) => {
+    mockedRequest.mockResolvedValueOnce({
+      pull: { ...PULL_WIRE, ...overrides, mergeableState: 'queued' },
+    });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe(expected);
+  });
+
+  it.each([undefined, 'clean', 'blocked', 'behind', 'dirty', 'unstable', 'unknown'])(
+    "keeps an open PR as 'open' when mergeableState is %s",
+    async (mergeableState) => {
+      mockedRequest.mockResolvedValueOnce({ pull: { ...PULL_WIRE, mergeableState } });
+      const client = new LiveIntegrationsClient();
+
+      expect((await client.githubPullRequest('octo', 'intent', 42)).state).toBe('open');
+    },
+  );
+
+  it('throws when the daemon reports no such PR (pull: null)', async () => {
+    mockedRequest.mockResolvedValueOnce({ pull: null });
+    const client = new LiveIntegrationsClient();
+
+    await expect(client.githubPullRequest('octo', 'intent', 99)).rejects.toThrow(/not found/);
+  });
+
+  it('propagates transport/daemon failures (e.g. GitHub not configured)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('GitHub is not configured.'));
+    const client = new LiveIntegrationsClient();
+
+    await expect(client.githubPullRequest('octo', 'intent', 42)).rejects.toThrow(
+      'GitHub is not configured.',
+    );
+  });
+});
+
+describe('LiveIntegrationsClient.githubIssue (github.issues.get, §5.27)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('sends owner/repo/number and normalizes an open issue', async () => {
+    mockedRequest.mockResolvedValueOnce({ issue: ISSUE_WIRE });
+    const client = new LiveIntegrationsClient();
+
+    const details = await client.githubIssue('octo', 'intent', 17);
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith('github.issues.get', {
+      owner: 'octo',
+      repo: 'intent',
+      number: 17,
+    });
+    expect(details).toEqual({
+      owner: 'octo',
+      repo: 'intent',
+      number: 17,
+      title: 'Theme flashes on first paint',
+      state: 'open',
+      author: 'hubot',
+      createdAt: '2026-01-01T08:00:00Z',
+      updatedAt: '2026-01-02T10:00:00Z',
+      url: 'https://github.com/octo/intent/issues/17',
+    });
+  });
+
+  it('surfaces a closed issue', async () => {
+    mockedRequest.mockResolvedValueOnce({ issue: { ...ISSUE_WIRE, state: 'closed' } });
+    const client = new LiveIntegrationsClient();
+
+    expect((await client.githubIssue('octo', 'intent', 17)).state).toBe('closed');
+  });
+
+  it('throws when the daemon reports no such issue (issue: null)', async () => {
+    mockedRequest.mockResolvedValueOnce({ issue: null });
+    const client = new LiveIntegrationsClient();
+
+    await expect(client.githubIssue('octo', 'intent', 99)).rejects.toThrow(/not found/);
+  });
+
+  it('propagates transport/daemon failures (e.g. GitHub not configured)', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('GitHub is not configured.'));
+    const client = new LiveIntegrationsClient();
+
+    await expect(client.githubIssue('octo', 'intent', 17)).rejects.toThrow(
       'GitHub is not configured.',
     );
   });

@@ -45,8 +45,12 @@ import {
 function makeState(overrides: Partial<StoreState> = {}): StoreState {
   return {
     specialists: specialistsInitialState,
-    model: { ...modelInitialState, providerModels: { auggie: 'auggie:sonnet4.5' } },
-    providerSettings: { ...providerSettingsInitialState, activeProviderId: 'auggie' },
+    model: {
+      ...modelInitialState,
+      defaultProviderId: 'auggie',
+      providerModels: { auggie: 'auggie:sonnet4.5' },
+    },
+    providerSettings: { ...providerSettingsInitialState },
     specialistProposalHistory: { entries: {} },
     githubAuth: { isAuthenticated: false },
     ...overrides,
@@ -175,12 +179,14 @@ describe('specialist-proposal-actions', () => {
   it('applies create proposals with a delete reverse action and focuses the new specialist', async () => {
     const result = await applySpecialistProposalWork(makeDetail(makeCreateProposal()));
 
+    // Writes emit bare model ids only (PROTOCOL §5.11): the compound
+    // proposal model splits, its prefix winning as the codingAgent.
     expectDispatchedWrite(saveFileSpecialist, {
       id: 'review-buddy',
       name: 'Review Buddy',
       description: 'Reviews changes',
       codingAgent: 'auggie',
-      model: 'auggie:opus4.5',
+      model: 'opus4.5',
       roleReminder: undefined,
       behaviorPrompt: 'Review carefully.',
       scope: 'user',

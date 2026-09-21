@@ -3,7 +3,7 @@
  * Safe to import from any process (renderer, main, shared, preload).
  */
 
-import type { ReleaseNotesContent } from "$features/release-notes/types";
+import type { ReleaseNotesContent } from '$features/release-notes/types';
 
 export type ReleaseNotes = ReleaseNotesContent;
 
@@ -14,4 +14,3 @@ export type ReleaseNotesState = {
   error: string | null;
   initialized: boolean;
 };
-

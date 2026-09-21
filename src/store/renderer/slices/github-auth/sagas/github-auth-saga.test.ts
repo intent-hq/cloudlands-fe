@@ -17,7 +17,16 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: vi.fn() }),
 }));
 
-import { cancelGitHubAuth, checkGitHubAuthStatus, githubAuthChanged, githubAuthReducer, initializeGitHubAuth, initialState, logoutGitHub, startGitHubAuth } from '../github-auth-slice';
+import {
+  cancelGitHubAuth,
+  checkGitHubAuthStatus,
+  githubAuthChanged,
+  githubAuthReducer,
+  initializeGitHubAuth,
+  initialState,
+  logoutGitHub,
+  startGitHubAuth,
+} from '../github-auth-slice';
 import { m } from '$shared/paraglide/messages.js';
 import { githubAuthSaga } from './github-auth-saga';
 
@@ -38,7 +47,10 @@ function harness(seed = initialState) {
     channel.put(action);
     return action;
   };
-  const task = runSaga({ channel, dispatch, getState: () => ({ githubAuth: state }) }, githubAuthSaga);
+  const task = runSaga(
+    { channel, dispatch, getState: () => ({ githubAuth: state }) },
+    githubAuthSaga,
+  );
   return { channel, dispatched, state: () => state, task };
 }
 
@@ -47,7 +59,11 @@ describe('githubAuthSaga', () => {
 
   it('maps auth status field by field and drops unrelated wire fields', async () => {
     const user = {
-      login: 'octo', name: 'Octo', email: null, avatar_url: 'avatar', accessToken: 'drop',
+      login: 'octo',
+      name: 'Octo',
+      email: null,
+      avatar_url: 'avatar',
+      accessToken: 'drop',
     };
     mocks.getAuthState.mockResolvedValue({
       isAuthenticated: true,
@@ -63,16 +79,22 @@ describe('githubAuthSaga', () => {
     await settle();
 
     expect(run.dispatched).toEqual([
-      { type: 'githubAuth/setAuthState', payload: {
-        isAuthenticated: true,
-        requiresDaemonAuth: false,
-        user: { login: 'octo', name: 'Octo', email: null, avatar_url: 'avatar' },
-        needsScopeUpdate: true,
-        oauthUrl: 'https://github.com/login/device',
-      } },
+      {
+        type: 'githubAuth/setAuthState',
+        payload: {
+          isAuthenticated: true,
+          requiresDaemonAuth: false,
+          user: { login: 'octo', name: 'Octo', email: null, avatar_url: 'avatar' },
+          needsScopeUpdate: true,
+          oauthUrl: 'https://github.com/login/device',
+        },
+      },
     ]);
     expect(run.state().user).toEqual({
-      login: 'octo', name: 'Octo', email: null, avatar_url: 'avatar',
+      login: 'octo',
+      name: 'Octo',
+      email: null,
+      avatar_url: 'avatar',
     });
     run.task.cancel();
     await run.task.toPromise();
@@ -81,30 +103,148 @@ describe('githubAuthSaga', () => {
   it('cancels polling on disconnect and ignores the late completion', async () => {
     let resolveCheck!: (value: unknown) => void;
     mocks.startAuth.mockResolvedValue({
-      success: true, userCode: 'ABCD', verificationUri: 'https://github.test',
-      expiresIn: 900, interval: 5,
+      success: true,
+      userCode: 'ABCD',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
     });
-    mocks.checkAuthComplete.mockReturnValue(new Promise((resolve) => { resolveCheck = resolve; }));
+    mocks.checkAuthComplete.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCheck = resolve;
+      }),
+    );
     mocks.cancelAuth.mockResolvedValue({ success: true });
     const run = harness();
     run.channel.put(startGitHubAuth());
     await settle();
     run.channel.put(cancelGitHubAuth());
     await settle();
-    resolveCheck({ success: true, data: { isComplete: true, user: {
-      login: 'late', name: null, email: null, avatar_url: 'late', accessToken: 'drop',
-    } } });
+    resolveCheck({
+      success: true,
+      data: {
+        isComplete: true,
+        user: {
+          login: 'late',
+          name: null,
+          email: null,
+          avatar_url: 'late',
+          accessToken: 'drop',
+        },
+      },
+    });
     await settle();
 
     expect(mocks.cancelAuth.mock.calls).toEqual([[]]);
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setAuthenticating', payload: [true] },
       { type: 'githubAuth/setOAuthInfo', payload: { oauthUrl: null, needsScopeUpdate: false } },
-      { type: 'githubAuth/setDeviceFlowInfo', payload: [{
-        userCode: 'ABCD', verificationUri: 'https://github.test', expiresIn: 900, interval: 5,
-      }] },
+      {
+        type: 'githubAuth/setDeviceFlowInfo',
+        payload: [
+          {
+            userCode: 'ABCD',
+            verificationUri: 'https://github.test',
+            expiresIn: 900,
+            interval: 5,
+          },
+        ],
+      },
       { type: 'githubAuth/authCancelled', payload: [] },
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('forwards the reconnect option to the client so an existing connection can be re-authorized (#5206)', async () => {
+    mocks.startAuth.mockResolvedValue({
+      success: true,
+      userCode: 'WXYZ',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.checkAuthComplete.mockResolvedValue({
+      success: true,
+      data: { isComplete: false, user: null },
+    });
+    const run = harness({ ...initialState, isAuthenticated: true });
+    run.channel.put(startGitHubAuth({ reconnect: true }));
+    await settle();
+
+    expect(mocks.startAuth.mock.calls).toEqual([[{ reconnect: true }]]);
+    expect(run.dispatched).toEqual([
+      { type: 'githubAuth/setAuthenticating', payload: [true] },
+      { type: 'githubAuth/setOAuthInfo', payload: { oauthUrl: null, needsScopeUpdate: false } },
+      {
+        type: 'githubAuth/setDeviceFlowInfo',
+        payload: [
+          {
+            userCode: 'WXYZ',
+            verificationUri: 'https://github.test',
+            expiresIn: 900,
+            interval: 5,
+          },
+        ],
+      },
+    ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('initialize resumes a pending reconnect flow even though the old token is still configured (#5206)', async () => {
+    mocks.getAuthState.mockResolvedValue({
+      isAuthenticated: true,
+      requiresDaemonAuth: false,
+      user: { login: 'octo', name: null, email: null, avatar_url: 'avatar' },
+      oauthUrl: 'https://github.com/login/device',
+      deviceFlow: {
+        status: 'pending',
+        userCode: 'WXYZ',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 899,
+        interval: 5,
+      },
+    });
+    mocks.checkAuthComplete.mockResolvedValue({
+      success: true,
+      data: { isComplete: false, user: null },
+    });
+    const run = harness();
+    run.channel.put(initializeGitHubAuth());
+    await settle();
+
+    expect(mocks.checkAuthComplete.mock.calls).toEqual([[]]);
+    expect(run.dispatched).toEqual([
+      {
+        type: 'githubAuth/setAuthState',
+        payload: {
+          isAuthenticated: true,
+          requiresDaemonAuth: false,
+          user: { login: 'octo', name: null, email: null, avatar_url: 'avatar' },
+          needsScopeUpdate: false,
+          oauthUrl: 'https://github.com/login/device',
+        },
+      },
+      { type: 'githubAuth/setAuthenticating', payload: [true] },
+      {
+        type: 'githubAuth/setDeviceFlowInfo',
+        payload: [
+          {
+            userCode: 'WXYZ',
+            verificationUri: 'https://github.com/login/device',
+            expiresIn: 899,
+            interval: 5,
+          },
+        ],
+      },
+    ]);
+    expect(run.state().deviceFlow).toEqual({
+      userCode: 'WXYZ',
+      verificationUri: 'https://github.com/login/device',
+      expiresIn: 899,
+      interval: 5,
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -131,9 +271,7 @@ describe('githubAuthSaga', () => {
     await settle();
 
     expect(mocks.logout.mock.calls).toEqual([[]]);
-    expect(run.dispatched).toEqual([
-      { type: 'githubAuth/logoutCompleted', payload: [] },
-    ]);
+    expect(run.dispatched).toEqual([{ type: 'githubAuth/logoutCompleted', payload: [] }]);
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -141,7 +279,11 @@ describe('githubAuthSaga', () => {
   it('runs repeated status requests concurrently like the middleware', async () => {
     let resolveFirst!: (value: unknown) => void;
     mocks.getAuthState
-      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
       .mockResolvedValueOnce({ isAuthenticated: false, requiresDaemonAuth: false, user: null });
     const run = harness();
     run.channel.put(initializeGitHubAuth());
@@ -157,17 +299,26 @@ describe('githubAuthSaga', () => {
 
     expect(mocks.getAuthState.mock.calls).toEqual([[], []]);
     expect(run.dispatched).toEqual([
-      { type: 'githubAuth/setAuthState', payload: {
-        isAuthenticated: false, requiresDaemonAuth: false, user: null,
-        needsScopeUpdate: false, oauthUrl: null,
-      } },
-      { type: 'githubAuth/setAuthState', payload: {
-        isAuthenticated: true,
-        requiresDaemonAuth: false,
-        user: { login: 'octo', name: null, email: null, avatar_url: 'avatar' },
-        needsScopeUpdate: false,
-        oauthUrl: null,
-      } },
+      {
+        type: 'githubAuth/setAuthState',
+        payload: {
+          isAuthenticated: false,
+          requiresDaemonAuth: false,
+          user: null,
+          needsScopeUpdate: false,
+          oauthUrl: null,
+        },
+      },
+      {
+        type: 'githubAuth/setAuthState',
+        payload: {
+          isAuthenticated: true,
+          requiresDaemonAuth: false,
+          user: { login: 'octo', name: null, email: null, avatar_url: 'avatar' },
+          needsScopeUpdate: false,
+          oauthUrl: null,
+        },
+      },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -176,23 +327,39 @@ describe('githubAuthSaga', () => {
   it('cancels a start poll when initialize clears stale flow and ignores its late completion', async () => {
     let resolveOld!: (value: unknown) => void;
     mocks.startAuth.mockResolvedValue({
-      success: true, userCode: 'OLD', verificationUri: 'https://old.test',
-      expiresIn: 900, interval: 5,
+      success: true,
+      userCode: 'OLD',
+      verificationUri: 'https://old.test',
+      expiresIn: 900,
+      interval: 5,
     });
     mocks.checkAuthComplete.mockReturnValue(
-      new Promise((resolve) => { resolveOld = resolve; }),
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
     );
     mocks.getAuthState.mockResolvedValue({
-      isAuthenticated: false, requiresDaemonAuth: false, user: null,
+      isAuthenticated: false,
+      requiresDaemonAuth: false,
+      user: null,
     });
     const run = harness();
     run.channel.put(startGitHubAuth());
     await settle();
     run.channel.put(initializeGitHubAuth());
     await settle();
-    resolveOld({ success: true, data: { isComplete: true, user: {
-      login: 'stale', name: null, email: null, avatar_url: 'stale',
-    } } });
+    resolveOld({
+      success: true,
+      data: {
+        isComplete: true,
+        user: {
+          login: 'stale',
+          name: null,
+          email: null,
+          avatar_url: 'stale',
+        },
+      },
+    });
     await settle();
 
     expect(mocks.checkAuthComplete.mock.calls).toEqual([[]]);
@@ -200,13 +367,27 @@ describe('githubAuthSaga', () => {
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setAuthenticating', payload: [true] },
       { type: 'githubAuth/setOAuthInfo', payload: { oauthUrl: null, needsScopeUpdate: false } },
-      { type: 'githubAuth/setDeviceFlowInfo', payload: [{
-        userCode: 'OLD', verificationUri: 'https://old.test', expiresIn: 900, interval: 5,
-      }] },
-      { type: 'githubAuth/setAuthState', payload: {
-        isAuthenticated: false, requiresDaemonAuth: false, user: null,
-        needsScopeUpdate: false, oauthUrl: null,
-      } },
+      {
+        type: 'githubAuth/setDeviceFlowInfo',
+        payload: [
+          {
+            userCode: 'OLD',
+            verificationUri: 'https://old.test',
+            expiresIn: 900,
+            interval: 5,
+          },
+        ],
+      },
+      {
+        type: 'githubAuth/setAuthState',
+        payload: {
+          isAuthenticated: false,
+          requiresDaemonAuth: false,
+          user: null,
+          needsScopeUpdate: false,
+          oauthUrl: null,
+        },
+      },
       { type: 'githubAuth/setDeviceFlowInfo', payload: [null] },
       { type: 'githubAuth/setAuthenticating', payload: [false] },
     ]);

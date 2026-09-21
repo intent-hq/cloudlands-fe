@@ -142,5 +142,4 @@ describe('text-utils', () => {
       expect(stripUserMessagePrefixes('plain text')).toBe('plain text');
     });
   });
-
 });

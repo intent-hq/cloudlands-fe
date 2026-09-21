@@ -81,6 +81,7 @@ export const HUD_TAKEOVER_KIND_CUES: Readonly<
   workspace_idle: 'workspace-idle',
   pr_open: 'pr-open',
   pr_ready: 'pr-ready',
+  pr_queued: 'pr-ready',
   pr_merged: 'pr-merged',
   workspace_complete: 'workspace-complete',
 };

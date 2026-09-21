@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
@@ -220,7 +220,8 @@ for (const theme of ['light', 'dark'] as const) {
             expect(row.cardEdges).toEqual(row.rowEdges);
             expect(row.leadingCenter[1]).toBeCloseTo(row.rowCenter, 1);
             expect(row.iconCenter[1]).toBeCloseTo(row.rowCenter, 1);
-            expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(36 * zoom, 1);
+            const labelInset = width === 320 ? 32 : 36;
+            expect(row.labelStart - row.rowEdges[0]).toBeCloseTo(labelInset * zoom, 1);
             expect(row.insets[2] - row.insets[1]).toBeCloseTo(0, 1);
             expect(row.summary).toEqual(['0px', 'hidden', 'ellipsis', 'nowrap']);
             expect(row.margins).toEqual([
@@ -265,9 +266,14 @@ for (const theme of ['light', 'dark'] as const) {
 
           if (messageId === 'assistant-streaming') {
             const streamingRow = message.getByTestId('reasoning-tool-call').last();
-            await expect(streamingRow.locator('[data-operational-leading]')).toHaveClass(
-              /animate-pulse/,
+            await expect(streamingRow.locator('[data-operational-leading]')).toHaveAttribute(
+              'data-streaming-pulse',
             );
+            expect(
+              await streamingRow
+                .locator('[data-operational-leading]')
+                .evaluate((node) => node.getAnimations({ subtree: true }).length),
+            ).toBe(0);
             await expect(streamingRow.locator('[data-operational-expanded-content]')).toBeVisible();
           }
 

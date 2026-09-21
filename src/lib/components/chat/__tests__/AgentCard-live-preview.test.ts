@@ -13,7 +13,7 @@
  *      re-derive previews (monorepo#2843).
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 import AgentCard from '../AgentCard.svelte';
 import { store as appStore } from '$store/renderer/store';
@@ -105,6 +105,61 @@ describe('AgentCard live preview precedence', () => {
     expect(header).not.toBeNull();
     expect(timestamp).not.toBeNull();
     expect(header?.contains(timestamp)).toBe(true);
+  });
+
+  it('reserves a non-clipping trailing slot for task progress outside row navigation', async () => {
+    seedSession({
+      name: 'A very long watched agent name that must truncate',
+      lastAgentResponse: 'A long preview that must keep its own truncation behavior',
+    });
+
+    const { container } = render(AgentCard, {
+      props: {
+        agentId,
+        inline: true,
+        taskProgress: [
+          { id: 'running', title: 'Run the focused task', status: 'running' },
+          { id: 'done', title: 'Finish setup', status: 'completed' },
+          { id: 'pending-1', title: 'Check alignment', status: 'pending' },
+          { id: 'pending-2', title: 'Check spacing', status: 'pending' },
+          { id: 'pending-3', title: 'Check overflow', status: 'pending' },
+          { id: 'pending-4', title: 'Check scrolling', status: 'pending' },
+          { id: 'pending-5', title: 'Check focus', status: 'pending' },
+        ],
+      },
+    });
+
+    const trigger = await screen.findByTestId('task-progress-trigger');
+    const activationButton = container.querySelector('[data-testid="agent-list-item"] > button');
+    const content = container.querySelector('.agent-card-content');
+    const trailing = screen.getByTestId('agent-card-trailing-slot');
+    expect(trigger.getAttribute('aria-label')).toBe('Task progress: 1 of 7 completed');
+    expect(trigger.className).toContain('h-(--row-action-target-compact)');
+    expect(trigger.className).toContain('min-w-(--row-action-target-compact)');
+    expect(trigger.className).toContain('w-fit');
+    expect(
+      within(trigger)
+        .getAllByTestId('task-progress-status-icon')
+        .map((icon) => icon.dataset.taskStatus),
+    ).toEqual(['completed', 'pending', 'pending', 'running']);
+    expect(within(trigger).getAllByTestId('task-progress-stack-item')).toHaveLength(5);
+    expect(
+      within(trigger)
+        .getAllByTestId('task-progress-status-icon')
+        .every((icon) => icon.className.includes('size-3.5') && !icon.className.includes('size-4')),
+    ).toBe(true);
+    expect(activationButton?.contains(trigger)).toBe(false);
+    expect(activationButton?.className).toContain('overflow-hidden');
+    expect(content?.className).toContain('mr-11');
+    expect(trailing.className).toContain('w-11');
+    expect(screen.getByTestId('agent-card-name').className).toContain('shrink-0');
+    expect(screen.getByTestId('agent-card-preview').className).toContain('truncate');
+
+    trigger.focus();
+    expect(screen.queryByRole('dialog', { name: 'Agent tasks' })).toBeNull();
+    await fireEvent.click(trigger);
+    expect(await screen.findByRole('dialog', { name: 'Agent tasks' })).toBeTruthy();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('serves the pushed wire preview over a streaming buffer ending in suggested prompts', async () => {

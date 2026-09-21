@@ -6,5 +6,5 @@ import { createWindow, getFocusedWindowBackendId } from './window.js';
  * hard-coded local default.
  */
 export function openNewWindowFromMenu(): void {
-  createWindow(getFocusedWindowBackendId());
+  void createWindow(getFocusedWindowBackendId());
 }

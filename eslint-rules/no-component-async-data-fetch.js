@@ -1,14 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const MESSAGE = 'Svelte components must not fetch or load async domain data directly. Dispatch through the configured Store instance (store.dispatch(action)) and read the result through Redux selectors instead; keep API/client/provider calls in sagas or service layers, not components.';
+const MESSAGE =
+  'Svelte components must not fetch or load async domain data directly. Dispatch through the configured Store instance (store.dispatch(action)) and read the result through Redux selectors instead; keep API/client/provider calls in sagas or service layers, not components.';
 
-const SAFE_AWAITED_IDENTIFIER_NAMES = new Set([
-  'tick',
-  'settled',
-  'sleep',
-  'delay',
-]);
+const SAFE_AWAITED_IDENTIFIER_NAMES = new Set(['tick', 'settled', 'sleep', 'delay']);
 
 const DOMAIN_DATA_METHOD_NAMES = new Set([
   'fetch',
@@ -22,15 +18,20 @@ const DOMAIN_DATA_METHOD_NAMES = new Set([
   'search',
 ]);
 
-const DOMAIN_IMPORT_SOURCE_PATTERN = /(?:^|[./-])(?:api|apis|client|clients|provider|providers|service|services|repository|repositories|sdk|ipc)(?:[./-]|$)/i;
-const DOMAIN_API_IMPORT_SOURCE_PATTERN = /(?:^|[./-])(?:api|apis|client|clients|provider|providers|repository|repositories|sdk)(?:[./-]|$)/i;
+const DOMAIN_IMPORT_SOURCE_PATTERN =
+  /(?:^|[./-])(?:api|apis|client|clients|provider|providers|service|services|repository|repositories|sdk|ipc)(?:[./-]|$)/i;
+const DOMAIN_API_IMPORT_SOURCE_PATTERN =
+  /(?:^|[./-])(?:api|apis|client|clients|provider|providers|repository|repositories|sdk)(?:[./-]|$)/i;
 const DOMAIN_API_OBJECT_NAME_PATTERN = /(?:api|client|provider|repository|repositories|sdk)$/i;
 const DOMAIN_DATA_OBJECT_NAME_PATTERN = /(?:service|source|sources|system|electronAPI|ipc)$/i;
-const DOMAIN_LOADER_NAME_PATTERN = /^(?:fetch|load|get|list|read|query|search|request|invoke)(?:[A-Z0-9_]|$)/;
+const DOMAIN_LOADER_NAME_PATTERN =
+  /^(?:fetch|load|get|list|read|query|search|request|invoke)(?:[A-Z0-9_]|$)/;
 const LOCAL_IMPORT_SOURCE_PATTERN = /^(?:\.{1,2}\/|\$lib\/|\$features\/|\$shared\/)/;
 const STORE_IMPORT_SOURCE_PATTERN = /^(?:\$lib\/store\/|\$store\/)/;
-const WRAPPER_IMPORT_SOURCE_PATTERN = /(?:^|[./-])(?:commands?|electron|ipc)(?:[./-]|$)|choose-parent-folder|patch-block-commands|rtk-settings-commands/i;
-const ASYNC_WRAPPER_SOURCE_TEXT_PATTERN = /(?:window\.)?electronAPI\??\.invoke|(?:^|[^\w$])invoke\s*\(|(?:^|[^\w$])fetch\s*\(|IPC_CHANNELS|(?:SETTINGS|SYSTEM|DIALOG|TERMINAL)_CHANNELS/;
+const WRAPPER_IMPORT_SOURCE_PATTERN =
+  /(?:^|[./-])(?:commands?|electron|ipc)(?:[./-]|$)|choose-parent-folder|patch-block-commands|rtk-settings-commands/i;
+const ASYNC_WRAPPER_SOURCE_TEXT_PATTERN =
+  /(?:window\.)?electronAPI\??\.invoke|(?:^|[^\w$])invoke\s*\(|(?:^|[^\w$])fetch\s*\(|IPC_CHANNELS|(?:SETTINGS|SYSTEM|DIALOG|TERMINAL)_CHANNELS/;
 
 function unwrapExpression(node) {
   let current = node;
@@ -102,9 +103,11 @@ function getFilename(context) {
 }
 
 function isLocalWrapperImportSource(source) {
-  return typeof source === 'string'
-    && LOCAL_IMPORT_SOURCE_PATTERN.test(source)
-    && !isStoreImportSource(source);
+  return (
+    typeof source === 'string' &&
+    LOCAL_IMPORT_SOURCE_PATTERN.test(source) &&
+    !isStoreImportSource(source)
+  );
 }
 
 function isStoreImportSource(source) {
@@ -157,16 +160,17 @@ function readImportSourceText(context, source) {
 }
 
 function isModuleScriptElement(node) {
-  return node.startTag?.attributes?.some(
-    (attribute) => attribute.type === 'SvelteAttribute'
-      && (
-        attribute.key?.name === 'module'
-        || (
-          attribute.key?.name === 'context'
-          && attribute.value?.some((value) => value.type === 'SvelteLiteral' && value.value === 'module')
-        )
-      ),
-  ) ?? false;
+  return (
+    node.startTag?.attributes?.some(
+      (attribute) =>
+        attribute.type === 'SvelteAttribute' &&
+        (attribute.key?.name === 'module' ||
+          (attribute.key?.name === 'context' &&
+            attribute.value?.some(
+              (value) => value.type === 'SvelteLiteral' && value.value === 'module',
+            ))),
+    ) ?? false
+  );
 }
 
 function isInSvelteComponentInstance(node) {
@@ -222,9 +226,9 @@ function isDomainMemberCall(callee, domainImportNames, domainApiImportNames) {
   const rootName = getRootIdentifierName(callee.object);
 
   if (
-    domainApiImportNames.has(rootName)
-    || DOMAIN_API_OBJECT_NAME_PATTERN.test(objectName ?? '')
-    || DOMAIN_API_OBJECT_NAME_PATTERN.test(rootName ?? '')
+    domainApiImportNames.has(rootName) ||
+    DOMAIN_API_OBJECT_NAME_PATTERN.test(objectName ?? '') ||
+    DOMAIN_API_OBJECT_NAME_PATTERN.test(rootName ?? '')
   ) {
     return true;
   }
@@ -233,10 +237,12 @@ function isDomainMemberCall(callee, domainImportNames, domainApiImportNames) {
     return false;
   }
 
-  return domainImportNames.has(rootName)
-    || DOMAIN_DATA_OBJECT_NAME_PATTERN.test(objectName ?? '')
-    || DOMAIN_DATA_OBJECT_NAME_PATTERN.test(rootName ?? '')
-    || methodName === 'invoke';
+  return (
+    domainImportNames.has(rootName) ||
+    DOMAIN_DATA_OBJECT_NAME_PATTERN.test(objectName ?? '') ||
+    DOMAIN_DATA_OBJECT_NAME_PATTERN.test(rootName ?? '') ||
+    methodName === 'invoke'
+  );
 }
 
 function isDomainDataCall(node, domainImportNames, domainApiImportNames) {
@@ -268,9 +274,11 @@ function isAwaitedStandaloneLoaderCall(node, domainImportNames) {
 }
 
 function isDomainImportSource(source) {
-  return typeof source === 'string'
-    && !isStoreImportSource(source)
-    && DOMAIN_IMPORT_SOURCE_PATTERN.test(source);
+  return (
+    typeof source === 'string' &&
+    !isStoreImportSource(source) &&
+    DOMAIN_IMPORT_SOURCE_PATTERN.test(source)
+  );
 }
 
 function isImportedAsyncWrapperCall(callee, asyncWrapperImportNames) {
@@ -350,9 +358,9 @@ export default {
         }
 
         if (
-          isGlobalFetchCall(node)
-          || isImportedAsyncWrapperCall(node.callee, asyncWrapperImportNames)
-          || isDomainDataCall(node, domainImportNames, domainApiImportNames)
+          isGlobalFetchCall(node) ||
+          isImportedAsyncWrapperCall(node.callee, asyncWrapperImportNames) ||
+          isDomainDataCall(node, domainImportNames, domainApiImportNames)
         ) {
           context.report({ node, messageId: 'noComponentAsyncDataFetch' });
         }

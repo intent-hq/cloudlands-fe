@@ -263,10 +263,6 @@ vi.mock('$lib/components/editor/FileViewer.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockFileViewer.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/SaveIndicator.svelte', async () => ({
-  default: (await import('./__tests__/mocks/MockSaveIndicator.svelte')).default,
-}));
-
 vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockOpenComboButton.svelte')).default,
 }));
@@ -341,6 +337,12 @@ describe('FileTabType Redux integration', () => {
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
 
+    expect(screen.queryByTestId('open-combo-button')).toBeNull();
+    expect(
+      screen
+        .getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() })
+        .getAttribute('aria-disabled'),
+    ).not.toBe('true');
     expect(screen.getByRole('menuitemcheckbox', { name: 'Wrap lines' })).toBeTruthy();
     expect(screen.getByRole('menuitemcheckbox', { name: 'Diff indicators' })).toBeTruthy();
 
@@ -448,6 +450,61 @@ describe('FileTabType Redux integration', () => {
       expect.objectContaining({ type: 'files/saveFileContentRequested' }),
     );
     expect((await screen.findByTestId('header-state')).getAttribute('data-dirty')).toBe('false');
+  });
+
+  it('opens markdown line targets in the source editor', async () => {
+    mockReduxState.files['README.md'] = {
+      localContent: '# Project',
+      originalContent: '# Project',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+
+    renderFileTab({
+      ...fileTab,
+      id: 'tab-readme',
+      title: 'README.md',
+      filePath: 'README.md',
+      data: { line: 42, jumpTimestamp: 1 },
+    });
+
+    const editor = await screen.findByTestId('code-editor');
+    expect(editor.getAttribute('data-jump-to-line')).toBe('42');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
+  });
+
+  it('switches an open markdown preview to source for a new jump request', async () => {
+    mockReduxState.files['README.md'] = {
+      localContent: '# Project',
+      originalContent: '# Project',
+      loading: false,
+      saving: false,
+      error: null,
+      isBinary: false,
+      lastUpdated: 0,
+    };
+    const markdownTab = {
+      ...fileTab,
+      id: 'tab-readme',
+      title: 'README.md',
+      filePath: 'README.md',
+    };
+    const view = renderFileTab(markdownTab);
+    expect(await screen.findByTestId('markdown-viewer')).toBeTruthy();
+
+    await view.rerender({
+      tab: { ...markdownTab, data: { line: 17, jumpTimestamp: 2 } },
+      workspaceId: 'ws-1',
+      isActive: true,
+      isPanelFocused: true,
+    });
+
+    const editor = await screen.findByTestId('code-editor');
+    expect(editor.getAttribute('data-jump-to-line')).toBe('17');
+    expect(screen.queryByTestId('markdown-viewer')).toBeNull();
   });
 
   it('updates the read-only markdown preview for repeated external content while clean', async () => {

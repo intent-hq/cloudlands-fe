@@ -11,7 +11,7 @@
   aria-label={m.chat_newMessagesDivider_label()}
 >
   <div class="h-px flex-1 bg-border"></div>
-  <span class="whitespace-nowrap px-1 font-medium text-foreground first-letter:uppercase">
+  <span class="whitespace-nowrap px-1 font-medium text-foreground">
     {m.chat_newMessagesDivider_label()}
   </span>
   <div class="h-px flex-1 bg-border"></div>

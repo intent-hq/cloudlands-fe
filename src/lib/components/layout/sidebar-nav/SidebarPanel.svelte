@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
@@ -6,13 +7,8 @@
   import SettingsCard from './cards/SettingsCard.svelte';
   import { onDestroy } from 'svelte';
   import Fa from 'svelte-fa';
-  import {
-    faChevronDown,
-    faXmark,
-    faEllipsisVertical,
-    faMagnifyingGlass,
-    faPlus,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark, faMagnifyingGlass, faPlus } from '@fortawesome/free-solid-svg-icons';
+  import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import * as Menu from '$lib/components/ui/menu';
 
@@ -39,6 +35,8 @@
     type AllSpacesViewMode,
     type SidebarNavItem,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
+  import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   const panelItem$ = selectPanelItem();
@@ -48,6 +46,18 @@
   const onboardingActive$ = selectOnboardingActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
+  // A collaborator-only client (multiplayer w3) has no Chief: the daemon
+  // answers its `__chief__` calls with not-found, so the card is never
+  // mounted and the workspace list takes the whole panel. The gate is live —
+  // flipping true after mount unmounts the card, whose destroy releases the
+  // Chief workspace (`workspaceUnmounted`).
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const chiefHidden = $derived($isCollaboratorOnlyClient$ || $isChiefCollapsed$);
+  // A guest window (bound to a joined host, multiplayer w4) lists only the
+  // workspaces shared with it, so its list is titled accordingly. Keyed off
+  // the guest-window identity rather than the fail-closed collaborator-only
+  // flag, which reads true on every owner window until identity settles.
+  const isGuestWindow$ = selectIsGuestWindow();
 
   const allSpacesViewModes = [
     { value: 'recent', label: m.layout_allCard_recent_label() },
@@ -293,18 +303,22 @@
           data-combined-panel-split
         >
           <div
-            class="combined-panel-spaces min-h-0 overflow-hidden flex flex-col {$isChiefCollapsed$
+            class="combined-panel-spaces min-h-0 overflow-hidden flex flex-col {chiefHidden
               ? 'flex-1'
               : 'shrink-0'}"
-            style:height={$isChiefCollapsed$ ? undefined : `${liveSplit * 100}%`}
+            style:height={$isChiefCollapsed$ || $isCollaboratorOnlyClient$
+              ? undefined
+              : `${liveSplit * 100}%`}
             data-combined-panel-spaces
           >
             <!-- Combined workspace panel: workspace list stacked above the Chief chat
                with a draggable horizontal divider between them. -->
             <div class="panel-header shrink-0">
               <div class="min-w-0 flex-1">
-                <h2 class="panel-title text-ui font-semibold text-foreground truncate">
-                  {m.layout_sidebarNav_allWorkspaces_title()}
+                <h2 class="panel-title text-ui font-medium text-foreground truncate">
+                  {$isGuestWindow$
+                    ? m.layout_sidebarNav_allSharedWorkspaces_title()
+                    : m.layout_sidebarNav_allWorkspaces_title()}
                 </h2>
               </div>
               <div class="flex items-center gap-0.5 shrink-0">
@@ -313,7 +327,9 @@
                   side="bottom"
                   sideOffset={4}
                 >
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     type="button"
                     class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
                     onclick={() => appStore.dispatch(setShowCreateModal(true))}
@@ -321,7 +337,7 @@
                     data-spaces-create
                   >
                     <Fa icon={faPlus} size="xs" />
-                  </button>
+                  </Button>
                 </Tooltip>
                 <Menu.Root bind:open={spacesOptionsOpen}>
                   <Menu.Trigger>
@@ -331,17 +347,19 @@
                         side="bottom"
                         sideOffset={4}
                       >
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           {...props}
                           type="button"
-                          class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
+                          class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-muted/50 focus-visible:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
                           aria-label={m.layout_sidebarPanel_workspaceListOptions_tooltip()}
                           aria-haspopup="menu"
                           aria-expanded={spacesOptionsOpen}
                           data-spaces-options-trigger
                         >
-                          <Fa icon={faEllipsisVertical} size="xs" />
-                        </button>
+                          <KebabIcon class="size-3.5" />
+                        </Button>
                       </Tooltip>
                     {/snippet}
                   </Menu.Trigger>
@@ -384,7 +402,9 @@
                   side="bottom"
                   sideOffset={4}
                 >
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     class="w-8 h-8 flex items-center justify-center rounded-md outline-none transition-colors cursor-pointer focus-visible:bg-muted/50 focus-visible:text-foreground {searchVisible
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
@@ -396,7 +416,7 @@
                     data-combined-panel-search-toggle
                   >
                     <Fa icon={faMagnifyingGlass} size="xs" />
-                  </button>
+                  </Button>
                 </Tooltip>
               </div>
             </div>
@@ -406,61 +426,43 @@
             </div>
           </div>
 
-          {#if !$isChiefCollapsed$}
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div
-              class="app-resize-handle combined-panel-divider relative shrink-0"
-              data-resize-axis="y"
-              data-resizing={isSplitResizing}
-              data-testid="split-resize-handle"
-              onmousedown={handleSplitResizeStart}
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
-            >
+          {#if !$isCollaboratorOnlyClient$}
+            {#if !$isChiefCollapsed$}
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
               <div
-                class="pointer-events-none h-px w-full bg-border"
-                data-combined-panel-divider-border
-              ></div>
-            </div>
-          {/if}
+                class="app-resize-handle combined-panel-divider relative shrink-0"
+                data-resize-axis="y"
+                data-resizing={isSplitResizing}
+                data-testid="split-resize-handle"
+                onmousedown={handleSplitResizeStart}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
+              >
+                <div
+                  class="pointer-events-none h-px w-full bg-border"
+                  data-combined-panel-divider-border
+                ></div>
+              </div>
+            {/if}
 
-          <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
+            <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
                lets the Chief composer's streaming aurora bleed across the app
                frame's pl-2/pb-2 window inset to the window edges. -->
-          <div
-            class="min-h-0 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col {$isChiefCollapsed$
-              ? 'shrink-0'
-              : 'flex-1'}"
-            data-combined-panel-chief
-          >
-            <button
-              type="button"
-              class="mx-2 flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-sm px-1 text-left outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-              aria-expanded={!$isChiefCollapsed$}
-              aria-controls="combined-panel-chief-content"
-              data-chief-section-toggle
-              onclick={() => appStore.dispatch(toggleChiefCollapsed())}
-            >
-              <Fa
-                icon={faChevronDown}
-                size="xs"
-                class="shrink-0 text-muted-foreground transition-transform {$isChiefCollapsed$
-                  ? '-rotate-90'
-                  : ''}"
-              />
-              <span class="type-caption min-w-0 flex-1 truncate font-medium text-subtle">
-                {m.layout_chiefCard_title()}
-              </span>
-            </button>
             <div
-              id="combined-panel-chief-content"
-              class="min-h-0 flex-1"
-              hidden={$isChiefCollapsed$}
+              class="min-h-0 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col {$isChiefCollapsed$
+                ? 'shrink-0'
+                : 'flex-1'}"
+              data-combined-panel-chief
             >
-              <ChiefCard expanded={true} embedded={true} />
+              <ChiefCard
+                expanded={true}
+                embedded={true}
+                collapsed={$isChiefCollapsed$}
+                ontoggle={() => appStore.dispatch(toggleChiefCollapsed())}
+              />
             </div>
-          </div>
+          {/if}
         </div>
       {:else}
         <!-- Header -->
@@ -474,13 +476,16 @@
             {/if}
           </div>
           <div class="flex items-center gap-0.5 shrink-0">
-            <button
-              class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              iconOnly
+              class="text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
               onclick={() => appStore.dispatch(closePanel())}
               aria-label={m.layout_sidebarPanel_close_ariaLabel()}
             >
               <Fa icon={faXmark} size="xs" />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -540,7 +545,7 @@
     transition: none;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     [data-panel-shell] {
       transition: none;
     }
@@ -595,7 +600,7 @@
       opacity var(--motion-standard) var(--ease-standard);
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .combined-panel-spaces,
     .combined-panel-divider {
       transition-duration: 0ms;

@@ -1,8 +1,8 @@
 /**
  * T14 — label a remote connection by its hostname on open.
  *
- * When `openBackendWindow` connects to a remote, it reuses the live client's
- * `host.status` capability probe (the same call the heartbeat issues) to read
+ * When `openBackendWindow` connects to a remote, it issues a `host.status`
+ * request on the live client (the same call the heartbeat issues) to read
  * the remote machine's hostname, persists it on the connection record, and
  * re-broadcasts the list so the menu can upgrade `host:port` to
  * `hostname (host:port)`. The capture is fire-and-forget: it must never block
@@ -78,6 +78,12 @@ vi.mock('../json-rpc-client', () => {
     getReconnectAttempts(): number {
       return 0;
     }
+    isConnectionLimited(): boolean {
+      return false;
+    }
+    getConnectionLimitRetryAfterMs(): number | null {
+      return null;
+    }
   }
   return { JsonRpcClient: FakeJsonRpcClient };
 });
@@ -108,6 +114,7 @@ const store = vi.hoisted(() => ({
   forget: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
+  setDetectedDeviceKind: vi.fn(),
   setDaemonVersion: vi.fn(),
   getDetectHosts: vi.fn(),
   setHosts: vi.fn(),
@@ -121,10 +128,52 @@ vi.mock('../connections-store', () => ({
   forget: store.forget,
   getDecryptedToken: store.getDecryptedToken,
   setHostname: store.setHostname,
+  setDetectedDeviceKind: store.setDetectedDeviceKind,
   setDaemonVersion: store.setDaemonVersion,
   getDetectHosts: store.getDetectHosts,
   setHosts: store.setHosts,
 }));
+
+// Guest sessions (multiplayer): a joined host resolves through this store
+// instead of the connections registry, and its hostname capture persists to
+// it. Empty by default; the guest test below seeds one record.
+const guestStore = vi.hoisted(() => ({
+  findById: vi.fn(),
+  getDecryptedToken: vi.fn(),
+  setHostname: vi.fn(),
+}));
+vi.mock('../guest-sessions-store', () => ({
+  list: vi.fn(async () => []),
+  findById: guestStore.findById,
+  forget: vi.fn(async () => true),
+  leaveWorkspace: vi.fn(async () => true),
+  setWorkspaces: vi.fn(async () => false),
+  getDecryptedToken: guestStore.getDecryptedToken,
+  setHostname: guestStore.setHostname,
+  setTcAddress: vi.fn(async () => false),
+  setHosts: vi.fn(async () => false),
+  listSyncRecords: vi.fn(async () => []),
+  applyRemoteSyncRecord: vi.fn(async () => false),
+  onGuestSessionsMutated: () => () => {},
+  onGuestCredentialReplaced: () => () => {},
+  onGuestSessionRemovedBySync: () => () => {},
+}));
+
+const GUEST = {
+  id: 'guest-1',
+  label: 'tc.example.ts.net',
+  host: 'tc.example.ts.net',
+  hosts: ['tc.example.ts.net'],
+  port: 8443,
+  fingerprint: 'EE:FF:00:11',
+  tcAddress: 'tc.example.ts.net',
+  hostname: null,
+  principalId: 'prn_7',
+  login: 'octocat',
+  tokenEncrypted: true,
+  workspaces: [{ id: 'ws-guest', title: 'Guest project' }],
+  updatedAt: 1,
+};
 
 const REMOTE = {
   id: 'remote-1',
@@ -174,6 +223,10 @@ beforeEach(() => {
   store.setDaemonVersion.mockResolvedValue(false);
   store.getDetectHosts.mockResolvedValue(false);
   store.setHosts.mockResolvedValue(undefined);
+  store.setDetectedDeviceKind.mockResolvedValue(false);
+  guestStore.findById.mockResolvedValue(null);
+  guestStore.getDecryptedToken.mockResolvedValue(null);
+  guestStore.setHostname.mockResolvedValue(true);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
 
@@ -183,7 +236,12 @@ afterEach(() => {
 
 describe('openBackendWindow hostname labeling', () => {
   it('captures the remote hostname via host.status and persists it after opening', async () => {
-    hostStatus.value = { hostname: 'studio.local', os: 'macos', arch: 'aarch64' };
+    hostStatus.value = {
+      hostname: 'studio.local',
+      os: 'macos',
+      arch: 'aarch64',
+      deviceKind: 'macStudio',
+    };
     const send = installWindow();
     const mod = await loadModule();
 
@@ -193,12 +251,24 @@ describe('openBackendWindow hostname labeling', () => {
     await vi.waitFor(() =>
       expect(store.setHostname).toHaveBeenCalledWith('remote-1', 'studio.local'),
     );
+    expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('remote-1', 'macStudio');
     // A connections:changed broadcast follows so the menu re-renders the label.
     await vi.waitFor(() =>
       expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true),
     );
     // The main process is notified too (Window menu entries carry backend labels).
     expect(vi.mocked(app.emit).mock.calls.some(([e]) => e === 'connections-changed')).toBe(true);
+  });
+
+  it('rejects override-only device kinds reported by host.status', async () => {
+    hostStatus.value = { hostname: 'studio.local', deviceKind: 'robot' };
+    const mod = await loadModule();
+
+    await mod.openBackendWindow('remote-1');
+
+    await vi.waitFor(() =>
+      expect(store.setDetectedDeviceKind).toHaveBeenCalledWith('remote-1', null),
+    );
   });
 
   it('prefers a trimmed prettyHostname over hostname when host.status carries both', async () => {
@@ -258,6 +328,31 @@ describe('openBackendWindow hostname labeling', () => {
 
     await expect(mod.openBackendWindow('remote-1')).resolves.toEqual({ id: 'remote-1' });
   });
+
+  it('captures a guest host’s pretty hostname into the guest session and re-broadcasts guest sessions', async () => {
+    hostStatus.value = {
+      hostname: 'studio.local',
+      prettyHostname: 'Clement’s Mac Studio',
+      os: 'macos',
+      arch: 'aarch64',
+    };
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const send = installWindow();
+    const mod = await loadModule();
+
+    await mod.openBackendWindow(GUEST.id);
+
+    await vi.waitFor(() =>
+      expect(guestStore.setHostname).toHaveBeenCalledWith(GUEST.id, 'Clement’s Mac Studio'),
+    );
+    // The guest record — not the paired-connection registry — is the write target.
+    expect(store.setHostname).not.toHaveBeenCalled();
+    expect(store.setDetectedDeviceKind).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -291,21 +386,19 @@ describe('openBackendWindow serialization (monorepo#2221)', () => {
     const mod = await loadModule();
     mod.__setBackendWindowHooksForTesting({ openOrFocus });
 
-    // Open A: its inline `host.status` probe parks on the slow answer, so the
-    // queued open-to-B makes no progress while A's operation is in flight.
+    // Open A then B. A's slow `host.status` only parks its fire-and-forget
+    // hostname capture — neither window waits on it, and the serialized
+    // operations still open in request order.
     const openA = mod.openBackendWindow('remote-1');
     const openB = mod.openBackendWindow('remote-2');
-    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(1));
-    expect(openOrFocus).not.toHaveBeenCalled();
-
-    slowAResolvers[0]({ hostname: 'alpha.local' });
     await expect(openA).resolves.toEqual({ id: 'remote-1' });
     await expect(openB).resolves.toEqual({ id: 'remote-2' });
     expect(openOrFocus.mock.calls.map(([id]) => id)).toEqual(['remote-1', 'remote-2']);
-    // The fire-and-forget capture issued its own (second) host.status against
-    // A's slow deferred; answer it so the label persists.
-    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(2));
-    slowAResolvers[1]({ hostname: 'alpha.local' });
+
+    // A's capture is still pending on the slow deferred; answer it so the
+    // label persists.
+    await vi.waitFor(() => expect(slowAResolvers.length).toBeGreaterThanOrEqual(1));
+    slowAResolvers[0]({ hostname: 'alpha.local' });
 
     // Each backend's capture labels its own record.
     await vi.waitFor(() => {
@@ -407,13 +500,12 @@ describe('reconnect hello hostname refresh', () => {
 
 describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
   it('discards a host.status result that arrives after the client was disposed', async () => {
-    // A's inline open probe answers immediately; the fire-and-forget capture's
-    // second `host.status` stays pending until the test resolves it.
+    // The fire-and-forget capture's `host.status` stays pending until the test
+    // resolves it.
     let probeCount = 0;
     let resolveSlowCapture!: (value: unknown) => void;
     hostStatus.byHost.set('10.0.0.5', () => {
       probeCount += 1;
-      if (probeCount === 1) return Promise.resolve({});
       return new Promise((r) => (resolveSlowCapture = r));
     });
 
@@ -423,7 +515,7 @@ describe('captureRemoteHostname stale-completion guard (monorepo#2221)', () => {
     // Open A (its capture stays pending on the slow probe), then dispose A's
     // client — e.g. its last window was closed — before the probe resolves.
     await mod.openBackendWindow('remote-1');
-    await vi.waitFor(() => expect(probeCount).toBe(2));
+    await vi.waitFor(() => expect(probeCount).toBe(1));
     mod.disconnectBackendClient('remote-1');
 
     const broadcastsBeforeLateResult = send.mock.calls.filter(

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import LauncherGeometryHost from './mocks/LauncherGeometryHost.svelte';
 
@@ -26,7 +26,7 @@ async function inspectLauncher(card: Locator) {
       const surfaceRect = surface?.getBoundingClientRect();
       const textNode = item.hasAttribute('data-agent-avatar-overflow')
         ? item
-        : item.querySelector<HTMLElement>('span[aria-hidden="true"]');
+        : item.querySelector<HTMLElement>('[data-slot="button-label"] > span[aria-hidden="true"]');
       const textRect = textNode?.getBoundingClientRect();
       return {
         left: (rect.left - cardRect.left) / scale,
@@ -146,18 +146,22 @@ for (const scenario of [
     expect(contextResource.height).toBeCloseTo(20, 1);
 
     const changesLauncher = component.locator('[data-sidebar-launcher="changes"]');
-    const changesResource = await inspectResource(changesLauncher);
-    expect(changesResource.leftDelta).toBeLessThanOrEqual(2);
-    expect(changesResource.width).toBeCloseTo(24, 1);
-    expect(changesResource.height).toBeCloseTo(24, 1);
+    await expect(changesLauncher.locator('[data-resource-icon-tile]')).toHaveCount(0);
     const changesLabel = changesLauncher.locator('[data-sidebar-launcher-label]');
-    const prAction = changesLauncher.locator('[data-sidebar-pr-link]');
+    const prAction = changesLauncher.locator('[data-sidebar-pr-trigger]');
     await expect(prAction).toHaveCount(1);
     await expect(prAction.locator('svg')).toHaveCount(1);
-    await expect(prAction).toHaveAttribute(
+    await expect(prAction).toHaveAttribute('data-sidebar-pr-count', '1');
+    await expect(changesLauncher.locator('[data-sidebar-pr-link]')).toHaveCount(0);
+    await prAction.click();
+    const prLink = page.locator('[data-sidebar-pr-link]');
+    await expect(prLink).toHaveCount(1);
+    await expect(prLink).toHaveAttribute(
       'data-sidebar-pr-url',
       'https://github.com/intent-hq/repository-with-a-very-long-name/pull/1373',
     );
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-sidebar-pr-link]')).toHaveCount(0);
     const labelBounds = await changesLabel.boundingBox();
     const actionBounds = await prAction.boundingBox();
     expect((actionBounds!.x - (labelBounds!.x + labelBounds!.width)) / scenario.zoom).toBeCloseTo(

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const daemonWorkspaces = new Map<string, Record<string, unknown>>();
+const reconnectHandlers = vi.hoisted(() => new Set<() => void>());
 
 const requestMock = vi.hoisted(() =>
   vi.fn(async (method: string, params?: Record<string, unknown>) => {
@@ -112,15 +113,14 @@ const requestMock = vi.hoisted(() =>
 
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestMock }),
-}));
-
-vi.mock('../../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: vi.fn((action: unknown) => action),
+  onBackendReconnected: (handler: () => void) => {
+    reconnectHandlers.add(handler);
+    return () => reconnectHandlers.delete(handler);
+  },
 }));
 
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';
-import { mainDispatch } from '../../../../store/main/redux-store-bridge';
 import {
   PullRequestStatus,
   WorkspaceStatus,
@@ -348,25 +348,6 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     // `restoreWorkspace` must not fall back to the retired unarchive path.
     const unarchiveCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.unarchive');
     expect(unarchiveCalls).toHaveLength(0);
-    // The emitted `workspaceUpdated` delta must carry both `archived: false`
-    // and the new `status`, otherwise the renderer's changes-merge leaves the
-    // sidebar showing the stale `Archived` status until a full refetch.
-    const updateDispatch = (mainDispatch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
-      ([action]) =>
-        typeof action === 'object' &&
-        action !== null &&
-        'type' in action &&
-        (action as { type: string }).type === 'domainEvents/workspaceUpdated',
-    );
-    expect(updateDispatch).toBeDefined();
-    const payload = (
-      updateDispatch![0] as { payload: [{ workspaceId: string; changes: Record<string, unknown> }] }
-    ).payload[0];
-    expect(payload.workspaceId).toBe(ws.id);
-    expect(payload.changes).toEqual({
-      archived: false,
-      status: WorkspaceStatus.Active,
-    });
   });
 
   it('cleanupWorkspace sends workspace.cleanup with { workspaceId } and no local shell-outs', async () => {
@@ -474,6 +455,22 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
     });
 
+    it('clears the cached workspace.list after a backend reconnect', async () => {
+      const ws = seed();
+      daemonWorkspaces.set(ws.id, { ...ws });
+
+      expect(reconnectHandlers.size).toBe(0);
+      await service.listWorkspaces();
+      expect(reconnectHandlers.size).toBe(1);
+      for (const handler of reconnectHandlers) handler();
+      await service.listWorkspaces();
+
+      expect(requestMock.mock.calls.filter(([method]) => method === 'workspace.list')).toEqual([
+        ['workspace.list', { includeArchived: false }],
+        ['workspace.list', { includeArchived: false }],
+      ]);
+    });
+
     it('keeps single-flighting a still-pending request slower than the TTL (no expire-while-pending race)', async () => {
       vi.useFakeTimers();
       try {
@@ -513,19 +510,22 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       ['updateWorkspace', async (id: WorkspaceId) => service.updateWorkspace({ id, title: 'New' })],
       ['deleteWorkspace', async (id: WorkspaceId) => service.deleteWorkspace(id)],
       ['archiveWorkspace', async (id: WorkspaceId) => service.archiveWorkspace(id)],
-    ])('clears the cached workspace.list after %s so a later list refetches', async (_name, mutate) => {
-      const ws = seed();
-      daemonWorkspaces.set(ws.id, { ...ws });
+    ])(
+      'clears the cached workspace.list after %s so a later list refetches',
+      async (_name, mutate) => {
+        const ws = seed();
+        daemonWorkspaces.set(ws.id, { ...ws });
 
-      // Prime the cache.
-      await service.listWorkspaces();
-      requestMock.mockClear();
+        // Prime the cache.
+        await service.listWorkspaces();
+        requestMock.mockClear();
 
-      await mutate(ws.id);
+        await mutate(ws.id);
 
-      await service.listWorkspaces();
-      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
-    });
+        await service.listWorkspaces();
+        expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
+      },
+    );
 
     it('clears the cached workspace.list after unarchiveWorkspace so a later list refetches', async () => {
       const ws = seed({ status: WorkspaceStatus.Archived });

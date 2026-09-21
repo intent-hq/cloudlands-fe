@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import StreamingTypingOperationalGeometryHost from './StreamingTypingOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
 
-test('matches adjacent tool-row geometry and keeps the explicit 8px top margin', async ({
+test('matches adjacent tool-row geometry with a modest 12px top gap and progress-only visible copy', async ({
   mount,
   page,
 }) => {
@@ -99,17 +99,17 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
                 afterContainer.getBoundingClientRect().top -
                 thinkingRow.getBoundingClientRect().bottom,
               text: thinkingRow.textContent,
-              primaryColor: getComputedStyle(
-                root.querySelector('[data-testid="streaming-status-thinking-label"]')!,
-              ).color,
-              secondaryColor: getComputedStyle(
-                root.querySelector('[data-testid="streaming-status-phase"]')!,
-              ).color,
+              genericLabel: (() => {
+                const rect = root
+                  .querySelector('[data-testid="streaming-status-thinking-label"]')!
+                  .getBoundingClientRect();
+                return { width: rect.width, height: rect.height };
+              })(),
             };
           });
 
-          expect(geometry.thinking.marginTop).toBe('8px');
-          expect(geometry.topGap).toBeCloseTo(8 * zoom, 1);
+          expect(geometry.thinking.marginTop).toBe('12px');
+          expect(geometry.topGap).toBeCloseTo(12 * zoom, 1);
           expect(geometry.bottomGap).toBeCloseTo(0, 1);
           expect(geometry.thinking.height).toBeCloseTo(28 * zoom, 1);
           expect(geometry.thinking.leadingWidth).toBeCloseTo(20 * zoom, 1);
@@ -122,7 +122,8 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
           expect(geometry.text).toContain('Thinking');
           expect(geometry.text).toContain('Sent prompt…');
           expect(geometry.text).not.toContain('·');
-          expect(geometry.primaryColor).not.toBe(geometry.secondaryColor);
+          expect(geometry.genericLabel.width).toBeLessThanOrEqual(zoom);
+          expect(geometry.genericLabel.height).toBeLessThanOrEqual(zoom);
 
           for (const tool of [geometry.before, geometry.after]) {
             for (const [thinking, adjacent] of [
@@ -142,13 +143,11 @@ test('matches adjacent tool-row geometry and keeps the explicit 8px top margin',
           }
 
           const mark = component.getByRole('status', { name: 'Loading' });
-          await expect(mark).toHaveAttribute('viewBox', '0 0 256 208');
-          await expect(mark.locator('[data-mark-arm]')).toHaveCount(5);
           const semanticColors = await mark.evaluate((node) => ({
             color: getComputedStyle(node).color,
-            stroke: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
+            ink: getComputedStyle(node.querySelector('[data-mark-arm]')!).stroke,
           }));
-          expect(semanticColors.stroke).toBe(semanticColors.color);
+          expect(semanticColors.ink).toBe(semanticColors.color);
         }
       }
     }
@@ -163,13 +162,13 @@ test('runs the mark only while active and holds neutral for reduced motion', asy
   const mark = component.locator('[data-slot="intent-mark-loader"]');
   await expect(mark).toHaveAttribute('data-motion-state', 'playing');
   expect(
-    await mark.evaluate(
-      (node) =>
-        node
-          .getAnimations({ subtree: true })
-          .filter((animation) => animation.effect?.getTiming().iterations === Infinity).length,
+    await mark.evaluate((node) =>
+      Array.from(node.querySelectorAll<SVGPathElement>('[data-mark-arm]')).map(
+        (arm) => arm.style.transform !== '' && arm.style.willChange === '',
+      ),
     ),
-  ).toBe(5);
+  ).toEqual([true, true, true, true, true]);
+  expect(await mark.evaluate((node) => node.getAnimations({ subtree: true }).length)).toBe(0);
 
   await mark.evaluate(
     (node) => ((window as typeof window & { thinkingRoot?: Element }).thinkingRoot = node),
@@ -219,6 +218,9 @@ test('updates localized phases, omits missing detail, and truncates without over
   await expect(component.getByTestId('streaming-status-thinking-label')).toHaveText('Thinking');
   const lifecycle = component.getByTestId('streaming-status-phase');
   await expect(lifecycle).toHaveText('Solicitud enviada al modelo…');
+  const row = component.locator('[data-streaming-typing-row]');
+  const before = await row.boundingBox();
+  expect(before).not.toBeNull();
 
   const truncation = await lifecycle.evaluate((node) => {
     const style = getComputedStyle(node);
@@ -250,10 +252,16 @@ test('updates localized phases, omits missing detail, and truncates without over
   await expect(component.getByTestId('streaming-status-phase')).toHaveText(
     'Transmitiendo respuesta…',
   );
+  const updated = await row.boundingBox();
+  expect(updated?.y).toBeCloseTo(before!.y, 1);
+  expect(updated?.height).toBeCloseTo(before!.height, 1);
 
   await component.update({
     props: { mode: 'streaming', phaseMessage: null, width: 160, zoom: 2 },
   });
   await expect(component.getByTestId('streaming-status-phase')).toHaveCount(0);
   await expect(component.getByRole('status')).toHaveAccessibleName('Loading');
+  const withoutDetail = await row.boundingBox();
+  expect(withoutDetail?.y).toBeCloseTo(before!.y, 1);
+  expect(withoutDetail?.height).toBeCloseTo(before!.height, 1);
 });

@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import QueuedMessageEditMotionHost from './QueuedMessageEditMotionHost.svelte';
 
 test.describe.configure({ mode: 'serial' });
@@ -67,7 +68,7 @@ for (const config of [
     await row.evaluate((node) => (node.dataset.identity = 'stable'));
     await startSampling(transcript, row);
 
-    await row.getByTestId('queued-message-content').click();
+    await row.getByTestId('queued-message-content').dblclick();
     const textarea = row.locator('textarea');
     await expect(textarea).toBeFocused();
     await textarea.fill('First line\nSecond line grows the editor\nThird line');
@@ -109,7 +110,7 @@ test('preserves a deliberately scrolled-up viewport during edit, refresh, reorde
   await startSampling(transcript, row, 36);
   // Locator.click() scrolls an off-screen target into view before dispatching
   // input, which would make this an automation-scroll test instead.
-  await row.getByTestId('queued-message-content').dispatchEvent('click');
+  await row.getByTestId('queued-message-content').dispatchEvent('dblclick');
   const textarea = row.locator('textarea');
   await textarea.evaluate((node, value) => {
     node.value = value;
@@ -131,7 +132,7 @@ test('completes reduced motion immediately and removes rows without residual spa
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(QueuedMessageEditMotionHost);
   const row = component.locator('[data-message-id="motion-0"]');
-  await row.getByTestId('queued-message-content').click();
+  await row.getByTestId('queued-message-content').dblclick();
   await expect(row.locator('textarea')).toBeFocused();
   // Reduced motion completes animations immediately, but finished transitions
   // can linger in getAnimations() for a frame or two under load — poll.

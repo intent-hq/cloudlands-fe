@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { SettingsDisclosure } from '$lib/components/patterns/settings';
+  import { Button, Input, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
   import {
-    selectModelEffortLevels,
+    selectProviderModelEffortLevels,
     selectSelectedModel,
   } from '$store/renderer/slices/model/model-selectors';
 
@@ -28,25 +30,18 @@
     saveFileSpecialist,
   } from '$store/renderer/slices/specialists/specialists-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import AgentRulesEditor from './AgentRulesEditor.svelte';
   import AutoSaveTextarea from './AutoSaveTextarea.svelte';
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import DefaultAgentModelSettings from './DefaultAgentModelSettings.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
-  import {
-    hasExplicitModelPin,
-    buildResetToInheritPayloads,
-  } from './utils/reset-specialists-to-inherit';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
-  import { parseCompoundModelId as parseCompoundModelIdWithDefault } from '$shared/utils/compound-model-id';
+  import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     generateUniqueSpecialistId,
@@ -81,12 +76,9 @@
     providerId: string;
     modelId: string;
   } {
-    return parseCompoundModelIdWithDefault(compoundModelId, $defaultProviderId$);
+    const { providerId, modelId } = splitLegacyCompoundId(compoundModelId);
+    return { providerId: providerId ?? $defaultProviderId$, modelId };
   }
-
-  // Show the reset-all button when any specialist pins an explicit
-  // frontmatter model instead of inheriting.
-  const anySpecialistHasExplicitModel = $derived(hasExplicitModelPin($fileSpecialists$));
 
   function getCurrentWorkspacePath(): string | undefined {
     if (!routeWorkspaceId) return undefined;
@@ -192,15 +184,19 @@
   // Sync specialist model value when specialist changes or file specialists
   // change. The picker's selected value is the EXPLICIT frontmatter model
   // only — undefined when inheriting (the daemon resolvedModel preview is
-  // shown via the picker's default-option plumbing instead).
+  // shown via the picker's default-option plumbing instead). The stored
+  // model is a BARE id (PROTOCOL §5.11); the picker boundary still speaks
+  // compound ids, so the effective codingAgent is recombined for display.
   $effect(() => {
     if (currentSpecialist) {
       void $fileSpecialists$; // track file specialist changes
-      _specialistCodingAgentValue = selectEffectiveCodingAgent.select(
-        appStore.state,
-        currentSpecialist.id,
-      );
-      specialistModelValue = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      const codingAgent = selectEffectiveCodingAgent.select(appStore.state, currentSpecialist.id);
+      _specialistCodingAgentValue = codingAgent;
+      const explicitModel = selectExplicitModel.select(appStore.state, currentSpecialist.id);
+      specialistModelValue =
+        explicitModel && codingAgent && !explicitModel.includes(':')
+          ? `${codingAgent}:${explicitModel}`
+          : explicitModel;
       specialistEffortValue = selectExplicitReasoningEffort.select(
         appStore.state,
         currentSpecialist.id,
@@ -211,18 +207,24 @@
   /**
    * Drop an effort level the given model does not advertise, so switching to
    * a model without that level resets the dropdown to Default instead of
-   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`).
+   * persisting an unsupported level (PROTOCOL §5.11 `reasoningEffort`). The
+   * lookup is provider-scoped: a cross-provider pick consults the resolved
+   * provider's cached catalog, not the active one.
    */
   function effortForModel(
-    compoundModelId: string | undefined,
+    providerId: string | undefined,
+    modelId: string | undefined,
     effort: string | undefined,
   ): string | undefined {
     if (!effort) return undefined;
-    const levels = selectModelEffortLevels.select(appStore.state, compoundModelId);
+    const levels = selectProviderModelEffortLevels.select(appStore.state, providerId, modelId);
     return levels?.includes(effort) ? effort : undefined;
   }
 
-  function handleSpecialistModelChange(compoundModelId: string) {
+  function handleSpecialistModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     if (!currentSpecialist) return;
 
     // Empty string = the inherit ("use global default") option was picked:
@@ -233,7 +235,11 @@
       specialistModelValue = undefined;
       // The effort level now applies to the inherited (daemon-resolved)
       // model — drop it when that model lacks the level.
-      const nextEffort = effortForModel(currentSpecialist.resolvedModel, specialistEffortValue);
+      const nextEffort = effortForModel(
+        currentSpecialist.resolvedProvider,
+        currentSpecialist.resolvedModel,
+        specialistEffortValue,
+      );
       specialistEffortValue = nextEffort;
       if (!isFileBased) return;
       const fileSpec = selectGetFileSpecialist.select(appStore.state, currentSpecialist.id);
@@ -271,12 +277,19 @@
       return;
     }
 
-    const { providerId: newProvider } = parseCompoundModelId(compoundModelId);
+    // Writes emit the bare model id only (PROTOCOL §5.11) — the provider
+    // rides the `codingAgent:` key, never a compound `model:` id. Prefer the
+    // resolved triple legs the picker emits (catalog-group attribution for
+    // bare cross-provider picks); fall back to splitting a legacy compound id
+    // (old persisted values).
+    const resolved = pick ?? parseCompoundModelId(compoundModelId);
+    const newProvider = resolved.providerId || $defaultProviderId$;
+    const bareModelId = resolved.modelId;
     _specialistCodingAgentValue = newProvider;
     specialistModelValue = compoundModelId;
     // Reset the effort to Default when the newly picked model does not
     // advertise the current level.
-    const nextEffort = effortForModel(compoundModelId, specialistEffortValue);
+    const nextEffort = effortForModel(newProvider || undefined, bareModelId, specialistEffortValue);
     specialistEffortValue = nextEffort;
 
     if (isFileBased) {
@@ -290,7 +303,7 @@
             name: fileSpec.name,
             description: fileSpec.description,
             codingAgent: newProvider,
-            model: compoundModelId,
+            model: bareModelId,
             roleReminder: fileSpec.roleReminder,
             modelOptions: fileSpec.modelOptions,
             reasoningEffort: nextEffort,
@@ -312,7 +325,7 @@
           name: currentSpecialist.name,
           description: currentSpecialist.description,
           codingAgent: newProvider,
-          model: compoundModelId,
+          model: bareModelId,
           roleReminder: currentSpecialist.roleReminder,
           modelOptions: currentSpecialist.modelOptions,
           reasoningEffort: nextEffort,
@@ -392,18 +405,24 @@
     );
   }
 
-  function handleCreateModelChange(compoundModelId: string) {
+  function handleCreateModelChange(
+    compoundModelId: string,
+    pick?: { providerId: string; modelId: string },
+  ) {
     // Empty string = the inherit ("use global default") option was picked.
     if (!compoundModelId) {
       newCodingAgent = undefined;
       newModel = undefined;
-      newEffort = effortForModel($selectedModel, newEffort);
+      newEffort = effortForModel($defaultProviderId$ || undefined, $selectedModel, newEffort);
       return;
     }
-    const { providerId } = parseCompoundModelId(compoundModelId);
-    newCodingAgent = providerId;
+    // Prefer the resolved triple legs the picker emits (catalog-group
+    // attribution for bare cross-provider picks); fall back to splitting a
+    // legacy compound id (old persisted values).
+    const resolved = pick ?? parseCompoundModelId(compoundModelId);
+    newCodingAgent = resolved.providerId || $defaultProviderId$;
     newModel = compoundModelId;
-    newEffort = effortForModel(compoundModelId, newEffort);
+    newEffort = effortForModel(newCodingAgent || undefined, resolved.modelId, newEffort);
   }
 
   function handlePromptSave(prompt: string) {
@@ -608,13 +627,16 @@
       newName.trim(),
       selectSpecialists.select(appStore.state).map((specialist) => specialist.id),
     );
+    // `newModel` carries the picker's compound id for display; writes emit
+    // the bare model id only (PROTOCOL §5.11), the provider on codingAgent.
+    const bareNewModel = newModel ? parseCompoundModelId(newModel).modelId : undefined;
     appStore.dispatch(
       saveFileSpecialist({
         id: createdId,
         name: newName.trim(),
         description: newDescription.trim() || m.settings_aiBehavior_customSpecialistFallback(),
         codingAgent: newCodingAgent,
-        model: newModel,
+        model: bareNewModel,
         reasoningEffort: newEffort,
         behaviorPrompt: newPrompt,
         scope: 'user',
@@ -625,7 +647,7 @@
     const expectedPath = folderPath
       ? `${folderPath}/${createdId}.md`
       : `~/.intent/specialists/${createdId}.md`;
-    toast.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
+    notify.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
       description: expectedPath.replace(/^\/Users\/[^/]+/, '~'),
     });
 
@@ -641,28 +663,6 @@
     newPrompt = m.settings_aiBehavior_newPromptTemplate();
     onDiscard?.();
   }
-
-  /**
-   * Clear the explicit model pin from every file specialist that
-   * has one so they all inherit the global default. Built-ins without an
-   * override file already inherit — no file is created for them. Built-in
-   * overrides that become identical to the bundled defaults once the pin
-   * is cleared are deleted instead of rewritten (monorepo#1450).
-   */
-  function resetAllSpecialistsToInherit() {
-    const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
-    const { saves, deletes } = buildResetToInheritPayloads(
-      $fileSpecialists$,
-      bundledSpecialists,
-      getCurrentWorkspacePath,
-    );
-    for (const payload of saves) {
-      appStore.dispatch(saveFileSpecialist(payload));
-    }
-    for (const ref of deletes) {
-      appStore.dispatch(deleteFileSpecialistAction(ref));
-    }
-  }
 </script>
 
 <div
@@ -675,29 +675,16 @@
   {#if activeView.type === 'system-prompt'}
     <div
       data-testid="all-agents-editor-layout"
-      class="grid min-w-0 grid-cols-1 gap-8 xl:h-full xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] xl:items-stretch"
+      class="flex min-w-0 flex-col gap-4 xl:h-full xl:min-h-0 xl:flex-1"
     >
+      <p class="type-body text-muted-foreground">
+        {m.settings_agentRules_description()}
+      </p>
       <div
         data-testid="all-agents-prompt-column"
-        class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
+        class="min-h-0 min-w-0 w-full xl:flex xl:flex-1 xl:flex-col"
       >
         <AgentRulesEditor class="xl:min-h-0 xl:flex-1" />
-      </div>
-
-      <div data-testid="all-agents-defaults-column" class="flex min-w-0 flex-col gap-6">
-        <p class="text-sm text-muted-foreground">
-          {m.settings_agentRules_description()}
-        </p>
-        <DefaultAgentModelSettings testId="all-agents-default-model-row" />
-        {#if anySpecialistHasExplicitModel}
-          <button
-            type="button"
-            onclick={resetAllSpecialistsToInherit}
-            class="self-start text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            {m.settings_aiBehavior_resetAllSpecialists()}
-          </button>
-        {/if}
       </div>
     </div>
 
@@ -717,7 +704,7 @@
           class="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2"
         >
           {#if !isBuiltIn && !hasOverrides}
-            <input
+            <Input
               type="text"
               value={currentSpecialist.name}
               onblur={(e) => handleNameSave(e.currentTarget.value)}
@@ -729,13 +716,13 @@
               }}
               aria-label={m.settings_aiBehavior_name_label()}
               placeholder={m.settings_aiBehavior_specialistName_placeholder()}
-              class="min-w-0 flex-1 text-base font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="min-w-0 flex-1 type-title font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
             />
           {:else}
-            <h2 class="text-base font-medium text-foreground">{currentSpecialist.name}</h2>
+            <h2 class="type-title font-medium text-foreground">{currentSpecialist.name}</h2>
             {#if isBuiltIn && hasOverrides}
               <span
-                class="text-xs px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
+                class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary-ink font-medium inline-flex items-center gap-1"
               >
                 <Fa icon={faPencil} class="w-2.5 h-2.5" />
                 {m.settings_aiBehavior_modifiedBadge()}
@@ -743,14 +730,16 @@
             {/if}
           {/if}
           {#if isBuiltIn && hasOverrides}
-            <button
+            <Button
+              variant="plain"
+              size="sm"
               type="button"
               onclick={resetToDefault}
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+              class="h-auto type-caption text-muted-foreground hover:text-foreground gap-1"
             >
               <Fa icon={faRotateLeft} class="w-3 h-3" />
               {m.settings_aiBehavior_reset()}
-            </button>
+            </Button>
           {/if}
           {#if specialistFilePath}
             <div class="ml-auto shrink-0">
@@ -773,7 +762,7 @@
         <!-- Specialist identity and source context. -->
         <div class="min-w-0">
           {#if !isBuiltIn && !hasOverrides}
-            <input
+            <Input
               type="text"
               value={currentSpecialist.description}
               onblur={(e) => handleDescriptionSave(e.currentTarget.value)}
@@ -784,14 +773,14 @@
                 }
               }}
               placeholder={m.settings_aiBehavior_specialistDescription_placeholder()}
-              class="w-full text-sm text-muted-foreground bg-transparent border-none outline-none px-0 py-0 mt-1 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="type-body mt-1 w-full border-none bg-transparent px-0 py-0 text-muted-foreground outline-none placeholder:text-muted-foreground focus:outline-none focus:ring-0"
             />
           {:else}
-            <p class="text-sm text-muted-foreground mt-1">{currentSpecialist.description}</p>
+            <p class="type-body mt-1 text-muted-foreground">{currentSpecialist.description}</p>
           {/if}
 
           {#if !isBuiltIn}
-            <p class="text-sm text-muted-foreground mt-2">
+            <p class="type-body mt-2 text-muted-foreground">
               {#if sourceLabel === 'Project'}
                 {m.settings_aiBehavior_projectInfo_before()}
                 <code class="bg-muted px-1 py-0.5 rounded break-all"
@@ -809,7 +798,7 @@
               {/if}
             </p>
           {/if}
-          <p class="text-sm text-muted-foreground mt-2">
+          <p class="type-body mt-2 text-muted-foreground">
             {m.settings_aiBehavior_usageHint()}
           </p>
         </div>
@@ -817,7 +806,7 @@
         <!-- Preserve the specialist model, reasoning, and delegation controls. -->
         <div class="min-w-0">
           <div class="flex min-w-0 flex-wrap items-center gap-3">
-            <span class="text-sm font-medium text-foreground shrink-0">
+            <span class="type-body shrink-0 font-medium text-foreground">
               {m.settings_aiBehavior_model_label()}
             </span>
             <ModelPicker
@@ -841,29 +830,32 @@
           <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
                the specialist id so draft rows never leak across specialist
                switches (remounting resets the component's local rows). -->
-          <details class="mt-4 min-w-0">
-            <summary class="text-ui cursor-pointer text-muted-foreground">
-              {m.settings_aiBehavior_advanced_label()}
-            </summary>
+          <SettingsDisclosure
+            label={m.settings_aiBehavior_advanced_label()}
+            class="mt-4"
+            flush
+            muted
+          >
             {#key currentSpecialist.id}
               <SpecialistModelOptions
                 savedOptions={savedModelOptions}
                 onCommit={handleModelOptionsCommit}
               />
             {/key}
-          </details>
+          </SettingsDisclosure>
         </div>
 
         {#if !isBuiltIn}
           <div class="pt-4 border-border">
-            <button
+            <Button
+              variant="ghost"
               type="button"
               onclick={deleteSpecialist}
-              class="text-xs text-muted-foreground hover:text-error-foreground transition-colors flex items-center gap-1.5 cursor-pointer"
+              class="type-body text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Fa icon={faTrash} class="w-3 h-3" />
               {m.settings_aiBehavior_deleteSpecialist()}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -880,22 +872,23 @@
         data-testid="create-specialist-prompt-column"
         class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
       >
-        <h2 class="mb-2 shrink-0 text-base font-medium text-foreground">
+        <h2 class="mb-2 shrink-0 type-title font-medium text-foreground">
           {m.settings_aiBehavior_createSpecialist_title()}
         </h2>
         <div class="flex min-h-0 flex-1 flex-col gap-1.5">
-          <textarea
+          <Textarea
             id="create-specialist-prompt"
             bind:value={newPrompt}
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
-            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
+            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 type-body
               focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
-              {newPromptIsOverLimit ? 'border-destructive' : ''}"></textarea>
+              {newPromptIsOverLimit ? 'border-danger' : ''}"
+          ></Textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
             <div
-              class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
-                ? 'text-destructive'
-                : 'text-warning'}"
+              class="flex shrink-0 items-center justify-end type-caption {newPromptIsOverLimit
+                ? 'text-danger'
+                : 'text-warning-ink'}"
             >
               <span>
                 {m.settings_autoSave_limitUsed({
@@ -917,7 +910,7 @@
         <div>
           <label
             for="create-specialist-name"
-            class="text-sm font-medium text-foreground block mb-1.5"
+            class="type-body font-medium text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_name_label()}
           </label>
@@ -933,7 +926,7 @@
         <div>
           <label
             for="create-specialist-description"
-            class="text-sm font-medium text-foreground block mb-1.5"
+            class="type-body font-medium text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_description_label()}
           </label>
@@ -947,7 +940,7 @@
         </div>
 
         <div class="flex items-center gap-3">
-          <span class="text-sm font-medium text-foreground shrink-0">
+          <span class="type-body shrink-0 font-medium text-foreground">
             {m.settings_aiBehavior_model_label()}
           </span>
           <ModelPicker
@@ -1007,10 +1000,5 @@
       height: 100%;
       min-height: 0;
     }
-  }
-
-  /* Warning color fallback */
-  .text-warning {
-    color: hsl(38, 92%, 50%);
   }
 </style>

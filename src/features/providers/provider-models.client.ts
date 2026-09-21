@@ -5,7 +5,7 @@
  * IPC channel. The main-process handlers (and the daemon-build mock-router
  * bridge in `model-catalog-bridge-seeder.ts`) are uniform thin calls to the
  * daemon's per-provider catalog (`models.list { providerId, forceRefresh }`,
- * PROTOCOL §6.7), so one client covers all nine providers.
+ * PROTOCOL §6.7), so one client covers all supported providers.
  *
  * `forceRefresh: true` makes the daemon skip its cache read and await a fresh
  * probe — the returned promise resolves only when the probe completes, so
@@ -21,6 +21,7 @@
 
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
@@ -58,11 +59,12 @@ interface GetModelsEnvelope {
 }
 
 /**
- * The nine uniform `<provider>:get-models` channels. Recorded in
+ * The uniform `<provider>:get-models` channels. Recorded in
  * `DYNAMIC_INVOKE_CALL_SITES` (ipc-channel-reconciliation.test.ts) because the
  * concrete channel is selected at runtime.
  */
 const PROVIDER_MODEL_CHANNELS: Record<string, string> = {
+  antigravity: 'antigravity:get-models',
   auggie: 'auggie:get-models',
   'claude-code': 'claude-code:get-models',
   codex: 'codex:get-models',
@@ -98,10 +100,12 @@ function toProviderError(providerId: string, message: string): Error {
  * (`window.electronAPI`) so the request reaches the live main-process handler.
  * Falls back to the mock-routed invoke when no real bridge is present
  * (daemon/web builds, unit tests) — there the channel is served by
- * `model-catalog-bridge-seeder.ts`.
+ * `model-catalog-bridge-seeder.ts`. The dev browser mock also installs a
+ * `window.electronAPI` (answering `*:get-models` with an empty catalog), so
+ * the platform detector — not bridge presence — decides the transport.
  */
 async function invokeModelChannel<T>(channel: string, data?: unknown): Promise<T> {
-  if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
+  if (isElectronPlatform() && window.electronAPI?.invoke) {
     return (await window.electronAPI.invoke(channel, data)) as T;
   }
   return await invoke<T>(channel, data);

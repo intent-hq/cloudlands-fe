@@ -51,7 +51,6 @@ test.describe('Build Smoke — Chat History Navigation', () => {
     console.log(
       `📝 Electron logs: main=${launched.logPaths.mainProcess}, renderer=${launched.logPaths.renderer}`,
     );
-
   });
 
   test.afterAll(async () => {
@@ -95,14 +94,11 @@ test.describe('Build Smoke — Chat History Navigation', () => {
       response: AGENT_RESPONSE,
     });
 
-    await app.evaluate(
-      (_electron, env) => {
-        for (const [k, v] of Object.entries(env)) {
-          process.env[k] = v;
-        }
-      },
-      mockEnv,
-    );
+    await app.evaluate((_electron, env) => {
+      for (const [k, v] of Object.entries(env)) {
+        process.env[k] = v;
+      }
+    }, mockEnv);
 
     // 1. Create workspace and wait for agent response
     const workspaceId = await createWorkspaceWithPrompt(page, {
@@ -135,7 +131,9 @@ test.describe('Build Smoke — Chat History Navigation', () => {
     const initialAssistantCount = await assistantMessages.count();
     expect(initialUserCount).toBeGreaterThanOrEqual(1);
     expect(initialAssistantCount).toBeGreaterThanOrEqual(1);
-    console.log(`✅ Initial messages verified (${initialUserCount} user + ${initialAssistantCount} assistant)`);
+    console.log(
+      `✅ Initial messages verified (${initialUserCount} user + ${initialAssistantCount} assistant)`,
+    );
 
     await takeScreenshot(page, 'nav-before-leaving');
 
@@ -182,11 +180,13 @@ test.describe('Build Smoke — Chat History Navigation', () => {
     await expect(assistantMessagesAfter.first()).toBeVisible({ timeout: 15_000 });
     const assistantCountAfter = await assistantMessagesAfter.count();
     expect(assistantCountAfter).toBeGreaterThanOrEqual(1);
-    console.log(`✅ Assistant messages persisted after navigation (${assistantCountAfter} of ${initialAssistantCount})`);
+    console.log(
+      `✅ Assistant messages persisted after navigation (${assistantCountAfter} of ${initialAssistantCount})`,
+    );
 
     await takeScreenshot(page, 'nav-after-returning');
 
     // Cleanup
-    await archiveAndGoHome(page, workspaceId).catch(() => { });
+    await archiveAndGoHome(page, workspaceId).catch(() => {});
   });
 });

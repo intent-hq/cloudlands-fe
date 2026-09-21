@@ -1,4 +1,3 @@
-
 export function decodeUrlPath(pathname: string): string | null {
   try {
     const decoded = decodeURIComponent(pathname);

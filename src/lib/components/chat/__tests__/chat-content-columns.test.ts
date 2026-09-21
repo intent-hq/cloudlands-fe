@@ -33,9 +33,7 @@ describe('chat content column contracts', () => {
       /class="composer-prompt-lane chat-content-measure mx-auto w-full min-w-0"[\s\S]*?data-testid="chat-composer-lane"/,
     );
     expect(panel).toContain('data-testid="chat-composer-controls-inner"');
-    expect(panel).toMatch(
-      /data-testid="chat-composer-lane"[\s\S]*?data-testid="question-wizard-slot"/,
-    );
+    expect(panel).toMatch(/data-testid="chat-composer-lane"[\s\S]*?<QuestionComposer/);
     expect(panel).toContain('.composer-prompt-layer :global(.rich-input-container)');
   });
 
@@ -46,10 +44,11 @@ describe('chat content column contracts', () => {
     );
   });
 
-  it('aligns queued-message surfaces with the prompt box at regular and Chief widths', () => {
+  it('renders queued-message surfaces inside the composer lane', () => {
     expect(panel).toMatch(
-      /data-testid="transcript-utility-stack"[\s\S]*?class="relative z-20 mt-6 \{isChiefWorkspace[\s\S]*?\? 'mx-1 sm:mx-2'[\s\S]*?: 'w-full'\}"[\s\S]*?data-testid="queued-message-utility-area"/,
+      /<SimpleRichInput[\s\S]*?\{#snippet queueRegion\(\)\}[\s\S]*?<QueuedMessageList[\s\S]*?<\/SimpleRichInput>/,
     );
+    expect(panel).not.toContain('data-testid="queued-message-utility-area"');
     expect(panel).not.toContain('queued-message-utility-wide');
     expect(panel).not.toContain("'-mx-4 sm:-mx-6'");
   });

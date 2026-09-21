@@ -28,9 +28,6 @@ export class LiveDraftsClient implements DraftsClient {
   }
 
   async clear(workspaceId: string, agentId: string) {
-    return await backendRequest<{ ok: true }>(
-      'drafts.clear',
-      { workspaceId, agentId }
-    );
+    return await backendRequest<{ ok: true }>('drafts.clear', { workspaceId, agentId });
   }
 }

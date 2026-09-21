@@ -118,7 +118,10 @@ export function defineMonacoThemes() {
  */
 export function applyCustomMonacoTheme(monacoThemeData: MonacoStandaloneThemeData): void {
   try {
-    monaco.editor.defineTheme('app-custom', monacoThemeData as Parameters<typeof monaco.editor.defineTheme>[1]);
+    monaco.editor.defineTheme(
+      'app-custom',
+      monacoThemeData as Parameters<typeof monaco.editor.defineTheme>[1],
+    );
     monaco.editor.setTheme('app-custom');
     customThemeActive = true;
   } catch (error) {

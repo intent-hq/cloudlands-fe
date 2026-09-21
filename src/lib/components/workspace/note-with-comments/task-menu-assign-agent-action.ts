@@ -10,6 +10,8 @@ import {
   removeTaskAgentAssociation,
 } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
+import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { Workspace } from '$shared/types';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { stripMarkdownFormatting } from '$shared/utils-client';
@@ -58,6 +60,16 @@ export async function runAssignAgentTaskMenuAction({
   storeDispatch: (action: AssignAgentStoreAction) => void;
   logger: LoggerLike;
 }): Promise<void> {
+  // The daemon refuses `agent.create` with -32003 for a collaborator
+  // connection; refuse here before any optimistic marker or wire call.
+  if (selectHidesAgentLifecycleActions.select(appStore.state, workspace.id)) {
+    logger.warn('Cannot assign an agent: agent lifecycle actions are not permitted here', {
+      workspaceId: workspace.id,
+      noteId,
+    });
+    return;
+  }
+
   const taskText = taskData.text || m.workspace_taskMenu_unknownTask_label();
   const taskPosition = parseInt(taskData.position) || 0;
   const occurrenceTaskKey = getTaskAssociationKeyAtPosition(editor, taskPosition, taskText);
@@ -171,14 +183,10 @@ export async function runAssignAgentTaskMenuAction({
     // preserved via a follow-up `agents.create`; the initial-message send and
     // explicit assignment are NOT re-issued here (known gap versus the retired
     // main-process handler).
-    const createResult = await appClient.tasks.createPrerequisite(
-      noteId,
-      sanitizedTitle,
-      {
-        content: taskNoteContent,
-        status: 'not_started',
-      },
-    );
+    const createResult = await appClient.tasks.createPrerequisite(noteId, sanitizedTitle, {
+      content: taskNoteContent,
+      status: 'not_started',
+    });
 
     if (!createResult.success || !createResult.id) {
       // Rollback: clear the optimistic agent ID and remove optimistic note
@@ -222,7 +230,10 @@ export async function runAssignAgentTaskMenuAction({
             let rekeyed = false;
             state.doc.descendants((node, pos) => {
               if (rekeyed) return false;
-              if (node.type.name === 'taskItem' && node.attrs.delegatedAgentId === optimisticAgentId) {
+              if (
+                node.type.name === 'taskItem' &&
+                node.attrs.delegatedAgentId === optimisticAgentId
+              ) {
                 tr.setNodeMarkup(pos, undefined, {
                   ...node.attrs,
                   delegatedAgentId: agentId,
@@ -237,13 +248,15 @@ export async function runAssignAgentTaskMenuAction({
           .run();
       }
 
-      storeDispatch(addTaskAgentAssociation(workspace.id, noteId, {
-        taskText,
-        taskKey,
-        agentId,
-        noteId,
-        createdAt: Date.now(),
-      }));
+      storeDispatch(
+        addTaskAgentAssociation(workspace.id, noteId, {
+          taskText,
+          taskKey,
+          agentId,
+          noteId,
+          createdAt: Date.now(),
+        }),
+      );
       logger.debug('Persisted task-agent association with daemon-assigned id', {
         taskText,
         taskKey,
@@ -332,24 +345,33 @@ export async function runAssignAgentTaskMenuAction({
         logger.debug('[convertToLinkedTask] Task not found by agentId, restoring associations', {
           agentId,
         });
-        restoreTaskAgentAssociations(editor, [{
-          taskText,
-          taskKey,
-          agentId,
-          noteId,
-          createdAt: Date.now(),
-        }], logger);
+        restoreTaskAgentAssociations(
+          editor,
+          [
+            {
+              taskText,
+              taskKey,
+              agentId,
+              noteId,
+              createdAt: Date.now(),
+            },
+          ],
+          logger,
+        );
         taskMatch = findTaskByAgentId();
       }
 
       // Step 3: If still not found, try by occurrence key/text as last resort
       if (!taskMatch) {
-        logger.debug('[convertToLinkedTask] Task still not found by agentId, trying by task key/text', {
-          agentId,
-          taskKey,
-          occurrenceTaskKey,
-          taskText,
-        });
+        logger.debug(
+          '[convertToLinkedTask] Task still not found by agentId, trying by task key/text',
+          {
+            agentId,
+            taskKey,
+            occurrenceTaskKey,
+            taskText,
+          },
+        );
         taskMatch = findTaskByKeyOrText();
       }
 
@@ -357,7 +379,7 @@ export async function runAssignAgentTaskMenuAction({
         logger.warn('[convertToLinkedTask] Task item not found by agentId or text', {
           agentId,
           noteId: taskNote.id,
-            taskKey,
+          taskKey,
           taskText,
         });
       } else {
@@ -429,7 +451,6 @@ export async function runAssignAgentTaskMenuAction({
         }
       }
     }
-
   } catch (error) {
     logger.error('Failed to graduate checklist item:', error);
     // Rollback: clear the optimistic agent ID and remove association

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { COMPOSER_INSET_CLASS } from './composer-inset';
   /* eslint-disable max-lines */
   /**
    * Chat Panel Component
@@ -35,6 +36,8 @@
    * - onChatUpdate: Callback for chat state updates
    */
 
+  import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { setComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { onMount, onDestroy, untrack, tick } from 'svelte';
   import { deepEqual } from 'fast-equals';
   import { writable } from 'svelte/store';
@@ -51,13 +54,13 @@
     saveAgentSessionRequested,
   } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
-    agentProposalResolveRequested,
     agentSessionDismissQuestionsRequested,
     agentSessionEditAndRegenerateRequested,
     agentSessionRegenerateFromMessageRequested,
     agentSessionRetryFromStalledRequested,
     agentSessionRetryLastMessageRequested,
     agentSessionRetryWithModelRequested,
+    agentSessionRetryWithProviderRequested,
     agentSessionStopChatRequested,
     clearHistorySegment,
     updateSession as updateAgentSessionFields,
@@ -76,18 +79,27 @@
   import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
   import { removeQueuedMessageRequested } from '$store/renderer/slices/agent-queue/agent-queue-slice';
   import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
+  import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
+  import { workspaceSetupScriptText } from '$features/workspace/utils/workspace-setup-script';
   import {
     acquireChatInterestLease,
     releaseChatInterestLease,
   } from '$features/agent/utils/chat-interest-leases';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import {
+    selectWorkspaceTasks,
+    selectWorkspaceTasksInitialized,
+  } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { selectAllTabs as selectPanelLayoutAllTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { clearBrowserElementCapture } from '$store/renderer/slices/browser/browser-slice';
+  import { selectPendingBrowserElementCaptures } from '$store/renderer/slices/browser/browser-selectors';
   import {
     setWorkspace as setMultiPanelWorkspace,
     updatePanels as updateMultiPanels,
     setSelection as setMultiPanelSelection,
     clearSelection as clearMultiPanelSelection,
+    clearChecked as clearMultiPanelChecked,
     type PanelContextItem,
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
   import {
@@ -100,6 +112,7 @@
 
   import {
     sendMessage,
+    sendQueuedMessageNowRequested,
     initializeChatRequested,
     refreshChatTranscriptRequested,
     chatRebindStarted,
@@ -118,11 +131,11 @@
   } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
     selectAwaitingSwitchBackSnapshot,
-    selectAwaitingUtilityFooter,
     selectChatError,
     selectChatFailureCorrelation,
     selectChatLastChunkTime,
     selectChatModelUnavailable,
+    selectChatQuotaExceeded,
     selectChatReceivedFirstChunk,
     selectChatStatusEvents,
     selectChatStreamingStartTime,
@@ -141,13 +154,25 @@
   import { appClient } from '$lib/client';
   import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import {
+    presenceTypingPulse,
+    presenceTypingStopped,
+  } from '$store/renderer/slices/presence/presence-slice';
+  import { selectPresenceOwnPrincipalId } from '$store/renderer/slices/presence/presence-selectors';
+  import PresenceTypingIndicator from '$features/presence/components/PresenceTypingIndicator.svelte';
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
-  import type { Workspace, AgentMetadata } from '$shared/types';
+  import type { Workspace, AgentMetadata, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
+  import {
+    appendContextItemContent,
+    browserCaptureTargetsAgent,
+    browserCaptureToContextItems,
+  } from './browser-capture-context';
   import { createFileDropTarget } from '$lib/utils/file-drop';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import type { DropSplit } from '$lib/utils/drop-split';
   import { getPanelFileDropContext } from '$lib/components/layout/panel-system/panel-file-drop-context.svelte';
   import { createChatDraftManager } from './chat-panel-draft.svelte';
@@ -164,7 +189,7 @@
   } from './new-messages-divider';
   import EventWakeupBanner from './EventWakeupBanner.svelte';
   import ConversationTurnGap from './ConversationTurnGap.svelte';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import { getAgentStopReasonTimestamp } from '$shared/utils/agent-attention';
@@ -175,39 +200,16 @@
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
+  import QuestionComposer from './questions/QuestionComposer.svelte';
   import {
     deriveMarkedQuestionRecoveryState,
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
-  import ProposalTray, { trayBodyMaxHeight } from './proposals/ProposalTray.svelte';
-  import {
-    derivePendingProposalRecoveryState,
-    deriveTrayPendingProposals,
-    proposalTrayVisible,
-  } from './proposals/proposal-tray-gate';
-  import {
-    clearTrayDraft,
-    loadTrayCollapsed,
-    saveTrayCollapsed,
-  } from './proposals/proposal-tray-storage';
-  import {
-    classifyPendingProposalRefs,
-    type PendingProposalEntry,
-  } from './proposals/pending-proposals';
-  import { getProposalId } from './proposals/proposal-id';
-  import {
-    applySpecialistProposal,
-    undoSpecialistProposal,
-  } from './proposals/specialist-proposal-actions';
-  import {
-    applySettingsProposal,
-    undoSettingsProposal,
-  } from './proposals/settings-proposal-actions';
-  import { applyWorkspaceProposal } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { derivePendingProposalRecoveryState } from './proposals/pending-proposal-recovery';
+  import { classifyPendingProposalRefs } from './proposals/pending-proposals';
+  import { reconcileAppliedProposals } from './proposals/proposal-action-handlers';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
-  import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
-  import type { ProposalActionDetail } from '$shared/types/proposal';
   import {
     initialWizardCollapsed,
     saveWizardCollapsed,
@@ -237,6 +239,7 @@
     captureScrollAnchor,
     followBottom,
     followToBottom,
+    hasActiveFollowBottomMutation,
     restoreScrollAnchor,
     type FollowBottomState,
   } from '$lib/utils/smartScroll';
@@ -245,9 +248,9 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import Fa from 'svelte-fa';
-  import { faLock, faPaperclip, faSpinner, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
-  import { fade } from 'svelte/transition';
-  import { safeSlide } from '$lib/utils/animations';
+  import { faLock, faPaperclip, faSquareCheck } from '@fortawesome/free-solid-svg-icons';
+  import { crispOut, spring, springIn } from '$lib/motion';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { navigateToTask } from '$lib/utils/workspace-navigation';
   import { seekConversationToMessage } from '$lib/utils/open-message';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -256,7 +259,13 @@
   import AutoCommitStatus, { type CommitStatus } from './AutoCommitStatus.svelte';
   import QueuedMessageList from './QueuedMessageList.svelte';
   import EventSubscriptionsCard from './EventSubscriptionsCard.svelte';
-  import Button from '../ui/button/button.svelte';
+  import {
+    deriveTaskProgressFromNativePlan,
+    selectNativeExecutionPlan,
+    type TaskProgressItem,
+  } from './workspace-task-fallback';
+  import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -270,11 +279,17 @@
     type UserMessageNavigationItem,
   } from './chat-message-navigation';
   import { parseSuggestedPromptsFromContentBlocks } from '$lib/utils/messageParser';
-  import { getQueueInfo, isBatchedDeliverySeam, stripDequeueWaitNote } from '$lib/utils/queue-info';
+  import { isBatchedDeliverySeam } from '$lib/utils/queue-info';
+  import { isEventWakeMessage } from './event-wake-summary';
   import {
     eventCardAssistantMarginClass,
     isAttentionQuestionAnswerSeam,
   } from './attention-flow-spacing';
+  import {
+    getSubscriptionCardSeam,
+    hasVisibleTurnBody,
+    isChatCardMessage,
+  } from './subscription-card-spacing';
   import {
     captureMessageSendOrigin,
     createMessageSendLaunchBubble,
@@ -282,7 +297,7 @@
   import { createPendingSendTransitions } from './pending-send-transitions';
 
   import LazyTurn from './LazyTurn.svelte';
-  import PinnedUserPrompt from './PinnedUserPrompt.svelte';
+  import PinnedTurnPrompt from './PinnedTurnPrompt.svelte';
   import {
     attachPinnedPromptMessage,
     trackPinnedPrompt,
@@ -294,7 +309,12 @@
     createLazyTurnHeightCache,
     type LazyTurnHeightCache,
   } from './lazy-turn-height-cache';
-  import { createMessageHydrationPolicy, type HydrationMessage } from './message-hydration-policy';
+  import {
+    CHAT_HYDRATION_FRAME_BUDGET_MS,
+    CHAT_HYDRATION_MAX_ROWS_PER_FRAME,
+    createMessageHydrationPolicy,
+    type HydrationMessage,
+  } from './message-hydration-policy';
   import {
     CHIEF_LAZY_MESSAGE_THRESHOLD,
     INITIAL_LAZY_MODE_TRACKER,
@@ -311,7 +331,10 @@
   } from './temporary-turn-materialization';
   import InlinePermissionRequest from './InlinePermissionRequest.svelte';
   import { selectPermissionRequests } from '$store/renderer/slices/permission/permission-selectors';
-  import { selectIsAgentMonospace } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectChatAuroraEnabled,
+    selectIsAgentMonospace,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     markAgentAsViewed,
     clearCurrentlyViewedAgent,
@@ -335,8 +358,16 @@
   import {
     selectEffectiveDefaultProviderId,
     selectProviderAuthFailureGuidance,
+    selectProviderCatalogEntries,
     selectProviderCatalogLoaded,
+    selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectAvailableEnabledProviderIds,
+    selectEnabledProviders,
+    selectQuotaRetryProviderIds,
+  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectProviderStatusMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { canChangeAgentProvider as resolveCanChangeAgentProvider } from './provider-lock';
   import ModelChangeNotice from './ModelChangeNotice.svelte';
@@ -347,6 +378,7 @@
     indexConversationTurns,
     type ConversationTurn,
   } from './conversation-turns';
+  import { createChatTranscriptStructureProjector } from './chat-transcript-structure';
   import {
     collectSearchRanges,
     createRangeForSpan,
@@ -365,7 +397,11 @@
     shouldShowTranscriptSkeleton,
     shouldShowTranscriptUtilityStack,
   } from './chat-panel-visibility';
-  import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
+  import {
+    isUserQueuedMessage,
+    omitDrainedQueuedMessages,
+  } from '$lib/utils/queued-message-visibility';
+  import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import {
     findPreviousUserMessage,
     isAutomatedChatMessage,
@@ -377,6 +413,7 @@
 
   const logger = createLogger('ChatPanel');
 
+  const chatAuroraEnabled$ = selectChatAuroraEnabled();
   const isAgentMonospace = selectIsAgentMonospace();
 
   // Constants
@@ -408,6 +445,7 @@
     /** Whether this panel is focused (has DOM focus within panel wrapper) */
     isPanelFocused?: boolean;
     onNavigationStateChange?: (state: ChatNavigationState) => void;
+    onTaskProgressChange?: (tasks: TaskProgressItem[]) => void;
   }
 
   let {
@@ -428,6 +466,7 @@
     onChatUpdate,
     isPanelFocused = false,
     onNavigationStateChange,
+    onTaskProgressChange,
   }: Props = $props();
 
   // True when this panel is rendering the Chief workspace, which opens directly
@@ -448,6 +487,7 @@
 
   // Reactive subscription to all panel-layout tabs — triggers availablePanelContexts recompute on tab changes
   const allPanelLayoutTabs$ = selectPanelLayoutAllTabs(workspaceIdStore);
+  const pendingBrowserElementCaptures$ = selectPendingBrowserElementCaptures(workspaceIdStore);
 
   // Redux selectors for chat values — called at init time, reactive via Svelte store protocol
   // Broad selector rationale: ChatPanel passes the materialized session to
@@ -472,6 +512,8 @@
   // statuses across all pending proposals at once.
   const proposalLifecycleMap$ = selectProposalLifecycleMap();
   const agentTasks$ = selectTasksForAgent(workspaceIdStore, agentIdStore);
+  const workspaceTasks$ = selectWorkspaceTasks(workspaceIdStore);
+  const workspaceTasksInitialized$ = selectWorkspaceTasksInitialized(workspaceIdStore);
   const queuedMessages$ = selectAgentQueueMessages(agentIdStore);
   const chatStreamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const chatError$ = selectChatError(agentIdStore);
@@ -479,6 +521,21 @@
   const chatStreamingStartTime$ = selectChatStreamingStartTime(agentIdStore);
   const chatLastChunkTime$ = selectChatLastChunkTime(agentIdStore);
   const chatModelUnavailable$ = selectChatModelUnavailable(agentIdStore);
+  // Quota-exceeded recovery (#4455): the provider that ran out on the last
+  // turn, plus the sibling providers we may offer instead.
+  const chatQuotaExceeded$ = selectChatQuotaExceeded(agentIdStore);
+  // Reactivity anchors for the quota-retry offer list: the enabled/available
+  // set, the raw enabled flags, and the per-provider auth flags all live in
+  // other slices. The raw flags are anchored separately because the picker set
+  // always admits the default provider, so toggling it leaves that array
+  // shallow-equal and the selector stream deduplicates the change away.
+  const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
+  const enabledProviders$ = selectEnabledProviders();
+  const providerStatusMap$ = selectProviderStatusMap();
+  // Read purely as a reactivity anchor for the display-name derivation below:
+  // provider display names come from the catalog, which hydrates
+  // asynchronously and can land after the quota failure does.
+  const providerCatalogEntries$ = selectProviderCatalogEntries();
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
@@ -493,10 +550,6 @@
   // Switch-back gate: true while a re-viewed conversation's (re)opening
   // standing subscription has not yet delivered its fresh seq-0 snapshot.
   const awaitingSwitchBackSnapshot$ = selectAwaitingSwitchBackSnapshot(agentIdStore);
-  // Utility-footer gate: true while the footer data sources (subscriptions,
-  // hooks, monitored PRs) have not all settled — transcript and footer
-  // reveal in the same paint (saga-cleared, bounded fallback).
-  const awaitingUtilityFooter$ = selectAwaitingUtilityFooter(agentIdStore);
   // Indeterminate first-hydration gate: while the INITIAL hydration is in
   // flight (never settled before for this agent), a partially-loaded message
   // list — e.g. the standing subscription's newest page landing ahead of the
@@ -512,11 +565,21 @@
       $transcriptSnapshotMeta$?.totalMessages ?? 0,
     ),
   );
+  // The transcript is KNOWN empty (not merely not-yet-hydrated): hydration
+  // settled, no switch-back snapshot outstanding, and no durable evidence of
+  // messages. A fresh mount over a still-hydrating conversation must not be
+  // mistaken for an empty chat.
+  const transcriptSettledEmpty = $derived(
+    $agentMessages$.length === 0 &&
+      $transcriptHydration$ === 'settled' &&
+      !$awaitingSwitchBackSnapshot$ &&
+      !authoritativeConversationEvidence,
+  );
   // Latched "New messages" divider viewing session (entry-only, frozen).
   const dividerSession$ = selectDividerSession(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(isDelegatedBackgroundTaskSession($agentSession$));
 
-  // Retired sessions (PROTOCOL v7.5+, retiredAt set) are read-only: the transcript
+  // Retired sessions (PROTOCOL §5.5 soft retire, retiredAt set) are read-only: the transcript
   // stays viewable but the composer is replaced with a restore affordance.
   const isRetiredSession = $derived(!!$agentSession$?.retiredAt);
 
@@ -631,8 +694,23 @@
   // svelte-ignore state_referenced_locally -- this records the identity at instance creation.
   logger.debug('[ChatPanel] INSTANCE CREATED', { instanceId, agentId });
 
+  let panelInterestAgentId: string | null = null;
+
+  function activePanelInterestAgentId(): string | null {
+    return isActive && agentId && !agentId.startsWith('terminal-') ? agentId : null;
+  }
+
+  function transferPanelInterestLease(nextAgentId: string | null): void {
+    if (nextAgentId === panelInterestAgentId) return;
+    if (nextAgentId) acquireChatInterestLease(nextAgentId, instanceId);
+    const previousAgentId = panelInterestAgentId;
+    panelInterestAgentId = nextAgentId;
+    if (previousAgentId) releaseChatInterestLease(previousAgentId, instanceId);
+  }
+
   let scrollContainer = $state<HTMLDivElement>();
   let composerElement = $state<HTMLDivElement>();
+  let panelHeight = $state(0);
   let composerHeight = $state(0);
   let inputComponent = $state<SimpleRichInput>();
   // Rehydrate the transcript scroll state cached by the previous instance's
@@ -658,7 +736,7 @@
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
-      getUserMessageNavigationItems($agentMessages$),
+      getUserMessageNavigationItems($agentMessages$, workspace?.ownerPrincipalId),
     ),
   );
 
@@ -753,8 +831,15 @@
 
   // Batch-end callback: one hydratedMessageIds rebuild per policy call, not
   // one per transitioned row (a mass transition would otherwise be O(n²)).
+  // Staged hydration waits out a followed-bottom mutation lease (the events
+  // footer disclosure motion) so a row it sweeps into the preload band does
+  // not mount mid-motion.
   const messageHydrationPolicy = createMessageHydrationPolicy([], {
     onHydrationChange: syncHydratedMessageIds,
+    isHydrationHeld: () =>
+      scrollContainer !== undefined && hasActiveFollowBottomMutation(scrollContainer),
+    frameBudgetMs: CHAT_HYDRATION_FRAME_BUDGET_MS,
+    maxRowsPerFrame: CHAT_HYDRATION_MAX_ROWS_PER_FRAME,
   });
 
   $effect(() => {
@@ -862,20 +947,6 @@
     if (turn) smoothScrollTo(turn, 'start');
   }
 
-  function getPinnedPromptText(message: AgentMessage): string {
-    const extracted = extractAllContent(message);
-    const text = getQueueInfo(message.metadata) ? stripDequeueWaitNote(extracted) : extracted;
-    if (text.trim()) return text.trim();
-    const attachment = message.contentBlocks?.find(
-      (block) => block.type === 'image' || block.type === 'file',
-    );
-    if (attachment?.type === 'file' && attachment.fileName) return attachment.fileName;
-    if (attachment?.type === 'image') {
-      return m.chat_chatMessage_attachedImage_fallback({ number: '1' });
-    }
-    return m.chat_shared_context_fallback();
-  }
-
   // CRITICAL: Destruction flag to prevent async callbacks from accessing reactive state after destruction.
   // This prevents "N is not a function" errors when Svelte's reactive system tries to call
   // nullified internal functions. This MUST be set FIRST in onDestroy, before any other cleanup.
@@ -941,12 +1012,13 @@
 
   // Agent Q&A: the daemon's pending marker is authoritative when present, so
   // its selected question-bearing assistant message stays pending across later
-  // rows until cleared, dismissed, or superseded. Transcript parsing remains
-  // the content source; legacy sessions use the daemon's non-system tail rule.
-  // The gate (own active turn, NOT the broad running gate — an agent paused
-  // on delegated agents has ended its turn and its questions must surface)
-  // lives in deriveWizardPendingQuestions so the regression suite exercises
-  // the real production gate.
+  // rows AND later automatic/user turns until cleared, dismissed, or
+  // superseded. Transcript parsing remains the content source; legacy sessions
+  // use the daemon's non-system tail rule, gated on the agent's own active
+  // turn (NOT the broad running gate — an agent paused on delegated agents has
+  // ended its turn and its questions must surface). Both live in
+  // deriveWizardPendingQuestions so the regression suite exercises the real
+  // production gate.
   const markedQuestionRecovery = $derived.by(() => {
     void $agentMessages$;
     void $agentHistoryMessages$;
@@ -978,11 +1050,14 @@
     // Reading $agentIsResponding$ keeps this $derived reactive to gate flips
     // that do not change the transcript; the dismissal marker read keeps it
     // reactive to metadata-only session updates (optimistic dismiss /
-    // agent:updated); the shared helper re-reads both from store state.
+    // agent:updated); the queue read keeps it reactive to a tagged answer
+    // entering/leaving the agent's queue; the shared helper re-reads all of
+    // them from store state.
     void $agentIsResponding$;
     void $agentSession$?.metadata?.dismissedQuestionsMessageId;
     void $agentSession$?.metadata?.pendingQuestionsMessageId;
     void $pendingQuestionRecovery$;
+    void $queuedMessages$;
     return deriveWizardPendingQuestions(
       appStore.state,
       agentId,
@@ -1032,12 +1107,25 @@
   // `questions_dismissed`, `source: 'system'`, unknown types) stay hidden —
   // the list, its count, and the up-arrow edit path all use this filtered
   // view (display-only; the daemon queue and drain order are untouched).
-  const visibleQueuedMessages = $derived($queuedMessages$.filter(isUserQueuedMessage));
+  // Entries already drained into the transcript (row stamped with
+  // `queueInfo.queuedMessageId`) are omitted while the shrunk queue snapshot
+  // is still in flight, so an answer never renders twice.
+  const visibleQueuedMessages = $derived(
+    omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
+  );
+
+  // Queue-surface attribution (multiplayer w2): on only once the workspace
+  // has more than one member. Entries carry their own `author` projection;
+  // the transcript's projections are the fallback for daemons that stamp
+  // `fromPrincipalId` only.
+  const queuedMessageAuthors = $derived(
+    getQueueSurfaceAuthors(workspace?.memberCount, $agentMessages$),
+  );
+  // The viewer's own rows carry no author identity (transcript and queue).
+  const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
 
   // Queue visibility around the wizard: hidden while the wizard is expanded,
-  // shown with a held-for-questions hint while Ignore-collapsed (the daemon
-  // parks automatic deliveries behind the pending Q&A — question hold,
-  // PROTOCOL §5.5). Derivation shared with the regression suite.
+  // shown while Ignore-collapsed. Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
     deriveQueuedMessagesVisibility({
       queueLength: visibleQueuedMessages.length,
@@ -1049,8 +1137,9 @@
     chatTranscriptBottomInsetClass({
       isChiefWorkspace,
       isCompactMode,
-      // Mirrors the render gate: retired sessions hide the queue block.
-      showQueue: queuedMessagesVisibility.showQueue && !isRetiredSession,
+      // The queue now lives in the composer, so the transcript always owns its
+      // normal trailing inset.
+      showQueue: false,
     }),
   );
 
@@ -1058,7 +1147,8 @@
   // `dismissedQuestionsMessageId` into session metadata optimistically (the
   // wizard-gate reads it, so the wizard hides immediately) and forwards
   // `agent.dismissQuestions` — the daemon persists the marker (survives
-  // reload) and releases the question hold. On failure the middleware rolls
+  // reload) and clears the pending question set, so the sticky wizard stays
+  // hidden across later turns. On failure the middleware rolls
   // the metadata back, so the wizard re-surfaces, and surfaces the error toast.
   // Returns the action promise so the wizard clears its stored draft only
   // after the dismissal is confirmed (a failure keeps the draft).
@@ -1096,25 +1186,8 @@
     void performLocalSendCleanup({ followBottom: true });
   }
 
-  // ── Pending-proposal tray (composer slot) ────────────────────────────────
-  // Derived from the daemon's `pendingProposals` session metadata (PROTOCOL
-  // §5.5) intersected with transcript resource blocks + the targeted-recovery
-  // cache. Unlike the Q&A wizard there is NO turn-active gating: proposals
-  // hold no deliveries, so the tray stays visible/actionable while the agent
-  // runs later turns. The void reads keep the $derived reactive to every
-  // store input the shared helper re-reads from state.
-  const trayPendingProposals = $derived.by(() => {
-    void $agentSession$?.metadata?.pendingProposals;
-    void $pendingProposalRecovery$;
-    void $proposalLifecycleMap$;
-    return deriveTrayPendingProposals(appStore.state, agentId, $agentMessages$);
-  });
-  const showProposalTray = $derived(
-    proposalTrayVisible({
-      hasPendingProposals: trayPendingProposals.length > 0,
-      hasPendingQuestions: !!pendingQuestions,
-      questionWizardCollapsed,
-    }),
+  const pendingProposalRefs = $derived(
+    classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals),
   );
 
   // Targeted recovery for refs whose carrying message is not hydrated
@@ -1131,7 +1204,7 @@
   });
   $effect(() => {
     if ($agentSession$?.id !== agentId) return;
-    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
+    const refs = pendingProposalRefs;
     const tracked = $pendingProposalRecovery$;
     const keep = [...new Set(refs.map((ref) => ref.messageId))];
     if (tracked && Object.keys(tracked).some((messageId) => !keep.includes(messageId))) {
@@ -1145,118 +1218,21 @@
     }
   });
 
-  // Measured panel height driving the tray body's scroll cap, so a tall
-  // proposal card in a short/narrow panel (the Chief sidebar) scrolls
-  // internally instead of pushing the composer out of reach.
-  let panelClientHeight = $state(0);
-
-  // Hide state is host-owned and persisted per agent, like the wizard's
-  // collapse flag; the initial value restores from storage (untracked so the
-  // load never re-runs on unrelated state flips).
-  let proposalTrayCollapsedOverride = $state<{ agentId: string; collapsed: boolean } | null>(null);
-  const proposalTrayCollapsed = $derived.by(() => {
-    if (proposalTrayCollapsedOverride?.agentId === agentId) {
-      return proposalTrayCollapsedOverride.collapsed;
-    }
-    return untrack(() => loadTrayCollapsed(agentId)) ?? false;
-  });
-
-  // Apply routing: workspace-create/bulk-op go through the
-  // workspace-operations saga, specialist edits through the specialist
-  // actions, everything else through the settings actions. Lifecycle success
-  // is bridged to the daemon resolution below.
-  function handleProposalTrayApply(detail: ProposalActionDetail) {
-    const { proposal } = detail;
-    if (proposal.kind === 'workspace-create' || proposal.kind === 'bulk-op') {
-      appStore.dispatch(
-        applyWorkspaceProposal({
-          proposal,
-          editedFields: detail.editedFields,
-          selectedBulkItemIds: detail.selectedBulkItemIds,
-        }),
-      );
-      return;
-    }
-    if (applySpecialistProposal(detail)) return;
-    applySettingsProposal(detail);
-  }
-
-  function handleProposalTrayUndo(proposalId: string) {
-    if (undoSpecialistProposal(proposalId)) return;
-    undoSettingsProposal(proposalId);
-  }
-
-  // Dismiss is persistent: `agent.resolveProposal { outcome: 'dismissed' }`.
-  // The wire ack reconciles lifecycle (the saga dispatches
-  // proposalResolutionReconciled), which retires the entry from the gate; a
-  // failure (middleware toasts) rethrows so the tray keeps the entry pending.
-  async function handleProposalTrayDismiss(entry: PendingProposalEntry): Promise<void> {
-    if (!workspace) return;
-    proposalResolveSent.add(entry.proposalId);
-    const action = agentProposalResolveRequested(agentId, workspace.id, {
-      proposalId: entry.proposalId,
-      outcome: 'dismissed',
-    });
-    appStore.dispatch(action);
-    try {
-      await action.promise;
-      clearTrayDraft(agentId, entry.proposalId);
-    } catch (error) {
-      proposalResolveSent.delete(entry.proposalId);
-      throw error;
-    }
-  }
-
   // Apply→resolve bridge. Applies key lifecycle under
   // `getProposalId(proposal)` — which can differ from the daemon's metadata
-  // ref key — and the gate retires an entry the instant its lifecycle turns
-  // 'applied', so the bridge works off a captured ref→local identity
-  // map rather than the filtered entries. Any still-pending metadata ref
+  // ref key. Inline proposal hosts capture the ref→local identity while they
+  // are rendered. Any still-pending metadata ref
   // whose lifecycle shows 'applied' under either identity gets ONE
   // resolve(applied) (daemon resolution is idempotent; first outcome wins).
-  const trayProposalIdentities = new Map<string, string>();
-  const proposalResolveSent = new Set<string>();
-  $effect(() => {
-    for (const entry of trayPendingProposals) {
-      trayProposalIdentities.set(entry.proposalId, getProposalId(entry.proposal));
-    }
-  });
   $effect(() => {
     const wsId = workspace?.id;
     if (!wsId || $agentSession$?.id !== agentId) return;
-    const lifecycle = $proposalLifecycleMap$ ?? {};
-    const refs = classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals);
-    for (const ref of refs) {
-      if (proposalResolveSent.has(ref.proposalId)) continue;
-      const localId = trayProposalIdentities.get(ref.proposalId);
-      const scopedEntry = lifecycle[agentScopedProposalKey(agentId, ref.proposalId)];
-      const localEntry = localId !== undefined ? lifecycle[localId] : undefined;
-      const appliedEntry =
-        scopedEntry?.status === 'applied'
-          ? scopedEntry
-          : localEntry?.status === 'applied'
-            ? localEntry
-            : undefined;
-      if (!appliedEntry) continue;
-      proposalResolveSent.add(ref.proposalId);
-      clearTrayDraft(agentId, ref.proposalId);
-      // Workspace-create applies carry the created workspace id in the
-      // lifecycle result; forward it as the resolution detail so the
-      // daemon's applied notice gives the model the created-workspace
-      // context (PROTOCOL §5.5).
-      const createdWorkspaceId = appliedEntry.result?.workspaceId;
-      // i18n-ignore (wire detail appended to the model notice, not UI copy)
-      const detail = createdWorkspaceId ? `Created workspace ${createdWorkspaceId}.` : undefined;
-      const action = agentProposalResolveRequested(agentId, wsId, {
-        proposalId: ref.proposalId,
-        outcome: 'applied',
-        ...(detail ? { detail } : {}),
-      });
-      appStore.dispatch(action);
-      // A wire failure (middleware toasts) drops the sent mark so a later
-      // pass retries the resolution — mirrors the dismiss path.
-      action.promise.catch(() => proposalResolveSent.delete(ref.proposalId));
-    }
+    reconcileAppliedProposals({
+      agentId,
+      workspaceId: wsId,
+      refs: pendingProposalRefs,
+      lifecycle: $proposalLifecycleMap$ ?? {},
+    });
   });
 
   // Search state
@@ -1266,6 +1242,8 @@
   // intermediate keystrokes don't trigger a full rewalk + turn re-render cascade.
   let debouncedSearchQuery = $state('');
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  type PendingSearchWork = { bindingKey: string };
+  let pendingSearchWork: PendingSearchWork | null = null;
   const SEARCH_DEBOUNCE_MS = 150;
   // Number of match-neighbors (before + after the current index) to force-render
   // via LazyTurn in addition to the current match's turn. Keeps initial search
@@ -1357,7 +1335,12 @@
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
   const allSearchMatches = $derived.by(() => {
-    return findChatSearchMatches($agentMessages$, debouncedSearchQuery, messageIdToTurnKey);
+    return findChatSearchMatches(
+      $agentMessages$,
+      debouncedSearchQuery,
+      messageIdToTurnKey,
+      workspace?.ownerPrincipalId,
+    );
   });
 
   // Derive the match count from allSearchMatches
@@ -1610,6 +1593,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (debouncedSearchQuery !== searchQuery) {
       debouncedSearchQuery = searchQuery;
     }
@@ -1625,6 +1609,7 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     showSearch = false;
     searchQuery = '';
     debouncedSearchQuery = '';
@@ -1648,24 +1633,50 @@
   // Handle search input changes — debounce the expensive match derivation so
   // intermediate keystrokes don't trigger a full rewalk + LazyTurn re-render
   // cascade. An empty query flushes immediately to clear highlights.
+  function searchBindingKey(): string {
+    return `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
+  }
+
+  function armPendingSearch(work: PendingSearchWork) {
+    if (searchDebounceTimer !== null) return;
+    const timer = setTimeout(() => {
+      if (searchDebounceTimer !== timer) return;
+      searchDebounceTimer = null;
+      if (
+        isComponentDestroyed ||
+        !isActive ||
+        !showSearch ||
+        pendingSearchWork !== work ||
+        work.bindingKey !== searchBindingKey()
+      ) {
+        return;
+      }
+      pendingSearchWork = null;
+      if (debouncedSearchQuery === searchQuery) return;
+      debouncedSearchQuery = searchQuery;
+      triggerHighlight();
+    }, SEARCH_DEBOUNCE_MS);
+    searchDebounceTimer = timer;
+  }
+
   function handleSearchInput() {
     if (!isActive) return;
     currentSearchIndex = 0;
+    if (debouncedSearchQuery !== searchQuery) searchHighlightRequest += 1;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingSearchWork = null;
     if (!searchQuery.trim()) {
       debouncedSearchQuery = '';
       triggerHighlight();
       return;
     }
-    searchDebounceTimer = setTimeout(() => {
-      if (!isActive) return;
-      searchDebounceTimer = null;
-      debouncedSearchQuery = searchQuery;
-      triggerHighlight();
-    }, SEARCH_DEBOUNCE_MS);
+    if (debouncedSearchQuery === searchQuery) return;
+    const work = { bindingKey: searchBindingKey() };
+    pendingSearchWork = work;
+    armPendingSearch(work);
   }
 
   function openSearchFromSelection() {
@@ -1677,6 +1688,7 @@
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = null;
       }
+      pendingSearchWork = null;
       searchQuery = selectedText;
       debouncedSearchQuery = selectedText;
       currentSearchIndex = 0;
@@ -1691,15 +1703,62 @@
     });
   }
 
+  // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
+  let lastSearchBindingKey = searchBindingKey();
   $effect(() => {
-    if (isActive) return;
-    searchHighlightRequest += 1;
-    if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = null;
+    const bindingKey = searchBindingKey();
+    if (bindingKey !== lastSearchBindingKey) {
+      lastSearchBindingKey = bindingKey;
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      pendingSearchWork = null;
+      return;
+    }
+    if (!isActive) {
+      searchHighlightRequest += 1;
+      if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+      return;
+    }
+    const work = pendingSearchWork;
+    if (!work) return;
+    if (!showSearch || searchQuery === debouncedSearchQuery || work.bindingKey !== bindingKey) {
+      pendingSearchWork = null;
+      return;
+    }
+    armPendingSearch(work);
   });
 
-  // Context items for the input
-  let contextItems = $state<ContextItem[]>([]);
+  // The composer and Context sidebar share one canonical attachment collection.
+  const composerContext$ = selectComposerContextItems(workspaceIdStore, agentIdStore);
+  let contextFiles = $state.raw<Record<string, File>>({});
+  const contextItems = $derived(
+    $composerContext$.map((item) => ({ ...item, file: contextFiles[item.id] })),
+  );
+
+  // Track readable emissions for rendering, but read Redux synchronously so consecutive
+  // input edits and send/restore see changes before the next coalesced emission.
+  function getContextItems(): ContextItem[] {
+    void $composerContext$;
+    return selectComposerContextItems
+      .select(appStore.state, workspace?.id ?? '', agentId ?? '')
+      .map((item) => ({ ...item, file: contextFiles[item.id] }));
+  }
+
+  function setContextItems(items: ContextItem[]) {
+    contextFiles = Object.fromEntries(
+      items.flatMap((item) => (item.file ? [[item.id, item.file]] : [])),
+    );
+    if (!workspace?.id || !agentId) return;
+    appStore.dispatch(
+      setComposerContextItems(
+        workspace.id,
+        agentId,
+        items.map(({ file: _file, ...item }) => item),
+      ),
+    );
+  }
 
   // Input value
   let inputValue = $state(
@@ -1732,6 +1791,14 @@
     pendingDraftWrite = { workspaceId, agentId, draft };
   }
 
+  // Presence typing (multiplayer w5): each user edit is a pulse for this
+  // agent; an emptied composer ends the episode at once (the saga throttles
+  // the wire sends and ends an idle episode on its own).
+  function reportTypingActivity(value: string): void {
+    if (!agentId) return;
+    appStore.dispatch(value.trim() ? presenceTypingPulse(agentId) : presenceTypingStopped());
+  }
+
   // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
   let lastDraftBindingKey = `${workspace?.id ?? ''}\u0000${agentId ?? ''}`;
   $effect(() => {
@@ -1760,14 +1827,6 @@
    */
   function isAutomatedMessage(message: AgentMessage): boolean {
     return isAutomatedChatMessage(message);
-  }
-
-  function isEventWakeMessage(message?: AgentMessage): boolean {
-    if (!message) return false;
-    return (
-      message.metadata?.type === 'event_notification' ||
-      extractAllContent(message).trim().startsWith('[WORKSPACE EVENTS]')
-    );
   }
 
   // Initialize input history from existing chat messages
@@ -1811,12 +1870,35 @@
     agentId: () => agentId,
     inputValue: () => inputValue,
     setInputValue: (text) => (inputValue = text),
-    contextItems: () => contextItems,
-    setContextItems: (items) => (contextItems = items),
+    contextItems: getContextItems,
+    setContextItems,
+    contextItemsAreScoped: true,
     applyEditorContent: (text) => inputComponent?.setContent?.(text),
     onSaveError: (err) => {
       logger.warn('[ChatPanel] Failed to save draft', { error: String(err) });
     },
+  });
+
+  $effect(() => {
+    const captures = $pendingBrowserElementCaptures$;
+    const workspaceId = workspace?.id;
+    if (!workspaceId || !agentId || !isActive || captures.length === 0) return;
+
+    const targeted = captures.filter((capture) => browserCaptureTargetsAgent(capture, agentId));
+    if (targeted.length === 0) return;
+
+    untrack(() => {
+      const currentItems = getContextItems();
+      const existingIds = new Set(currentItems.map((item) => item.id));
+      const additions = targeted
+        .flatMap(browserCaptureToContextItems)
+        .filter((item) => !existingIds.has(item.id));
+      if (additions.length > 0) setContextItems([...currentItems, ...additions]);
+    });
+    for (const capture of targeted) {
+      appStore.dispatch(clearBrowserElementCapture(workspaceId, capture.id));
+    }
+    void tick().then(() => inputComponent?.focus?.());
   });
 
   // Reference to QueuedMessageList for programmatic editing via Up arrow
@@ -2130,25 +2212,19 @@
   // Alias for backward compatibility
   let pendingInitialPrompt = $derived(pendingInitialData.prompt);
 
-  // Transcript reveal deferral: keep the indeterminate skeleton up (and
-  // suppress everything that would paint stale conversation state) until the
-  // resubscribe snapshot applies AND the utility-footer data sources settle
-  // (or the subscription closes / the saga-owned bounded fallback clears the
-  // gates) — then reveal transcript and footer in one paint.
+  // Transcript reveal deferral: keep the indeterminate skeleton up until the
+  // resubscribe snapshot applies (or the saga-owned bounded recovery clears
+  // the gate). Utility-footer reads populate independently after reveal.
   const deferTranscriptReveal = $derived(
     shouldDeferTranscriptReveal({
       awaitingSwitchBackSnapshot: $awaitingSwitchBackSnapshot$,
-      awaitingUtilityFooter: $awaitingUtilityFooter$,
       transcriptHydratedOnce: $transcriptHydratedOnce$,
       hasPendingInitialPrompt: Boolean(pendingInitialPrompt),
     }),
   );
 
-  // Utility stack gate: the hooks/monitors/subscriptions card never renders
-  // before the transcript reveal — hidden until this agent's first hydration
-  // settles and the reveal deferral clears, so it mounts in the SAME flip
-  // that reveals the transcript (data prefetch is unaffected; only the
-  // render is gated).
+  // The utility stack never precedes the transcript. Once transcript hydration
+  // settles, each footer source owns its loading/failure/empty presentation.
   const showTranscriptUtilityCard = $derived(
     shouldShowTranscriptUtilityStack({
       transcriptHydratedOnce: $transcriptHydratedOnce$,
@@ -2156,6 +2232,26 @@
       revealDeferred: deferTranscriptReveal,
     }),
   );
+  // Cache each segment by its selector reference. Live text and session/task
+  // updates must not rescan unchanged scrollback history for a native plan.
+  const historyNativePlan = $derived(selectNativeExecutionPlan([$agentHistoryMessages$]));
+  const liveNativePlan = $derived(selectNativeExecutionPlan([$agentMessages$]));
+  const taskProgressItems = $derived(
+    showTranscriptUtilityCard
+      ? deriveTaskProgressFromNativePlan(
+          {
+            initialized: $workspaceTasksInitialized$,
+            tasks: $workspaceTasks$,
+            session: $agentSession$ ?? null,
+          },
+          liveNativePlan.present ? liveNativePlan : historyNativePlan,
+        )
+      : [],
+  );
+
+  $effect(() => {
+    onTaskProgressChange?.(taskProgressItems);
+  });
 
   // Provider/model lock — prevents changing provider or model after any message
   let canChangeProvider = $derived(
@@ -3275,22 +3371,20 @@
     }
     return true;
   }
-  // Get the auggie session ID from the most recent assistant message's metadata
-  // This is the raw UUID format that auggie uses, needed for debugging/support
-  let auggieSessionId = $derived.by(() => {
-    // Look for auggieSessionId in assistant messages (most recent first)
-    for (let i = $agentMessages$.length - 1; i >= 0; i--) {
-      const msg = $agentMessages$[i];
-      if (msg.role === 'assistant' && msg.metadata?.auggieSessionId) {
-        return msg.metadata.auggieSessionId as string;
-      }
-    }
-    return undefined;
-  });
-
-  // PERF: Pre-compute total turn count for lazy loading decisions
-  // Count user messages as proxy for turns (each user message starts a turn)
-  const totalTurnCount = $derived($agentMessages$.filter((m) => m.role === 'user').length);
+  // Structural transcript metadata is derived in one pass. During a live turn,
+  // replacing only the final assistant row's content reuses this projection;
+  // ChatMessage keeps subscribing to that row by id, so volatile text stays live.
+  const projectTranscriptStructure = createChatTranscriptStructureProjector();
+  const transcriptStructure = $derived(
+    projectTranscriptStructure({
+      messages: $agentMessages$,
+      isStreaming: $agentSessionIsStreaming$,
+      isActive,
+      snapshotSequence: $transcriptSnapshotMeta$?.seq,
+    }),
+  );
+  const auggieSessionId = $derived(transcriptStructure.latestAuggieSessionId);
+  const totalTurnCount = $derived(transcriptStructure.userTurnCount);
 
   // PERF: Enable lazy loading only for larger conversations, latched across
   // background older-history prepends (see nextLazyMode). The decision crosses
@@ -3316,28 +3410,6 @@
       messageThreshold,
     );
     return lazyModeTracker.mode;
-  });
-
-  // PERF: Pre-compute message index and turn number maps for O(1) lookups
-  // This avoids O(n²) complexity from indexOf/slice/filter in the render loop
-  const messageIndexMap = $derived.by(() => {
-    const map = new Map<string, number>();
-    for (let i = 0; i < $agentMessages$.length; i++) {
-      map.set($agentMessages$[i].id, i);
-    }
-    return map;
-  });
-
-  const messageTurnNumberMap = $derived.by(() => {
-    const map = new Map<string, number>();
-    let turnCount = 0;
-    for (const message of $agentMessages$) {
-      if (message.role === 'assistant') {
-        turnCount++;
-        map.set(message.id, turnCount);
-      }
-    }
-    return map;
   });
 
   // Track previous message count and newest row to detect new messages and to
@@ -3405,11 +3477,11 @@
 
   // Helper functions for O(1) lookups
   function getMessageIndex(messageId: string): number {
-    return messageIndexMap.get(messageId) ?? -1;
+    return transcriptStructure.messageIndexById.get(messageId) ?? -1;
   }
 
   function getMessageTurnNumber(messageId: string): number {
-    return messageTurnNumberMap.get(messageId) ?? 0;
+    return transcriptStructure.assistantTurnNumberById.get(messageId) ?? 0;
   }
 
   // Compute the turn structure and both virtualization/search indexes in one
@@ -3456,6 +3528,103 @@
   // Map each messageId to its enclosing turnKey. Used by allSearchMatches so that
   // matches in virtualized message placeholders can be force-rendered during search.
   const messageIdToTurnKey = $derived(conversationTurnIndex.turnKeyByMessageId);
+
+  let offscreenPendingProposalMessageId = $state<string | null>(null);
+
+  function findPendingProposalCard(
+    message: HTMLElement,
+    ref: PendingProposalRef,
+    claimed: Set<Element> = new Set(),
+  ): HTMLElement | null {
+    const exact = message.querySelector<HTMLElement>(
+      `[data-apply-tool-call-id="${CSS.escape(ref.proposalId)}"]`,
+    );
+    if (exact && !claimed.has(exact)) return exact;
+    return (
+      Array.from(message.querySelectorAll<HTMLElement>('[data-proposal-kind]')).find(
+        (candidate) => !claimed.has(candidate),
+      ) ?? null
+    );
+  }
+
+  // Watch pending turns against the transcript viewport. The persistent
+  // LazyTurn shell survives content hydration changes, so observation does
+  // not go stale when a card is replaced by a placeholder and restored.
+  $effect(() => {
+    const refs = pendingProposalRefs;
+    const root = scrollContainer;
+    void $agentMessages$;
+    void $pendingProposalRecovery$;
+    void $proposalLifecycleMap$;
+    if (!isActive || !root || refs.length === 0) {
+      offscreenPendingProposalMessageId = null;
+      return;
+    }
+
+    let disposed = false;
+    let observer: IntersectionObserver | null = null;
+    tick().then(() => {
+      if (disposed || !isActive || scrollContainer !== root) return;
+      const refKeysByTarget = new Map<Element, string[]>();
+      const visibility = new Map<string, boolean>();
+      const claimed = new Set<Element>();
+      const recovered = $pendingProposalRecovery$;
+      for (const ref of refs) {
+        const refKey = `${ref.messageId}\u0000${ref.proposalId}`;
+        const message = root.querySelector<HTMLElement>(
+          `[data-message-id="${CSS.escape(ref.messageId)}"]`,
+        );
+        let target = message?.closest<HTMLElement>('[data-lazy-turn-key]') ?? null;
+        if (!target) {
+          const turnKey = messageIdToTurnKey.get(ref.messageId);
+          target = turnKey
+            ? root.querySelector<HTMLElement>(`[data-lazy-turn-key="${CSS.escape(turnKey)}"]`)
+            : null;
+        }
+        if (!target && message) target = findPendingProposalCard(message, ref, claimed);
+        if (!target) {
+          const recoveredEntry = recovered?.[ref.messageId];
+          if (
+            recoveredEntry?.status === 'found' &&
+            recoveredEntry.proposals?.some((entry) => entry.proposalId === ref.proposalId)
+          ) {
+            visibility.set(refKey, false);
+          }
+          continue;
+        }
+        claimed.add(target);
+        refKeysByTarget.set(target, [...(refKeysByTarget.get(target) ?? []), refKey]);
+      }
+      if (refKeysByTarget.size === 0 || typeof IntersectionObserver === 'undefined') {
+        offscreenPendingProposalMessageId =
+          refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+            ?.messageId ?? null;
+        return;
+      }
+      offscreenPendingProposalMessageId =
+        refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+          ?.messageId ?? null;
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            for (const refKey of refKeysByTarget.get(entry.target) ?? []) {
+              visibility.set(refKey, entry.isIntersecting);
+            }
+          }
+          offscreenPendingProposalMessageId =
+            refs.find((ref) => visibility.get(`${ref.messageId}\u0000${ref.proposalId}`) === false)
+              ?.messageId ?? null;
+        },
+        { root, threshold: 0.01 },
+      );
+      for (const target of refKeysByTarget.keys()) observer.observe(target);
+    });
+
+    return () => {
+      disposed = true;
+      observer?.disconnect();
+    };
+  });
 
   // --- Auto-commit status (fetched once, shared across all AutoCommitStatus instances) ---
   let autoCommitStatuses = $state<CommitStatus[]>([]);
@@ -3542,6 +3711,10 @@
 
   // Initialize chat on mount
   onMount(() => {
+    // Establish interest before initialization can open a subscription and
+    // before any viewed-agent sweep can decide which registrations to keep.
+    transferPanelInterestLease(activePanelInterestAgentId());
+
     logger.info('ChatPanel mounted', {
       instanceId,
       agentId,
@@ -3601,9 +3774,23 @@
           repoPath: workspace.repositoryPath || '',
           specialistName: session?.name,
           specialistId: (session?.metadata as any)?.specialist,
-          setupScript: workspace.setupScript,
+          // The wire serves `setupScript` as a `{ script, ... }` record
+          // (PROTOCOL §5.25); the card renders the script text.
+          setupScript: workspaceSetupScriptText(workspace.setupScript),
           skipWorktree: workspace.skipWorktree,
         };
+        // `setupScript` is detail-only (absent from slim `workspace.list`
+        // rows), so an undefined value on the list-backed prop does not mean
+        // "no script". Pull the detail once (single-flighted per workspace)
+        // and patch the setup card when it arrives.
+        if (isInitialWorkspaceAgent && workspace.setupScript === undefined) {
+          const wsId = workspace.id;
+          void ensureWorkspaceDetail(wsId).then((detail) => {
+            const setupScript = workspaceSetupScriptText(detail?.setupScript);
+            if (!setupScript || !onboardingContext || workspace?.id !== wsId) return;
+            onboardingContext = { ...onboardingContext, setupScript };
+          });
+        }
       }
     }
 
@@ -3615,7 +3802,12 @@
     // delivered message once it arrives.
 
     // Empty chats start at the top and unlock until the first send. Non-empty
-    // chats are positioned by the follow action itself.
+    // chats are positioned by the follow action itself. A still-hydrating
+    // transcript (empty store, hydration not settled) is left untouched: the
+    // first-hydration auto-scroll effect owns that entry. The settled-empty
+    // branch only fires on a remount over an already-settled store (a new
+    // agent's hydration settles after this frame); either way an empty
+    // container sits at 0, so this is a no-op safeguard, not the entry owner.
     const initialScrollFrame = requestAnimationFrame(() => {
       if (!isActive) return;
       if (scrollContainer) {
@@ -3628,7 +3820,7 @@
             shouldFollowBottom = true;
             followToBottom(scrollContainer);
           }
-        } else {
+        } else if (transcriptSettledEmpty) {
           // Scroll to top for empty panel (shows specialist switcher)
           scrollContainer.scrollTop = 0;
           // Don't auto-follow until user sends a message
@@ -3641,10 +3833,7 @@
   });
 
   $effect(() => {
-    const interestedAgentId = agentId;
-    if (!isActive || !interestedAgentId || interestedAgentId.startsWith('terminal-')) return;
-    acquireChatInterestLease(interestedAgentId, instanceId);
-    return () => releaseChatInterestLease(interestedAgentId, instanceId);
+    transferPanelInterestLease(activePanelInterestAgentId());
   });
 
   // ── Auto-focus on mount (used by Chief of Staff) ──
@@ -3778,7 +3967,7 @@
       targetScrollTop = scrollContainer.scrollTop + (elementRect.bottom - containerRect.bottom) + 1;
     }
 
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    if (prefersReducedMotion()) {
       scrollContainer.scrollTop = targetScrollTop;
       return;
     }
@@ -3786,9 +3975,9 @@
   }
 
   /**
-   * Smoothly scroll to a specific position with 150ms animation.
+   * Smoothly scroll to a specific position with the moderate motion tier.
    */
-  function smoothScrollToPosition(top: number, duration: number = 150) {
+  function smoothScrollToPosition(top: number, duration: number = spring.moderate.settleMs) {
     if (!isActive) return;
     animateScrollTo(() => (isActive ? scrollContainer : null), top, duration);
   }
@@ -4036,6 +4225,9 @@
   // dehydrate once hydrated (see message-hydration-policy.ts).
   $effect(() => {
     const messages = hydrationMessages;
+    messageHydrationPolicy.setScope(
+      `${String(workspace?.id ?? '')}:${agentId}:${$agentSession$?.backendSessionId ?? $agentSession$?.acpSessionId ?? ''}`,
+    );
     messageHydrationPolicy.setActive(isActive);
     if (!isActive) return;
     messageHydrationPolicy.updateMessages(messages);
@@ -4095,6 +4287,25 @@
     return null;
   }
 
+  async function scrollToPendingProposal(): Promise<void> {
+    const messageId = offscreenPendingProposalMessageId;
+    const ref = pendingProposalRefs.find((candidate) => candidate.messageId === messageId);
+    if (!messageId || !ref) return;
+    if (!messageIdToTurnKey.has(messageId)) {
+      if (!(await seekConversationToMessage(agentId, messageId)) || !isActive) return;
+      await tick();
+    }
+    const message = await forceRenderAndFindMessage(messageId);
+    if (!message || !isActive) return;
+    await tick();
+    if (!isActive) return;
+    const target = findPendingProposalCard(message, ref) ?? message;
+    smoothScrollTo(target, 'center');
+    target.classList.add('highlight-flash');
+    scheduleHighlightRemoval(target, 'highlight-flash', 1500);
+    scheduleDeepOpenRelease();
+  }
+
   // Entry positioning for the unread marker: force-render the anchor message's
   // turn (it may be a virtualized LazyTurn placeholder), then decide where to
   // land. If the divider would still be visible with the viewport scrolled
@@ -4141,7 +4352,7 @@
       scrollContainer.clientHeight,
       scrollContainer.scrollHeight,
     );
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    if (prefersReducedMotion()) {
       scrollContainer.scrollTop = entryScrollTop;
     } else {
       smoothScrollToPosition(entryScrollTop);
@@ -4310,8 +4521,6 @@
             if (newHeight !== composerHeight) {
               composerHeight = newHeight;
             }
-          } else if (entry.target === panelElement) {
-            panelClientHeight = entry.contentRect.height;
           }
         }
         if (scrollContainerResized && scrollContainer) {
@@ -4323,9 +4532,6 @@
       });
       observer.observe(scrollContainer);
       observer.observe(composerElement);
-      // The panel root's height is layout-fixed (h-full), so observing it
-      // creates no feedback loop with the tray's capped body height.
-      if (panelElement) observer.observe(panelElement);
     };
     readinessFrame = requestAnimationFrame(setupWhenReady);
 
@@ -4456,6 +4662,7 @@
     // from accessing reactive state after destruction, which would cause
     // "N is not a function" errors in Svelte's reactive system.
     isComponentDestroyed = true;
+    transferPanelInterestLease(null);
     flushPendingDraftWrite();
     flushPendingSelectionWrites();
     cancelAllSendTransitions();
@@ -4498,6 +4705,8 @@
 
     logger.info('ChatPanel destroyed', { instanceId, agentId });
     // Clean up subscriptions and scroll manager
+    searchHighlightRequest += 1;
+    pendingSearchWork = null;
     if (searchDebounceTimer !== null) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
@@ -4518,7 +4727,9 @@
     const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
 
     onChatUpdate({
-      lastUserMessage: lastUserMessage ? getPresentedUserMessageText(lastUserMessage) : undefined,
+      lastUserMessage: lastUserMessage
+        ? getPresentedUserMessageText(lastUserMessage, workspace?.ownerPrincipalId)
+        : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
       isProcessing: $agentIsResponding$,
       messageCount: messages.length,
@@ -4551,30 +4762,22 @@
 
   // Handle sending a queued message immediately (interrupts current stream).
   // One atomic daemon call (`agent.sendQueuedMessageNow`, monorepo#1032): the
-  // send middleware needs only agentId/wsId/queuedMessageId — the daemon owns
+  // saga needs only agentId/wsId/queuedMessageId — the daemon owns
   // the entry's content/attachments and dequeues + delivers transactionally.
-  function handleSendQueuedMessageNow(messageId: string) {
-    const message = $queuedMessages$.find((m) => m.id === messageId);
-    if (!message || !workspace) return;
-
+  async function handleSendQueuedMessageNow(messageId: string) {
+    if (!workspace) throw new Error(m.agent_chatSend_sendNowRejected_error());
     logger.info('Send queued message now triggered', { messageId, agentId });
-
-    appStore.dispatch(
-      sendMessage(agentId, {
-        wsId: workspace.id,
-        text: message.content,
-        queuedMessageId: messageId,
-      }),
-    );
-
-    void performLocalSendCleanup({
-      clearInput: false,
-      followBottom: true,
-    });
+    const action = sendQueuedMessageNowRequested(agentId, workspace.id, messageId);
+    appStore.dispatch(action);
+    const outcome = await action.promise;
+    if (outcome === 'delivered') {
+      void performLocalSendCleanup({ clearInput: false, followBottom: true });
+    }
+    return outcome;
   }
 
   // Build workspace context string for agent messages
-  function buildWorkspaceContextString(): string {
+  function buildWorkspaceContextString(items: ContextItem[] = []): string {
     const parts: string[] = [];
 
     // Add context from checked panels in the multi-panel context store
@@ -4620,7 +4823,7 @@
       parts.push(`[Selected text${source}:\n\`\`\`\n${displayText}\n\`\`\`]`);
     }
 
-    return parts.join('\n');
+    return appendContextItemContent(parts.join('\n'), items);
   }
 
   // Input history navigation callbacks (terminal-like up/down arrow)
@@ -4719,10 +4922,17 @@
       // Once this send owns the empty state, that stale response must not
       // restore the just-sent prompt into the editor.
       draftManager.invalidatePendingRestore();
-      contextItems = [];
+      setContextItems([]);
+      // Checked panels/selections were folded into this send; uncheck them so
+      // they do not ride along with the next message. A selection write still
+      // deferred to the next frame must land first, or it would re-check
+      // itself after the cleanup.
+      flushPendingSelectionWrites();
+      appStore.dispatch(clearMultiPanelChecked());
       inputValue = '';
       inputComponent?.clear();
       commitDraftWrite('');
+      appStore.dispatch(presenceTypingStopped());
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
@@ -4774,11 +4984,18 @@
     // shared/domain cleanup, and send side effects live in sagas.
     const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
     const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-    if (!workspace || !isActive) return;
+    if (!workspace || !isActive) {
+      logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
+        agentId,
+        hasWorkspace: !!workspace,
+        isActive,
+      });
+      return;
+    }
     flushPendingDraftWrite();
 
-    const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
-    const workspaceContextStr = buildWorkspaceContextString();
+    const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
+    const workspaceContextStr = buildWorkspaceContextString(allContextItems);
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
@@ -4856,7 +5073,7 @@
       if (result.redriven === false) {
         // Nothing was queued to redrive — the error is cleared, but no new
         // turn starts. Tell the user what to do next instead of a silent no-op.
-        toast.info(m.chat_chatPanel_nothingToRetry_toast());
+        notify.info(m.chat_chatPanel_nothingToRetry_toast());
       }
       return;
     }
@@ -4869,6 +5086,14 @@
   function handleRetryWithModel(model: string) {
     if (!workspace) return;
     appStore.dispatch(agentSessionRetryWithModelRequested(agentId, workspace.id, model));
+  }
+
+  // Handle retrying the quota-failed turn on a different provider (#4455).
+  // The saga owns the two-step move (resolve a model on the target provider,
+  // switch the live session, then redrive) — this only names the provider.
+  function handleRetryWithProvider(providerId: string) {
+    if (!workspace) return;
+    appStore.dispatch(agentSessionRetryWithProviderRequested(agentId, workspace.id, providerId));
   }
 
   // Handle retrying from a stalled turn: cancel it and re-send the same input
@@ -4884,7 +5109,43 @@
   // guard.
   const gatedRetry = $derived(isRetiredSession ? undefined : handleRetry);
   const gatedRetryWithModel = $derived(isRetiredSession ? undefined : handleRetryWithModel);
+  const gatedRetryWithProvider = $derived(isRetiredSession ? undefined : handleRetryWithProvider);
   const gatedStalledRetry = $derived(isRetiredSession ? undefined : handleStalledRetry);
+
+  /**
+   * The exhausted provider, carrying its catalog display name — StreamingStatus
+   * cannot resolve that name itself because the offer list below deliberately
+   * excludes the exhausted provider.
+   */
+  const quotaExceeded = $derived.by(() => {
+    const quota = $chatQuotaExceeded$;
+    if (!quota) return null;
+    void $providerCatalogEntries$;
+    return {
+      ...quota,
+      displayName: selectProviderDisplayName.select(appStore.state, quota.providerId),
+    };
+  });
+
+  /**
+   * Providers we can offer as a quota retry target: the
+   * "enabled ∧ visible ∧ probe-available ∧ signed-in" set minus the provider
+   * that just ran out (`selectQuotaRetryProviderIds`). Offering the exhausted
+   * one back would only reproduce the same failure, a signed-out one would be
+   * a dead end, and an empty list makes StreamingStatus fall back to the plain
+   * error banner rather than dangling a dead action.
+   */
+  const quotaRetryProviders = $derived.by(() => {
+    const quota = $chatQuotaExceeded$;
+    if (!quota) return [];
+    void $providerCatalogEntries$;
+    void $availableEnabledProviderIds$;
+    void $enabledProviders$;
+    void $providerStatusMap$;
+    return selectQuotaRetryProviderIds
+      .select(appStore.state, quota.providerId)
+      .map((id) => ({ id, displayName: selectProviderDisplayName.select(appStore.state, id) }));
+  });
 
   // Handle changing the specialist for an agent
   // The specialist can be changed at any time - even after messages have been sent.
@@ -4972,8 +5233,8 @@
 
     logger.info('Force submit triggered', { agentId });
 
-    const allContextItems = [...contextItems, ...inlineImageItems, ...mentionContextItems];
-    const workspaceContextStr = buildWorkspaceContextString();
+    const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
+    const workspaceContextStr = buildWorkspaceContextString(allContextItems);
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
     const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
@@ -5061,9 +5322,16 @@
   // Handle regenerating from a specific assistant message
   function handleRegenerateFromMessage(assistantMessageId: string) {
     if (!workspace) return;
-    appStore.dispatch(
-      agentSessionRegenerateFromMessageRequested(agentId, workspace.id, assistantMessageId),
+    const action = agentSessionRegenerateFromMessageRequested(
+      agentId,
+      workspace.id,
+      assistantMessageId,
     );
+    appStore.dispatch(action);
+    // Failures are surfaced via toast by the regenerate saga (before it
+    // delegates) or by the edit-regenerate saga it delegates to; swallow the
+    // rejection here.
+    action.promise.catch(() => {});
   }
 
   // Handle selecting a suggested prompt - sends immediately
@@ -5100,7 +5368,7 @@
     if (!isActive) return;
     const container = scrollContainer;
     if (!container) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    if (prefersReducedMotion()) {
       shouldFollowBottom = true;
       followToBottom(container);
       return;
@@ -5235,7 +5503,7 @@
 <svelte:window
   onkeydown={(e) => {
     if (!isActive) return;
-    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+    const isMac = navigator.platform.toUpperCase().includes('MAC');
     if (
       isPanelFocused &&
       !isFocusInEditableElement(e.target as Element | null) &&
@@ -5245,7 +5513,7 @@
       focusPrompt();
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+    if (!e.defaultPrevented && matchesShortcut(e, 'mod+f', isMac)) {
       // Only open search if this panel is focused and active, and focus is not in terminal
       if (
         isPanelFocused &&
@@ -5289,7 +5557,8 @@
 
 <div
   bind:this={panelElement}
-  class="group/panel flex flex-col h-full w-full min-w-0 relative z-20"
+  bind:clientHeight={panelHeight}
+  class="chat-panel-container group/panel flex flex-col h-full w-full min-w-0 relative z-20"
   role="region"
   aria-label={agentName}
   data-agent-model={agentModel}
@@ -5309,12 +5578,13 @@
 >
   <!-- The regular Aurora belongs to the complete chat surface, not the inset
        composer lane. It inherits the real Panel radius for its own bottom clip. -->
-  {#if $agentSessionIsStreaming$ && !isChiefWorkspace}
+  {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && !isChiefWorkspace}
     <div
       class="composer-aurora-host regular-panel-aurora-host pointer-events-none absolute inset-x-0 bottom-0 z-0 overflow-hidden"
       style:height={`calc(${composerHeight}px + 10rem)`}
       data-testid="composer-aurora-host"
-      transition:fade
+      in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+      out:crispOut={{ tier: 'moderate' }}
     >
       <AuroraBackground {agentId} />
     </div>
@@ -5326,7 +5596,7 @@
       class="absolute inset-0 z-50 flex items-center justify-center rounded-lg border border-dashed border-primary bg-primary/5 pointer-events-none"
       data-testid="chat-panel-drop-overlay"
     >
-      <div class="flex flex-col items-center gap-2 text-primary">
+      <div class="flex flex-col items-start gap-2 text-left text-primary-ink">
         <Fa icon={faPaperclip} class="w-6 h-6" />
         <span class="text-sm font-medium">{m.chat_richInput_dropFiles_label()}</span>
       </div>
@@ -5373,11 +5643,13 @@
           class="chat-content-measure mx-auto w-full min-w-0 {isChiefWorkspace
             ? 'px-0'
             : 'px-4 sm:px-6'}"
+          class:regular-chat-content-inset={!isChiefWorkspace}
           data-testid="pinned-prompt-overlay-lane"
         >
           <div class={isChiefWorkspace ? 'mx-1 sm:mx-2' : ''}>
-            <PinnedUserPrompt
-              text={getPinnedPromptText(pinnedPrompt.message)}
+            <PinnedTurnPrompt
+              message={pinnedPrompt.message}
+              surface={pinnedPrompt.surface}
               {workspace}
               onActivate={handlePinnedPromptClick}
             />
@@ -5416,7 +5688,9 @@
         class="conversation-column chat-content-measure mx-auto flex min-h-full w-full min-w-0 flex-col {isChiefWorkspace
           ? 'px-0'
           : 'px-4 pt-8 sm:px-6'} {transcriptBottomInsetClass}"
+        class:regular-chat-content-inset={!isChiefWorkspace}
         data-testid="chat-transcript-inner"
+        data-structural-recompute-count={transcriptStructure.recomputeCount}
       >
         <!-- Task Assignment Pill -->
         {#if $agentTasks$.length > 0}
@@ -5472,7 +5746,7 @@
         {/snippet}
 
         {#if transcriptHydrationFailed && $agentMessages$.length === 0}
-          <div class="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
+          <div class="flex min-h-48 flex-col items-start justify-center gap-3 p-6 text-left">
             <p class="text-sm text-muted-foreground">{m.chat_shared_actionFailed_label()}</p>
             <Button variant="outline" onclick={handleRetryTranscriptHydration}>
               {m.chat_shared_retry_label()}
@@ -5495,7 +5769,7 @@
           />
         {:else if onboardingContext && shouldShowSetupCardOnly( { isInitialWorkspaceAgent, hasOnboardingContext: true, hasOnboardingPrompt: Boolean(onboardingContext.prompt?.trim()), hasMessages: $agentMessages$.length > 0, isStreaming: $agentSessionIsStreaming$, hasPendingInitialPrompt: Boolean(pendingInitialPrompt), hydrationSettled: $transcriptHydration$ === 'settled' } )}
           <!-- Initial workspace agent with no prompt, hydration settled — show setup card only, no skeletons (a loading transcript falls through to the skeleton branch below) -->
-          <div class="pt-16 pb-6">
+          <div class="workspace-setup-card-alignment pt-16 pb-6">
             <WorkspaceSetupCard
               repoName={onboardingContext.projectName ||
                 onboardingContext.projectPath?.split('/').pop() ||
@@ -5527,19 +5801,17 @@
           <!-- Pending initial prompt - shown as optimistic UI immediately -->
           <!-- FIX: Keep showing pendingMessage until a USER message arrives in $agentMessages$ -->
           <!-- This prevents the flash where pendingMessage disappears but only assistant streaming content has arrived -->
-          {@const hasUserMessage = $agentMessages$.some((m) => m.role === 'user')}
+          {@const hasUserMessage = transcriptStructure.hasUserMessage}
           {@const pendingCondition = pendingMessage && !hasUserMessage}
           {@const messagesCondition = hasUserMessage || $agentMessages$.length > 0}
           {#if pendingCondition}
             <!-- Get any streaming assistant messages to render alongside the pending user message -->
-            {@const streamingAssistantMessages = $agentMessages$.filter(
-              (m) => m.role === 'assistant',
-            )}
+            {@const streamingAssistantMessageIds = transcriptStructure.assistantMessageIds}
             {#if initialPromptProp}
               <!-- No animation - parent already showed optimistic message, but we need to keep showing it -->
               <div class="w-full">
                 {#if isInitialWorkspaceAgent && onboardingContext}
-                  <div class="pt-16 pb-6">
+                  <div class="workspace-setup-card-alignment pt-16 pb-6">
                     <WorkspaceSetupCard
                       repoName={onboardingContext.projectName ||
                         onboardingContext.projectPath?.split('/').pop() ||
@@ -5570,24 +5842,26 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
+                      ownPrincipalId={$presenceOwnPrincipalId$}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
 
                   <!-- Render any streaming assistant messages -->
-                  {#each streamingAssistantMessages as message, index (message.id)}
-                    {@const isLastMessage = index === streamingAssistantMessages.length - 1}
+                  {#each streamingAssistantMessageIds as messageId, index (messageId)}
+                    {@const isLastMessage = index === streamingAssistantMessageIds.length - 1}
                     {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                     <div
-                      data-message-id={message.id}
+                      data-message-id={messageId}
                       data-message-role="assistant"
                       class="message-nav-target"
                     >
                       <ChatMessage
                         {agentId}
-                        messageId={message.id}
+                        {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         isStreaming={isCurrentlyStreaming}
                         isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
@@ -5598,6 +5872,7 @@
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
                           isProcessing={$agentIsResponding$}
+                          processQueueHint={$agentSession$?.processQueueHint}
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5606,12 +5881,14 @@
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
+                          {quotaExceeded}
+                          {quotaRetryProviders}
                           {hasPendingPermission}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
+                          onRetryWithProvider={gatedRetryWithProvider}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
-                          seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
                         />
@@ -5620,11 +5897,12 @@
                   {/each}
 
                   <!-- Show streaming status while waiting for first assistant message -->
-                  {#if streamingAssistantMessages.length === 0}
+                  {#if streamingAssistantMessageIds.length === 0}
                     <div class="mb-4">
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
                         isProcessing={$agentIsResponding$}
+                        processQueueHint={$agentSession$?.processQueueHint}
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5633,12 +5911,14 @@
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
+                        {quotaExceeded}
+                        {quotaRetryProviders}
                         {hasPendingPermission}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
+                        onRetryWithProvider={gatedRetryWithProvider}
                         onStop={handleStop}
                         onStalledRetry={gatedStalledRetry}
-                        seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
                       />
@@ -5651,7 +5931,7 @@
               <!-- NOTE: Removed in:fly transition to debug duplicate flash issue -->
               <div class="w-full">
                 {#if isInitialWorkspaceAgent && onboardingContext}
-                  <div class="pt-16 pb-6">
+                  <div class="workspace-setup-card-alignment pt-16 pb-6">
                     <WorkspaceSetupCard
                       repoName={onboardingContext.projectName ||
                         onboardingContext.projectPath?.split('/').pop() ||
@@ -5682,24 +5962,26 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
+                      ownPrincipalId={$presenceOwnPrincipalId$}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
 
                   <!-- Render any streaming assistant messages -->
-                  {#each streamingAssistantMessages as message, index (message.id)}
-                    {@const isLastMessage = index === streamingAssistantMessages.length - 1}
+                  {#each streamingAssistantMessageIds as messageId, index (messageId)}
+                    {@const isLastMessage = index === streamingAssistantMessageIds.length - 1}
                     {@const isCurrentlyStreaming = isLastMessage && $agentSessionIsStreaming$}
                     <div
-                      data-message-id={message.id}
+                      data-message-id={messageId}
                       data-message-role="assistant"
                       class="message-nav-target"
                     >
                       <ChatMessage
                         {agentId}
-                        messageId={message.id}
+                        {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         isStreaming={isCurrentlyStreaming}
                         isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
@@ -5710,6 +5992,7 @@
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
                           isProcessing={$agentIsResponding$}
+                          processQueueHint={$agentSession$?.processQueueHint}
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5718,12 +6001,14 @@
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
+                          {quotaExceeded}
+                          {quotaRetryProviders}
                           {hasPendingPermission}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
+                          onRetryWithProvider={gatedRetryWithProvider}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
-                          seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
                         />
@@ -5732,11 +6017,12 @@
                   {/each}
 
                   <!-- Show streaming status while waiting for first assistant message -->
-                  {#if streamingAssistantMessages.length === 0}
+                  {#if streamingAssistantMessageIds.length === 0}
                     <div class="mb-4">
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
                         isProcessing={$agentIsResponding$}
+                        processQueueHint={$agentSession$?.processQueueHint}
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5745,12 +6031,14 @@
                         sessionCorrupted={effectiveSessionCorrupted}
                         failedAt={effectiveFailedAt}
                         modelUnavailable={$chatModelUnavailable$}
+                        {quotaExceeded}
+                        {quotaRetryProviders}
                         {hasPendingPermission}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
+                        onRetryWithProvider={gatedRetryWithProvider}
                         onStop={handleStop}
                         onStalledRetry={gatedStalledRetry}
-                        seed={agentId}
                         statusEvents={$chatStatusEvents$}
                         streamingStartTime={$chatStreamingStartTime$}
                       />
@@ -5769,6 +6057,7 @@
                 <StreamingStatus
                   isStreaming={$agentSessionIsStreaming$}
                   isProcessing={$agentIsResponding$}
+                  processQueueHint={$agentSession$?.processQueueHint}
                   lastChunkTime={$chatLastChunkTime$}
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -5777,12 +6066,14 @@
                   sessionCorrupted={effectiveSessionCorrupted}
                   failedAt={effectiveFailedAt}
                   modelUnavailable={$chatModelUnavailable$}
+                  {quotaExceeded}
+                  {quotaRetryProviders}
                   {hasPendingPermission}
                   onRetry={gatedRetry}
                   onRetryWithModel={gatedRetryWithModel}
+                  onRetryWithProvider={gatedRetryWithProvider}
                   onStop={handleStop}
                   onStalledRetry={gatedStalledRetry}
-                  seed={agentId}
                   statusEvents={$chatStatusEvents$}
                   streamingStartTime={$chatStreamingStartTime$}
                   class={effectiveError ? 'mt-0' : undefined}
@@ -5815,7 +6106,7 @@
                    falsely signals the beginning of the conversation; the
                    older-history loading affordance below renders instead. -->
               {#if isInitialWorkspaceAgent && onboardingContext && conversationStartLoaded}
-                <div class="pt-16 pb-6">
+                <div class="workspace-setup-card-alignment pt-16 pb-6">
                   <WorkspaceSetupCard
                     repoName={onboardingContext.projectName ||
                       onboardingContext.projectPath?.split('/').pop() ||
@@ -5855,11 +6146,11 @@
                    stops (see syncOlderHistoryIndicator). -->
               {#if olderHistoryIndicatorVisible}
                 <div
-                  class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
+                  class="flex items-center justify-start gap-2 py-2 text-left text-xs text-muted-foreground"
                   data-testid="chat-older-history-loading"
                   aria-live="polite"
                 >
-                  <Fa icon={faSpinner} class="animate-spin" size="xs" />
+                  <IntentMarkLoader size={12} />
                   <span>{m.chat_chatPanel_loadingOlderMessages_label()}</span>
                 </div>
               {/if}
@@ -5878,7 +6169,7 @@
                 {#if groupIndex === historyGapBeforeGroupIndex}
                   <div
                     bind:this={historyGapSentinel}
-                    class="flex items-center justify-center py-3"
+                    class="flex items-center justify-start py-3 text-left"
                     data-testid="chat-history-gap"
                   >
                     {#if $fetchingGapFill$}
@@ -5886,7 +6177,7 @@
                         class="flex items-center gap-2 text-xs text-muted-foreground"
                         aria-live="polite"
                       >
-                        <Fa icon={faSpinner} class="animate-spin" size="xs" />
+                        <IntentMarkLoader size={12} />
                         <span>{m.chat_chatPanel_historyGapLoading_label()}</span>
                       </div>
                     {:else}
@@ -5934,8 +6225,41 @@
                   {@const nextTurnHasUserMessage = Boolean(
                     nextTurn?.userMessage && !nextTurnIsEventNotification,
                   )}
+                  {@const currentIsChatCard = isChatCardMessage(turn.userMessage)}
+                  {@const nextIsChatCard = isChatCardMessage(nextTurn?.userMessage)}
                   {@const isLastTurnInConversation =
                     globalTurnIndexMap.get(turnKey) === globalTurnIndexMap.size - 1}
+                  {@const showPendingAssistantStatus =
+                    groupIndex === groupedMessages.length - 1 &&
+                    turnIndex === turns.length - 1 &&
+                    turn.assistantMessages.length === 0 &&
+                    shouldShowPendingAssistantStatus({
+                      isStreaming: $agentSessionIsStreaming$,
+                      isProcessing: $agentIsResponding$,
+                      error: effectiveError,
+                      modelUnavailable: $chatModelUnavailable$,
+                    })}
+                  {@const hasTurnBody = hasVisibleTurnBody({
+                    assistantMessages: turn.assistantMessages,
+                    hasVisibleNotice: turn.noticeMessages.some((notice) =>
+                      Boolean(getModelChangeNotice(notice)),
+                    ),
+                    hasPendingStatus:
+                      showPendingAssistantStatus ||
+                      (groupIndex === groupedMessages.length - 1 &&
+                        turnIndex === turns.length - 1 &&
+                        turn.assistantMessages.length > 0 &&
+                        Boolean(
+                          $agentSessionIsStreaming$ || effectiveError || $chatModelUnavailable$,
+                        )),
+                    suppressCoordinationStoppedIndicator: turn.userMessage
+                      ? isAutomatedMessage(turn.userMessage)
+                      : false,
+                  })}
+                  {@const subscriptionCardSeam = getSubscriptionCardSeam(
+                    currentIsChatCard && !hasTurnBody,
+                    nextIsChatCard,
+                  )}
                   {@const compactOperationalTurnBoundary = hasOperationalAssistantTurnBoundary(
                     turn,
                     nextTurn,
@@ -5953,7 +6277,7 @@
                     !attentionQuestionAnswerTurnSeam && isBatchedDeliverySeam(turn, nextTurn)}
                   <!-- Seam BEFORE this turn: the same batch test against the
                        previous rendered turn (crossing group boundaries like
-                       nextTurn). When true, the preceding h-2 gap owns the
+                       nextTurn). When true, the preceding gap owns the
                        seam and this turn's rows drop their own top margins. -->
                   {@const prevTurn =
                     turns[turnIndex - 1] ??
@@ -5963,6 +6287,7 @@
                     !isAttentionQuestionAnswerSeam(prevTurn, turn) &&
                     isBatchedDeliverySeam(prevTurn, turn),
                   )}
+                  {@const cardSpacingOwnedBefore = Boolean(prevTurn && currentIsChatCard)}
                   <!-- Conversation turn container - constrains sticky behavior -->
                   <!-- Fallback chain mirrors the row render order below. Edge case:
                        a user message with metadata.type === 'event_notification' but
@@ -5990,14 +6315,15 @@
                       <!-- Source wake-up row remains owned by this transcript turn. -->
                       <div
                         data-message-id={message.id}
+                        data-pinnable-user-prompt
                         data-pinned-prompt-id={message.id}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-10 {eventCardAssistantMarginClass(
                           message,
-                          turn.assistantMessages.length > 0,
+                          hasTurnBody,
                         )}"
                         use:attachPinnedPromptMessage={message}
-                        transition:safeSlide={{ axis: 'y', duration: 200 }}
+                        transition:safeDisclosureTransition={{ tier: 'moderate' }}
                       >
                         <EventWakeupBanner
                           metadata={message.metadata as {
@@ -6013,7 +6339,7 @@
                           {messageText}
                           asDivider={true}
                           compact={isCompactMode}
-                          suppressTopGap={batchedSeamBefore}
+                          suppressTopGap={batchedSeamBefore || cardSpacingOwnedBefore}
                           showAgentCards={!isDelegatedBackgroundTaskAgent}
                           {workspace}
                         />
@@ -6034,14 +6360,18 @@
                       <div
                         data-message-id={message.id}
                         data-message-role="user"
-                        data-pinnable-user-prompt={!isAutomatedMessage(message) ? '' : undefined}
                         data-pinned-prompt-id={message.id}
                         data-send-app-message-id={message.appMessageId}
                         data-message-index={globalIndex}
                         class="message-nav-target relative z-20"
-                        class:mb-0={batchedDeliveryTurnSeam}
-                        class:mb-5={!batchedDeliveryTurnSeam && isAutomatedMessage(message)}
-                        class:mb-7={!batchedDeliveryTurnSeam && !isAutomatedMessage(message)}
+                        class:mb-0={batchedDeliveryTurnSeam || (currentIsChatCard && !hasTurnBody)}
+                        class:mb-6={!batchedDeliveryTurnSeam && currentIsChatCard && hasTurnBody}
+                        class:mb-5={!batchedDeliveryTurnSeam &&
+                          !currentIsChatCard &&
+                          isAutomatedMessage(message)}
+                        class:mb-7={!batchedDeliveryTurnSeam &&
+                          !currentIsChatCard &&
+                          !isAutomatedMessage(message)}
                         class:invisible={pendingSendMessageIds.has(
                           String(message.appMessageId ?? ''),
                         )}
@@ -6049,6 +6379,7 @@
                       >
                         <LazyTurn
                           turnKey={message.id}
+                          {isActive}
                           scrollRoot={scrollContainer}
                           heightCache={lazyTurnHeightCache}
                           hydrationController={messageHydrationPolicy}
@@ -6063,6 +6394,7 @@
                                 messageId={message.id}
                                 ownsMessageIdentity={false}
                                 {workspace}
+                                ownPrincipalId={$presenceOwnPrincipalId$}
                                 onEditSubmit={isRetiredSession
                                   ? undefined
                                   : (newText, model, blocks) =>
@@ -6073,7 +6405,8 @@
                                   hydratedInputModel}
                                 onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                                 backendSessionId={auggieSessionId}
-                                suppressAutomatedWakeTopSpacing={batchedSeamBefore}
+                                suppressAutomatedWakeTopSpacing={batchedSeamBefore ||
+                                  cardSpacingOwnedBefore}
                               />
                             </div>
                           {/snippet}
@@ -6097,11 +6430,12 @@
                     {/each}
 
                     <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                    {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ } )}
+                    {#if showPendingAssistantStatus}
                       <div class={isCompactMode ? 'mb-2' : 'mb-8'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
                           isProcessing={$agentIsResponding$}
+                          processQueueHint={$agentSession$?.processQueueHint}
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -6110,12 +6444,14 @@
                           sessionCorrupted={effectiveSessionCorrupted}
                           failedAt={effectiveFailedAt}
                           modelUnavailable={$chatModelUnavailable$}
+                          {quotaExceeded}
+                          {quotaRetryProviders}
                           {hasPendingPermission}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
+                          onRetryWithProvider={gatedRetryWithProvider}
                           onStop={handleStop}
                           onStalledRetry={gatedStalledRetry}
-                          seed={agentId}
                           statusEvents={$chatStatusEvents$}
                           streamingStartTime={$chatStreamingStartTime$}
                         />
@@ -6144,6 +6480,7 @@
                       {@const globalIndex = getMessageIndex(message.id)}
                       <LazyTurn
                         turnKey={message.id}
+                        {isActive}
                         scrollRoot={scrollContainer}
                         heightCache={lazyTurnHeightCache}
                         hydrationController={messageHydrationPolicy}
@@ -6166,6 +6503,7 @@
                               messageId={message.id}
                               ownsMessageIdentity={false}
                               {workspace}
+                              ownPrincipalId={$presenceOwnPrincipalId$}
                               isStreaming={isCurrentlyStreaming}
                               isLastConversationMessage={isLastMessage}
                               onEditSubmit={isRetiredSession
@@ -6187,6 +6525,7 @@
                               <StreamingStatus
                                 isStreaming={$agentSessionIsStreaming$}
                                 isProcessing={$agentIsResponding$}
+                                processQueueHint={$agentSession$?.processQueueHint}
                                 lastChunkTime={$chatLastChunkTime$}
                                 receivedFirstChunk={$chatReceivedFirstChunk$}
                                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -6195,12 +6534,14 @@
                                 sessionCorrupted={effectiveSessionCorrupted}
                                 failedAt={effectiveFailedAt}
                                 modelUnavailable={$chatModelUnavailable$}
+                                {quotaExceeded}
+                                {quotaRetryProviders}
                                 {hasPendingPermission}
                                 onRetry={gatedRetry}
                                 onRetryWithModel={gatedRetryWithModel}
+                                onRetryWithProvider={gatedRetryWithProvider}
                                 onStop={handleStop}
                                 onStalledRetry={gatedStalledRetry}
-                                seed={agentId}
                                 statusEvents={$chatStatusEvents$}
                                 streamingStartTime={$chatStreamingStartTime$}
                               />
@@ -6211,7 +6552,7 @@
                             class="w-full"
                             class:mb-1={!compactNextMessageBoundary &&
                               !(isLastAssistant && compactOperationalTurnBoundary) &&
-                              !(isLastAssistant && nextTurnHasUserMessage)}
+                              !(isLastAssistant && (nextTurnHasUserMessage || nextIsChatCard))}
                             data-after-assistant-message={message.id}
                           >
                             <ChatFileChangesSummary
@@ -6248,6 +6589,7 @@
                       zeroToolSeam={zeroOperationalTurnBoundary}
                       batchedDeliverySeam={batchedDeliveryTurnSeam}
                       attentionQuestionAnswerSeam={attentionQuestionAnswerTurnSeam}
+                      {subscriptionCardSeam}
                     />
                   {/if}
                   <!-- Turn-boundary divider placement: the anchor is this turn's
@@ -6266,6 +6608,7 @@
                   <StreamingStatus
                     isStreaming={$agentSessionIsStreaming$}
                     isProcessing={$agentIsResponding$}
+                    processQueueHint={$agentSession$?.processQueueHint}
                     lastChunkTime={$chatLastChunkTime$}
                     receivedFirstChunk={$chatReceivedFirstChunk$}
                     streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -6274,12 +6617,14 @@
                     sessionCorrupted={effectiveSessionCorrupted}
                     failedAt={effectiveFailedAt}
                     modelUnavailable={$chatModelUnavailable$}
+                    {quotaExceeded}
+                    {quotaRetryProviders}
                     {hasPendingPermission}
                     onRetry={gatedRetry}
                     onRetryWithModel={gatedRetryWithModel}
+                    onRetryWithProvider={gatedRetryWithProvider}
                     onStop={handleStop}
                     onStalledRetry={gatedStalledRetry}
-                    seed={agentId}
                     statusEvents={$chatStatusEvents$}
                     streamingStartTime={$chatStreamingStartTime$}
                   />
@@ -6302,19 +6647,6 @@
           </div>
         {/if}
 
-        <!-- Show suggested prompts for the last message only, when not streaming -->
-        {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
-          <div class="w-full {isCompactMode ? 'pb-1 pt-2' : 'py-2'}">
-            <SuggestedPrompts
-              prompts={suggestedPrompts}
-              onSelect={handleSelectSuggestedPrompt}
-              onEdit={handleEditSuggestedPrompt}
-              compact={isCompactMode}
-              showShortcutHints={isChatFocused}
-            />
-          </div>
-        {/if}
-
         <!-- Inline Permission Requests (filtered by current agent) -->
         {#if agentId && agentPermissionRequests.length > 0}
           {@const currentRequest = agentPermissionRequests[0]}
@@ -6327,7 +6659,6 @@
           </div>
         {/if}
 
-        <!-- Pending attention request (discussion/blocker) remains in transcript order. -->
         {#if workspace?.id && agentId}
           <AttentionRequestBanner {agentId} />
         {/if}
@@ -6336,38 +6667,19 @@
              It collapses naturally when transcript or expanded disclosure content overflows. -->
         <div class="mt-auto" data-testid="transcript-utility-stack">
           <!-- {#key} forces a full remount when workspace or agent changes,
-             preventing stale subscription UI from leaking across switches.
-             Hidden until the transcript hydration settles so the card never
-             pops in ahead of (or during) the transcript skeleton. -->
+             preventing stale utility UI from leaking across switches.
+             Hidden until transcript hydration settles; the workspace-task
+             task progress is routed to the panel header instead. -->
           {#if workspace?.id && showTranscriptUtilityCard}
             {#key `${workspace.id}::${agentId}`}
               <EventSubscriptionsCard
                 workspaceId={workspace.id}
                 {agentId}
+                {isActive}
                 compact={isCompactMode}
                 bind:visible={hasVisibleTranscriptUtility}
               />
             {/key}
-          {/if}
-
-          <!-- Queued messages remain in the same scroll/follow surface.
-               Hidden on retired sessions: the queue's edit/remove/send-now
-               controls all mutate daemon state a retired agent rejects. -->
-          {#if queuedMessagesVisibility.showQueue && !isRetiredSession}
-            <div
-              class="relative z-20 mt-6 {isChiefWorkspace ? 'mx-1 sm:mx-2' : 'w-full'}"
-              data-testid="queued-message-utility-area"
-            >
-              <QueuedMessageList
-                bind:this={queuedMessageListRef}
-                messages={visibleQueuedMessages}
-                heldForQuestions={queuedMessagesVisibility.heldForQuestions}
-                onedit={handleEditQueuedMessage}
-                onremove={handleRemoveQueuedMessage}
-                onsendnow={handleSendQueuedMessageNow}
-                ondone={() => inputComponent?.focus?.()}
-              />
-            </div>
           {/if}
         </div>
 
@@ -6405,12 +6717,13 @@
          ChiefCard px-2 inset and the sidebar frame's pl-2/pb-2 window inset (the
          ancestors clip with an 8px overflow-clip-margin), touching the app window's
          left/bottom edges. -->
-    {#if $agentSessionIsStreaming$ && isChiefWorkspace}
+    {#if isActive && $chatAuroraEnabled$ && $agentSessionIsStreaming$ && isChiefWorkspace}
       <div
         class="composer-aurora-host pointer-events-none absolute -left-4 -right-2 -bottom-4 z-0 overflow-hidden"
         style="height: calc(100% + 10rem);"
         data-testid="composer-aurora-host"
-        transition:fade
+        in:springIn={{ tier: 'moderate', y: 0, scale: 1 }}
+        out:crispOut={{ tier: 'moderate' }}
       >
         <AuroraBackground {agentId} />
       </div>
@@ -6452,85 +6765,129 @@
               </Button>
             </div>
           {:else}
-            {#if pendingQuestions}
-              {#key pendingQuestions.messageId}
-                <div class="w-full" data-testid="question-wizard-slot">
-                  <QuestionWizard
-                    questions={pendingQuestions.questions}
-                    draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
-                    collapsed={questionWizardCollapsed}
-                    onToggleCollapsed={(collapsed) => {
-                      // Can be invoked around the teardown frame after the
-                      // pending-questions source is already nulled.
-                      if (!pendingQuestions) return;
-                      questionWizardCollapsedOverride = {
-                        messageId: pendingQuestions.messageId,
-                        collapsed,
-                      };
-                      saveWizardCollapsed(
-                        wizardDraftKey(agentId, pendingQuestions.messageId),
-                        collapsed,
-                      );
-                    }}
-                    onComplete={handleQuestionWizardComplete}
-                    onDismiss={handleQuestionWizardDismiss}
-                  />
-                </div>
-              {/key}
+            {#if offscreenPendingProposalMessageId}
+              <div
+                class="flex w-full justify-center px-4 pb-2"
+                data-testid="pending-proposal-chip-slot"
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="h-7 rounded-full bg-background px-3 type-caption shadow-sm"
+                  data-testid="pending-proposal-chip"
+                  onclick={scrollToPendingProposal}
+                >
+                  {m.chat_proposalTray_title()}
+                </Button>
+              </div>
             {/if}
-            {#if showProposalTray}
-              {#key agentId}
-                <div class="w-full" data-testid="proposal-tray-slot">
-                  <ProposalTray
+            <QuestionComposer
+              expanded={!!pendingQuestions && !questionWizardCollapsed}
+              active={isActive && isChatFocused}
+              maxHeight={panelHeight > 0 ? panelHeight - 48 : undefined}
+            >
+              {#snippet question()}
+                {#if pendingQuestions}
+                  {#key pendingQuestions.messageId}
+                    <QuestionWizard
+                      questions={pendingQuestions.questions}
+                      draftKey={wizardDraftKey(agentId, pendingQuestions.messageId)}
+                      collapsed={questionWizardCollapsed}
+                      onToggleCollapsed={(collapsed) => {
+                        // Can be invoked around the teardown frame after the
+                        // pending-questions source is already nulled.
+                        if (!pendingQuestions) return;
+                        questionWizardCollapsedOverride = {
+                          messageId: pendingQuestions.messageId,
+                          collapsed,
+                        };
+                        saveWizardCollapsed(
+                          wizardDraftKey(agentId, pendingQuestions.messageId),
+                          collapsed,
+                        );
+                      }}
+                      onComplete={handleQuestionWizardComplete}
+                      onDismiss={handleQuestionWizardDismiss}
+                    />
+                  {/key}
+                {/if}
+              {/snippet}
+              {#if !pendingQuestionRecoveryLoading || pendingQuestions || questionWizardCollapsed}
+                <!-- Show suggested prompts for the last message only, when not streaming. -->
+                {#if suggestedPrompts.length > 0 && !deferTranscriptReveal}
+                  <div
+                    class="w-full {isCompactMode ? 'pb-2' : 'pb-3'} {isChiefWorkspace
+                      ? 'px-0'
+                      : COMPOSER_INSET_CLASS}"
+                  >
+                    <SuggestedPrompts
+                      prompts={suggestedPrompts}
+                      onSelect={handleSelectSuggestedPrompt}
+                      onEdit={handleEditSuggestedPrompt}
+                      compact={isCompactMode}
+                      showShortcutHints={isChatFocused}
+                      workspaceId={workspace?.id}
+                    />
+                  </div>
+                {/if}
+                {#if draftManager.gateVisible}
+                  <ChatDraftLoadingGate />
+                {/if}
+                {#if workspace && agentId}
+                  <PresenceTypingIndicator
+                    workspaceId={workspace.id}
                     {agentId}
-                    entries={trayPendingProposals}
-                    maxBodyHeight={trayBodyMaxHeight(panelClientHeight)}
-                    collapsed={proposalTrayCollapsed}
-                    onToggleCollapsed={(collapsed) => {
-                      proposalTrayCollapsedOverride = { agentId, collapsed };
-                      saveTrayCollapsed(agentId, collapsed);
-                    }}
-                    onApply={handleProposalTrayApply}
-                    onDismiss={handleProposalTrayDismiss}
-                    onUndo={handleProposalTrayUndo}
+                    class={isChiefWorkspace ? 'px-3 pb-1' : 'regular-composer-content-inset pb-1'}
                   />
-                </div>
-              {/key}
-            {/if}
-            {#if (!pendingQuestions && !pendingQuestionRecoveryLoading) || questionWizardCollapsed}
-              {#if draftManager.gateVisible}
-                <ChatDraftLoadingGate />
+                {/if}
+                <SimpleRichInput
+                  bind:this={inputComponent}
+                  bind:contextItems={getContextItems, setContextItems}
+                  bind:value={inputValue}
+                  onvaluechange={(value) => {
+                    scheduleDraftWrite(value);
+                    reportTypingActivity(value);
+                  }}
+                  onsubmit={handleSend}
+                  onforcesubmit={handleForceSubmit}
+                  onstop={handleStop}
+                  onHistoryPrev={handleHistoryPrev}
+                  onHistoryNext={handleHistoryNext}
+                  disabled={!workspace || !$agentSession$}
+                  inputLocked={draftManager.gateActive}
+                  isStreaming={$agentSessionIsStreaming$}
+                  isResponding={$agentIsResponding$}
+                  {workspace}
+                  currentContext={currentMainPanelContext}
+                  {agentId}
+                  selectedModel={hydratedInputModel}
+                  compactMode={isCompactMode}
+                  editorClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                  contentInsetClassName={`${COMPOSER_INSET_CLASS} w-full`}
+                  actionBarEndClassName={COMPOSER_INSET_CLASS}
+                  edgeDocked
+                  externalDropTarget
+                  requiresModelSwitchConfirmation={!canChangeProvider}
+                  providerId={inputProviderId}
+                >
+                  {#snippet queueRegion()}
+                    {#if queuedMessagesVisibility.showQueue}
+                      <QueuedMessageList
+                        bind:this={queuedMessageListRef}
+                        messages={visibleQueuedMessages}
+                        authors={queuedMessageAuthors}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
+                        onedit={handleEditQueuedMessage}
+                        onremove={handleRemoveQueuedMessage}
+                        onsendnow={handleSendQueuedMessageNow}
+                        ondone={() => inputComponent?.focus?.()}
+                      />
+                    {/if}
+                  {/snippet}
+                </SimpleRichInput>
               {/if}
-              <SimpleRichInput
-                bind:this={inputComponent}
-                bind:contextItems
-                bind:value={inputValue}
-                onvaluechange={(value) => {
-                  scheduleDraftWrite(value);
-                }}
-                onsubmit={handleSend}
-                onforcesubmit={handleForceSubmit}
-                onstop={handleStop}
-                onHistoryPrev={handleHistoryPrev}
-                onHistoryNext={handleHistoryNext}
-                disabled={!workspace || !$agentSession$}
-                inputLocked={draftManager.gateActive}
-                isStreaming={$agentSessionIsStreaming$}
-                isResponding={$agentIsResponding$}
-                {workspace}
-                currentContext={currentMainPanelContext}
-                {agentId}
-                selectedModel={hydratedInputModel}
-                compactMode={isCompactMode}
-                editorClassName={isChiefWorkspace ? 'w-full px-3!' : 'w-full px-4! sm:px-6!'}
-                contentInsetClassName={isChiefWorkspace ? 'w-full px-3' : 'w-full px-4 sm:px-6'}
-                actionBarEndClassName={isChiefWorkspace ? 'pr-3!' : undefined}
-                edgeDocked
-                externalDropTarget
-                requiresModelSwitchConfirmation={!canChangeProvider}
-                providerId={inputProviderId}
-              />
-            {/if}
+            </QuestionComposer>
           {/if}
         </div>
       </div>
@@ -6539,6 +6896,40 @@
 </div>
 
 <style>
+  .chat-panel-container {
+    container: chat-panel / inline-size;
+  }
+
+  .regular-chat-content-inset {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .workspace-setup-card-alignment {
+    --chat-operational-row-inline-padding: 0.5rem;
+    --chat-operational-leading-gap: 0.5rem;
+    margin-left: -0.5rem;
+    text-align: left;
+  }
+
+  @container chat-panel (max-width: 639.98px) {
+    .regular-chat-content-inset {
+      --chat-operational-row-inline-padding: 0.125rem;
+      --chat-operational-leading-gap: 0.625rem;
+    }
+
+    .workspace-setup-card-alignment {
+      margin-left: 1.5rem;
+    }
+  }
+
+  @container chat-panel (min-width: 640px) {
+    .regular-chat-content-inset {
+      padding-left: 3.1rem;
+      padding-right: 3.1rem;
+    }
+  }
+
   .regular-panel-aurora-host {
     border-bottom-left-radius: var(--panel-shell-radius);
     border-bottom-right-radius: var(--panel-shell-radius);
@@ -6561,22 +6952,25 @@
 
   /* Flash animation for message navigation */
   :global(.message-highlight-flash) {
-    animation: message-flash 0.6s ease-out;
+    animation: message-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
   /* Flash animation for scroll-to-turn navigation */
   :global(.highlight-flash) {
-    animation: highlight-flash 1.5s ease-out;
+    animation: highlight-flash calc(var(--spring-slow) * 6) var(--spring-exit-ease);
   }
 
   /* Transient scroll re-lock confirmation: hold briefly, then fade out.
      Forwards fill keeps it invisible until the element unmounts. */
   .lock-confirmation {
-    animation: lock-confirmation-fade 1.5s ease-out forwards;
+    animation: lock-confirmation-fade calc(var(--spring-slow) * 6) var(--spring-exit-ease) forwards;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .lock-confirmation {
+  @container style(--motion-reduced: 1) {
+    .lock-confirmation,
+    :global(.message-highlight-flash),
+    :global(.highlight-flash),
+    .input-flash :global(.rich-input-container) {
       animation: none;
       opacity: 0.9;
     }
@@ -6614,7 +7008,7 @@
 
   /* Subtle flash animation for input when draft prompt is applied */
   .input-flash :global(.rich-input-container) {
-    animation: input-flash 0.6s ease-out;
+    animation: input-flash calc(var(--spring-slow) * 2.5) var(--spring-exit-ease);
   }
 
   .conversation-composer {
@@ -6631,7 +7025,7 @@
     padding: 0.5rem var(--composer-lane-inset-x) var(--composer-lane-inset-bottom);
   }
 
-  @media (min-width: 640px) {
+  @container chat-panel (min-width: 640px) {
     .conversation-composer {
       --composer-lane-inset-x: 1.5rem;
       --composer-lane-inset-bottom: 1.5rem;
@@ -6660,7 +7054,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     :global(.conversation-column *),
     .conversation-composer {
       scroll-behavior: auto;

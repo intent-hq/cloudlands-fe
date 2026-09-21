@@ -3,6 +3,7 @@
   import { store } from '$store/renderer/store';
   import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { AgentStatus, type AgentSession, type Note, type TaskStatus } from '$shared/types';
   import { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
   import TestTaskItemNodeView from './TestTaskItemNodeView.test.svelte';
@@ -68,6 +69,10 @@
       updatedAt: timestamp,
     }) as AgentSession;
   const dispose = store.init();
+  // Settle the window identity as an owner window (no guest list outside
+  // Electron); until it settles the assign affordance is withheld as for a
+  // collaborator (multiplayer w3/w4).
+  store.dispatch(guestSessionsListUnavailable());
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
   store.dispatch(
     bulkUpsertSessions(

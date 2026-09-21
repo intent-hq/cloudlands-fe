@@ -1,9 +1,7 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import {
-  faCheck,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -46,11 +44,11 @@
 
 <div class="suggestion-tooltip" style="left: {x}px; top: {y}px;">
   <div class="flex justify-between items-center mb-2">
-    <span class="font-semibold text-xs uppercase tracking-wide"
-      >{getTypeLabel(suggestion.type)}</span
-    >
+    <span class="font-semibold text-xs">{getTypeLabel(suggestion.type)}</span>
     {#if suggestion.author}
-      <span class="suggestion-tooltip-author">{m.tiptap_suggestionTooltip_byAuthor_label({ author: suggestion.author })}</span>
+      <span class="suggestion-tooltip-author"
+        >{m.tiptap_suggestionTooltip_byAuthor_label({ author: suggestion.author })}</span
+      >
     {/if}
   </div>
 
@@ -68,13 +66,23 @@
   {/if}
 
   <div class="suggestion-tooltip-actions">
-    <button class="accept" onclick={handleAccept} title={m.tiptap_suggestionTooltip_accept_tooltip()}>
+    <Button
+      variant="ghost"
+      class="accept"
+      onclick={handleAccept}
+      title={m.tiptap_suggestionTooltip_accept_tooltip()}
+    >
       <Fa icon={faCheck} size="xs" class="inline mr-1" />
       {m.tiptap_suggestionTooltip_accept_label()}
-    </button>
-    <button class="reject" onclick={handleReject} title={m.tiptap_suggestionTooltip_reject_tooltip()}>
+    </Button>
+    <Button
+      variant="ghost"
+      class="reject"
+      onclick={handleReject}
+      title={m.tiptap_suggestionTooltip_reject_tooltip()}
+    >
       <Fa icon={faXmark} size="xs" class="inline mr-1" />
       {m.tiptap_suggestionTooltip_reject_label()}
-    </button>
+    </Button>
   </div>
 </div>

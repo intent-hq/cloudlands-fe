@@ -63,9 +63,10 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: mocks.selector(() => mocks.workspaceEntity),
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
-  selectWorkspaceActivePrSummary: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => []),
+  selectHidesOwnerWorkspaceActions: mocks.selector(() => false),
+  selectHidesAgentLifecycleActions: mocks.selector(() => false),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -89,8 +90,22 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectWorkspacePresencePeople: mocks.selector(() => []),
+  selectWorkspacePresenceFocusTargets: mocks.selector(() => ({})),
+}));
+
+vi.mock('$store/renderer/slices/git/git-selectors', () => ({
+  selectAcceptChangesStatus: mocks.selector(() => null),
+  selectAcceptChangesStatusLoading: mocks.selector(() => false),
+}));
+
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
+  removeWorkspaceEntity: Object.assign(
+    vi.fn((id: string) => ({ type: 'workspace/removeWorkspaceEntity', payload: [id] })),
+    { type: 'workspace/removeWorkspaceEntity' },
+  ),
   setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
@@ -117,6 +132,10 @@ vi.mock('$store/renderer/slices/ui-layout/ui-layout-slice', () => ({
 }));
 
 vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-slice', () => ({
+  requestArchiveWorkspace: vi.fn((id: string) => ({
+    type: 'workspaceOperations/requestArchiveWorkspace',
+    payload: [id],
+  })),
   requestDeleteWorkspace: vi.fn((id: string) => ({
     type: 'workspaceOperations/delete',
     payload: [id],

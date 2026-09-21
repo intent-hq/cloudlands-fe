@@ -18,6 +18,10 @@ import type {
 } from '$shared/types';
 import type { TokenUsage } from '$features/token-usage/token-usage-types';
 import type { ContextItem } from '$features/context/types';
+import {
+  isWorkspaceBrowserClient,
+  type WorkspaceBrowserClient,
+} from '$shared/types/browser-clients';
 import type {
   MutationResult,
   SubscriptionHandler,
@@ -127,8 +131,17 @@ function isContextItem(item: unknown): item is ContextItem {
   );
 }
 
+/** The `browserClient` envelope field must be the documented shape; anything else is a wire bug. */
+function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserClient {
+  if (!isWorkspaceBrowserClient(value)) {
+    throw new Error(`Invalid ${method} response shape`);
+  }
+  return value;
+}
+
 export class LiveWorkspacesClient implements WorkspacesClient {
   private readonly listRequests = new Map<boolean, Promise<Workspace[]>>();
+  private readonly getRequests = new Map<string, Promise<Workspace | null>>();
 
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]> {
     const includeArchived = options?.includeArchived === true;
@@ -154,16 +167,35 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return request;
   }
 
-  async get(id: string): Promise<Workspace | null> {
-    const result = await backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
+  /**
+   * `workspace.get` (§5.1), single-flighted per workspace id: every caller —
+   * `open`, the workspace-load saga, and the on-demand detail hydration
+   * helpers — shares one in-flight request, so overlapping reads never fan
+   * out into duplicate RPCs. The entry clears once the request settles either
+   * way, so a rejected read never poisons later ones.
+   */
+  get(id: string): Promise<Workspace | null> {
+    const existing = this.getRequests.get(id);
+    if (existing) return existing;
+
+    const request = backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
       workspaceId: id,
+    }).then((result) => {
+      const raw =
+        result && typeof result === 'object' && 'workspace' in result
+          ? (result as { workspace?: unknown }).workspace
+          : result;
+      if (!raw || typeof raw !== 'object') return null;
+      return normalizeWorkspace(raw as Record<string, unknown>);
     });
-    const raw =
-      result && typeof result === 'object' && 'workspace' in result
-        ? (result as { workspace?: unknown }).workspace
-        : result;
-    if (!raw || typeof raw !== 'object') return null;
-    return normalizeWorkspace(raw as Record<string, unknown>);
+    this.getRequests.set(id, request);
+    const clearRequest = () => {
+      if (this.getRequests.get(id) === request) {
+        this.getRequests.delete(id);
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
   }
 
   // The daemon owns watcher/monitoring start-up that the legacy main-process
@@ -382,6 +414,30 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     });
     const next = Array.isArray(result?.items) ? result.items : [];
     return next.filter(isContextItem);
+  }
+
+  /** `workspace.getBrowserClient { workspaceId }` → `{ browserClient }` (REV-2). */
+  async getBrowserClient(workspaceId: string): Promise<WorkspaceBrowserClient> {
+    const result = await backendRequest<{ browserClient?: unknown }>('workspace.getBrowserClient', {
+      workspaceId,
+    });
+    return requireBrowserClient(result?.browserClient, 'workspace.getBrowserClient');
+  }
+
+  /**
+   * `workspace.setBrowserClient { workspaceId, clientId: string | null }` →
+   * `{ browserClient }` (REV-2). `null` clears the pin; the daemon rejects a
+   * `clientId` that never completed `client.hello` with -32602.
+   */
+  async setBrowserClient(
+    workspaceId: string,
+    clientId: string | null,
+  ): Promise<WorkspaceBrowserClient> {
+    const result = await backendRequest<{ browserClient?: unknown }>('workspace.setBrowserClient', {
+      workspaceId,
+      clientId,
+    });
+    return requireBrowserClient(result?.browserClient, 'workspace.setBrowserClient');
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {

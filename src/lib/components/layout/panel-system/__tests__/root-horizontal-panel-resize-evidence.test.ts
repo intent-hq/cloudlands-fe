@@ -106,32 +106,13 @@ function widthsAfterDelta(index: number, delta: number): number[] {
   return resizePanelWidthsAtDivider(panelWidths(), index, delta).panelWidths;
 }
 
-function widthsAfterOuterDelta(delta: number): number[] {
-  const expected = panelWidths();
-  expected[expected.length - 1] += delta;
-  return expected;
-}
-
-function widthsAfterFixedViewportOuterDelta(delta: number): number[] {
-  const current = panelWidths();
-  const currentTotal = current.reduce((sum, width) => sum + width, 0);
-  const scale = currentTotal / (currentTotal + delta);
-  return current.map((width, index) =>
-    index === current.length - 1 ? (width + delta) * scale : width * scale,
-  );
-}
-
 function splitHandle(index: number): HTMLButtonElement {
   const root = document.querySelector<HTMLElement>('.panel-split-container.horizontal')!;
   return [
     ...root.querySelectorAll<HTMLButtonElement>(
-      ':scope > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+      ':scope > .panel-split-handle-wrapper > div > button[data-resize-axis="x"]',
     ),
   ][index];
-}
-
-function outerHandle(): HTMLButtonElement {
-  return document.querySelector<HTMLButtonElement>('.panel-canvas-resize-handle')!;
 }
 
 function nextFrame(): Promise<void> {
@@ -312,10 +293,6 @@ describe('root horizontal resize release evidence', () => {
     expect(inset.scrollLeft).toBe(173);
     await releaseAndSample(splitHandle(1), 200, [180, 160, 140], widthsAfterDelta(1, -60));
     expect(inset.scrollLeft).toBe(173);
-    const outerExpected =
-      mode === 'tab' ? widthsAfterFixedViewportOuterDelta(90) : widthsAfterOuterDelta(90);
-    await releaseAndSample(outerHandle(), 1000, [1030, 1060, 1090], outerExpected);
-    expect(inset.scrollLeft).toBe(173);
   });
 
   it('keeps totals valid through repeated proportional resize and minimum clamps', async () => {
@@ -389,6 +366,13 @@ describe('root horizontal resize release evidence', () => {
     expectWidths(persistedWidths);
     secondRestore.unmount();
 
+    // A same-session scope remount keeps the live in-memory layout (#4835), so
+    // a legacy stored shape is only migrated on a real restart: stop the saga
+    // and the store before mounting against the legacy fixture.
+    sagaChannel!.put(panelLayoutScopeUnmounted(WORKSPACE_ID));
+    await settleSaga();
+    await stopSaga();
+    storeContext?.dispose();
     storage.set(
       STORAGE_KEY,
       JSON.stringify({
@@ -398,7 +382,8 @@ describe('root horizontal resize release evidence', () => {
         canvasWidth: 1600,
       }),
     );
-    sagaChannel!.put(panelLayoutScopeUnmounted(WORKSPACE_ID));
+    storeContext = initAppStore(appStore);
+    startProductionSaga();
     await settleSaga();
     sagaChannel!.put(panelLayoutScopeMounted(WORKSPACE_ID));
     await settleSaga();

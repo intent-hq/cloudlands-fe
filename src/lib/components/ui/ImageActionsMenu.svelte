@@ -10,7 +10,8 @@
    */
   import Fa from 'svelte-fa';
   import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
+  import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import { cn } from '$lib/utils.js';
   import { m } from '$shared/paraglide/messages.js';
@@ -21,12 +22,13 @@
     base64ByteSize,
     base64ToBlob,
     imageDownloadFileName,
+    isHttpsImageUrl,
     parseBase64DataUrl,
     parseWorkspaceFileImageUrl,
   } from '$lib/utils/image-actions';
 
   interface Props {
-    /** Image source: a base64 `data:` URL or a `workspace-file://` URL. */
+    /** Image source: data, workspace-file, workspace-asset, or HTTPS URL. */
     imageUrl: string;
     /** Display name — download filename fallback for data-URL images. */
     imageName?: string;
@@ -47,6 +49,7 @@
 
   const dataUrl = $derived(parseBase64DataUrl(imageUrl));
   const workspaceFile = $derived(parseWorkspaceFileImageUrl(imageUrl));
+  const isHttpsImage = $derived(isHttpsImageUrl(imageUrl));
 
   // Info rows: dimensions from the decoded image, size from the byte payload.
   let dimensions = $state<{ width: number; height: number } | null>(null);
@@ -124,7 +127,7 @@
       document.body.removeChild(link);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     } catch {
-      toast.error(m.ui_imageActionsMenu_downloadFailed_error());
+      notify.error(m.ui_imageActionsMenu_downloadFailed_error());
     }
   }
 
@@ -132,9 +135,19 @@
     if (!workspaceFile) return;
     try {
       await writeTextToClipboard(workspaceFile.path);
-      toast.success(m.ui_imageActionsMenu_pathCopied_label());
+      notify.success(m.ui_imageActionsMenu_pathCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
+    }
+  }
+
+  async function copyLink() {
+    if (!isHttpsImage) return;
+    try {
+      await writeTextToClipboard(imageUrl);
+      notify.success(m.ui_imageActionsMenu_linkCopied_label());
+    } catch {
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 
@@ -165,9 +178,9 @@
       // Clipboard image writes only accept PNG.
       if (blob.type !== 'image/png') blob = await convertToPngBlob(blob);
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      toast.success(m.ui_imageActionsMenu_imageCopied_label());
+      notify.success(m.ui_imageActionsMenu_imageCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 </script>
@@ -176,25 +189,38 @@
   <Menu.Trigger
     class={cn(
       'flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white',
-      'hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring',
+      'hover:bg-black/75',
       triggerClass,
     )}
-    aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
     onclick={(event: MouseEvent) => event.stopPropagation()}
   >
-    <Fa icon={faEllipsis} size="sm" />
+    {#snippet child({ props })}
+      <Button
+        {...props}
+        variant="plain"
+        size="icon-sm"
+        wrapContent={false}
+        active={open}
+        aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
+      >
+        <Fa icon={faEllipsis} size="sm" />
+      </Button>
+    {/snippet}
   </Menu.Trigger>
   <Menu.Content class={contentClass} align="end">
     <Menu.Item onSelect={() => void download()}>
       {m.ui_imageActionsMenu_download_label()}
     </Menu.Item>
+    <Menu.Item onSelect={() => void copyImage()}>
+      {m.ui_imageActionsMenu_copyImage_label()}
+    </Menu.Item>
     {#if workspaceFile}
       <Menu.Item onSelect={() => void copyPath()}>
         {m.ui_imageActionsMenu_copyPath_label()}
       </Menu.Item>
-    {:else}
-      <Menu.Item onSelect={() => void copyImage()}>
-        {m.ui_imageActionsMenu_copyImage_label()}
+    {:else if isHttpsImage}
+      <Menu.Item onSelect={() => void copyLink()}>
+        {m.ui_imageActionsMenu_copyLink_label()}
       </Menu.Item>
     {/if}
     {#if dimensions || byteSize !== null}

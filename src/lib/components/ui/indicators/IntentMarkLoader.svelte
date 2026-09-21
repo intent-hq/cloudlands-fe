@@ -1,6 +1,12 @@
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
   import {
+    intentMarkPaths,
+    intentMarkStrokeWidth,
+    intentMarkViewBox,
+    pulseKeyframes,
+  } from './intent-mark-vector';
+  import {
     createIntentMarkMotion,
     type IntentMarkMotionOptions,
     type IntentMarkVariant,
@@ -33,7 +39,7 @@
   class="intent-mark-loader {className}"
   width={size}
   height={size}
-  viewBox="0 0 256 208"
+  viewBox={intentMarkViewBox}
   fill="none"
   role="status"
   aria-label={m.ui_spinner_loading_ariaLabel()}
@@ -42,32 +48,17 @@
   data-playing={playing}
   data-motion-state="neutral"
 >
-  <g aria-hidden="true" data-mark>
-    <path
-      data-mark-arm="upper-left"
-      data-bloom-arm="upper-left"
-      pathLength="100"
-      d="M76 8L94 61C99 76 92 83 78 77L27 48"
-    />
-    <path
-      data-mark-arm="upper-right"
-      data-bloom-arm="upper-right"
-      pathLength="100"
-      d="M180 8L162 61C157 76 164 83 178 77L229 48"
-    />
-    <path
-      data-mark-arm="lower-left"
-      data-bloom-arm="lower-left"
-      pathLength="100"
-      d="M16 104L68 96C83 94 89 102 79 114L45 157"
-    />
-    <path
-      data-mark-arm="lower-right"
-      data-bloom-arm="lower-right"
-      pathLength="100"
-      d="M240 104L188 96C173 94 167 102 177 114L211 157"
-    />
-    <path data-mark-arm="bottom" data-bloom-arm="bottom" pathLength="100" d="M128 126L128 184" />
+  <g data-mark-layer="neutral" aria-hidden="true">
+    {#each intentMarkPaths as d, index}
+      <path
+        {d}
+        data-mark-arm={index}
+        pathLength="100"
+        stroke="currentColor"
+        stroke-width={intentMarkStrokeWidth}
+        style:transform={String(pulseKeyframes(index)[0].transform)}
+      />
+    {/each}
   </g>
 </svg>
 
@@ -83,16 +74,19 @@
   }
 
   path {
-    stroke: currentColor;
-    stroke-width: 18;
+    pointer-events: none;
     stroke-linecap: butt;
-    stroke-linejoin: miter;
-    stroke-miterlimit: 10;
-    stroke-dasharray: 100 100;
+    stroke-linejoin: round;
+    stroke-dasharray: 100 200;
     stroke-dashoffset: 0;
-    transform: translate(0, 0) rotate(0deg) scale(1);
-    transform-box: view-box;
-    transform-origin: 128px 96px;
+    transform-origin: 0 0;
+  }
+
+  @container style(--motion-reduced: 1) {
+    .intent-mark-loader,
+    .intent-mark-loader :global(*) {
+      transition-property: none;
+    }
   }
 
   @media (forced-colors: active) {

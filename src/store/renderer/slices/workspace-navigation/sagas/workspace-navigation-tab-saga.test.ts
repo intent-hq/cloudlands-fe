@@ -7,8 +7,18 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   emptyWorkspaceState,
   openTabInRightmostColumn,
-  panelLayoutReducer,
+  panelLayoutReducer as rawPanelLayoutReducer,
 } from '../../panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+
+/** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
+const ownerWindowSlices = {
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+  // Settled owner window: guest list received, no host joined.
+  guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
+};
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
@@ -35,9 +45,11 @@ vi.mock('$lib/components/chat/input/context-api', () => ({
   getAttachmentInfo: mocks.getAttachmentInfo,
   downloadAttachment: mocks.downloadAttachment,
 }));
-vi.mock('svelte-sonner', () => ({
-  toast: { error: mocks.toastError, success: mocks.toastSuccess },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: mocks.toastSuccess },
 }));
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const settle = async () => {
   await Promise.resolve();
@@ -149,9 +161,11 @@ describe('workspaceNavigationTabSaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const state = {
+      ...ownerWindowSlices,
       panelLayout: {
         byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-focused' } },
       },
+      workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'owner' }]) },
     };
     const task = runSaga({ channel, dispatch, getState: () => state }, workspaceNavigationTabSaga);
     const event = { id: 'event-1', type: 'file:changed', timestamp: 42 } as never;
@@ -207,6 +221,30 @@ describe('workspaceNavigationTabSaga', () => {
         panelId: 'panel-focused',
         tab: { type: 'code-review', data: { status: 'completed', result: 'Looks good' } },
       },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops browser opens for a collaborator workspace (owner-only, multiplayer w3)', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const state = {
+      ...ownerWindowSlices,
+      panelLayout: {
+        byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-focused' } },
+      },
+      workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'collaborator' }]) },
+    };
+    const task = runSaga({ channel, dispatch, getState: () => state }, workspaceNavigationTabSaga);
+
+    channel.put(openWorkspaceBrowser('ws-1', 'https://example.com'));
+    channel.put(openWorkspaceCodeReview('ws-1', { status: 'completed', result: 'Looks good' }));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual(['panelLayout/openTab']);
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+      payload: { tab: { type: 'code-review' } },
     });
     task.cancel();
     await task.toPromise();
@@ -324,10 +362,45 @@ describe('workspaceNavigationTabSaga', () => {
     vi.restoreAllMocks();
   });
 
+  it.each([
+    ['docs/chl-spec.md:2471', undefined, 'docs/chl-spec.md', 'chl-spec.md', 2471],
+    ['src/a.ts:10:5', undefined, 'src/a.ts', 'a.ts', 10],
+    ['src/a.ts#L10-20', undefined, 'src/a.ts', 'a.ts', 10],
+    ['src/a.ts:10', { line: 3 }, 'src/a.ts', 'a.ts', 3],
+  ])(
+    'normalizes a line suffix before opening %s',
+    async (filePath, options, expectedPath, expectedTitle, expectedLine) => {
+      vi.spyOn(Date, 'now').mockReturnValue(42);
+      const channel = stdChannel();
+      const dispatch = vi.fn();
+      const task = runSaga(
+        { channel, dispatch, getState: () => noFocusedPanelState },
+        workspaceNavigationTabSaga,
+      );
+
+      channel.put(openWorkspaceFile('ws-1', filePath, options));
+      await settle();
+
+      expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+        payload: {
+          tab: {
+            type: 'file',
+            title: expectedTitle,
+            filePath: expectedPath,
+            data: { line: expectedLine, jumpTimestamp: 42 },
+          },
+        },
+      });
+      task.cancel();
+      await task.toPromise();
+      vi.restoreAllMocks();
+    },
+  );
+
   // Regression tests for intent-hq/monorepo#3398: a mod-clicked note-task link
-  // (openInNewAdjacentPanel) must open a NEW column right of the source panel,
-  // even when an equivalent note tab is already open in another column.
-  describe('mod-click note routing into a new adjacent column (monorepo#3398)', () => {
+  // (openInNewAdjacentPanel) permits a duplicate instead of activating an
+  // equivalent note tab that is already open elsewhere.
+  describe('mod-click note routing into the adjacent column (monorepo#3398)', () => {
     const notesState = {
       byWorkspaceId: {
         'ws-1': { notes: createCollection('id', [{ id: 'note-1', title: 'Plan' }]) },
@@ -350,7 +423,7 @@ describe('workspaceNavigationTabSaga', () => {
       return { channel, task, getLayout: () => state.panelLayout.byWorkspaceId['ws-1'] };
     }
 
-    it('creates a new column right of the source even when the note is open in another column', async () => {
+    it('opens a duplicate in the right neighbor when the note is already open there', async () => {
       const { channel, task, getLayout } = runWithLayout({
         root: {
           type: 'split',
@@ -391,21 +464,19 @@ describe('workspaceNavigationTabSaga', () => {
 
       const ws = getLayout();
       const order = ws.root.children.map((child: any) => child.panelId);
-      expect(order).toHaveLength(3);
-      expect(order[0]).toBe('left');
-      expect(order[2]).toBe('right');
-      const middle = ws.panels[order[1]];
-      expect(middle.tabs).toEqual([
+      expect(order).toEqual(['left', 'right']);
+      expect(ws.panels.right.tabs).toEqual([
+        expect.objectContaining({ id: 'existing-note' }),
+        expect.objectContaining({ id: 'right-file' }),
         expect.objectContaining({ type: 'note', noteId: 'note-1', title: 'Plan' }),
       ]);
-      expect(middle.activeTabId).toBe(middle.tabs[0].id);
-      // The pre-existing copy in the right column must not be hijacked.
-      expect(ws.panels.right.activeTabId).toBe('right-file');
+      expect(ws.panels.right.activeTabId).toBe(ws.panels.right.tabs[2].id);
+      expect(ws.pendingFocusTabId).toBe(ws.panels.right.tabs[2].id);
       task.cancel();
       await task.toPromise();
     });
 
-    it('creates a new column right of the source when the note is not open anywhere', async () => {
+    it('opens in the right neighbor when the note is not open anywhere', async () => {
       const { channel, task, getLayout } = runWithLayout({
         root: {
           type: 'split',
@@ -443,12 +514,13 @@ describe('workspaceNavigationTabSaga', () => {
 
       const ws = getLayout();
       const order = ws.root.children.map((child: any) => child.panelId);
-      expect(order).toHaveLength(3);
-      expect(order[0]).toBe('left');
-      expect(order[2]).toBe('right');
-      expect(ws.panels[order[1]].tabs).toEqual([
+      expect(order).toEqual(['left', 'right']);
+      expect(ws.panels.right.tabs).toEqual([
+        expect.objectContaining({ id: 'right-file' }),
         expect.objectContaining({ type: 'note', noteId: 'note-1' }),
       ]);
+      expect(ws.panels.right.activeTabId).toBe(ws.panels.right.tabs[1].id);
+      expect(ws.pendingFocusTabId).toBe(ws.panels.right.tabs[1].id);
       task.cancel();
       await task.toPromise();
     });

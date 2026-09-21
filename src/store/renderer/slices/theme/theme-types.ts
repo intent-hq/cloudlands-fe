@@ -1,5 +1,5 @@
-export type ThemeName = "light" | "dark";
-export type ThemePreference = ThemeName | "system";
+export type ThemeName = 'light' | 'dark';
+export type ThemePreference = ThemeName | 'system';
 
 export type ThemeState = {
   name: ThemeName;
@@ -12,11 +12,11 @@ export type ThemeState = {
 
 export type ThemeCustomizationState = Pick<
   ThemeState,
-  "hasCustomTheme" | "customThemeName" | "activePresetId"
+  'hasCustomTheme' | 'customThemeName' | 'activePresetId'
 >;
 
-export const DEFAULT_THEME_NAME: ThemeName = "dark";
-export const DEFAULT_THEME_PREFERENCE: ThemePreference = "system";
+export const DEFAULT_THEME_NAME: ThemeName = 'dark';
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'system';
 export const DEFAULT_THEME_CUSTOMIZATION: ThemeCustomizationState = {
   hasCustomTheme: false,
   customThemeName: null,

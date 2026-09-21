@@ -1,8 +1,5 @@
-import type {
-  VoiceOpenAiModel,
-  VoiceProvider,
-} from "$features/voice/voice-settings-service";
-import type { VoiceEngine } from "$features/voice/voice-engine-preference";
+import type { VoiceOpenAiModel, VoiceProvider } from '$features/voice/voice-settings-service';
+import type { VoiceEngine } from '$features/voice/voice-engine-preference';
 
 /** Serializable projection of an audio-input MediaDeviceInfo. */
 export interface VoiceInputDevice {

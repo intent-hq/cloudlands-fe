@@ -1,6 +1,6 @@
-import { call, type SagaGenerator } from "typed-redux-saga";
+import { call, type SagaGenerator } from 'typed-redux-saga';
 
-import { safeLocalStorage } from "$lib/utils/safe-storage";
+import { safeLocalStorage } from '$lib/utils/safe-storage';
 
 export function* getLocalStorageItem(key: string): SagaGenerator<string | null> {
   try {

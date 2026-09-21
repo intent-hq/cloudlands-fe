@@ -30,11 +30,12 @@ describe('SettingsSidebarNav', () => {
       agentsNavigation: createSpecialistsNavigation(),
     });
 
-    const setup = screen.getByRole('button', { name: 'Setup' });
+    const setup = screen.getByRole('button', { name: 'Workspace setup' });
     expect(setup.getAttribute('aria-current')).toBe('page');
     expect(
       screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current'),
     ).toBeNull();
+    expect(screen.queryAllByRole('img')).toHaveLength(0);
   });
 
   it('selects a category when clicked', async () => {
@@ -45,24 +46,62 @@ describe('SettingsSidebarNav', () => {
       agentsNavigation: createSpecialistsNavigation(),
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Agent Behavior' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Agent defaults' }));
 
     expect(onSelect).toHaveBeenCalledWith('agent-behavior');
   });
 
-  it('delegates specialist navigation without making the section heading clickable', async () => {
-    const onSelectSpecialist = vi.fn();
+  it.each([
+    'display',
+    'app-behavior',
+    'input',
+    'agent-behavior',
+    'providers',
+    'connections',
+    'devices',
+    'setup',
+    'advanced',
+  ] as const)('preserves selection through the %s tab identifier', async (id) => {
+    const onSelect = vi.fn();
+    const { container } = render(SettingsSidebarNav, {
+      activeTab: id,
+      onSelect,
+      agentsNavigation: createSpecialistsNavigation(),
+    });
+    const button = container.querySelector(`[data-settings-tab="${id}"]`)!;
+    expect(button.getAttribute('aria-current')).toBe('page');
+    expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    expect(button.getAttribute('data-state')).toBe('active');
+    await fireEvent.click(button);
+    expect(onSelect).toHaveBeenCalledWith(id);
+  });
+
+  it('withholds hidden categories while keeping the rest navigable (collaborator, multiplayer w3)', () => {
     render(SettingsSidebarNav, {
-      activeTab: 'specialists',
+      activeTab: 'display',
       onSelect: vi.fn(),
-      agentsNavigation: createSpecialistsNavigation(onSelectSpecialist),
+      agentsNavigation: createSpecialistsNavigation(),
+      hiddenTabs: ['providers', 'connections'],
     });
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Specialists' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Specialists' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Providers' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connections' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Workspace setup' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Agent defaults' })).toBeTruthy();
+  });
+
+  it('delegates specialist navigation without making the section heading clickable', async () => {
+    const onSelectSpecialist = vi.fn();
+    const onSelect = vi.fn();
+    render(SettingsSidebarNav, {
+      activeTab: 'specialists',
+      onSelect,
+      agentsNavigation: createSpecialistsNavigation(onSelectSpecialist),
+    });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Implementor' }));
 
     expect(onSelectSpecialist).toHaveBeenCalledWith('Implementor');
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

@@ -21,7 +21,7 @@ vi.mock('$store/renderer/store', () => {
   const store: any = {
     get state() {
       return {
-        terminals: { height: 30, workspaces: {} },
+        terminals: { height: 30, workspaceHeights: {}, workspaces: {} },
       };
     },
     dispatch: (action: any) => {
@@ -67,8 +67,8 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { disposeTerminal: vi.fn(), clearTerminal: vi.fn() },

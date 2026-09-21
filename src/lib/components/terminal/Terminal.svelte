@@ -233,7 +233,7 @@
   {/if}
 
   <!-- Terminal content -->
-  <div class="terminal-content" bind:this={container}></div>
+  <div class="terminal-content native-scrollbars" bind:this={container}></div>
 </div>
 
 <style>

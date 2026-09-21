@@ -61,8 +61,47 @@ function releaseBump(dir: string): void {
   writeFileSync(join(dir, 'CHANGELOG.md'), '# Changelog\n\n## 2.29.0\n\n- new entry\n');
 }
 
-function evaluate(dir: string) {
-  return evaluateFastPath('base', 'HEAD', dir) as { fastPath: boolean; reason?: string };
+function evaluate(dir: string, baseRef = 'base') {
+  return evaluateFastPath(baseRef, 'HEAD', dir) as { fastPath: boolean; reason?: string };
+}
+
+// Shapes HEAD like a merge_group entry: the PR branch is cut from `base`,
+// main advances past it (the previous queue entry), and head_sha is the PR's
+// change applied onto that advanced main. The repo's queue uses the squash
+// method, so the real head is a single-parent commit (parent = base_sha);
+// 'merge' models a merge-method queue (two parents). Returns the entry's
+// base_sha.
+function mergeQueueEntry(
+  dir: string,
+  editPrTip: () => void,
+  method: 'squash' | 'merge' = 'squash',
+): string {
+  const git = (...args: string[]) =>
+    execFileSync('git', args, {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  git('checkout', '-q', '-b', 'release-pr');
+  editPrTip();
+  commit(dir, 'chore(main): release');
+  git('checkout', '-q', 'main');
+  writeFileSync(join(dir, 'other.ts'), 'export const other = 1;\n');
+  commit(dir, 'previous queue entry');
+  const baseSha = git('rev-parse', 'HEAD');
+  if (method === 'squash') {
+    git('merge', '-q', '--squash', 'release-pr');
+    commit(dir, 'chore(main): release (squash)');
+    expect(git('rev-list', '--parents', '-n', '1', 'HEAD').split(' ')).toEqual([
+      git('rev-parse', 'HEAD'),
+      baseSha,
+    ]);
+  } else {
+    git('merge', '-q', '--no-ff', '--no-edit', 'release-pr');
+    expect(git('rev-parse', 'HEAD^1')).toBe(baseSha);
+    expect(git('rev-parse', 'HEAD^2')).toBe(git('rev-parse', 'release-pr'));
+  }
+  return baseSha;
 }
 
 afterEach(() => {
@@ -249,6 +288,30 @@ describe('release-pr-fast-path', () => {
     expect(evaluate(dir)).toEqual({
       fastPath: false,
       reason: 'expected exactly one pin line at head (found 2)',
+    });
+  });
+
+  it('matches a release-shaped merge_group entry (squash queue: single-parent head on base_sha)', () => {
+    const dir = initRepo();
+    const baseSha = mergeQueueEntry(dir, () => releaseBump(dir));
+    expect(evaluate(dir, baseSha)).toEqual({ fastPath: true });
+  });
+
+  it('matches a release-shaped merge_group entry (merge queue: two-parent head on base_sha)', () => {
+    const dir = initRepo();
+    const baseSha = mergeQueueEntry(dir, () => releaseBump(dir), 'merge');
+    expect(evaluate(dir, baseSha)).toEqual({ fastPath: true });
+  });
+
+  it('rejects a merge_group entry whose PR tip also touches another file', () => {
+    const dir = initRepo();
+    const baseSha = mergeQueueEntry(dir, () => {
+      releaseBump(dir);
+      writeFileSync(join(dir, 'src.ts'), 'export const value = 2;\n');
+    });
+    expect(evaluate(dir, baseSha)).toEqual({
+      fastPath: false,
+      reason: 'disallowed file: src.ts',
     });
   });
 });

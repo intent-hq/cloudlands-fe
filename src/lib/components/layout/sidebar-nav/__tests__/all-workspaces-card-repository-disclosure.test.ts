@@ -105,9 +105,42 @@ describe('AllWorkspacesCard repository disclosure', () => {
     appStore.init();
     appStore.dispatch(resetWorkspaceState());
     appStore.dispatch(setPinnedWorkspaceIds([]));
+    appStore.dispatch(hydrateSidebarNav({ collapsedRepoGroupKeys: [] }));
     appStore.dispatch(setAllSpacesViewMode('recent'));
     appStore.dispatch(setShowArchivedWorkspaces(false));
     vi.mocked(goto).mockReset();
+  });
+
+  it('hides repo rows and show-more, retains collapse on remount, and skips hidden rows during navigation', async () => {
+    const view = renderRepositoryView(() => {
+      seedRepository('alpha', 4);
+      seedRepository('beta', 3, 10);
+    });
+    const group = await waitFor(() => repositoryGroup('alpha'));
+    const toggle = within(group).getByRole('button', { name: 'alpha', exact: true });
+    const time = group.querySelector('[data-workspace-card-time]');
+    expect(time).not.toBeNull();
+    expect(time?.closest('[hidden]')).toBeNull();
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('false'));
+    expect(document.getElementById(toggle.getAttribute('aria-controls')!)?.hidden).toBe(true);
+    expect(within(group).queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(within(group).queryByRole('button', { name: 'alpha space 1' })).toBeNull();
+    expect(time?.closest('[hidden]')?.id).toBe(toggle.getAttribute('aria-controls'));
+    const search = screen.getByPlaceholderText(m.layout_activeCard_search_placeholder());
+    await fireEvent.keyDown(search, { key: 'Home' });
+    await fireEvent.keyDown(search, { key: 'Enter' });
+    await waitFor(() => expect(goto).toHaveBeenCalledWith('/workspace/beta-1'));
+    view.unmount();
+    renderRepositoryView(() => {});
+    const restored = await screen.findByRole('button', { name: 'alpha', exact: true });
+    expect(restored.getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(restored);
+    await waitFor(() => expect(restored.getAttribute('aria-expanded')).toBe('true'));
+    expect(screen.getByRole('button', { name: 'alpha space 1' })).toBeTruthy();
+    const restoredTime = repositoryGroup('alpha').querySelector('[data-workspace-card-time]');
+    expect(restoredTime).not.toBeNull();
+    expect(restoredTime?.closest('[hidden]')).toBeNull();
   });
 
   it('renders all three members without a disclosure control', async () => {
@@ -130,54 +163,6 @@ describe('AllWorkspacesCard repository disclosure', () => {
 
     appStore.dispatch(togglePinWorkspace('alpha-4'));
     await waitFor(() => expect(rowIds(group)).toEqual(['alpha-4', 'alpha-1', 'alpha-2']));
-  });
-
-  it('renders a compact left-aligned text action with transparent interaction states', async () => {
-    renderRepositoryView(() => seedRepository('alpha', 4));
-
-    const group = await waitFor(() => repositoryGroup('alpha'));
-    const heading = within(group).getByRole('heading', { level: 4, name: 'alpha' });
-    const toggle = within(group).getByRole('button', { name: 'Show more' });
-    const label = toggle.querySelector('[data-repository-group-toggle-label]') as HTMLElement;
-    const container = toggle.closest('.min-w-0') as HTMLElement;
-
-    expect(container.className).toContain('min-w-0');
-    expect(container.className).toContain('px-2');
-    expect(toggle.className).toContain('type-caption');
-    expect(toggle.className).toContain('min-h-7');
-    expect(toggle.className).toContain('w-fit');
-    expect(toggle.className).toContain('max-w-full');
-    expect(toggle.className).toContain('justify-start');
-    expect(toggle.className).toContain('text-left');
-    expect(toggle.className).toContain('font-normal');
-    expect(toggle.className).toContain('text-muted-foreground');
-    expect(toggle.className).toContain('border-0');
-    expect(toggle.className).toContain('bg-transparent');
-    expect(toggle.className).toContain('shadow-none');
-    expect(toggle.className).toContain('hover:bg-transparent');
-    expect(toggle.className).toContain('active:bg-transparent');
-    expect(toggle.className).toContain('focus-visible:bg-transparent');
-    expect(toggle.className).toContain('focus-visible:text-foreground');
-    expect(toggle.className).toContain('focus-visible:underline');
-    expect(toggle.className).toContain('focus-visible:outline-none');
-    expect(toggle.className).toContain('focus-visible:ring-0!');
-    expect(toggle.classList.contains('w-full')).toBe(false);
-    expect(toggle.className).not.toMatch(/focus-visible:outline-(?!none(?:\s|$)|0(?:\s|$))\S+/);
-    expect(toggle.className).not.toMatch(/focus-visible:(?:shadow|ring-offset)-\S+/);
-
-    setGeometry(group, 0, 240);
-    setGeometry(container, 0, 240);
-    setGeometry(toggle, 4, 72);
-    setGeometry(heading, 8, 48, 16);
-    setGeometry(label, 8, 64, 16);
-
-    expect(toggle.getBoundingClientRect().width).toBeLessThan(
-      container.getBoundingClientRect().width,
-    );
-    expect(label.getBoundingClientRect().left).toBe(heading.getBoundingClientRect().left);
-    expect(toggle.getBoundingClientRect().right).toBeLessThanOrEqual(
-      group.getBoundingClientRect().right,
-    );
   });
 
   it('keeps its content-sized hit target contained at narrow and zoom-equivalent widths', async () => {

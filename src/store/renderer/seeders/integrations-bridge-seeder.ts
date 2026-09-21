@@ -24,6 +24,7 @@ import type {
   GitHubAuthState,
   GitHubAuthStatus,
   GithubRepo,
+  GithubUserSearchHit,
   StartAuthResult,
 } from '$features/github-auth/types';
 import { LINEAR_AUTH_CHANNELS } from '$features/linear-auth/constants';
@@ -37,6 +38,10 @@ import type {
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { LiveIntegrationsClient } from '$lib/client/live/live-integrations-client';
 import { createLogger } from '$lib/utils/client-logger';
+import {
+  invalidateGitHubAuthStatus,
+  readGitHubAuthStatus,
+} from '$features/github-auth/renderer/github-auth-status.client';
 
 const logger = createLogger('IntegrationsBridgeSeeder');
 
@@ -57,7 +62,7 @@ function errorMessage(error: unknown): string {
 /** `github.authStatus` — probes the env PAT via GET /user; null = probe failed. */
 async function githubAuthStatus(): Promise<GitHubAuthStatus | null> {
   try {
-    return await backendRequest<GitHubAuthStatus>('github.authStatus');
+    return await readGitHubAuthStatus();
   } catch {
     return null;
   }
@@ -107,6 +112,11 @@ registerMockIpcHandler(
 // "poll" is the event fallback that completes when `github.authStatus`
 // validates, cancel maps to `github.cancelAuth`, and logout to
 // `github.revoke` (token deleted daemon-side; never crosses the wire).
+//
+// A configured token only short-circuits a plain "start"; `{ reconnect: true }`
+// always starts a fresh device flow so an existing connection can be
+// re-authorized for new scopes (intent#5206). The daemon swaps the stored
+// token on authorize, so the old one keeps working until then.
 
 /** `github.connect` success payload (§5.27) — user-facing codes only. */
 interface GitHubConnectWire {
@@ -117,9 +127,10 @@ interface GitHubConnectWire {
   interval?: number;
 }
 
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartAuthResult> => {
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (arg): Promise<StartAuthResult> => {
+  const reconnect = asRecord(arg).reconnect === true;
   const status = await githubAuthStatus();
-  if (status?.isConfigured === true) {
+  if (!reconnect && status?.isConfigured === true) {
     return {
       success: true,
       alreadyAuthenticated: true,
@@ -135,6 +146,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartA
       typeof result.expiresIn === 'number' &&
       typeof result.interval === 'number'
     ) {
+      invalidateGitHubAuthStatus();
       return {
         success: true,
         oauthUrl: result.verificationUri,
@@ -156,9 +168,14 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartA
   }
 });
 
+// The daemon clears the `deviceFlow` slot only when a flow authorizes; a
+// pending flow means the user has not entered the code yet, and a terminal
+// `expired` / `denied` / `error` flow stays in the slot (§5.27). A reconnect
+// runs on top of a still-valid token, so `isConfigured` alone would report a
+// not-yet-authorized or failed re-authorization as complete (intent#5206).
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN, async () => {
   const status = await githubAuthStatus();
-  const isComplete = status?.isConfigured === true;
+  const isComplete = status?.isConfigured === true && !status.deviceFlow;
   const user = isComplete ? await liveIntegrations.githubUser() : null;
   return { success: true, data: { user, isComplete } };
 });
@@ -173,6 +190,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async () => {
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the cancel.' };
     }
+    invalidateGitHubAuthStatus();
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -190,6 +208,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LOGOUT, async () => {
     if (result?.ok !== true) {
       return { success: false, error: 'The daemon did not confirm the revoke.' };
     }
+    invalidateGitHubAuthStatus();
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -247,6 +266,42 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, async (arg) => {
   }
 });
 
+// ── GitHub user search for the Share dialog's pin typeahead (PROTOCOL §5.27) ──
+
+/** Daemon `github.users.search` hit — `{ id, login, avatarUrl, htmlUrl }`. */
+interface GithubUserSearchHitWire {
+  id: number;
+  login: string;
+  avatarUrl?: string | null;
+  htmlUrl?: string | null;
+}
+
+function toUserSearchHit(user: GithubUserSearchHitWire): GithubUserSearchHit {
+  return {
+    id: user.id,
+    login: user.login,
+    avatarUrl: user.avatarUrl ?? null,
+    htmlUrl: user.htmlUrl ?? null,
+  };
+}
+
+// `limit` is left to the daemon default (8, clamped into [1, 10]).
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_USERS, async (arg) => {
+  const query = asRecord(arg).query;
+  if (typeof query !== 'string' || query.length === 0) {
+    return { success: false, error: 'query is required' };
+  }
+  try {
+    const result = await backendRequest<{ users?: GithubUserSearchHitWire[] }>(
+      'github.users.search',
+      { query },
+    );
+    return { success: true, data: (result?.users ?? []).map(toUserSearchHit) };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+});
+
 // ── GitHub issues & PRs for the Add-context pane (PROTOCOL §5.27) ──
 
 /** Daemon `GithubUser` — derived identity only (§5.27). */
@@ -286,6 +341,21 @@ interface GithubPullWire {
   merged?: boolean;
   draft?: boolean;
   assignees?: GithubUserWire[];
+  owner?: string;
+  repo?: string;
+}
+
+/** `{ owner, repo }` repository reference (§5.27 `repos` search param / related repos). */
+interface GithubRepoRef {
+  owner: string;
+  repo: string;
+}
+
+/** Narrow an unknown value to a well-formed `{ owner, repo }` reference. */
+function asRepoRef(value: unknown): GithubRepoRef | null {
+  const { owner, repo } = asRecord(value);
+  if (typeof owner !== 'string' || !owner || typeof repo !== 'string' || !repo) return null;
+  return { owner, repo };
 }
 
 /** Legacy search params sent by IssueSuggestions: `{ owner, repo, options }`. */
@@ -295,6 +365,7 @@ function searchParams(arg: unknown): {
   filter?: string;
   state?: string;
   query?: string;
+  repos?: GithubRepoRef[];
   nextToken?: string;
   limit?: number;
 } | null {
@@ -303,22 +374,33 @@ function searchParams(arg: unknown): {
   const repo = params.repo;
   if (typeof owner !== 'string' || !owner || typeof repo !== 'string' || !repo) return null;
   const options = asRecord(params.options);
+  const repos = Array.isArray(options.repos)
+    ? options.repos.map(asRepoRef).filter((ref): ref is GithubRepoRef => ref !== null)
+    : [];
   return {
     owner,
     repo,
     filter: typeof options.filter === 'string' ? options.filter : undefined,
     state: typeof options.state === 'string' ? options.state : undefined,
     query: typeof options.query === 'string' && options.query ? options.query : undefined,
+    repos: repos.length > 0 ? repos : undefined,
     nextToken:
       typeof options.nextToken === 'string' && options.nextToken ? options.nextToken : undefined,
     limit: typeof options.per_page === 'number' ? options.per_page : undefined,
   };
 }
 
+/** Pane row id — unique across a multi-repo blend (`owner/repo#number`). */
+function repoScopedId(owner: string, repo: string, number: number): string {
+  return `${owner}/${repo}#${number}`;
+}
+
 // `git-tracking:search-github-issues` → daemon `github.issues.search`. The
 // pane maps `{ id, htmlUrl, author.login, labels[] }`; the wire keys issues by
-// `number` (no separate id), so `id` echoes the number. `query`/`nextToken`
-// forward to the daemon and the response `nextToken` rides alongside `data`.
+// `number` (no separate id), so `id` is the repo-scoped `owner/repo#number`.
+// `query`/`repos`/`nextToken` forward to the daemon and the response
+// `nextToken` rides alongside `data`. Each item's `owner`/`repo` come from the
+// wire item (multi-repo search names the hit's own repo).
 registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (arg) => {
   const params = searchParams(arg);
   if (!params) return { success: false, error: 'owner and repo are required' };
@@ -327,20 +409,24 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (ar
       'github.issues.search',
       params,
     );
-    const data = result.issues.map((issue) => ({
-      id: String(issue.number),
-      number: issue.number,
-      title: issue.title,
-      body: issue.body,
-      htmlUrl: issue.htmlUrl,
-      state: issue.state,
-      owner: issue.owner ?? params.owner,
-      repo: issue.repo ?? params.repo,
-      author: issue.user ? { login: issue.user.login } : undefined,
-      labels: issue.labels ?? [],
-      createdAt: issue.createdAt,
-      updatedAt: issue.updatedAt,
-    }));
+    const data = result.issues.map((issue) => {
+      const owner = issue.owner ?? params.owner;
+      const repo = issue.repo ?? params.repo;
+      return {
+        id: repoScopedId(owner, repo, issue.number),
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+        htmlUrl: issue.htmlUrl,
+        state: issue.state,
+        owner,
+        repo,
+        author: issue.user ? { login: issue.user.login } : undefined,
+        labels: issue.labels ?? [],
+        createdAt: issue.createdAt,
+        updatedAt: issue.updatedAt,
+      };
+    });
     return { success: true, data, nextToken: result.nextToken ?? null };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -349,8 +435,8 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_GITHUB_ISSUES, async (ar
 
 // `git-tracking:search-pull-requests` → daemon `github.pulls.search`. The pane
 // renders a single `state: open|closed|merged|draft`, which the wire carries
-// as `state` + `merged` + `draft` booleans. `query`/`nextToken` forward to the
-// daemon and the response `nextToken` rides alongside `data`.
+// as `state` + `merged` + `draft` booleans. `query`/`repos`/`nextToken`
+// forward to the daemon and the response `nextToken` rides alongside `data`.
 registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, async (arg) => {
   const params = searchParams(arg);
   if (!params) return { success: false, error: 'owner and repo are required' };
@@ -359,21 +445,44 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.SEARCH_PULL_REQUESTS, async (ar
       'github.pulls.search',
       params,
     );
-    const data = result.pulls.map((pull) => ({
-      id: String(pull.number),
-      number: pull.number,
-      title: pull.title,
-      description: pull.body,
-      htmlUrl: pull.htmlUrl,
-      state: pull.merged === true ? 'merged' : pull.draft === true ? 'draft' : pull.state,
-      author: pull.user ? { login: pull.user.login } : undefined,
-      assignees: (pull.assignees ?? []).map((user) => user.login),
-      sourceBranch: pull.headRef,
-      targetBranch: pull.baseRef,
-      createdAt: pull.createdAt,
-      updatedAt: pull.updatedAt,
-    }));
+    const data = result.pulls.map((pull) => {
+      const owner = pull.owner ?? params.owner;
+      const repo = pull.repo ?? params.repo;
+      return {
+        id: repoScopedId(owner, repo, pull.number),
+        number: pull.number,
+        title: pull.title,
+        description: pull.body,
+        htmlUrl: pull.htmlUrl,
+        state: pull.merged === true ? 'merged' : pull.draft === true ? 'draft' : pull.state,
+        owner,
+        repo,
+        author: pull.user ? { login: pull.user.login } : undefined,
+        assignees: (pull.assignees ?? []).map((user) => user.login),
+        sourceBranch: pull.headRef,
+        targetBranch: pull.baseRef,
+        createdAt: pull.createdAt,
+        updatedAt: pull.updatedAt,
+      };
+    });
     return { success: true, data, nextToken: result.nextToken ?? null };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+});
+
+// `git-tracking:list-related-repos` → daemon `github.relatedRepos.list`
+// (§5.27): the GitHub repos the addressed repo's `.gitmodules`
+// references, `{ owner, repo, path }[]` capped at 5 by the daemon. A missing
+// `.gitmodules` is `{ repos: [] }` on the wire, never an error.
+registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.LIST_RELATED_REPOS, async (arg) => {
+  const ref = asRepoRef(arg);
+  if (!ref) return { success: false, error: 'owner and repo are required' };
+  try {
+    const result = await backendRequest<{
+      repos?: (GithubRepoRef & { path: string })[];
+    }>('github.relatedRepos.list', ref);
+    return { success: true, data: result?.repos ?? [] };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

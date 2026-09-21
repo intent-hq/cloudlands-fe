@@ -393,7 +393,7 @@
   .search-input:focus,
   .type-select:focus {
     outline: none;
-    border-color: hsl(var(--primary));
+    border-color: hsl(var(--primary-ink));
   }
 
   .test-button {

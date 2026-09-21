@@ -1,7 +1,8 @@
 # Redux Store — Agent Directives
 
 > Architecture update — the renderer uses the published Themis runtime.
-> `@augmentcode/themis@0.1.1` is the canonical Store implementation. Themis
+> The `@augmentcode/themis` version declared in `package.json` is the canonical
+> Store implementation. Themis
 > owns its saga middleware and initializes it during `Store.init()`; do not add
 > another saga middleware. `store.runSaga(sagaFn)` starts an app-owned saga and
 > returns its cancellation handler. Business side effects belong to root-owned
@@ -11,7 +12,7 @@ Use these rules when creating or editing code in `src/store/renderer/` so Redux 
 
 ## Source of Truth
 
-- The published `@augmentcode/themis@0.1.1` exports and installed Themis skills are the source of truth for the store API surface.
+- The published exports of the `@augmentcode/themis` version declared in `package.json` and installed Themis skills are the source of truth for the store API surface.
 - This file is a repository-local companion checklist for `src/store/renderer/`. Keep it concise.
 - If this file conflicts with the installed Themis runtime, follow the runtime and report the instruction drift instead of extending local guidance.
 
@@ -110,7 +111,7 @@ export const setEnabled = createAction<[wsId: string, value: boolean]>('example/
 - If a slice exists only to define saga trigger actions and has no meaningful state, do not register a reducer for it in `src/store/renderer/reducer.ts`.
 - A saga can exist without a reducer entry in the state tree.
 - Keep the action creators and saga registration, but omit the empty reducer.
-- Current examples: `agent-events`, `git-events`, `settings-events`, `workspace-lifecycle`.
+- Current examples: `agent-events`, `git-events`, `settings-events`.
 
 ## 10. Workspace-Scoped State Pattern
 

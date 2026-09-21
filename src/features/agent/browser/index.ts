@@ -174,5 +174,3 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
 // UnifiedAgentFactory, deletion through the agent-mutation middleware's
 // soft-hide-then-commit → daemon agent.delete, and persistence is owned by
 // the daemon on the main side via direct agent.* RPCs, PROTOCOL.md §5.5).
-
-

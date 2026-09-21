@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
 vi.mock('$lib/utils/navigation.client', () => ({ navigateToRoute: mocks.navigate }));
-vi.mock('svelte-sonner', () => ({ toast: { success: mocks.success, error: mocks.error } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mocks.success, error: mocks.error },
+}));
 
 import { setLastGitError, setLastGitOperation } from '../../git/git-slice';
 import {
@@ -55,7 +57,12 @@ function startSaga(dispatch: ReturnType<typeof vi.fn>, current = state()) {
       workspaceId
         ? openWorkspaceTab(workspaceId)
         : loadWorkspaceTabsState({
-            openTabs: [], currentTabId: null, pinnedTabs: [], unsavedTabs: [], optimisticTabs: [], tabOrder: [],
+            openTabs: [],
+            currentTabId: null,
+            pinnedTabs: [],
+            unsavedTabs: [],
+            optimisticTabs: [],
+            tabOrder: [],
           }),
     );
     listeners.forEach((listener) => listener());

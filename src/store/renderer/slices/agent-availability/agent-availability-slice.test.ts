@@ -1,19 +1,26 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   agentAvailabilityReducer,
   checkAllProvidersComplete,
   checkSingleProviderFailure,
   checkSingleProviderRequested,
+  checkSingleProviderSuccess,
   initialState,
   setAllProvidersLoading,
 } from './agent-availability-slice';
 import type { AgentAvailabilityState } from './agent-availability-types';
 
 describe('agentAvailabilityReducer status retention during re-checks', () => {
+  it('retains the last successful Antigravity status after a failed recheck', () => {
+    const known = agentAvailabilityReducer(
+      initialState,
+      checkSingleProviderSuccess('antigravity', { available: true, authenticated: true }),
+    );
+    const pending = agentAvailabilityReducer(known, checkSingleProviderRequested('antigravity'));
+    const failed = agentAvailabilityReducer(pending, checkSingleProviderFailure('antigravity'));
+    expect(failed.providerStatusMap.antigravity).toEqual({ available: true, authenticated: true });
+    expect(failed.providerLoadingMap.antigravity).toBe(false);
+  });
   // Regression guard for sticky onboarding tiers: ordering in AgentGrid is
   // derived from the last-known providerStatusMap, so re-check actions must
   // not clear it — only checkSingleProviderSuccess may replace an entry.

@@ -7,10 +7,7 @@
  * Example: @[ENG-123](linear://issue/abc123)
  */
 
-import {
-  Node,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { SvelteNodeViewRenderer } from '$lib/utils/tiptap/svelte-node-view';
 import ContextMentionNodeView from './ContextMentionNodeView.svelte';
 import type { ContextItemType, ContextProvider } from '$features/context/types';
@@ -168,7 +165,8 @@ export const ContextMention = Node.create({
     return {
       insertContextMention:
         (attrs: ContextMentionAttributes) =>
-          ({ commands }) => commands.insertContent({
+        ({ commands }) =>
+          commands.insertContent({
             type: this.name,
             attrs,
           }),

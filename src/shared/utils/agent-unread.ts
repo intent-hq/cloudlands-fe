@@ -22,6 +22,10 @@
  * so a (malformed) self-referencing `createdByAgentId` also suppresses the
  * dot.
  *
+ * Muted agents (`notificationsMuted === true`, the daemon-owned per-agent
+ * mute settable via `agent.update`) also always derive `false`: the mute
+ * suppresses the unread dot alongside the notification itself.
+ *
  * Dependency-light per AGENTS.md: pure function, no stores or services.
  */
 
@@ -29,6 +33,7 @@ interface AgentUnreadInputs {
   lastMessageRole?: 'user' | 'assistant';
   lastMessageId?: string;
   isBackground?: boolean;
+  notificationsMuted?: boolean;
   metadata?: {
     lastSeenMessageId?: string;
     isBackground?: unknown;
@@ -47,9 +52,11 @@ interface AgentUnreadInputs {
  * Always `false` for background agents (`isBackground === true` or
  * `metadata.isBackground === true`) and delegated child agents
  * (`metadata.createdByAgentId` is a non-empty string) — only top-level
- * foreground agents surface the unread indicator.
+ * foreground agents surface the unread indicator — and for muted agents
+ * (`notificationsMuted === true`).
  */
 export function deriveAgentHasUnread(agent: AgentUnreadInputs): boolean {
+  if (agent.notificationsMuted === true) return false;
   if (agent.isBackground === true || agent.metadata?.isBackground === true) return false;
   if (normalizeId(agent.metadata?.createdByAgentId) !== undefined) return false;
   if (agent.lastMessageRole !== 'assistant') return false;

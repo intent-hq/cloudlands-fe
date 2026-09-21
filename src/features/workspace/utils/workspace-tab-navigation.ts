@@ -19,11 +19,11 @@ import {
   reopenClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-slice';
 import {
+  selectAllTabs,
   selectPanelColumnCount,
   selectFocusedPanel,
   selectFocusedPanelId,
-  selectLastClosedPanelColumn,
-  selectRecentlyClosed,
+  selectLastPanelClose,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
@@ -83,8 +83,25 @@ interface RegisterWorkspaceTabShortcutsOptions {
   getCurrentPath: () => string;
   navigate: (path: string) => unknown;
   openNewWorkspace: () => void;
+  onCreateAgent?: (workspaceId: string) => void;
+  onCreateNote?: (workspaceId: string) => void;
+  onCreateTerminal?: (workspaceId: string) => void;
+  onCreateBrowser?: (workspaceId: string) => void;
   onWorkspaceTabMoved?: (detail: WorkspaceTabMovedEventDetail) => void;
+  /** Closes the app window once the last workspace tab is gone; omitted on the web build. */
+  closeWindow?: () => unknown;
   resolveBinding?: (id: ShortcutId) => string;
+}
+
+/**
+ * The current tab id only while it is in the tab strip. `loadWorkspaceTabsState`
+ * keeps a persisted `currentTabId` the normalized stacks omit, so a non-null id
+ * is not enough to prove a reachable tab.
+ */
+function selectReachableWorkspaceTabId(state: StoreState): string | null {
+  const workspaceId = selectCurrentWorkspaceTabId.select(state);
+  if (!workspaceId) return null;
+  return selectWorkspaceTabOrder.select(state).includes(workspaceId) ? workspaceId : null;
 }
 
 function navigateToSelectedWorkspace(
@@ -92,7 +109,7 @@ function navigateToSelectedWorkspace(
   currentPath: string,
   navigate: (path: string) => unknown,
 ): string | null {
-  const workspaceId = selectCurrentWorkspaceTabId.select(store.state);
+  const workspaceId = selectReachableWorkspaceTabId(store.state);
   const nextPath = workspaceId
     ? `/workspace/${workspaceId}`
     : resolveEmptyWindowDestination(selectWorkspaceItems.select(store.state));
@@ -150,7 +167,7 @@ export function closeActiveWorkspaceTab(
   return closeWorkspaceTabById(store, workspaceId, currentPath, navigate);
 }
 
-/** Close focused content, or remove its already-empty structural column. */
+/** Close focused content, collapsing its structural column when it becomes empty. */
 export function closeActivePanelTab(
   store: WorkspaceTabNavigationStore,
   currentPath: string,
@@ -164,9 +181,11 @@ export function closeActivePanelTab(
 
   const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId);
   const isEmpty = panel.tabs.length === 0 && panel.activeTabId === null;
-  const canRemoveEmptyColumn =
-    isEmpty && selectPanelColumnCount.select(store.state, workspaceId) > 1;
-  if ((!activeTab || activeTab.closable === false) && !canRemoveEmptyColumn) return null;
+  const canRemoveColumn =
+    selectPanelColumnCount.select(store.state, workspaceId) > 1 &&
+    (isEmpty ||
+      (panel.tabs.length === 1 && activeTab !== undefined && activeTab.closable !== false));
+  if ((!activeTab || activeTab.closable === false) && !canRemoveColumn) return null;
 
   const measuredWidth =
     availableCanvasWidth ??
@@ -174,6 +193,81 @@ export function closeActivePanelTab(
     undefined;
   store.dispatch(closeFocusedPanelTab(workspaceId, undefined, measuredWidth));
   return activeTab?.id ?? panel.id;
+}
+
+export type CloseTabCascadeLevel = 'panel' | 'workspace' | 'window';
+
+interface CloseTabCascadeOptions {
+  navigate: (path: string) => unknown;
+  closeWindow?: () => unknown;
+  availableCanvasWidth?: number;
+}
+
+/** True once every column of a restored layout is empty, so nothing is left to close. */
+function isWorkspaceLayoutEmpty(store: WorkspaceTabNavigationStore, workspaceId: string): boolean {
+  const layout = store.state.panelLayout.byWorkspaceId[workspaceId];
+  if (!layout || layout.restoreStatus === 'pending') return false;
+  return selectAllTabs.select(store.state, workspaceId).length === 0;
+}
+
+/**
+ * Workspace level: route to the current tab. The reducer allows a null or
+ * unreachable current id while tabs remain (restored tabs never become
+ * current; a persisted id may be absent from the loaded stacks), so select
+ * the first surviving tab first rather than treating that as empty.
+ */
+function navigateToRemainingWorkspace(
+  store: WorkspaceTabNavigationStore,
+  currentPath: string,
+  navigate: (path: string) => unknown,
+): void {
+  if (!selectReachableWorkspaceTabId(store.state)) {
+    store.dispatch(switchToWorkspaceTabByIndex(0));
+  }
+  navigateToSelectedWorkspace(store, currentPath, navigate);
+}
+
+/** Window level: close the window, or on the web build show the empty-window destination. */
+function closeEmptyWindow(
+  store: WorkspaceTabNavigationStore,
+  currentPath: string,
+  { navigate, closeWindow }: CloseTabCascadeOptions,
+): CloseTabCascadeLevel | null {
+  if (!closeWindow) {
+    navigateToSelectedWorkspace(store, currentPath, navigate);
+    return null;
+  }
+  closeWindow();
+  return 'window';
+}
+
+/**
+ * Cmd+W: close focused panel content; once the workspace's last column is
+ * empty close the workspace tab; once no workspace tab remains close the
+ * window. Non-closable tabs stop the cascade at the panel level.
+ */
+export function closeActiveTabCascade(
+  store: WorkspaceTabNavigationStore,
+  currentPath: string,
+  options: CloseTabCascadeOptions,
+): CloseTabCascadeLevel | null {
+  const workspaceId = resolveWorkspaceTabToClose(store, currentPath);
+  if (!workspaceId) {
+    if (selectWorkspaceTabOrder.select(store.state).length > 0) return null;
+    return closeEmptyWindow(store, currentPath, options);
+  }
+
+  if (closeActivePanelTab(store, currentPath, options.availableCanvasWidth) !== null) {
+    return 'panel';
+  }
+  if (!isWorkspaceLayoutEmpty(store, workspaceId)) return null;
+
+  store.dispatch(closeWorkspaceTab(workspaceId));
+  if (selectWorkspaceTabOrder.select(store.state).length > 0) {
+    navigateToRemainingWorkspace(store, currentPath, options.navigate);
+    return 'workspace';
+  }
+  return closeEmptyWindow(store, currentPath, options) ?? 'workspace';
 }
 
 export function reopenWorkspaceTab(
@@ -198,19 +292,7 @@ export function reopenPanelOrWorkspaceTab(
   const workspaceId = match && match[1] !== 'new' ? match[1] : null;
 
   const lastClosedWorkspace = selectLastClosedWorkspaceTab.select(store.state);
-  const lastClosedPanelTab = workspaceId
-    ? (selectRecentlyClosed.select(store.state, workspaceId)[0] ?? null)
-    : null;
-  const lastClosedPanelColumn = workspaceId
-    ? selectLastClosedPanelColumn.select(store.state, workspaceId)
-    : null;
-  const lastPanelClose =
-    lastClosedPanelColumn &&
-    (!lastClosedPanelTab || lastClosedPanelColumn.closedAt >= lastClosedPanelTab.closedAt)
-      ? { kind: 'column' as const, closedAt: lastClosedPanelColumn.closedAt }
-      : lastClosedPanelTab
-        ? { kind: 'tab' as const, closedAt: lastClosedPanelTab.closedAt }
-        : null;
+  const lastPanelClose = workspaceId ? selectLastPanelClose.select(store.state, workspaceId) : null;
 
   if (
     workspaceId &&
@@ -268,12 +350,21 @@ export function registerWorkspaceTabShortcuts({
   getCurrentPath,
   navigate,
   openNewWorkspace,
+  onCreateAgent,
+  onCreateNote,
+  onCreateTerminal,
+  onCreateBrowser,
   onWorkspaceTabMoved,
+  closeWindow,
   resolveBinding,
 }: RegisterWorkspaceTabShortcutsOptions): void {
   const mod = isMac ? { meta: true } : { ctrl: true };
   const sidebarChord = getShortcutChord('TOGGLE_SIDEBAR', isMac);
   const withRoute = (action: (currentPath: string) => unknown) => () => action(getCurrentPath());
+  const withWorkspace = (action: (workspaceId: string) => void) => () => {
+    const match = getCurrentPath().match(/^\/workspace\/([^/]+)/);
+    if (match?.[1] && match[1] !== 'new') action(match[1]);
+  };
   const effective = (id: ShortcutId) =>
     resolveBinding ? { binding: () => resolveBinding(id) } : {};
 
@@ -300,13 +391,52 @@ export function registerWorkspaceTabShortcuts({
     description: m.workspace_shortcuts_newPanel_description(),
     action: withRoute((path) => openNewPanel(store, path)),
   });
+  for (const [id, key, description, action] of [
+    ['workspace.new-agent', 'a', m.ui_shortcuts_newAgent_label(), onCreateAgent],
+    [
+      'workspace.new-note',
+      'n',
+      m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_note_label(),
+      }),
+      onCreateNote,
+    ],
+    [
+      'workspace.new-terminal',
+      't',
+      m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_terminal_label(),
+      }),
+      onCreateTerminal,
+    ],
+    [
+      'workspace.new-browser',
+      'b',
+      m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_browser_label(),
+      }),
+      onCreateBrowser,
+    ],
+  ] as const) {
+    if (!action) continue;
+    register({
+      ...effective(id),
+      ...mod,
+      key,
+      alt: true,
+      global: true,
+      allowInTerminal: true,
+      description,
+      action: withWorkspace(action),
+    });
+  }
   register({
     ...effective('navigation.close-tab'),
     ...mod,
     key: 'w',
     global: true,
     description: m.workspace_shortcuts_closePanelTab_description(),
-    action: withRoute((path) => closeActivePanelTab(store, path)),
+    action: withRoute((path) => closeActiveTabCascade(store, path, { navigate, closeWindow })),
   });
   register({
     ...effective('navigation.close-space-tab'),

@@ -10,10 +10,10 @@
  * sole data path (intent-hq/monorepo#1697); there is no legacy `note:*`
  * events-driven refetch.
  */
-import { AuthorType, ContentType, NoteVisibility } from "$shared/types";
-import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
-import { isProjectionRejected } from "$shared/utils/note-content";
-import type { Author, CreateNoteRequest, Note, NoteVersion } from "$shared/types";
+import { AuthorType, ContentType, NoteVisibility } from '$shared/types';
+import { NoteId, WorkspaceId } from '$shared/types/branded-ids';
+import { isProjectionRejected } from '$shared/utils/note-content';
+import type { Author, CreateNoteRequest, Note, NoteVersion } from '$shared/types';
 import type {
   LineAttributionClient,
   LineAttributionData,
@@ -24,16 +24,16 @@ import type {
   NotesClient,
   SubscriptionHandler,
   Unsubscribe,
-} from "../app-client";
-import { backendRequest } from "./backend-transport";
-import { createDeltaSubscription } from "./delta-subscription";
+} from '../app-client';
+import { backendRequest } from './backend-transport';
+import { createDeltaSubscription } from './delta-subscription';
 import {
   newIdempotencyKey,
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
   runMutation,
   subscribeWorkspaceIds,
-} from "./live-support";
+} from './live-support';
 
 /**
  * Parse a daemon version number (`v: i64` on the wire) from a value the FE may
@@ -41,10 +41,10 @@ import {
  * `null` when the value cannot be resolved to a finite non-negative integer.
  */
 function normalizeVersionNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
     return Math.trunc(value);
   }
-  if (typeof value === "string" && value.length > 0) {
+  if (typeof value === 'string' && value.length > 0) {
     const parsed = Number(value);
     if (Number.isFinite(parsed) && parsed >= 0) return Math.trunc(parsed);
   }
@@ -58,56 +58,59 @@ function normalizeVersionNumber(value: unknown): number | null {
  * stringified `v` (opaque to the UI, unwrapped on restore).
  */
 function normalizeNoteVersion(raw: unknown): NoteVersion | null {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const v = normalizeVersionNumber(r.v);
   if (v === null) return null;
-  const authorRaw = r.author && typeof r.author === "object" ? (r.author as Record<string, unknown>) : null;
+  const authorRaw =
+    r.author && typeof r.author === 'object' ? (r.author as Record<string, unknown>) : null;
   const author: Author | undefined = authorRaw
     ? {
-        id: String(authorRaw.id ?? ""),
-        name: String(authorRaw.name ?? ""),
-        type: (typeof authorRaw.type === "string" ? authorRaw.type : AuthorType.System) as AuthorType,
+        id: String(authorRaw.id ?? ''),
+        name: String(authorRaw.name ?? ''),
+        type: (typeof authorRaw.type === 'string'
+          ? authorRaw.type
+          : AuthorType.System) as AuthorType,
       }
     : undefined;
   return {
     versionId: String(v),
     versionNumber: v,
-    content: String(r.content ?? ""),
-    title: String(r.title ?? ""),
+    content: String(r.content ?? ''),
+    title: String(r.title ?? ''),
     ...(author ? { author } : {}),
-    createdAt: String(r.date ?? ""),
+    createdAt: String(r.date ?? ''),
   };
 }
 
 /** Coerce a raw daemon note object into the renderer `Note` shape. */
 export function normalizeNote(raw: Record<string, unknown>, workspaceId: string): Note {
   const now = new Date().toISOString();
-  const id = String(raw.id ?? "");
+  const id = String(raw.id ?? '');
   return {
     ...(raw as Partial<Note>),
     id: NoteId(id),
     workspaceId: WorkspaceId(String(raw.workspaceId ?? workspaceId)),
-    title: String(raw.title ?? ""),
-    content: String(raw.content ?? ""),
-    contentType: (typeof raw.contentType === "string"
+    title: String(raw.title ?? ''),
+    content: String(raw.content ?? ''),
+    contentType: (typeof raw.contentType === 'string'
       ? raw.contentType
       : ContentType.Markdown) as ContentType,
     tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
     isPinned: Boolean(raw.isPinned ?? raw.is_pinned ?? false),
     isArchived: Boolean(raw.isArchived ?? raw.is_archived ?? false),
-    visibility: (typeof raw.visibility === "string"
+    visibility: (typeof raw.visibility === 'string'
       ? raw.visibility
       : NoteVisibility.Workspace) as NoteVisibility,
     // Optimistic-concurrency revision (§11.4-D): carried through when the daemon
     // returns a number, forced to undefined otherwise (overriding the raw spread)
     // so a malformed value can never leak — no behavior change → last-writer-wins.
-    rev: typeof raw.rev === "number" ? raw.rev : undefined,
+    rev: typeof raw.rev === 'number' ? raw.rev : undefined,
     // Slim-projection fields (§5.2 `projection: "slim"`): carried through only
     // when the daemon returned them, undefined otherwise (overriding the raw
     // spread) so full rows never carry stale slim markers.
-    contentPreview: typeof raw.contentPreview === "string" ? raw.contentPreview : undefined,
-    contentLength: typeof raw.contentLength === "number" ? raw.contentLength : undefined,
+    contentPreview: typeof raw.contentPreview === 'string' ? raw.contentPreview : undefined,
+    contentLength: typeof raw.contentLength === 'number' ? raw.contentLength : undefined,
     createdAt: String(raw.createdAt ?? raw.created_at ?? now),
     updatedAt: String(raw.updatedAt ?? raw.updated_at ?? now),
   } as Note;
@@ -123,19 +126,19 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
  */
 class LiveLineAttributionClient implements LineAttributionClient {
   async load(workspaceId: string, noteId: string): Promise<LineAttributionData | null> {
-    const result = await backendRequest<LineAttributionData | null>(
-      "note.lineAttribution.load",
-      { workspaceId, noteId },
-    );
-    if (!result || typeof result !== "object") return null;
+    const result = await backendRequest<LineAttributionData | null>('note.lineAttribution.load', {
+      workspaceId,
+      noteId,
+    });
+    if (!result || typeof result !== 'object') return null;
     return result;
   }
 
   async computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }> {
-    const result = await backendRequest<{ ok?: boolean }>(
-      "note.lineAttribution.computeNow",
-      { workspaceId, noteId },
-    );
+    const result = await backendRequest<{ ok?: boolean }>('note.lineAttribution.computeNow', {
+      workspaceId,
+      noteId,
+    });
     return { ok: Boolean(result?.ok) };
   }
 }
@@ -143,27 +146,24 @@ class LiveLineAttributionClient implements LineAttributionClient {
 export class LiveNotesClient implements NotesClient {
   readonly lineAttribution: LineAttributionClient = new LiveLineAttributionClient();
 
-  async list(
-    workspaceId: string,
-    options?: { projection?: "full" | "slim" },
-  ): Promise<Note[]> {
+  async list(workspaceId: string, options?: { projection?: 'full' | 'slim' }): Promise<Note[]> {
     // §5.2 `projection`: only ride the wire when "slim" is requested so older
     // daemons see an unchanged request. If a daemon rejects the unknown param
     // (-32602 Invalid params), fall back once to the plain full list; other
     // failures (transport, workspace not found) propagate unchanged.
     let result: { notes?: unknown[] } | null;
-    if (options?.projection === "slim") {
+    if (options?.projection === 'slim') {
       try {
-        result = await backendRequest<{ notes?: unknown[] }>("note.list", {
+        result = await backendRequest<{ notes?: unknown[] }>('note.list', {
           workspaceId,
-          projection: "slim",
+          projection: 'slim',
         });
       } catch (error) {
         if (!isProjectionRejected(error)) throw error;
-        result = await backendRequest<{ notes?: unknown[] }>("note.list", { workspaceId });
+        result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
       }
     } else {
-      result = await backendRequest<{ notes?: unknown[] }>("note.list", { workspaceId });
+      result = await backendRequest<{ notes?: unknown[] }>('note.list', { workspaceId });
     }
     const notes = Array.isArray(result?.notes) ? result.notes : [];
     return notes.map((n) => {
@@ -180,15 +180,15 @@ export class LiveNotesClient implements NotesClient {
     const workspaceId = explicitWorkspaceId ?? (await resolveNoteWorkspaceId(noteId));
     if (!workspaceId) return null;
     try {
-      const result = await backendRequest<{ note?: unknown } | unknown>("note.get", {
+      const result = await backendRequest<{ note?: unknown } | unknown>('note.get', {
         workspaceId,
         noteId,
       });
       const raw =
-        result && typeof result === "object" && "note" in result
+        result && typeof result === 'object' && 'note' in result
           ? (result as { note?: unknown }).note
           : result;
-      if (!raw || typeof raw !== "object") return null;
+      if (!raw || typeof raw !== 'object') return null;
       return normalizeNote(raw as Record<string, unknown>, workspaceId);
     } catch {
       return null;
@@ -204,7 +204,7 @@ export class LiveNotesClient implements NotesClient {
   // `resolveNoteWorkspaceId` (fallback-only; the cache is last-writer-wins).
 
   async create(request: CreateNoteRequest): Promise<MutationResult> {
-    return runMutation("note.create", { ...request, idempotencyKey: newIdempotencyKey() });
+    return runMutation('note.create', { ...request, idempotencyKey: newIdempotencyKey() });
   }
 
   async setContent(
@@ -213,7 +213,13 @@ export class LiveNotesClient implements NotesClient {
     expectedVersion?: number,
     workspaceId?: string,
   ): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.setContent", { content }, expectedVersion, workspaceId);
+    return this.runNoteMutation(
+      noteId,
+      'note.setContent',
+      { content },
+      expectedVersion,
+      workspaceId,
+    );
   }
 
   async add(
@@ -225,7 +231,7 @@ export class LiveNotesClient implements NotesClient {
   ): Promise<MutationResult> {
     return this.runNoteMutation(
       noteId,
-      "note.add",
+      'note.add',
       {
         content,
         ...(options?.heading !== undefined ? { heading: options.heading } : {}),
@@ -245,7 +251,7 @@ export class LiveNotesClient implements NotesClient {
   ): Promise<MutationResult> {
     return this.runNoteMutation(
       noteId,
-      "note.edit",
+      'note.edit',
       { old: oldText, new: newText },
       expectedVersion,
       workspaceId,
@@ -262,7 +268,7 @@ export class LiveNotesClient implements NotesClient {
   ): Promise<MutationResult> {
     return this.runNoteMutation(
       noteId,
-      "note.editLines",
+      'note.editLines',
       { start, end, content },
       expectedVersion,
       workspaceId,
@@ -274,7 +280,7 @@ export class LiveNotesClient implements NotesClient {
     expectedVersion?: number,
     workspaceId?: string,
   ): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.delete", {}, expectedVersion, workspaceId);
+    return this.runNoteMutation(noteId, 'note.delete', {}, expectedVersion, workspaceId);
   }
 
   async updateMetadata(
@@ -285,7 +291,7 @@ export class LiveNotesClient implements NotesClient {
   ): Promise<MutationResult> {
     return this.runNoteMutation(
       noteId,
-      "note.updateMetadata",
+      'note.updateMetadata',
       {
         ...(metadata.title !== undefined ? { title: metadata.title } : {}),
         ...(metadata.tags !== undefined ? { tags: metadata.tags } : {}),
@@ -305,7 +311,7 @@ export class LiveNotesClient implements NotesClient {
   // to `applyNoteVersionsError`.
 
   async listVersions(workspaceId: string, noteId: string): Promise<NoteVersion[]> {
-    const summaries = await backendRequest<unknown[]>("note.listVersions", {
+    const summaries = await backendRequest<unknown[]>('note.listVersions', {
       workspaceId,
       noteId,
     });
@@ -314,7 +320,7 @@ export class LiveNotesClient implements NotesClient {
       summaries.map((s) => {
         const v = normalizeVersionNumber((s as { v?: unknown }).v);
         if (v === null) return Promise.resolve(null);
-        return backendRequest<unknown>("note.getVersion", { workspaceId, noteId, v })
+        return backendRequest<unknown>('note.getVersion', { workspaceId, noteId, v })
           .then((raw) => normalizeNoteVersion(raw))
           .catch(() => null);
       }),
@@ -332,12 +338,13 @@ export class LiveNotesClient implements NotesClient {
       return { success: false, error: `Invalid version id: ${versionId}` };
     }
     try {
-      const raw = await backendRequest<{ ok?: boolean; note?: unknown }>(
-        "note.restoreVersion",
-        { workspaceId, noteId, v },
-      );
+      const raw = await backendRequest<{ ok?: boolean; note?: unknown }>('note.restoreVersion', {
+        workspaceId,
+        noteId,
+        v,
+      });
       const note =
-        raw && typeof raw === "object" && raw.note && typeof raw.note === "object"
+        raw && typeof raw === 'object' && raw.note && typeof raw.note === 'object'
           ? normalizeNote(raw.note as Record<string, unknown>, workspaceId)
           : undefined;
       return { success: true, note };
@@ -380,7 +387,7 @@ export class LiveNotesClient implements NotesClient {
     // authoritative `current` into a renderer `Note` so the write service can
     // reload-to-latest (advancing the threaded rev) without touching daemon shapes.
     const current = result.conflict?.current;
-    if (current && typeof current === "object") {
+    if (current && typeof current === 'object') {
       return {
         ...result,
         conflict: { current: normalizeNote(current as Record<string, unknown>, workspaceId) },
@@ -401,18 +408,18 @@ export class LiveNotesClient implements NotesClient {
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe {
     return createDeltaSubscription<Note>({
       channel: {
-        subscribeMethod: "note.subscribe",
-        unsubscribeMethod: "note.unsubscribe",
+        subscribeMethod: 'note.subscribe',
+        unsubscribeMethod: 'note.unsubscribe',
         dynamic: {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
         },
       },
-      getId: (raw) => String(raw.id ?? ""),
+      getId: (raw) => String(raw.id ?? ''),
       // Push-path entities are the daemon's wire `Note` (§9.1), which always
       // carries `workspaceId` (camelCase serde) — no per-channel stamping.
       normalize: (raw) => {
-        const workspaceId = String(raw.workspaceId ?? "");
+        const workspaceId = String(raw.workspaceId ?? '');
         if (!workspaceId) return null;
         const note = normalizeNote(raw, workspaceId);
         rememberNoteWorkspace(String(note.id), workspaceId);

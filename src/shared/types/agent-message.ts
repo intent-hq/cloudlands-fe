@@ -17,7 +17,8 @@ import type { AgentId } from './branded-ids';
 /**
  * Message role type
  */
-export type MessageRole = 'user' | 'assistant' | 'system' | 'error';
+export const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system', 'error'] as const;
+export type MessageRole = (typeof MESSAGE_ROLES)[number];
 
 /**
  * Tool call information
@@ -46,6 +47,20 @@ export interface ToolResult {
   content: any;
   isError?: boolean;
   timestamp?: string;
+}
+
+/**
+ * Serve-time author projection the daemon attaches to every `user` row of a
+ * multiplayer workspace (PROTOCOL §5.5, intent-hq/intentd#1869): the
+ * principal resolved from the row's `metadata.fromPrincipalId` stamp, else
+ * the workspace's legacy author, else its owner. Profile fields are `null`
+ * when the principal row is gone; `principalId` is always the row's id.
+ */
+export interface MessageAuthor {
+  principalId: string;
+  login: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
 }
 
 /**
@@ -118,11 +133,19 @@ export interface MessageMetadata {
   // single-message deliveries and on rows from older daemons. Batch entries
   // whose wait fell below the 5-second annotation threshold carry ONLY
   // `batchId` (no `queuedAt`/`waitedMs`), so the wait fields are optional.
+  // `queuedMessageId` names the queue entry (`QueuedMessage.id`) the row was
+  // drained from; absent on rows from older daemons.
   queueInfo?: {
     queuedAt?: string;
     waitedMs?: number;
     batchId?: string;
+    queuedMessageId?: string;
   };
+
+  // Daemon-stamped authoring principal on user-origin rows (PROTOCOL §5.5,
+  // intent-hq/intentd#1869). Overwrites any client-supplied value; stripped
+  // from non-user-origin rows. The resolved profile rides `AgentMessage.author`.
+  fromPrincipalId?: string;
 
   // Allow additional properties
   [key: string]: any;
@@ -146,6 +169,14 @@ export interface AgentMessage {
   timestamp: string | Date;
   turnNumber?: number;
 
+  // Daemon-assigned per-agent monotonic sequence number (PROTOCOL §5.5) —
+  // present on every daemon-persisted row (getConversation pages, §7.1
+  // snapshot rows, terminal-frame reconciles via `messageSeq`). Absent only
+  // on local-only rows: optimistic user rows before the daemon echo and
+  // in-flight assistant messages before the terminal frame. The transcript
+  // orders by this, not timestamps (clock-skew immune).
+  seq?: number;
+
   // Tool interactions
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
@@ -157,6 +188,20 @@ export interface AgentMessage {
   // Streaming state
   isStreaming?: boolean;
   streamingComplete?: boolean;
+  // Renderer-local, never on the wire: the renderer wrote this row's terminal
+  // state without the §7.1 stream delivering it — the firehose placeholder on
+  // a covered agent (created on any firehose event with no in-flight row, so
+  // it may still be `isStreaming`), a firehose terminal on an existing row, or
+  // the close-time / retained-row `settleStreaming` normalize. Absent means
+  // daemon-canonical (or still streaming under the §7.1 stream). Cleared by
+  // construction when a §7.1 snapshot/delta replaces the row by id (transcript
+  // rows never carry it) and by dedup when a canonical row merges into it.
+  provisional?: true;
+
+  // Serve-time author projection on `user` rows (PROTOCOL §5.5,
+  // intent-hq/intentd#1869). Absent on non-user rows, on local-only optimistic
+  // rows before the daemon echo, and on rows from older daemons.
+  author?: MessageAuthor;
 
   // Metadata
   metadata?: MessageMetadata;

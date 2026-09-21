@@ -34,7 +34,10 @@ export function toPromptToken(
     case 'rule': {
       // Expect meta.path to be relative like .intent/rules/<file>.md or .augment/rules/<file>.md
       const relPath: string = stripLeadingAt(meta.path || item.label || item.id);
-      const norm = relPath.startsWith('.intent/') || relPath.startsWith('.augment/') ? relPath : `.intent/rules/${relPath}`;
+      const norm =
+        relPath.startsWith('.intent/') || relPath.startsWith('.augment/')
+          ? relPath
+          : `.intent/rules/${relPath}`;
       return `@${norm}`;
     }
     case 'personality': {

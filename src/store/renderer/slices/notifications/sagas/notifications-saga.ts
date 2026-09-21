@@ -4,8 +4,10 @@ import { actionChannel, all, call, flush, fork, race, take } from 'typed-redux-s
 import type { AgentIdleEvent } from '$features/events/types';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { playNotificationSoundPerSettings } from '$features/notifications/notification-sound-gate';
+import { readIdleNotificationGate } from '$features/notifications/utils/idle-gate';
 import { buildNotificationContent } from '$features/notifications/utils/notification-content';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { readSetting } from '$lib/client/live/live-settings-client';
 import { isElectron } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { getPlatform } from '$lib/utils/platform-capabilities';
@@ -28,14 +30,6 @@ type NotificationNavigateEvent = { workspaceId?: string; chief?: boolean; agentI
 type NativeNotificationEvent =
   | { kind: 'show'; data?: NotificationShowEvent }
   | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
-type AgentListResult = {
-  agents?: Array<{
-    id?: string;
-    isStreaming?: boolean;
-    isResponding?: boolean;
-    metadata?: { isBackground?: boolean; specialist?: string };
-  }>;
-};
 
 function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent> {
   return eventChannel<NativeNotificationEvent>((emit) => {
@@ -153,18 +147,19 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
     let soundOnlyWhenUnfocused = fallbackSoundOnly ?? true;
     try {
       const [enabledResult, soundResult] = yield* all([
-        call(backendRequest, 'settings.get', { path: 'notifications.enabled' }),
-        call(backendRequest, 'settings.get', { path: 'notifications.soundOnlyWhenUnfocused' }),
+        call(readSetting, 'notifications.enabled'),
+        call(readSetting, 'notifications.soundOnlyWhenUnfocused'),
       ]);
-      const enabledValue = (enabledResult as { value?: unknown } | null)?.value;
-      const soundValue = (soundResult as { value?: unknown } | null)?.value;
+      const enabledValue = enabledResult?.value;
+      const soundValue = soundResult?.value;
       if (typeof enabledValue === 'boolean') enabled = enabledValue;
       if (typeof soundValue === 'boolean') soundOnlyWhenUnfocused = soundValue;
     } catch (error) {
       logger.warn('Failed to fetch notifications.* settings from daemon', { error });
     }
     // Fast path: skip when the workspace is archived (archived workspaces
-    // never notify; field absent on older daemons), when the agent is
+    // never notify; field absent on older daemons), when the agent is muted
+    // (§5.5 `notificationsMuted`, stamped only when true), when the agent is
     // waiting on other agents (§5.5), active background hooks (§3.1), or
     // active PR monitors (§5.42) — it will run again on its own, so the
     // workspace isn't truly quiet yet. Both hook/monitor fields are absent
@@ -176,6 +171,7 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
     if (
       !enabled ||
       event.data.isBackground ||
+      event.data.notificationsMuted === true ||
       event.data.isWaitingForOtherAgents ||
       (event.data.waitingOnHooks?.length ?? 0) > 0 ||
       (event.data.waitingOnPrMonitors?.length ?? 0) > 0
@@ -183,17 +179,15 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
       return;
     }
 
-    const agentList = (yield* call(backendRequest, 'agent.list', { workspaceId })) as
-      AgentListResult | undefined;
-    const agents = agentList?.agents ?? [];
-    const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
-    if (idleAgent?.metadata?.isBackground) return;
-    if (
-      agents.some(
-        (agent) => agent.id !== event.data.agentId && (agent.isStreaming || agent.isResponding),
-      )
-    )
-      return;
+    // Bounded wire gate (idle-gate.ts, intent#5531 — never the unscoped
+    // `agent.list`): `agent.get` for the idle agent's own flags, then
+    // `agent.listActive` + per-active-sibling `agent.get`.
+    const verdict = yield* call(readIdleNotificationGate, backendRequest, {
+      workspaceId,
+      agentId: event.data.agentId,
+    });
+    if (verdict.kind !== 'notify') return;
+    const idleAgent = verdict.idleAgent;
 
     const isChief = workspaceId === CHIEF_WORKSPACE_ID;
     let workspaceTitle: string | undefined;

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   /**
    * BranchDisplay - Branch display/edit with trunk branch picker
    * Shows working branch (editable) and trunk branch (selectable).
@@ -9,7 +11,7 @@
 
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import { getBranchNameValidationError } from './sidebar-changes-utils';
@@ -29,10 +31,20 @@
     repoPath: string;
     repoType: 'local' | 'github';
     canChangeTrunk: boolean;
+    /** Owner-only writes (`workspace.update` of `branch` / `baseRef`) are
+     * offered only when true; a collaborator gets read-only labels. */
+    isOwner?: boolean;
   }
 
-  let { workspaceId, trunkBranch, repoPath, repoType, canChangeTrunk }: Props = $props();
-
+  let {
+    workspaceId,
+    trunkBranch,
+    repoPath,
+    repoType,
+    canChangeTrunk,
+    isOwner = true,
+  }: Props = $props();
+  const fieldId = $props.id();
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -42,10 +54,20 @@
   const workspace = selectWorkspaceById(workspaceIdStore);
 
   // Branch rename state
-  let branchRename = $state<{ active: boolean; value: string; inputRef: HTMLInputElement | null; saving: boolean }>({ active: false, value: '', inputRef: null, saving: false });
+  let branchRename = $state<{
+    active: boolean;
+    value: string;
+    inputRef: HTMLInputElement | null;
+    saving: boolean;
+  }>({ active: false, value: '', inputRef: null, saving: false });
 
   // Branch copy state
-  let branchCopy = $state({ copiedWorking: false, workingTooltip: false, copiedTrunk: false, trunkTooltip: false });
+  let branchCopy = $state({
+    copiedWorking: false,
+    workingTooltip: false,
+    copiedTrunk: false,
+    trunkTooltip: false,
+  });
 
   // Reset branch rename state when workspace changes
   $effect(() => {
@@ -93,7 +115,7 @@
     const validationError = getBranchNameValidationError(newBranch);
     if (validationError) {
       logger.error('Invalid branch name format', { branchName: newBranch, error: validationError });
-      toast.error(validationError);
+      notify.error(validationError);
       branchRename.value = $workspace.branch || '';
       branchRename.active = false;
       return;
@@ -110,12 +132,12 @@
         await persistWorkspaceChanges({ branch: newBranch });
       } else {
         logger.error('Failed to rename branch', { error: result.error });
-        toast.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
+        notify.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
         branchRename.value = $workspace.branch || '';
       }
     } catch (error) {
       logger.error('Error renaming branch:', error);
-      toast.error(m.workspace_sidebarHeader_renameBranchFailed_error());
+      notify.error(m.workspace_sidebarHeader_renameBranchFailed_error());
       branchRename.value = $workspace.branch || '';
     } finally {
       branchRename.active = false;
@@ -128,13 +150,19 @@
       e.preventDefault();
       saveBranch();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
       branchRename.active = false;
       branchRename.value = $workspace?.branch || '';
     }
   }
 
   function handleBranchClickOutside(e: MouseEvent) {
-    if (branchRename.active && branchRename.inputRef && !branchRename.inputRef.contains(e.target as Node)) {
+    if (
+      branchRename.active &&
+      branchRename.inputRef &&
+      !branchRename.inputRef.contains(e.target as Node)
+    ) {
       saveBranch();
     }
   }
@@ -150,84 +178,102 @@
 </script>
 
 <!-- Branch display/edit with trunk branch picker -->
-<div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-subtle text-xs mb-3 -ml-0.5">
-  <!-- Working branch -->
-  <div class="flex items-center shrink-0">
-    <GitBranchIcon size={12} class="shrink-0 text-ghost" />
-    {#if branchRename.active}
-      <input
-        bind:this={branchRename.inputRef}
-        type="text"
-        bind:value={branchRename.value}
-        onblur={saveBranch}
-        onkeydown={handleBranchKeydown}
-        disabled={branchRename.saving}
-        class="text-ui text-foreground bg-none
-               px-1 py-0.5 rounded
-               outline-none min-w-[60px] max-w-[150px] leading-normal
-               focus:ring-none! focus:outline-none!
-               transition-all duration-150 disabled:opacity-50"
-        placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
-        style="width: {Math.max(60, Math.min(150, (branchRename.value || '').length * 6 + 20))}px"
-      />
-    {:else}
-      <Tooltip side="top" disableCloseOnTriggerClick bind:open={branchCopy.workingTooltip}>
-        {#snippet content()}<span
-            >{m.workspace_branchDisplay_workingOn_tooltip({
-              branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
-            })}</span
-          ><br /><span class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
-          >{#if branchCopy.copiedWorking}<span
-              class="text-green-500 ml-1.5 inline-flex items-center gap-1"
-              ><Fa icon={faCheck} size="xs" /></span
-            >{/if}{/snippet}
-        <button
-          class="text-ui text-subtle bg-transparent
-                 border-none px-1 py-0.5 rounded cursor-pointer text-left
-                 max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-                 transition-all duration-150 leading-normal
-                 hover:text-foreground hover:opacity-80
-                 focus-visible:outline-none!
-                 disabled:cursor-default disabled:opacity-50"
-          onclick={(e) => {
-            if (e.shiftKey && $workspace?.branch) {
-              navigator.clipboard.writeText($workspace.branch);
-              branchCopy.copiedWorking = true;
-              branchCopy.workingTooltip = true;
-              setTimeout(() => {
-                branchCopy.copiedWorking = false;
-                branchCopy.workingTooltip = false;
-              }, 1500);
-            } else {
-              startEditingBranch();
-            }
-          }}
-          disabled={!$workspace || branchRename.saving}
-        >
-          {#if $workspace}
-            {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
-          {/if}
-        </button>
-      </Tooltip>
-    {/if}
-  </div>
+<div class="flex min-w-0 flex-col gap-3 mt-1 mb-3" data-branch-summary>
+  <div class="flex min-w-0 flex-col gap-1">
+    <p
+      id={`${fieldId}-working`}
+      class="branch-label text-subtle leading-snug type-caption font-normal"
+    >
+      {m.workspace_sidebarChanges_codeLivesIn_label()}
+    </p>
 
-  <!-- <span class="text-ghost mx-auto">→</span> -->
-  <div
-    class="relative flex-1 ml-0.5 mr-1.5 bg-muted-foreground/70 text-subtle h-px flex items-end opacity-30"
-  >
-    <span class="absolute -right-0.5 top-1/2 transform -translate-y-1/2">→</span>
+    <!-- Working branch -->
+    <div class="min-w-0 w-full" data-branch-field="working">
+      {#if branchRename.active}
+        <Input
+          bind:ref={branchRename.inputRef}
+          type="text"
+          bind:value={branchRename.value}
+          onblur={saveBranch}
+          onkeydown={handleBranchKeydown}
+          disabled={branchRename.saving}
+          size="compact"
+          aria-labelledby={`${fieldId}-working`}
+          class="text-ui font-normal"
+          placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
+        />
+      {:else}
+        <Tooltip
+          class="w-full min-w-0"
+          side="top"
+          disableCloseOnTriggerClick
+          bind:open={branchCopy.workingTooltip}
+        >
+          {#snippet content()}<span
+              >{isOwner
+                ? m.workspace_branchDisplay_workingOn_tooltip({
+                    branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
+                  })
+                : m.workspace_branchDisplay_workingOnReadOnly_tooltip({
+                    branch: $workspace?.branch || m.workspace_branchDisplay_noBranch_label(),
+                  })}</span
+            ><br /><span class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
+            >{#if branchCopy.copiedWorking}<span
+                class="text-green-500 ml-1.5 inline-flex items-center gap-1"
+                ><Fa icon={faCheck} size="xs" /></span
+              >{/if}{/snippet}
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="branch-name-button"
+            aria-labelledby={`${fieldId}-working ${fieldId}-working-value`}
+            class="w-full min-w-0 {isOwner
+              ? 'cursor-text'
+              : 'cursor-default'} justify-start text-left text-ui font-normal"
+            onclick={(e) => {
+              if (e.shiftKey && $workspace?.branch) {
+                navigator.clipboard.writeText($workspace.branch);
+                branchCopy.copiedWorking = true;
+                branchCopy.workingTooltip = true;
+                setTimeout(() => {
+                  branchCopy.copiedWorking = false;
+                  branchCopy.workingTooltip = false;
+                }, 1500);
+              } else if (isOwner) {
+                startEditingBranch();
+              }
+            }}
+            disabled={!$workspace || branchRename.saving}
+          >
+            {#snippet leadingIcon()}<GitBranchIcon size={14} class="text-subtle" />{/snippet}
+            {#if $workspace}
+              <span id={`${fieldId}-working-value`} class="truncate">
+                {$workspace.branch || m.workspace_branchDisplay_noBranch_label()}
+              </span>
+            {/if}
+          </Button>
+        </Tooltip>
+      {/if}
+    </div>
   </div>
 
   <!-- Trunk branch picker -->
-  <div class="flex items-center shrink-0 min-w-0 max-w-[min(100%,_10rem)]">
+  <div class="flex min-w-0 flex-col gap-1" data-branch-field="target">
+    <p
+      id={`${fieldId}-target`}
+      class="branch-label text-subtle leading-snug type-caption font-normal"
+    >
+      {m.workspace_sidebarChanges_mergedInto_label()}
+    </p>
     <Tooltip
-      class="min-w-0 max-w-full"
+      class="min-w-0 w-full"
       side="top"
       disableCloseOnTriggerClick
       bind:open={branchCopy.trunkTooltip}
     >
-      {#snippet content()}{#if canChangeTrunk}<span>{m.workspace_branchDisplay_trunkChange_tooltip()}</span
+      {#snippet content()}{#if canChangeTrunk}<span
+            >{m.workspace_branchDisplay_trunkChange_tooltip()}</span
+          >{:else if !isOwner}<span>{m.workspace_branchDisplay_trunkOwnerOnly_tooltip()}</span
           >{:else}<span>{m.workspace_branchDisplay_trunkLocked_tooltip()}</span>{/if}<br /><span
           class="text-ghost">{m.workspace_branchDisplay_shiftClickCopy_label()}</span
         >{#if branchCopy.copiedTrunk}<span
@@ -235,7 +281,7 @@
             ><Fa icon={faCheck} size="xs" /></span
           >{/if}{/snippet}
       <div
-        class="flex items-center min-w-0 max-w-full"
+        class="min-w-0 w-full"
         role="button"
         tabindex="-1"
         onclick={(e) => {
@@ -253,30 +299,42 @@
         }}
         onkeydown={() => {}}
       >
-        <BranchSelector
-          variant="ghost"
-          value={trunkBranch}
-          {repoPath}
-          {repoType}
-          disabled={!canChangeTrunk}
-          dropUp={false}
-          portal={true}
-          triggerClass="pl-0 pr-0 h-6 text-ui"
-          hasTriggerIcon={false}
-          onchange={async (e) => {
-            try {
-              const result = await persistWorkspaceChanges({
-                baseRef: e.detail.branch,
-              });
-              if (!result.ok) {
-                toast.error('Failed to update base branch');
+        {#if canChangeTrunk}
+          <BranchSelector
+            variant="default"
+            value={trunkBranch}
+            {repoPath}
+            {repoType}
+            dropUp={false}
+            portal={true}
+            triggerClass="h-(--control-height-small) text-ui font-normal text-foreground"
+            hasTriggerIcon={false}
+            onchange={async (e) => {
+              // BranchSelector also reports its initial auto-selection; only a
+              // real change of trunk should reach workspace.update.
+              if (e.detail.branch === trunkBranch) return;
+              try {
+                const result = await persistWorkspaceChanges({
+                  baseRef: e.detail.branch,
+                });
+                if (!result.ok) {
+                  notify.error('Failed to update base branch');
+                }
+              } catch (err) {
+                console.error('[BranchDisplay] Update error:', err);
+                notify.error('Failed to update base branch');
               }
-            } catch (err) {
-              console.error('[BranchDisplay] Update error:', err);
-              toast.error('Failed to update base branch');
-            }
-          }}
-        />
+            }}
+          />
+        {:else}
+          <Input
+            readonly
+            size="compact"
+            aria-labelledby={`${fieldId}-target`}
+            value={trunkBranch || m.workspace_branchSelector_noBranchSelected_label()}
+            class="text-ui font-normal cursor-default"
+          />
+        {/if}
       </div>
     </Tooltip>
   </div>

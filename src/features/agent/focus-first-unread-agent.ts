@@ -82,6 +82,12 @@ function subscribeToStore(listener: () => void): () => void {
  * 3. The first foreground agent — the workspace *is* unread, so landing on its
  *    primary agent beats leaving the user on an unrelated tab.
  *
+ * Every tier skips agents whose daemon-owned `notificationsMuted` flag is set
+ * (`AgentLite`, PROTOCOL §5.5): a muted agent never raises the unread signal,
+ * so it cannot be what the badge refers to. Only when *every* foreground agent
+ * is muted does tier 3 settle for the first one, so hydration still always
+ * yields a candidate.
+ *
  * Tier 3 waits for {@link areAgentsLoaded}: mid-hydration the foreground list
  * lands before the sessions carrying the tier 1/2 signals, so falling back
  * early would settle for the first agent while the actually-unread one was
@@ -97,13 +103,17 @@ export function findFirstUnreadForegroundAgentId(workspaceId: string): string | 
     state.workspaceAgents?.byWorkspaceId[workspaceId]?.foregroundAgentIds ?? [];
   if (foregroundAgentIds.length === 0) return null;
   const sessions = state.agentSessions?.byAgentId ?? {};
-  for (const agentId of foregroundAgentIds) {
+  const candidates = foregroundAgentIds.filter(
+    (agentId) => sessions[agentId]?.notificationsMuted !== true,
+  );
+  for (const agentId of candidates) {
     if (sessions[agentId]?.hasUnread === true) return agentId;
   }
-  for (const agentId of foregroundAgentIds) {
+  for (const agentId of candidates) {
     if (sessions[agentId]?.lastMessageRole === 'assistant') return agentId;
   }
-  return areAgentsLoaded(workspaceId) ? foregroundAgentIds[0] : null;
+  if (!areAgentsLoaded(workspaceId)) return null;
+  return candidates[0] ?? foregroundAgentIds[0];
 }
 
 /**

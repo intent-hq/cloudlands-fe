@@ -1,66 +1,107 @@
-/** @vitest-environment jsdom */
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { getCounterScaledTitlebarHeight, WINDOW_TITLEBAR_HEIGHT_PX } from './titlebar-geometry';
 import {
-  configuredVisualStates,
-  exerciseVisualStates,
-} from '$lib/components/__tests__/helpers/visual-state-characterization';
-
-function source(relativePath: string) {
-  return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
-}
+  getCounterScaledTitlebarHeight,
+  getClippedWorkspaceTabBorderMaskBounds,
+  getWorkspaceTabBorderMaskImage,
+  getWorkspaceTabLeadingInsetPx,
+  getWorkspaceTabScrollerMarginLeftPx,
+  getWorkspaceTabScrollerPaddingLeftPx,
+  getWorkspaceTabScrollFadeState,
+  WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+  WORKSPACE_TAB_CORNER_RADIUS_PX,
+  WORKSPACE_TAB_FLARE_RADIUS_PX,
+  WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
+  WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
+} from './titlebar-geometry';
 
 describe('shared title-bar geometry', () => {
-  it('affirms titlebar border-box geometry in every required visual state', async () => {
-    const observed = await exerciseVisualStates(({ zoom }) => {
-      const target = document.createElement('button');
-      document.body.append(target);
-      target.style.height = `${getCounterScaledTitlebarHeight(zoom)}px`;
-      return {
-        container: target,
-        target,
-        unmount: () => target.remove(),
-        assertCapability: () => {
-          expect(target.style.height).toBe(`${35 / zoom}px`);
-          expect(WINDOW_TITLEBAR_HEIGHT_PX).toBe(35);
-        },
-      };
-    });
-    expect(observed).toEqual(configuredVisualStates);
-  });
-
   it.each([
+    [0.5, 70],
+    [0.67, 52.23880597014925],
+    [0.8, 43.75],
     [1, 35],
     [1.25, 28],
-    [1.5, 35 / 1.5],
+    [1.5, 23.333333333333332],
     [2, 17.5],
   ])('counter-scales the %sx zoom band to %spx', (zoomFactor, expectedHeight) => {
     expect(getCounterScaledTitlebarHeight(zoomFactor)).toBeCloseTo(expectedHeight);
   });
-
-  it('keeps the title bar on the shared geometry token', () => {
-    const titlebar = source('./WindowTitleBar.svelte');
-
-    expect(WINDOW_TITLEBAR_HEIGHT_PX).toBe(35);
-    expect(titlebar).toContain('getCounterScaledTitlebarHeight($zoomFactor)');
-    expect(titlebar).toContain('style:height="{WINDOW_TITLEBAR_HEIGHT_PX}px"');
-    expect(titlebar).toContain('box-sizing: border-box');
-    expect(titlebar).not.toContain('35 / $zoomFactor');
-    expect(titlebar).not.toContain('height: 35px');
+  it('keeps the closed and open tab insets outside the leading flare', () => {
+    expect(getWorkspaceTabLeadingInsetPx(false)).toBe(16);
+    expect(getWorkspaceTabLeadingInsetPx(true)).toBe(22);
+    expect(getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(false))).toBe(6);
+    expect(getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(true))).toBe(10);
+    expect(
+      WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX +
+        getWorkspaceTabScrollerPaddingLeftPx(getWorkspaceTabLeadingInsetPx(true)),
+    ).toBe(18);
+    expect(getWorkspaceTabScrollerMarginLeftPx(true)).toBe(WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX);
+    expect(getWorkspaceTabScrollerMarginLeftPx(false)).toBe(-6);
   });
 
-  it('keeps macOS clearance separate from the fixed-control optical shift', () => {
-    const titlebar = source('./WindowTitleBar.svelte');
+  it('shows edge fades only where scrolling hides tabs', () => {
+    expect(getWorkspaceTabScrollFadeState(0, 500, 300)).toEqual({ left: false, right: true });
+    expect(getWorkspaceTabScrollFadeState(100, 500, 300)).toEqual({ left: true, right: true });
+    expect(getWorkspaceTabScrollFadeState(200, 500, 300)).toEqual({ left: true, right: false });
+    expect(getWorkspaceTabScrollFadeState(0, 300, 300)).toEqual({ left: false, right: false });
+  });
+  it('uses one radius for the tab corners and flares', () => {
+    expect(WORKSPACE_TAB_CORNER_RADIUS_PX).toBe(6);
+    expect(WORKSPACE_TAB_FLARE_RADIUS_PX).toBe(WORKSPACE_TAB_CORNER_RADIUS_PX);
+  });
 
-    expect(titlebar).toContain('--titlebar-control-shift: 0px');
-    expect(titlebar).toMatch(
-      /\.window-title-bar:global\(\.window-title-bar-mac\)[^{]*\{[^}]*--titlebar-control-shift:\s*8px;[^}]*padding-left:\s*60px;/s,
+  it('clips the active-tab body mask to the scroller', () => {
+    expect(
+      getClippedWorkspaceTabBorderMaskBounds(
+        { left: 92, right: 252 },
+        { left: 100, right: 220 },
+        20,
+      ),
+    ).toEqual({ left: 80, width: 120 });
+    expect(
+      getClippedWorkspaceTabBorderMaskBounds(
+        { left: 92, right: 252 },
+        { left: 100, right: 220 },
+        20,
+        { left: true, right: true },
+      ),
+    ).toEqual({
+      left: 80,
+      width: 120,
+      fadeLeft: {
+        start: 80 + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX,
+        end: 80 + WORKSPACE_TAB_LEADING_EDGE_FADE_OFFSET_PX + WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
+      },
+      fadeRight: { start: 200 - WORKSPACE_TAB_EDGE_FADE_WIDTH_PX, end: 200 },
+    });
+    expect(
+      getClippedWorkspaceTabBorderMaskBounds(
+        { left: 40, right: 80 },
+        { left: 100, right: 220 },
+        20,
+      ),
+    ).toBeNull();
+    expect(
+      getClippedWorkspaceTabBorderMaskBounds(
+        { left: 100, right: 220 },
+        { left: 112, right: 180 },
+        20,
+      ),
+    ).toEqual({ left: 92, width: 68 });
+  });
+
+  it('aligns the border mask gradient with the scroller fade range', () => {
+    const bounds = getClippedWorkspaceTabBorderMaskBounds(
+      { left: 112, right: 252 },
+      { left: 100, right: 220 },
+      20,
+      { left: true, right: true },
     );
-    expect(titlebar).toContain('titlebar-left-drag-handle shrink-0 self-stretch');
-    expect(titlebar).toContain('titlebar-fixed-controls flex min-w-0 items-center gap-1');
-    expect(titlebar).toContain('data-titlebar-workspace-controls');
-    expect(titlebar).toContain('width: calc(16px - var(--titlebar-control-shift))');
-    expect(titlebar).toContain('padding-right: var(--titlebar-control-shift)');
+
+    expect(bounds).not.toBeNull();
+    expect(getWorkspaceTabBorderMaskImage(bounds!)).toBe(
+      'linear-gradient(to right, transparent 4px, black 28px, black 84px, transparent 108px)',
+    );
+    expect(getWorkspaceTabBorderMaskImage({ left: 80, width: 120 })).toBe('none');
   });
 });

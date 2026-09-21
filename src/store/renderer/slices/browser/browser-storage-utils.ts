@@ -8,7 +8,7 @@
  * slice reducer to use when it needs the prefix directly. These should stay in sync,
  * but the slice doesn't need this module's storageKey() helper.
  */
-import type { RecentUrl } from "./browser-types";
+import type { RecentUrl } from './browser-types';
 
 /** localStorage key for a workspace's recent URLs: `browser-recent-${workspaceId}` */
 export function storageKey(workspaceId: string): string {
@@ -17,12 +17,12 @@ export function storageKey(workspaceId: string): string {
 
 /** Type guard for `RecentUrl` (runtime validation of localStorage payloads). */
 export function isRecentUrl(value: unknown): value is RecentUrl {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
   return (
-    typeof obj.url === "string" &&
-    typeof obj.lastVisited === "string" &&
-    (obj.title === undefined || typeof obj.title === "string") &&
-    (obj.favicon === undefined || typeof obj.favicon === "string")
+    typeof obj.url === 'string' &&
+    typeof obj.lastVisited === 'string' &&
+    (obj.title === undefined || typeof obj.title === 'string') &&
+    (obj.favicon === undefined || typeof obj.favicon === 'string')
   );
 }

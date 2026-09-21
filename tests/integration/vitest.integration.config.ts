@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -6,14 +7,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../..');
 const coverageEnabled = process.env.VITEST_COVERAGE === 'true' || process.env.COVERAGE === 'true';
 
-// CI-only budget headroom mirroring vitest.config.ts: the integration step runs
-// in the same Unit & Integration Tests job on the shared self-hosted runner, so
-// it is exposed to the same load-induced starvation (intent-hq/monorepo#3082).
+// CI-only budget headroom mirroring vitest.config.ts: the Integration Tests job
+// runs on the shared self-hosted runner alongside the unit-shard legs, so it is
+// exposed to the same load-induced starvation (intent-hq/monorepo#3082).
 // Local runs are unchanged. std-env semantics: CI=false means "not CI".
 const isCI = !!process.env.CI && process.env.CI !== 'false';
 
 export default defineConfig({
   root: rootDir,
+  // Renderer selectors import the same Svelte-backed icon catalog as the app.
+  plugins: [svelte()],
   test: {
     name: 'integration',
     globals: true,
@@ -62,6 +65,21 @@ export default defineConfig({
       $shared: path.resolve(__dirname, '../../src/shared'),
       $store: path.resolve(__dirname, '../../src/store'),
       $utils: path.resolve(__dirname, '../../src/utils'),
+      '@fortawesome/fontawesome-common-types': path.resolve(
+        rootDir,
+        'src/lib/icons/phosphor-icons.ts',
+      ),
+      '@fortawesome/fontawesome-svg-core': path.resolve(rootDir, 'src/lib/icons/phosphor-icons.ts'),
+      '@fortawesome/free-brands-svg-icons': path.resolve(
+        rootDir,
+        'src/lib/icons/phosphor-icons.ts',
+      ),
+      '@fortawesome/free-regular-svg-icons': path.resolve(
+        rootDir,
+        'src/lib/icons/phosphor-icons.ts',
+      ),
+      '@fortawesome/free-solid-svg-icons': path.resolve(rootDir, 'src/lib/icons/phosphor-icons.ts'),
+      'svelte-fa': path.resolve(rootDir, 'src/lib/components/shared/icons/fa-proxy.ts'),
     },
   },
 });

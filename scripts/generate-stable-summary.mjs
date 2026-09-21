@@ -119,10 +119,12 @@ async function main() {
   const parts = [summaryLines.join('\n')];
 
   if (intentdVersion) {
-    parts.push(await buildIntentdSectionWithDelta({
-      version: intentdVersion,
-      baseVersion: intentdBaseVersion,
-    }));
+    parts.push(
+      await buildIntentdSectionWithDelta({
+        version: intentdVersion,
+        baseVersion: intentdBaseVersion,
+      }),
+    );
   } else {
     console.warn('⚠️ No usable --intentd-version — omitting the consolidated intentd section.');
   }

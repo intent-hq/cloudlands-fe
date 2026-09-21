@@ -29,7 +29,6 @@
         <StreamingStatus
           isProcessing
           statusEvents={[{ phase, message, level: 'info', timestamp }]}
-          seed={id}
         />
       </div>
     </div>

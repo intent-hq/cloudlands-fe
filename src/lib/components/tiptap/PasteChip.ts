@@ -7,10 +7,7 @@
  * Follows the same pattern as ContextMention.ts.
  */
 
-import {
-  Node,
-  mergeAttributes,
-} from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { SvelteNodeViewRenderer } from '$lib/utils/tiptap/svelte-node-view';
 import PasteChipNodeView from './PasteChipNodeView.svelte';
 import { m } from '$shared/paraglide/messages.js';
@@ -93,4 +90,3 @@ export const PasteChip = Node.create({
     };
   },
 });
-

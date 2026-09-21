@@ -182,8 +182,6 @@ describe('recordLastUsedSetupScript / getLastUsedSetupScript', () => {
     expect(getLastUsedSetupScript('/repo/1')).toBeUndefined();
     expect(getLastUsedSetupScript('/repo/2')).toBeUndefined();
     expect(getLastUsedSetupScript('/repo/3')?.content).toBe('echo 3');
-    expect(getLastUsedSetupScript(`/repo/${MAX_REPOS + 2}`)?.content).toBe(
-      `echo ${MAX_REPOS + 2}`,
-    );
+    expect(getLastUsedSetupScript(`/repo/${MAX_REPOS + 2}`)?.content).toBe(`echo ${MAX_REPOS + 2}`);
   });
 });

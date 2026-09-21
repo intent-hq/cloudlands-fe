@@ -101,7 +101,7 @@ include:
 - `pnpm run lint`
 - `pnpm tsc -p tsconfig.json --noEmit`
 - `pnpm tsc -p tsconfig.main.json --noEmit`
-- `pnpm tsc -p tsconfig.preload.json --noEmit`
+- `pnpm run generate:ipc-channels && pnpm tsc -p tsconfig.preload.json --noEmit`
 - `pnpm run build`
 - `pnpm exec playwright test <targeted-spec> --reporter=line`
 

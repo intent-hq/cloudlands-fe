@@ -63,10 +63,7 @@ beforeEach(() => {
   getUserMedia = vi.fn(async () => new FakeMediaStream());
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
   vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
-  vi.stubGlobal(
-    'BlobEvent',
-    class {} as never,
-  );
+  vi.stubGlobal('BlobEvent', class {} as never);
 });
 
 afterEach(() => {

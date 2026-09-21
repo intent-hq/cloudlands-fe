@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable intent/no-raw-menu-row -- This harness intentionally exercises legacy raw menu content. */
   import DropdownMenu from '../dropdown-menu.svelte';
 
   let {

@@ -1,6 +1,6 @@
 /**
  * Tests for the workspace-vocabulary cache (`voice.getWorkspaceVocabulary`,
- * PROTOCOL §5.41 v5.1): single-flight coalescing per workspace, TTL reuse,
+ * PROTOCOL §5.41): single-flight coalescing per workspace, TTL reuse,
  * and the resilient fetch-failure fallback (resolve [] and retry next time).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -79,7 +79,7 @@ describe('getWorkspaceVocabularyTerms', () => {
 
   it('resolves [] on a failed fetch and retries on the next call (resilient fallback)', async () => {
     getWorkspaceVocabularyMock
-      .mockRejectedValueOnce(new Error('daemon predates v5.1'))
+      .mockRejectedValueOnce(new Error('daemon lacks voice.getWorkspaceVocabulary'))
       .mockResolvedValueOnce({ terms: ['intentd'] });
 
     await expect(getWorkspaceVocabularyTerms('ws-1')).resolves.toEqual([]);

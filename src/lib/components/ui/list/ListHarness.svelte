@@ -11,7 +11,7 @@
   {collapsed}
   onToggleCollapse={() => (collapsed = !collapsed)}
 >
-  <ListContainer>
+  <ListContainer interactive>
     <ListItem
       title="A long list title that truncates without forcing horizontal page overflow"
       subtitle="Supporting metadata remains secondary"
@@ -20,6 +20,7 @@
     />
     <ListItem title="Active row" active badge="Live" badgeVariant="success" />
     <ListItem title="Disabled row" disabled />
+    <ListItem title="Loading row" loading />
   </ListContainer>
 </ListSection>
 

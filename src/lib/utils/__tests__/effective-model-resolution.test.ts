@@ -1,27 +1,36 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveSubmitProvider } from '../effective-model-resolution';
-
-const defaultProviderId = 'auggie';
+import { resolveSubmitModelAndProvider } from '../effective-model-resolution';
 
 // Default-model resolution is daemon-owned (PROTOCOL §5.11); the former
-// client-side resolution helpers were removed. Only the submit-provider
-// derivation (explicit user picks only) remains client-side.
-describe('resolveSubmitProvider', () => {
-
-  it('derives the provider from a compound model prefix', () => {
-    expect(resolveSubmitProvider('claude-code:sonnet', 'grok', defaultProviderId)).toBe('claude-code');
+// client-side resolution helpers were removed. Only the submit-triple
+// normalization (explicit user picks only) remains client-side.
+describe('resolveSubmitModelAndProvider', () => {
+  it('splits a legacy compound id into its own provider and a bare model', () => {
+    expect(resolveSubmitModelAndProvider('claude-code:sonnet', 'grok')).toEqual({
+      model: 'sonnet',
+      provider: 'claude-code',
+    });
   });
 
-  it('resolves a bare model id to the default provider', () => {
-    expect(resolveSubmitProvider('fable-5', 'grok', defaultProviderId)).toBe(defaultProviderId);
+  it('pairs a bare model id with the selected provider', () => {
+    expect(resolveSubmitModelAndProvider('fable-5', 'grok')).toEqual({
+      model: 'fable-5',
+      provider: 'grok',
+    });
   });
 
   it('keeps the selected provider when no model resolved', () => {
-    expect(resolveSubmitProvider(undefined, 'grok', defaultProviderId)).toBe('grok');
+    expect(resolveSubmitModelAndProvider(undefined, 'grok')).toEqual({
+      model: undefined,
+      provider: 'grok',
+    });
   });
 
   it('keeps the selected provider for an empty compound prefix (mirrors the daemon filter)', () => {
-    expect(resolveSubmitProvider(':sonnet', 'grok', defaultProviderId)).toBe('grok');
+    expect(resolveSubmitModelAndProvider(':sonnet', 'grok')).toEqual({
+      model: 'sonnet',
+      provider: 'grok',
+    });
   });
 });

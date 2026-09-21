@@ -65,10 +65,9 @@ describe('selectAgentPreview', () => {
     });
   });
 
-  it('gates a pending attention request while the turn is live (live text wins)', () => {
-    // Mid-turn rehydration can deliver the persisted attention fields while
-    // the agent is still streaming — the preview must not surface them until
-    // the turn ends.
+  it('a pending attention request wins over live text while the turn is live', () => {
+    // Automatic deliveries restart the agent without clearing the request, so
+    // it is still pending while the agent streams — attention trumps running.
     const state = stateWith(
       session({
         attentionRequestKind: 'blocker',
@@ -80,8 +79,8 @@ describe('selectAgentPreview', () => {
       { receivedFirstChunk: true },
     );
     expect(selectAgentPreview.select(state, AGENT)).toEqual({
-      kind: 'live-text',
-      text: 'live text',
+      kind: 'attention',
+      attention: { kind: 'blocker', reason: 'sandbox broken', timestamp: undefined },
       isLive: true,
     });
   });

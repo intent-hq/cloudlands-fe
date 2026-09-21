@@ -25,7 +25,6 @@ const getTestBridgeStore = () => ({
 });
 
 vi.mock('../../../store/main/redux-store-bridge', () => ({
-  mainDispatch: (action: any) => getTestBridgeStore().dispatch(action),
   getMainState: () => getTestBridgeStore().state,
   getMainStore: () => getTestBridgeStore(),
   initMainStoreBridge: vi.fn(),

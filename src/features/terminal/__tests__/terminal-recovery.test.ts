@@ -9,18 +9,8 @@
  * and by simulating the adapter's listener pattern.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
-import {
-  TerminalStateMachine,
-  TerminalState,
-} from '../terminal-state-machine';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { TerminalStateMachine, TerminalState } from '../terminal-state-machine';
 
 // Mock the Logger
 vi.mock('../../../shared/logger', () => ({
@@ -128,10 +118,7 @@ describe('Terminal Recovery - State Machine Transitions', () => {
       machine.transition('error');
 
       expect(errorCallback).toHaveBeenCalled();
-      expect(transitionCallback).toHaveBeenCalledWith(
-        TerminalState.CONNECTED,
-        TerminalState.ERROR,
-      );
+      expect(transitionCallback).toHaveBeenCalledWith(TerminalState.CONNECTED, TerminalState.ERROR);
     });
 
     it('should notify listeners on full reconnect cycle', () => {
@@ -328,9 +315,9 @@ describe('Terminal Recovery - Auto-reconnect Logic', () => {
         return true;
       }
 
-      expect(attemptWebglRecovery()).toBe(true);  // attempt 1
-      expect(attemptWebglRecovery()).toBe(true);  // attempt 2
-      expect(attemptWebglRecovery()).toBe(true);  // attempt 3
+      expect(attemptWebglRecovery()).toBe(true); // attempt 1
+      expect(attemptWebglRecovery()).toBe(true); // attempt 2
+      expect(attemptWebglRecovery()).toBe(true); // attempt 3
       expect(attemptWebglRecovery()).toBe(false); // capped
       expect(webglRecoveryAttempts).toBe(3);
     });

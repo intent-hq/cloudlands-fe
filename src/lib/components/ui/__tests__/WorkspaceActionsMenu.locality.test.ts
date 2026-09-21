@@ -8,15 +8,19 @@
  * actions stay.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { InstalledEditor } from '$store/renderer/slices/external-editors/external-editors-slice';
 import type { BackendTransportInfo } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import { toNativePath } from '$lib/utils/path-utils';
 import { warmImport } from '../../../../test/warm-import';
 
 let mockStoreState: Partial<StoreState> = {};
 const mockDispatch = vi.fn();
+const electronBridgeMocks = vi.hoisted(() => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
@@ -46,7 +50,7 @@ vi.mock('$lib/components/ui/button/button.svelte', async () => {
 });
 
 vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn().mockResolvedValue(undefined),
+  invoke: electronBridgeMocks.invoke,
 }));
 
 vi.mock('$lib/client', () => ({
@@ -66,6 +70,40 @@ const mockEditors: InstalledEditor[] = [
   },
 ];
 
+const manyMockEditors: InstalledEditor[] = [
+  ...mockEditors,
+  ...(['cursor', 'zed', 'windsurf'].map((id, index) => ({
+    id,
+    name: id[0].toUpperCase() + id.slice(1),
+    shortLabel: id,
+    appName: id,
+    category: 'ide' as const,
+    handlerType: 'generic' as const,
+    priority: 90 - index * 10,
+    installed: true,
+  })) as InstalledEditor[]),
+  {
+    id: 'finder',
+    name: 'Finder',
+    shortLabel: 'Finder',
+    appName: 'Finder',
+    category: 'finder',
+    handlerType: 'finder',
+    priority: 0,
+    installed: true,
+  },
+  {
+    id: 'hidden-editor',
+    name: 'Hidden Editor',
+    shortLabel: 'Hidden',
+    appName: 'Hidden Editor',
+    category: 'ide',
+    handlerType: 'generic',
+    priority: 60,
+    installed: true,
+  },
+];
+
 const mockWorkspaces = [
   { id: 'ws-local' },
   { id: 'ws-remote', environmentConfig: { type: 'remote' } },
@@ -74,12 +112,16 @@ const mockWorkspaces = [
 function makeState(
   transport: BackendTransportInfo | null,
   hostLocality: 'local' | 'remote' | null = null,
+  editors: InstalledEditor[] = mockEditors,
+  hiddenEditorIds: string[] = [],
+  editorOrder: string[] = [],
 ): Partial<StoreState> {
   return {
     externalEditors: {
       selectedAction: 'vscode',
-      editors: createCollection<InstalledEditor, 'id'>('id', mockEditors),
-      hiddenEditorIds: [],
+      editors: createCollection<InstalledEditor, 'id'>('id', editors),
+      editorOrder,
+      hiddenEditorIds,
       loading: false,
       error: null,
       lastFetched: 0,
@@ -104,11 +146,36 @@ async function renderMenu(workspaceId = '') {
   return container;
 }
 
+function openInLabels(container: HTMLElement): string[] {
+  return Array.from(
+    container.querySelectorAll<HTMLSpanElement>('button span[title^="Open in "]'),
+  ).map((label) => label.textContent?.trim() ?? '');
+}
+
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('./mocks/Fa.svelte'));
 warmImport(() => import('./mocks/button.svelte'));
+warmImport(() => import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte'));
 warmImport(() => import('$features/workspace/components/WorkspaceActionsMenu.svelte'));
+
+interface SubmenuProps {
+  filePath?: string;
+  workspaceId?: string;
+  workspaceFolderPath?: string;
+  isWorkspaceRoot?: boolean;
+}
+
+async function renderSubmenu(props: SubmenuProps = {}) {
+  const Harness = (await import('./mocks/WorkspaceActionsMenuSubmenuHarness.svelte')).default;
+  render(Harness, { props });
+  await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+  const trigger = await screen.findByRole('menuitem', { name: 'Open in...' });
+  trigger.focus();
+  await fireEvent.keyDown(trigger, { key: 'ArrowRight' });
+  await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+  return trigger;
+}
 
 describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
   beforeEach(() => {
@@ -150,6 +217,107 @@ describe('WorkspaceActionsMenu locality gating (monorepo#883)', () => {
 
     expect(container.textContent).toContain('Open in Visual Studio Code');
     expect(container.textContent).toContain('Choose app');
+  });
+
+  it('shows every installed non-hidden editor on a local daemon', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' }, null, manyMockEditors, ['hidden-editor']);
+    const container = await renderMenu();
+
+    expect(container.textContent).toContain('Open in Visual Studio Code');
+    expect(container.textContent).toContain('Open in Cursor');
+    expect(container.textContent).toContain('Open in Zed');
+    expect(container.textContent).toContain('Open in Windsurf');
+    expect(container.textContent).not.toContain('Open in Hidden Editor');
+  });
+
+  it('preserves selector-provided order when Finder is moved away from the end', async () => {
+    mockStoreState = makeState(
+      { mode: 'sidecar-uds' },
+      null,
+      manyMockEditors,
+      ['hidden-editor'],
+      ['finder', 'zed', 'vscode', 'windsurf', 'cursor', 'hidden-editor'],
+    );
+    const container = await renderMenu();
+
+    expect(openInLabels(container)).toEqual([
+      'Open in Finder',
+      'Open in Zed',
+      'Open in Visual Studio Code',
+      'Open in Windsurf',
+      'Open in Cursor',
+    ]);
+  });
+
+  it('stacks editor and copy actions in an accessible submenu', async () => {
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+    const trigger = await renderSubmenu();
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      await screen.findByRole('menuitem', { name: 'Open in Visual Studio Code' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Choose app' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Copy Relative Path' })).toBeTruthy();
+  });
+
+  it('keeps copy actions in submenu mode when external editors are unavailable', async () => {
+    mockStoreState = makeState({ mode: 'external-ws' });
+    await renderSubmenu();
+
+    expect(screen.queryByRole('menuitem', { name: 'Choose app' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Open in Visual Studio Code' })).toBeNull();
+    expect(await screen.findByRole('menuitem', { name: 'Copy Absolute Path' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Copy Relative Path' })).toBeTruthy();
+  });
+
+  it('resolves a workspace-root copy through the worktree path', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    electronBridgeMocks.invoke.mockResolvedValue({
+      success: true,
+      data: { worktreePath: '/abs/wt' },
+    });
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+
+    await renderSubmenu({
+      workspaceId: 'ws-root',
+      filePath: '.',
+      isWorkspaceRoot: true,
+      workspaceFolderPath: '__WORKSPACE_ROOT__',
+    });
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('workspace:get', { id: 'ws-root' }),
+    );
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Absolute Path' }));
+
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/abs/wt')));
+  });
+
+  it('falls back to the legacy workspace path for a workspace-root copy', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    electronBridgeMocks.invoke.mockResolvedValue({
+      success: true,
+      data: { path: '/abs/legacy' },
+    });
+    mockStoreState = makeState({ mode: 'sidecar-uds' });
+
+    await renderSubmenu({
+      workspaceId: 'ws-legacy',
+      filePath: '.',
+      isWorkspaceRoot: true,
+      workspaceFolderPath: '__WORKSPACE_ROOT__',
+    });
+    await waitFor(() =>
+      expect(electronBridgeMocks.invoke).toHaveBeenCalledWith('workspace:get', { id: 'ws-legacy' }),
+    );
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Absolute Path' }));
+
+    await waitFor(() =>
+      expect(clipboard.writeText).toHaveBeenCalledWith(toNativePath('/abs/legacy')),
+    );
   });
 });
 

@@ -5,14 +5,33 @@
  * Tests all critical functionality to ensure the app is working correctly
  */
 
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { pnpmInvocation } from './pnpm-launcher.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.join(__dirname, '..');
+
+function pnpmOutput(args: string[]): string {
+  const launcher = pnpmInvocation(args);
+  const result = spawnSync(launcher.executable, launcher.args, {
+    cwd: rootDir,
+    encoding: 'utf-8',
+    shell: launcher.shell,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(
+      `pnpm ${args.join(' ')} exited with ${result.status ?? result.signal}\n${output}`,
+    );
+  }
+  return output;
+}
 
 interface TestResult {
   name: string;
@@ -42,10 +61,7 @@ console.log('🧪 Running Comprehensive Tests...\n');
 
 // 1. TypeScript Compilation
 runTest('TypeScript compilation', () => {
-  const output = execSync('pnpm check 2>&1', {
-    cwd: rootDir,
-    encoding: 'utf-8',
-  });
+  const output = pnpmOutput(['check']);
 
   // Check for errors
   const errorMatch = output.match(/found (\d+) error/);
@@ -57,19 +73,15 @@ runTest('TypeScript compilation', () => {
 // 2. IPC Handler Registration
 runTest('IPC handler registration', () => {
   try {
-    const auditOutput = execSync('pnpm tsx scripts/comprehensive-ipc-audit.ts 2>&1', {
-      cwd: rootDir,
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    });
+    const auditOutput = pnpmOutput(['tsx', 'scripts/comprehensive-ipc-audit.ts']);
 
     // Check for missing handlers
     const missingMatch = auditOutput.match(/Missing Handlers:\n([\s\S]*?)⚠️/);
     if (missingMatch) {
       const missingHandlers = missingMatch[1]
         .split('\n')
-        .filter(line => line.includes('-'))
-        .map(line => line.trim().replace('- ', ''));
+        .filter((line) => line.includes('-'))
+        .map((line) => line.trim().replace('- ', ''));
 
       // Some handlers might be intentionally missing (deprecated, etc)
       const criticalHandlers = [
@@ -80,9 +92,7 @@ runTest('IPC handler registration', () => {
         'agent:send-message',
       ];
 
-      const missingCritical = criticalHandlers.filter(h =>
-        missingHandlers.includes(h),
-      );
+      const missingCritical = criticalHandlers.filter((h) => missingHandlers.includes(h));
 
       if (missingCritical.length > 0) {
         throw new Error(`Missing critical handlers: ${missingCritical.join(', ')}`);
@@ -101,8 +111,8 @@ runTest('Error tracking system', () => {
     const errors = JSON.parse(fs.readFileSync(errorFile, 'utf-8'));
     if (Array.isArray(errors) && errors.length > 0) {
       // Check for critical errors
-      const criticalErrors = errors.filter((e: any) =>
-        e.level === 'critical' || e.level === 'error',
+      const criticalErrors = errors.filter(
+        (e: any) => e.level === 'critical' || e.level === 'error',
       );
       if (criticalErrors.length > 0) {
         throw new Error(`Found ${criticalErrors.length} critical/error level issues`);
@@ -115,7 +125,7 @@ runTest('Error tracking system', () => {
 runTest('Required files exist', () => {
   const requiredFiles = [
     'src/main/index.ts',
-    'src/preload/index.ts',
+    'src/preload/index.template.ts',
     'src/routes/+layout.svelte',
     'src/shared/ipc-registry.ts',
     'src/main/ipc-schemas.ts',
@@ -134,17 +144,9 @@ runTest('Required files exist', () => {
 
 // 5. Package Dependencies
 runTest('Package dependencies', () => {
-  const packageJson = JSON.parse(
-    fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8'),
-  );
+  const packageJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8'));
 
-  const criticalDeps = [
-    'electron',
-    'svelte',
-    '@sveltejs/kit',
-    'zod',
-    'vite',
-  ];
+  const criticalDeps = ['electron', 'svelte', '@sveltejs/kit', 'zod', 'vite'];
 
   const allDeps = {
     ...packageJson.dependencies,
@@ -159,12 +161,12 @@ runTest('Package dependencies', () => {
 });
 
 // Print summary
-console.log(`\n${  '='.repeat(60)}`);
+console.log(`\n${'='.repeat(60)}`);
 console.log('📊 Test Summary');
 console.log('='.repeat(60));
 
-const passed = results.filter(r => r.passed).length;
-const failed = results.filter(r => !r.passed).length;
+const passed = results.filter((r) => r.passed).length;
+const failed = results.filter((r) => !r.passed).length;
 
 console.log(`✅ Passed: ${passed}`);
 console.log(`❌ Failed: ${failed}`);
@@ -172,9 +174,11 @@ console.log(`📈 Success Rate: ${((passed / results.length) * 100).toFixed(1)}%
 
 if (failed > 0) {
   console.log('\n❌ Failed Tests:');
-  results.filter(r => !r.passed).forEach(r => {
-    console.log(`  - ${r.name}: ${r.error}`);
-  });
+  results
+    .filter((r) => !r.passed)
+    .forEach((r) => {
+      console.log(`  - ${r.name}: ${r.error}`);
+    });
   process.exit(1);
 }
 

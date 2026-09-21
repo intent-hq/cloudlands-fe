@@ -1,11 +1,14 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   /**
    * WalkthroughInlineComment
    *
    * A minimal inline comment input for asking questions about code.
    */
   import Fa from 'svelte-fa';
-  import { faArrowRight, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRight } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -59,32 +62,34 @@
 </script>
 
 <div class="walkthrough-inline-comment flex items-center gap-2 {className}">
-  <input
-    bind:this={inputElement}
+  <Input
+    bind:ref={inputElement}
     bind:value={message}
     onkeydown={handleKeydown}
     placeholder={m.codeReview_inlineComment_askLine_placeholder()}
     disabled={isSending}
-    class="flex-1 h-8 rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-50"
+    class="flex-1 h-8 rounded-md border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary-ink/30 focus:border-primary-ink/50 disabled:opacity-50"
   />
-  <button
+  <Button
     type="button"
+    variant="primary"
     onclick={handleSend}
     disabled={!message.trim() || isSending}
-    class="h-8 w-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    class="h-8 w-8 p-0"
   >
     {#if isSending}
-      <Fa icon={faSpinner} class="h-3.5 w-3.5 animate-spin" />
+      <IntentMarkLoader size={14} />
     {:else}
       <Fa icon={faArrowRight} class="h-3.5 w-3.5" />
     {/if}
-  </button>
-  <button
+  </Button>
+  <Button
     type="button"
+    variant="ghost"
     onclick={() => onClose?.()}
     class="h-8 px-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
   >
     {m.codeReview_inlineComment_cancel_label()}
-  </button>
+  </Button>
 </div>
 <p class="text-ui text-subtle mt-1">{m.codeReview_inlineComment_inputHint_label()}</p>

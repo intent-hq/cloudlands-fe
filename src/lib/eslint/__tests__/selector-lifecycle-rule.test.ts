@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import svelteParser from 'svelte-eslint-parser';
@@ -107,7 +103,9 @@ describe('selector-lifecycle ESLint rule', () => {
     `);
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]?.message).toContain('Do not wrap selector readables with svelte/store get()');
+    expect(messages[0]?.message).toContain(
+      'Do not wrap selector readables with svelte/store get()',
+    );
     expect(messages[0]?.message).toContain('selector.select(store.state, ...)');
   });
 
@@ -124,7 +122,9 @@ describe('selector-lifecycle ESLint rule', () => {
     `);
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]?.message).toContain('Do not wrap selector readables with svelte/store get()');
+    expect(messages[0]?.message).toContain(
+      'Do not wrap selector readables with svelte/store get()',
+    );
   });
 
   it('warns for callback-style props like onClose', async () => {
@@ -161,7 +161,9 @@ describe('selector-lifecycle ESLint rule', () => {
     `);
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]?.message).toContain('Do not mirror readable values with $derived($readable$)');
+    expect(messages[0]?.message).toContain(
+      'Do not mirror readable values with $derived($readable$)',
+    );
   });
 
   it('allows computed derived expressions and $derived.by callbacks', async () => {

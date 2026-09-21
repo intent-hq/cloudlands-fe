@@ -108,8 +108,8 @@ describe('BulkActionConfirmDialog', () => {
     const dialog = screen.getByRole('dialog');
     const confirm = screen.getByRole('button', { name: 'Archive' });
     await waitFor(() => expect(document.activeElement).toBe(confirm));
-    expect(confirm.className).toContain('ring-[3px]');
-    expect(dialog.className).toContain('max-w-sm');
+    expect(confirm.className).toContain('focus-visible:outline');
+    expect(confirm.className).toContain('focus-visible:-outline-offset-1');
     expect(dialog.querySelector('.svelte-fa')).toBeNull();
   });
 });

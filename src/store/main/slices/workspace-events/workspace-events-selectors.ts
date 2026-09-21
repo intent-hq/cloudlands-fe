@@ -4,11 +4,11 @@
  * Plain selectors invoked with an explicit main-process state snapshot.
  */
 
-import { createMainSelector } from "../../create-main-selector";
-import type { MainStoreState } from "../../types";
-import type { WorkspaceEventState } from "./types";
-import { emptyWorkspaceEventState } from "./types";
-import type { WorkspaceEvent } from "../../../../features/events/types";
+import { createMainSelector } from '../../create-main-selector';
+import type { MainStoreState } from '../../types';
+import type { WorkspaceEventState } from './types';
+import { emptyWorkspaceEventState } from './types';
+import type { WorkspaceEvent } from '../../../../features/events/types';
 
 type MainSelectorState = MainStoreState;
 
@@ -38,11 +38,9 @@ export const selectRecentEvents = createMainSelector(
 );
 
 /** Get total event count for a workspace */
-export const selectEventCount = createMainSelector(
-  (state, workspaceId: string): number => {
-    return getWs(state, workspaceId).eventCount;
-  },
-);
+export const selectEventCount = createMainSelector((state, workspaceId: string): number => {
+  return getWs(state, workspaceId).eventCount;
+});
 
 /** Filter events by type for a workspace */
 export const selectEventsByType = createMainSelector(
@@ -50,4 +48,3 @@ export const selectEventsByType = createMainSelector(
     return getWs(state, workspaceId).recentEvents.filter((e) => e.type === type);
   },
 );
-

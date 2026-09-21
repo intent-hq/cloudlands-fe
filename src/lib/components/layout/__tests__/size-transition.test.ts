@@ -19,31 +19,38 @@ function createNode(width = 320, height = 240): HTMLElement {
 }
 
 describe('resize transition', () => {
-  it('skips layout measurement entirely for zero-duration plays', () => {
-    const node = createNode();
+  it.each([{ enabled: false }, { duration: 0 }])(
+    'skips layout measurement when motion is disabled: %j',
+    (params) => {
+      const node = createNode();
 
-    const config = resize(node, { duration: 0 });
+      const config = resize(node, params);
 
-    expect(node.getBoundingClientRect).not.toHaveBeenCalled();
-    expect(config.duration).toBe(0);
-    expect(config.css).toBeUndefined();
-  });
+      expect(node.getBoundingClientRect).not.toHaveBeenCalled();
+      expect(config.duration).toBe(0);
+      expect(config.css).toBeUndefined();
+    },
+  );
 
   it('measures and animates the width for a real intro on the x axis', () => {
     const node = createNode(320);
+    const easing = (progress: number) => progress;
 
-    const config = resize(node, { axis: 'x', duration: 180 });
+    const config = resize(node, { axis: 'x', duration: 180, easing, fade: true, clip: false });
 
     expect(node.getBoundingClientRect).toHaveBeenCalledTimes(1);
     expect(config.duration).toBe(180);
+    expect(config.easing).toBe(easing);
     expect(config.css?.(0.5, 0.5)).toContain('width: 160px');
+    expect(config.css?.(0.5, 0.5)).toContain('opacity: 0.5');
+    expect(config.css?.(0.5, 0.5)).not.toContain('overflow: hidden');
     expect(config.css?.(1, 0)).toContain('width: 320px');
   });
 
   it('measures and animates the height on the y axis', () => {
     const node = createNode(320, 240);
 
-    const config = resize(node, { axis: 'y', duration: 180 });
+    const config = resize(node, { axis: 'y', tier: 'moderate' });
 
     expect(node.getBoundingClientRect).toHaveBeenCalledTimes(1);
     expect(config.css?.(0.5, 0.5)).toContain('height: 120px');

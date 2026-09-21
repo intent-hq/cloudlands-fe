@@ -7,22 +7,14 @@
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { Button } from '$lib/components/ui/button';
   import Fa from 'svelte-fa';
-  import {
-  faCodeBranch,
-  faFile,
-  faServer,
-  faPlus,
-} from '@fortawesome/free-solid-svg-icons';
+  import { faCodeBranch, faFile, faServer, faPlus } from '@fortawesome/free-solid-svg-icons';
   import type { Workspace } from '$shared/types';
   import { WorkspaceStatusEnum } from '$shared/types';
   import {
-  compareWorkspaceActivityDisplayTimeDesc,
-  getWorkspaceActivityDisplayTime,
-} from '$shared/utils/workspace-activity-time';
-  import {
-  buildRepoPathLookup,
-  getGroupKey,
-} from './utils/workspace-grouping';
+    compareWorkspaceActivityDisplayTimeDesc,
+    getWorkspaceActivityDisplayTime,
+  } from '$shared/utils/workspace-activity-time';
+  import { buildRepoPathLookup, getGroupKey } from './utils/workspace-grouping';
   import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   interface Props {
@@ -179,7 +171,7 @@
                       aria-label={m.workspace_links_remoteSpace_label()}
                       title={m.workspace_links_remoteSpace_label()}
                     >
-                      <Fa icon={faServer} size="xs" class="text-primary flex-shrink-0" />
+                      <Fa icon={faServer} size="xs" class="text-primary-ink flex-shrink-0" />
                     </div>
                   {/if}
                   {#if workspace.title}
@@ -239,7 +231,7 @@
                   aria-label={m.workspace_links_remoteSpace_label()}
                   title={m.workspace_links_remoteSpace_label()}
                 >
-                  <Fa icon={faServer} size="xs" class="text-primary flex-shrink-0" />
+                  <Fa icon={faServer} size="xs" class="text-primary-ink flex-shrink-0" />
                 </div>
               {/if}
               {#if workspace.title}
@@ -280,7 +272,10 @@
         class="block"
       >
         <Button
-          class="w-full h-8 flex items-center justify-center rounded-md transition-colors {isActive
+          variant="ghost"
+          size="icon"
+          iconOnly
+          class="w-full rounded-md transition-colors {isActive
             ? 'bg-secondary text-secondary-foreground'
             : 'hover:bg-accent'}"
           title={workspace.title || m.workspace_links_untitled_label()}

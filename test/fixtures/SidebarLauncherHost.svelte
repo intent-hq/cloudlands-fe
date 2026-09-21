@@ -5,6 +5,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+  import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { setMultiSelectSidebarSelectedTabs } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { setThemeName } from '$store/renderer/slices/theme/theme-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -43,6 +44,11 @@
   const initiallyHasPullRequest = hasPullRequest;
   const workspaceId = 'launcher-paint-test';
   const disposeStore = startRootStoreLifecycle(store, { startSagas: () => [] });
+  // No sagas run here, so settle the window's guest/owner identity the way
+  // guestSessionsSaga does outside Electron; otherwise the fail-closed
+  // `selectIsWorkspaceCollaborator` (#2652) reads the window as collaborator
+  // and withholds the Browser and Shell compact cards this suite drives.
+  store.dispatch(guestSessionsListUnavailable());
   const timestamp = '2026-08-13T16:51:00.000Z';
   const agents = Array.from({ length: initialAgentCount }, (_, index) => ({
     id: index === 0 ? 'agent-running' : `agent-${index}`,

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  isReplaceAgentEligible,
-  type ReplaceAgentSessionLike,
-} from '../replace-agent-eligibility';
+import { isReplaceAgentEligible, type ReplaceAgentSessionLike } from '../replace-agent-eligibility';
 
 function eligibleSession(
   overrides: Partial<ReplaceAgentSessionLike> = {},
@@ -57,9 +54,7 @@ describe('isReplaceAgentEligible', () => {
 
     it('is ineligible when the delegation markers live under agentMetadata', () => {
       expect(
-        isReplaceAgentEligible(
-          eligibleSession({ agentMetadata: { createdByAgentId: 'agent-1' } }),
-        ),
+        isReplaceAgentEligible(eligibleSession({ agentMetadata: { createdByAgentId: 'agent-1' } })),
       ).toBe(false);
       expect(
         isReplaceAgentEligible(eligibleSession({ agentMetadata: { parentAgentId: 'agent-1' } })),
@@ -73,9 +68,9 @@ describe('isReplaceAgentEligible', () => {
     });
 
     it('is ineligible when metadata.isBackground is true', () => {
-      expect(
-        isReplaceAgentEligible(eligibleSession({ metadata: { isBackground: true } })),
-      ).toBe(false);
+      expect(isReplaceAgentEligible(eligibleSession({ metadata: { isBackground: true } }))).toBe(
+        false,
+      );
     });
 
     it('is ineligible when agentMetadata.isBackground is true', () => {
@@ -99,9 +94,9 @@ describe('isReplaceAgentEligible', () => {
 
   describe('not-retired gate', () => {
     it('is ineligible once retiredAt is set', () => {
-      expect(
-        isReplaceAgentEligible(eligibleSession({ retiredAt: '2026-08-27T00:00:00Z' })),
-      ).toBe(false);
+      expect(isReplaceAgentEligible(eligibleSession({ retiredAt: '2026-08-27T00:00:00Z' }))).toBe(
+        false,
+      );
     });
   });
 });

@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Proposal } from '$shared/types/proposal';
 
@@ -20,6 +21,49 @@ const historySelectorState = vi.hoisted(() => ({
 const navigationMocks = vi.hoisted(() => ({
   goto: vi.fn(),
 }));
+
+// The New Workspace modal's effective specialist (null = General), as the
+// workspace-initializer selector would resolve it.
+const newWorkspaceDefaultState = vi.hoisted(() => {
+  const listeners = new Set<(value: string | null) => void>();
+  return {
+    specialist: null as string | null,
+    listeners,
+    setSpecialist(value: string | null) {
+      this.specialist = value;
+      for (const listener of listeners) listener(value);
+    },
+  };
+});
+
+// Whether the workspace-initializer slice has restored its persisted settings
+// (settings.get is async, so a card can mount before it resolves).
+const workspaceInitializerHydratedState = vi.hoisted(() => {
+  const listeners = new Set<(value: boolean) => void>();
+  return {
+    hydrated: true,
+    listeners,
+    setHydrated(value: boolean) {
+      this.hydrated = value;
+      for (const listener of listeners) listener(value);
+    },
+  };
+});
+
+// The specialist catalog, which also loads asynchronously.
+const specialistsState = vi.hoisted(() => {
+  type SpecialistRow = { id: string };
+  const listeners = new Set<(value: SpecialistRow[]) => void>();
+  const initial: SpecialistRow[] = [];
+  return {
+    specialists: initial,
+    listeners,
+    setSpecialists(value: SpecialistRow[]) {
+      this.specialists = value;
+      for (const listener of listeners) listener(value);
+    },
+  };
+});
 
 const electronBridgeMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -123,6 +167,43 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: prBranchLookupState.selectPrBranchLookupEntries,
 }));
+vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
+  selectNewWorkspaceDefaultSpecialist: Object.assign(
+    vi.fn(() => ({
+      subscribe: (run: (value: string | null) => void) => {
+        run(newWorkspaceDefaultState.specialist);
+        newWorkspaceDefaultState.listeners.add(run);
+        return () => newWorkspaceDefaultState.listeners.delete(run);
+      },
+    })),
+    { select: vi.fn(() => newWorkspaceDefaultState.specialist) },
+  ),
+  selectWorkspaceInitializerHydrated: Object.assign(
+    vi.fn(() => ({
+      subscribe: (run: (value: boolean) => void) => {
+        run(workspaceInitializerHydratedState.hydrated);
+        workspaceInitializerHydratedState.listeners.add(run);
+        return () => workspaceInitializerHydratedState.listeners.delete(run);
+      },
+    })),
+    { select: vi.fn(() => workspaceInitializerHydratedState.hydrated) },
+  ),
+}));
+vi.mock('$store/renderer/slices/specialists/specialists-selectors', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('$store/renderer/slices/specialists/specialists-selectors')
+  >()),
+  selectSpecialists: Object.assign(
+    vi.fn(() => ({
+      subscribe: (run: (value: { id: string }[]) => void) => {
+        run(specialistsState.specialists);
+        specialistsState.listeners.add(run);
+        return () => specialistsState.listeners.delete(run);
+      },
+    })),
+    { select: vi.fn(() => specialistsState.specialists) },
+  ),
+}));
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: prBranchLookupState.dispatch,
@@ -188,6 +269,12 @@ beforeEach(() => {
   lifecycleSelectorState.result = null;
   historySelectorState.settingsApplied = null;
   historySelectorState.specialistApplied = null;
+  newWorkspaceDefaultState.specialist = null;
+  newWorkspaceDefaultState.listeners.clear();
+  workspaceInitializerHydratedState.hydrated = true;
+  workspaceInitializerHydratedState.listeners.clear();
+  specialistsState.specialists = [];
+  specialistsState.listeners.clear();
   navigationMocks.goto.mockReset();
   electronBridgeMocks.invoke.mockReset();
   prBranchLookupState.reset();
@@ -261,7 +348,7 @@ describe('ProposalCard', () => {
     expect(status.textContent).toContain('Applying…');
     expect(status.getAttribute('aria-live')).toBe('polite');
     expect(screen.getByRole('button', { name: 'Applying…' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Not now' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('renders applied proposals as completed instead of actionable', () => {
@@ -281,40 +368,21 @@ describe('ProposalCard', () => {
     expect(status.className).toContain('text-success');
     expect(container.querySelector('[data-lifecycle-status="applied"]')).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit Title' })).toBeNull();
     expect(onApply).not.toHaveBeenCalled();
     expect(onDiscard).not.toHaveBeenCalled();
   });
 
-  it('uses a neutral outer border for completed cards when requested by the host', () => {
-    lifecycleSelectorState.status = 'applied';
-    const { container } = render(ProposalCard, {
-      props: {
-        proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
-        neutralBorder: true,
-      },
-    });
-
-    const card = container.querySelector('[data-proposal-kind]');
-    expect(card?.className).toContain('border-border');
-    expect(card?.className).not.toContain('border-success');
-    expect(screen.getByRole('status').className).toContain('text-success');
-  });
-
-  it('uses the compact editorial surface and semantic status roles', () => {
+  it('uses the editorial type ramp without raw palette colors', () => {
     const { container } = render(ProposalCard, {
       props: {
         proposal: makeProposal([{ key: 'title', label: 'Title', value: 'Workspace title' }]),
       },
     });
 
-    const card = container.querySelector('[data-proposal-kind]');
-    expect(card?.className).toContain('rounded-(--radius-medium)');
-    expect(card?.className).toContain('bg-card');
-    expect(card?.className).toContain('shadow-(--elevation-raised)');
-    expect(screen.getByRole('heading', { name: 'Change settings' }).className).toContain(
-      'type-body',
+    expect(screen.getByRole('heading', { name: 'Apply these changes?' }).className).toContain(
+      'type-title',
     );
     expect(container.innerHTML).not.toMatch(/(?:green|emerald)-[0-9]/);
   });
@@ -466,14 +534,13 @@ describe('ProposalCard', () => {
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
   });
 
-  it('renders Layout A Discard with the same Button styling as Layout B', () => {
+  it('renders the same secondary action for workspace and settings proposals', () => {
     const { unmount } = render(ProposalCard, {
       props: {
         proposal: makeWorkspaceProposal(),
       },
     });
-    const workspaceDiscard = screen.getByRole('button', { name: 'Discard' });
-    const workspaceDiscardClass = workspaceDiscard.className;
+    const workspaceDismiss = screen.getByRole('button', { name: 'Not now' });
 
     unmount();
 
@@ -483,8 +550,8 @@ describe('ProposalCard', () => {
       },
     });
 
-    expect(workspaceDiscard.getAttribute('data-slot')).toBe('button');
-    expect(workspaceDiscardClass).toBe(screen.getByRole('button', { name: 'Discard' }).className);
+    expect(workspaceDismiss.getAttribute('data-slot')).toBe('button');
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeTruthy();
   });
 
   it('renders workspace metadata controls with the shared label and control row structure', () => {
@@ -503,12 +570,11 @@ describe('ProposalCard', () => {
 
     const rows = Array.from(container.querySelectorAll('[data-row="metadata"]'));
 
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     expect(
       rows.map((row) => row.querySelector('[data-metadata-label]')?.textContent?.trim()),
-    ).toEqual(['Repo', 'Base branch', 'Specialist']);
+    ).toEqual(['Project', 'Initial agent']);
     for (const row of rows) {
-      expect(row.className).toContain('grid-cols-[6rem_minmax(0,1fr)]');
       expect(row.querySelector('[data-metadata-label]')?.className).toContain(
         'text-muted-foreground',
       );
@@ -519,9 +585,9 @@ describe('ProposalCard', () => {
       rows[0],
     );
     expect(screen.getByTestId('proposal-branch-picker').closest('[data-row="metadata"]')).toBe(
-      rows[1],
+      rows[0],
     );
-    expect(screen.getByTestId('proposal-specialist-dropdown')).toBe(rows[2]);
+    expect(screen.getByTestId('proposal-specialist-dropdown')).toBe(rows[1]);
     const pickerMocks = screen.getAllByTestId('mock-repo-and-branch-picker');
     expect(pickerMocks.map((picker) => picker.getAttribute('data-field'))).toEqual([
       'repo',
@@ -569,7 +635,9 @@ describe('ProposalCard', () => {
     });
 
     expect(screen.getByText('Edit specialist: Review Buddy')).toBeTruthy();
-    expect(container.textContent).toContain('Name: Reviewer → Review Buddy');
+    expect(
+      container.querySelector('[data-proposal-before-after-row="name"]')?.textContent,
+    ).toContain('Reviewer → Review Buddy');
     expect(container.textContent).not.toContain('specialist edit');
   });
 
@@ -995,6 +1063,257 @@ describe('ProposalCard', () => {
     });
   });
 
+  describe('specialist default from the New Workspace modal', () => {
+    function renderWithoutSpecialist(preview: Record<string, unknown> = {}) {
+      const { container } = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+              ...preview,
+            },
+          }),
+        },
+      });
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
+      return { applyListener };
+    }
+
+    it('preselects the modal specialist when the proposal names none and applies it', async () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      const { applyListener } = renderWithoutSpecialist();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+
+      await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+      const event = applyListener.mock.calls[0]?.[0] as CustomEvent | undefined;
+      expect(event?.detail.editedFields.specialist).toBe('coordinator');
+    });
+
+    it('preselects a single-agent modal specialist when the proposal names none', () => {
+      newWorkspaceDefaultState.specialist = 'implementor';
+      renderWithoutSpecialist();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
+    });
+
+    it('falls back to General when the modal has no remembered specialist', () => {
+      newWorkspaceDefaultState.specialist = null;
+      renderWithoutSpecialist();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
+    });
+
+    it('applies the modal default to Chief-style params proposals without a specialist', () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal(
+            {},
+            {
+              repository: 'example-org/example-repo',
+              initialMessage: 'Review and summarize PR #647',
+            },
+          ),
+        },
+      });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+    });
+
+    it('leaves an explicitly named specialist unaffected by the modal default', () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      renderWithoutSpecialist({ specialist: 'planner' });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('planner');
+    });
+
+    it('keeps an explicit General (null) specialist instead of the modal default', () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      renderWithoutSpecialist({ specialist: null });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
+    });
+
+    it('restores a draft specialist over the modal default', () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+            },
+          }),
+          initialDraft: {
+            fieldValues: {},
+            selectedBulkItemIds: [],
+            workspace: {
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              branch: 'main',
+              specialist: 'ui-designer',
+            },
+          },
+        },
+      });
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('ui-designer');
+    });
+
+    it('reads the modal default once: later modal changes leave the selection and draft alone', async () => {
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      const onDraftChange = vi.fn();
+      const { container } = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Investigate follow-up',
+              initialPrompt: 'Inspect the separate issue.',
+              repoPath: '/repo/current',
+              branch: 'main',
+            },
+          }),
+          onDraftChange,
+        },
+      });
+      const applyListener = vi.fn();
+      container
+        .querySelector('[data-proposal-kind]')
+        ?.addEventListener('proposalapply', applyListener as EventListener);
+      await tick();
+      const draftCallsAfterInit = onDraftChange.mock.calls.length;
+
+      newWorkspaceDefaultState.setSpecialist('implementor');
+      await tick();
+
+      expect(newWorkspaceDefaultState.listeners.size).toBe(0);
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+      expect(onDraftChange.mock.calls.length).toBe(draftCallsAfterInit);
+
+      await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+      const event = applyListener.mock.calls[0]?.[0] as CustomEvent | undefined;
+      expect(event?.detail.editedFields.specialist).toBe('coordinator');
+    });
+
+    it('re-resolves the modal default once initializer hydration settles', async () => {
+      // Mounted while settings.get('workspaceInitializer.state') is still
+      // pending: the selector resolves the first-launch default (General here).
+      workspaceInitializerHydratedState.hydrated = false;
+      newWorkspaceDefaultState.specialist = null;
+      const { applyListener } = renderWithoutSpecialist();
+      await tick();
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
+
+      // Hydration releases the remembered team/single-agent selection.
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      workspaceInitializerHydratedState.setHydrated(true);
+      await tick();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('coordinator');
+      await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+      const event = applyListener.mock.calls[0]?.[0] as CustomEvent | undefined;
+      expect(event?.detail.editedFields.specialist).toBe('coordinator');
+    });
+
+    it('re-resolves the modal default when the specialist catalog loads', async () => {
+      // A remembered id outside the not-yet-loaded catalog resolves to General;
+      // once the catalog carries it, the card picks it up.
+      newWorkspaceDefaultState.specialist = null;
+      renderWithoutSpecialist();
+      await tick();
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('general');
+
+      newWorkspaceDefaultState.specialist = 'implementor';
+      specialistsState.setSpecialists([{ id: 'implementor' }]);
+      await tick();
+
+      expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
+    });
+
+    it('does not let late hydration override an explicit specialist, a restored draft, or a user edit', async () => {
+      workspaceInitializerHydratedState.hydrated = false;
+      newWorkspaceDefaultState.specialist = null;
+
+      const explicit = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Explicit',
+              initialPrompt: 'Go',
+              repoPath: '/repo/current',
+              branch: 'main',
+              specialist: 'planner',
+            },
+          }),
+        },
+      });
+      const restored = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Restored',
+              initialPrompt: 'Go',
+              repoPath: '/repo/current',
+              branch: 'main',
+            },
+          }),
+          initialDraft: {
+            fieldValues: {},
+            selectedBulkItemIds: [],
+            workspace: { title: 'Restored', initialPrompt: 'Go', branch: 'main', specialist: null },
+          },
+        },
+      });
+      const edited = render(ProposalCard, {
+        props: {
+          proposal: makeWorkspaceProposal({
+            workspaceCreate: {
+              mode: 'sibling',
+              title: 'Edited',
+              initialPrompt: 'Go',
+              repoPath: '/repo/current',
+              branch: 'main',
+            },
+          }),
+        },
+      });
+      await tick();
+      const dropdownOf = (result: { container: HTMLElement }) => {
+        const dropdown = result.container.querySelector('[data-testid="mock-specialist-dropdown"]');
+        if (!dropdown) throw new Error('Specialist dropdown not found');
+        return dropdown;
+      };
+      const editButton = Array.from(edited.container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Mock specialist change'),
+      );
+      if (!editButton) throw new Error('Mock specialist change button not found');
+      await fireEvent.click(editButton);
+      expect(dropdownOf(edited).textContent).toContain('ui-designer');
+
+      newWorkspaceDefaultState.specialist = 'coordinator';
+      workspaceInitializerHydratedState.setHydrated(true);
+      await tick();
+
+      expect(dropdownOf(explicit).textContent).toContain('planner');
+      expect(dropdownOf(restored).textContent).toContain('general');
+      expect(dropdownOf(edited).textContent).toContain('ui-designer');
+    });
+  });
+
   it('renders the localized sibling heading without changing the Chief heading', () => {
     const { unmount } = render(ProposalCard, {
       props: {
@@ -1008,15 +1327,14 @@ describe('ProposalCard', () => {
       },
     });
 
-    expect(screen.getByRole('heading', { name: 'Create new workspace' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Create a new workspace?' })).toBeTruthy();
     unmount();
 
     render(ProposalCard, { props: { proposal: makeWorkspaceProposal() } });
-    expect(screen.getByRole('heading', { name: 'Create workspace: Review PR #647' })).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Create new workspace' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Create a new workspace?' })).toBeTruthy();
   });
 
-  it('matches the locked sibling Repo field to the Base branch soft filled surface', () => {
+  it('keeps the sibling repository locked while the branch remains selectable', () => {
     render(ProposalCard, {
       props: {
         proposal: makeWorkspaceProposal({
@@ -1030,20 +1348,8 @@ describe('ProposalCard', () => {
       },
     });
 
-    const repoClasses = screen.getByTestId('proposal-repo-locked').className.split(/\s+/);
-    expect(repoClasses).toEqual(
-      expect.arrayContaining([
-        'rounded-md',
-        'bg-muted/40',
-        'px-2',
-        'py-1',
-        'text-sm',
-        'leading-5',
-        'font-normal',
-        'text-foreground',
-      ]),
-    );
-    expect(repoClasses).not.toContain('border');
+    expect(screen.getByTestId('proposal-repo-locked').textContent).toContain('/repo/current');
+    expect(screen.queryByTestId('proposal-repo-picker')).toBeNull();
     expect(getBranchPicker().getAttribute('data-presentation')).toBe('metadata');
   });
 
@@ -1139,7 +1445,7 @@ describe('ProposalCard', () => {
       },
     });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
 
     expect(onApply).not.toHaveBeenCalled();
     expect(onDiscard).toHaveBeenCalledTimes(1);
@@ -1212,7 +1518,7 @@ describe('ProposalCard', () => {
     expect(screen.queryByTestId('proposal-repo-picker')).toBeNull();
     expect(screen.queryByTestId('proposal-branch-picker')).toBeNull();
     expect(screen.queryByTestId('proposal-specialist-dropdown')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Not now' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Applying/ })).toBeNull();
   });

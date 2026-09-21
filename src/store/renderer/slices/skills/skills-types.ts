@@ -8,7 +8,7 @@ export type SkillInfo = {
   name: string;
   description: string;
   location: string;
-  scope?: "project" | "user";
+  scope?: 'project' | 'user';
 };
 
 export type SkillsWorkspaceState = {
@@ -20,4 +20,3 @@ export type SkillsWorkspaceState = {
 export type SkillsState = {
   byWorkspaceId: Record<string, SkillsWorkspaceState>;
 };
-

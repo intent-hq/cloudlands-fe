@@ -1,29 +1,75 @@
+const ModelPickerCatalogPreview = () => import('./renderers/ModelPickerCatalogPreview.svelte');
 import type { Component } from 'svelte';
 import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
-import BasicCatalogPreview from './renderers/BasicCatalogPreview.svelte';
-import ChoiceCatalogPreview from './renderers/ChoiceCatalogPreview.svelte';
-import ContentFieldCatalogPreview from './renderers/ContentFieldCatalogPreview.svelte';
-import NavigationHelpCatalogPreview from './renderers/NavigationHelpCatalogPreview.svelte';
-import OverlayCatalogPreview from './renderers/OverlayCatalogPreview.svelte';
-import SettingsCatalogPreview from './renderers/SettingsCatalogPreview.svelte';
+const MessageComposerCatalogPreview = () =>
+  import('./renderers/MessageComposerCatalogPreview.svelte');
+const AskUserQuestionsCatalogPreview = () =>
+  import('./renderers/AskUserQuestionsCatalogPreview.svelte');
+const BasicCatalogPreview = () => import('./renderers/BasicCatalogPreview.svelte');
+const ChoiceCatalogPreview = () => import('./renderers/ChoiceCatalogPreview.svelte');
+const ChoiceGroupCatalogPreview = () => import('./renderers/ChoiceGroupCatalogPreview.svelte');
+const ContentFieldCatalogPreview = () => import('./renderers/ContentFieldCatalogPreview.svelte');
+const NavigationHelpCatalogPreview = () =>
+  import('./renderers/NavigationHelpCatalogPreview.svelte');
+const NavigationPrimitivesCatalogPreview = () =>
+  import('./renderers/NavigationPrimitivesCatalogPreview.svelte');
+const OverlayCatalogPreview = () => import('./renderers/OverlayCatalogPreview.svelte');
+const ProximityHighlightCatalogPreview = () =>
+  import('./renderers/ProximityHighlightCatalogPreview.svelte');
+const SettingsCatalogPreview = () => import('./renderers/SettingsCatalogPreview.svelte');
+const ToastCatalogPreview = () => import('./renderers/ToastCatalogPreview.svelte');
+const ModalCatalogPreview = () => import('./renderers/ModalCatalogPreview.svelte');
+const PopoversCatalogPreview = () => import('./renderers/PopoversCatalogPreview.svelte');
+const RowsCatalogPreview = () => import('./renderers/RowsCatalogPreview.svelte');
+const FieldsCatalogPreview = () => import('./renderers/FieldsCatalogPreview.svelte');
+const ScreenStatesCatalogPreview = () => import('./renderers/ScreenStatesCatalogPreview.svelte');
+const PatternCatalogPreview = () => import('./renderers/PatternCatalogPreview.svelte');
+const SubscriptionRowsCatalogPreview = () =>
+  import('./renderers/SubscriptionRowsCatalogPreview.svelte');
 
-export const catalogRendererIds = [
+const catalogRendererIds = [
+  'accordion',
+  'action-menu',
+  'ask-user-questions',
   'badge',
   'breadcrumb',
   'button',
   'button-group',
   'card',
   'checkbox',
+  'checkbox-group',
+  'collection',
   'combobox',
+  'confirm',
+  'dropdown',
+  'grouped-combobox',
+  'copy-input',
   'dialog',
   'file-input',
+  'fields',
+  'form',
   'input',
+  'input-group',
+  'input-message',
+  'kbd',
   'label',
   'list',
   'menu',
+  'message-composer',
+  'modals',
+  'model-picker',
+  'notify',
+  'proximity-highlight',
+  'popovers',
+  'rows',
+  'screen',
+  'screen-states',
+  'radio-group',
   'scroll-area',
+  'searchable-select',
   'select',
   'separator',
+  'settings',
   'settings-field-row',
   'settings-page-shell',
   'settings-section',
@@ -31,12 +77,16 @@ export const catalogRendererIds = [
   'sidebar',
   'skeleton',
   'slider',
-  'spinner',
+  'loading-indicator',
   'switch',
+  'table',
+  'tabs',
   'textarea',
+  'toast',
   'toggle',
   'toggle-group',
   'tooltip',
+  'subscription-rows',
 ] as const;
 
 export type CatalogRendererId = (typeof catalogRendererIds)[number];
@@ -46,9 +96,11 @@ export interface CatalogRendererProps {
   fixture: UiComponentFixture;
 }
 
-type CatalogRenderer<K extends CatalogRendererId> = Component<{
-  componentId: K;
-  fixture: UiComponentFixture;
+type CatalogRenderer<K extends CatalogRendererId> = () => Promise<{
+  default: Component<{
+    componentId: K;
+    fixture: UiComponentFixture;
+  }>;
 }>;
 
 type CatalogRendererRegistry = {
@@ -56,22 +108,49 @@ type CatalogRendererRegistry = {
 };
 
 export const catalogRenderers = {
+  'model-picker': ModelPickerCatalogPreview,
+  'subscription-rows': SubscriptionRowsCatalogPreview,
+  accordion: NavigationPrimitivesCatalogPreview,
+  'action-menu': PatternCatalogPreview,
+  'ask-user-questions': AskUserQuestionsCatalogPreview,
   badge: BasicCatalogPreview,
   breadcrumb: NavigationHelpCatalogPreview,
   button: BasicCatalogPreview,
   'button-group': BasicCatalogPreview,
   card: ContentFieldCatalogPreview,
   checkbox: BasicCatalogPreview,
+  'checkbox-group': ChoiceGroupCatalogPreview,
+  collection: PatternCatalogPreview,
   combobox: ChoiceCatalogPreview,
+  confirm: PatternCatalogPreview,
+  dropdown: ChoiceCatalogPreview,
+  'grouped-combobox': ChoiceCatalogPreview,
+  'copy-input': ContentFieldCatalogPreview,
   dialog: OverlayCatalogPreview,
   'file-input': SettingsCatalogPreview,
+  fields: FieldsCatalogPreview,
+  form: PatternCatalogPreview,
   input: ContentFieldCatalogPreview,
+  'input-group': ContentFieldCatalogPreview,
+  'input-message': ContentFieldCatalogPreview,
+  kbd: NavigationHelpCatalogPreview,
   label: ContentFieldCatalogPreview,
   list: ContentFieldCatalogPreview,
   menu: OverlayCatalogPreview,
+  'message-composer': MessageComposerCatalogPreview,
+  modals: ModalCatalogPreview,
+  notify: PatternCatalogPreview,
+  popovers: PopoversCatalogPreview,
+  rows: RowsCatalogPreview,
+  screen: PatternCatalogPreview,
+  'screen-states': ScreenStatesCatalogPreview,
+  'proximity-highlight': ProximityHighlightCatalogPreview,
+  'radio-group': ChoiceGroupCatalogPreview,
   'scroll-area': NavigationHelpCatalogPreview,
+  'searchable-select': ChoiceCatalogPreview,
   select: ChoiceCatalogPreview,
   separator: ContentFieldCatalogPreview,
+  settings: PatternCatalogPreview,
   'settings-field-row': SettingsCatalogPreview,
   'settings-page-shell': SettingsCatalogPreview,
   'settings-section': SettingsCatalogPreview,
@@ -79,21 +158,25 @@ export const catalogRenderers = {
   sidebar: NavigationHelpCatalogPreview,
   skeleton: ContentFieldCatalogPreview,
   slider: SettingsCatalogPreview,
-  spinner: ContentFieldCatalogPreview,
+  'loading-indicator': ContentFieldCatalogPreview,
   switch: BasicCatalogPreview,
+  table: ContentFieldCatalogPreview,
+  tabs: NavigationPrimitivesCatalogPreview,
   textarea: ContentFieldCatalogPreview,
+  toast: ToastCatalogPreview,
   toggle: BasicCatalogPreview,
   'toggle-group': BasicCatalogPreview,
   tooltip: NavigationHelpCatalogPreview,
 } satisfies CatalogRendererRegistry;
 
-export function getCatalogRenderer(
+export async function getCatalogRenderer(
   id: string,
-): { id: CatalogRendererId; component: Component<CatalogRendererProps> } | undefined {
+): Promise<{ id: CatalogRendererId; component: Component<CatalogRendererProps> } | undefined> {
   if (!catalogRendererIds.includes(id as CatalogRendererId)) return undefined;
   const rendererId = id as CatalogRendererId;
   return {
     id: rendererId,
-    component: catalogRenderers[rendererId] as unknown as Component<CatalogRendererProps>,
+    component: (await catalogRenderers[rendererId]())
+      .default as unknown as Component<CatalogRendererProps>,
   };
 }

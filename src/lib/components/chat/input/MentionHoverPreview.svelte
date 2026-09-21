@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
+  import { crispOut, springIn } from '$lib/motion';
   import { faNote } from '$lib/icons/faNote';
   import Fa from 'svelte-fa';
   import {
-  faFile,
-  faFolder,
-  faCheckSquare,
-  faBook,
-  faTerminal,
-  faGlobe,
-  faRobot,
-  faUserTie,
-} from '@fortawesome/free-solid-svg-icons';
+    faFile,
+    faFolder,
+    faCheckSquare,
+    faBook,
+    faTerminal,
+    faGlobe,
+    faRobot,
+    faUserTie,
+  } from '@fortawesome/free-solid-svg-icons';
   import type { MentionCandidate, MentionType } from '$lib/services/mentions/types';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -87,7 +87,8 @@
   bind:this={hoverElement}
   class="mention-hover-preview"
   style="left: {adjustedPos.x}px; top: {adjustedPos.y}px"
-  transition:fade={{ duration: 150 }}
+  in:springIn={{ tier: 'fast', y: 0, scale: 1 }}
+  out:crispOut={{ tier: 'fast' }}
   role="tooltip"
   aria-label={m.chat_mentionPreview_ariaLabel()}
   onmouseout={handleMouseOut}

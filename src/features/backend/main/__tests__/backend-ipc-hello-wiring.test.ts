@@ -28,6 +28,9 @@ const {
   mockPersistClientId,
   mockSetDaemonVersion,
   mockSetUpdateSupported,
+  mockSetTcAddress,
+  mockSetHosts,
+  mockGetDetectHosts,
   systemStatus,
   mockRunLog,
   startupFailedListeners,
@@ -38,6 +41,9 @@ const {
   mockPersistClientId: vi.fn(async () => {}),
   mockSetDaemonVersion: vi.fn(async () => false),
   mockSetUpdateSupported: vi.fn(async () => false),
+  mockSetTcAddress: vi.fn(async () => false),
+  mockSetHosts: vi.fn(async () => true),
+  mockGetDetectHosts: vi.fn(async () => true),
   // `system.status` result the fake client answers with; tests override.
   systemStatus: { value: {} as unknown },
   mockRunLog: {
@@ -75,16 +81,37 @@ vi.mock('../json-rpc-client', () => ({
     getStatus(): string {
       return 'disconnected';
     }
+    getConnectedVia(): null {
+      return null;
+    }
     getReconnectAttempts(): number {
       return 0;
+    }
+    isConnectionLimited(): boolean {
+      return false;
+    }
+    getConnectionLimitRetryAfterMs(): number | null {
+      return null;
     }
   },
 }));
 
-vi.mock('../client-identity', () => ({
-  getOrCreateClientId: mockGetOrCreateClientId,
-  persistClientId: mockPersistClientId,
-}));
+vi.mock('../client-identity', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../client-identity')>();
+  return {
+    ...actual,
+    getOrCreateClientId: mockGetOrCreateClientId,
+    persistClientId: mockPersistClientId,
+    // Real REV-2 builder over the mocked clientId: the wiring under test is
+    // that the MAIN client presents the full params, not just the id.
+    buildMainClientHelloParams: async () => ({
+      clientId: await mockGetOrCreateClientId(),
+      name: actual.DESKTOP_CLIENT_NAME,
+      capabilities: { browserExec: true },
+      ...actual.getClientHostIdentity(),
+    }),
+  };
+});
 
 vi.mock('../intentd-sidecar', () => ({
   onSidecarGaveUp: vi.fn(),
@@ -121,17 +148,26 @@ vi.mock('../connections-store', async (importOriginal) => ({
   getDecryptedToken: vi.fn(async () => 'tok-remote'),
   setDaemonVersion: mockSetDaemonVersion,
   setUpdateSupported: mockSetUpdateSupported,
+  setTcAddress: mockSetTcAddress,
+  setHosts: mockSetHosts,
+  getDetectHosts: mockGetDetectHosts,
 }));
 
 describe('backend.ipc client identity wiring (§5.17)', () => {
-  it('constructs the shared JsonRpcClient with helloParams presenting the persisted clientId', async () => {
+  it('constructs the shared JsonRpcClient with helloParams presenting the persisted clientId + REV-2 browserExec identity', async () => {
     const { getBackendClient } = await import('../backend.ipc');
     getBackendClient();
 
     expect(ctorOptions).toHaveLength(1);
-    const helloParams = ctorOptions[0].helloParams as () => Promise<unknown>;
+    const helloParams = ctorOptions[0].helloParams as () => Promise<Record<string, unknown>>;
     expect(typeof helloParams).toBe('function');
-    await expect(helloParams()).resolves.toEqual({ clientId: 'cli-persisted' });
+    const params = await helloParams();
+    expect(params).toMatchObject({
+      clientId: 'cli-persisted',
+      name: 'Intent Desktop',
+      capabilities: { browserExec: true },
+    });
+    expect(typeof params.hostname).toBe('string');
     expect(mockGetOrCreateClientId).toHaveBeenCalled();
   });
 
@@ -438,6 +474,57 @@ describe('backend.ipc daemon build-identity log on hello (#3649)', () => {
     });
   });
 
+  it('exposes the connected daemon protocolVersion per connection id for feature gates (intent-hq/intent#5482)', async () => {
+    const { getConnectedDaemonProtocolVersion, __resetBackendProtocolStateForTesting } =
+      await import('../backend.ipc');
+    __resetBackendProtocolStateForTesting();
+    const onHelloResult = await getPrimaryOnHelloResult();
+
+    // Nothing captured yet and no sidecar baseline: unknown.
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+    expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
+
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
+    expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
+
+    // A hello without a version is unknown — the earlier hello never lingers.
+    onHelloResult({ clientId: 'cli-1', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+
+    // A fresh hello (reconnect after a daemon upgrade) re-captures.
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.10', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.10');
+    __resetBackendProtocolStateForTesting();
+  });
+
+  it('lets the sidecar probe seed the local version only until the first local hello (intent-hq/intent#5482)', async () => {
+    const { getLocalDaemonProtocolVersion } = await import('../intentd-sidecar');
+    vi.mocked(getLocalDaemonProtocolVersion).mockReturnValue('10.4');
+    const { getConnectedDaemonProtocolVersion, __resetBackendProtocolStateForTesting } =
+      await import('../backend.ipc');
+    __resetBackendProtocolStateForTesting();
+    const onHelloResult = await getPrimaryOnHelloResult();
+
+    // Before the pooled local client's hello answers, the probe baseline stands in.
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
+    // The probe is local-only: a remote id never inherits it.
+    expect(getConnectedDaemonProtocolVersion('conn-remote')).toBeNull();
+
+    // A local hello that omits the version is authoritative: null, no
+    // fallback to the (possibly stale or env-default) probe value.
+    onHelloResult({ clientId: 'cli-1', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+
+    // A later hello with a version re-captures; a versionless one clears again.
+    onHelloResult({ clientId: 'cli-1', protocolVersion: '10.4', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBe('10.4');
+    onHelloResult({ clientId: 'cli-1', server: {} });
+    expect(getConnectedDaemonProtocolVersion('local')).toBeNull();
+    __resetBackendProtocolStateForTesting();
+    vi.mocked(getLocalDaemonProtocolVersion).mockReturnValue(null);
+  });
+
   it('does not log for hellos without a well-formed server.version', async () => {
     const onHelloResult = await getPrimaryOnHelloResult();
     const info = vi.spyOn(Logger.prototype, 'info');
@@ -562,7 +649,7 @@ describe('backend.ipc remote updateSupported capture on hello', () => {
   });
 
   it('persists a pool member remote updateSupported flag keyed by its connection id', async () => {
-    systemStatus.value = { updateSupported: true };
+    systemStatus.value = { exactUpdateSupported: true };
     const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     await connectBackendClient('conn-remote');
     const poolCtor = ctorOptions[ctorOptions.length - 1];
@@ -576,8 +663,8 @@ describe('backend.ipc remote updateSupported capture on hello', () => {
     disconnectBackendClient('conn-remote');
   });
 
-  it('persists an explicit updateSupported: false (unsupported is conclusive)', async () => {
-    systemStatus.value = { updateSupported: false };
+  it('persists an explicit exactUpdateSupported: false (unsupported is conclusive)', async () => {
+    systemStatus.value = { exactUpdateSupported: false };
     const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     await connectBackendClient('conn-remote');
     const poolCtor = ctorOptions[ctorOptions.length - 1];
@@ -592,7 +679,7 @@ describe('backend.ipc remote updateSupported capture on hello', () => {
   });
 
   it('broadcasts connections:changed only when the captured flag actually changed', async () => {
-    systemStatus.value = { updateSupported: true };
+    systemStatus.value = { exactUpdateSupported: true };
     const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     await connectBackendClient('conn-remote');
     const poolCtor = ctorOptions[ctorOptions.length - 1];
@@ -623,7 +710,7 @@ describe('backend.ipc remote updateSupported capture on hello', () => {
   });
 
   it('never captures for the local backend (pooled local client)', async () => {
-    systemStatus.value = { updateSupported: true };
+    systemStatus.value = { exactUpdateSupported: true };
     const { getBackendClient } = await import('../backend.ipc');
     getBackendClient();
     const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
@@ -634,8 +721,8 @@ describe('backend.ipc remote updateSupported capture on hello', () => {
     expect(mockSetUpdateSupported).not.toHaveBeenCalled();
   });
 
-  it('clears the stored flag to null when system.status omits updateSupported (older daemon)', async () => {
-    systemStatus.value = { status: 'ok' }; // no updateSupported field
+  it('clears the stored flag to null when system.status omits exactUpdateSupported (older daemon)', async () => {
+    systemStatus.value = { updateSupported: true }; // channel-only daemon must not offer exact updates
     const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
     await connectBackendClient('conn-remote');
     const poolCtor = ctorOptions[ctorOptions.length - 1];
@@ -651,13 +738,291 @@ describe('backend.ipc remote updateSupported capture on hello', () => {
 
     // A malformed (non-boolean) field clears the same way.
     mockSetUpdateSupported.mockClear();
-    systemStatus.value = { updateSupported: 'yes' };
+    systemStatus.value = { exactUpdateSupported: 'yes' };
     onHelloResult({ server: { version: '0.9.0' } });
     await vi.waitFor(() => {
       expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', null);
     });
 
     disconnectBackendClient('conn-remote');
+  });
+});
+
+describe('backend.ipc remote tcAddress capture on hello', () => {
+  afterEach(() => {
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    mockSetUpdateSupported.mockClear();
+    mockSetUpdateSupported.mockResolvedValue(false);
+    mockSetTcAddress.mockClear();
+    mockSetTcAddress.mockResolvedValue(false);
+    systemStatus.value = {};
+  });
+
+  it('persists the advertised tunnel address keyed by the connection id', async () => {
+    systemStatus.value = { tcAddress: 'tc7f2a91.tailcat.net' };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', 'tc7f2a91.tailcat.net');
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('clears the stored address to null when system.status omits tcAddress', async () => {
+    // PROTOCOL §5: the field is omitted — never null — when the tunnel is
+    // disabled or the sidecar is down; a successful flagless response is a
+    // conclusive "no tunnel" (see extractTcAddress for the trade-off note).
+    systemStatus.value = { exactUpdateSupported: true }; // no tcAddress field
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('clears to null on a malformed (non-string or empty) tcAddress', async () => {
+    systemStatus.value = { tcAddress: 42 };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
+    });
+
+    // Whitespace-only clears the same way.
+    mockSetTcAddress.mockClear();
+    systemStatus.value = { tcAddress: '   ' };
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetTcAddress).toHaveBeenCalledWith('conn-remote', null);
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('broadcasts connections:changed when only the tunnel address changed', async () => {
+    systemStatus.value = { tcAddress: 'tc7f2a91.tailcat.net' };
+    const { connectBackendClient, disconnectBackendClient } = await import('../backend.ipc');
+    await connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    const onHelloResult = poolCtor.onHelloResult as (result: unknown) => void;
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    // updateSupported unchanged, tcAddress changed → still broadcasts.
+    mockSetUpdateSupported.mockResolvedValueOnce(false);
+    mockSetTcAddress.mockResolvedValueOnce(true);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(send.mock.calls.filter(([c]) => c === 'connections:changed').length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    disconnectBackendClient('conn-remote');
+  });
+
+  it('never captures for the local backend (pooled local client)', async () => {
+    systemStatus.value = { tcAddress: 'tc7f2a91.tailcat.net' };
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetTcAddress).not.toHaveBeenCalled();
+  });
+});
+
+describe('backend.ipc remote localIps capture on hello', () => {
+  afterEach(() => {
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
+    mockSetUpdateSupported.mockClear();
+    mockSetUpdateSupported.mockResolvedValue(false);
+    mockSetTcAddress.mockClear();
+    mockSetTcAddress.mockResolvedValue(false);
+    mockSetHosts.mockClear();
+    mockGetDetectHosts.mockClear();
+    mockGetDetectHosts.mockResolvedValue(true);
+    systemStatus.value = {};
+  });
+
+  async function connectRemote() {
+    const mod = await import('../backend.ipc');
+    await mod.connectBackendClient('conn-remote');
+    const poolCtor = ctorOptions[ctorOptions.length - 1];
+    return {
+      mod,
+      onHelloResult: poolCtor.onHelloResult as (result: unknown) => void,
+      remoteRequest: vi.mocked(mod.getBackendClientForId('conn-remote').request),
+    };
+  }
+
+  it('persists the extra addresses a remote system.status reports (server.pairingInfo is local-only)', async () => {
+    // PROTOCOL §system.status shape; localIps is served to remote callers.
+    systemStatus.value = {
+      status: 'ok',
+      exactUpdateSupported: true,
+      localIps: ['172.96.161.227', '100.85.97.67'],
+    };
+    const { mod, onHelloResult, remoteRequest } = await connectRemote();
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetHosts).toHaveBeenCalledWith('conn-remote', ['172.96.161.227', '100.85.97.67']);
+    });
+    // PROTOCOL: `system.status` takes no params — the exact wire call.
+    expect(remoteRequest).toHaveBeenCalledWith('system.status');
+    expect(mockGetDetectHosts).toHaveBeenCalledWith('conn-remote');
+
+    mod.disconnectBackendClient('conn-remote');
+  });
+
+  it('drops the host write when the pooled client is replaced during the preceding store writes', async () => {
+    systemStatus.value = { exactUpdateSupported: true, localIps: ['172.96.161.227'] };
+    // Hold the tcAddress write open so the disconnect lands mid-capture,
+    // AFTER the initial stale-client check already passed.
+    let releaseTcAddress!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseTcAddress = resolve));
+    mockSetTcAddress.mockImplementationOnce(async () => {
+      await gate;
+      return false;
+    });
+    const { mod, onHelloResult } = await connectRemote();
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetTcAddress).toHaveBeenCalledTimes(1));
+
+    mod.disconnectBackendClient('conn-remote');
+    releaseTcAddress();
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mockSetHosts).not.toHaveBeenCalled();
+  });
+
+  it('filters bound loopback entries out before persisting (diagnostic surface keeps them)', async () => {
+    systemStatus.value = {
+      localIps: ['127.0.0.1', '172.96.161.227', '::1', '[::1]', '::ffff:127.0.0.1'],
+    };
+    const { mod, onHelloResult } = await connectRemote();
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetHosts).toHaveBeenCalledWith('conn-remote', ['172.96.161.227']);
+    });
+
+    mod.disconnectBackendClient('conn-remote');
+  });
+
+  it('leaves the stored hosts untouched on an empty, loopback-only, or absent localIps', async () => {
+    const { mod, onHelloResult } = await connectRemote();
+
+    // Listener down: PROTOCOL says localIps is empty (never null).
+    systemStatus.value = { exactUpdateSupported: true, localIps: [] };
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetUpdateSupported).toHaveBeenCalledTimes(1));
+
+    // Loopback-only bind: every entry is filtered out.
+    systemStatus.value = { exactUpdateSupported: true, localIps: ['127.0.0.1', '::1'] };
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetUpdateSupported).toHaveBeenCalledTimes(2));
+
+    // Older daemon without the field at all.
+    systemStatus.value = { exactUpdateSupported: true };
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetUpdateSupported).toHaveBeenCalledTimes(3));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetHosts).not.toHaveBeenCalled();
+
+    mod.disconnectBackendClient('conn-remote');
+  });
+
+  it('skips the host refresh for records that opted out of IP detection', async () => {
+    mockGetDetectHosts.mockResolvedValue(false);
+    systemStatus.value = {
+      exactUpdateSupported: true,
+      localIps: ['172.96.161.227', '100.85.97.67'],
+    };
+    const { mod, onHelloResult } = await connectRemote();
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    // The other captures from the same response still land.
+    await vi.waitFor(() => {
+      expect(mockSetUpdateSupported).toHaveBeenCalledWith('conn-remote', true);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockGetDetectHosts).toHaveBeenCalledWith('conn-remote');
+    expect(mockSetHosts).not.toHaveBeenCalled();
+
+    mod.disconnectBackendClient('conn-remote');
+  });
+
+  it('broadcasts connections:changed only when the persisted host list actually changed', async () => {
+    systemStatus.value = { localIps: ['172.96.161.227'] };
+    const { mod, onHelloResult } = await connectRemote();
+
+    const send = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
+      { id: 1, isDestroyed: () => false, webContents: { send } } as never,
+    ]);
+
+    const broadcasts = () => send.mock.calls.filter(([c]) => c === 'connections:changed').length;
+
+    // updateSupported and tcAddress unchanged → a changed hosts list alone
+    // still pushes the refreshed list so the edit panel's "Detected
+    // addresses" updates.
+    mockSetUpdateSupported.mockResolvedValueOnce(false);
+    mockSetTcAddress.mockResolvedValueOnce(false);
+    mockSetHosts.mockResolvedValueOnce(true);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => {
+      expect(mockSetHosts).toHaveBeenCalledTimes(1);
+      expect(broadcasts()).toBe(1);
+    });
+    expect(mockSetHosts).toHaveBeenCalledWith('conn-remote', ['172.96.161.227']);
+
+    // The routine every-connect hello with an identical list: the store
+    // skips the write and nothing is broadcast (no per-reconnect IPC churn).
+    mockSetUpdateSupported.mockResolvedValueOnce(false);
+    mockSetTcAddress.mockResolvedValueOnce(false);
+    mockSetHosts.mockResolvedValueOnce(false);
+    onHelloResult({ server: { version: '0.9.0' } });
+    await vi.waitFor(() => expect(mockSetHosts).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(broadcasts()).toBe(1);
+
+    mod.disconnectBackendClient('conn-remote');
+  });
+
+  it('never captures for the local backend (pooled local client)', async () => {
+    systemStatus.value = { localIps: ['172.96.161.227'] };
+    const { getBackendClient } = await import('../backend.ipc');
+    getBackendClient();
+    const onHelloResult = ctorOptions[0].onHelloResult as (result: unknown) => void;
+
+    onHelloResult({ server: { version: '0.9.0' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockSetHosts).not.toHaveBeenCalled();
   });
 });
 

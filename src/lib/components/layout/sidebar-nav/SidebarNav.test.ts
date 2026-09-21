@@ -67,7 +67,7 @@ describe('SidebarNav unified Spaces control', () => {
 
     expect(container.querySelectorAll('[data-navigation-icon]')).toHaveLength(1);
     expect(container.querySelector('[data-navigation-icon="spaces"]')).toBeNull();
-    expect(control.className).toContain('size-8');
+    expect(control.className).toContain('size-(--control-height-medium)');
     expect(control.className).toContain('text-foreground');
     expect(control.className).toContain('opacity-100');
     expect(control.className).toContain('titlebar-navigation-control');

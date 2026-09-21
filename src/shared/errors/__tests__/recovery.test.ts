@@ -2,11 +2,7 @@
  * Tests for Error Recovery Module
  */
 
-import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   getRecoverySuggestions,
   getRecoveryHints,

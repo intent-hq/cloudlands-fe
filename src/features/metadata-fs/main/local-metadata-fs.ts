@@ -10,7 +10,6 @@ import { promises as fs } from 'fs';
 import type { IMetadataFS, MetadataDirent, MetadataStat } from './metadata-fs';
 
 export class LocalMetadataFS implements IMetadataFS {
-   
   async readFile(filePath: string, _encoding: 'utf-8'): Promise<string> {
     return fs.readFile(filePath, 'utf-8');
   }
@@ -31,7 +30,7 @@ export class LocalMetadataFS implements IMetadataFS {
 
   async readdir(
     dirPath: string,
-     
+
     _options: { withFileTypes: true },
   ): Promise<MetadataDirent[]> {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -44,7 +43,6 @@ export class LocalMetadataFS implements IMetadataFS {
     }));
   }
 
-   
   async writeFile(filePath: string, content: string, _encoding: 'utf-8'): Promise<void> {
     await fs.writeFile(filePath, content, 'utf-8');
   }
@@ -65,4 +63,3 @@ export class LocalMetadataFS implements IMetadataFS {
     await fs.rename(oldPath, newPath);
   }
 }
-
