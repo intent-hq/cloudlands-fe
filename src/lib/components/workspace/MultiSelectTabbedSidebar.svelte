@@ -42,10 +42,13 @@
     selectAllWorkspaceAgents,
     selectBackgroundAgentsLoaded,
     selectDelegatedAgentsLoaded,
+    selectDelegatedCounts,
     selectIsLoadingAgents,
     selectIsLoadingBackgroundAgents,
     selectIsLoadingDelegatedAgents,
     selectIsLoadingRetiredAgents,
+    selectLoadedDelegatedParentIds,
+    selectLoadingDelegatedParentIds,
     selectRetiredAgentsLoaded,
     selectRetiredCount,
     selectScopeCounts,
@@ -237,6 +240,9 @@
   const scopeCounts$ = selectScopeCounts(workspaceIdStore);
   const delegatedAgentsLoaded$ = selectDelegatedAgentsLoaded(workspaceIdStore);
   const loadingDelegated$ = selectIsLoadingDelegatedAgents(workspaceIdStore);
+  const delegatedCounts$ = selectDelegatedCounts(workspaceIdStore);
+  const loadedDelegatedParentIds$ = selectLoadedDelegatedParentIds(workspaceIdStore);
+  const loadingDelegatedParentIds$ = selectLoadingDelegatedParentIds(workspaceIdStore);
   const backgroundAgentsLoaded$ = selectBackgroundAgentsLoaded(workspaceIdStore);
   const loadingBackground$ = selectIsLoadingBackgroundAgents(workspaceIdStore);
   const hasUnreadForegroundAgents$ = selectWorkspaceHasUnreadForegroundAgents(workspaceIdStore);
@@ -1138,9 +1144,14 @@
                             scopeCounts={$scopeCounts$}
                             delegatedAgentsLoaded={$delegatedAgentsLoaded$}
                             loadingDelegated={$loadingDelegated$}
-                            onLoadDelegated={() => {
-                              appStore.dispatch(fetchDelegatedAgentsRequested(workspaceId));
+                            onLoadDelegated={(parentAgentId) => {
+                              appStore.dispatch(
+                                fetchDelegatedAgentsRequested(workspaceId, parentAgentId),
+                              );
                             }}
+                            delegatedCounts={$delegatedCounts$}
+                            loadedDelegatedParentIds={$loadedDelegatedParentIds$}
+                            loadingDelegatedParentIds={$loadingDelegatedParentIds$}
                             backgroundAgentsLoaded={$backgroundAgentsLoaded$}
                             loadingBackground={$loadingBackground$}
                             onLoadBackground={() => {

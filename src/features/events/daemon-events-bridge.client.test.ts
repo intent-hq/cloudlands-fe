@@ -276,10 +276,12 @@ import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/questi
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   setAgents,
+  setDelegatedCounts,
   setRetiredCount,
   setScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import {
+  selectDelegatedCounts,
   selectRetiredCount,
   selectScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -6069,6 +6071,131 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
     expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
     // The retired-count nudge is unchanged on that path.
     expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+  });
+
+  // §5.5 delegatedCounts: the same lifecycle events nudge the row's parent
+  // total so `Σ byParent[*].total` stays in lockstep with `scopeCounts.delegated`.
+  describe('per-parent delegatedCounts move in lockstep with the delegated bin', () => {
+    const DELEGATED = {
+      running: 1,
+      byParent: {
+        [PARENT]: { total: 2, running: 1 },
+        'agent-other-parent': { total: 1, running: 0 },
+      },
+    };
+    const delegatedCountsOf = () => selectDelegatedCounts.select(appStore.state, WS);
+
+    beforeEach(() => {
+      appStore.dispatch(setDelegatedCounts(WS, DELEGATED));
+    });
+
+    it('agent:created on a delegated row adds one to its parent (wire parentAgentId first, createdByAgentId fallback) and nothing to a top-level or background row', async () => {
+      const handler = capturedHandlers[0]!;
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-child' as never, parentAgentId: PARENT as never });
+      });
+      handler(notification('agent:created', { agentId: 'agent-child' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+      expect(delegatedCountsOf()).toEqual({
+        ...DELEGATED,
+        byParent: { ...DELEGATED.byParent, [PARENT]: { total: 3, running: 1 } },
+      });
+
+      // A parent with no entry yet gains one with `running: 0`.
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({
+          id: 'agent-child-2' as never,
+          metadata: { createdByAgentId: 'agent-new-parent' } as never,
+        });
+      });
+      handler(notification('agent:created', { agentId: 'agent-child-2' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 5 });
+      expect(delegatedCountsOf()?.byParent['agent-new-parent']).toEqual({ total: 1, running: 0 });
+
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-bg' as never, isBackground: true });
+      });
+      handler(notification('agent:created', { agentId: 'agent-bg' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 5, background: 2 });
+      expect(Object.keys(delegatedCountsOf()?.byParent ?? {})).toHaveLength(3);
+    });
+
+    it('agent:deleted on a known delegated row takes one from its parent and drops a parent reaching zero', async () => {
+      seedSession({ parentAgentId: PARENT as never });
+      const handler = capturedHandlers[0]!;
+      handler(notification('agent:deleted', { agentId: AGENT }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+      expect(delegatedCountsOf()?.byParent[PARENT]).toEqual({ total: 1, running: 1 });
+
+      seedSession({
+        id: 'agent-only-child' as never,
+        parentAgentId: 'agent-other-parent' as never,
+      });
+      handler(notification('agent:deleted', { agentId: 'agent-only-child' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 1 });
+      expect(delegatedCountsOf()?.byParent).toEqual({ [PARENT]: { total: 1, running: 1 } });
+    });
+
+    it('agent:retired moves a known delegated row out of its parent total and agent:restored moves it back; running is never nudged', async () => {
+      seedSession({ parentAgentId: PARENT as never });
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: AGENT }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+      expect(delegatedCountsOf()?.byParent[PARENT]).toEqual({ total: 1, running: 1 });
+
+      seedSession({ parentAgentId: PARENT as never, retiredAt: '2026-01-01T12:00:00.000Z' });
+      handler(notification('agent:restored', { agentId: AGENT }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      expect(delegatedCountsOf()).toEqual(DELEGATED);
+    });
+
+    it('a nudge is a no-op on a workspace holding no delegatedCounts (daemon predating the field) while the bin still moves', async () => {
+      appStore.dispatch(setDelegatedCounts(WS, null));
+      seedSession({ parentAgentId: PARENT as never });
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:deleted', { agentId: AGENT }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+      expect(delegatedCountsOf()).toBeNull();
+    });
+
+    it('a fork-only row (parentSessionId, no parent agent) never moves the delegated bin without a byParent key — Σ byParent[*].total stays equal to scopeCounts.delegated across create, delete, retire and restore', async () => {
+      const sumByParent = () =>
+        Object.values(delegatedCountsOf()?.byParent ?? {}).reduce((n, e) => n + e.total, 0);
+      const handler = capturedHandlers[0]!;
+      expect(sumByParent()).toBe(COUNTS.delegated);
+
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-fork' as never, parentSessionId: 'agent-primary' as never });
+      });
+      handler(notification('agent:created', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel + 1 });
+      expect(delegatedCountsOf()).toEqual(DELEGATED);
+      expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
+
+      handler(notification('agent:retired', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      handler(notification('agent:restored', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel + 1 });
+
+      handler(notification('agent:deleted', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      expect(delegatedCountsOf()).toEqual(DELEGATED);
+      expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
+    });
   });
 });
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {

@@ -141,6 +141,27 @@ export interface AgentScopeCounts {
   background: number;
 }
 
+/** One parent's direct non-retired children: `total` rows, `running` of them mid-turn. */
+export interface AgentDelegatedParentCounts {
+  total: number;
+  running: number;
+}
+
+/**
+ * Per-parent counts of the workspace's non-retired DELEGATED sessions, served
+ * as `delegatedCounts` on every `agent.list` response (§5.5). `running` is the
+ * workspace-wide running delegated count (persisted status `pending` /
+ * `active` / legacy `Processing`); `byParent` keys are raw `parentAgentId`
+ * values — a parent with no non-retired children has NO entry, and a key may
+ * name a parent outside this workspace (cross-workspace delegation). Invariant
+ * daemon-side: `Σ byParent[*].total === scopeCounts.delegated`. Absent on
+ * older daemons.
+ */
+export interface AgentDelegatedCounts {
+  running: number;
+  byParent: Record<string, AgentDelegatedParentCounts>;
+}
+
 /**
  * Canonical AgentSession interface
  *
