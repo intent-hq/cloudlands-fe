@@ -93,6 +93,56 @@ function harness(seed = initialState) {
 describe('gitlabAuthSaga', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('verifier: target-host authorization during initialize cannot attach its identity to the old host', async () => {
+    let resolveInitial!: (value: unknown) => void;
+    mocks.getStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInitial = resolve;
+        }),
+    );
+    mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, host: HOST });
+    const run = harness();
+    try {
+      run.channel.put(initializeGitLabAuth(HOST));
+      await settle();
+      run.channel.put(gitlabAuthChanged('authorized', HOST));
+      await settle();
+      resolveInitial({ ...UNCONFIGURED_STATUS, host: HOST });
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: true, user: WIRE_USER });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it.each(['revoked', 'denied'] as const)(
+    'verifier: target-host %s during initialize preserves the requested host',
+    async (status) => {
+      let resolveInitial!: (value: unknown) => void;
+      mocks.getStatus.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitial = resolve;
+          }),
+      );
+      const run = harness();
+      try {
+        run.channel.put(initializeGitLabAuth(HOST));
+        await settle();
+        run.channel.put(gitlabAuthChanged(status, HOST));
+        await settle();
+        resolveInitial({ ...UNCONFIGURED_STATUS, host: HOST });
+        await settle();
+        expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
   it('verifier: a rejected stale authorized read cannot run completion fallback on a newer host', async () => {
     let rejectOld!: (reason: Error) => void;
     mocks.getStatus.mockImplementation((_provider: string, host?: string) =>
@@ -148,7 +198,10 @@ describe('gitlabAuthSaga', () => {
     await settle();
 
     expect(mocks.getStatus.mock.calls).toEqual([['gitlab', HOST]]);
+    // The requested host is selected before the read so daemon events for it
+    // (and for the host being left) are filtered correctly while it is in flight.
     expect(run.dispatched).toEqual([
+      { type: 'gitlabAuth/setHost', payload: [HOST] },
       {
         type: 'gitlabAuth/setAuthStatus',
         payload: {

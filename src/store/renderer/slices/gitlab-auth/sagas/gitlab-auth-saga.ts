@@ -104,12 +104,15 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
  * belongs to that intent, and host comparison alone cannot tell a stale read
  * from a fresh one when both concern the same host.
  *
- * `host` is the instance the latest intent targets. It is recorded before the
- * intent's daemon round trip, because the slice only learns a newly selected
- * host once that read resolves — until then a daemon event for the previous
- * host would still look like one for the selected host.
+ * Invariant: the slice host is the *only* record of the instance the latest
+ * intent targets. Every writer that targets a host publishes it with
+ * `setGitLabHost` before its daemon round trip, in the same step that bumps
+ * the generation, so no writer or daemon event can observe a target host the
+ * slice has not learned yet. A second copy of the target (e.g. on the fence)
+ * would let an event for the target be accepted, and complete on the slice's
+ * previous host, before the selection had been published.
  */
-type IntentFence = { generation: number; host: string | null };
+type IntentFence = { generation: number };
 
 function bumpIntent(fence: IntentFence): number {
   fence.generation += 1;
@@ -118,10 +121,6 @@ function bumpIntent(fence: IntentFence): number {
 
 function superseded(fence: IntentFence, generation: number): boolean {
   return fence.generation !== generation;
-}
-
-function* intentHost(fence: IntentFence): SagaGenerator<string> {
-  return fence.host ?? (yield* selectGitLabAuthHost.effect());
 }
 
 type CompletionCheck = 'completed' | 'pending' | 'superseded';
@@ -213,9 +212,12 @@ function* pollDeviceFlowWorker(
 
 /**
  * Reads the status for `host` (the daemon's default when omitted) and hydrates
- * the slice. The write is dropped when a newer intent landed while the read
- * was in flight: that intent's own read or connect owns the state now, and a
- * stale result must not put the previous host or identity back.
+ * the slice. A requested host is published before the read so that daemon
+ * events are filtered against it from the start: an event for the host being
+ * left is dropped, and one for the requested host lands on a slice that
+ * already shows it. The write is dropped when a newer intent landed while the
+ * read was in flight: that intent's own read or connect owns the state now,
+ * and a stale result must not put the previous host or identity back.
  */
 function* initialize(
   host: string | undefined,
@@ -223,13 +225,11 @@ function* initialize(
   generation: number,
 ): SagaGenerator<void> {
   try {
-    const target = host ?? (yield* intentHost(fence));
-    fence.host = target;
+    if (host !== undefined) yield* put(setGitLabHost(host));
+    const target = host ?? (yield* selectGitLabAuthHost.effect());
     const status = yield* call(readStatus, host);
     if (!status || superseded(fence, generation)) return;
-    const payload = statusPayload(status, target);
-    fence.host = payload.host;
-    yield* put(setGitLabAuthStatus(payload));
+    yield* put(setGitLabAuthStatus(statusPayload(status, target)));
     // A pending grant is resumed so a settings remount or client refresh does
     // not drop the in-flight code.
     if (validPendingFlow(status.deviceFlow)) {
@@ -259,7 +259,6 @@ function* startDeviceAuth(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<void> {
-  fence.host = host;
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
@@ -320,7 +319,6 @@ function* connectWithToken(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<void> {
-  fence.host = host;
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
@@ -398,10 +396,10 @@ function* authChanged(
   status: ReturnType<typeof gitlabAuthChanged>['payload'][0],
   eventHost: string | undefined,
 ): SagaGenerator<void> {
-  const host = yield* intentHost(fence);
-  // The daemon emits for every instance; only the one the current intent
-  // targets is reflected here — an event for the host being left must not
-  // cancel a pending selection of the next one.
+  const host = yield* selectGitLabAuthHost.effect();
+  // The daemon emits for every instance; only the selected one is reflected
+  // here — an event for the host being left must not cancel a pending
+  // selection of the next one (which is already published, see IntentFence).
   if (!eventForHost(eventHost, host)) return;
   // A transition for the selected host outdates every read begun before it.
   const generation = bumpIntent(fence);
@@ -452,7 +450,8 @@ function* checkGitLabAuthStatusWorker(
   _action: ReturnType<typeof checkGitLabAuthStatus>,
 ): SagaGenerator<void> {
   // A focus re-check reads on behalf of the current intent; it is not a new one.
-  yield* call(checkAuthComplete, yield* intentHost(fence), fence, fence.generation);
+  const host = yield* selectGitLabAuthHost.effect();
+  yield* call(checkAuthComplete, host, fence, fence.generation);
 }
 
 function* cancelGitLabAuthWorker(
@@ -478,7 +477,7 @@ function* gitlabAuthChangedWorker(
 }
 
 export function* gitlabAuthSaga(): SagaGenerator<void> {
-  const fence: IntentFence = { generation: 0, host: null };
+  const fence: IntentFence = { generation: 0 };
   // Only the latest initialize may hydrate: an older read (mount-time default
   // host) that resolved after a newer one would otherwise overwrite it.
   yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker, fence);
