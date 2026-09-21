@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AgentScopeCounts, AgentSession } from '$shared/types';
+  import type { AgentDelegatedCounts, AgentScopeCounts, AgentSession } from '$shared/types';
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import LazyAgentCard from './LazyAgentCard.svelte';
   import CreateAgentSection from './CreateAgentSection.svelte';
@@ -55,8 +55,23 @@
     delegatedAgentsLoaded?: boolean;
     /** True while the lazy delegated read is in flight. */
     loadingDelegated?: boolean;
-    /** Lazy-load trigger: fired when the Delegated bin expands (or a search needs delegated rows). */
-    onLoadDelegated?: () => void;
+    /**
+     * Lazy-load trigger: fired without an id when the Delegated bin expands (or a
+     * search needs delegated rows), and with a `parentAgentId` when one parent's
+     * collapsed delegated group expands before its children are loaded.
+     */
+    onLoadDelegated?: (parentAgentId?: string) => void;
+    /**
+     * Daemon-served per-parent delegated counts (`delegatedCounts`, §5.5). When
+     * present alongside `scopeCounts`, each parent's delegated group renders from
+     * `byParent[agent.id]` before its children load, and the collapsed Delegated
+     * bin's running count comes from `running`. `null`/absent = old daemon.
+     */
+    delegatedCounts?: AgentDelegatedCounts | null;
+    /** Parents whose direct children the per-parent delegated read has hydrated. */
+    loadedDelegatedParentIds?: Record<string, true>;
+    /** Parents whose per-parent delegated read is in flight. */
+    loadingDelegatedParentIds?: Record<string, true>;
     /** True once the lazy `scope: "background"` read has hydrated the background rows. */
     backgroundAgentsLoaded?: boolean;
     /** True while the lazy background read is in flight. */
@@ -83,6 +98,9 @@
     delegatedAgentsLoaded = false,
     loadingDelegated = false,
     onLoadDelegated,
+    delegatedCounts = null,
+    loadedDelegatedParentIds = {},
+    loadingDelegatedParentIds = {},
     backgroundAgentsLoaded = false,
     loadingBackground = false,
     onLoadBackground,
@@ -128,6 +146,10 @@
   // Lazy-bin mode: the daemon served `scopeCounts`, so `agents` holds only the
   // top-level rows until the Delegated / Background bins are expanded.
   const hasLazyBins = $derived(scopeCounts !== null);
+  // Per-parent mode: the daemon also served `delegatedCounts`, so each parent's
+  // delegated group renders collapsed from its count and expanding it loads
+  // only that parent's children (`scope: "delegated"` + `parentAgentId`).
+  const hasDelegatedCounts = $derived(hasLazyBins && delegatedCounts !== null);
   // Bin membership follows the wire parent (`agentListBinOf`, the daemon's
   // §5.5 row-scope rule), never the rendered tree depth: a delegated row
   // whose parent is not loaded (a collapsed Background parent, or a retired
@@ -160,7 +182,17 @@
   ]);
   // Fall back to the regular list when delegations exist (tree heights are variable)
   // or a coordinator is present (its section headers need the regular rendering).
-  const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
+  // A daemon-served per-parent delegated group is a delegation too: its bar
+  // renders only through the tree, and it is not a flat 40px row.
+  const hasCountedDelegatedGroup = $derived(
+    hasDelegatedCounts &&
+      topLevelForegroundAgents.some(
+        (agent) => (delegatedCounts?.byParent[agent.id]?.total ?? 0) > 0,
+      ),
+  );
+  const shouldUseVirtual = $derived(
+    !hasCountedDelegatedGroup && shouldVirtualizeWorkspaceAgentRows(filteredAgentRows),
+  );
   // The retired bin is always flat with uniform-height rows, so a length check suffices.
   const shouldVirtualizeRetired = $derived(
     retiredAgents.length > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
@@ -179,8 +211,12 @@
   // The daemon's `delegated` bin: every parented row (background children
   // included), whether or not its parent is loaded.
   const loadedDelegatedAgents = $derived(activeAgents.filter(isDelegatedAgent));
+  // Daemon-served running count until the whole bin is loaded (rows of a
+  // collapsed bin are not hydrated, so they cannot be counted locally).
   const runningDelegatedCount = $derived(
-    loadedDelegatedAgents.filter((agent) => isAgentRunning(agent.id)).length,
+    hasDelegatedCounts && !delegatedAgentsLoaded
+      ? (delegatedCounts?.running ?? 0)
+      : loadedDelegatedAgents.filter((agent) => isAgentRunning(agent.id)).length,
   );
   const runningBackgroundCount = $derived(
     standaloneBackgroundAgents.filter((agent) => isAgentRunning(agent.id)).length,
@@ -250,6 +286,19 @@
     onLoadBackground?.();
   }
 
+  function isDelegatedParentLoaded(agentId: string): boolean {
+    return delegatedAgentsLoaded || loadedDelegatedParentIds[agentId] === true;
+  }
+
+  // Same transition-triggered contract as the bins: fires when one parent's
+  // group expands before its children are loaded, and never while the whole-bin
+  // read (which covers every parent) is in flight.
+  function requestDelegatedParentLoad(agentId: string) {
+    if (!hasDelegatedCounts || loadingDelegated) return;
+    if (isDelegatedParentLoaded(agentId) || loadingDelegatedParentIds[agentId] === true) return;
+    onLoadDelegated?.(agentId);
+  }
+
   function toggleRetiredBin() {
     showRetiredAgents = !showRetiredAgents;
     if (showRetiredAgents) requestRetiredLoad();
@@ -298,10 +347,12 @@
   }
 
   function toggleDelegation(agentId: string) {
+    const expanding = !isDelegationExpanded(agentId);
     const next = new Set(toggledDelegationIds);
     if (next.has(agentId)) next.delete(agentId);
     else next.add(agentId);
     toggledDelegationIds = next;
+    if (expanding) requestDelegatedParentLoad(agentId);
   }
 
   function handleAgentClick(agentId: string, event: MouseEvent | KeyboardEvent) {
@@ -323,10 +374,27 @@
       onclick={(event) => handleAgentClick(agent.id, event)}
     />
 
-    {@const children = delegatedRowsVisible ? (directChildrenByAgentId.get(agent.id) ?? []) : []}
-    {#if children.length > 0}
+    <!-- Per-parent mode keeps the group (and its loaded children) addressable
+         while the workspace-level bin is collapsed: the group renders from the
+         daemon count and expands on its own. Otherwise the tree hides delegated
+         rows until the bin is expanded, as before. -->
+    {@const children =
+      delegatedRowsVisible || hasDelegatedCounts
+        ? (directChildrenByAgentId.get(agent.id) ?? [])
+        : []}
+    <!-- Daemon-served `{ total, running }` until this parent's children are
+         hydrated; the loaded rows are authoritative after that. -->
+    {@const countedChildren =
+      hasDelegatedCounts && !isDelegatedParentLoaded(agent.id)
+        ? delegatedCounts?.byParent[agent.id]
+        : undefined}
+    {@const childTotal = Math.max(countedChildren?.total ?? 0, children.length)}
+    {#if childTotal > 0}
       {@const isExpanded = isDelegationExpanded(agent.id)}
       {@const runningChildren = children.filter((child) => isAgentRunning(child.id))}
+      {@const childRunning = countedChildren?.running ?? runningChildren.length}
+      {@const showChildrenSkeleton =
+        countedChildren !== undefined && children.length === 0 && !showDelegatedSkeleton}
       <!-- Keep child indentation; align the toggle with the parent avatar + gap. -->
       <div class="mb-2" style="padding-left: 26px;">
         <Button
@@ -345,13 +413,13 @@
           data-agent-delegation-toggle={agent.id}
         >
           <span class="truncate text-left">
-            {#if !isExpanded && runningChildren.length > 0}
+            {#if !isExpanded && childRunning > 0}
               {m.workspace_agentsList_delegatedRunning_label({
-                running: formatInteger(runningChildren.length),
-                total: formatInteger(children.length),
+                running: formatInteger(childRunning),
+                total: formatInteger(childTotal),
               })}
             {:else}
-              {m.workspace_agentsList_delegated_label({ count: formatInteger(children.length) })}
+              {m.workspace_agentsList_delegated_label({ count: formatInteger(childTotal) })}
             {/if}
           </span>
           <Fa
@@ -365,7 +433,21 @@
 
         {#if isExpanded}
           <div class="flex flex-col gap-0.5" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-            {@render agentTree(children)}
+            {#if showChildrenSkeleton}
+              <!-- Per-parent read in flight (or about to start): skeleton rows
+                   under the parent. The whole-bin read shows the bin's skeleton
+                   below instead. -->
+              <div class="space-y-2 py-2" data-agent-delegation-loading={agent.id}>
+                {#each [1, 2] as { }}
+                  <div class="flex h-10 items-center gap-2 rounded-md px-2">
+                    <Skeleton class="size-6 shrink-0 rounded-md" />
+                    <Skeleton class="h-3.5 w-24" />
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              {@render agentTree(children)}
+            {/if}
           </div>
         {/if}
       </div>

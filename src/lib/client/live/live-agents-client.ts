@@ -11,7 +11,14 @@ import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-erro
 import { AgentStatus, isContentBlock } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
-import type { AgentMessage, AgentScopeCounts, AgentSession, ContentBlock } from '$shared/types';
+import type {
+  AgentDelegatedCounts,
+  AgentDelegatedParentCounts,
+  AgentMessage,
+  AgentScopeCounts,
+  AgentSession,
+  ContentBlock,
+} from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type {
   AgentCancelDeleteResult,
@@ -125,6 +132,28 @@ function readScopeCounts(value: unknown): AgentScopeCounts | undefined {
   return { topLevel, delegated, background };
 }
 
+/**
+ * `delegatedCounts` (§5.5) is presence-detected the same way: a daemon that
+ * serves it carries `{ running, byParent }` on every response, with `byParent`
+ * always an object (possibly empty). Only the documented shape is accepted —
+ * a missing `byParent`, a non-numeric `running`, or a malformed entry reads
+ * as absent rather than being healed.
+ */
+function readDelegatedCounts(value: unknown): AgentDelegatedCounts | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { running, byParent } = value as Record<string, unknown>;
+  if (typeof running !== 'number') return undefined;
+  if (!byParent || typeof byParent !== 'object' || Array.isArray(byParent)) return undefined;
+  const parents: Record<string, AgentDelegatedParentCounts> = {};
+  for (const [parentAgentId, entry] of Object.entries(byParent as Record<string, unknown>)) {
+    if (!entry || typeof entry !== 'object') return undefined;
+    const { total, running: parentRunning } = entry as Record<string, unknown>;
+    if (typeof total !== 'number' || typeof parentRunning !== 'number') return undefined;
+    parents[parentAgentId] = { total, running: parentRunning };
+  }
+  return { running, byParent: parents };
+}
+
 export class LiveAgentsClient implements AgentsClient {
   async list(workspaceId: string, options?: AgentListOptions): Promise<AgentSession[]> {
     const { agents } = await this.listWithMeta(workspaceId, options);
@@ -144,17 +173,23 @@ export class LiveAgentsClient implements AgentsClient {
     const params: Record<string, unknown> = { workspaceId };
     if (options?.retiredOnly) params.retiredOnly = true;
     if (options?.scope && options.scope !== 'all') params.scope = options.scope;
+    // `parentAgentId` narrows a delegated read to one parent's direct children
+    // and rides only when supplied (the daemon rejects it on any other scope).
+    if (options?.parentAgentId) params.parentAgentId = options.parentAgentId;
     const result = await backendRequest<{
       agents?: unknown[];
       retiredCount?: number;
       scopeCounts?: unknown;
+      delegatedCounts?: unknown;
     }>('agent.list', params);
     const agents = Array.isArray(result?.agents) ? result.agents : [];
     const scopeCounts = readScopeCounts(result?.scopeCounts);
+    const delegatedCounts = readDelegatedCounts(result?.delegatedCounts);
     return {
       agents: agents.map((a) => normalizeAgent(a as Record<string, unknown>)),
       retiredCount: typeof result?.retiredCount === 'number' ? result.retiredCount : 0,
       ...(scopeCounts ? { scopeCounts } : {}),
+      ...(delegatedCounts ? { delegatedCounts } : {}),
     };
   }
 

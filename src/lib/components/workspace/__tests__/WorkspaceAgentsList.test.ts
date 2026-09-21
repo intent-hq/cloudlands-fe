@@ -677,6 +677,281 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(view.container.querySelector(`[data-agent-panel-row="${child.id}"]`)).toBeTruthy();
   });
 
+  it('renders collapsed per-parent bars from delegatedCounts and loads only that parent on expand (§5.5 delegatedCounts)', async () => {
+    const coordinator = makeAgent('coordinator', { name: 'Coordinator' });
+    const other = makeAgent('other', { name: 'Other parent' });
+    const childless = makeAgent('childless', { name: 'Childless' });
+    const agents = [coordinator, other, childless];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: 3, delegated: 3, background: 0 },
+      delegatedCounts: {
+        running: 2,
+        byParent: {
+          [coordinator.id]: { total: 2, running: 1 },
+          [other.id]: { total: 1, running: 1 },
+          'agent-elsewhere': { total: 4, running: 4 },
+        },
+      },
+      onLoadDelegated,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(`[data-agent-panel-row="${coordinator.id}"]`),
+      ).toBeTruthy(),
+    );
+
+    // Count-first: every parent with a daemon-served count shows its collapsed
+    // bar, labelled from `{ total, running }`, with no delegated row hydrated;
+    // a parent without an entry (and an unknown key) renders nothing.
+    const coordinatorBar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${coordinator.id}"]`,
+    );
+    const otherBar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${other.id}"]`,
+    );
+    expect(coordinatorBar?.textContent).toContain('1 / 2 delegated running');
+    expect(coordinatorBar?.getAttribute('aria-expanded')).toBe('false');
+    expect(otherBar?.textContent).toContain('1 / 1 delegated running');
+    expect(
+      view.container.querySelector(`[data-agent-delegation-toggle="${childless.id}"]`),
+    ).toBeNull();
+    expect(view.container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(2);
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+
+    // The collapsed workspace bin reports the daemon's running count although
+    // no delegated row is loaded locally.
+    const delegatedToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-delegated-toggle]',
+    );
+    expect(delegatedToggle?.textContent).toContain('2 / 3 delegated agents running');
+    expect(delegatedToggle?.getAttribute('aria-expanded')).toBe('false');
+
+    // Expanding one bar requests that parent's children only, with skeleton
+    // rows under the parent while the read is in flight.
+    await fireEvent.click(coordinatorBar!);
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+    expect(onLoadDelegated).toHaveBeenLastCalledWith(coordinator.id);
+    expect(coordinatorBar?.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      view.container.querySelector(`[data-agent-delegation-loading="${coordinator.id}"]`),
+    ).toBeTruthy();
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+    expect(otherBar?.getAttribute('aria-expanded')).toBe('false');
+    await view.rerender({ ...props, loadingDelegatedParentIds: { [coordinator.id]: true } });
+
+    // Loaded: only that parent's children appear, and its label switches to the
+    // loaded rows (the other parent keeps its daemon count).
+    const childA = makeAgent('child-a', {
+      name: 'Child A',
+      metadata: { createdByAgentId: coordinator.id } as AgentSession['metadata'],
+    });
+    const childB = makeAgent('child-b', {
+      name: 'Child B',
+      metadata: { createdByAgentId: coordinator.id } as AgentSession['metadata'],
+    });
+    appStore.dispatch(bulkUpsertSessions([childA, childB]));
+    await view.rerender({
+      ...props,
+      agents: [...agents, childA, childB],
+      runningAgentIds: [childA.id],
+      loadingDelegatedParentIds: {},
+      loadedDelegatedParentIds: { [coordinator.id]: true },
+    });
+    expect(
+      view.container.querySelector(`[data-agent-delegation-loading="${coordinator.id}"]`),
+    ).toBeNull();
+    expect(view.container.querySelector(`[data-agent-panel-row="${childA.id}"]`)).toBeTruthy();
+    expect(view.container.querySelector(`[data-agent-panel-row="${childB.id}"]`)).toBeTruthy();
+    expect(coordinatorBar?.textContent).toContain('2 delegated');
+    expect(otherBar?.textContent).toContain('1 / 1 delegated running');
+    expect(delegatedToggle?.textContent).toContain('2 / 3 delegated agents running');
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+
+    // Collapsing a loaded parent hides its rows and shows the loaded running
+    // count; re-expanding does not re-fetch.
+    await fireEvent.click(coordinatorBar!);
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${childA.id}"]`)).toBeNull(),
+    );
+    expect(coordinatorBar?.textContent).toContain('1 / 2 delegated running');
+    await fireEvent.click(coordinatorBar!);
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${childA.id}"]`)).toBeTruthy(),
+    );
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+
+    // Expanding the workspace bin still loads the whole bin (no parent id) and
+    // opens every group: the still-unloaded parent shows its own skeleton
+    // (rows are already loaded, so the bin-level skeleton stays off).
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() => expect(onLoadDelegated).toHaveBeenCalledTimes(2));
+    expect(onLoadDelegated).toHaveBeenLastCalledWith();
+    expect(otherBar?.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      view.container.querySelector(`[data-agent-delegation-loading="${other.id}"]`),
+    ).toBeTruthy();
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+
+    // Whole-bin loaded: every parent is loaded, labels come from the rows.
+    const childC = makeAgent('child-c', {
+      name: 'Child C',
+      metadata: { createdByAgentId: other.id } as AgentSession['metadata'],
+    });
+    appStore.dispatch(bulkUpsertSessions([childC]));
+    await view.rerender({
+      ...props,
+      agents: [...agents, childA, childB, childC],
+      runningAgentIds: [childA.id],
+      loadedDelegatedParentIds: { [coordinator.id]: true },
+      delegatedAgentsLoaded: true,
+    });
+    expect(view.container.querySelector('[data-agent-delegated-loading]')).toBeNull();
+    expect(view.container.querySelector(`[data-agent-panel-row="${childC.id}"]`)).toBeTruthy();
+    expect(otherBar?.textContent).toContain('1 delegated');
+    expect(delegatedToggle?.textContent).toContain('3 delegated agents');
+    await fireEvent.click(delegatedToggle!);
+    expect(delegatedToggle?.textContent).toContain('1 / 3 delegated agents running');
+  });
+
+  it('does not request a per-parent load while the whole-bin read is in flight or the parent is already loading', async () => {
+    const parent = makeAgent('parent', { name: 'Parent' });
+    appStore.dispatch(bulkUpsertSessions([parent]));
+    const onLoadDelegated = vi.fn();
+    const props = {
+      agents: [parent],
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 1, background: 0 },
+      delegatedCounts: { running: 0, byParent: { [parent.id]: { total: 1, running: 0 } } },
+      onLoadDelegated,
+    };
+    const view = render(WorkspaceAgentsList, { props: { ...props, loadingDelegated: true } });
+    const bar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${parent.id}"]`,
+    );
+    expect(bar?.textContent).toContain('1 delegated');
+    await fireEvent.click(bar!);
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+    await fireEvent.click(bar!);
+
+    await view.rerender({
+      ...props,
+      loadingDelegated: false,
+      loadingDelegatedParentIds: { [parent.id]: true },
+    });
+    await fireEvent.click(bar!);
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+    await fireEvent.click(bar!);
+
+    // A failed read leaves the parent unloaded: the next expand retries.
+    await view.rerender({ ...props, loadingDelegated: false, loadingDelegatedParentIds: {} });
+    await fireEvent.click(bar!);
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+    expect(onLoadDelegated).toHaveBeenLastCalledWith(parent.id);
+  });
+
+  it('keeps the whole-bin behavior without delegatedCounts (old daemon): no per-parent bar before the bin loads', async () => {
+    const parent = makeAgent('parent', { name: 'Parent' });
+    appStore.dispatch(bulkUpsertSessions([parent]));
+    const onLoadDelegated = vi.fn();
+    const props = {
+      agents: [parent],
+      workspaceId,
+      scopeCounts: { topLevel: 1, delegated: 1, background: 0 },
+      delegatedCounts: null,
+      onLoadDelegated,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${parent.id}"]`)).toBeTruthy(),
+    );
+    expect(view.container.querySelector('[data-agent-delegation-toggle]')).toBeNull();
+    const delegatedToggle = view.container.querySelector<HTMLElement>(
+      '[data-agent-delegated-toggle]',
+    );
+    expect(delegatedToggle?.textContent).toContain('1 delegated agents');
+    await fireEvent.click(delegatedToggle!);
+    await waitFor(() => expect(onLoadDelegated).toHaveBeenCalledTimes(1));
+    expect(onLoadDelegated).toHaveBeenLastCalledWith();
+  });
+
+  it('renders the per-parent bar above the virtualization threshold (counted group disables the flat virtual path)', async () => {
+    const agents = Array.from({ length: 21 }, (_, index) =>
+      makeAgent(`parent-${index}`, { name: `Parent ${index}` }),
+    );
+    const [first] = agents;
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: agents.length, delegated: 2, background: 0 },
+      delegatedCounts: { running: 1, byParent: { [first.id]: { total: 2, running: 1 } } },
+      onLoadDelegated,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${first.id}"]`)).toBeTruthy(),
+    );
+
+    // Count-first, before any delegated row is loaded: the bar is present with
+    // the daemon numbers, which the uniform-row virtual path cannot render.
+    const bar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${first.id}"]`,
+    );
+    expect(bar?.textContent).toContain('1 / 2 delegated running');
+    expect(bar?.getAttribute('aria-expanded')).toBe('false');
+    expect(view.container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(1);
+    expect(view.container.querySelector('[data-index]')).toBeNull();
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+
+    // Expanding the bar requests only that parent's children.
+    await fireEvent.click(bar!);
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+    expect(onLoadDelegated).toHaveBeenLastCalledWith(first.id);
+    expect(
+      view.container.querySelector(`[data-agent-delegation-loading="${first.id}"]`),
+    ).toBeTruthy();
+
+    // Whole-bin hydration: the bar stays in place and now reads from the rows.
+    const children = ['child-a', 'child-b'].map((id) =>
+      makeAgent(id, {
+        name: id,
+        metadata: { createdByAgentId: first.id } as AgentSession['metadata'],
+      }),
+    );
+    appStore.dispatch(bulkUpsertSessions(children));
+    await view.rerender({
+      ...props,
+      agents: [...agents, ...children],
+      runningAgentIds: [children[0].id],
+      delegatedAgentsLoaded: true,
+    });
+    const hydratedBar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${first.id}"]`,
+    );
+    expect(hydratedBar?.getAttribute('aria-expanded')).toBe('true');
+    expect(hydratedBar?.textContent).toContain('2 delegated');
+    expect(view.container.querySelector(`[data-agent-panel-row="${children[0].id}"]`)).toBeTruthy();
+    expect(view.container.querySelector(`[data-agent-panel-row="${children[1].id}"]`)).toBeTruthy();
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+
+    // A childless list of the same size still virtualizes.
+    await view.rerender({
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: agents.length, delegated: 0, background: 0 },
+      delegatedCounts: { running: 0, byParent: {} },
+      onLoadDelegated,
+    });
+    await waitFor(() => expect(view.container.querySelector('[data-index]')).toBeTruthy());
+    expect(view.container.querySelector('[data-agent-delegation-toggle]')).toBeNull();
+  });
+
   it('virtualizes the retired bin above the threshold', async () => {
     const active = makeAgent('active-agent', { name: 'Active agent' });
     const retired = Array.from({ length: 40 }, (_, index) =>
