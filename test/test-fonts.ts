@@ -5,7 +5,7 @@ import { test, type Page } from '@playwright/test';
  * with the repo-bundled Inter Variable so text metrics match the CT harness
  * (`playwright/index.ts`) and /sandbox instead of the host's fallback fonts.
  */
-export const HARNESS_FONT_UI =
+const HARNESS_FONT_UI =
   "'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 const INTER_FAMILY = 'Inter Variable';
