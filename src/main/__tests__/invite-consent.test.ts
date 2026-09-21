@@ -34,7 +34,8 @@ vi.mock('../../shared/logger', () => ({
 
 const PAYLOAD: InviteConsentShowPayload = {
   requestId: 'req-1',
-  mode: 'device-code',
+  mode: 'sign-in-required',
+  reason: 'not-connected',
   userCode: 'ABCD-1234',
   verificationUri: 'https://github.com/login/device',
   workspaceTitle: 'Shared workspace',

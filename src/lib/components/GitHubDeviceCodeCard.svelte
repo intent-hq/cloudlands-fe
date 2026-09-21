@@ -14,22 +14,22 @@
     verificationUri: string;
     /** Compact layout for tight surfaces like the sidebar banner. */
     compact?: boolean;
+    /** Label of the open-verification-page button (defaults to the GitHub copy). */
+    openLabel?: string;
     /**
      * Override for the "Open GitHub" action. When set, the card does not open
      * the URL itself — the caller owns the open (e.g. the invite consent modal,
      * where main opens the allowlisted URL and the modal enters its waiting state).
      */
     onOpen?: () => void;
-    /** Label of the open-verification-page button (defaults to the GitHub copy). */
-    openLabel?: string;
   }
 
   let {
     userCode,
     verificationUri,
     compact = false,
-    onOpen,
     openLabel = m.lib_githubDeviceCode_openGithub_label(),
+    onOpen,
   }: Props = $props();
 
   function handleOpenGitHub() {
