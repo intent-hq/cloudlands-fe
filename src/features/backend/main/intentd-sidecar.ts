@@ -19,6 +19,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { Logger } from '$shared/logger';
@@ -45,6 +46,13 @@ let restartTimer: NodeJS.Timeout | null = null;
 let killEscalationTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
 let consecutiveFailures = 0;
+
+/** Signature of `os.setPriority(pid, priority)`; injectable via the test seam. */
+type SidecarPrioritySetter = (pid: number, priority: number) => void;
+
+let setSidecarPriority: SidecarPrioritySetter = os.setPriority;
+/** EACCES/EPERM is the expected outcome on macOS/Linux — log it once, not per respawn. */
+let priorityDeniedLogged = false;
 
 /**
  * The local daemon's `protocolVersion`, learned from the startup UDS version
@@ -345,6 +353,18 @@ export function __resetIntentdSidecarForTesting(): void {
   sidecarStartupFailure = null;
   spawnOnDemandInFlight = null;
   localDaemonProtocolVersion = null;
+  setSidecarPriority = os.setPriority;
+  priorityDeniedLogged = false;
+}
+
+/**
+ * Test seam: replace the `os.setPriority` call used after a spawn so tests
+ * never touch a real process's scheduling priority. `null` restores the default.
+ * @internal
+ */
+export function __setSidecarPrioritySetterForTesting(setter: SidecarPrioritySetter | null): void {
+  setSidecarPriority = setter ?? os.setPriority;
+  priorityDeniedLogged = false;
 }
 
 /**
@@ -821,6 +841,40 @@ export function buildSidecarSpawnEnv(
 }
 
 /**
+ * Best-effort: raise the sidecar to above-normal scheduling priority so intentd
+ * keeps answering RPC (health checks, UI) while agent subtrees load the machine.
+ *
+ * Windows grants ABOVE_NORMAL without elevation. Unprivileged processes on
+ * macOS/Linux cannot raise priority (negative nice needs root / CAP_SYS_NICE),
+ * so EACCES/EPERM is expected there and never affects the spawn. Node wraps
+ * the libuv failure in ERR_SYSTEM_ERROR with the errno name under `info.code`.
+ */
+function raiseSidecarPriority(pid: number): void {
+  const priority = os.constants.priority.PRIORITY_ABOVE_NORMAL;
+  try {
+    setSidecarPriority(pid, priority);
+    logger.info('Raised intentd sidecar scheduling priority', { pid, priority });
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { info?: { code?: string } };
+    const code = e.info?.code ?? e.code;
+    if (code === 'EACCES' || code === 'EPERM') {
+      if (!priorityDeniedLogged) {
+        priorityDeniedLogged = true;
+        logger.info(
+          'Cannot raise intentd sidecar priority (unprivileged; expected on macOS/Linux)',
+          {
+            pid,
+            code,
+          },
+        );
+      }
+      return;
+    }
+    logger.warn('Failed to raise intentd sidecar priority', { pid, code }, err);
+  }
+}
+
+/**
  * Spawn the sidecar daemon process.
  *
  * Internal helper extracted from startIntentdSidecar for restart path reuse.
@@ -842,6 +896,10 @@ async function spawnSidecarProcess(
     detached: false,
   });
   sidecarProcess = proc;
+
+  // A spawn-time failure (e.g. ENOENT) assigns no pid; the 'error' handler
+  // below owns that path.
+  if (proc.pid !== undefined) raiseSidecarPriority(proc.pid);
 
   // Fresh startup readiness window: this process has not answered yet.
   resetReadinessState();
