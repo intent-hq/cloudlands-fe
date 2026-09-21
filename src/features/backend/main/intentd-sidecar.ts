@@ -861,6 +861,7 @@ function raiseSidecarPriority(pid: number): void {
       if (!priorityDeniedLogged) {
         priorityDeniedLogged = true;
         logger.info(
+          // i18n-ignore (developer log message)
           'Cannot raise intentd sidecar priority (unprivileged; expected on macOS/Linux)',
           {
             pid,
