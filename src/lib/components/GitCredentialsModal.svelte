@@ -197,7 +197,7 @@
       <!-- Footer -->
       <div class="flex justify-end gap-2 p-4 border-t border-border">
         <Button
-          class="bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"
+          class="border-none px-4 py-2 rounded cursor-pointer text-foreground"
           onclick={handleClose}
         >
           {m.lib_gitCredentials_close_label()}

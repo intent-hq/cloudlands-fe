@@ -63,9 +63,8 @@
   </div>
   <Button
     type="button"
-    class="inline-flex items-center justify-center gap-2 rounded border-none bg-success text-success-foreground cursor-pointer hover:bg-success/90 {compact
-      ? 'px-3 py-1.5 text-xs'
-      : 'px-6 py-3 text-base w-full'}"
+    variant="primary"
+    class="gap-2 {compact ? 'px-3 py-1.5 text-xs' : 'px-6 py-3 text-base w-full'}"
     onclick={handleOpenGitHub}
   >
     <span>{openLabel}</span>

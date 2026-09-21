@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { type AST, parse } from 'svelte/compiler';
 import type { UiComponentInventory } from '../src/lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import {
@@ -182,6 +183,218 @@ function patternAdoptionCheckFailures(root: string): string[] {
   } catch (error) {
     return [error instanceof Error ? error.message : String(error)];
   }
+}
+
+interface ButtonBackgroundFinding {
+  file: string;
+  line: number;
+  classes: string[];
+}
+
+export interface ButtonBackgroundAudit {
+  count: number;
+  ceiling: number;
+  findings: ButtonBackgroundFinding[];
+  failures: string[];
+}
+
+// Non-colour `bg-*` utilities (size, position, repeat, clip, gradient, ...) never paint a surface.
+const NON_COLOUR_BACKGROUND_UTILITIES =
+  /^bg-(?:transparent|inherit|current|none|auto|cover|contain|fixed|local|scroll|clip-|origin-|blend-|repeat|no-repeat|gradient-|linear-|radial-|conic-|top|bottom|left|right|center|size-|position-)/;
+// Arbitrary (`bg-[…]`) and CSS-variable (`bg-(…)`) values paint a colour unless the value is an
+// image, a gradient, or carries a non-colour type hint (`bg-[length:…]`, `bg-(image:…)`).
+const NON_COLOUR_ARBITRARY_BACKGROUND =
+  /^bg-[[(](?:url\(|image-set\(|(?:linear|radial|conic)-gradient\(|(?:image|length|size|position|repeat|attachment|origin|clip):)/;
+// `bg-x/50`, `bg-[#000]/[0.4]`: translucent tints, not an opaque surface.
+const TRANSLUCENT_BACKGROUND = /\/(?:\d+|\[[^\]]*\])$/;
+
+function opaqueBackgroundClasses(classValue: string): string[] {
+  return classValue
+    .split(/\s+/)
+    .map((token) => token.replace(/^!/, ''))
+    .filter(
+      (token) =>
+        /^bg-./.test(token) &&
+        !TRANSLUCENT_BACKGROUND.test(token) &&
+        !NON_COLOUR_BACKGROUND_UTILITIES.test(token) &&
+        !NON_COLOUR_ARBITRARY_BACKGROUND.test(token),
+    );
+}
+
+interface EstreeNode {
+  type?: string;
+  [key: string]: unknown;
+}
+
+function isNode(value: unknown): value is EstreeNode {
+  return typeof value === 'object' && value !== null;
+}
+
+// String literals reachable from a template expression, e.g. every branch of
+// `class={cn("px-2", active ? "bg-primary" : `bg-${tone}`)}`.
+function stringLiterals(expression: unknown): string[] {
+  const literals: string[] = [];
+  const stack: unknown[] = [expression];
+  while (stack.length) {
+    const node = stack.pop();
+    if (Array.isArray(node)) {
+      stack.push(...node);
+      continue;
+    }
+    if (!isNode(node)) continue;
+    if (node.type === 'Literal' && typeof node.value === 'string') {
+      literals.push(node.value);
+    } else if (node.type === 'TemplateLiteral' && Array.isArray(node.quasis)) {
+      for (const quasi of node.quasis as Array<{
+        value: { cooked?: string | null; raw: string };
+      }>) {
+        literals.push(quasi.value.cooked ?? quasi.value.raw);
+      }
+    }
+    stack.push(...Object.values(node));
+  }
+  return literals;
+}
+
+function attributeStrings(value: AST.Attribute['value']): string[] {
+  if (value === true) return [];
+  return (Array.isArray(value) ? value : [value]).flatMap((part) =>
+    part.type === 'Text' ? [part.data] : stringLiterals(part.expression),
+  );
+}
+
+// The `[name, value]` pairs of an object-literal spread (`{...{ class: "bg-x" }}`), or null when
+// the spread is not statically known (`{...props}`, computed keys, nested spreads).
+function literalSpreadProperties(expression: unknown): Array<[string, unknown]> | null {
+  if (!isNode(expression) || expression.type !== 'ObjectExpression') return null;
+  const entries: Array<[string, unknown]> = [];
+  for (const property of expression.properties as unknown[]) {
+    if (!isNode(property) || property.type !== 'Property' || property.computed) return null;
+    const key = property.key;
+    const name =
+      isNode(key) && key.type === 'Identifier'
+        ? (key.name as string)
+        : isNode(key) && key.type === 'Literal' && typeof key.value === 'string'
+          ? key.value
+          : null;
+    if (name === null) return null;
+    entries.push([name, property.value]);
+  }
+  return entries;
+}
+
+// Opaque background classes a `<Button>` receives without also selecting a `variant`. Attributes
+// are read in source order so a later `class` overrides an earlier spread's `class`; a runtime
+// spread may supply `variant`, so such a Button is treated as unknown rather than flagged.
+function buttonOpaqueBackgrounds(component: AST.Component): string[] {
+  let hasVariant = false;
+  let classStrings: string[] = [];
+  const directives: string[] = [];
+  for (const attribute of component.attributes) {
+    switch (attribute.type) {
+      case 'Attribute':
+        if (attribute.name === 'variant') hasVariant = true;
+        else if (attribute.name === 'class') classStrings = attributeStrings(attribute.value);
+        break;
+      case 'BindDirective':
+        if (attribute.name === 'variant') hasVariant = true;
+        break;
+      case 'ClassDirective':
+        directives.push(attribute.name);
+        break;
+      case 'SpreadAttribute': {
+        const properties = literalSpreadProperties(attribute.expression);
+        if (!properties) return [];
+        for (const [name, value] of properties) {
+          if (name === 'variant') hasVariant = true;
+          else if (name === 'class') classStrings = stringLiterals(value);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  if (hasVariant) return [];
+  const classes = new Set([...classStrings, ...directives].flatMap(opaqueBackgroundClasses));
+  return [...classes].sort(sortText);
+}
+
+// `file:line:column: svelte parse error (code): diagnostic` for a `svelte/compiler` parse failure,
+// so an unparseable file fails the audit like any other finding instead of crashing the run.
+function parseFailure(file: string, error: unknown): string {
+  const compileError = error as {
+    message?: unknown;
+    code?: unknown;
+    start?: { line?: unknown; column?: unknown };
+  } | null;
+  const message = typeof compileError?.message === 'string' ? compileError.message : String(error);
+  const diagnostic = message.split('\n')[0] || 'unknown error';
+  const code = typeof compileError?.code === 'string' ? ` (${compileError.code})` : '';
+  const line = compileError?.start?.line;
+  const column = compileError?.start?.column;
+  const location =
+    typeof line === 'number' ? `:${line}${typeof column === 'number' ? `:${column + 1}` : ''}` : '';
+  return `${file}${location}: svelte parse error${code}: ${diagnostic}`;
+}
+
+// Every rendered `<Button>` component node in a Svelte file. Parsing (rather than regex over the
+// raw source) keeps HTML comments, `<script>`/`<style>` bodies, and string contents out of scope.
+function buttonComponents(file: string, source: string): AST.Component[] {
+  const root: AST.Root = parse(source, { modern: true, filename: file });
+  const components: AST.Component[] = [];
+  const stack: unknown[] = [root.fragment];
+  while (stack.length) {
+    const node = stack.pop();
+    if (Array.isArray(node)) {
+      stack.push(...node);
+      continue;
+    }
+    if (!isNode(node)) continue;
+    if (node.type === 'Component' && node.name === 'Button') {
+      components.push(node as unknown as AST.Component);
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'attributes' || key === 'expression' || key === 'metadata') continue;
+      if (isNode(value)) stack.push(value);
+    }
+  }
+  return components.sort((a, b) => a.start - b.start);
+}
+
+export function buildButtonBackgroundAudit(root = projectRoot): ButtonBackgroundAudit {
+  const findings: ButtonBackgroundFinding[] = [];
+  // A file the parser rejects cannot be audited, so it fails closed rather than being skipped.
+  const parseFailures: string[] = [];
+  for (const absolute of walk(path.join(root, 'src')).filter(productionSvelteSource)) {
+    const file = normalizedRelative(root, absolute);
+    const source = fs.readFileSync(absolute, 'utf8');
+    if (!source.includes('<Button')) continue;
+    let components: AST.Component[];
+    try {
+      components = buttonComponents(file, source);
+    } catch (error) {
+      parseFailures.push(parseFailure(file, error));
+      continue;
+    }
+    for (const component of components) {
+      const classes = buttonOpaqueBackgrounds(component);
+      if (!classes.length) continue;
+      const line = source.slice(0, component.start).split('\n').length;
+      findings.push({ file, line, classes });
+    }
+  }
+  const ceiling = uiComponentGuardrails.buttonBackgroundOverrides;
+  const failures = [
+    ...parseFailures,
+    ...(findings.length > ceiling
+      ? findings.map(
+          (finding) =>
+            `${finding.file}:${finding.line}: <Button> without variant sets ${finding.classes.join(' ')}; Button paints its surface on an inner span that covers class-level backgrounds, so use variant="primary" (or another buttonVariants entry) instead of bg-* on Button`,
+        )
+      : []),
+  ];
+  return { count: findings.length, ceiling, findings, failures };
 }
 
 function emptyRawElementCounts(): RawElementCounts {
@@ -505,11 +718,16 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
     const audit = buildPatternAdoptionAudit(root);
     return { stdout: JSON.stringify(audit, null, 2), stderr: '', exitCode: 0 };
   }
+  if (mode === 'button-backgrounds') {
+    const audit = buildButtonBackgroundAudit(root);
+    return { stdout: JSON.stringify(audit, null, 2), stderr: '', exitCode: 0 };
+  }
   if (mode === 'check') {
     const failures = [
       ...checkFailures(root, inventory, usesProjectManifest),
       ...rawElementCheckFailures(root, usesProjectManifest),
       ...patternAdoptionCheckFailures(root),
+      ...buildButtonBackgroundAudit(root).failures,
     ].sort(sortText);
     if (failures.length) {
       return { stdout: '', stderr: failures.join('\n'), exitCode: 1 };
@@ -526,7 +744,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
       (component) => component.category === 'deletion-candidate',
     ).length;
     return {
-      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0; rawElementViolations=0; patternViolations=0`,
+      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0; rawElementViolations=0; patternViolations=0; buttonBackgroundOverrides=0`,
       stderr: '',
       exitCode: 0,
     };
@@ -534,7 +752,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
   return {
     stdout: '',
     stderr:
-      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|raw-elements|patterns|check]',
+      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|raw-elements|patterns|button-backgrounds|check]',
     exitCode: 2,
   };
 }
