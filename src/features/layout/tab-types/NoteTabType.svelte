@@ -94,9 +94,6 @@
   let noteEditorRef = $state<{
     getCurrentMarkdown?: (workspaceId: string, noteId: string) => string | undefined;
   } | null>(null);
-  const canExportNote = $derived(
-    !!$note && $note.id === tab.noteId && $note.workspaceId === workspaceId && !noteContentStale,
-  );
 
   onDestroy(() => {
     if (noteCopyTimeoutId) {
@@ -110,6 +107,9 @@
   // leaves the row stale (notes.get swallows errors), so track it locally and
   // surface an error state with retry instead of a permanent loading state.
   const noteContentStale = $derived(isNoteContentStale($note));
+  const canExportNote = $derived(
+    !!$note && $note.id === tab.noteId && $note.workspaceId === workspaceId && !noteContentStale,
+  );
   let contentLoadFailedNoteId = $state<string | null>(null);
   const noteContentLoadFailed = $derived(
     noteContentStale && contentLoadFailedNoteId === tab.noteId,
