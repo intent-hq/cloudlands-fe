@@ -184,6 +184,99 @@ function patternAdoptionCheckFailures(root: string): string[] {
   }
 }
 
+interface ButtonBackgroundFinding {
+  file: string;
+  line: number;
+  classes: string[];
+}
+
+export interface ButtonBackgroundAudit {
+  count: number;
+  ceiling: number;
+  findings: ButtonBackgroundFinding[];
+  failures: string[];
+}
+
+// Non-colour `bg-*` utilities (size, position, repeat, clip, gradient, ...) never paint a surface.
+const NON_COLOUR_BACKGROUND_UTILITIES =
+  /^bg-(?:transparent|inherit|current|none|auto|cover|contain|fixed|local|scroll|clip-|origin-|blend-|repeat|no-repeat|gradient-|linear-|radial-|conic-|top|bottom|left|right|center|size-|position-|\[)/;
+
+function opaqueBackgroundClasses(classValue: string): string[] {
+  return [...classValue.matchAll(/(?<![\w:/-])!?(bg-[a-zA-Z][\w-]*)(?![\w/-])/g)]
+    .map((match) => match[1])
+    .filter((token) => !NON_COLOUR_BACKGROUND_UTILITIES.test(token));
+}
+
+// Returns the end index (exclusive) of the tag whose `<` sits at `start`, honouring
+// quoted attribute values and `{...}` expressions so `>` inside them does not close the tag.
+function tagEnd(source: string, start: number): number {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (depth > 0) {
+      if (char === '{') depth += 1;
+      else if (char === '}') depth -= 1;
+      else if (char === "'" || char === '"' || char === '`') quote = char;
+      continue;
+    }
+    if (char === '{') depth = 1;
+    else if (char === '"' || char === "'") quote = char;
+    else if (char === '>') return index + 1;
+  }
+  return source.length;
+}
+
+function buttonOpaqueBackgrounds(tag: string): string[] {
+  if (/(?<![\w-])variant\s*=|\{variant\}/.test(tag)) return [];
+  const classes = new Set<string>();
+  for (const match of tag.matchAll(/(?<![\w:-])class\s*=\s*(?:"([^"]*)"|'([^']*)'|(\{))/g)) {
+    if (match[3] === undefined) {
+      opaqueBackgroundClasses(match[1] ?? match[2] ?? '').forEach((token) => classes.add(token));
+      continue;
+    }
+    const expression = tag.slice(match.index + match[0].length, tagEnd(tag, match.index) - 1);
+    for (const literal of expression.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`/g)) {
+      opaqueBackgroundClasses(literal[1] ?? literal[2] ?? literal[3] ?? '').forEach((token) =>
+        classes.add(token),
+      );
+    }
+  }
+  for (const match of tag.matchAll(/(?<![\w:-])class:(bg-[\w-]+)/g)) {
+    opaqueBackgroundClasses(match[1]).forEach((token) => classes.add(token));
+  }
+  return [...classes].sort(sortText);
+}
+
+export function buildButtonBackgroundAudit(root = projectRoot): ButtonBackgroundAudit {
+  const findings: ButtonBackgroundFinding[] = [];
+  for (const absolute of walk(path.join(root, 'src')).filter(productionSvelteSource)) {
+    const file = normalizedRelative(root, absolute);
+    const source = fs.readFileSync(absolute, 'utf8');
+    for (const match of source.matchAll(/<Button(?=[\s/>])/g)) {
+      const classes = buttonOpaqueBackgrounds(
+        source.slice(match.index, tagEnd(source, match.index)),
+      );
+      if (!classes.length) continue;
+      const line = source.slice(0, match.index).split('\n').length;
+      findings.push({ file, line, classes });
+    }
+  }
+  const ceiling = uiComponentGuardrails.buttonBackgroundOverrides;
+  const failures =
+    findings.length > ceiling
+      ? findings.map(
+          (finding) =>
+            `${finding.file}:${finding.line}: <Button> without variant sets ${finding.classes.join(' ')}; Button paints its surface on an inner span that covers class-level backgrounds, so use variant="primary" (or another buttonVariants entry) instead of bg-* on Button`,
+        )
+      : [];
+  return { count: findings.length, ceiling, findings, failures };
+}
+
 function emptyRawElementCounts(): RawElementCounts {
   return Object.fromEntries(
     RAW_ELEMENT_TAGS.map((tag) => [tag, { files: 0, elements: 0 }]),
@@ -505,11 +598,16 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
     const audit = buildPatternAdoptionAudit(root);
     return { stdout: JSON.stringify(audit, null, 2), stderr: '', exitCode: 0 };
   }
+  if (mode === 'button-backgrounds') {
+    const audit = buildButtonBackgroundAudit(root);
+    return { stdout: JSON.stringify(audit, null, 2), stderr: '', exitCode: 0 };
+  }
   if (mode === 'check') {
     const failures = [
       ...checkFailures(root, inventory, usesProjectManifest),
       ...rawElementCheckFailures(root, usesProjectManifest),
       ...patternAdoptionCheckFailures(root),
+      ...buildButtonBackgroundAudit(root).failures,
     ].sort(sortText);
     if (failures.length) {
       return { stdout: '', stderr: failures.join('\n'), exitCode: 1 };
@@ -526,7 +624,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
       (component) => component.category === 'deletion-candidate',
     ).length;
     return {
-      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0; rawElementViolations=0; patternViolations=0`,
+      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0; rawElementViolations=0; patternViolations=0; buttonBackgroundOverrides=0`,
       stderr: '',
       exitCode: 0,
     };
@@ -534,7 +632,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
   return {
     stdout: '',
     stderr:
-      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|raw-elements|patterns|check]',
+      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|raw-elements|patterns|button-backgrounds|check]',
     exitCode: 2,
   };
 }

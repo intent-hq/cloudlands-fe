@@ -9,7 +9,11 @@ import {
   parseUiComponentInventory,
   parseUiComponentMetadata,
 } from '../src/lib/components/ui/component-metadata';
-import { buildPatternAdoptionAudit, runUiComponentAudit } from './ui-component-audit';
+import {
+  buildButtonBackgroundAudit,
+  buildPatternAdoptionAudit,
+  runUiComponentAudit,
+} from './ui-component-audit';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
 const auditScript = path.resolve(process.cwd(), 'scripts/ui-component-audit.ts');
@@ -270,6 +274,102 @@ describe('UI component inventory gate', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe('Button background override guard', () => {
+  // Minimal tree so `check` can build the inventory and raw-element policy for a temp root.
+  const scaffold = {
+    'src/lib/components/ui/button/index.ts': "export const Button = 'button';",
+    'src/lib/components/ui/button/button.svelte': '<button>primitive host</button>',
+    'scripts/ui-component-raw-element-allowlist.json': JSON.stringify({
+      ceilings: {
+        'src/features': { button: 0, input: 0, select: 0, textarea: 0 },
+        'src/lib': { button: 0, input: 0, select: 0, textarea: 0 },
+      },
+      exceptions: [],
+    }),
+  };
+
+  function withFixtures(files: Record<string, string>, run: (root: string) => void) {
+    const root = mkdtempSync(path.join(tmpdir(), 'button-background-audit-'));
+    try {
+      for (const [file, source] of Object.entries({ ...scaffold, ...files })) {
+        const target = path.join(root, file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        writeFileSync(target, source);
+      }
+      run(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it('fails a Button that sets an opaque bg-* class without a variant, naming file:line and the repair', () => {
+    withFixtures(
+      {
+        'src/features/example/Accept.svelte': [
+          '<div>',
+          '  <Button class="bg-primary text-primary-foreground" onclick={() => count > 1 && accept()}>',
+          '    Apply',
+          '  </Button>',
+          '  <Button',
+          '    type="button"',
+          '    class={cn("h-8", "bg-success text-success-foreground", extra)}',
+          '  >',
+          '    Open',
+          '  </Button>',
+          '  <Button class:bg-danger={armed}>Delete</Button>',
+          '</div>',
+        ].join('\n'),
+      },
+      (root) => {
+        const audit = buildButtonBackgroundAudit(root);
+        expect(audit.findings).toEqual([
+          { file: 'src/features/example/Accept.svelte', line: 2, classes: ['bg-primary'] },
+          { file: 'src/features/example/Accept.svelte', line: 5, classes: ['bg-success'] },
+          { file: 'src/features/example/Accept.svelte', line: 11, classes: ['bg-danger'] },
+        ]);
+        expect(audit.failures[0]).toMatch(
+          /^src\/features\/example\/Accept\.svelte:2: <Button> without variant sets bg-primary; .*use variant="primary"/,
+        );
+
+        const result = runUiComponentAudit('check', root);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(
+          'Accept.svelte:2: <Button> without variant sets bg-primary',
+        );
+        expect(result.stderr).toContain(
+          'Accept.svelte:5: <Button> without variant sets bg-success',
+        );
+      },
+    );
+  });
+
+  it('passes Buttons with a variant, translucent, state-prefixed, transparent, or non-colour bg-* classes', () => {
+    withFixtures(
+      {
+        'src/features/example/Fine.svelte': [
+          '<Button variant="primary" class="bg-primary text-primary-foreground">Apply</Button>',
+          '<Button {variant} class="bg-danger">Delete</Button>',
+          '<Button class="bg-success/10 text-success hover:bg-muted focus-visible:bg-accent dark:bg-muted">Soft</Button>',
+          '<Button class="bg-transparent bg-cover bg-gradient-to-r bg-[url(/x.png)]">Ghost</Button>',
+          '<Button class={cn("px-2", active && "bg-muted/50")}>Toggle</Button>',
+          '<ButtonGroup class="bg-primary"><span class="bg-primary">not a Button</span></ButtonGroup>',
+        ].join('\n'),
+        'src/routes/sandbox/button/+page.svelte': '<Button class="bg-primary">fixture</Button>',
+        'src/features/example/__tests__/Harness.svelte': '<Button class="bg-primary">test</Button>',
+      },
+      (root) => {
+        const audit = buildButtonBackgroundAudit(root);
+        expect(audit).toMatchObject({ count: 0, ceiling: 0, findings: [], failures: [] });
+        expect(runUiComponentAudit('check', root).stderr).not.toContain('<Button> without variant');
+      },
+    );
+  });
+
+  it('keeps the checked-in tree at the zero ceiling', () => {
+    expect(buildButtonBackgroundAudit()).toMatchObject({ count: 0, ceiling: 0, failures: [] });
+  });
 });
 
 describe('settings pattern adoption', () => {
