@@ -159,10 +159,7 @@
             <p class="text-subtle text-sm mt-2">
               {m.lib_githubAuth_localCredentials_message()}
             </p>
-            <Button
-              class="mt-4 cursor-pointer rounded border-none bg-success px-6 py-3 text-base text-success-foreground hover:bg-success/90"
-              onclick={handleConnect}
-            >
+            <Button variant="primary" class="mt-4 px-6 py-3 text-base" onclick={handleConnect}>
               {m.lib_githubAuth_connect_label()}
             </Button>
           </div>
