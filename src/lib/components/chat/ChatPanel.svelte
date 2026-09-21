@@ -5339,6 +5339,25 @@
     handleSend(prompt);
   }
 
+  function isSuggestedPromptShortcutVisible(index: number): boolean {
+    const hint = scrollContainer?.querySelectorAll<HTMLElement>('[data-suggested-prompt-hint]')[
+      index
+    ];
+    if (!scrollContainer || !hint) return false;
+    // Read the targeted hint at keypress time: scroll/resize can precede an
+    // IntersectionObserver delivery, and only part of the prompt list may be visible.
+    const target = hint.getBoundingClientRect();
+    const clip = scrollContainer.getBoundingClientRect();
+    return (
+      target.width > 0 &&
+      target.height > 0 &&
+      target.top >= Math.max(clip.top, 0) &&
+      target.bottom <= Math.min(clip.bottom, window.innerHeight) &&
+      target.left >= Math.max(clip.left, 0) &&
+      target.right <= Math.min(clip.right, window.innerWidth)
+    );
+  }
+
   // Handle editing a suggested prompt - loads into input without sending
   async function handleEditSuggestedPrompt(prompt: string) {
     if (!isActive) return;
@@ -5545,7 +5564,7 @@
         const hasModifier = isMac
           ? e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey // Ctrl on Mac
           : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey; // Alt on Win/Linux
-        if (hasModifier) {
+        if (hasModifier && isSuggestedPromptShortcutVisible(promptIndex)) {
           e.preventDefault();
           const prompt = suggestedPrompts[promptIndex];
           handleSelectSuggestedPrompt(prompt);
