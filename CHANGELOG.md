@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.172.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.2...v2.172.3) (2026-09-21)
+
+
+### 🐛 Bug Fixes
+
+* **chat:** Restore smooth and subtle aura rendering ([#2591](https://github.com/intent-hq/cloudlands-fe/issues/2591)) ([3c616ce](https://github.com/intent-hq/cloudlands-fe/commit/3c616ce2e1a98e44939280eba9a9bf38473a0126))
+
 ## [2.172.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.1...v2.172.2) (2026-09-21)
 
 
