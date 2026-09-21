@@ -128,7 +128,7 @@ async function setSidebarCollapsed(collapsed: boolean) {
   const isCollapsed = async () => (await sidebar.evaluate((element) => element.clientWidth)) === 0;
 
   if ((await isCollapsed()) !== collapsed) {
-    await page.keyboard.press('Meta+b');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+b' : 'Control+b');
   }
   await expect.poll(isCollapsed).toBe(collapsed);
 }

@@ -13,10 +13,12 @@ function findPackagedApp(): string | undefined {
   const candidates =
     process.platform === 'win32'
       ? [join(root, 'dist-electron', 'win-unpacked', 'Intent.exe')]
-      : [
-          join(root, 'dist-electron', 'mac-arm64', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
-          join(root, 'dist-electron', 'mac', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
-        ];
+      : process.platform === 'linux'
+        ? [join(root, 'dist-electron', 'linux-unpacked', 'intent')]
+        : [
+            join(root, 'dist-electron', 'mac-arm64', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
+            join(root, 'dist-electron', 'mac', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
+          ];
 
   return candidates.find((candidate) => existsSync(candidate));
 }
@@ -24,7 +26,9 @@ function findPackagedApp(): string | undefined {
 const packagedApp = findPackagedApp();
 if (!packagedApp) {
   console.error('❌ Build-smoke tests require a packaged app, but none was found.');
-  console.error('   Run pnpm run dist:mac or set PACKAGED_APP_PATH before invoking this gate.');
+  console.error(
+    '   Run pnpm run dist:mac (or pnpm run dist:linux dir on Linux) or set PACKAGED_APP_PATH before invoking this gate.',
+  );
   process.exit(1);
 }
 

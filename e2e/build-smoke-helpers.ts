@@ -6,7 +6,7 @@
  */
 
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 
 import {
   existsSync,
@@ -31,6 +31,7 @@ import { basename, join, resolve } from 'path';
  *  1. PACKAGED_APP_PATH env var (explicit override)
  *  2. dist-electron/mac-arm64/Intent.app/Contents/MacOS/Intent
  *  3. dist-electron/mac/Intent.app/Contents/MacOS/Intent
+ *  (Linux: dist-electron/linux-unpacked/intent; Windows: dist-electron/win-unpacked/Intent.exe)
  *
  * Throws if no binary is found.
  */
@@ -47,10 +48,12 @@ function findPackagedApp(): string {
   const candidates =
     process.platform === 'win32'
       ? [join(root, 'dist-electron', 'win-unpacked', 'Intent.exe')]
-      : [
-          join(root, 'dist-electron', 'mac-arm64', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
-          join(root, 'dist-electron', 'mac', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
-        ];
+      : process.platform === 'linux'
+        ? [join(root, 'dist-electron', 'linux-unpacked', 'intent')]
+        : [
+            join(root, 'dist-electron', 'mac-arm64', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
+            join(root, 'dist-electron', 'mac', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
+          ];
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -83,9 +86,12 @@ async function killExistingPackagedApp(): Promise<void> {
     }
   } else {
     // Match the packaged binary path so unrelated processes (e.g. intentd)
-    // are never touched.
+    // are never touched. execFileSync: no intermediate shell whose own
+    // command line would match the pattern.
+    const pattern =
+      process.platform === 'linux' ? 'linux-unpacked/intent' : 'Intent\\.app/Contents/MacOS/Intent';
     try {
-      execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
+      execFileSync('pkill', ['-f', pattern], { stdio: 'ignore' });
     } catch {
       // No matching processes — that's fine
     }
