@@ -140,6 +140,30 @@ describe('buildChildEnv', () => {
     expect(env.PWTEST_CACHE_DIR).toBe('/cache');
     expect(env.PLAYWRIGHT_HTML_OPEN).toBe('on-failure');
   });
+
+  it('defaults NODE_OPTIONS to the 8 GB heap cap when unset', () => {
+    const { env } = buildChildEnv({ env: baseEnv, isTTY: false, root: '/repo' });
+    expect(env.NODE_OPTIONS).toBe('--max-old-space-size=8192');
+  });
+
+  it('appends the heap cap to a pre-set NODE_OPTIONS that has no heap flag', () => {
+    const preset = '--require /x/dd-trace/init';
+    const { env } = buildChildEnv({
+      env: { ...baseEnv, NODE_OPTIONS: preset },
+      isTTY: false,
+      root: '/repo',
+    });
+    expect(env.NODE_OPTIONS).toBe(`${preset} --max-old-space-size=8192`);
+  });
+
+  it('keeps a pre-set NODE_OPTIONS that already chooses a heap size', () => {
+    const { env } = buildChildEnv({
+      env: { ...baseEnv, NODE_OPTIONS: '--max-old-space-size=2048' },
+      isTTY: false,
+      root: '/repo',
+    });
+    expect(env.NODE_OPTIONS).toBe('--max-old-space-size=2048');
+  });
 });
 
 describe('exitCodeFromChild', () => {
