@@ -1,20 +1,24 @@
-// @verify-changed-triggers: .github/workflows/*.{yml,yaml}, package.json, **/vitest*.config.*,
-//   **/playwright*.config.*, scripts/**
+// @verify-changed-triggers: .github/workflows/*.{yml,yaml}, package.json, **/*.config.*, scripts/**
 // @vitest-environment node
 
 /**
  * Every test-runner suite must be reached by CI.
  *
- * A suite is a Vitest or Playwright config file (`vitest*.config.*`,
- * `playwright*.config.*`) anywhere in the package. It is covered when some
+ * A suite is a Vitest or Playwright config file anywhere in the package: a
+ * `vitest*.config.*` / `playwright*.config.*` by name, or any other
+ * `*.config.{ts,js,...}` whose source imports a runner (`@playwright/test`,
+ * `@playwright/experimental-ct-*`, `vitest`, `vitest/config`) — an import
+ * statement or `require`, so a runner named only in a comment or a string is
+ * not one (`eslint.config.js` quotes `@playwright/experimental-ct-svelte` in a
+ * lint message). It is covered when some
  * workflow `run:` step reaches it — directly, or through the `package.json`
  * scripts graph (`pnpm run <s> [args]`, `pnpm <s> [args]`,
  * `node scripts/pnpm-run.mjs <s> [args]`, expanded transitively with the
  * forwarded args appended, as pnpm does) — by naming the config (`--config=X`,
  * `--config X`, `-c X`), by running the runner on its default config (`vitest`
  * → `vitest.config.*`, `playwright test` → `playwright.config.*`), or by
- * launching a local script (`node|tsx scripts/<file>`) whose source names the
- * config basename. Only the word in executable position counts — past leading
+ * launching a local script (`node|tsx scripts/<file>`) whose code — comments
+ * excluded — names the config by path or basename. Only the word in executable position counts — past leading
  * `VAR=value`s and wrappers such as `cross-env` / `xvfb-run`, unwrapped from
  * `pnpm exec` / `npx` — so a script or runner named inside a quoted string or a
  * shell comment (`echo "run pnpm run test:x later"`) is data, not a command;
@@ -33,12 +37,16 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join, posix } from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const THIS_FILE = 'scripts/check-test-suite-ci-coverage.test.ts';
 const WORKFLOWS_DIR = '.github/workflows';
 const PACKAGE_JSON_PATH = 'package.json';
 const SUITE_CONFIG = /(?:^|\/)(vitest|playwright)[^/]*\.config\.[^/]+$/;
+const CONFIG_FILE = /\.config\.[cm]?[jt]s$/;
+/** Module specifiers whose import makes a config file a test-runner suite. */
+const RUNNER_MODULE = /^(?:@playwright\/(?:test|experimental-ct-[\w-]+)|vitest(?:\/config)?)$/;
 const PNPM_RUN_WRAPPER = 'scripts/pnpm-run.mjs';
 const RUN_STEP = /^(\s*)(?:-\s+)?run:(?:\s+(.*))?$/;
 const BLOCK_SCALAR = /^([|>])[-+0-9]*\s*(?:#.*)?$/;
@@ -73,11 +81,41 @@ interface Word {
 }
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
-const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({});
+const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
+  'src/lib/components/ui/card/operate-patterns.playwright.config.ts':
+    '2026-09-21: intentionally manual visual harness; its spec renders Operate pattern contact sheets into a dated .demo-artifacts/ directory for human review, with no checked-in baselines to compare against in CI',
+  'e2e/build-smoke.config.ts':
+    '2026-09-21, provisional: needs a packaged app; the follow-up PR "Run the build-smoke suite from a nightly/dispatch Linux workflow" wires it and removes this entry',
+});
 
 const normalizePath = (value: string) => posix.normalize(value.replaceAll('\\', '/'));
 
-const isSuiteConfig = (path: string) => SUITE_CONFIG.test(normalizePath(path));
+/** A reader of repo-relative paths under `root`: the file text, or `undefined` when absent. */
+const fileReader =
+  (root: string): Reader =>
+  (path) => {
+    const resolved = join(root, path);
+    return existsSync(resolved) ? readFileSync(resolved, 'utf-8') : undefined;
+  };
+
+/** Whether `source` imports (or `require`s) a test runner; comments and strings do not count. */
+const importsRunner = (source: string) =>
+  ts
+    .preProcessFile(source, true, true)
+    .importedFiles.some(({ fileName }) => RUNNER_MODULE.test(fileName));
+
+/**
+ * A suite config: `vitest*.config.*` / `playwright*.config.*` by name (the
+ * fast path, no read), or any other `*.config.{ts,js,...}` whose source
+ * imports a runner.
+ */
+const isSuiteConfig = (path: string, readSource: Reader) => {
+  const normalized = normalizePath(path);
+  if (SUITE_CONFIG.test(normalized)) return true;
+  if (!CONFIG_FILE.test(normalized)) return false;
+  const source = readSource(normalized);
+  return source !== undefined && importsRunner(source);
+};
 
 /** Tracked and untracked (non-ignored) suite config files, repo-relative and sorted. */
 function listSuiteConfigs(root = process.cwd()): string[] {
@@ -86,7 +124,11 @@ function listSuiteConfigs(root = process.cwd()): string[] {
     ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
     { cwd: root, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 },
   );
-  return output.split('\0').filter(isSuiteConfig).sort();
+  const readSource = fileReader(root);
+  return output
+    .split('\0')
+    .filter((path) => isSuiteConfig(path, readSource))
+    .sort();
 }
 
 const unquote = (value: string) => value.replace(/^(['"])(.*)\1$/, '$2');
@@ -317,10 +359,28 @@ const defaultConfig = (runner: Runner, suites: readonly string[]) =>
   suites.find((suite) => new RegExp(`^${runner}\\.config\\.[^/]+$`).test(suite)) ??
   `${runner}.config.ts`;
 
-// A basename mention in a launcher's source: the name bounded by non-path
-// characters, so `playwright-ct.config.ts` never stands in for `playwright.config.ts`.
-const mentionsBasename = (source: string, suite: string) =>
-  new RegExp(`(?:^|[^\\w./-])${basename(suite).replace(/[.]/g, '\\.')}(?![\\w.-])`).test(source);
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/**
+ * `source` reprinted without its comments; string and template contents stay
+ * intact. Parsing (not bare scanning) is required: only the parser rescans a
+ * template's tail after `${…}`, so `${x}://…` is template text, not a comment.
+ */
+const withoutComments = (source: string) =>
+  ts
+    .createPrinter({ removeComments: true })
+    .printFile(
+      ts.createSourceFile('launcher.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS),
+    );
+
+// A mention of the suite in a launcher's code — its repo path or bare basename,
+// comments excluded — bounded by non-path characters, so `playwright-ct.config.ts`
+// never stands in for `playwright.config.ts`, `other/vitest.config.ts` never for
+// the root one, and `e2e/x.config.ts/y.config.ts` never for `e2e/x.config.ts`.
+const mentionsSuite = (source: string, suite: string) => {
+  const names = [...new Set([suite, basename(suite)])].map(escapeRegExp);
+  return new RegExp(`(?:^|[^\\w./-])(?:${names.join('|')})(?![\\w./-])`).test(source);
+};
 
 /** The `scripts/<file>` a `node|tsx [flags] <file>` command launches. */
 const launcherFile = (words: string[]): string | undefined => {
@@ -353,7 +413,8 @@ function suitesReferencedBy(
     const launcher = launcherFile(words);
     const source = launcher === undefined ? undefined : readLauncher(launcher);
     if (source === undefined) continue;
-    for (const suite of suites) if (mentionsBasename(source, suite)) reached.add(suite);
+    const code = withoutComments(source);
+    for (const suite of suites) if (mentionsSuite(code, suite)) reached.add(suite);
   }
   return reached;
 }
@@ -421,11 +482,6 @@ function describeUncovered(suites: string[], input: CoverageInput): string {
     .join('\n');
 }
 
-const readRepoFile: Reader = (path) => {
-  const resolved = join(process.cwd(), path);
-  return existsSync(resolved) ? readFileSync(resolved, 'utf-8') : undefined;
-};
-
 function readWorkflows(): string[] {
   const dir = join(process.cwd(), WORKFLOWS_DIR);
   return readdirSync(dir)
@@ -440,6 +496,7 @@ describe('test-suite CI coverage detector', () => {
       .map((run) => `      - name: step\n        run: ${run}`)
       .join('\n')}\n`;
   const suites = [
+    'e2e/build-smoke.config.ts',
     'e2e/playwright.config.e2e.ts',
     'playwright-ct.config.ts',
     'playwright.config.ts',
@@ -449,6 +506,7 @@ describe('test-suite CI coverage detector', () => {
   ];
   const scripts: Scripts = {
     'test:unit': 'node scripts/check-deps-fresh.mjs && vitest run --config vitest.config.ts',
+    'test:build-smoke': 'tsx scripts/run-build-smoke-if-packaged.ts',
     'test:ui-invariants':
       'node scripts/check-deps-fresh.mjs && node scripts/ui-invariant-suites.mjs',
     'test:playwright': 'playwright test',
@@ -468,6 +526,8 @@ describe('test-suite CI coverage detector', () => {
   const launchers: Record<string, string> = {
     'scripts/run-ct-tests.mjs': "args = ['test', '-c', 'playwright-ct.config.ts', ...forwarded];",
     'scripts/ui-invariant-suites.mjs': "[vitestBin, 'run', '--config', 'vitest.config.ts']",
+    'scripts/run-build-smoke-if-packaged.ts':
+      "pnpmInvocation(['exec', 'playwright', 'test', '--config=e2e/build-smoke.config.ts']);",
     'scripts/check-deps-fresh.mjs': 'export {};',
   };
   const readLauncher: Reader = (path) => launchers[path];
@@ -477,13 +537,53 @@ describe('test-suite CI coverage detector', () => {
     scripts,
     readLauncher,
   });
+  const configSources: Record<string, string> = {
+    'e2e/build-smoke.config.ts':
+      "import { defineConfig } from '@playwright/test';\nexport default defineConfig({});",
+    'src/lib/card/operate-patterns.playwright.config.ts':
+      "import { defineConfig, devices } from '@playwright/test';\n\nexport default defineConfig({ projects: [{ use: devices['Desktop Chrome'] }] });",
+    'bench/perf.config.mts':
+      "import { defineConfig } from 'vitest/config'\nexport default defineConfig({})",
+    'src/ct-harness.config.ts':
+      "import type { PlaywrightTestConfig } from '@playwright/experimental-ct-svelte';\nconst config: PlaywrightTestConfig = {};\nexport default config;",
+    'legacy/vitest-runner.config.cjs':
+      "module.exports = require('vitest/config').defineConfig({});",
+    'foo.config.ts': "import { defineConfig } from 'vite';\nexport default defineConfig({});",
+    'eslint.config.js':
+      "// migrated off @playwright/test; see `import { test } from 'vitest'`\nexport default [{ rules: { 'no-restricted-imports': ['error', { name: '@playwright/experimental-ct-svelte' }] } }];",
+    'scripts/vitest-suite-files.mjs': "import { defineConfig } from 'vitest/config';",
+    'src/lib/runner.config.ts': 'export const doc = \'from "vitest/config"\';',
+  };
+  const readConfig: Reader = (path) => configSources[path];
 
-  it('recognises suite config files by basename anywhere in the tree', () => {
-    expect(suites.every(isSuiteConfig)).toBe(true);
-    expect(isSuiteConfig('vitest.config.mts')).toBe(true);
-    expect(isSuiteConfig('src/lib/card/operate-patterns.playwright.config.ts')).toBe(false);
-    expect(isSuiteConfig('scripts/vitest-suite-files.mjs')).toBe(false);
-    expect(isSuiteConfig('vite.config.mjs')).toBe(false);
+  it('recognises suite config files by basename anywhere in the tree without reading them', () => {
+    const unreadable: Reader = () => {
+      throw new Error('read');
+    };
+    const byName = suites.filter((suite) => !(suite in configSources));
+    expect(byName).toHaveLength(6);
+    expect(byName.every((suite) => isSuiteConfig(suite, unreadable))).toBe(true);
+    expect(isSuiteConfig('vitest.config.mts', unreadable)).toBe(true);
+    expect(isSuiteConfig('scripts/vitest-suite-files.mjs', readConfig)).toBe(false);
+    expect(isSuiteConfig('vite.config.mjs', readConfig)).toBe(false);
+  });
+
+  it('recognises any *.config.* whose source imports a test runner', () => {
+    // Not `playwright*.config.*` by name: only the `@playwright/test` import makes it a suite.
+    expect(isSuiteConfig('src/lib/card/operate-patterns.playwright.config.ts', readConfig)).toBe(
+      true,
+    );
+    expect(isSuiteConfig('e2e/build-smoke.config.ts', readConfig)).toBe(true);
+    expect(isSuiteConfig('bench/perf.config.mts', readConfig)).toBe(true);
+    expect(isSuiteConfig('src/ct-harness.config.ts', readConfig)).toBe(true);
+    expect(isSuiteConfig('legacy/vitest-runner.config.cjs', readConfig)).toBe(true);
+    expect(isSuiteConfig('foo.config.ts', readConfig)).toBe(false);
+    expect(isSuiteConfig('missing.config.ts', readConfig)).toBe(false);
+  });
+
+  it('ignores a runner named only in a comment or a string', () => {
+    expect(isSuiteConfig('eslint.config.js', readConfig)).toBe(false);
+    expect(isSuiteConfig('src/lib/runner.config.ts', readConfig)).toBe(false);
   });
 
   it('extracts inline and block-scalar run: steps, joining folded and continued lines', () => {
@@ -702,13 +802,81 @@ describe('test-suite CI coverage detector', () => {
       'playwright-ct.config.ts',
     ]);
     expect(reached('node scripts/ui-invariant-suites.mjs')).toEqual(['vitest.config.ts']);
+    expect(reached('tsx scripts/run-build-smoke-if-packaged.ts')).toEqual([
+      'e2e/build-smoke.config.ts',
+    ]);
     expect(reached('node scripts/check-deps-fresh.mjs && playwright install chromium')).toEqual([]);
     expect(reached('pnpm exec playwright install chromium')).toEqual([]);
+  });
+
+  it('reaches a content-detected suite through the package script that launches it', () => {
+    const workflow = steps(
+      'PACKAGED_APP_PATH=dist-electron/linux-unpacked/intent pnpm run test:build-smoke',
+    );
+    expect([...coveredSuites(input(workflow))]).toEqual(['e2e/build-smoke.config.ts']);
   });
 
   it('does not let a launcher mention of a similar basename stand in for the root config', () => {
     const reached = suitesReferencedBy('node scripts/run-ct-tests.mjs', suites, readLauncher);
     expect(reached.has('playwright.config.ts')).toBe(false);
+    const nested: Reader = () => "['--config', 'other/vitest.config.ts']";
+    expect(suitesReferencedBy('node scripts/x.mjs', suites, nested).has('vitest.config.ts')).toBe(
+      false,
+    );
+  });
+
+  it('does not let a launcher mention of a suite path with a trailing segment stand in for it', () => {
+    const longer: Reader = () => "['--config=e2e/build-smoke.config.ts/other.config.ts']";
+    expect([...suitesReferencedBy('node scripts/x.mjs', suites, longer)]).toEqual([]);
+  });
+
+  it('ignores suites a launcher names only in comments', () => {
+    const reached = (source: string) => [
+      ...suitesReferencedBy('node scripts/x.mjs', suites, () => source),
+    ];
+    expect(reached('// Related: e2e/build-smoke.config.ts\nexport {};')).toEqual([]);
+    expect(
+      reached('/* see vitest.config.ts and\n   e2e/build-smoke.config.ts */\nexport {};'),
+    ).toEqual([]);
+    expect(
+      reached(
+        "// Related: e2e/build-smoke.config.ts\nargs = ['test', '-c', 'playwright-ct.config.ts'];",
+      ),
+    ).toEqual(['playwright-ct.config.ts']);
+    expect(reached("const config = 'vitest.config.ts'; // e2e/build-smoke.config.ts")).toEqual([
+      'vitest.config.ts',
+    ]);
+  });
+
+  it('keeps template literals whole while dropping the comments around them', () => {
+    const reached = (source: string) => [
+      ...suitesReferencedBy('node scripts/x.mjs', suites, () => source),
+    ];
+    expect(
+      reached(
+        'const cmd = `${runner} --config=e2e/build-smoke.config.ts`;\n// Related: playwright-ct.config.ts',
+      ),
+    ).toEqual(['e2e/build-smoke.config.ts']);
+    expect(
+      reached(
+        'const url = `${scheme}://example.invalid`; const args = ["--config=e2e/build-smoke.config.ts"];',
+      ),
+    ).toEqual(['e2e/build-smoke.config.ts']);
+    expect(
+      reached(
+        'const s = `${a}//${`${b}//x`} vitest.config.ts` /* e2e/build-smoke.config.ts */; // playwright-ct.config.ts',
+      ),
+    ).toEqual(['vitest.config.ts']);
+  });
+
+  it('matches launcher mentions of suite paths containing regex metacharacters exactly', () => {
+    const odd = ['src/routes/[id]/foo.config.ts', 'src/routes/(group)/foo.config.ts'];
+    const reached = (source: string) => [
+      ...suitesReferencedBy('node scripts/x.mjs', odd, () => source),
+    ];
+    expect(reached("['--config', 'src/routes/[id]/foo.config.ts']")).toEqual([odd[0]]);
+    expect(reached("['--config', 'src/routes/(group)/foo.config.ts']")).toEqual([odd[1]]);
+    expect(reached("['--config', 'src/routes/id/foo.config.ts']")).toEqual([]);
   });
 
   it('covers every suite a workflow reaches directly or through the scripts graph', () => {
@@ -718,6 +886,7 @@ describe('test-suite CI coverage detector', () => {
       'pnpm run test:playwright --project=chromium --workers=1',
       'xvfb-run -a pnpm run test:playwright:manual:browser-lifetime --workers=1',
       'pnpm run test:ct --only-changed=HEAD',
+      'pnpm run test:build-smoke',
     );
     expect(auditCoverage(input(workflow), {})).toEqual({
       uncovered: ['e2e/playwright.config.e2e.ts'],
@@ -736,6 +905,7 @@ describe('test-suite CI coverage detector', () => {
   it('reports an unwired suite with the test* scripts that reference it', () => {
     const report = auditCoverage(input(steps('pnpm run test:unit', 'pnpm run test:ct')), {});
     expect(report.uncovered).toEqual([
+      'e2e/build-smoke.config.ts',
       'e2e/playwright.config.e2e.ts',
       'playwright.config.ts',
       'playwright.manual.config.ts',
@@ -770,13 +940,19 @@ describe(`${WORKFLOWS_DIR} reaches every test-runner suite`, () => {
     suites,
     workflows: readWorkflows(),
     scripts,
-    readLauncher: readRepoFile,
+    readLauncher: fileReader(process.cwd()),
   };
   const report = auditCoverage(input);
 
   it('enumerates at least the root vitest and playwright configs', () => {
     expect(suites).toContain('vitest.config.ts');
     expect(suites).toContain('playwright.config.ts');
+  });
+
+  it('enumerates the content-detected suites, not a config that only quotes a runner', () => {
+    expect(suites).toContain('e2e/build-smoke.config.ts');
+    expect(suites).toContain('src/lib/components/ui/card/operate-patterns.playwright.config.ts');
+    expect(suites).not.toContain('eslint.config.js');
   });
 
   it('every suite is reached by a workflow run: step or allowlisted with a reason', () => {
