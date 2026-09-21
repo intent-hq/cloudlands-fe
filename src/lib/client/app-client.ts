@@ -11,6 +11,7 @@
  * stays aligned with the live store shape.
  */
 import type {
+  AgentDelegatedCounts,
   AgentListScope,
   AgentMessage,
   AgentScopeCounts,
@@ -548,6 +549,11 @@ export interface AgentListOptions {
   retiredOnly?: boolean;
   /** Row scope (intent-hq/intent#5383): one bin of the non-retired sessions; `all` / absent is the default read. */
   scope?: AgentListScope;
+  /**
+   * Narrows a `scope: "delegated"` read to that parent's DIRECT sub-agents
+   * (§5.5; the daemon rejects it with any other scope).
+   */
+  parentAgentId?: string;
 }
 
 export interface AgentListResult {
@@ -559,6 +565,11 @@ export interface AgentListResult {
    * default (all-rows) read without this field.
    */
   scopeCounts?: AgentScopeCounts;
+  /**
+   * Per-parent delegated counts (`delegatedCounts`, §5.5) — present only when
+   * the daemon serves them; workspace-wide even on a narrowed read.
+   */
+  delegatedCounts?: AgentDelegatedCounts;
 }
 
 export interface AgentsClient {

@@ -109,6 +109,41 @@ export const selectIsLoadingDelegatedAgents = store.createSelector((state, wsId:
   return getWorkspaceAgentState(state, wsId).isLoadingDelegatedAgents;
 });
 
+/**
+ * Daemon-served per-parent delegated counts (`delegatedCounts`, §5.5) for the
+ * collapsed per-parent delegated groups; `null` when the daemon served none.
+ */
+export const selectDelegatedCounts = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).delegatedCounts;
+});
+
+/**
+ * True once one parent's direct children are hydrated — by the per-parent
+ * read (`scope: "delegated"` + `parentAgentId`) or by the whole-bin read,
+ * which covers every parent.
+ */
+export const selectDelegatedParentLoaded = store.createSelector(
+  (state, wsId: string, parentAgentId: string) => {
+    const workspaceState = getWorkspaceAgentState(state, wsId);
+    return (
+      workspaceState.delegatedAgentsLoaded ||
+      workspaceState.loadedDelegatedParentIds[parentAgentId] === true
+    );
+  },
+);
+
+/** True while that parent's per-parent delegated read is in flight. */
+export const selectIsLoadingDelegatedParent = store.createSelector(
+  (state, wsId: string, parentAgentId: string) => {
+    return getWorkspaceAgentState(state, wsId).loadingDelegatedParentIds[parentAgentId] === true;
+  },
+);
+
+/** The parents whose per-parent delegated read has landed (not the whole-bin flag). */
+export const selectLoadedDelegatedParentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).loadedDelegatedParentIds;
+});
+
 /** True once the on-demand `scope: "background"` read has hydrated the background rows. */
 export const selectBackgroundAgentsLoaded = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).backgroundAgentsLoaded;
