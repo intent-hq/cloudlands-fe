@@ -19,9 +19,10 @@ const virtualModules: Record<string, string> = {
   '$features/workspace/utils/empty-window-destination': `
     export const resolveEmptyWindowDestination = () => '/';`,
   '$lib/components/ui/tooltip': `
-    import Tooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
-    export const TooltipRich = Tooltip;
-    export const TooltipShortcut = Tooltip;`,
+    import MockTooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
+    export const Tooltip = MockTooltip;
+    export const TooltipRich = MockTooltip;
+    export const TooltipShortcut = MockTooltip;`,
   '$lib/components/workspace/WorkspaceHoverCard.svelte': `
     export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
@@ -72,6 +73,14 @@ const virtualModules: Record<string, string> = {
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceTabStatuses = () =>
       readable(() => globalThis.__workspaceTabScenario.statuses);`,
+  '$store/renderer/slices/presence/presence-selectors': `
+    const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
+    export const selectPresenceRosters = () => readable(() => []);
+    export const selectPresenceMembers = () => readable(() => []);
+    export const selectPresenceOwnPrincipalId = () => readable(() => undefined);
+    export const selectWorkspacePresencePeople = Object.assign(() => readable(() => []), {
+      select: () => [],
+    });`,
   '$store/renderer/store': `
     export const store = {
       dispatch(action) { globalThis.__workspaceTabScenario.actions.push(action); },
