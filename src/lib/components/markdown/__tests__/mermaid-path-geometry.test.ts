@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { color } from 'd3';
+import mermaid from 'mermaid';
 import {
   alignMermaidOpenArrowheads,
   buildDownstreamFanoutRoutes,
@@ -27,11 +28,13 @@ import {
   preferClearStraightRoute,
   repairFlowchartNodeOutlines,
   replacePathTerminal,
+  rewriteStateRoutes,
   routeOrthogonalAroundObstacles,
   roundOrthogonalBends,
   separateFlowchartVerticalLane,
   simplifyOrthogonalPoints,
   snapOrthogonalTerminals,
+  type StateDiagramRoutingData,
 } from '../mermaid-path-geometry';
 
 type TestPoint = { x: number; y: number };
@@ -764,6 +767,300 @@ describe('Mermaid path terminal geometry', () => {
         ),
       ).toBeNull();
       expect(buildDownstreamFanoutRoutes(source, [...targets, targets[0]], [], [])).toBeNull();
+    });
+  });
+
+  describe('authored state transition routing', () => {
+    const transitions = [
+      '[*] --> Idle',
+      'Idle --> Starting: User sends message',
+      'Starting --> Streaming: Agent responds',
+      'Streaming --> RunningTool: Tool starts',
+      'RunningTool --> Streaming: Tool completes',
+      'Streaming --> NeedsInput: Agent asks user',
+      'NeedsInput --> Streaming: User replies',
+      'Streaming --> Complete: Agent finishes',
+      'Starting --> Failed: Request fails',
+      'Streaming --> Failed: Stream fails',
+      'Failed --> Starting: User retries',
+    ];
+    const source = `stateDiagram-v2\n${transitions.join('\n')}`;
+
+    class Translation {
+      constructor(
+        public e = 0,
+        public f = 0,
+      ) {}
+      inverse() {
+        return new Translation(-this.e, -this.f);
+      }
+    }
+    class LayoutPoint {
+      constructor(
+        public x = 0,
+        public y = 0,
+      ) {}
+      matrixTransform(matrix: Translation) {
+        return new LayoutPoint(this.x + matrix.e, this.y + matrix.f);
+      }
+    }
+    function matrix(element: Element | null): Translation {
+      const result = new Translation();
+      for (let current = element; current; current = current.parentElement) {
+        const match = current
+          .getAttribute('transform')
+          ?.match(/translate\(([-\d.]+),\s*([-\d.]+)\)/);
+        if (match) {
+          result.e += Number(match[1]);
+          result.f += Number(match[2]);
+        }
+      }
+      return result;
+    }
+    function localBox(element: Element): TestBounds {
+      if (element.matches('.edgeLabel')) return { x: 0, y: 0, width: 80, height: 20 };
+      return Object.fromEntries(
+        ['x', 'y', 'width', 'height'].map((key) => [key, Number(element.getAttribute(key))]),
+      ) as TestBounds;
+    }
+
+    function installGeometry(svg: SVGSVGElement) {
+      for (const element of [svg, ...svg.querySelectorAll('*')]) {
+        Object.defineProperties(element, {
+          getScreenCTM: { configurable: true, value: () => matrix(element) },
+          getBBox: { value: () => localBox(element) },
+          transform: { value: { baseVal: { consolidate: () => ({ matrix: matrix(element) }) } } },
+        });
+      }
+    }
+
+    async function fixture(authoredSource = source) {
+      mermaid.initialize({ startOnLoad: false });
+      const parsed = await mermaid.mermaidAPI.getDiagramFromText(authoredSource);
+      expect(parsed.type).toBe('stateDiagram');
+      const data = (
+        parsed.db as typeof parsed.db & { getData(): StateDiagramRoutingData }
+      ).getData();
+      vi.stubGlobal('DOMPoint', LayoutPoint);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.id = 'authored-state';
+      svg.classList.add('statediagram');
+      const group = (className: string) => {
+        const element = document.createElementNS(svg.namespaceURI, 'g');
+        element.setAttribute('class', className);
+        svg.append(element);
+        return element;
+      };
+      const nodes = group('nodes');
+      const paths = group('edgePaths');
+      const labels = group('edgeLabels');
+      // Model the pinned Mermaid renderer's DOM identity contract, not its
+      // layout. Geometry shims expose translations so endpoint assertions read
+      // the nodes AFTER production compact reflow, never a copied route table.
+      for (const [index, node] of data.nodes.entries()) {
+        const element = document.createElementNS(svg.namespaceURI, 'g');
+        element.id = `${svg.id}-${node.domId}`;
+        element.setAttribute('class', 'node');
+        element.setAttribute('transform', `translate(100, ${index * 150})`);
+        const shape = document.createElementNS(svg.namespaceURI, 'rect');
+        shape.setAttribute('width', '100');
+        shape.setAttribute('height', '40');
+        const text = document.createElementNS(svg.namespaceURI, 'text');
+        text.textContent = node.id === 'root_start' ? '' : node.id;
+        element.append(shape, text);
+        nodes.append(element);
+      }
+      for (const edge of data.edges) {
+        const path = document.createElementNS(svg.namespaceURI, 'path');
+        path.id = `${svg.id}-${edge.id}`;
+        path.setAttribute('data-id', edge.id);
+        path.setAttribute('d', 'M0,0L1,1');
+        paths.append(path);
+        // Mermaid may omit the label element for an unlabeled entry edge.
+        if (!edge.label) continue;
+        const label = document.createElementNS(svg.namespaceURI, 'g');
+        label.setAttribute('class', 'edgeLabel');
+        label.setAttribute('transform', 'translate(7, 11)');
+        const inner = document.createElementNS(svg.namespaceURI, 'g');
+        inner.setAttribute('class', 'label');
+        inner.setAttribute('data-id', edge.id);
+        inner.textContent = edge.label;
+        label.append(inner);
+        labels.append(label);
+      }
+      installGeometry(svg);
+      return { svg, data };
+    }
+
+    function expectAuthoredEndpoints(svg: SVGSVGElement, data: StateDiagramRoutingData) {
+      const boundary = (id: string, point: TestPoint) => {
+        const parsedNode = data.nodes.find((node) => node.id === id)!;
+        const node = [...svg.querySelectorAll<SVGGElement>('g.node')].find(
+          (element) => element.id === `${svg.id}-${parsedNode.domId}`,
+        )!;
+        const shape = node.querySelector('rect')!;
+        const box = localBox(shape);
+        const offset = matrix(shape);
+        const x = point.x - offset.e;
+        const y = point.y - offset.f;
+        expect(x).toBeGreaterThanOrEqual(box.x);
+        expect(x).toBeLessThanOrEqual(box.x + box.width);
+        expect(y).toBeGreaterThanOrEqual(box.y);
+        expect(y).toBeLessThanOrEqual(box.y + box.height);
+        expect(
+          Math.min(
+            Math.abs(x - box.x),
+            Math.abs(x - box.x - box.width),
+            Math.abs(y - box.y),
+            Math.abs(y - box.y - box.height),
+          ),
+        ).toBeLessThan(0.001);
+        return node;
+      };
+      for (const edge of data.edges.filter((edge) => edge.start !== 'root_start')) {
+        const path = [...svg.querySelectorAll<SVGPathElement>('.edgePaths path')].find(
+          (element) => element.dataset.id === edge.id,
+        )!;
+        expect(path.dataset.manhattanPoints).toBeTruthy();
+        const values = path.getAttribute('d')!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+        boundary(edge.start, { x: values[0], y: values[1] });
+        const target = boundary(edge.end, { x: values.at(-2)!, y: values.at(-1)! });
+        expect(path.dataset.terminalTarget).toBe(target.id);
+        const label = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')].find(
+          (element) => element.querySelector('.label')?.getAttribute('data-id') === edge.id,
+        )!;
+        expect(label.dataset.routePathId).toBe(path.id);
+        expect(label.textContent).toBe(edge.label);
+      }
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it.each([false, true])('keeps the original sample endpoints (compact=%s)', async (compact) => {
+      const { svg, data } = await fixture();
+      const entry = data.edges.find((edge) => edge.start === 'root_start')!;
+      const entryPath = [...svg.querySelectorAll('path')].find(
+        (path) => path.getAttribute('data-id') === entry.id,
+      )!;
+      const entryGeometry = entryPath.getAttribute('d');
+      expect(rewriteStateRoutes(svg, compact, data)).toBeDefined();
+      expectAuthoredEndpoints(svg, data);
+      expect(entryPath.getAttribute('d')).toBe(entryGeometry);
+      const once = svg.outerHTML;
+      rewriteStateRoutes(svg, compact, data);
+      expect(svg.outerHTML).toBe(once);
+      const clone = svg.cloneNode(true) as SVGSVGElement;
+      installGeometry(clone);
+      for (const path of clone.querySelectorAll('[data-manhattan-points]')) {
+        path.setAttribute('d', 'M0,0L1,1');
+      }
+      expect(rewriteStateRoutes(clone, compact)).toBeDefined();
+      expectAuthoredEndpoints(clone, data);
+      expect(clone.outerHTML).toBe(once);
+    });
+
+    it.each([false, true])(
+      'leaves Starting --> Complete: Agent responds and all seven states untouched (compact=%s)',
+      async (compact) => {
+        const { svg, data } = await fixture(
+          source.replace(
+            'Starting --> Streaming: Agent responds',
+            'Starting --> Complete: Agent responds',
+          ),
+        );
+        expect(data.edges.find((edge) => edge.label === 'Agent responds')).toMatchObject({
+          start: 'Starting',
+          end: 'Complete',
+        });
+        const before = svg.outerHTML;
+        const readGeometry = vi.spyOn(svg.querySelector<SVGGElement>('g.node')!, 'getScreenCTM');
+        expect(rewriteStateRoutes(svg, compact, data)).toBeUndefined();
+        expect(svg.outerHTML).toBe(before);
+        expect(readGeometry).not.toHaveBeenCalled();
+      },
+    );
+
+    for (const compact of [false, true]) {
+      it.each(['reordered transitions', 'swapped labels', 'duplicate labels'])(
+        `uses parsed identities with %s and independently reordered DOM (compact=${compact})`,
+        async (variant) => {
+          const changed =
+            variant === 'reordered transitions'
+              ? transitions.toReversed()
+              : transitions.map((line, index) => {
+                  if (!index) return line;
+                  const label =
+                    variant === 'duplicate labels'
+                      ? 'Agent responds'
+                      : transitions[(index % (transitions.length - 1)) + 1].split(': ')[1];
+                  return `${line.split(':')[0]}: ${label}`;
+                });
+          const { svg, data } = await fixture(`stateDiagram-v2\n${changed.join('\n')}`);
+          const paths = svg.querySelector('.edgePaths')!;
+          paths.append(...[...paths.children].reverse());
+          const labels = svg.querySelector('.edgeLabels')!;
+          labels.append(labels.children[0]);
+          const nodes = svg.querySelector('.nodes')!;
+          nodes.append(...[...nodes.children].reverse());
+          // Display names are not identifiers, either: repeated text must not
+          // collapse distinct states or disable a valid authored-ID topology.
+          for (const text of svg.querySelectorAll('.node text')) text.textContent = 'Same name';
+          expect(
+            rewriteStateRoutes(svg, compact, {
+              ...data,
+              edges: data.edges.toReversed(),
+              nodes: data.nodes.toReversed(),
+            }),
+          ).toBeDefined();
+          expectAuthoredEndpoints(svg, data);
+        },
+      );
+    }
+
+    it.each([
+      ['extra node', `${source}\nUnrelated`],
+      ['extra edge', `${source}\nComplete --> Idle: Reset`],
+      ['parallel edge', `${source}\nStarting --> Streaming: Again`],
+      ['horizontal direction', `${source}\ndirection LR`],
+    ])(
+      'does not mutate unsupported %s topology in compact mode',
+      async (_name, authoredSource) => {
+        const { svg, data } = await fixture(authoredSource);
+        const before = svg.outerHTML;
+        expect(rewriteStateRoutes(svg, true, data)).toBeUndefined();
+        expect(svg.outerHTML).toBe(before);
+      },
+    );
+
+    it.each([
+      'missing parse',
+      'invalid cached parse',
+      'missing path ID',
+      'duplicate path ID',
+      'missing label ID',
+      'duplicate label ID',
+      'missing node ID',
+    ])('rejects %s before compact mutations', async (missing) => {
+      const { svg, data } = await fixture();
+      const paths = [...svg.querySelectorAll('path')];
+      const labels = [...svg.querySelectorAll('.edgeLabel > .label')];
+      if (missing === 'invalid cached parse') svg.dataset.stateRouteGraph = '{';
+      if (missing === 'missing path ID') paths[0].removeAttribute('data-id');
+      if (missing === 'duplicate path ID')
+        paths[0].setAttribute('data-id', paths[1].getAttribute('data-id')!);
+      if (missing === 'missing label ID') labels[0].removeAttribute('data-id');
+      if (missing === 'duplicate label ID')
+        labels[0].setAttribute('data-id', labels[1].getAttribute('data-id')!);
+      if (missing === 'missing node ID') svg.querySelector('.node')!.removeAttribute('id');
+      const before = svg.outerHTML;
+      expect(
+        rewriteStateRoutes(
+          svg,
+          true,
+          missing === 'missing parse' || missing === 'invalid cached parse' ? undefined : data,
+        ),
+      ).toBeUndefined();
+      expect(svg.outerHTML).toBe(before);
     });
   });
 

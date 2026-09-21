@@ -389,6 +389,19 @@ const STATE_ROUTE_NODES = {
   [STATE_LABEL.userRetries]: ['Failed', 'Starting'],
 } as const;
 
+/** The identity fields returned by Mermaid's parsed StateDB.getData(), before rendering. */
+export type StateDiagramRoutingData = {
+  direction: string;
+  nodes: {
+    id: string;
+    domId?: string;
+    shape: string;
+    isGroup?: boolean;
+    parentId?: string;
+  }[];
+  edges: { id: string; start: string; end: string; label?: string }[];
+};
+
 export function replacePathTerminal(pathData: string, terminal: Point): string | null {
   const numberPattern = '-?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:e[-+]?\\d+)?';
   const match = pathData.match(
@@ -6023,30 +6036,109 @@ export function chooseLabelSegment(
     )[0];
 }
 
-export function rewriteStateRoutes(svg: SVGSVGElement, compact = false) {
-  if (!svg.classList.contains('statediagram')) return;
+function stateRoutePlan(svg: SVGSVGElement, diagram?: StateDiagramRoutingData) {
+  if (!diagram || diagram.direction !== 'TB' || !svg.id) return;
+  // These are route presets for one supported authored topology, not a way to
+  // infer endpoints from display names or transition text. Reject the whole
+  // reflow if any edge/node is different: compact mode moves shared nodes.
+  const presets = Object.entries(STATE_ROUTE_NODES);
+  const requiredIds = new Set<string>(['root_start', ...Object.values(STATE_ROUTE_NODES).flat()]);
+  if (
+    diagram.nodes.length !== requiredIds.size ||
+    new Set(diagram.nodes.map((node) => node.id)).size !== requiredIds.size ||
+    new Set(diagram.nodes.map((node) => node.domId)).size !== requiredIds.size ||
+    diagram.nodes.some(
+      (node) =>
+        !requiredIds.has(node.id) ||
+        !node.domId ||
+        node.isGroup ||
+        node.parentId ||
+        node.shape !== (node.id === 'root_start' ? 'stateStart' : 'rect'),
+    ) ||
+    diagram.edges.length !== presets.length + 1 ||
+    new Set(diagram.edges.map((edge) => edge.id)).size !== diagram.edges.length ||
+    diagram.edges.filter((edge) => edge.start === 'root_start' && edge.end === 'Idle').length !== 1
+  )
+    return;
   const paths = [
     ...svg.querySelectorAll<SVGPathElement>('.edgePaths path, path.transition[data-edge="true"]'),
   ];
   const labels = [...svg.querySelectorAll<SVGGElement>('.edgeLabels > .edgeLabel')];
-  for (const element of [...paths, ...labels]) {
-    element.style.setProperty('transition-property', 'none', 'important');
+  const nodes = [...svg.querySelectorAll<SVGGElement>('g.node')];
+  if (paths.length !== diagram.edges.length || nodes.length !== diagram.nodes.length) return;
+  const pathsById = new Map<string, SVGPathElement>();
+  for (const path of paths) {
+    const id = path.dataset.id;
+    if (
+      !id ||
+      pathsById.has(id) ||
+      path.id !== `${svg.id}-${id}` ||
+      !diagram.edges.some((edge) => edge.id === id)
+    )
+      return;
+    pathsById.set(id, path);
   }
+  const labelsById = new Map<string, SVGGElement>();
+  for (const label of labels) {
+    const id = label.querySelector(':scope > .label[data-id]')?.getAttribute('data-id');
+    if (!id || labelsById.has(id) || !pathsById.has(id)) return;
+    labelsById.set(id, label);
+  }
+  const nodesById = new Map<string, SVGGElement>();
+  for (const node of diagram.nodes) {
+    const matches = nodes.filter((element) => element.id === `${svg.id}-${node.domId}`);
+    if (matches.length !== 1) return;
+    nodesById.set(node.id, matches[0]);
+  }
+  const routes = [];
+  for (const [kind, [source, target]] of presets) {
+    const matches = diagram.edges.filter((edge) => edge.start === source && edge.end === target);
+    if (matches.length !== 1) return;
+    const edge = matches[0];
+    const path = pathsById.get(edge.id);
+    const label = labelsById.get(edge.id);
+    if (!path || !label) return;
+    routes.push({ edge, path, label, kind: kind as keyof typeof STATE_ROUTE_NODES });
+  }
+  return { paths, labels, nodesById, routes, diagram };
+}
+
+export function rewriteStateRoutes(
+  svg: SVGSVGElement,
+  compact = false,
+  diagram?: StateDiagramRoutingData,
+) {
+  if (!svg.classList.contains('statediagram')) return;
+  let plan: ReturnType<typeof stateRoutePlan>;
+  try {
+    // Retain verified parser identity for repeat fits and SVG clones. Never
+    // reconstruct missing identity from text, element order, or painted paths.
+    plan = stateRoutePlan(svg, diagram ?? JSON.parse(svg.dataset.stateRouteGraph ?? 'null'));
+  } catch {
+    return;
+  }
+  if (!plan) return;
+  const { paths, labels, nodesById, routes } = plan;
   const referencePath = paths[0];
   if (!referencePath) return;
   const nodeBounds = new Map<string, Bounds>();
   const nodeElements = new Map<string, { node: SVGGElement; shape: SVGGraphicsElement }>();
-  for (const node of svg.querySelectorAll<SVGGElement>('g.node')) {
-    const name = node.textContent?.trim();
+  for (const [id, node] of nodesById) {
     const shape = shapeForNode(node);
     const bounds = shape && boundsInPathSpace(shape, referencePath);
-    if (name && bounds) {
-      nodeBounds.set(name, bounds);
-      if (shape) nodeElements.set(name, { node, shape });
-    }
+    if (!shape || !bounds || !Object.values(bounds).every(Number.isFinite)) return;
+    if (compact && !node.transform.baseVal.consolidate()?.matrix) return;
+    nodeBounds.set(id, bounds);
+    nodeElements.set(id, { node, shape });
   }
-  const requiredNames = new Set(Object.values(STATE_ROUTE_NODES).flat());
-  if ([...requiredNames].some((name) => !nodeBounds.has(name))) return;
+  svg.dataset.stateRouteGraph = JSON.stringify({
+    direction: plan.diagram.direction,
+    nodes: plan.diagram.nodes.map(({ id, domId, shape }) => ({ id, domId, shape })),
+    edges: plan.diagram.edges.map(({ id, start, end }) => ({ id, start, end })),
+  } satisfies StateDiagramRoutingData);
+  for (const element of [...paths, ...labels]) {
+    element.style.setProperty('transition-property', 'none', 'important');
+  }
   if (compact) {
     const idle = nodeBounds.get('Idle');
     if (!idle) return;
@@ -6073,36 +6165,17 @@ export function rewriteStateRoutes(svg: SVGSVGElement, compact = false) {
       nodeBounds.set(name, { ...current, ...target });
     });
   }
-  const allNodes = [...nodeBounds.values()];
+  const allNodes = [...nodeBounds].flatMap(([id, bounds]) => (id === 'root_start' ? [] : [bounds]));
   const occupied: Segment[] = [];
   const occupiedRoutes: Segment[] = [];
   const routePoints: Point[] = [];
-  const labelOrder = [
-    '',
-    STATE_LABEL.userSendsMessage,
-    STATE_LABEL.agentResponds,
-    STATE_LABEL.toolStarts,
-    STATE_LABEL.toolCompletes,
-    STATE_LABEL.agentAsksUser,
-    STATE_LABEL.userReplies,
-    STATE_LABEL.agentFinishes,
-    STATE_LABEL.requestFails,
-    STATE_LABEL.streamFails,
-    STATE_LABEL.userRetries,
-  ];
-  const labelsByText = new Map(
-    labels.map((label) => [label.textContent?.replace(/\s+/g, ' ').trim() ?? '', label]),
-  );
-  paths.forEach((path, index) => {
-    const label = labelsByText.get(labelOrder[index]);
-    if (!label) return;
-    const text = label.textContent?.replace(/\s+/g, ' ').trim() as keyof typeof STATE_ROUTE_NODES;
-    const nodeNames = STATE_ROUTE_NODES[text];
-    if (!nodeNames || !path) return;
+  routes.forEach(({ edge, path, label, kind: text }) => {
+    // routeLabel is the legacy geometry-preset key. Never read authored label
+    // text to select it, and never replace the label's authored content.
     label.dataset.routePathId = path.id;
     path.dataset.routeLabel = text;
-    const source = nodeBounds.get(nodeNames[0]);
-    const target = nodeBounds.get(nodeNames[1]);
+    const source = nodeBounds.get(edge.start);
+    const target = nodeBounds.get(edge.end);
     if (!source || !target) return;
     const directPoints = simplifyOrthogonalPoints(
       stateRoutePoints(text, source, target, allNodes, compact),
@@ -6158,7 +6231,7 @@ export function rewriteStateRoutes(svg: SVGSVGElement, compact = false) {
     );
     path.dataset.manhattanSegments = String(points.length - 1);
     path.dataset.manhattanPoints = points.map((point) => `${point.x},${point.y}`).join(' ');
-    path.dataset.terminalTarget = nodeElements.get(nodeNames[1])?.node.id ?? nodeNames[1];
+    path.dataset.terminalTarget = nodeElements.get(edge.end)?.node.id ?? edge.end;
     label.dataset.routePathId = path.id;
     occupied.push(labelSegment);
     occupiedRoutes.push(...segments(points));

@@ -64,6 +64,7 @@
     snapFlowchartFanoutPorts,
     snapFlowchartPorts,
     snapFlowchartFeedbackPorts,
+    type StateDiagramRoutingData,
   } from './mermaid-path-geometry';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -1299,6 +1300,7 @@ ${source}`;
     generation: number,
     source: string,
     clusterMembership?: FlowchartClusterMembership,
+    stateDiagram?: StateDiagramRoutingData,
   ): Promise<boolean> {
     const fit = ++fitGeneration;
     await tick();
@@ -1386,10 +1388,11 @@ ${source}`;
     const stateRouteLayout = narrowLayout ? 'compact' : 'wide';
     const shouldRewriteStateRoutes =
       !normalizedState || svg.dataset.stateRouteLayout !== stateRouteLayout;
-    if (shouldRewriteStateRoutes) rewriteStateRoutes(svg, narrowLayout);
+    const rewrittenStateRoutes =
+      shouldRewriteStateRoutes && rewriteStateRoutes(svg, narrowLayout, stateDiagram);
     repairUpwardStateFailureRoutes(svg);
     repairStateEntryRoutes(svg);
-    if (normalizedState && shouldRewriteStateRoutes) {
+    if (normalizedState && rewrittenStateRoutes) {
       svg.dataset.stateRouteLayout = stateRouteLayout;
     }
     const classBounds = repairClassDiagramGeometry(svg);
@@ -1602,7 +1605,8 @@ ${source}`;
           const { svg } = await mermaid.render(id, renderCode);
           if (generation !== renderGeneration) return;
           let clusterMembership: FlowchartClusterMembership | undefined;
-          if (usesHtmlLabels && /class="[^"]*\bcluster\b/.test(svg)) {
+          let stateDiagram: StateDiagramRoutingData | undefined;
+          if (usesStateDiagram || (usesHtmlLabels && /class="[^"]*\bcluster\b/.test(svg))) {
             const diagram = await mermaid.mermaidAPI.getDiagramFromText(renderCode);
             if (generation !== renderGeneration) return;
             if (diagram.type === 'flowchart-v2') {
@@ -1610,11 +1614,21 @@ ${source}`;
                 (diagram.db as typeof diagram.db & FlowchartSubgraphDatabase).getSubGraphs(),
               );
             }
+            if (diagram.type === 'stateDiagram') {
+              stateDiagram = (
+                diagram.db as typeof diagram.db & { getData(): StateDiagramRoutingData }
+              ).getData();
+            }
           }
           renderedSvg = svg;
           error = null;
           // Finish geometry before another diagram dirties the document for measurement.
-          const fitCompleted = await fitRenderedSvg(generation, renderCode, clusterMembership);
+          const fitCompleted = await fitRenderedSvg(
+            generation,
+            renderCode,
+            clusterMembership,
+            stateDiagram,
+          );
           if (fitCompleted && generation === renderGeneration) settledGeneration = generation;
         },
         () => generation === renderGeneration,

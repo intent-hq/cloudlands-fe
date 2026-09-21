@@ -365,7 +365,7 @@
     background: transparent;
   }
 
-  .code-textarea {
+  .code-editor-wrapper :global(.code-textarea) {
     position: absolute;
     top: 0;
     left: 0;
@@ -385,7 +385,7 @@
     overflow: hidden;
   }
 
-  .code-textarea:focus {
+  .code-editor-wrapper :global(.code-textarea:focus) {
     outline: none;
   }
 
