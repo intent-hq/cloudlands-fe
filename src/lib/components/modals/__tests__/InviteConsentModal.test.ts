@@ -53,6 +53,14 @@ const CONFIRM_PAYLOAD: InviteConsentShowPayload = {
   hostLabel: 'host.example',
 };
 
+/** No forge connected at all (`connect-forge`): choose GitHub or GitLab before any device code. */
+const CONNECT_FORGE_PAYLOAD: InviteConsentShowPayload = {
+  requestId: 'req-5',
+  mode: 'connect-forge',
+  workspaceTitle: 'Alpha',
+  hostLabel: 'host.example',
+};
+
 const DIALOG_NAME = 'Join “Alpha” on host.example';
 
 // Pre-warm the component module graph so the cold dynamic import is not
@@ -330,6 +338,32 @@ describe('InviteConsentModal', () => {
     });
 
     expect(screen.queryByTestId('invite-consent-connect-gitlab')).toBeNull();
+  });
+
+  it('connect-forge: offers Connections (cancels the join) and Sign in to GitHub (open) with no device code asked for', async () => {
+    const onRespond = vi.fn();
+    const InviteConsentModal = await loadModal();
+
+    render(InviteConsentModal, {
+      props: { open: true, payload: CONNECT_FORGE_PAYLOAD, onRespond },
+    });
+
+    await screen.findByRole('alertdialog', { name: DIALOG_NAME });
+    expect(screen.getByTestId('invite-consent-connect-forge')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open GitHub' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
+
+    const signIn = screen.getByRole('button', { name: 'Sign in to GitHub' });
+    await fireEvent.click(signIn);
+    await fireEvent.click(signIn);
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith('open');
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(handleLink).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByTestId('invite-consent-open-connections'));
+    expect(onRespond.mock.calls).toEqual([['open'], ['cancel']]);
+    expect(navigateToSettings).toHaveBeenCalledWith({ tab: 'connections', hash: 'integrations' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('prove mode: a cancel from the joining state is still reported until main dismisses', async () => {

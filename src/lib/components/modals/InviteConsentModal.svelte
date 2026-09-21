@@ -3,6 +3,12 @@
    * In-app GitHub identity consent dialog for an `intent://invite` join
    * (replaces the native message box when a renderer window is available).
    *
+   * `mode: "connect-forge"` (no forge connected at all): names both forges
+   * and offers the choice before anything is asked of GitHub — Settings →
+   * Connections for GitLab (cancels the join, reopened after connecting) or
+   * the primary "Sign in to GitHub", which reports `open` and keeps the
+   * dialog up in a waiting state until main replaces it with the device code.
+   *
    * `mode: "sign-in-required"` (the guest's own Intent is not signed in to
    * GitHub, or its token lacks the `gist` scope): shows the device code +
    * verification URL of the guest's own sign-in, states why it is needed
@@ -54,6 +60,7 @@
   // The request that has been sent `open`; keyed by id so a new payload resets it.
   let openedRequestId = $state<string | null>(null);
   const waiting = $derived(payload !== null && openedRequestId === payload.requestId);
+  const connectMode = $derived(payload?.mode === 'connect-forge');
   const signInMode = $derived(payload?.mode === 'sign-in-required');
   // The forge the proof names; a `prove` payload without `identity` is GitHub.
   const gitlabIdentity = $derived(
@@ -147,7 +154,26 @@
         </div>
 
         <div id={dialogDescriptionId} class="flex-1 overflow-auto px-6 py-5 space-y-5">
-          {#if payload.mode === 'sign-in-required'}
+          {#if payload.mode === 'connect-forge'}
+            <section class="space-y-1" data-testid="invite-consent-connect-forge">
+              <h3 class="text-sm font-medium text-foreground">
+                {m.inviteConsent_modal_connectForge_title()}
+              </h3>
+              <p class="text-xs text-subtle">
+                {m.inviteConsent_modal_connectForge_description()}
+              </p>
+              <p class="text-xs text-subtle">
+                {m.inviteConsent_modal_connectForgeGitLab_before()}<Button
+                  type="button"
+                  variant="link"
+                  class="h-auto p-0 text-xs underline underline-offset-2"
+                  data-testid="invite-consent-open-connections"
+                  onclick={openConnectionsSettings}
+                  >{m.inviteConsent_modal_signInGitLabInstead_link()}</Button
+                >{m.inviteConsent_modal_connectForgeGitLab_after()}
+              </p>
+            </section>
+          {:else if payload.mode === 'sign-in-required'}
             <section class="space-y-1">
               <h3 class="text-sm font-medium text-foreground">
                 {m.inviteConsent_modal_signInRequired_title()}
@@ -195,9 +221,13 @@
               {m.inviteConsent_modal_hostLearns_title()}
             </h3>
             <p class="text-xs text-subtle">
-              {gitlabIdentity
-                ? m.inviteConsent_modal_hostLearnsGitLab_description({ host: gitlabIdentity.host })
-                : m.inviteConsent_modal_hostLearns_description()}
+              {#if connectMode}
+                {m.inviteConsent_modal_hostLearnsForge_description()}
+              {:else if gitlabIdentity}
+                {m.inviteConsent_modal_hostLearnsGitLab_description({ host: gitlabIdentity.host })}
+              {:else}
+                {m.inviteConsent_modal_hostLearns_description()}
+              {/if}
             </p>
           </section>
           {#if payload.mode === 'sign-in-required'}
@@ -211,7 +241,7 @@
             <div class="flex items-center gap-2 text-sm text-subtle">
               <IntentMarkLoader size={14} class="shrink-0" />
               <span>
-                {signInMode
+                {signInMode || connectMode
                   ? m.inviteConsent_modal_waiting_label()
                   : m.inviteConsent_modal_joining_label()}
               </span>
@@ -225,7 +255,11 @@
           <Button variant="outline" onclick={cancel}>
             {m.inviteConsent_modal_cancelButton_label()}
           </Button>
-          {#if !signInMode}
+          {#if connectMode}
+            <Button onclick={handleOpen} disabled={waiting}>
+              {m.inviteConsent_modal_signInGitHubButton_label()}
+            </Button>
+          {:else if !signInMode}
             <Button onclick={handleOpen} disabled={waiting}>
               {m.inviteConsent_modal_joinButton_label()}
             </Button>

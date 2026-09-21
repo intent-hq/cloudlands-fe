@@ -2,6 +2,7 @@
   /**
    * Guest-side join prompts for the GitLab identity seam: the consent modal
    * naming the forge the proof is made on (GitLab instance vs GitHub), the
+   * neutral connect-first prompt when no forge is connected, the
    * sign-in-required prompt, and the `identity-unverifiable` notice naming
    * the forge instance the host could not read the proof on.
    */
@@ -41,6 +42,9 @@
       },
       'confirm-returning': {
         props: { consent: { ...base, mode: 'confirm', login: 'octocat' } },
+      },
+      'connect-forge': {
+        props: { consent: { ...base, mode: 'connect-forge' } },
       },
       'sign-in-required': {
         props: {

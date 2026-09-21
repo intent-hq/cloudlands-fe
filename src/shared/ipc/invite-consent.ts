@@ -3,8 +3,14 @@
  *
  * The main process (`src/main/invite-consent.ts`) renders the consent prompt
  * of an `intent://invite` join (`features/deeplink/main/invite-deep-link.ts`)
- * in the renderer instead of a native message box, in one of three modes:
+ * in the renderer instead of a native message box, in one of four modes:
  *
+ * - `connect-forge`: the guest's own Intent has no forge connected at all.
+ *   Shown before anything is asked of GitHub: the modal names both forges,
+ *   points at Settings → Connections for GitLab, and its primary "Sign in to
+ *   GitHub" (`open`) is what starts the GitHub device flow — which then shows
+ *   as the `sign-in-required` prompt below. A GitHub that is down never hides
+ *   the GitLab path.
  * - `sign-in-required`: the guest's own Intent is not signed in to GitHub
  *   (or its token predates the `gist` scope the identity proof needs). The
  *   modal shows the device code + verification URL of the guest's OWN
@@ -38,8 +44,9 @@
  *   the modal mounts — main only waits a short window for the ack before
  *   dismissing the request and falling back to the native dialog.
  * - `invite-consent:response` (renderer → main, `invoke`):
- *   {@link InviteConsentResponsePayload}. `open` = the primary action ("Open
- *   GitHub" in `sign-in-required` mode, "Join" in `prove` / `confirm` mode);
+ *   {@link InviteConsentResponsePayload}. `open` = the primary action ("Sign
+ *   in to GitHub" in `connect-forge` mode, "Open GitHub" in `sign-in-required`
+ *   mode, "Join" in `prove` / `confirm` mode);
  *   Escape / backdrop / × / Cancel all map to `cancel`. A `cancel` may also
  *   arrive after `open`, while the modal is in its waiting state — it aborts
  *   the join until the host commits it; a `cancel` that lands after main
@@ -86,11 +93,19 @@ export interface InviteIdentityProvider {
 interface InviteConsentShowBase {
   requestId: string;
   /** Which prompt the modal renders. */
-  mode: 'sign-in-required' | 'prove' | 'confirm';
+  mode: 'connect-forge' | 'sign-in-required' | 'prove' | 'confirm';
   /** Title of the workspace being joined. */
   workspaceTitle: string;
   /** Host (or tunnel address) of the daemon that runs the identity check. */
   hostLabel: string;
+}
+
+/**
+ * `invite-consent:show` payload when the guest's own Intent has no forge
+ * connected: choose GitHub (`open` starts its device flow) or GitLab (Settings).
+ */
+interface InviteConsentConnectForgePayload extends InviteConsentShowBase {
+  mode: 'connect-forge';
 }
 
 /** `invite-consent:show` payload when the guest's own Intent must sign in to GitHub first. */
@@ -123,7 +138,10 @@ interface InviteConsentConfirmPayload extends InviteConsentShowBase {
 
 /** `invite-consent:show` payload (main → renderer). */
 export type InviteConsentShowPayload =
-  InviteConsentSignInRequiredPayload | InviteConsentProvePayload | InviteConsentConfirmPayload;
+  | InviteConsentConnectForgePayload
+  | InviteConsentSignInRequiredPayload
+  | InviteConsentProvePayload
+  | InviteConsentConfirmPayload;
 
 /** `invite-consent:ack` payload (renderer → main invoke). */
 export interface InviteConsentAckPayload {

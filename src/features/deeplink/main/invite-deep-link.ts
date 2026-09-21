@@ -26,13 +26,14 @@
  *    reduces to `isConfigured`, but returning the login the prove prompt
  *    names), else GitLab (`sourceControl.authStatus { provider: "gitlab" }`,
  *    whose `host` names the instance the proof is made on). Neither signed
- *    in — or, later, a GitHub token that predates the `gist` scope the proof
- *    needs (`github-scope-missing`) — puts the consent modal in its
- *    `sign-in-required` state: the guest's own `github.connect` device flow
- *    (code copied to the clipboard; "Open GitHub" opens the URL) is awaited
- *    while the modal shows "waiting for GitHub"; the modal also points at
- *    Settings → Connections for a GitLab sign-in instead. This prompt appears
- *    only at join time, never at startup.
+ *    in puts the consent modal in its neutral `connect-forge` state first —
+ *    Settings → Connections for GitLab, or "Sign in to GitHub" — before
+ *    anything is asked of GitHub. That choice, or a GitHub token that
+ *    predates the `gist` scope the proof needs (`github-scope-missing`),
+ *    leads to the `sign-in-required` state: the guest's own `github.connect`
+ *    device flow (code copied to the clipboard; "Open GitHub" opens the URL)
+ *    is awaited while the modal shows "waiting for GitHub". These prompts
+ *    appear only at join time, never at startup.
  * 3. Consent proper: the modal's `prove` state ("Join <title> on <host> as
  *    @login", "what the host learns", Join). It renders in the renderer
  *    (`main/invite-consent.ts`, `invite-consent:*` channels) and stays up in
@@ -613,6 +614,13 @@ type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' }
  * launches the URL and the flow's terminal transition is awaited. Cancel
  * (before or while waiting) aborts the flow locally (`github.cancelAuth`,
  * best effort). Resolves with the login the daemon is now signed in as.
+ *
+ * With no forge connected at all (`not-connected`) the neutral
+ * `connect-forge` prompt comes first, before anything is asked of GitHub:
+ * it offers GitLab through Settings → Connections (a cancel of the join) and
+ * "Sign in to GitHub" (`open`), which is what starts the device flow — so a
+ * GitHub the daemon cannot reach never hides the GitLab path. Without a
+ * renderer the prompt is skipped for the native device-code box as before.
  */
 async function signInToGitHub(
   client: JsonRpcClient,
@@ -620,6 +628,14 @@ async function signInToGitHub(
   labels: PromptLabels,
   prompts: ConsentPrompts,
 ): Promise<SignInResult> {
+  if (reason === 'not-connected') {
+    const choice = prompts.show({ requestId: randomUUID(), mode: 'connect-forge', ...labels });
+    if ((await choice.decision) === 'cancel') {
+      choice.dismiss('cancelled');
+      logger.info('User left the invite to connect a forge first');
+      return { kind: 'cancelled' };
+    }
+  }
   let start: GithubConnectResult;
   try {
     start = await client.request<GithubConnectResult>('github.connect');
