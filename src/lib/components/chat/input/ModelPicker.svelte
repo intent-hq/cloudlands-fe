@@ -731,8 +731,17 @@
     propModelAtLocalChange = undefined;
   });
 
+  // A live owner → collaborator role change must not let a deferred update
+  // queued during streaming reach the backend once streaming ends.
   $effect(() => {
-    if (!deferUpdate && pendingModelUpdate) {
+    if (isGuestLocked && pendingModelUpdate) {
+      logger.info('Dropping deferred model update (picker guest-locked):', { agentId });
+      pendingModelUpdate = null;
+    }
+  });
+
+  $effect(() => {
+    if (!deferUpdate && pendingModelUpdate && !isGuestLocked) {
       const model = pendingModelUpdate;
       pendingModelUpdate = null;
       logger.info('Applying deferred model update:', { model, agentId });
@@ -778,6 +787,7 @@
   }
 
   async function applyBackendModelUpdate(model: string) {
+    if (isGuestLocked) return;
     if (agentId && workspaceId) {
       try {
         // Send the picked model's provider explicitly: the owning catalog
@@ -817,6 +827,10 @@
   }
 
   async function handleModelSelect(model: string | undefined) {
+    if (isGuestLocked) {
+      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+      return;
+    }
     if (model !== undefined && !canUseProviderModels(resolvePickedTriple(model).providerId)) {
       dropdownValue = localModel ?? USE_DEFAULT_VALUE;
       return;
@@ -846,6 +860,10 @@
     onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
 
     await tick();
+
+    // The role may have changed while yielding; never mutate session state
+    // from a picker that is now guest-locked.
+    if (isGuestLocked) return;
 
     if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
     if (!updateGlobalStore) return;
@@ -1795,7 +1813,9 @@
         localModel,
         modelValue === USE_DEFAULT_VALUE ? null : modelValue,
       );
-      if (!confirmed) {
+      // The confirmation may resolve after the window's role changed; a pick
+      // that started in an owner window must not land once guest-locked.
+      if (!confirmed || isGuestLocked) {
         // Revert the dropdown's internal selection back to the current model.
         dropdownValue = localModel ?? USE_DEFAULT_VALUE;
         return;

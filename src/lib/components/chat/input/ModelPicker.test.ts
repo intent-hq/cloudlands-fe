@@ -577,6 +577,95 @@ describe('ModelPicker guest / collaborator lock', () => {
     await fireEvent.click(button);
     expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
+
+  const flipToCollaborator = async () => {
+    withWorkspaceRole('collaborator');
+    (mockAppStore as unknown as { emitState: () => void }).emitState();
+    await waitFor(() => {
+      expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    });
+  };
+
+  const twoModelCatalog = () => {
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId === 'auggie'
+        ? {
+            models: [
+              ...hostCatalog,
+              { value: 'auggie:opus4.7', label: 'Opus 4.7', description: 'Smarter' },
+            ],
+          }
+        : { models: [] },
+    );
+  };
+
+  it('role flips to collaborator while a pick awaits confirmation: the confirmed pick is dropped', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    withWorkspaceRole('owner');
+    twoModelCatalog();
+    let resolveConfirm!: (confirmed: boolean) => void;
+    const confirmModelChange = vi.fn(
+      () => new Promise<boolean>((resolve) => (resolveConfirm = resolve)),
+    );
+    const onModelChange = vi.fn();
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        confirmModelChange,
+        onModelChange,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
+    await waitFor(() => {
+      expect(confirmModelChange).toHaveBeenCalledWith('auggie:sonnet4.6', 'auggie:opus4.7');
+    });
+
+    await flipToCollaborator();
+
+    resolveConfirm(true);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onModelChange).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+    expect(screen.getByRole('button').textContent).toContain('Sonnet 4.6');
+  });
+
+  it('role flips to collaborator while a deferred update is queued: streaming end does not flush it', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    withWorkspaceRole('owner');
+    twoModelCatalog();
+    const props = {
+      selectedModel: 'auggie:sonnet4.6',
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      updateGlobalStore: true,
+      deferUpdate: true,
+      portal: false,
+    };
+    const { rerender } = render(ModelPicker, { props });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
+    await new Promise((r) => setTimeout(r, 0));
+    // The local session updated but the backend call is deferred while streaming.
+    expect(dispatchedTypes()).toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+
+    await flipToCollaborator();
+
+    await rerender({ ...props, deferUpdate: false });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
 });
 
 describe('ModelPicker legacy Auggie models', () => {
