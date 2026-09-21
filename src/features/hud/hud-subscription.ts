@@ -17,7 +17,8 @@
  *    touched by a live status event) have one. The read is BOUNDED
  *    (intent-hq/intent#5531): the `scope: "topLevel"` `agent.list` bin plus
  *    the workspace's currently busy agents from one shared `agent.listActive`
- *    read, each fetched with `agent.get` — never the unscoped all-rows list.
+ *    read plus the summary's capped failed rows, each fetched with
+ *    `agent.get` — never the unscoped all-rows list.
  *    The lifecycle-read-service coalesces per workspace and the requests run
  *    in parallel; freshness comes from the daemon-events-bridge, which
  *    re-dispatches the same action on `agent:status-changed`/`agent:idle`
@@ -223,7 +224,7 @@ type BusyAgentIdsByWorkspaceId = ReadonlyMap<string, ReadonlySet<string>>;
  */
 function hydrateVisibleWorkspaceAgents(): void {
   const workspaces = appStore.state.workspace?.workspaces;
-  const workspaceIds: string[] = [];
+  const pending: Array<{ workspaceId: string; failedSummaryIds: string[] }> = [];
   for (const workspace of workspaces ? getItems(workspaces) : []) {
     if (
       workspace.status === WorkspaceStatus.Archived ||
@@ -234,13 +235,17 @@ function hydrateVisibleWorkspaceAgents(): void {
     const workspaceId = String(workspace.id);
     if (hydratedAgentWorkspaceIds.has(workspaceId)) continue;
     hydratedAgentWorkspaceIds.add(workspaceId);
-    workspaceIds.push(workspaceId);
+    pending.push({ workspaceId, failedSummaryIds: failedSummaryAgentIds(workspace) });
   }
-  if (workspaceIds.length === 0) return;
+  if (pending.length === 0) return;
   const busyAgentIds = readBusyAgentIds();
-  for (const workspaceId of workspaceIds) {
+  for (const { workspaceId, failedSummaryIds } of pending) {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
-    const hydration = hydrateHudWorkspaceAgents(workspaceId, busyAgentIds).finally(() => {
+    const hydration = hydrateHudWorkspaceAgents(
+      workspaceId,
+      busyAgentIds,
+      failedSummaryIds,
+    ).finally(() => {
       if (pendingAgentHydrationByWorkspaceId.get(workspaceId) === hydration) {
         pendingAgentHydrationByWorkspaceId.delete(workspaceId);
       }
@@ -275,17 +280,56 @@ async function readBusyAgentIds(): Promise<BusyAgentIdsByWorkspaceId> {
 }
 
 /**
+ * Cap on the summary's failed rows point-read per workspace by
+ * `hydrateHudWorkspaceAgents`. The §5.1 `agentSummary` is deliberately
+ * uncapped (459 rows on the intent-hq/intent#5531 workspace), so the failed
+ * subset is bounded here too — newest failures first, since those are the
+ * rows the card renders and the failed snippet reads.
+ */
+export const HUD_FAILED_SUMMARY_ROW_READ_CAP = 8;
+
+/**
+ * Failed rows of a workspace's §5.1 `agentSummary` (`status` error/failed —
+ * the only session-detail-bearing rows the summary can identify: it carries
+ * neither the attention-request trio nor `notificationsMuted`), newest
+ * `lastActivity` first, capped at `HUD_FAILED_SUMMARY_ROW_READ_CAP`. A failed
+ * delegated child is neither top-level nor busy, so without this read its
+ * card row has no `stopReason` / activity line and its mute state is unknown
+ * to the failed-snippet gate.
+ */
+function failedSummaryAgentIds(workspace: { agentSummary?: unknown }): string[] {
+  const summary = workspace.agentSummary as { agents?: unknown } | undefined;
+  if (!summary || !Array.isArray(summary.agents)) return [];
+  const failed: Array<{ id: string; lastActivityMs: number }> = [];
+  for (const agent of summary.agents) {
+    const row = agent as { id?: unknown; status?: unknown; lastActivity?: unknown };
+    if (typeof row?.id !== 'string' || typeof row.status !== 'string') continue;
+    if (toHudAgentStateBucket(row.status) !== 'failed') continue;
+    if (isAgentDeletionPending(row.id)) continue;
+    const ms = typeof row.lastActivity === 'string' ? Date.parse(row.lastActivity) : NaN;
+    failed.push({ id: row.id, lastActivityMs: Number.isFinite(ms) ? ms : -Infinity });
+  }
+  return failed
+    .sort((a, b) => b.lastActivityMs - a.lastActivityMs)
+    .slice(0, HUD_FAILED_SUMMARY_ROW_READ_CAP)
+    .map((row) => row.id);
+}
+
+/**
  * Bounded per-workspace hydration (intent-hq/intent#5531): the HUD needs the
  * top-level agents (the `scope: "topLevel"` bin the sidebar's default read
  * uses too) plus whichever background/delegated agents are currently mid-turn
- * — idle child rows are not needed for the card activity line. The busy rows
- * absent from the top-level bin are point-read with `agent.get`, bounded by
- * the workspace's busy count rather than its session count; a single failed
- * point read is skipped, never failing the workspace's hydration.
+ * — idle child rows are not needed for the card activity line — plus the
+ * summary's (capped) failed rows, whose `stopReason` / `notificationsMuted`
+ * the card's failed row and snippet read. The rows absent from the top-level
+ * bin are point-read with `agent.get`, bounded by the workspace's busy count
+ * plus the failed cap rather than its session count; a single failed point
+ * read is skipped, never failing the workspace's hydration.
  */
 async function hydrateHudWorkspaceAgents(
   workspaceId: string,
   busyAgentIds: Promise<BusyAgentIdsByWorkspaceId>,
+  failedSummaryIds: readonly string[] = [],
 ): Promise<void> {
   try {
     const [{ agents: topLevel }, busyByWorkspaceId] = await Promise.all([
@@ -293,15 +337,15 @@ async function hydrateHudWorkspaceAgents(
       busyAgentIds,
     ]);
     const listedIds = new Set(topLevel.map((agent) => String(agent.id)));
-    const busyIds = [...(busyByWorkspaceId.get(workspaceId) ?? [])].filter(
-      (agentId) => !listedIds.has(agentId),
-    );
-    const busyRows = await Promise.all(
-      busyIds.map(async (agentId) => {
+    const pointReadIds = [
+      ...new Set([...(busyByWorkspaceId.get(workspaceId) ?? []), ...failedSummaryIds]),
+    ].filter((agentId) => !listedIds.has(agentId));
+    const pointReadRows = await Promise.all(
+      pointReadIds.map(async (agentId) => {
         try {
           return await appClient.agents.get(agentId);
         } catch (error) {
-          logger.debug('agent.get failed for busy HUD agent; skipped', {
+          logger.debug('agent.get failed for busy/failed HUD agent; skipped', {
             workspaceId,
             agentId,
             error,
@@ -310,7 +354,7 @@ async function hydrateHudWorkspaceAgents(
         }
       }),
     );
-    const listed = [...topLevel, ...busyRows.filter((row) => row !== null)];
+    const listed = [...topLevel, ...pointReadRows.filter((row) => row !== null)];
     const agents = listed
       .filter((agent) => !agent.pendingDeleteAt && !isAgentDeletionPending(String(agent.id)))
       .map((agent) => ({ ...agent, messages: agent.messages ?? [] }));
@@ -405,22 +449,33 @@ function handleEvent(event: WorkspaceEvent, isLive: () => boolean = () => true):
   // the mute gate runs — otherwise a muted agent's `agent:started` /
   // `agent:failed` / `agent:stream:end` (no payload stamp) racing the list
   // would take over the screen.
+  // An agent still unknown after that (an idle delegated/background agent
+  // — outside the bounded topLevel + busy hydration, intent-hq/intent#5531)
+  // is point-read with one coalesced `agent.get` before the gate runs, so
+  // its mute state is never assumed from a missing session.
   const emitTrigger = () => {
     if (!isLive()) return;
     const trigger = mapEventToTakeoverTrigger(event, resolveAgentDisplayName, isAgentMuted);
     if (trigger && !isDuplicateStatusUpdate(trigger)) emitTakeoverTrigger(trigger);
   };
   const agentId = typeof data.agentId === 'string' ? data.agentId : undefined;
-  const pendingHydration = workspaceId
-    ? pendingAgentHydrationByWorkspaceId.get(workspaceId)
-    : undefined;
   if (
-    pendingHydration &&
     agentId &&
     HUD_TAKEOVER_EVENT_TYPES.includes(type) &&
-    readAgentSession(agentId) === undefined
+    readAgentSession(agentId) === undefined &&
+    mapEventToTakeoverTrigger(event, undefined, () => false) !== null
   ) {
-    void pendingHydration.then(emitTrigger);
+    const pendingHydration = workspaceId
+      ? pendingAgentHydrationByWorkspaceId.get(workspaceId)
+      : undefined;
+    void (pendingHydration ?? Promise.resolve()).then(() => {
+      if (!isLive()) return;
+      if (readAgentSession(agentId) !== undefined) {
+        emitTrigger();
+        return;
+      }
+      return hydrateUnknownAgent(agentId, workspaceId).then(emitTrigger);
+    });
     return;
   }
   emitTrigger();
@@ -434,9 +489,52 @@ function readAgentSession(agentId: string): { notificationsMuted?: unknown } | u
 }
 
 /**
+ * In-flight `agent.get` point reads for agents absent from the session slice,
+ * keyed by agent id — an unknown agent's event burst (`agent:started`, then
+ * `agent:stream:end` / `agent:failed`) coalesces into ONE read. Cleared on
+ * `startHudSubscription()`.
+ */
+const pendingUnknownAgentReadByAgentId = new Map<string, Promise<void>>();
+
+/**
+ * Land an unknown agent's session in the store via `agent.get` (§5.5) so the
+ * mute gate reads its `notificationsMuted`; bounded by the number of distinct
+ * unknown agents that emit takeover events, never by the session count. A
+ * failed or not-found read leaves the agent unknown — it then gates as
+ * unmuted, the pre-existing behavior for a session the store never saw.
+ */
+function hydrateUnknownAgent(agentId: string, workspaceId: string): Promise<void> {
+  const pending = pendingUnknownAgentReadByAgentId.get(agentId);
+  if (pending) return pending;
+  const read = appClient.agents
+    .get(agentId)
+    .then((agent) => {
+      if (!agent || agent.pendingDeleteAt || isAgentDeletionPending(agentId)) return;
+      const session = { ...agent, messages: agent.messages ?? [] };
+      appStore.dispatch(bulkUpsertSessions([session], { listProjection: true }));
+      appStore.dispatch(upsertSession(session));
+    })
+    .catch((error: unknown) => {
+      logger.debug('agent.get failed for unknown HUD agent; gated as unmuted', {
+        workspaceId,
+        agentId,
+        error,
+      });
+    })
+    .finally(() => {
+      if (pendingUnknownAgentReadByAgentId.get(agentId) === read) {
+        pendingUnknownAgentReadByAgentId.delete(agentId);
+      }
+    });
+  pendingUnknownAgentReadByAgentId.set(agentId, read);
+  return read;
+}
+
+/**
  * One-time mute read off `appStore.state` (no selector imports): the hydrated
  * session's `notificationsMuted` (§5.5 AgentLite, hydrated per HUD-visible
- * workspace by `hydrateVisibleWorkspaceAgents`); unknown agents are unmuted.
+ * workspace by `hydrateVisibleWorkspaceAgents`, or point-read by
+ * `hydrateUnknownAgent`); unknown agents are unmuted.
  */
 function isAgentMuted(agentId: string): boolean {
   return readAgentSession(agentId)?.notificationsMuted === true;
@@ -493,6 +591,7 @@ export function startHudSubscription(): () => void {
   delegatedRowEmittedAgentIds.clear();
   hydratedAgentWorkspaceIds.clear();
   pendingAgentHydrationByWorkspaceId.clear();
+  pendingUnknownAgentReadByAgentId.clear();
   appStore.dispatch(hudActivated());
 
   // Per-backend grid-filter restore + persist-on-change (thin localStorage

@@ -34,8 +34,10 @@ import {
   selectHudSystem,
   selectHudUsage,
   selectHudUsageError,
+  selectHudWorkspaceCards,
 } from '$store/renderer/slices/hud/hud-selectors';
 import {
+  HUD_FAILED_SUMMARY_ROW_READ_CAP,
   HUD_RATE_HISTORY_LIMIT,
   HUD_RATE_HISTORY_POLL_MS,
   HUD_REPLACE_GROUP,
@@ -841,6 +843,115 @@ describe('HUD subscription (mock backend, real store)', () => {
     }
   });
 
+  it('point-reads a muted agent OMITTED from the bounded hydration via one coalesced agent.get before gating its takeover (intent#5531)', async () => {
+    const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
+    const received: Array<{ kind: string; detail?: string }> = [];
+    const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
+    const WS_OMIT_ID = '77777777-7777-4777-8777-777777777777';
+    const MUTED_CHILD_ID = 'agent-cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const LOUD_CHILD_ID = 'agent-dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const GONE_ID = 'agent-eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    scriptHappyBackend(backend);
+    // The topLevel bin is empty and nothing is busy: both idle delegated
+    // children are absent from the initial reads — exactly the sessions the
+    // bounded hydration no longer carries.
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    let releaseGet: (() => void) | undefined;
+    const getGate = new Promise<void>((resolve) => {
+      releaseGet = resolve;
+    });
+    backend.onRequest('agent.get', async (params) => {
+      const { agentId } = params as { agentId: string };
+      await getGate;
+      if (agentId === MUTED_CHILD_ID || agentId === LOUD_CHILD_ID) {
+        return {
+          agent: {
+            id: agentId,
+            workspaceId: WS_OMIT_ID,
+            name: agentId === MUTED_CHILD_ID ? 'Muted child' : 'Loud child',
+            status: 'idle',
+            messageCount: 2,
+            parentAgentId: 'agent-11111111-aaaa-4aaa-8aaa-111111111111',
+            ...(agentId === MUTED_CHILD_ID ? { notificationsMuted: true } : {}),
+            lastActivity: '2026-07-30T11:59:00Z',
+            createdAt: '2026-07-30T10:30:00Z',
+            updatedAt: '2026-07-30T11:59:00Z',
+            metadata: { isBackground: true, delegationDepth: 1 },
+          },
+        };
+      }
+      throw Object.assign(new Error(`agent not found: ${agentId}`), {
+        rpcCode: -32602,
+        data: { code: 'not-found' },
+      });
+    });
+    appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_OMIT_ID)));
+    try {
+      stop = startHudSubscription();
+      await flush();
+      await flush();
+      expect(appStore.state.agentSessions?.byAgentId[MUTED_CHILD_ID]).toBeUndefined();
+      const getCalls = () =>
+        backend.requests
+          .filter((r) => r.method === 'agent.get')
+          .map((r) => (r.params as { agentId: string }).agentId);
+      expect(getCalls()).toEqual([]);
+
+      // Hydration has landed; the omitted agents now wake up. The muted
+      // child's burst (started + failed) must coalesce into ONE point read.
+      for (const [agentId, id, type, extra] of [
+        [MUTED_CHILD_ID, 'evt-omit-1', 'agent:started', {}],
+        [MUTED_CHILD_ID, 'evt-omit-2', 'agent:failed', { error: 'boom' }],
+        [LOUD_CHILD_ID, 'evt-omit-3', 'agent:started', {}],
+        [GONE_ID, 'evt-omit-4', 'agent:started', {}],
+      ] as const) {
+        backend.pushEvent({
+          type,
+          workspaceId: WS_OMIT_ID,
+          id,
+          subscriptionId: SUB_ID,
+          timestamp: '2026-07-30T12:00:00.000Z',
+          data: { agentId, ...extra },
+        });
+      }
+      await flush();
+      // Nothing may take over while the mute state is still unknown, and
+      // the reads are bounded by the distinct unknown agents, not the events.
+      expect(received).toEqual([]);
+      expect(getCalls().sort()).toEqual([GONE_ID, LOUD_CHILD_ID, MUTED_CHILD_ID].sort());
+
+      releaseGet?.();
+      await flush();
+      await flush();
+
+      // The point read decides: the muted child's takeovers are dropped, the
+      // unmuted child's fires, and a vanished session gates as unmuted.
+      expect(received.map((t) => ({ kind: t.kind, detail: t.detail }))).toEqual([
+        { kind: 'agent_started', detail: 'Loud child' },
+        { kind: 'agent_started', detail: '' },
+      ]);
+      expect(appStore.state.agentSessions?.byAgentId[MUTED_CHILD_ID]?.notificationsMuted).toBe(
+        true,
+      );
+
+      // With the session landed, a later event is gated synchronously — no
+      // second read.
+      backend.pushEvent({
+        type: 'agent:started',
+        workspaceId: WS_OMIT_ID,
+        id: 'evt-omit-5',
+        subscriptionId: SUB_ID,
+        data: { agentId: MUTED_CHILD_ID },
+      });
+      await flush();
+      expect(received).toHaveLength(2);
+      expect(getCalls()).toHaveLength(3);
+    } finally {
+      unsubscribe();
+      appStore.dispatch(removeWorkspaceEntity(WS_OMIT_ID));
+    }
+  });
+
   it('fires the STATUS UPDATE takeover only on statusMessage text changes, never on displayStatus', async () => {
     const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
     const received: Array<{ kind?: string; detail?: string }> = [];
@@ -1310,6 +1421,141 @@ describe('HUD subscription (mock backend, real store)', () => {
       );
     } finally {
       appStore.dispatch(removeWorkspaceEntity(WS_BG_ID));
+    }
+  });
+
+  it('point-reads the summary FAILED child rows (newest first, capped) so a muted failed child never masks the failed snippet (intent#5531)', async () => {
+    const WS_FAIL_ID = '88888888-8888-4888-8888-888888888888';
+    const TOP_ID = 'agent-11111111-aaaa-4aaa-8aaa-111111111111';
+    const IDLE_CHILD_ID = 'agent-99999999-9999-4999-8999-999999999999';
+    const failedChildId = (n: number) =>
+      `agent-f${n}f${n}f${n}f${n}-ffff-4fff-8fff-${String(n).padStart(12, '0')}`;
+    const FAILED_COUNT = HUD_FAILED_SUMMARY_ROW_READ_CAP + 2;
+    const MUTED_FAILED_ID = failedChildId(FAILED_COUNT - 1);
+    const LOUD_FAILED_ID = failedChildId(FAILED_COUNT - 2);
+    const failedSummaryRows = Array.from({ length: FAILED_COUNT }, (_, n) => ({
+      id: failedChildId(n),
+      name: `Worker ${n}`,
+      status: 'error',
+      parentAgentId: TOP_ID,
+      lastActivity: `2026-07-30T11:${String(n).padStart(2, '0')}:00Z`,
+      isStreaming: false,
+      isResponding: false,
+    }));
+    scriptHappyBackend(backend);
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: TOP_ID,
+          workspaceId: WS_FAIL_ID,
+          name: 'Coordinator',
+          status: 'idle',
+          messageCount: 3,
+          lastActivity: '2026-07-30T11:59:00Z',
+          createdAt: '2026-07-30T10:00:00Z',
+          updatedAt: '2026-07-30T11:59:00Z',
+          metadata: { isBackground: false },
+        },
+      ],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 1, delegated: FAILED_COUNT + 1, background: 0 },
+    }));
+    backend.onRequest('agent.get', (params) => {
+      const { agentId } = params as { agentId: string };
+      const n = failedSummaryRows.findIndex((row) => row.id === agentId);
+      if (n < 0) {
+        throw Object.assign(new Error(`agent not found: ${agentId}`), {
+          rpcCode: -32602,
+          data: { code: 'not-found' },
+        });
+      }
+      return {
+        agent: {
+          id: agentId,
+          workspaceId: WS_FAIL_ID,
+          name: `Worker ${n}`,
+          status: 'error',
+          messageCount: 4,
+          parentAgentId: TOP_ID,
+          stopReason: agentId === MUTED_FAILED_ID ? 'muted crash' : `worker ${n} crashed`,
+          ...(agentId === MUTED_FAILED_ID ? { notificationsMuted: true } : {}),
+          lastActivity: failedSummaryRows[n].lastActivity,
+          createdAt: '2026-07-30T10:30:00Z',
+          updatedAt: failedSummaryRows[n].lastActivity,
+          metadata: { isBackground: false, delegationDepth: 1 },
+        },
+      };
+    });
+    appStore.dispatch(
+      setWorkspaceEntity({
+        ...makeHudWorkspace(WS_FAIL_ID),
+        displayStatus: 'failed',
+        agentSummary: {
+          count: FAILED_COUNT + 2,
+          agents: [
+            {
+              id: TOP_ID,
+              name: 'Coordinator',
+              status: 'idle',
+              lastActivity: '2026-07-30T11:59:00Z',
+              isStreaming: false,
+              isResponding: false,
+            },
+            {
+              id: IDLE_CHILD_ID,
+              name: 'Idle child',
+              status: 'idle',
+              parentAgentId: TOP_ID,
+              lastActivity: '2026-07-30T11:58:00Z',
+              isStreaming: false,
+              isResponding: false,
+            },
+            ...failedSummaryRows,
+          ],
+          agentIds: [TOP_ID, IDLE_CHILD_ID, ...failedSummaryRows.map((row) => row.id)],
+        },
+      } as Workspace),
+    );
+    try {
+      stop = startHudSubscription();
+      await flush();
+      await flush();
+      await flush();
+
+      // Only the summary's failed rows are point-read — the idle child never
+      // is — and only the newest HUD_FAILED_SUMMARY_ROW_READ_CAP of them.
+      const getIds = backend.requests
+        .filter((r) => r.method === 'agent.get')
+        .map((r) => (r.params as { agentId: string }).agentId)
+        .sort();
+      expect(getIds).toEqual(
+        failedSummaryRows
+          .slice(2)
+          .map((row) => row.id)
+          .sort(),
+      );
+      expect(getIds).toHaveLength(HUD_FAILED_SUMMARY_ROW_READ_CAP);
+
+      const sessions = appStore.state.agentSessions?.byAgentId ?? {};
+      expect(sessions[MUTED_FAILED_ID]?.notificationsMuted).toBe(true);
+      expect(sessions[MUTED_FAILED_ID]?.stopReason).toBe('muted crash');
+      expect(sessions[LOUD_FAILED_ID]?.stopReason).toBe(`worker ${FAILED_COUNT - 2} crashed`);
+      expect(sessions[IDLE_CHILD_ID]).toBeUndefined();
+
+      // The card's failed snippet skips the muted child (newest failed row,
+      // first in tree order) and surfaces the unmuted child's stopReason.
+      const card = selectHudWorkspaceCards
+        .select(appStore.state)
+        .find((entry) => entry.workspaceId === WS_FAIL_ID);
+      expect(card?.attentionSnippet).toEqual({
+        kind: 'failed',
+        text: `worker ${FAILED_COUNT - 2} crashed`,
+      });
+      expect(card?.agents.map((agent) => agent.id)).toEqual(
+        expect.arrayContaining([MUTED_FAILED_ID, LOUD_FAILED_ID]),
+      );
+    } finally {
+      appStore.dispatch(removeWorkspaceEntity(WS_FAIL_ID));
     }
   });
 });
