@@ -153,6 +153,11 @@ export const selectLoadedDelegatedParentIds = store.createSelector((state, wsId:
   return getWorkspaceAgentState(state, wsId).loadedDelegatedParentIds;
 });
 
+/** The parents whose per-parent delegated read is in flight. */
+export const selectLoadingDelegatedParentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).loadingDelegatedParentIds;
+});
+
 /** True once the on-demand `scope: "background"` read has hydrated the background rows. */
 export const selectBackgroundAgentsLoaded = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).backgroundAgentsLoaded;

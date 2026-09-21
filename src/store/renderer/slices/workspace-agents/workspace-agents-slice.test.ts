@@ -19,6 +19,7 @@ import {
   selectIsLoadingDelegatedAgents,
   selectIsLoadingDelegatedParent,
   selectLoadedDelegatedParentIds,
+  selectLoadingDelegatedParentIds,
   selectScopeCounts,
   selectAgentsLoaded,
   selectForegroundWorkspaceAgents,
@@ -394,8 +395,12 @@ describe('workspaceAgentsReducer', () => {
     state = workspaceAgentsReducer(state, setIsLoadingDelegatedParent(WS_1, PARENT_A, true));
     expect(selectIsLoadingDelegatedParent.select(mockState(state), WS_1, PARENT_A)).toBe(true);
     expect(selectIsLoadingDelegatedParent.select(mockState(state), WS_1, PARENT_B)).toBe(false);
+    expect(selectLoadingDelegatedParentIds.select(mockState(state), WS_1)).toEqual({
+      [PARENT_A]: true,
+    });
     state = workspaceAgentsReducer(state, setIsLoadingDelegatedParent(WS_1, PARENT_A, false));
     expect(state.byWorkspaceId[WS_1].loadingDelegatedParentIds).toEqual({});
+    expect(selectLoadingDelegatedParentIds.select(mockState(state), WS_1)).toEqual({});
     state = workspaceAgentsReducer(state, setDelegatedParentLoaded(WS_1, PARENT_A, true));
     expect(selectLoadedDelegatedParentIds.select(mockState(state), WS_1)).toEqual({
       [PARENT_A]: true,
