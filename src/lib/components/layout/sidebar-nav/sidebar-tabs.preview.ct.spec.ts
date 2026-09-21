@@ -70,6 +70,7 @@ for (const width of [288, 100]) {
     await expectAligned();
     await component.getByRole('tab', { name: 'Intent', exact: true }).click();
     await workspaces.click();
+    await expect(component.locator('[data-combined-panel-spaces]')).toHaveCSS('transform', 'none');
     await expectAligned();
   });
 }
