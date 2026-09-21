@@ -228,6 +228,8 @@ const availableEnabledProviderIds$ = derived(
 const mockAgentSession$ = writable<
   { id: string; workspaceId: string; provider?: string } | undefined
 >(undefined);
+// Guest-local Antigravity sign-in state (`selectIsProviderModelAccessAllowed`).
+const antigravityModelsAllowed$ = writable(true);
 vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', () => ({
   selectActiveProviderId: () => activeProviderId$,
   selectModelFetchProviderIds: () =>
@@ -235,7 +237,8 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
       [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
       ([checked, enabled, available]) => (checked ? available : enabled),
     ),
-  selectIsProviderModelAccessAllowed: () => readable(true),
+  selectIsProviderModelAccessAllowed: (providerId: string) =>
+    providerId === 'antigravity' ? antigravityModelsAllowed$ : readable(true),
   selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 
@@ -434,6 +437,7 @@ describe('ModelPicker guest / collaborator lock', () => {
     hasCheckedOnce$.set(true);
     enabledProviderIds$.set(['auggie']);
     activeProviderId$.set('auggie');
+    antigravityModelsAllowed$.set(true);
   });
 
   it('guest window: renders disabled with the host catalog label and provider icon, no warning, no mutation', async () => {
@@ -488,6 +492,51 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(screen.queryByRole('status')).toBeNull();
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('guest window: an Antigravity agent reads the host catalog even without local Antigravity sign-in', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    asGuestWindow();
+    availableProviderOverride$.set([]);
+    antigravityModelsAllowed$.set(false);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'antigravity' });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId === 'antigravity'
+        ? {
+            models: [
+              { value: 'antigravity:gemini-3.7-flash-high', label: 'Gemini 3.7 Flash (High)' },
+            ],
+          }
+        : { models: [] },
+    );
+
+    renderAgentPicker('antigravity:gemini-3.7-flash-high');
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('antigravity');
+    });
+    await waitFor(() => {
+      expect(button.textContent).toContain('Gemini 3.7 Flash (High)');
+    });
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('owner window: an Antigravity agent still waits for local Antigravity sign-in before reading its catalog', async () => {
+    withWorkspaceRole('owner');
+    antigravityModelsAllowed$.set(false);
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'antigravity' });
+
+    renderAgentPicker('antigravity:gemini-3.7-flash-high');
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith('antigravity');
   });
 
   it('collaborator seat in an owner window: renders disabled with the catalog label and no warning', async () => {

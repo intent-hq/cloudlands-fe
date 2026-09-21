@@ -135,8 +135,15 @@
   const activeProviderId$ = selectActiveProviderId();
   const modelFetchProviderIds$ = selectModelFetchProviderIds();
   const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
+  // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
+  // host catalog regardless (`isGuestLocked` is declared with the props below
+  // and only read once the picker is rendering).
   function canUseProviderModels(providerId: string): boolean {
-    return normalizeProviderId(providerId) !== 'antigravity' || $antigravityModelsAllowed$;
+    return (
+      normalizeProviderId(providerId) !== 'antigravity' ||
+      $antigravityModelsAllowed$ ||
+      isGuestLocked
+    );
   }
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
