@@ -83,7 +83,13 @@ const IDLE_GATE_METHODS = ['agent.get', 'agent.listActive', 'agent.list'];
 /** §5.5 `agent.get` envelope for one row of `rows`, or the daemon `not-found` rejection. */
 const agentGetResult = (
   params: { agentId?: string },
-  rows: Array<{ id: string; notificationsMuted?: boolean; metadata?: unknown }>,
+  rows: Array<{
+    id: string;
+    isStreaming?: boolean;
+    isResponding?: boolean;
+    notificationsMuted?: boolean;
+    metadata?: unknown;
+  }>,
 ) => {
   const row = rows.find((candidate) => candidate.id === params.agentId);
   if (!row) {
@@ -258,16 +264,17 @@ describe('notification sagas', () => {
     expect(MockNotification.instances).toEqual([]);
 
     // Bounded active gate: the daemon-global busy set names `other` in this
-    // workspace, and its ONE `agent.get` confirms it is unmuted. (Drop the
-    // cached `notifications.enabled: false` from the step above first, or the
-    // disabled gate short-circuits and the wire assertions pass vacuously.)
+    // workspace, and its ONE `agent.get` confirms it is still responding and
+    // unmuted. (Drop the cached `notifications.enabled: false` from the step
+    // above first, or the disabled gate short-circuits and the wire
+    // assertions pass vacuously.)
     invalidateSettingsReadCache();
     mocks.backend.mockClear();
     mocks.backend.mockImplementation(async (method, params) => {
       if (method === 'settings.get')
         return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
       if (method === 'agent.get')
-        return agentGetResult(params, [{ id: 'agent-1' }, { id: 'other' }]);
+        return agentGetResult(params, [{ id: 'agent-1' }, { id: 'other', isResponding: true }]);
       if (method === 'agent.listActive')
         return { streams: [{ agentId: 'other', workspaceId: 'ws-1' }] };
       throw new Error('unexpected');
@@ -284,6 +291,37 @@ describe('notification sagas', () => {
       ['agent.listActive', {}],
       ['agent.get', { agentId: 'other', workspaceId: 'ws-1' }],
     ]);
+
+    // A busy-set sibling whose row already reads terminal (both activity
+    // flags `false` — the daemon persists Error/Completed before the manager
+    // releases the busy slot) is NOT active under the old row predicate.
+    mocks.backend.mockClear();
+    mocks.backend.mockImplementation(async (method, params) => {
+      if (method === 'settings.get')
+        return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
+      if (method === 'agent.get')
+        return agentGetResult(params, [
+          { id: 'agent-1' },
+          { id: 'failed', isStreaming: false, isResponding: false },
+        ]);
+      if (method === 'agent.listActive')
+        return { streams: [{ agentId: 'failed', workspaceId: 'ws-1' }] };
+      if (method === 'workspace.get')
+        return { workspace: { id: params.workspaceId, title: 'My Space' } };
+      throw new Error(`unexpected ${method}`);
+    });
+    emitMockIpcEvent('agent:idle', idle());
+    await flush();
+    expect(MockNotification.instances).toHaveLength(1);
+    expect(
+      mocks.backend.mock.calls.filter(([method]) => IDLE_GATE_METHODS.includes(method)),
+    ).toEqual([
+      SELF_GET,
+      ['agent.listActive', {}],
+      ['agent.get', { agentId: 'failed', workspaceId: 'ws-1' }],
+    ]);
+    MockNotification.instances.length = 0;
+    mocks.sound.mockClear();
 
     // A busy stream from ANOTHER workspace never holds this workspace's gate.
     mocks.backend.mockClear();
@@ -403,7 +441,7 @@ describe('notification sagas', () => {
       if (method === 'agent.get')
         return agentGetResult(params, [
           { id: 'agent-1' },
-          { id: 'muted-sibling', notificationsMuted: true },
+          { id: 'muted-sibling', isResponding: true, notificationsMuted: true },
         ]);
       if (method === 'agent.listActive')
         return { streams: [{ agentId: 'muted-sibling', workspaceId: 'ws-1' }] };

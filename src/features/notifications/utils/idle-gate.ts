@@ -11,13 +11,18 @@
  *   1. the idle agent's own `metadata.isBackground` / `notificationsMuted` /
  *      `provider` / `metadata.specialist` come from ONE `agent.get` row;
  *   2. "is any other agent still active?" comes from `agent.listActive` — the
- *      daemon-global mid-turn busy set (§5.5) filtered to the workspace. An
- *      AgentLite row's `isResponding` is derived from that same busy set
- *      (`agent_is_busy`) and `isStreaming` is always `false` on the
- *      projection, so the filtered busy set is an exact equivalent of the old
- *      `isStreaming || isResponding` scan over every row;
- *   3. the muted-sibling exclusion is preserved by an `agent.get` per active
- *      sibling — bounded by the active count, not the workspace size.
+ *      daemon-global mid-turn busy set (§5.5) filtered to the workspace. That
+ *      set is a SUPERSET of the rows the old scan counted: an AgentLite row's
+ *      `isResponding` derives from the same busy set (`agent_is_busy`), but
+ *      the projection forces both `isStreaming` and `isResponding` to `false`
+ *      for a session already persisted terminal (`completed`/`error`/
+ *      `deleted`) while its worker is still draining — the manager releases
+ *      the busy slot only after the failure handler returns;
+ *   3. each active sibling is therefore read with ONE `agent.get` — bounded
+ *      by the active count, not the workspace size — and counted only when
+ *      its row still carries `isStreaming || isResponding` (the old predicate)
+ *      and is not muted. This keeps the verdict identical to the old scan,
+ *      including the terminal-but-still-busy window.
  *
  * Failure posture (matches the old `agent.list` gate exactly): a row the
  * daemon reports `not-found` is treated as ABSENT from the workspace — the
@@ -37,6 +42,8 @@ export type IdleGateRequest = (method: string, params: Record<string, unknown>) 
 interface IdleGateAgent {
   id?: string;
   provider?: string;
+  isStreaming?: boolean;
+  isResponding?: boolean;
   notificationsMuted?: boolean;
   metadata?: { isBackground?: boolean; specialist?: string };
 }
@@ -98,13 +105,18 @@ export async function readIdleNotificationGate(
   ];
   if (otherActiveIds.length === 0) return { kind: 'notify', idleAgent };
 
-  // Muted siblings never hold the gate: a running muted agent's own idle is
-  // suppressed, so counting it here would leave the workspace silent.
+  // Re-apply the old row predicate on the fetched siblings: a busy-set entry
+  // whose row already reads terminal (both flags `false`) is not active.
+  // Muted siblings never hold the gate either: a running muted agent's own
+  // idle is suppressed, so counting it here would leave the workspace silent.
   const siblings = await Promise.all(
     otherActiveIds.map((id) => getAgentRow(request, workspaceId, id)),
   );
   const otherActiveCount = siblings.filter(
-    (row) => row !== undefined && row.notificationsMuted !== true,
+    (row) =>
+      row !== undefined &&
+      (row.isStreaming === true || row.isResponding === true) &&
+      row.notificationsMuted !== true,
   ).length;
   if (otherActiveCount > 0) return { kind: 'others-active', idleAgent, otherActiveCount };
   return { kind: 'notify', idleAgent };

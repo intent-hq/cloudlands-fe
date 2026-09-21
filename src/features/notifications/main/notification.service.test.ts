@@ -52,7 +52,9 @@ const {
    * The workspace's §5.5 AgentLite rows. `agent.get` serves one row by id
    * (daemon `not-found` rejection when absent); `agent.listActive` serves the
    * `isStreaming || isResponding` subset as `streams` (rows default to
-   * `workspace-1`, the suites' default event workspace).
+   * `workspace-1`, the suites' default event workspace). Tests modelling the
+   * daemon's terminal-but-still-busy window override `agent.listActive` to
+   * list a row whose flags are both `false`.
    */
   const agentListResponse: {
     agents: Array<{
@@ -1719,6 +1721,33 @@ describe('NotificationService handleAgentIdle suppression via the bounded idle g
       ['agent.listActive', {}],
       ['agent.get', { agentId: 'agent-gone', workspaceId: 'workspace-1' }],
     ]);
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+
+  it('does not count a busy-set sibling whose row already reads terminal (both activity flags false) between the two reads', async () => {
+    // agent_ops.rs forces `isStreaming`/`isResponding` false once the session
+    // is persisted Completed/Error/Deleted, while the manager still holds the
+    // busy slot until the failure handler returns — so `agent.listActive` can
+    // list a sibling whose `agent.get` row no longer passes the old predicate.
+    agentListResponse.agents = [
+      { id: 'agent-self', isStreaming: false, isResponding: false },
+      { id: 'agent-failed', isStreaming: false, isResponding: false },
+    ];
+    const defaultImpl = requestMock.getMockImplementation()!;
+    overrideMethod('agent.listActive', async () => ({
+      streams: [{ agentId: 'agent-failed', workspaceId: 'workspace-1' }],
+    }));
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    requestMock.mockImplementation(defaultImpl);
+
+    expect(idleGateCalls()).toEqual([
+      SELF_GET,
+      ['agent.listActive', {}],
+      ['agent.get', { agentId: 'agent-failed', workspaceId: 'workspace-1' }],
+    ]);
+    // Old `isStreaming || isResponding` scan would not have counted this row.
     expect(mockNotificationInstances.length).toBe(1);
   });
 

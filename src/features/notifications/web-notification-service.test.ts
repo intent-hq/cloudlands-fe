@@ -140,7 +140,8 @@ function settingsGetResult(path: string, value: unknown) {
  * `agentListResult` rejects with the daemon's `not-found` shape;
  * `agent.listActive` serves the `isStreaming || isResponding` rows as
  * `streams` (each stamped with its row `workspaceId`, defaulting to the first
- * expected id). Unexpected methods/params throw, which the service folds to
+ * expected id; tests modelling the daemon's terminal-but-still-busy window
+ * override it). Unexpected methods/params throw, which the service folds to
  * its failure paths; tests where that fold is indistinguishable from
  * legitimate suppression ALSO assert the exact `mockBackendRequest.mock.calls`
  * transcript after acting.
@@ -536,6 +537,35 @@ describe('web-notification-service', () => {
       // The foreign stream is filtered client-side; its row is never read.
       expect(MockNotification.instances).toHaveLength(1);
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('does not count a busy-set sibling whose row already reads terminal (both activity flags false)', async () => {
+      // The daemon persists Error/Completed (forcing both flags false on the
+      // row) before the manager releases the busy slot, so `agent.listActive`
+      // can still list a sibling the old `isStreaming || isResponding` scan
+      // would not have counted.
+      stubBackendWire({
+        agentListResult: {
+          agents: [
+            ...SOLO_AGENT_LIST.agents,
+            { id: 'agent-failed', status: 'error', isStreaming: false, isResponding: false },
+          ],
+        },
+      });
+      const stub = mockBackendRequest.getMockImplementation()!;
+      mockBackendRequest.mockImplementation(async (method: string, params?: unknown) => {
+        if (method === 'agent.listActive') {
+          expect(params).toEqual({});
+          return { streams: [{ agentId: 'agent-failed', workspaceId: 'ws-1' }] };
+        }
+        return stub(method, params);
+      });
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { siblingIds: ['agent-failed'] }),
+      );
     });
 
     it('drops the notification when agent.listActive fails (parity with a failed agent.list)', async () => {
