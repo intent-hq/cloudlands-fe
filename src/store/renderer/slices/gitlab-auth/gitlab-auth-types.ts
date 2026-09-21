@@ -12,8 +12,12 @@ export type GitLabAuthState = {
   isAuthenticating: boolean;
   /** Device-grant codes while a flow is pending (null otherwise) */
   deviceFlow: ForgeDeviceFlowInfo | null;
-  /** Whether the host supports the device grant; false ⇒ lead with the PAT path */
-  deviceGrantSupported: boolean;
+  /**
+   * Whether the host supports the device grant; false ⇒ lead with the PAT
+   * path. `null` until the daemon has reported the status for `host` — the
+   * device grant is attempted first until then.
+   */
+  deviceGrantSupported: boolean | null;
   /** Derived GitLab identity (if configured) */
   user: ForgeUser | null;
   /** Error message if any */

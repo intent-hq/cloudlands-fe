@@ -57,10 +57,13 @@
   let preferToken = $state(false);
 
   const host = $derived(normalizeGitLabHost(hostDraft) || DEFAULT_GITLAB_HOST);
-  // Device-grant support is only known for the host the daemon last reported;
-  // an unreported host is attempted with the device grant first and the saga
-  // falls back (`device-grant-unsupported`) when the instance refuses it.
-  const showTokenField = $derived(preferToken || (host === $host$ && !$deviceGrantSupported$));
+  // Device-grant support is only known for the host the daemon last reported
+  // (`null` until `initializeGitLabAuth()` has hydrated it); an unreported host
+  // is attempted with the device grant first and the saga falls back
+  // (`device-grant-unsupported`) when the instance refuses it.
+  const showTokenField = $derived(
+    preferToken || (host === $host$ && $deviceGrantSupported$ === false),
+  );
   const tokenPageUrl = $derived(gitlabPersonalAccessTokenUrl(host));
   const canSubmitToken = $derived(tokenDraft.trim().length > 0);
 
@@ -210,7 +213,7 @@
         >
           {m.lib_gitlabConnect_connect_label()}
         </Button>
-        {#if preferToken && $deviceGrantSupported$}
+        {#if preferToken && $deviceGrantSupported$ !== false}
           <Button variant="ghost" size={secondarySize} type="button" onclick={handleUseDevice}>
             {m.lib_gitlabConnect_useDevice_label()}
           </Button>

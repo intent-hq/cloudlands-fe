@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import {
   closeSync,
@@ -353,36 +354,86 @@ describe('runSvelteCheck', () => {
   });
 
   describe('with a real child process', () => {
-    const runChild = async (code: string, nodeArgs = '') => {
+    // The oracle (the child's own maxRSS) travels through a file named by this
+    // env var, not through stdout: anything preloaded into the child (a Datadog
+    // tracer's startup log, intent-hq/intent#5509) shares the child's stdout.
+    const ORACLE_FILE_ENV = 'RSS_TEST_ORACLE_FILE';
+    const touch256MiBAndExit = (exitCode: number) =>
+      [
+        "import { writeFileSync } from 'node:fs';",
+        'Buffer.alloc(256 * 1024 * 1024, 1);',
+        `writeFileSync(process.env.${ORACLE_FILE_ENV}, String(process.resourceUsage().maxRSS));`,
+        `process.exit(${exitCode});`,
+      ].join('\n');
+
+    // `preload` is injected as its own argv entries: CT_NODE_ARGS is split on
+    // whitespace with no quoting, so a tmpdir containing a space would break
+    // the path apart.
+    const runChild = async (code: string, nodeArgs = '', preload?: string) => {
       const dir = mkdtempSync(path.join(tmpdir(), 'rss-child-test-'));
       const outputPath = path.join(dir, 'output');
+      const oraclePath = path.join(dir, 'oracle');
       const outputFd = openSync(outputPath, 'w');
       const errors: string[] = [];
       const result = await runSvelteCheck({
         cliPath: code,
         args: [],
         outputFd,
-        env: { ...process.env, CT_NODE_ARGS: `${nodeArgs} --input-type=module --eval` },
+        env: {
+          ...process.env,
+          CT_NODE_ARGS: `${nodeArgs} --input-type=module --eval`,
+          [ORACLE_FILE_ENV]: oraclePath,
+        },
+        spawnImpl: preload
+          ? (((cmd: string, argv: string[], opts: object) =>
+              spawn(cmd, ['--require', preload, ...argv], opts)) as never)
+          : undefined,
         printError: (message: string) => errors.push(message),
       });
       closeSync(outputFd);
       const output = readFileSync(outputPath, 'utf8');
+      const childMaxRssMiB = existsSync(oraclePath)
+        ? Math.round(Number(readFileSync(oraclePath, 'utf8')) / 1024)
+        : null;
       rmSync(dir, { recursive: true, force: true });
-      return { ...result, errors, output };
+      return { ...result, errors, output, childMaxRssMiB };
     };
 
     it.each([0, 1])(
       'reports a child that touched 256 MiB and exited %i, even within one interval',
       async (exitCode) => {
-        const { peakRssMiB, output, ...rest } = await runChild(
-          `Buffer.alloc(256 * 1024 * 1024, 1); console.log(process.resourceUsage().maxRSS); process.exit(${exitCode});`,
+        const { peakRssMiB, childMaxRssMiB, ...rest } = await runChild(
+          touch256MiBAndExit(exitCode),
         );
-        expect(rest).toEqual({ exitCode, errors: [] });
-        const childMaxRssMiB = Math.round(Number(output.trim()) / 1024);
+        expect(rest).toMatchObject({ exitCode, errors: [] });
         expect(childMaxRssMiB).toBeGreaterThanOrEqual(256);
-        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB);
+        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB as number);
       },
     );
+
+    // intent-hq/intent#5509: a host with Datadog tracing injected into Node
+    // (NODE_OPTIONS -r dd-trace/init) prints its startup configuration to the
+    // child's stdout before anything the child writes itself.
+    it('measures the peak when a preload writes a startup banner to the child stdout first', async () => {
+      const banner =
+        'DATADOG TRACER CONFIGURATION - {"date":"2026-09-20T00:00:00.000Z","service":"node","enabled":true}';
+      const preloadDir = mkdtempSync(path.join(tmpdir(), 'rss banner preload-'));
+      const preload = path.join(preloadDir, 'banner.cjs');
+      writeFileSync(preload, `process.stdout.write(${JSON.stringify(`${banner}\n`)});`);
+      try {
+        const { peakRssMiB, childMaxRssMiB, output, ...rest } = await runChild(
+          touch256MiBAndExit(0),
+          '',
+          preload,
+        );
+        expect(rest).toEqual({ exitCode: 0, errors: [] });
+        expect(output).toContain(banner);
+        expect(childMaxRssMiB).toBeGreaterThanOrEqual(256);
+        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB as number);
+      } finally {
+        rmSync(preloadDir, { recursive: true, force: true });
+      }
+    });
 
     it('still reports a peak after a V8 heap-limit OOM abort', async () => {
       const { exitCode, peakRssMiB, errors } = await runChild(

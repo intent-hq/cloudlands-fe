@@ -25,6 +25,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { m } from '$shared/paraglide/messages.js';
 import {
   cancelGitLabAuth,
+  checkGitLabAuthStatus,
   connectGitLabWithToken,
   gitlabAuthChanged,
   gitlabAuthReducer,
@@ -93,6 +94,133 @@ function harness(seed = initialState) {
 describe('gitlabAuthSaga', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('verifier: a focus read begun before default-host hydration cannot attach the old identity', async () => {
+    let resolveDefault!: (value: unknown) => void;
+    let resolveFocus!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation(
+      (_provider: string, host?: string) =>
+        new Promise((resolve) => {
+          if (host === undefined) resolveDefault = resolve;
+          else resolveFocus = resolve;
+        }),
+    );
+    const run = harness();
+    try {
+      run.channel.put(initializeGitLabAuth());
+      await settle();
+      run.channel.put(checkGitLabAuthStatus());
+      await settle();
+      expect(mocks.getStatus).toHaveBeenLastCalledWith('gitlab', OTHER_HOST);
+      resolveDefault({ ...UNCONFIGURED_STATUS, host: HOST });
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+      resolveFocus({ ...CONFIGURED_STATUS, host: OTHER_HOST });
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('verifier: target-host authorization during initialize cannot attach its identity to the old host', async () => {
+    let resolveInitial!: (value: unknown) => void;
+    mocks.getStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInitial = resolve;
+        }),
+    );
+    mocks.getStatus.mockResolvedValue({ ...CONFIGURED_STATUS, host: HOST });
+    const run = harness();
+    try {
+      run.channel.put(initializeGitLabAuth(HOST));
+      await settle();
+      run.channel.put(gitlabAuthChanged('authorized', HOST));
+      await settle();
+      resolveInitial({ ...UNCONFIGURED_STATUS, host: HOST });
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: true, user: WIRE_USER });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it.each(['revoked', 'denied'] as const)(
+    'verifier: target-host %s during initialize preserves the requested host',
+    async (status) => {
+      let resolveInitial!: (value: unknown) => void;
+      mocks.getStatus.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitial = resolve;
+          }),
+      );
+      const run = harness();
+      try {
+        run.channel.put(initializeGitLabAuth(HOST));
+        await settle();
+        run.channel.put(gitlabAuthChanged(status, HOST));
+        await settle();
+        resolveInitial({ ...UNCONFIGURED_STATUS, host: HOST });
+        await settle();
+        expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+      } finally {
+        run.task.cancel();
+        await run.task.toPromise();
+      }
+    },
+  );
+
+  it('verifier: a rejected stale authorized read cannot run completion fallback on a newer host', async () => {
+    let rejectOld!: (reason: Error) => void;
+    mocks.getStatus.mockImplementation((_provider: string, host?: string) =>
+      host === OTHER_HOST
+        ? new Promise((_resolve, reject) => {
+            rejectOld = reject;
+          })
+        : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST }),
+    );
+    const run = harness();
+    try {
+      run.channel.put(gitlabAuthChanged('authorized', OTHER_HOST));
+      await settle();
+      run.channel.put(initializeGitLabAuth(HOST));
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false });
+      rejectOld(new Error('status unavailable'));
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('verifier: an old-host event during the new host read cannot cancel the requested selection', async () => {
+    let resolveNew!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveNew = resolve;
+        }),
+    );
+    const run = harness();
+    try {
+      run.channel.put(initializeGitLabAuth(HOST));
+      await settle();
+      run.channel.put(gitlabAuthChanged('revoked', OTHER_HOST));
+      await settle();
+      resolveNew({ ...UNCONFIGURED_STATUS, host: HOST });
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it('initialize reads sourceControl.authStatus for the host and hydrates field by field', async () => {
     mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
     const run = harness();
@@ -100,7 +228,10 @@ describe('gitlabAuthSaga', () => {
     await settle();
 
     expect(mocks.getStatus.mock.calls).toEqual([['gitlab', HOST]]);
+    // The requested host is selected before the read so daemon events for it
+    // (and for the host being left) are filtered correctly while it is in flight.
     expect(run.dispatched).toEqual([
+      { type: 'gitlabAuth/setHost', payload: [HOST] },
       {
         type: 'gitlabAuth/setAuthStatus',
         payload: {
@@ -155,6 +286,167 @@ describe('gitlabAuthSaga', () => {
       user: WIRE_USER,
       method: 'device',
     });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a slow mount-time read for the default host cannot overwrite a later-initialized host', async () => {
+    let resolveDefault!: (value: unknown) => void;
+    let resolveScoped!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation(
+      (_provider: string, host?: string) =>
+        new Promise((resolve) => {
+          if (host === undefined) resolveDefault = resolve;
+          else resolveScoped = resolve;
+        }),
+    );
+    const run = harness();
+    run.channel.put(initializeGitLabAuth());
+    await settle();
+    run.channel.put(initializeGitLabAuth(HOST));
+    await settle();
+    expect(mocks.getStatus.mock.calls).toEqual([
+      ['gitlab', undefined],
+      ['gitlab', HOST],
+    ]);
+
+    resolveScoped({ ...UNCONFIGURED_STATUS, host: HOST });
+    await settle();
+    const hydratedB = {
+      host: HOST,
+      isConfigured: false,
+      deviceGrantSupported: true,
+      user: null,
+      method: null,
+    };
+    expect(run.state()).toMatchObject(hydratedB);
+
+    // The default host's read lands last: A's connection must not replace B.
+    resolveDefault({ ...CONFIGURED_STATUS, host: OTHER_HOST, method: 'device' });
+    await settle();
+    expect(run.state()).toMatchObject(hydratedB);
+    expect(
+      run.dispatched.filter((a) => (a as { type: string }).type === 'gitlabAuth/setAuthStatus'),
+    ).toHaveLength(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a stale default-host read cannot overwrite a grant the user started against another host', async () => {
+    let resolveDefault!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation((_provider: string, host?: string) => {
+      if (host === undefined)
+        return new Promise((resolve) => {
+          resolveDefault = resolve;
+        });
+      return Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST, deviceFlow: PENDING_FLOW });
+    });
+    mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
+    const run = harness();
+    run.channel.put(initializeGitLabAuth());
+    await settle();
+    run.channel.put(startGitLabDeviceAuth(HOST));
+    await settle();
+    const pendingOnB = {
+      host: HOST,
+      isConfigured: false,
+      isAuthenticating: true,
+      deviceFlow: PENDING_INFO,
+      user: null,
+    };
+    expect(run.state()).toMatchObject(pendingOnB);
+
+    resolveDefault({ ...CONFIGURED_STATUS, host: OTHER_HOST, method: 'device' });
+    await settle();
+    expect(run.state()).toMatchObject(pendingOnB);
+    expect(run.dispatched.map((a) => (a as { type: string }).type)).not.toContain(
+      'gitlabAuth/setAuthStatus',
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a default read begun while the host was already selected cannot replace its new grant', async () => {
+    // Selected B, daemon default A: the unscoped read starts and finishes with
+    // the selection unchanged, so only the intent that started B's grant can
+    // tell it is stale.
+    let resolveDefault!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation((_provider: string, host?: string) =>
+      host === undefined
+        ? new Promise((resolve) => {
+            resolveDefault = resolve;
+          })
+        : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST, deviceFlow: PENDING_FLOW }),
+    );
+    mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
+    const run = harness({ ...initialState, host: HOST });
+    run.channel.put(initializeGitLabAuth());
+    await settle();
+    run.channel.put(startGitLabDeviceAuth(HOST));
+    await settle();
+    const pendingOnB = { host: HOST, isConfigured: false, deviceFlow: PENDING_INFO };
+    expect(run.state()).toMatchObject(pendingOnB);
+
+    resolveDefault({ ...CONFIGURED_STATUS, host: OTHER_HOST });
+    await settle();
+    expect(run.state()).toMatchObject(pendingOnB);
+    expect(run.dispatched.map((a) => (a as { type: string }).type)).not.toContain(
+      'gitlabAuth/setAuthStatus',
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('an expired-event reconcile that resolves late cannot replace a newer host selection', async () => {
+    let resolveOld!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation((_provider: string, host?: string) =>
+      host === OTHER_HOST
+        ? new Promise((resolve) => {
+            resolveOld = resolve;
+          })
+        : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST }),
+    );
+    const run = harness();
+    run.channel.put(gitlabAuthChanged('expired', OTHER_HOST));
+    await settle();
+    run.channel.put(initializeGitLabAuth(HOST));
+    await settle();
+    const hydratedB = { host: HOST, isConfigured: false, user: null };
+    expect(run.state()).toMatchObject(hydratedB);
+
+    resolveOld({ ...CONFIGURED_STATUS, host: OTHER_HOST });
+    await settle();
+    expect(run.state()).toMatchObject(hydratedB);
+    expect(
+      run.dispatched.filter((a) => (a as { type: string }).type === 'gitlabAuth/setAuthStatus'),
+    ).toHaveLength(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('an authorized-event completion that resolves late cannot attach the old identity to a newer host', async () => {
+    let resolveOld!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation((_provider: string, host?: string) =>
+      host === OTHER_HOST
+        ? new Promise((resolve) => {
+            resolveOld = resolve;
+          })
+        : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST }),
+    );
+    const run = harness();
+    run.channel.put(gitlabAuthChanged('authorized', OTHER_HOST));
+    await settle();
+    run.channel.put(initializeGitLabAuth(HOST));
+    await settle();
+    const hydratedB = { host: HOST, isConfigured: false, user: null, method: null };
+    expect(run.state()).toMatchObject(hydratedB);
+
+    resolveOld({ ...CONFIGURED_STATUS, host: OTHER_HOST });
+    await settle();
+    expect(run.state()).toMatchObject(hydratedB);
+    expect(run.dispatched.map((a) => (a as { type: string }).type)).not.toContain(
+      'gitlabAuth/authCompleted',
+    );
     run.task.cancel();
     await run.task.toPromise();
   });

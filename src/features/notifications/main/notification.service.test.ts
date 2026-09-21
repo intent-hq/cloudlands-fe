@@ -27,7 +27,8 @@ vi.mock('../../../shared/logger', () => ({
 
 // Method-aware multi-backend daemon-client stub: per-backend request mocks
 // (keyed by backend id) route `settings.get` to a configurable per-path
-// `notifications.*` fixture, `agent.list` to a configurable PROTOCOL.md
+// `notifications.*` fixture, the bounded idle-gate reads (`agent.get` by id,
+// `agent.listActive` as the busy subset) to a configurable PROTOCOL.md
 // §5.5-shaped AgentLite[] fixture (defaults to empty), and
 // `events.subscribe` / `events.unsubscribe` to §6.1/§6.2-shaped responses
 // (subscription ids are per-backend: `<backendId>-sub-N`). The any-backend
@@ -40,21 +41,57 @@ const {
   liveBackendIds,
   resetBackendMocks,
   agentListResponse,
+  serveAgentRead,
   settingsValues,
   notificationListeners,
   statusListeners,
   reconnectHandlers,
 } = vi.hoisted(() => {
   const LOCAL_ID = 'local';
+  /**
+   * The workspace's §5.5 AgentLite rows. `agent.get` serves one row by id
+   * (daemon `not-found` rejection when absent); `agent.listActive` serves the
+   * `isStreaming || isResponding` subset as `streams` (rows default to
+   * `workspace-1`, the suites' default event workspace). Tests modelling the
+   * daemon's terminal-but-still-busy window override `agent.listActive` to
+   * list a row whose flags are both `false`.
+   */
   const agentListResponse: {
     agents: Array<{
       id?: string;
+      workspaceId?: string;
       provider?: string;
       isStreaming?: boolean;
       isResponding?: boolean;
+      notificationsMuted?: boolean;
       metadata?: { isBackground?: boolean; specialist?: string };
     }>;
   } = { agents: [] };
+  /** PROTOCOL §5.5 `agent.get` / `agent.listActive` reads over the fixture; `undefined` = not served. */
+  const serveAgentRead = (method: string, params?: unknown): unknown => {
+    if (method === 'agent.get') {
+      const agentId = (params as { agentId?: string } | undefined)?.agentId;
+      const row = agentListResponse.agents.find((agent) => agent.id === agentId);
+      if (!row) {
+        throw Object.assign(new Error(`Agent not found: ${agentId}`), {
+          rpcCode: -32602,
+          data: { code: 'not-found' },
+        });
+      }
+      return { agent: row };
+    }
+    if (method === 'agent.listActive') {
+      return {
+        streams: agentListResponse.agents
+          .filter((agent) => agent.isStreaming === true || agent.isResponding === true)
+          .map((agent) => ({
+            agentId: agent.id,
+            workspaceId: agent.workspaceId ?? 'workspace-1',
+          })),
+      };
+    }
+    return undefined;
+  };
   const settingsValues: Record<string, unknown> = {};
   const subCounters = new Map<string, number>();
   const makeRequestMock = (backendId: string) =>
@@ -63,8 +100,8 @@ const {
         const path = (params as { path?: string } | undefined)?.path ?? '';
         return { path, value: settingsValues[path] ?? true };
       }
-      if (method === 'agent.list') {
-        return agentListResponse;
+      if (method === 'agent.get' || method === 'agent.listActive') {
+        return serveAgentRead(method, params);
       }
       if (method === 'events.subscribe') {
         const n = (subCounters.get(backendId) ?? 0) + 1;
@@ -114,6 +151,7 @@ const {
     liveBackendIds,
     resetBackendMocks,
     agentListResponse,
+    serveAgentRead,
     settingsValues,
     notificationListeners,
     statusListeners,
@@ -365,8 +403,11 @@ describe('NotificationService daemon agent:idle subscription', () => {
     );
     await flush();
 
-    // Per-event routing: agent.list targets the EVENT's workspace.
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-2' });
+    // Per-event routing: the idle-gate reads target the EVENT's workspace.
+    expect(requestMock).toHaveBeenCalledWith('agent.get', {
+      agentId: 'agent-self',
+      workspaceId: 'workspace-2',
+    });
     expect(mockNotificationInstances.length).toBe(1);
     service.stop();
   });
@@ -394,7 +435,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.stop();
   });
 
-  it('suppresses notifications for background agents flagged via agent.list metadata', async () => {
+  it('suppresses notifications for background agents flagged via agent.get metadata', async () => {
     agentListResponse.agents = [
       { id: 'agent-self', metadata: { isBackground: true, specialist: 'implementor' } },
     ];
@@ -470,7 +511,8 @@ describe('NotificationService daemon agent:idle subscription', () => {
         const path = (params as { path?: string } | undefined)?.path ?? '';
         return { path, value: settingsValues[path] ?? true };
       }
-      if (method === 'agent.list') return agentListResponse;
+      if (method === 'agent.get' || method === 'agent.listActive')
+        return serveAgentRead(method, params);
       if (method === 'events.unsubscribe') return { success: true };
       return {};
     });
@@ -653,9 +695,14 @@ describe('NotificationService daemon agent:idle subscription', () => {
     );
     await flush();
     expect(mockNotificationInstances.length).toBe(1);
-    // Follow-up agent.list went to the remote backend, not the local one.
-    expect(remoteMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
-    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    // Follow-up idle-gate reads went to the remote backend, not the local one.
+    expect(remoteMock).toHaveBeenCalledWith('agent.get', {
+      agentId: 'agent-self',
+      workspaceId: 'workspace-1',
+    });
+    expect(remoteMock).toHaveBeenCalledWith('agent.listActive', {});
+    expect(requestMock).not.toHaveBeenCalledWith('agent.get', expect.anything());
+    expect(requestMock).not.toHaveBeenCalledWith('agent.listActive', expect.anything());
     service.stop();
   });
 
@@ -1549,7 +1596,15 @@ describe('NotificationService click-target selection excludes the HUD window', (
   });
 });
 
-describe('NotificationService handleAgentIdle suppression via agent.list', () => {
+describe('NotificationService handleAgentIdle suppression via the bounded idle gate (agent.get + agent.listActive)', () => {
+  /** Exact wire shape of the idle agent's own `agent.get` (PROTOCOL.md §5.5). */
+  const SELF_GET = ['agent.get', { agentId: 'agent-self', workspaceId: 'workspace-1' }] as const;
+  /** Every idle-gate wire read of one run, in call order. */
+  const idleGateCalls = () =>
+    requestMock.mock.calls.filter(([method]) =>
+      ['agent.get', 'agent.listActive', 'agent.list'].includes(method as string),
+    );
+
   function buildIdleEvent(overrides: Partial<AgentIdleEvent['data']> = {}): AgentIdleEvent {
     return {
       type: 'agent:idle',
@@ -1591,45 +1646,157 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    // Assert exact on-wire request shape (PROTOCOL.md §5.5).
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    // Exact on-wire transcript (PROTOCOL.md §5.5): the idle agent's own row,
+    // the daemon-global busy set, then ONE `agent.get` per active sibling —
+    // never an unscoped `agent.list`.
+    expect(idleGateCalls()).toEqual([
+      SELF_GET,
+      ['agent.listActive', {}],
+      ['agent.get', { agentId: 'agent-other', workspaceId: 'workspace-1' }],
+    ]);
     // No notification constructed because suppression fired.
     expect(mockNotificationInstances.length).toBe(0);
   });
 
-  it('does not suppress when the only active agent in the list is the idling agent itself', async () => {
+  it('ignores busy streams from OTHER workspaces in the daemon-global agent.listActive set', async () => {
+    agentListResponse.agents = [
+      { id: 'agent-self', isStreaming: false, isResponding: false },
+      { id: 'agent-elsewhere', workspaceId: 'workspace-2', isStreaming: true, isResponding: true },
+    ];
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    // The foreign stream is filtered out client-side; its row is never read.
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+
+  it('does not suppress when the only active agent in the busy set is the idling agent itself', async () => {
     agentListResponse.agents = [{ id: 'agent-self', isStreaming: true, isResponding: false }];
 
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     // Notification proceeds — the idling agent's own residual flag is not a
     // suppression trigger.
     expect(mockNotificationInstances.length).toBe(1);
   });
 
-  it('does not suppress when agent.list returns an empty list', async () => {
+  it('does not suppress when the idle agent is not-found and the busy set is empty', async () => {
     agentListResponse.agents = [];
 
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    // A `not-found` row means no flags: the gate falls through to the busy
+    // set (parity with the old empty `agent.list`), and notifies.
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 
-  it('suppresses via the notificationsMuted fast path: no banner, no notification:show, no agent.list read', async () => {
+  /** Override ONE served method for the test; every other method keeps the default stub. */
+  function overrideMethod(method: string, impl: () => Promise<unknown>): void {
+    const defaultImpl = requestMock.getMockImplementation()!;
+    requestMock.mockImplementation(async (m: string, params?: unknown) =>
+      m === method ? impl() : defaultImpl(m, params),
+    );
+  }
+
+  it('does not count an active sibling whose row vanished (not-found) between the busy read and its agent.get', async () => {
+    agentListResponse.agents = [{ id: 'agent-self', isStreaming: false, isResponding: false }];
+    const defaultImpl = requestMock.getMockImplementation()!;
+    // Serve a busy stream for a sibling that has no row (deleted mid-gate).
+    overrideMethod('agent.listActive', async () => ({
+      streams: [{ agentId: 'agent-gone', workspaceId: 'workspace-1' }],
+    }));
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    requestMock.mockImplementation(defaultImpl);
+
+    expect(idleGateCalls()).toEqual([
+      SELF_GET,
+      ['agent.listActive', {}],
+      ['agent.get', { agentId: 'agent-gone', workspaceId: 'workspace-1' }],
+    ]);
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+
+  it('does not count a busy-set sibling whose row already reads terminal (both activity flags false) between the two reads', async () => {
+    // agent_ops.rs forces `isStreaming`/`isResponding` false once the session
+    // is persisted Completed/Error/Deleted, while the manager still holds the
+    // busy slot until the failure handler returns — so `agent.listActive` can
+    // list a sibling whose `agent.get` row no longer passes the old predicate.
+    agentListResponse.agents = [
+      { id: 'agent-self', isStreaming: false, isResponding: false },
+      { id: 'agent-failed', isStreaming: false, isResponding: false },
+    ];
+    const defaultImpl = requestMock.getMockImplementation()!;
+    overrideMethod('agent.listActive', async () => ({
+      streams: [{ agentId: 'agent-failed', workspaceId: 'workspace-1' }],
+    }));
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    requestMock.mockImplementation(defaultImpl);
+
+    expect(idleGateCalls()).toEqual([
+      SELF_GET,
+      ['agent.listActive', {}],
+      ['agent.get', { agentId: 'agent-failed', workspaceId: 'workspace-1' }],
+    ]);
+    // Old `isStreaming || isResponding` scan would not have counted this row.
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+
+  it('drops the notification when agent.get rejects with a bare -32602 lacking the structured not-found code (unverified read, fail-closed)', async () => {
+    agentListResponse.agents = [];
+    const defaultImpl = requestMock.getMockImplementation()!;
+    // Same rpcCode and message as the daemon's not-found, but WITHOUT
+    // `data.code: "not-found"` — a generic invalid-params rejection or a
+    // re-wrapped error. Only the strict structured pair counts as absent.
+    overrideMethod('agent.get', async () => {
+      throw Object.assign(new Error('Agent not found: agent-self'), { rpcCode: -32602 });
+    });
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    requestMock.mockImplementation(defaultImpl);
+
+    expect(idleGateCalls()).toEqual([SELF_GET]);
+    expect(mockNotificationInstances.length).toBe(0);
+    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+  });
+
+  it('drops the notification when agent.listActive fails for any other reason (parity with a failed agent.list)', async () => {
+    agentListResponse.agents = [{ id: 'agent-self', isStreaming: false, isResponding: false }];
+    const defaultImpl = requestMock.getMockImplementation()!;
+    overrideMethod('agent.listActive', async () => {
+      throw new Error('daemon unavailable');
+    });
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    requestMock.mockImplementation(defaultImpl);
+
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
+    expect(mockNotificationInstances.length).toBe(0);
+    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+  });
+
+  it('suppresses via the notificationsMuted fast path: no banner, no notification:show, no idle-gate read', async () => {
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ notificationsMuted: true }));
 
-    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    expect(idleGateCalls()).toEqual([]);
     expect(mockNotificationInstances.length).toBe(0);
     // No renderer sound event either — a muted agent is fully silent.
     expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
   });
 
-  it('suppresses when agent.list reports the idle agent as notificationsMuted (older idle payloads)', async () => {
+  it('suppresses when agent.get reports the idle agent as notificationsMuted (older idle payloads) without reading the busy set', async () => {
     agentListResponse.agents = [
       { id: 'agent-self', isStreaming: false, isResponding: false, notificationsMuted: true },
     ];
@@ -1637,7 +1804,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET]);
     expect(mockNotificationInstances.length).toBe(0);
     expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
   });
@@ -1651,18 +1818,22 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([
+      SELF_GET,
+      ['agent.listActive', {}],
+      ['agent.get', { agentId: 'agent-other', workspaceId: 'workspace-1' }],
+    ]);
     // The muted sibling's own idle is suppressed, so it must not hold the
     // other-agents-active gate — otherwise the workspace never notifies.
     expect(mockNotificationInstances.length).toBe(1);
   });
 
-  it('suppresses via the isWaitingForOtherAgents fast path without consulting agent.list', async () => {
+  it('suppresses via the isWaitingForOtherAgents fast path without consulting the idle gate', async () => {
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ isWaitingForOtherAgents: true }));
 
-    // Fast path fires before the agent.list gate — no §5.5 read at all.
-    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    // Fast path fires before the wire gate — no §5.5 read at all.
+    expect(idleGateCalls()).toEqual([]);
     expect(mockNotificationInstances.length).toBe(0);
   });
 
@@ -1670,7 +1841,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ isWaitingForOtherAgents: false }));
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 
@@ -1678,17 +1849,17 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 
-  it('suppresses via the waitingOnHooks fast path without consulting agent.list', async () => {
+  it('suppresses via the waitingOnHooks fast path without consulting the idle gate', async () => {
     const service = new NotificationService();
     await service.handleAgentIdle(
       buildIdleEvent({ waitingOnHooks: [{ hookId: 'hook-1', name: 'Watch CI' }] }),
     );
 
-    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    expect(idleGateCalls()).toEqual([]);
     expect(mockNotificationInstances.length).toBe(0);
   });
 
@@ -1696,7 +1867,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ waitingOnHooks: [] }));
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 
@@ -1704,11 +1875,11 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 
-  it('suppresses via the waitingOnPrMonitors fast path without consulting agent.list', async () => {
+  it('suppresses via the waitingOnPrMonitors fast path without consulting the idle gate', async () => {
     const service = new NotificationService();
     await service.handleAgentIdle(
       buildIdleEvent({
@@ -1716,7 +1887,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
       }),
     );
 
-    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    expect(idleGateCalls()).toEqual([]);
     expect(mockNotificationInstances.length).toBe(0);
   });
 
@@ -1724,7 +1895,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ waitingOnPrMonitors: [] }));
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 
@@ -1732,15 +1903,15 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 
-  it('suppresses via the workspaceArchived fast path without consulting agent.list', async () => {
+  it('suppresses via the workspaceArchived fast path without consulting the idle gate', async () => {
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ workspaceArchived: true }));
 
-    expect(requestMock).not.toHaveBeenCalledWith('agent.list', expect.anything());
+    expect(idleGateCalls()).toEqual([]);
     expect(mockNotificationInstances.length).toBe(0);
   });
 
@@ -1748,7 +1919,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent({ workspaceArchived: false }));
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 
@@ -1756,7 +1927,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
     const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
-    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(idleGateCalls()).toEqual([SELF_GET, ['agent.listActive', {}]]);
     expect(mockNotificationInstances.length).toBe(1);
   });
 });

@@ -32,8 +32,10 @@
  *    predates the `gist` scope the proof needs (`github-scope-missing`),
  *    leads to the `sign-in-required` state: the guest's own `github.connect`
  *    device flow (code copied to the clipboard; "Open GitHub" opens the URL)
- *    is awaited while the modal shows "waiting for GitHub". These prompts
- *    appear only at join time, never at startup.
+ *    is awaited from the moment the code is shown — a code entered on another
+ *    device completes the sign-in without the button — while the modal shows
+ *    "waiting for GitHub" after "Open GitHub". These prompts appear only at
+ *    join time, never at startup.
  * 3. Consent proper: the modal's `prove` state ("Join <title> on <host> as
  *    @login", "what the host learns", Join). It renders in the renderer
  *    (`main/invite-consent.ts`, `invite-consent:*` channels) and stays up in
@@ -610,10 +612,11 @@ type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' }
 /**
  * Sign the guest's own daemon in to GitHub from the consent modal's
  * `sign-in-required` state: `github.connect` starts the device flow, the
- * modal shows the code + URL (code copied to the clipboard), "Open GitHub"
- * launches the URL and the flow's terminal transition is awaited. Cancel
- * (before or while waiting) aborts the flow locally (`github.cancelAuth`,
- * best effort). Resolves with the login the daemon is now signed in as.
+ * modal shows the code + URL (code copied to the clipboard) and the flow's
+ * terminal transition is awaited from that moment — the code may be entered
+ * on any device, so "Open GitHub" only launches the URL here. Cancel (before
+ * or after "Open GitHub") aborts the flow locally (`github.cancelAuth`, best
+ * effort). Resolves with the login the daemon is now signed in as.
  *
  * With no forge connected at all (`not-connected`) the neutral
  * `connect-forge` prompt comes first, before anything is asked of GitHub:
@@ -668,68 +671,85 @@ async function signInToGitHub(
     expiresInMs: start.expiresIn * 1000,
     ...labels,
   });
-  const decision = await consent.decision;
-  if (decision === 'cancel') {
-    consent.dismiss('cancelled');
-    cancelSignIn();
-    logger.info('User cancelled the GitHub sign-in the invite needs');
-    return { kind: 'cancelled' };
-  }
-  // No renderer to show the modal (cold start / no ack): native box.
-  if (
-    decision === null &&
-    !(await showDeviceCode(start.userCode, start.verificationUri, labels.workspaceTitle))
-  ) {
-    cancelSignIn();
-    logger.info('User cancelled the GitHub sign-in the invite needs');
-    return { kind: 'cancelled' };
-  }
-  // From here the modal stays up in its waiting state. Cancel and the flow's
-  // end are raced from the browser launch onwards — whichever settles first
-  // decides — so a cancel still aborts even if the launch never settles.
-  const cancelSignal = consent.cancelledWhileWaiting.then(() => 'cancelled' as const);
+  // The flow is awaited from the moment the code is shown: the user may enter
+  // it on another device and never click "Open GitHub". Its end is raced
+  // against the user's first decision, then against a cancel while waiting.
+  // The wait's listener and timers are released on every exit, including a
+  // rejected dialog, so nothing polls the daemon after this returns.
   const wait = waitForSignIn(
     client,
     start.expiresIn * 1000 + WAIT_MARGIN_MS,
     Math.max((start.interval ?? 0) * 1000, SIGN_IN_POLL_FLOOR_MS),
   );
-  const settled = wait.status.then((status) => ({ status }));
-  // The OS error text is dropped (bounded code only): it may echo the URL.
-  const launch = (async () => {
-    try {
-      await shell.openExternal(start.verificationUri);
-      return 'launched' as const;
-    } catch {
-      return 'launch-failed' as const;
+  try {
+    const settled = wait.status.then((status) => ({ status }));
+    const cancelSignal = consent.cancelledWhileWaiting.then(() => 'cancelled' as const);
+    let outcome: { status: SignInStatus | 'timeout' } | 'cancelled' | 'launch-failed';
+    let decision = await Promise.race([settled, consent.decision]);
+    // No renderer to show the modal (cold start / no ack): native box, closed
+    // through its signal when the flow ends first (on macOS a parentless box
+    // ignores the signal — it then waits for the click, as before).
+    if (decision === null) {
+      const closeBox = new AbortController();
+      void wait.status.then(() => closeBox.abort());
+      const box = showDeviceCode(
+        start.userCode,
+        start.verificationUri,
+        labels.workspaceTitle,
+        closeBox.signal,
+      ).then((open) => (open ? ('open' as const) : ('cancel' as const)));
+      decision = await Promise.race([settled, box]);
+      if (decision === 'cancel' && closeBox.signal.aborted) decision = await settled;
     }
-  })();
-  let outcome = await Promise.race([cancelSignal, settled, launch]);
-  if (outcome === 'launched') {
-    outcome = await Promise.race([cancelSignal, settled]);
-  }
-  if (outcome === 'cancelled') {
-    wait.stop();
-    consent.dismiss('cancelled');
-    cancelSignIn();
-    logger.info('User cancelled the invite while waiting for the GitHub sign-in');
-    return { kind: 'cancelled' };
-  }
-  if (outcome === 'launch-failed') {
-    wait.stop();
-    cancelSignIn();
-    throw new InviteFlowError('verification-launch-failed');
-  }
-  switch (outcome.status) {
-    case 'denied':
-      throw new InviteFlowError('sign-in-denied');
-    case 'expired':
-    case 'timeout':
+    if (decision === 'cancel') {
+      consent.dismiss('cancelled');
       cancelSignIn();
-      throw new InviteFlowError('sign-in-expired');
-    case 'error':
-      throw new InviteFlowError('sign-in-failed');
-    case 'authorized':
-      break;
+      logger.info('User cancelled the GitHub sign-in the invite needs');
+      return { kind: 'cancelled' };
+    }
+    if (decision === 'open') {
+      // From here the modal stays up in its waiting state. Cancel and the
+      // flow's end are raced from the browser launch onwards — whichever
+      // settles first decides — so a cancel still aborts even if the launch
+      // never settles. The OS error text is dropped (bounded code only): it
+      // may echo the URL.
+      const launch = (async () => {
+        try {
+          await shell.openExternal(start.verificationUri);
+          return 'launched' as const;
+        } catch {
+          return 'launch-failed' as const;
+        }
+      })();
+      const first = await Promise.race([cancelSignal, settled, launch]);
+      outcome = first === 'launched' ? await Promise.race([cancelSignal, settled]) : first;
+    } else {
+      outcome = decision;
+    }
+    if (outcome === 'cancelled') {
+      consent.dismiss('cancelled');
+      cancelSignIn();
+      logger.info('User cancelled the invite while waiting for the GitHub sign-in');
+      return { kind: 'cancelled' };
+    }
+    if (outcome === 'launch-failed') {
+      cancelSignIn();
+      throw new InviteFlowError('verification-launch-failed');
+    }
+    switch (outcome.status) {
+      case 'denied':
+        throw new InviteFlowError('sign-in-denied');
+      case 'expired':
+      case 'timeout':
+        cancelSignIn();
+        throw new InviteFlowError('sign-in-expired');
+      case 'error':
+        throw new InviteFlowError('sign-in-failed');
+      case 'authorized':
+        break;
+    }
+  } finally {
+    wait.stop();
   }
   const login = await readLocalLogin(client);
   if (login === null) throw new InviteFlowError('sign-in-failed');
@@ -1121,13 +1141,18 @@ async function showDialog(options: MessageBoxOptions): Promise<number> {
   return result.response;
 }
 
-/** Sign-in prompt: user code + verification URL. True when the user chose "Open GitHub". */
+/**
+ * Sign-in prompt: user code + verification URL. True when the user chose
+ * "Open GitHub"; `signal` closes the box as a cancel when the flow ends first.
+ */
 async function showDeviceCode(
   userCode: string,
   verificationUri: string,
   workspaceTitle: string,
+  signal: AbortSignal,
 ): Promise<boolean> {
   const response = await showDialog({
+    signal,
     type: 'info',
     title: m.deeplink_inviteCode_title(),
     message: m.deeplink_inviteCode_message({

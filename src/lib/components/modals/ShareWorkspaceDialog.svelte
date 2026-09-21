@@ -8,8 +8,8 @@
    * creates `intent://invite` links (optionally pinned to a GitHub login;
    * an unpinned link is reusable until it expires or is revoked, a pinned
    * one is single-use), lists the open invites with Copy link + Revoke, and
-   * lists the member roster with Remove. A reusable row is labelled
-   * "Reusable · N joined" from the daemon's `reusable` / `redemptionCount`;
+   * lists the member roster with Remove. A reusable row shows the join count
+   * ("N joined") from the daemon's `reusable` / `redemptionCount`;
    * a daemon that predates those fields (every link single-use) shows the
    * pinned presentation for every row. Gated on a forge connection: members
    * are identified by their GitHub or GitLab account, so a daemon with neither
@@ -437,7 +437,7 @@
   }
 
   /**
-   * The row's secondary line: reuse + join count for a reusable link combined
+   * The row's secondary line: the join count for a reusable link combined
    * with the expiry through the catalog (`_reusableDetail_label`), so each
    * locale owns the separator and order; the expiry alone otherwise.
    */

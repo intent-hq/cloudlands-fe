@@ -384,16 +384,13 @@ describe('ShareWorkspaceDialog — roster and invites', () => {
       'inv-legacy',
     ]);
     const details = screen.getAllByTestId('share-invite-detail').map((d) => d.textContent ?? '');
-    expect(details[0]).toContain('Reusable');
     expect(details[0]).toContain('2 joined');
     expect(details[0]).toMatch(/Expires/);
     // A single redemption takes the singular form.
     expect(details[1]).toContain('1 joined');
     expect(details[1]).toMatch(/Expires/);
-    expect(details[2]).not.toContain('Reusable');
     expect(details[2]).toMatch(/Expires/);
     // A daemon without the reusable fields: every link is single-use.
-    expect(details[3]).not.toContain('Reusable');
     expect(details[3]).toMatch(/Expires/);
     // Revoke stays available on the reusable rows (and the legacy unpinned one).
     expect(

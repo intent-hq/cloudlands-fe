@@ -21,7 +21,8 @@ on:
   # skipped on the PR and was ejected three times). test-playwright (the
   # root `test/*.spec.ts` suite via playwright.config.ts) follows the same
   # shape: always on merge_group, and on pull_request only when the diff
-  # touches test/** or playwright.config.ts (release-fast-path's
+  # touches test/**, playwright.config.ts, or the playwright/*-spec-pattern.mjs
+  # modules it reads (release-fast-path's
   # root_playwright_required output, computed from the same base..head
   # diff); otherwise it skips on pull_request and the gate accepts that skip
   # only because root_playwright_required says so. Merge groups are created
@@ -70,7 +71,8 @@ jobs:
   # additionally never runs on pull_request at all, and test-ct /
   # test-playwright run on pull_request only when release-fast-path's
   # ct_required / root_playwright_required output is 'true' — the diff
-  # touches a CT-contract path / test/** or playwright.config.ts — and
+  # touches a CT-contract path / test/** or the root Playwright config and
+  # its spec-pattern modules — and
   # always on merge_group; see their job comments)
   # — EXCEPT the
   # gate, which deliberately still runs on fork PRs so the required "CI
@@ -389,8 +391,9 @@ jobs:
   # is computed in the queue too but is informational there: test-ct's `if:`
   # runs it on every merge_group entry regardless, unless fast_path is 'true'.
   # root_playwright_required is the same idea for the root Playwright suite
-  # (test-playwright): 'true' when the diff touches test/** or
-  # playwright.config.ts, computed inline from the same base..head diff with
+  # (test-playwright): 'true' when the diff touches test/**,
+  # playwright.config.ts, or the playwright/*-spec-pattern.mjs modules it
+  # reads, computed inline from the same base..head diff with
   # the same fail-safe (a git failure requires the suite), and likewise
   # informational in the queue.
   release-fast-path:
@@ -454,10 +457,12 @@ jobs:
           set -euo pipefail
           # The root suite (playwright.config.ts: test/**/*.spec.ts) is
           # required on pull_request when the diff touches the specs, their
-          # fixtures / snapshots / harness helpers (all under test/), or the
-          # config itself. Same base..head diff and flags as
-          # ct-contract-paths.mjs. Fail-safe: a git failure requires the
-          # suite, never skips it.
+          # fixtures / snapshots / harness helpers (all under test/), the
+          # config itself, or the playwright/*-spec-pattern.mjs modules the
+          # config reads its testDir/testMatch/testIgnore from (the same set
+          # scripts/verify-changed.mjs selects `playwright-full` for). Same
+          # base..head diff and flags as ct-contract-paths.mjs. Fail-safe: a
+          # git failure requires the suite, never skips it.
           if ! changed=$(git diff --name-only --no-renames --diff-filter=ACMD "$BASE_SHA" HEAD); then
             echo "git diff failed — requiring the root Playwright suite (fail-safe)"
             echo "root_playwright_required=true" >> "$GITHUB_OUTPUT"
@@ -466,7 +471,7 @@ jobs:
           # grep must drain its whole input: with `-q` it exits on the first
           # match, printf takes SIGPIPE on a diff larger than the pipe buffer,
           # and pipefail turns a matched diff into the false branch.
-          if printf '%s\n' "$changed" | grep -E '^(test/|playwright\.config\.ts$)' >/dev/null; then
+          if printf '%s\n' "$changed" | grep -E '^(test/|playwright\.config\.ts$|playwright/(root|ct)-spec-pattern\.mjs$)' >/dev/null; then
             echo "root_playwright_required=true" | tee -a "$GITHUB_OUTPUT"
           else
             echo "root_playwright_required=false" | tee -a "$GITHUB_OUTPUT"
@@ -596,7 +601,7 @@ jobs:
               -e "await import('./$MODULE'); process.exit(0);" \
               2>&1) || EXIT_CODE=$?
 
-            if [ "$EXIT_CODE" -ne 0 ] && echo "$OUTPUT" | grep -q "Cannot find package 'svelte'"; then
+            if [ "$EXIT_CODE" -ne 0 ] && grep -q "Cannot find package 'svelte'" <<<"$OUTPUT"; then
               echo "FAIL: $MODULE"
               echo "$OUTPUT" | head -3
               FAILED=1
@@ -1150,7 +1155,8 @@ jobs:
   # install different Chromium builds and must never clobber each other in
   # a shared tinybox $HOME (see test-ct's per-slot paths note).
   # Event gating mirrors test-ct: every merge_group, plus pull_requests
-  # whose diff touches test/** or playwright.config.ts
+  # whose diff touches test/**, playwright.config.ts, or the
+  # playwright/*-spec-pattern.mjs modules it reads
   # (root_playwright_required from release-fast-path); the gate's
   # check_root_playwright accepts a pull_request skip only via that output
   # or fast_path. Before this job the suite had no automated path at all.
@@ -1427,7 +1433,8 @@ jobs:
   # has the identical check shape keyed on root_playwright_required
   # instead: on pull_request its skip is accepted only via fast_path ==
   # 'true' or root_playwright_required == 'false' (the diff touches neither
-  # test/** nor playwright.config.ts); 'true' or EMPTY rejects the skip.
+  # test/** nor the root Playwright config and its spec-pattern modules);
+  # 'true' or EMPTY rejects the skip.
   # Fork PRs stay red regardless: checks /
   # build-web / test skip on them with fast_path empty, which check_heavy
   # rejects.
@@ -1599,9 +1606,9 @@ jobs:
           # root_playwright_required — on merge_group it must succeed, or be
           # skipped ONLY via the release-PR fast path; on pull_request a skip
           # is accepted only via fast_path == 'true' or
-          # root_playwright_required == 'false' (neither test/** nor
-          # playwright.config.ts in the diff). 'true' or EMPTY rejects the
-          # skip: fail-safe, never fail-open.
+          # root_playwright_required == 'false' (neither test/** nor the
+          # root Playwright config and its spec-pattern modules in the diff).
+          # 'true' or EMPTY rejects the skip: fail-safe, never fail-open.
           if [ "${{ github.event_name }}" = "merge_group" ]; then
             check_root_playwright() {
               if [ "$2" = "success" ]; then
@@ -1624,7 +1631,7 @@ jobs:
                 return 0
               fi
               if [ "$2" = "skipped" ] && [ "$ROOT_PLAYWRIGHT_REQUIRED" = "false" ]; then
-                echo "$1 skipped — the diff touches neither test/** nor playwright.config.ts (root_playwright_required=false), accepted"
+                echo "$1 skipped — the diff touches neither test/** nor the root Playwright config and its spec-pattern modules (root_playwright_required=false), accepted"
                 return 0
               fi
               echo "$1 result '$2' not acceptable (root_playwright_required='$ROOT_PLAYWRIGHT_REQUIRED', fast_path='$FAST_PATH')"
