@@ -216,6 +216,46 @@ test('keeps the regular Aurora clipped during reduced-motion streaming transitio
   await expect(aurora).toHaveCount(0);
 });
 
+for (const zoom of [1, 2]) {
+  test(`detects a corner paint leak under the dark scroll fade at ${zoom * 100}%`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(ChatPanelComposerGeometryHost, {
+      props: { theme: 'dark', width: 180, streaming: true, zoom },
+    });
+    const panel = component.locator('.panel');
+    const aurora = component.getByTestId('composer-aurora-host');
+    await expect(aurora).toBeVisible();
+    await expect(component.getByTestId('panel-workspace-inset')).not.toHaveCSS(
+      'mask-image',
+      'none',
+    );
+    await applyAuroraPaintProbe(aurora);
+    const clipped = await samplePanelBottomPixels(panel);
+    clipped.outsideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(false));
+    clipped.insideCorners.forEach((corner) => expect(isPaintProbe(corner)).toBe(true));
+
+    // Deliberately break both production clips while leaving the real scroll fade
+    // active. The oracle must reject this leak, not merely accept the healthy case.
+    await panel.evaluate((node) => {
+      (node as HTMLElement).style.setProperty('--panel-shell-radius', '0px');
+    });
+    try {
+      const leaking = await samplePanelBottomPixels(panel);
+      leaking.outsideCorners.forEach((corner, index) => {
+        expect(isPaintProbe(corner)).toBe(true);
+        expect(colorDistance(corner, clipped.outsideCorners[index])).toBeGreaterThan(100);
+      });
+    } finally {
+      await panel.evaluate((node) => {
+        (node as HTMLElement).style.removeProperty('--panel-shell-radius');
+      });
+    }
+  });
+}
+
 test('keeps transcript suggestions above the composer while resizing into compact mode', async ({
   mount,
 }) => {
