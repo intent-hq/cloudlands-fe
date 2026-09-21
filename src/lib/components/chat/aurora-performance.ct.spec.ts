@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import Preview from './aurora-performance.preview.svelte';
 
 for (const pixelRatio of ['native', 0.5] as const) {
