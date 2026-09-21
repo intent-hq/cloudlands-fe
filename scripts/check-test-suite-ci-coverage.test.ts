@@ -1,5 +1,5 @@
-// @verify-changed-triggers: .github/workflows/*.yml, package.json, **/vitest*.config.*,
-//   **/playwright*.config.*, scripts/*.mjs, scripts/*.ts
+// @verify-changed-triggers: .github/workflows/*.{yml,yaml}, package.json, **/vitest*.config.*,
+//   **/playwright*.config.*, scripts/**
 // @vitest-environment node
 
 /**
@@ -8,13 +8,15 @@
  * A suite is a Vitest or Playwright config file (`vitest*.config.*`,
  * `playwright*.config.*`) anywhere in the package. It is covered when some
  * workflow `run:` step reaches it — directly, or through the `package.json`
- * scripts graph (`pnpm run <s>`, `pnpm <s>`, `node scripts/pnpm-run.mjs <s>`,
- * expanded transitively) — by naming the config (`--config=X`, `--config X`,
- * `-c X`), by running the runner on its default config (`vitest` →
- * `vitest.config.*`, `playwright test` → `playwright.config.*`), or by
+ * scripts graph (`pnpm run <s> [args]`, `pnpm <s> [args]`,
+ * `node scripts/pnpm-run.mjs <s> [args]`, expanded transitively with the
+ * forwarded args appended, as pnpm does) — by naming the config (`--config=X`,
+ * `--config X`, `-c X`), by running the runner on its default config (`vitest`
+ * → `vitest.config.*`, `playwright test` → `playwright.config.*`), or by
  * launching a local script (`node|tsx scripts/<file>`) whose source names the
- * config basename. Anything else needs an `ALLOWLIST` entry with a reason, and
- * a stale entry fails too.
+ * config basename. Shell comments never count; folded (`>`) bodies and `\`
+ * line continuations are joined before matching. Anything else needs an
+ * `ALLOWLIST` entry with a reason, and a stale entry fails too.
  *
  * The root Playwright suite sat behind `test:playwright` with no workflow step
  * for months and rotted unobserved: cloudlands-fe#2709 re-wired it and found 11
@@ -34,15 +36,24 @@ const PACKAGE_JSON_PATH = 'package.json';
 const SUITE_CONFIG = /(?:^|\/)(vitest|playwright)[^/]*\.config\.[^/]+$/;
 const PNPM_RUN_WRAPPER = 'scripts/pnpm-run.mjs';
 const RUN_STEP = /^(\s*)(?:-\s+)?run:(?:\s+(.*))?$/;
-const BLOCK_SCALAR = /^[|>][-+0-9]*\s*(?:#.*)?$/;
+const BLOCK_SCALAR = /^([|>])[-+0-9]*\s*(?:#.*)?$/;
+const SHELL_COMMENT = /(^|\s)#.*$/;
+const LINE_CONTINUATION = /\s*\\\n\s*/g;
+const FOLDED_NEWLINE = /([^\n])\n(?=[^\n])/g;
 const SCRIPT_NAME = /^[\w:.-]+$/;
 const SHELL_CHAIN = /\s*(?:&&|\|\||;|\n)\s*/;
 const LAUNCHER = /^scripts\/[\w./-]+$/;
 const RUNNERS = ['vitest', 'playwright'] as const;
+const MAX_SCRIPT_HOPS = 16;
 
 type Runner = (typeof RUNNERS)[number];
 type Scripts = Record<string, string>;
 type Reader = (path: string) => string | undefined;
+/** One package-script call with the args pnpm forwards to it. */
+interface Invocation {
+  name: string;
+  args: string[];
+}
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
@@ -64,7 +75,15 @@ function listSuiteConfigs(root = process.cwd()): string[] {
   return output.split('\0').filter(isSuiteConfig).sort();
 }
 
-/** The `run:` step bodies of a workflow file, shell comment lines dropped. */
+const unquote = (value: string) => value.replace(/^(['"])(.*)\1$/, '$2');
+
+/** A shell line without its trailing `# comment`; `''` for a comment-only line. */
+const stripComment = (line: string) => line.replace(SHELL_COMMENT, '').trim();
+
+/**
+ * The `run:` step bodies of a workflow file. Comments are dropped, a folded
+ * (`>`) body is joined on spaces, and `\` line continuations are joined.
+ */
 function workflowRunSteps(workflow: string): string[] {
   const lines = workflow.split('\n');
   const steps: string[] = [];
@@ -74,8 +93,9 @@ function workflowRunSteps(workflow: string): string[] {
     const match = RUN_STEP.exec(line);
     if (!match) continue;
     const value = (match[2] ?? '').trim();
-    if (!BLOCK_SCALAR.test(value)) {
-      steps.push(value.replace(/^(['"])(.*)\1$/, '$2'));
+    const block = BLOCK_SCALAR.exec(value);
+    if (!block) {
+      steps.push(stripComment(unquote(value)));
       continue;
     }
     const keyColumn = line.indexOf('run:');
@@ -85,9 +105,16 @@ function workflowRunSteps(workflow: string): string[] {
       const indent = next.length - next.trimStart().length;
       if (next.trim() !== '' && indent <= keyColumn) break;
       index += 1;
-      if (!next.trim().startsWith('#')) body.push(next.trim());
+      const text = stripComment(next);
+      if (text !== '' || next.trim() === '') body.push(text);
     }
-    steps.push(body.join('\n'));
+    const joined = body.join('\n');
+    steps.push(
+      (block[1] === '>' ? joined.replace(FOLDED_NEWLINE, '$1 ') : joined).replace(
+        LINE_CONTINUATION,
+        ' ',
+      ),
+    );
   }
   return steps;
 }
@@ -98,37 +125,52 @@ const commandSegments = (text: string) =>
     .map((segment) => segment.trim())
     .filter(Boolean);
 
-const tokens = (segment: string) =>
-  segment.split(/\s+/).map((token) => token.replace(/^(['"])(.*)\1$/, '$2'));
+const tokens = (segment: string) => segment.split(/\s+/).map(unquote);
 
-/** Package scripts a command invokes: `pnpm run <s>`, `pnpm <s>`, `node scripts/pnpm-run.mjs <s>`. */
-function invokedScripts(command: string, scripts: Scripts): string[] {
-  const names: string[] = [];
+/**
+ * Package scripts a command invokes — `pnpm run <s>`, `pnpm <s>`,
+ * `node scripts/pnpm-run.mjs <s>` — each with the trailing args pnpm forwards
+ * to the script (a separating `--` dropped).
+ */
+function invokedScripts(command: string, scripts: Scripts): Invocation[] {
+  const invocations: Invocation[] = [];
   for (const segment of commandSegments(command)) {
     const words = tokens(segment);
     for (let index = 0; index < words.length - 1; index += 1) {
       const word = words[index];
       const next = words[index + 1];
       if (word === 'pnpm' || word.endsWith(`/${PNPM_RUN_WRAPPER}`) || word === PNPM_RUN_WRAPPER) {
-        const target = next === 'run' && word === 'pnpm' ? words[index + 2] : next;
-        if (target && SCRIPT_NAME.test(target) && target in scripts) names.push(target);
+        const at = next === 'run' && word === 'pnpm' ? index + 2 : index + 1;
+        const target = words[at];
+        if (target && SCRIPT_NAME.test(target) && target in scripts) {
+          const args = words.slice(at + 1);
+          invocations.push({ name: target, args: args[0] === '--' ? args.slice(1) : args });
+        }
       }
     }
   }
-  return names;
+  return invocations;
 }
 
-/** `root` plus every script it reaches transitively through the scripts graph. */
-function scriptClosure(scripts: Scripts, roots: Iterable<string>): Set<string> {
+/**
+ * The command lines `steps` run, transitively: each step, then every package
+ * script it invokes with the forwarded args appended (as pnpm runs it), and so
+ * on through the scripts graph.
+ */
+function expandCommands(scripts: Scripts, steps: readonly string[]): string[] {
+  const commands: string[] = [];
   const seen = new Set<string>();
-  const queue = [...roots];
+  const queue = steps.map((command) => ({ command, hops: 0 }));
   while (queue.length) {
-    const name = queue.shift()!;
-    if (seen.has(name) || !(name in scripts)) continue;
-    seen.add(name);
-    queue.push(...invokedScripts(scripts[name], scripts));
+    const { command, hops } = queue.shift()!;
+    if (seen.has(command) || hops > MAX_SCRIPT_HOPS) continue;
+    seen.add(command);
+    commands.push(command);
+    for (const { name, args } of invokedScripts(command, scripts)) {
+      queue.push({ command: [scripts[name], ...args].join(' ').trim(), hops: hops + 1 });
+    }
   }
-  return seen;
+  return commands;
 }
 
 const runnerOf = (words: string[]): Runner | undefined => {
@@ -206,11 +248,8 @@ interface CoverageInput {
 
 /** Suites reached from any workflow `run:` step, directly or via the scripts graph. */
 function coveredSuites({ suites, workflows, scripts, readLauncher }: CoverageInput) {
-  const steps = workflows.flatMap(workflowRunSteps);
-  const roots = steps.flatMap((step) => invokedScripts(step, scripts));
-  const commands = [...steps, ...[...scriptClosure(scripts, roots)].map((name) => scripts[name])];
   const covered = new Set<string>();
-  for (const command of commands) {
+  for (const command of expandCommands(scripts, workflows.flatMap(workflowRunSteps))) {
     for (const suite of suitesReferencedBy(command, suites, readLauncher)) covered.add(suite);
   }
   return covered;
@@ -328,7 +367,7 @@ describe('test-suite CI coverage detector', () => {
     expect(isSuiteConfig('vite.config.mjs')).toBe(false);
   });
 
-  it('extracts inline and block-scalar run: steps, dropping comment lines', () => {
+  it('extracts inline and block-scalar run: steps, dropping comments and joining folded lines', () => {
     const workflow = [
       'steps:',
       '  - name: inline',
@@ -340,11 +379,15 @@ describe('test-suite CI coverage detector', () => {
       '      # shell comment naming pnpm run test:ct',
       '      pnpm install --frozen-lockfile',
       '',
-      '      pnpm run test:unit --shard=1/2',
+      '      pnpm run test:unit --shard=1/2  # was: pnpm run test:playwright',
       '  - name: folded',
       '    run: >',
       '      pnpm run dist:linux',
       '      --flag',
+      '  - name: continued',
+      '    run: |',
+      '      pnpm exec playwright test \\',
+      '        --config=playwright.manual.config.ts',
       '  - name: after',
       '    uses: actions/upload-artifact@v4',
     ].join('\n');
@@ -352,33 +395,64 @@ describe('test-suite CI coverage detector', () => {
       'pnpm run lint',
       'pnpm run check',
       'pnpm install --frozen-lockfile\n\npnpm run test:unit --shard=1/2',
-      'pnpm run dist:linux\n--flag',
+      'pnpm run dist:linux --flag',
+      'pnpm exec playwright test --config=playwright.manual.config.ts',
     ]);
   });
 
-  it('extracts package-script invocations through env and wrapper prefixes and trailing args', () => {
+  it('ignores a script named only in a trailing shell comment', () => {
+    const workflow = steps('echo skipped # pnpm run test:playwright');
+    expect(workflowRunSteps(workflow)).toEqual(['echo skipped']);
+    expect(coveredSuites(input(workflow)).size).toBe(0);
+  });
+
+  it('extracts package-script invocations through env and wrapper prefixes with forwarded args', () => {
     expect(
       invokedScripts(
         'xvfb-run -a pnpm run test:playwright:manual:browser-lifetime --workers=1 --reporter=list',
         scripts,
       ),
-    ).toEqual(['test:playwright:manual:browser-lifetime']);
-    expect(invokedScripts('CI=true corepack pnpm test:ct --grep x', scripts)).toEqual(['test:ct']);
+    ).toEqual([
+      { name: 'test:playwright:manual:browser-lifetime', args: ['--workers=1', '--reporter=list'] },
+    ]);
+    expect(invokedScripts('CI=true corepack pnpm test:ct --grep x', scripts)).toEqual([
+      { name: 'test:ct', args: ['--grep', 'x'] },
+    ]);
     expect(invokedScripts('node scripts/pnpm-run.mjs test:unit; pnpm run build', scripts)).toEqual([
-      'test:unit',
-      'build',
+      { name: 'test:unit', args: [] },
+      { name: 'build', args: [] },
+    ]);
+    expect(invokedScripts('pnpm run test:playwright -- --config x.ts', scripts)).toEqual([
+      { name: 'test:playwright', args: ['--config', 'x.ts'] },
     ]);
     expect(
       invokedScripts('pnpm install --frozen-lockfile && pnpm exec playwright install', scripts),
     ).toEqual([]);
   });
 
-  it('expands the scripts graph transitively', () => {
-    expect([...scriptClosure(scripts, ['validate:architecture'])].sort()).toEqual([
-      'lint:architecture',
-      'test:ui-invariants',
-      'validate:architecture',
+  it('expands the scripts graph transitively into the command lines pnpm runs', () => {
+    expect(expandCommands(scripts, ['pnpm run validate:architecture'])).toEqual([
+      'pnpm run validate:architecture',
+      scripts['validate:architecture'],
+      scripts['lint:architecture'],
+      scripts['test:ui-invariants'],
     ]);
+    expect(expandCommands(scripts, ['pnpm run test:playwright --project=chromium'])).toEqual([
+      'pnpm run test:playwright --project=chromium',
+      'playwright test --project=chromium',
+    ]);
+    const recursive: Scripts = { loop: 'pnpm run loop --again' };
+    expect(expandCommands(recursive, ['pnpm run loop']).length).toBeLessThanOrEqual(
+      MAX_SCRIPT_HOPS + 2,
+    );
+  });
+
+  it('applies a --config forwarded through pnpm run to the script, not its default', () => {
+    const forwarded = steps('pnpm run test:playwright --config=playwright.manual.config.ts');
+    expect([...coveredSuites(input(forwarded))]).toEqual(['playwright.manual.config.ts']);
+    const folded =
+      'jobs:\n  job:\n    steps:\n      - run: >\n          pnpm exec playwright test\n          --config=playwright.manual.config.ts\n';
+    expect([...coveredSuites(input(folded))]).toEqual(['playwright.manual.config.ts']);
   });
 
   it('resolves explicit, default, and launcher-named configs from one command line', () => {
