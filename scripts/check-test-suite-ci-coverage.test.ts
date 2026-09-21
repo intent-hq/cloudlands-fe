@@ -52,8 +52,10 @@ const RUNNERS = ['vitest', 'playwright'] as const;
 const WRAPPERS = new Set(['cross-env', 'env', 'xvfb-run', 'corepack']);
 /** Commands that run the bins named after them. */
 const BIN_HOSTS = new Set(['pnpm', 'npx', 'pnpx']);
-/** Commands that run their quoted arguments as command lines. */
-const NESTED_RUNNERS = new Set(['sh', 'bash', 'concurrently']);
+/** Shells whose `-c` operand is a command line; `concurrently` runs each quoted argument as one. */
+const SHELLS = new Set(['sh', 'bash']);
+/** A word the tokenizer would read back unchanged without quoting. */
+const PLAIN_WORD = /^[\w@%+=:,./-]+$/;
 const MAX_SCRIPT_HOPS = 16;
 
 type Runner = (typeof RUNNERS)[number];
@@ -135,8 +137,9 @@ function workflowRunSteps(workflow: string): string[] {
  * A command line as the words of each simple command it runs. Splits on `&&`,
  * `||`, `|`, `;`, `&` and newlines outside quotes (`2>&1` stays a word), drops
  * quotes, treats a word-initial `#` as a comment to end of line, and appends
- * the quoted arguments of a nested runner (`sh -c`, `concurrently`) parsed as
- * command lines of their own. Any other quoted string is one word of data.
+ * the command lines a nested runner executes — the `-c` operand of `sh`/`bash`,
+ * each quoted argument of `concurrently` — parsed as command lines of their
+ * own. Any other quoted string is one word of data.
  */
 function commandSegments(text: string): string[][] {
   const segments: Word[][] = [];
@@ -189,11 +192,32 @@ function commandSegments(text: string): string[][] {
 function expandNestedRunner(words: Word[]): string[][] {
   const texts = words.map((word) => word.text);
   const at = commandIndex(texts);
-  const nested = NESTED_RUNNERS.has(basename(texts[at] ?? ''))
-    ? words.slice(at + 1).filter((word) => word.quoted)
-    : [];
-  return [texts, ...nested.flatMap((word) => commandSegments(word.text))];
+  return [texts, ...nestedCommandLines(words, at).flatMap(commandSegments)];
 }
+
+/** The command lines a nested runner in executable position `at` executes. */
+function nestedCommandLines(words: Word[], at: number): string[] {
+  const program = basename(words[at]?.text ?? '');
+  if (program === 'concurrently') {
+    return words
+      .slice(at + 1)
+      .filter((word) => word.quoted)
+      .map((word) => word.text);
+  }
+  if (!SHELLS.has(program)) return [];
+  for (let index = at + 1; index < words.length; index += 1) {
+    const option = words[index].text;
+    if (!option.startsWith('-')) break;
+    if (option.startsWith('--')) continue;
+    if (option.includes('c')) return words[index + 1] ? [words[index + 1].text] : [];
+    if (option.includes('o')) index += 1;
+  }
+  return [];
+}
+
+/** `word` quoted so the tokenizer reads it back as the same single word. */
+const shellQuote = (word: string) =>
+  PLAIN_WORD.test(word) ? word : `'${word.replaceAll("'", String.raw`'\''`)}'`;
 
 /** Index of the word in executable position: past leading `VAR=value`s, wrappers and their flags. */
 function commandIndex(words: string[]): number {
@@ -267,7 +291,10 @@ function expandCommands(scripts: Scripts, steps: readonly string[]): string[] {
     seen.add(command);
     commands.push(command);
     for (const { name, args } of invokedScripts(command, scripts)) {
-      queue.push({ command: [scripts[name], ...args].join(' ').trim(), hops: hops + 1 });
+      queue.push({
+        command: [scripts[name], ...args.map(shellQuote)].join(' ').trim(),
+        hops: hops + 1,
+      });
     }
   }
   return commands;
@@ -519,7 +546,7 @@ describe('test-suite CI coverage detector', () => {
     ]);
   });
 
-  it('parses the quoted arguments of sh -c, bash -c and concurrently as command lines', () => {
+  it('parses the -c operand of sh/bash and the quoted arguments of concurrently as command lines', () => {
     expect(commandSegments('concurrently -k "pnpm run test:unit" "pnpm run test:ct"')).toEqual([
       ['concurrently', '-k', 'pnpm run test:unit', 'pnpm run test:ct'],
       ['pnpm', 'run', 'test:unit'],
@@ -530,8 +557,53 @@ describe('test-suite CI coverage detector', () => {
       ['echo', 'pnpm run test:ct'],
       ['pnpm', 'run', 'lint'],
     ]);
+    expect(commandSegments("bash --noprofile -eo pipefail -xc 'pnpm run lint'")).toEqual([
+      ['bash', '--noprofile', '-eo', 'pipefail', '-xc', 'pnpm run lint'],
+      ['pnpm', 'run', 'lint'],
+    ]);
     const nested = steps('sh -c "pnpm run test:playwright 2>&1 | tee out.log"');
     expect([...coveredSuites(input(nested))]).toEqual(['playwright.config.ts']);
+  });
+
+  it('treats only the -c operand as shell code: later operands are $0 and positional data', () => {
+    expect(commandSegments("bash -c 'echo skipped' 'pnpm run test:playwright'")).toEqual([
+      ['bash', '-c', 'echo skipped', 'pnpm run test:playwright'],
+      ['echo', 'skipped'],
+    ]);
+    expect(commandSegments("sh 'pnpm run test:playwright'")).toEqual([
+      ['sh', 'pnpm run test:playwright'],
+    ]);
+    expect(commandSegments("sh run.sh 'pnpm run test:playwright'")).toEqual([
+      ['sh', 'run.sh', 'pnpm run test:playwright'],
+    ]);
+    for (const run of [
+      "bash -c 'echo skipped' 'pnpm run test:playwright'",
+      "sh -e 'pnpm run test:playwright'",
+      "bash -c 'echo skipped' -- 'pnpm run test:playwright'",
+    ]) {
+      expect(coveredSuites(input(steps(run))).size, run).toBe(0);
+    }
+  });
+
+  it('keeps forwarded argument boundaries when re-parsing the expanded script', () => {
+    const grep =
+      'pnpm run test:playwright:manual:browser-lifetime --grep "nothing; pnpm run test:playwright"';
+    expect(expandCommands(scripts, [grep])).toEqual([
+      grep,
+      `${scripts['test:playwright:manual:browser-lifetime']} --grep 'nothing; pnpm run test:playwright'`,
+    ]);
+    expect([...coveredSuites(input(steps(grep)))]).toEqual(['playwright.manual.config.ts']);
+    for (const run of [
+      `pnpm run test:playwright:manual:browser-lifetime --grep "a && pnpm run test:playwright"`,
+      `pnpm run test:playwright:manual:browser-lifetime --grep 'x | pnpm run test:playwright'`,
+      `pnpm run test:playwright:manual:browser-lifetime --grep "it's #1 ; pnpm run test:playwright"`,
+      `pnpm run test:playwright:manual:browser-lifetime --grep "$(pnpm run test:playwright)"`,
+    ]) {
+      expect([...coveredSuites(input(steps(run)))], run).toEqual(['playwright.manual.config.ts']);
+    }
+    expect(shellQuote('--project=chromium')).toBe('--project=chromium');
+    expect(shellQuote("it's; x")).toBe(String.raw`'it'\''s; x'`);
+    expect(commandSegments(`echo ${shellQuote("it's; x")}`)).toEqual([['echo', "it's; x"]]);
   });
 
   it('finds the program in executable position past env assignments, wrappers and bin hosts', () => {
