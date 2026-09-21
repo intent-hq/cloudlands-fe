@@ -97,36 +97,68 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
 }
 
 /**
+ * Monotonic marker of the latest intent the slice reflects: a host selection,
+ * grant, PAT submit, cancel, logout, or a daemon transition for the selected
+ * host. Every writer captures the generation before its daemon round trip and
+ * drops its result when a newer intent has bumped it since — the slice then
+ * belongs to that intent, and host comparison alone cannot tell a stale read
+ * from a fresh one when both concern the same host.
+ */
+type IntentFence = { generation: number };
+
+function bumpIntent(fence: IntentFence): number {
+  fence.generation += 1;
+  return fence.generation;
+}
+
+function superseded(fence: IntentFence, generation: number): boolean {
+  return fence.generation !== generation;
+}
+
+type CompletionCheck = 'completed' | 'pending' | 'superseded';
+
+/**
  * Completes the flow when the daemon reports a configured credential and an
  * empty flow slot for `host`. The status is always read for the host the flow
  * targets: the daemon's default is its *persisted* host, which only follows a
  * successful connect, so an unscoped read during a grant against instance B
  * would report instance A's connection and complete the wrong flow.
  */
-function* checkAuthComplete(host: string): SagaGenerator<boolean> {
+function* checkAuthComplete(
+  host: string,
+  fence: IntentFence,
+  generation: number,
+): SagaGenerator<CompletionCheck> {
   try {
     const status = yield* call(readStatus, host);
+    if (superseded(fence, generation)) return 'superseded';
     if (status?.isConfigured === true && !status.deviceFlow) {
       const payload = statusPayload(status, host);
       yield* put(gitlabAuthCompleted({ user: payload.user, method: payload.method }));
-      return true;
+      return 'completed';
     }
   } catch (error) {
     logger.error('GitLab auth completion check failed', error);
   }
-  return false;
+  return 'pending';
 }
 
-function* pollForCompletion(intervalMs: number, host: string): SagaGenerator<void> {
+function* pollForCompletion(
+  intervalMs: number,
+  host: string,
+  fence: IntentFence,
+  generation: number,
+): SagaGenerator<void> {
   const startedAt = Date.now();
-  if (yield* call(checkAuthComplete, host)) return;
+  if ((yield* call(checkAuthComplete, host, fence, generation)) !== 'pending') return;
   while (true) {
     yield* delay(intervalMs);
+    if (superseded(fence, generation)) return;
     if (Date.now() - startedAt > AUTH_POLL_TIMEOUT_MS) {
       yield* put(setGitLabAuthError(m.gitlabAuth_service_timedOut_error()));
       return;
     }
-    if (yield* call(checkAuthComplete, host)) return;
+    if ((yield* call(checkAuthComplete, host, fence, generation)) !== 'pending') return;
   }
 }
 
@@ -147,16 +179,21 @@ function* waitForPollEnd(host: string): SagaGenerator<void> {
 }
 
 function* pollDeviceFlowWorker(
+  fence: IntentFence,
   action: ReturnType<typeof setGitLabDeviceFlowInfo>,
 ): SagaGenerator<void> {
   const [flow] = action.payload;
   if (flow === null) return;
+  // The poll belongs to the intent that produced the flow, not a new one.
+  const generation = fence.generation;
   const host = yield* selectGitLabAuthHost.effect();
   yield* race({
     completed: call(
       pollForCompletion,
       Math.max(flow.interval * 1_000, AUTH_POLL_INTERVAL_MS),
       host,
+      fence,
+      generation,
     ),
     cancelled: call(waitForPollEnd, host),
   });
@@ -164,18 +201,19 @@ function* pollDeviceFlowWorker(
 
 /**
  * Reads the status for `host` (the daemon's default when omitted) and hydrates
- * the slice. The write is dropped when the selection moved to a third host
- * while the read was in flight: that host's own read or connect owns the state
- * now, and a stale result must not put the previous host back.
+ * the slice. The write is dropped when a newer intent landed while the read
+ * was in flight: that intent's own read or connect owns the state now, and a
+ * stale result must not put the previous host or identity back.
  */
-function* initialize(host?: string): SagaGenerator<void> {
+function* initialize(
+  host: string | undefined,
+  fence: IntentFence,
+  generation: number,
+): SagaGenerator<void> {
   try {
-    const selectedAtStart = yield* selectGitLabAuthHost.effect();
+    const target = host ?? (yield* selectGitLabAuthHost.effect());
     const status = yield* call(readStatus, host);
-    if (!status) return;
-    const target = host ?? selectedAtStart;
-    const selectedNow = yield* selectGitLabAuthHost.effect();
-    if (!sameHost(selectedNow, selectedAtStart) && !sameHost(selectedNow, target)) return;
+    if (!status || superseded(fence, generation)) return;
     yield* put(setGitLabAuthStatus(statusPayload(status, target)));
     // A pending grant is resumed so a settings remount or client refresh does
     // not drop the in-flight code.
@@ -201,12 +239,17 @@ function* initialize(host?: string): SagaGenerator<void> {
   }
 }
 
-function* startDeviceAuth(host: string): SagaGenerator<void> {
+function* startDeviceAuth(
+  host: string,
+  fence: IntentFence,
+  generation: number,
+): SagaGenerator<void> {
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
     const params: ForgeConnectParams = { provider: PROVIDER, host, method: 'device' };
     const result = yield* call([forgeAuthClient, forgeAuthClient.connect], params);
+    if (superseded(fence, generation)) return;
     if (!result.success) {
       if (result.code === 'device-grant-unsupported') {
         yield* put(
@@ -237,6 +280,7 @@ function* startDeviceAuth(host: string): SagaGenerator<void> {
       }),
     );
   } catch (error) {
+    if (superseded(fence, generation)) return;
     const message =
       error instanceof Error ? error.message : m.gitlabAuth_service_startFailed_error();
     yield* put(setGitLabAuthError(message));
@@ -254,48 +298,60 @@ async function connectStagedToken(host: string, tokenRef: number): Promise<Forge
   return await forgeAuthClient.connect(params);
 }
 
-function* connectWithToken(host: string, tokenRef: number): SagaGenerator<void> {
+function* connectWithToken(
+  host: string,
+  tokenRef: number,
+  fence: IntentFence,
+  generation: number,
+): SagaGenerator<void> {
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
     const result = yield* call(connectStagedToken, host, tokenRef);
+    if (superseded(fence, generation)) return;
     if (!result.success) {
       yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_tokenRejected_error()));
       return;
     }
     // The PAT never round-trips; the daemon's status is the only identity source.
     const status = yield* call(readStatus, host);
+    if (superseded(fence, generation)) return;
     const payload = status ? statusPayload(status, host) : null;
     yield* put(
       gitlabAuthCompleted({ user: payload?.user ?? null, method: payload?.method ?? 'pat' }),
     );
   } catch (error) {
+    if (superseded(fence, generation)) return;
     const message =
       error instanceof Error ? error.message : m.gitlabAuth_service_tokenRejected_error();
     yield* put(setGitLabAuthError(message));
   }
 }
 
-function* cancelAuth(): SagaGenerator<void> {
+function* cancelAuth(fence: IntentFence, generation: number): SagaGenerator<void> {
   try {
     const host = yield* selectGitLabAuthHost.effect();
     const result = yield* call([forgeAuthClient, forgeAuthClient.cancelAuth], PROVIDER, host);
+    if (superseded(fence, generation)) return;
     if (result.success) yield* put(gitlabAuthCancelled());
     else yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_cancelFailed_error()));
   } catch (error) {
     logger.error('Failed to cancel GitLab auth', error);
+    if (superseded(fence, generation)) return;
     yield* put(setGitLabAuthError(m.gitlabAuth_service_cancelFailed_error()));
   }
 }
 
-function* logout(): SagaGenerator<void> {
+function* logout(fence: IntentFence, generation: number): SagaGenerator<void> {
   try {
     const host = yield* selectGitLabAuthHost.effect();
     const result = yield* call([forgeAuthClient, forgeAuthClient.revoke], PROVIDER, host);
+    if (superseded(fence, generation)) return;
     if (result.success) yield* put(gitlabLogoutCompleted());
     else yield* put(setGitLabAuthError(result.error || m.gitlabAuth_service_logoutFailed_error()));
   } catch (error) {
     logger.error('Failed to disconnect GitLab', error);
+    if (superseded(fence, generation)) return;
     yield* put(setGitLabAuthError(m.gitlabAuth_service_logoutFailed_error()));
   }
 }
@@ -306,93 +362,112 @@ function* logout(): SagaGenerator<void> {
  * knows which, so the configured identity is re-read rather than cleared: an
  * expired code must not discard an independently valid credential.
  */
-function* reconcileStatus(host: string): SagaGenerator<void> {
+function* reconcileStatus(
+  host: string,
+  fence: IntentFence,
+  generation: number,
+): SagaGenerator<void> {
   try {
     const status = yield* call(readStatus, host);
-    if (status) yield* put(setGitLabAuthStatus(statusPayload(status, host)));
+    if (!status || superseded(fence, generation)) return;
+    yield* put(setGitLabAuthStatus(statusPayload(status, host)));
   } catch (error) {
     logger.error('Failed to reconcile GitLab auth status', error);
   }
 }
 
 function* authChanged(
+  fence: IntentFence,
   status: ReturnType<typeof gitlabAuthChanged>['payload'][0],
   eventHost: string | undefined,
 ): SagaGenerator<void> {
   const host = yield* selectGitLabAuthHost.effect();
   // The daemon emits for every instance; only the selected one is reflected here.
   if (!eventForHost(eventHost, host)) return;
+  // A transition for the selected host outdates every read begun before it.
+  const generation = bumpIntent(fence);
   if (status === 'authorized') {
     yield* put(clearGitLabAuthError());
-    if (!(yield* call(checkAuthComplete, host))) {
+    if ((yield* call(checkAuthComplete, host, fence, generation)) === 'pending') {
       // The status probe failed or lags the event: report completion without an
       // identity and let the next initialize reconcile.
       yield* put(gitlabAuthCompleted({ user: null, method: null }));
-      yield* call(initialize, host);
+      yield* call(initialize, host, fence, generation);
     }
     return;
   }
   if (status === 'revoked') yield* put(gitlabLogoutCompleted());
   else if (status === 'expired') {
     yield* put(setGitLabAuthError(m.gitlabAuth_service_codeExpired_error()));
-    yield* call(reconcileStatus, host);
+    yield* call(reconcileStatus, host, fence, generation);
   } else if (status === 'denied')
     yield* put(setGitLabAuthError(m.gitlabAuth_service_denied_error()));
   else yield* put(setGitLabAuthError(m.gitlabAuth_service_failed_error()));
 }
 
 function* initializeGitLabAuthWorker(
+  fence: IntentFence,
   action: ReturnType<typeof initializeGitLabAuth>,
 ): SagaGenerator<void> {
   const [host] = action.payload ?? [];
-  yield* call(initialize, host);
+  yield* call(initialize, host, fence, bumpIntent(fence));
 }
 
 function* startGitLabDeviceAuthWorker(
+  fence: IntentFence,
   action: ReturnType<typeof startGitLabDeviceAuth>,
 ): SagaGenerator<void> {
-  yield* call(startDeviceAuth, action.payload[0]);
+  yield* call(startDeviceAuth, action.payload[0], fence, bumpIntent(fence));
 }
 
 function* connectGitLabWithTokenWorker(
+  fence: IntentFence,
   action: ReturnType<typeof connectGitLabWithToken>,
 ): SagaGenerator<void> {
   const { host, tokenRef } = action.payload;
-  yield* call(connectWithToken, host, tokenRef);
+  yield* call(connectWithToken, host, tokenRef, fence, bumpIntent(fence));
 }
 
 function* checkGitLabAuthStatusWorker(
+  fence: IntentFence,
   _action: ReturnType<typeof checkGitLabAuthStatus>,
 ): SagaGenerator<void> {
-  yield* call(checkAuthComplete, yield* selectGitLabAuthHost.effect());
+  // A focus re-check reads on behalf of the current intent; it is not a new one.
+  yield* call(checkAuthComplete, yield* selectGitLabAuthHost.effect(), fence, fence.generation);
 }
 
 function* cancelGitLabAuthWorker(
+  fence: IntentFence,
   _action: ReturnType<typeof cancelGitLabAuth>,
 ): SagaGenerator<void> {
-  yield* call(cancelAuth);
+  yield* call(cancelAuth, fence, bumpIntent(fence));
 }
 
-function* logoutGitLabWorker(_action: ReturnType<typeof logoutGitLab>): SagaGenerator<void> {
-  yield* call(logout);
+function* logoutGitLabWorker(
+  fence: IntentFence,
+  _action: ReturnType<typeof logoutGitLab>,
+): SagaGenerator<void> {
+  yield* call(logout, fence, bumpIntent(fence));
 }
 
 function* gitlabAuthChangedWorker(
+  fence: IntentFence,
   action: ReturnType<typeof gitlabAuthChanged>,
 ): SagaGenerator<void> {
   const [status, host] = action.payload;
-  yield* call(authChanged, status, host);
+  yield* call(authChanged, fence, status, host);
 }
 
 export function* gitlabAuthSaga(): SagaGenerator<void> {
+  const fence: IntentFence = { generation: 0 };
   // Only the latest initialize may hydrate: an older read (mount-time default
   // host) that resolved after a newer one would otherwise overwrite it.
-  yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker);
-  yield* takeEvery(startGitLabDeviceAuth, startGitLabDeviceAuthWorker);
-  yield* takeEvery(connectGitLabWithToken, connectGitLabWithTokenWorker);
-  yield* takeEvery(checkGitLabAuthStatus, checkGitLabAuthStatusWorker);
-  yield* takeEvery(cancelGitLabAuth, cancelGitLabAuthWorker);
-  yield* takeEvery(logoutGitLab, logoutGitLabWorker);
-  yield* takeEvery(gitlabAuthChanged, gitlabAuthChangedWorker);
-  yield* takeLatest(setGitLabDeviceFlowInfo, pollDeviceFlowWorker);
+  yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker, fence);
+  yield* takeEvery(startGitLabDeviceAuth, startGitLabDeviceAuthWorker, fence);
+  yield* takeEvery(connectGitLabWithToken, connectGitLabWithTokenWorker, fence);
+  yield* takeEvery(checkGitLabAuthStatus, checkGitLabAuthStatusWorker, fence);
+  yield* takeEvery(cancelGitLabAuth, cancelGitLabAuthWorker, fence);
+  yield* takeEvery(logoutGitLab, logoutGitLabWorker, fence);
+  yield* takeEvery(gitlabAuthChanged, gitlabAuthChangedWorker, fence);
+  yield* takeLatest(setGitLabDeviceFlowInfo, pollDeviceFlowWorker, fence);
 }
