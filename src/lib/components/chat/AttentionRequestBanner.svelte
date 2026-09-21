@@ -29,14 +29,15 @@
   });
 
   const attentionRequest$ = selectAgentAttentionRequest(agentIdStore);
+  const isBlocker = $derived($attentionRequest$?.kind === 'blocker');
 </script>
 
 {#if $attentionRequest$}
   <ChatNotice
-    title={$attentionRequest$.kind === 'blocker'
+    title={isBlocker
       ? m.chat_agentCard_attentionBlocker_label()
       : m.chat_agentCard_attentionDiscussion_label()}
-    tone={$attentionRequest$.kind === 'blocker' ? 'danger' : 'warning'}
+    tone={isBlocker ? 'danger' : 'warning'}
     reason={$attentionRequest$.reason}
     timestamp={$attentionRequest$.timestamp}
     announce={false}
