@@ -1,12 +1,53 @@
 import { describe, expect, it } from 'vitest';
-import { presencePersonRing, type PresenceCircle } from './presence-person';
+import {
+  presencePersonForgeHandle,
+  presencePersonLabel,
+  presencePersonNameWithForge,
+  presencePersonRing,
+  type PresenceCircle,
+} from './presence-person';
 
-const circle = (facts: Partial<Pick<PresenceCircle, 'owner' | 'online'>>): PresenceCircle => ({
+const circle = (
+  facts: Partial<Pick<PresenceCircle, 'owner' | 'online' | 'self' | 'login' | 'identity'>>,
+): PresenceCircle => ({
   principalId: 'p-1',
   login: 'p-1',
   displayName: null,
   avatarUrl: null,
   ...facts,
+});
+
+const github = { provider: 'github', host: 'github.com', externalUserId: '42' } as const;
+const gitlab = { provider: 'gitlab', host: 'gitlab.example.com', externalUserId: '7' } as const;
+
+describe('forge handle', () => {
+  it('names the login on its forge — GitHub by name, GitLab by instance — and nothing without an identity', () => {
+    expect(presencePersonForgeHandle(circle({ login: 'ada', identity: github }))).toBe(
+      '@ada on GitHub',
+    );
+    expect(presencePersonForgeHandle(circle({ login: 'ada', identity: gitlab }))).toBe(
+      '@ada on gitlab.example.com',
+    );
+    expect(presencePersonForgeHandle(circle({ login: 'ada' }))).toBeNull();
+  });
+
+  it('falls back to the bare forge for an identity without a resolved login', () => {
+    expect(presencePersonForgeHandle(circle({ login: null, identity: github }))).toBe('GitHub');
+    expect(presencePersonForgeHandle(circle({ login: null, identity: gitlab }))).toBe(
+      'GitLab (gitlab.example.com)',
+    );
+  });
+
+  it('appends the handle to the name, after the "(you)" mark, only when the row carries an identity', () => {
+    expect(presencePersonNameWithForge(circle({ login: 'ada', identity: gitlab }))).toBe(
+      'ada · @ada on gitlab.example.com',
+    );
+    expect(presencePersonNameWithForge(circle({ login: 'ada' }))).toBe('ada');
+    expect(presencePersonLabel(circle({ login: 'ada', self: true, identity: github }))).toBe(
+      'ada (you) · @ada on GitHub',
+    );
+    expect(presencePersonLabel(circle({ login: 'ada', self: true }))).toBe('ada (you)');
+  });
 });
 
 describe('presencePersonRing', () => {

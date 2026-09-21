@@ -194,6 +194,7 @@
   "settings_connections_identity_current_label": "{provider} {login}",
   "settings_connections_identity_choose_description": "Ambas forjas están conectadas. Elige qué cuenta te identifica ante los espacios que compartes y a los que te unes.",
   "settings_connections_identity_single_description": "Tu cuenta de {provider} te identifica ante los espacios que compartes y a los que te unes. Conecta otra forja para elegir entre ellas.",
+  "settings_connections_identity_unlinked_description": "Actualmente ninguna cuenta te identifica ante los espacios compartidos. Elige una forja conectada para vincular una.",
   "settings_connections_identity_switch_title": "¿Cambiar la identidad a {identity}?",
   "settings_connections_identity_switch_description": "Las nuevas invitaciones que crees y aceptes usarán esta cuenta. Las invitaciones ya vinculadas a tu cuenta actual siguen funcionando.",
   "settings_connections_identity_switch_confirm_label": "Cambiar identidad",
@@ -6548,5 +6549,8 @@
   "presence_typing_two_label": "{first} y {second} están escribiendo…",
   "presence_typing_many": "{first} y {count} más están escribiendo…",
   "presence_avatarStack_onlyYou_label": "Solo usted está aquí",
-  "presence_person_you_label": "{name} (usted)"
+  "presence_person_you_label": "{name} (usted)",
+  "presence_person_githubHandle_label": "{login} en GitHub",
+  "presence_person_gitlabHandle_label": "{login} en {host}",
+  "presence_person_forge_label": "{name} · {handle}"
 }

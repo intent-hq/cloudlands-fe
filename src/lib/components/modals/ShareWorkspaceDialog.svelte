@@ -15,10 +15,11 @@
    * are identified by their GitHub or GitLab account, so a daemon with neither
    * configured cannot mint invites and the dialog shows a connect-first state
    * instead. With both forges connected the pin field gains a provider
-   * selector (seeded from the host's `identity.provider`); with one, the pin
-   * is sent bare and the daemon resolves it on its own identity forge.
-   * Member rows carry the identity's forge icon and `@login` (GitLab rows
-   * name the instance).
+   * selector (seeded from the host's identity forge); with one, the pin is
+   * sent bare and the daemon resolves it on its own identity forge. Member
+   * rows carry the identity's forge icon and `@login` (GitLab rows name the
+   * instance). Everything provider-aware is gated on `identitySeamSupported`:
+   * against an older daemon the dialog is the GitHub-only one.
    *
    * Owner-only: `canManage` is false for a collaborator connection (or once
    * the daemon refused an owner-only method with `-32003`), and the dialog then
@@ -88,8 +89,16 @@
     /** The GitLab instance the host's connection targets (`pinHost` for a GitLab pin). */
     gitlabHost?: string;
     /**
-     * The host's `identity.provider` setting: which connected forge is its
-     * identity, `null` when implied. Seeds the pin's provider choice.
+     * The connected daemon serves the identity seam — `pinProvider` /
+     * `pinHost` on `workspace.invite.create` and `identity` on member rows.
+     * While false the dialog keeps the GitHub-only shapes: no provider
+     * selector, a bare pin, and a GitLab connection is not an identity forge.
+     */
+    identitySeamSupported?: boolean;
+    /**
+     * The forge that is the host's identity (its `principal.me` triple, else
+     * the daemon's implied default), `null` while unlinked. Seeds the pin's
+     * provider choice, as the daemon defaults `pinProvider` to it.
      */
     identityProvider?: IdentityProvider | null;
     /** Owner of the target workspace and not withheld by the daemon. */
@@ -151,6 +160,7 @@
     githubConnected = false,
     gitlabConnected = false,
     gitlabHost = '',
+    identitySeamSupported = false,
     identityProvider = null,
     canManage = false,
     members = [],
@@ -185,10 +195,12 @@
   const busy = $derived(
     revokingInviteId !== null || removingPrincipalId !== null || addingPrincipalId !== null,
   );
+  /** GitLab counts as an identity forge only once the daemon serves the seam. */
+  const gitlabIdentityConnected = $derived(identitySeamSupported && gitlabConnected);
   /** Any forge identity on the host lets it mint invites. */
-  const forgeConnected = $derived(githubConnected || gitlabConnected);
-  /** Both forges connected: the pin's forge is the owner's pick. */
-  const pinProviderChoosable = $derived(githubConnected && gitlabConnected);
+  const forgeConnected = $derived(githubConnected || gitlabIdentityConnected);
+  /** Both forges connected on a seam-capable daemon: the pin's forge is the owner's pick. */
+  const pinProviderChoosable = $derived(githubConnected && gitlabIdentityConnected);
   /** The forge the pin is resolved on; `null` while no forge is connected. */
   const pinProvider = $derived.by((): IdentityProvider | null => {
     if (!forgeConnected) return null;

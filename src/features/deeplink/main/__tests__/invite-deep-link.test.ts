@@ -103,12 +103,21 @@ function emitAuthChanged(status: string): void {
   }
 }
 
+/**
+ * The local sidecar's `client.hello` protocolVersion, read through
+ * `getConnectedDaemonProtocolVersion('local')`. Defaults to a daemon that
+ * serves the identity seam; a test sets an older one to exercise the gate.
+ */
+const localProtocolVersion = vi.fn<() => string | null>(() => '10.6'); // protocol-version-ok: fixture hello
+
 const openBackendWindow = vi.fn();
 vi.mock('../../../backend/main/backend.ipc', () => ({
   get openBackendWindow() {
     return openBackendWindow;
   },
   getBackendClient: () => ({ request: localRequest }),
+  getConnectedDaemonProtocolVersion: (connectionId: string) =>
+    connectionId === 'local' ? localProtocolVersion() : null,
   onBackendNotification: (handler: NotificationHandler) => {
     notificationListeners.add(handler);
     return () => notificationListeners.delete(handler);
@@ -2290,7 +2299,26 @@ describe('handleInviteDeepLink — GitLab identity', () => {
 
   beforeEach(() => {
     gitlabOnlyDaemon();
+    localProtocolVersion.mockReturnValue('10.6'); // protocol-version-ok: fixture hello
     prove.mockResolvedValue({ ...CREDENTIAL, principalId: 'gl:4711', login: 'gl-user' });
+  });
+
+  it('never probes GitLab on a local daemon that predates the identity seam: sign-in-required, no snippet', async () => {
+    localProtocolVersion.mockReturnValue('10.5'); // protocol-version-ok: pre-seam fixture hello
+    onLocal('github.connect', () => CONNECT);
+    onLocal('github.cancelAuth', () => ({ ok: true }));
+    const { prompt } = fakeConsent('cancel');
+    showInviteConsent.mockReturnValue(prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(localCalls('sourceControl.authStatus')).toEqual([]);
+    expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({
+      mode: 'sign-in-required',
+      reason: 'not-connected',
+    });
+    expect(prove).not.toHaveBeenCalled();
   });
 
   it('joins with a snippet proof: consent names GitLab, prove carries provider/host/proofId, snippet deleted', async () => {

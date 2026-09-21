@@ -194,6 +194,7 @@
   "settings_connections_identity_current_label": "{provider} {login}",
   "settings_connections_identity_choose_description": "Beide Forges sind verbunden. Wähle, welches Konto dich gegenüber den Workspaces ausweist, die du teilst und denen du beitrittst.",
   "settings_connections_identity_single_description": "Dein {provider}-Konto weist dich gegenüber den Workspaces aus, die du teilst und denen du beitrittst. Verbinde eine weitere Forge, um zwischen ihnen zu wählen.",
+  "settings_connections_identity_unlinked_description": "Derzeit weist dich kein Konto gegenüber geteilten Workspaces aus. Wähle eine verbundene Forge, um eines zu verknüpfen.",
   "settings_connections_identity_switch_title": "Identität zu {identity} wechseln?",
   "settings_connections_identity_switch_description": "Neue Einladungen, die du erstellst und annimmst, verwenden dieses Konto. Einladungen, die bereits an dein aktuelles Konto gebunden sind, funktionieren weiterhin.",
   "settings_connections_identity_switch_confirm_label": "Identität wechseln",
@@ -6548,5 +6549,8 @@
   "presence_typing_two_label": "{first} und {second} schreiben…",
   "presence_typing_many": "{first} und {count} weitere schreiben…",
   "presence_avatarStack_onlyYou_label": "Nur Sie sind hier",
-  "presence_person_you_label": "{name} (Sie)"
+  "presence_person_you_label": "{name} (Sie)",
+  "presence_person_githubHandle_label": "{login} auf GitHub",
+  "presence_person_gitlabHandle_label": "{login} auf {host}",
+  "presence_person_forge_label": "{name} · {handle}"
 }

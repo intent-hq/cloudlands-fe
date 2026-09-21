@@ -194,6 +194,7 @@
   "settings_connections_identity_current_label": "{provider} {login}",
   "settings_connections_identity_choose_description": "Both forges are connected. Choose which account identifies you to the workspaces you share and join.",
   "settings_connections_identity_single_description": "Your {provider} account identifies you to the workspaces you share and join. Connect another forge to choose between them.",
+  "settings_connections_identity_unlinked_description": "No account currently identifies you to shared workspaces. Choose a connected forge to link one.",
   "settings_connections_identity_switch_title": "Switch identity to {identity}?",
   "settings_connections_identity_switch_description": "New invites you create and accept will use this account. Invites already pinned to your current account keep working.",
   "settings_connections_identity_switch_confirm_label": "Switch identity",
@@ -6548,5 +6549,8 @@
   "presence_typing_two_label": "{first} and {second} are typing…",
   "presence_typing_many": "{first} and {count} others are typing…",
   "presence_avatarStack_onlyYou_label": "Only you here",
-  "presence_person_you_label": "{name} (you)"
+  "presence_person_you_label": "{name} (you)",
+  "presence_person_githubHandle_label": "{login} on GitHub",
+  "presence_person_gitlabHandle_label": "{login} on {host}",
+  "presence_person_forge_label": "{name} · {handle}"
 }

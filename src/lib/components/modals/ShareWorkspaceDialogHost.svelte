@@ -48,7 +48,8 @@
     selectGitLabAuthHost,
     selectGitLabAuthIsConfigured,
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
-  import { selectIdentityProvider } from '$store/renderer/slices/identity/identity-selectors';
+  import { selectEffectiveIdentityProvider } from '$store/renderer/slices/identity/identity-selectors';
+  import { selectDaemonSupportsIdentitySeam } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { searchGithubUsers } from '$store/renderer/slices/github-user-search/github-user-search-slice';
   import {
@@ -65,7 +66,8 @@
   const githubConnected$ = selectGitHubAuthIsAuthenticated();
   const gitlabConnected$ = selectGitLabAuthIsConfigured();
   const gitlabHost$ = selectGitLabAuthHost();
-  const identityProvider$ = selectIdentityProvider();
+  const identitySeamSupported$ = selectDaemonSupportsIdentitySeam();
+  const identityProvider$ = selectEffectiveIdentityProvider();
   const canManage$ = selectShareCanManage();
   const members$ = selectShareMembers();
   const invites$ = selectShareInvites();
@@ -104,6 +106,7 @@
   githubConnected={$githubConnected$}
   gitlabConnected={$gitlabConnected$}
   gitlabHost={$gitlabHost$}
+  identitySeamSupported={$identitySeamSupported$}
   identityProvider={$identityProvider$}
   canManage={$canManage$}
   members={$members$}

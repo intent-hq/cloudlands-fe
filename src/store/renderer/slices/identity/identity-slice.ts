@@ -7,6 +7,9 @@ export const IDENTITY_PROVIDER_SETTING_PATH = 'identity.provider';
 
 export const initialState: IdentityState = {
   provider: null,
+  currentIdentity: null,
+  currentLogin: null,
+  principalLoaded: false,
   loadStatus: 'idle',
   saving: false,
   error: null,
@@ -25,6 +28,15 @@ export const identityLoaded = createAction<[provider: IdentityProvider | null]>(
 /** Saga: the read failed (an older daemon without the setting reads as unset). */
 export const identityLoadFailed = createAction('identity/loadFailed');
 
+/**
+ * Saga: `principal.me` answered — the identity the daemon actually holds for
+ * this connection (`identity` omitted on the wire ⇒ `null`, unlinked) and its
+ * cached `login`.
+ */
+export const principalLoaded = createAction<
+  [identity: PrincipalIdentity | null, login: string | null]
+>('identity/principalLoaded');
+
 /** Trigger: write `identity.provider` via `settings.update` (re-keys the primary). */
 export const setIdentityProviderRequested = createAction<[provider: IdentityProvider]>(
   'identity/setProviderRequested',
@@ -41,8 +53,8 @@ export const identityProviderSaveFailed = createAction<[error: string]>(
 
 /**
  * `principal:identity-changed { principalId, identity | null }` arrived from
- * the daemon: the primary was re-keyed (or unlinked), so the mirrored
- * provider follows the new triple.
+ * the daemon: the primary was re-keyed (or unlinked). The triple is applied
+ * at once; the saga then re-reads `principal.me` for the new `login`.
  */
 export const identityChanged =
   createAction<[identity: PrincipalIdentity | null]>('identity/changed');
@@ -64,6 +76,12 @@ identityReducer.with(identityLoaded, (state, { payload: [provider] }) => ({
   loadStatus: 'loaded',
 }));
 identityReducer.with(identityLoadFailed, (state) => ({ ...state, loadStatus: 'error' }));
+identityReducer.with(principalLoaded, (state, { payload: [identity, login] }) => ({
+  ...state,
+  currentIdentity: identity,
+  currentLogin: login,
+  principalLoaded: true,
+}));
 identityReducer.with(setIdentityProviderRequested, (state) => ({
   ...state,
   saving: true,
@@ -82,5 +100,7 @@ identityReducer.with(identityProviderSaveFailed, (state, { payload: [error] }) =
 }));
 identityReducer.with(identityChanged, (state, { payload: [identity] }) => ({
   ...state,
-  provider: identity?.provider ?? null,
+  currentIdentity: identity,
+  currentLogin: identity ? state.currentLogin : null,
+  principalLoaded: true,
 }));

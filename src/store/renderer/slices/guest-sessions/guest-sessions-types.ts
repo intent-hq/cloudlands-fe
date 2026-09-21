@@ -10,6 +10,7 @@
  * Safe to import from any process.
  */
 
+import type { PrincipalIdentity } from '$features/workspace-sharing/types';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import type { WorkspaceRole } from '$shared/types';
 import type { Collection } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -28,12 +29,17 @@ export type {
  */
 export interface WorkspaceMember {
   principalId: string;
-  /** GitHub login; null for a principal without a resolved identity. */
+  /** Forge login; null for a principal without a resolved identity. */
   login: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   role: WorkspaceRole;
   addedAt: string;
+  /**
+   * The provider-neutral identity triple (`Principal.identity`); absent from
+   * a daemon that predates the identity seam or for an unlinked principal.
+   */
+  identity?: PrincipalIdentity;
 }
 
 /** `workspace.members.list` result. */

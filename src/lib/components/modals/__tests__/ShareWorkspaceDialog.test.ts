@@ -142,6 +142,18 @@ describe('ShareWorkspaceDialog — forge gate', () => {
     expect(onOpenConnections).toHaveBeenCalledTimes(1);
   });
 
+  it('treats a GitLab connection as no identity forge while the daemon lacks the identity seam', () => {
+    renderDialog({
+      githubConnected: false,
+      gitlabConnected: true,
+      gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: false,
+    });
+
+    expect(screen.getByTestId('share-github-required')).toBeTruthy();
+    expect(screen.queryByLabelText(/Restrict to a/)).toBeNull();
+  });
+
   it('lets a GitLab-only host share: free-text GitLab pin, no typeahead, bare login on submit', async () => {
     const onCreateInvite = vi.fn();
     const onSearchUsers = vi.fn();
@@ -149,6 +161,7 @@ describe('ShareWorkspaceDialog — forge gate', () => {
       githubConnected: false,
       gitlabConnected: true,
       gitlabHost: 'gitlab.example.com',
+      identitySeamSupported: true,
       onCreateInvite,
       onSearchUsers,
     });
@@ -171,7 +184,26 @@ describe('ShareWorkspaceDialog — pin forge (both forges connected)', () => {
     githubConnected: true,
     gitlabConnected: true,
     gitlabHost: 'gitlab.example.com',
+    identitySeamSupported: true,
   };
+
+  it('keeps the GitHub-only pin (no selector, bare login) against a daemon without the identity seam', async () => {
+    const onCreateInvite = vi.fn();
+    renderDialog({
+      ...both,
+      identitySeamSupported: false,
+      identityProvider: 'gitlab',
+      onCreateInvite,
+    });
+
+    expect(screen.queryByTestId('share-pin-provider-trigger')).toBeNull();
+    const pin = screen.getByLabelText(/Restrict to a GitHub user/) as HTMLInputElement;
+    await fireEvent.input(pin, { target: { value: 'dave' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Create invite link/ }));
+
+    // No `pinProvider` / `pinHost` ride to a daemon that would reject them.
+    expect(onCreateInvite).toHaveBeenCalledWith('dave');
+  });
 
   async function pickForge(name: RegExp) {
     const trigger = screen.getByTestId('share-pin-provider-trigger');

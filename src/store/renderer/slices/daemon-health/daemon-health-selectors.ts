@@ -116,6 +116,40 @@ export const selectDaemonSupportsSourceControlAuth = store.createSelector((state
 );
 
 /**
+ * First protocol version (major, minor) whose daemon serves the
+ * provider-neutral identity seam: `Principal.identity` on `principal.me` /
+ * `workspace.members.list`, the `identity.provider` setting and
+ * `principal:identity-changed`, `pinProvider` / `pinHost` on
+ * `workspace.invite.create`, and `sourceControl.identityProof.*` with the
+ * `provider` / `host` / `proofId` params of `invite.prove`.
+ */
+const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 6 } as const;
+
+/**
+ * True when a daemon reporting `protocolVersion` serves the identity seam
+ * above. Same comparison rules as `supportsSourceControlAuthProtocol`.
+ */
+export function supportsIdentitySeamProtocol(protocolVersion?: string | null): boolean {
+  if (!protocolVersion) return false;
+  const match = protocolVersion.trim().match(/^([0-9]+)\.([0-9]+)(?:\.[0-9]+)?$/);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const { major: minMajor, minor: minMinor } = IDENTITY_SEAM_MIN_PROTOCOL;
+  return major > minMajor || (major === minMajor && minor >= minMinor);
+}
+
+/**
+ * True when the connected daemon (per the last system.status poll) serves the
+ * identity seam. False before the first poll — the identity choice, provider
+ * pins and provider-aware member rows stay hidden until the daemon has proven
+ * the capability, and the GitHub-only shapes are sent instead.
+ */
+export const selectDaemonSupportsIdentitySeam = store.createSelector((state): boolean =>
+  supportsIdentitySeamProtocol(state.daemonHealth.stats?.protocolVersion),
+);
+
+/**
  * Whether a transport reaches a daemon on THIS machine (PROTOCOL §5.14
  * locality: UDS ⇒ local, WebSocket ⇒ remote). A `null` transport — no
  * backend:status/backend:get-status info yet — is treated as local: the only

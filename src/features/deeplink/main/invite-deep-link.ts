@@ -90,6 +90,7 @@ import type { InviteFailureReason, InviteNoticeShowPayload } from '$shared/ipc/i
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { isTcAddress } from '$shared/tc-address';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
 import { parseInviteUri } from '$shared/utils/invite-uri';
 import { showInviteConsent, type InviteConsentPrompt } from '../../../main/invite-consent';
@@ -98,10 +99,12 @@ import { getMainWindow } from '../../../main/state';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
 import {
   getBackendClient,
+  getConnectedDaemonProtocolVersion,
   onBackendNotification,
   openBackendWindow,
 } from '../../backend/main/backend.ipc';
 import { PinMismatchError, normalizeFingerprint } from '../../backend/main/backend-connection';
+import { protocolVersionAtLeast } from '../../backend/main/protocol-compat';
 import {
   InviteRpcError,
   InviteTransportError,
@@ -804,14 +807,31 @@ interface ForgeAuthStatusResult {
 }
 
 /**
+ * First protocol version (major, minor) whose daemon serves the identity
+ * seam: `sourceControl.identityProof.*` and the `provider` / `host` /
+ * `proofId` params of `invite.prove` a GitLab proof needs. The GUEST's own
+ * daemon must serve it — the proof is made there — so the probe is gated on
+ * the local sidecar's hello, never on the host's.
+ */
+const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 6 } as const;
+
+/**
  * The forge account the guest's own daemon is signed in as: GitHub when it
  * has a GitHub connection, else GitLab (the instance the daemon's connection
- * targets), else `null`. A daemon that predates `sourceControl.*` fails the
- * GitLab probe, which reads as "not connected".
+ * targets), else `null`. The GitLab probe is only made against a local daemon
+ * that serves the identity seam: an older one cannot publish a snippet proof,
+ * so a GitLab-only guest on it reads as "not connected" and is sent to the
+ * GitHub sign-in.
  */
 async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity | null> {
   const githubLogin = await readLocalLogin(client);
   if (githubLogin !== null) return { provider: 'github', host: GITHUB_HOST, login: githubLogin };
+  const seamSupported = protocolVersionAtLeast(
+    getConnectedDaemonProtocolVersion(LOCAL_CONNECTION_ID),
+    IDENTITY_SEAM_MIN_PROTOCOL.major,
+    IDENTITY_SEAM_MIN_PROTOCOL.minor,
+  );
+  if (!seamSupported) return null;
   try {
     const result = await client.request<ForgeAuthStatusResult>('sourceControl.authStatus', {
       provider: 'gitlab',

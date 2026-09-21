@@ -194,6 +194,7 @@
   "settings_connections_identity_current_label": "{provider} {login}",
   "settings_connections_identity_choose_description": "両方のフォージが接続されています。共有・参加するワークスペースであなたを識別するアカウントを選択してください。",
   "settings_connections_identity_single_description": "共有・参加するワークスペースでは {provider} アカウントであなたが識別されます。別のフォージを接続すると選択できるようになります。",
+  "settings_connections_identity_unlinked_description": "現在、共有ワークスペースであなたを識別するアカウントはありません。接続済みのフォージを選択してリンクしてください。",
   "settings_connections_identity_switch_title": "アイデンティティを {identity} に切り替えますか？",
   "settings_connections_identity_switch_description": "今後作成・承諾する招待はこのアカウントを使用します。現在のアカウントに限定済みの招待は引き続き有効です。",
   "settings_connections_identity_switch_confirm_label": "アイデンティティを切り替える",
@@ -6548,5 +6549,8 @@
   "presence_typing_two_label": "{first}と{second}が入力中…",
   "presence_typing_many": "{first}と他{count}人が入力中…",
   "presence_avatarStack_onlyYou_label": "ここにいるのはあなただけです",
-  "presence_person_you_label": "{name}（あなた）"
+  "presence_person_you_label": "{name}（あなた）",
+  "presence_person_githubHandle_label": "GitHub の {login}",
+  "presence_person_gitlabHandle_label": "{host} の {login}",
+  "presence_person_forge_label": "{name}・{handle}"
 }

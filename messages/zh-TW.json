@@ -194,6 +194,7 @@
   "settings_connections_identity_current_label": "{provider} {login}",
   "settings_connections_identity_choose_description": "兩個程式碼託管平台都已連線。請選擇在你分享和加入的工作區中用來識別你的帳戶。",
   "settings_connections_identity_single_description": "在你分享和加入的工作區中，由你的 {provider} 帳戶識別你。連線另一個程式碼託管平台後即可在兩者之間選擇。",
+  "settings_connections_identity_unlinked_description": "目前沒有帳戶在分享的工作區中識別你。選擇一個已連線的程式碼託管平台以連結帳戶。",
   "settings_connections_identity_switch_title": "要將身分切換為 {identity} 嗎？",
   "settings_connections_identity_switch_description": "你之後建立和接受的邀請將使用此帳戶。已限定至目前帳戶的邀請仍然有效。",
   "settings_connections_identity_switch_confirm_label": "切換身分",
@@ -6548,5 +6549,8 @@
   "presence_typing_two_label": "{first} 和 {second} 正在輸入…",
   "presence_typing_many": "{first} 和另外 {count} 人正在輸入…",
   "presence_avatarStack_onlyYou_label": "這裡只有你",
-  "presence_person_you_label": "{name}（你）"
+  "presence_person_you_label": "{name}（你）",
+  "presence_person_githubHandle_label": "GitHub 上的 {login}",
+  "presence_person_gitlabHandle_label": "{host} 上的 {login}",
+  "presence_person_forge_label": "{name} · {handle}"
 }

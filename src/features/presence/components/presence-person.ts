@@ -37,14 +37,43 @@ export function presencePersonRing(person: PresenceCircle): PresenceRing | null 
   return person.online === true ? 'member' : null;
 }
 
-export function presencePersonName(person: PresenceIdentity): string {
+function presencePersonName(person: PresenceIdentity): string {
   return person.displayName?.trim() || person.login?.trim() || m.presence_person_unknown_label();
 }
 
-/** The name, marked "(you)" for this window's own principal. */
-export function presencePersonLabel(person: PresenceCircle): string {
+/**
+ * The person's handle on their identity forge — "@login on GitHub", "@login
+ * on <gitlab host>", the bare forge without a login — or `null` for a person
+ * whose row carries no identity (a roster-only person, an older daemon).
+ */
+export function presencePersonForgeHandle(person: PresenceIdentity): string | null {
+  const identity = person.identity;
+  if (!identity) return null;
+  const login = person.login?.trim();
+  if (identity.provider === 'gitlab') {
+    return login
+      ? m.presence_person_gitlabHandle_label({ login: `@${login}`, host: identity.host })
+      : m.workspace_share_pinProvider_gitlab_label({ host: identity.host });
+  }
+  return login
+    ? m.presence_person_githubHandle_label({ login: `@${login}` })
+    : m.workspace_share_pinProvider_github_label();
+}
+
+/** The name followed by the forge handle when the row carries an identity. */
+export function presencePersonNameWithForge(person: PresenceIdentity): string {
   const name = presencePersonName(person);
-  return person.self ? m.presence_person_you_label({ name }) : name;
+  const handle = presencePersonForgeHandle(person);
+  return handle ? m.presence_person_forge_label({ name, handle }) : name;
+}
+
+/** The name (with the forge handle when known), marked "(you)" for this window's own principal. */
+export function presencePersonLabel(person: PresenceCircle): string {
+  const name = person.self
+    ? m.presence_person_you_label({ name: presencePersonName(person) })
+    : presencePersonName(person);
+  const handle = presencePersonForgeHandle(person);
+  return handle ? m.presence_person_forge_label({ name, handle }) : name;
 }
 
 export function presencePersonInitial(person: PresenceIdentity): string {

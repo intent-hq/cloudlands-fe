@@ -194,6 +194,7 @@
   "settings_connections_identity_current_label": "{provider} {login}",
   "settings_connections_identity_choose_description": "두 포지가 모두 연결되어 있습니다. 공유하거나 참여하는 워크스페이스에서 나를 식별할 계정을 선택하세요.",
   "settings_connections_identity_single_description": "공유하거나 참여하는 워크스페이스에서는 {provider} 계정으로 나를 식별합니다. 다른 포지를 연결하면 둘 중에서 선택할 수 있습니다.",
+  "settings_connections_identity_unlinked_description": "현재 공유 워크스페이스에서 나를 식별하는 계정이 없습니다. 연결된 포지를 선택하여 계정을 연결하세요.",
   "settings_connections_identity_switch_title": "ID를 {identity}(으)로 전환할까요?",
   "settings_connections_identity_switch_description": "앞으로 만들고 수락하는 초대는 이 계정을 사용합니다. 현재 계정에 이미 고정된 초대는 계속 유효합니다.",
   "settings_connections_identity_switch_confirm_label": "ID 전환",
@@ -6548,5 +6549,8 @@
   "presence_typing_two_label": "{first}님과 {second}님이 입력 중…",
   "presence_typing_many": "{first}님 외 {count}명이 입력 중…",
   "presence_avatarStack_onlyYou_label": "여기에는 나만 있습니다",
-  "presence_person_you_label": "{name} (나)"
+  "presence_person_you_label": "{name} (나)",
+  "presence_person_githubHandle_label": "GitHub의 {login}",
+  "presence_person_gitlabHandle_label": "{host}의 {login}",
+  "presence_person_forge_label": "{name} · {handle}"
 }

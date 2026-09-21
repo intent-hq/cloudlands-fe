@@ -95,7 +95,7 @@
   import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
   import {
-    presencePersonName,
+    presencePersonNameWithForge,
     type PresenceCircle,
     type PresenceCircleAction,
   } from '$features/presence/components/presence-person';
@@ -459,7 +459,8 @@
     const wsId = $workspace?.id ? String($workspace.id) : undefined;
     const share = shareAction?.onClick ?? null;
     return (person: PresenceCircle): PresenceCircleAction => {
-      const name = presencePersonName(person);
+      // The hover names the person's forge too: "Ada · @ada on GitHub · on Coordinator".
+      const name = presencePersonNameWithForge(person);
       const target = targets[person.principalId];
       if (target?.kind === 'agent') {
         const agent = agents.find((s) => String(s.id) === target.agentId)?.name ?? '';

@@ -21,7 +21,9 @@ import {
   selectSidecarRunLogError,
   selectDaemonVersionComparison,
   selectDaemonStatusCheckFailure,
+  selectDaemonSupportsIdentitySeam,
   selectDaemonSupportsSourceControlAuth,
+  supportsIdentitySeamProtocol,
   supportsSourceControlAuthProtocol,
 } from './daemon-health-selectors';
 import { initialState } from './daemon-health-slice';
@@ -257,5 +259,33 @@ describe('supportsSourceControlAuthProtocol / selectDaemonSupportsSourceControlA
     const empty = { daemonHealth: { ...initialState } } as unknown as StoreState;
     expect(selectDaemonSupportsSourceControlAuth.select(empty)).toBe(false);
     expect(selectDaemonSupportsSourceControlAuth.select(protocolState(undefined))).toBe(false);
+  });
+
+  describe('supportsIdentitySeamProtocol / selectDaemonSupportsIdentitySeam', () => {
+    it('accepts the first version carrying the identity seam and every later one', () => {
+      expect(supportsIdentitySeamProtocol('10.6')).toBe(true);
+      expect(supportsIdentitySeamProtocol('10.6.1')).toBe(true);
+      expect(supportsIdentitySeamProtocol('10.12')).toBe(true);
+      expect(supportsIdentitySeamProtocol('11.0')).toBe(true);
+    });
+
+    it('rejects the sourceControl.* auth version and everything earlier', () => {
+      expect(supportsIdentitySeamProtocol('10.5')).toBe(false);
+      expect(supportsIdentitySeamProtocol('10.5.9')).toBe(false);
+      expect(supportsIdentitySeamProtocol('9.14')).toBe(false);
+      expect(supportsIdentitySeamProtocol('10')).toBe(false);
+      expect(supportsIdentitySeamProtocol(undefined)).toBe(false);
+      expect(supportsIdentitySeamProtocol(null)).toBe(false);
+      expect(supportsIdentitySeamProtocol('dev-build')).toBe(false);
+      expect(supportsIdentitySeamProtocol('10.6garbage')).toBe(false);
+    });
+
+    it('reads stats.protocolVersion and is unsupported before the first poll', () => {
+      expect(selectDaemonSupportsIdentitySeam.select(protocolState('10.6'))).toBe(true);
+      expect(selectDaemonSupportsIdentitySeam.select(protocolState('10.5'))).toBe(false);
+      const empty = { daemonHealth: { ...initialState } } as unknown as StoreState;
+      expect(selectDaemonSupportsIdentitySeam.select(empty)).toBe(false);
+      expect(selectDaemonSupportsIdentitySeam.select(protocolState(undefined))).toBe(false);
+    });
   });
 });
