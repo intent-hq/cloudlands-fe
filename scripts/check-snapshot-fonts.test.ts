@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ROOT_IGNORED_SPEC_NAMES, isRootSpec } from '../playwright/root-spec-pattern.mjs';
 import {
   CT_FONT_IMPORT,
   CT_HARNESS,
@@ -19,7 +20,6 @@ import {
   harnessImportsFont,
   importsFontHelper,
   isCtSpec,
-  isRootSpec,
 } from './check-snapshot-fonts.mjs';
 
 const scriptPath = join(process.cwd(), 'scripts/check-snapshot-fonts.mjs');
@@ -254,7 +254,7 @@ describe('font load detection', () => {
 });
 
 describe('spec discovery', () => {
-  it('matches the root suite case-insensitively with dot segments, like Playwright', () => {
+  it('classifies root specs with the shared Playwright classifier', () => {
     for (const file of [
       'test/a.spec.ts',
       'test/nested/a.spec.ts',
@@ -275,9 +275,28 @@ describe('spec discovery', () => {
       'src/test/a.spec.ts',
       'src/a.ct.spec.ts',
       'test',
+      ...ROOT_IGNORED_SPEC_NAMES.map((name) => `test/${name}`),
     ]) {
       expect(isRootSpec(file), file).toBe(false);
     }
+  });
+
+  it('does not scan the root specs playwright.config.ts ignores', () => {
+    const ignoredWithoutHelper = Object.fromEntries(
+      ROOT_IGNORED_SPEC_NAMES.map((name) => [`test/${name}`, ROOT_SPEC_BODY.join('\n')]),
+    );
+    const root = writeTree({ ...passingTree, ...ignoredWithoutHelper });
+    const files = collectSpecFiles(root);
+    expect(files.map((file) => file.path).sort()).toEqual([
+      'src/features/thing/__tests__/thing.ct.spec.ts',
+      'test/agent-avatar.spec.ts',
+    ]);
+    const handed = Object.entries(ignoredWithoutHelper).map(([path, content]) => ({
+      path,
+      content,
+    }));
+    expect(findSnapshotFontHits([...files, ...handed], HARNESS)).toEqual([]);
+    expect(runGate(root).exitCode).toBe(0);
   });
 
   it('classifies CT specs with the shared Playwright classifier', () => {

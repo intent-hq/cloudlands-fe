@@ -102,9 +102,10 @@ function commitFile(root: string, file: string, content: string) {
 }
 
 // A checkout shaped like the release-fast-path job: the real module under
-// scripts/ (plus the shared spec-pattern module it imports), one base commit
-// and one head commit on top of it. Extra `headFiles` land in the same head
-// commit (`git diff --name-only` lists the commit's paths in sorted order).
+// scripts/ (plus the shared spec-pattern module it imports) committed in the
+// base, and one head commit on top of it. Extra `headFiles` land in the same
+// head commit (`git diff --name-only` lists the commit's paths in sorted
+// order), so the base..head diff names exactly the head files.
 function checkoutWith(headFile: string, moduleSource?: string, headFiles: string[] = []) {
   const root = temporaryDirectory('ct-contract-paths-ci-');
   git(root, 'init', '-q');
@@ -116,6 +117,7 @@ function checkoutWith(headFile: string, moduleSource?: string, headFiles: string
   copyFileSync(resolve(SPEC_PATTERN_PATH), join(root, SPEC_PATTERN_PATH));
   if (moduleSource === undefined) copyFileSync(resolve(MODULE_PATH), join(root, MODULE_PATH));
   else writeFileSync(join(root, MODULE_PATH), moduleSource);
+  git(root, 'add', MODULE_PATH, SPEC_PATTERN_PATH);
   commitFile(root, 'src/base.ts', '');
   const base = git(root, 'rev-parse', 'HEAD');
   for (const file of headFiles) {
@@ -267,6 +269,8 @@ describe(`${WORKFLOW_PATH} computes root Playwright relevance in release-fast-pa
       ['a root harness helper', 'test/helpers/harness.ts'],
       ['a nested root fixture', 'test/fixtures/nested/data.json'],
       ['the root Playwright config', 'playwright.config.ts'],
+      ['the root spec pattern module', 'playwright/root-spec-pattern.mjs'],
+      ['the CT spec pattern module the root one builds on', 'playwright/ct-spec-pattern.mjs'],
     ])('writes root_playwright_required=true when the diff adds %s', (_name, file) => {
       const { root, base } = checkoutWith(file);
       const result = runStep(root, base);
@@ -314,6 +318,8 @@ describe(`${WORKFLOW_PATH} computes root Playwright relevance in release-fast-pa
       ['a test-prefixed sibling directory', 'test-results/last-run.json'],
       ['the CT Playwright config', 'playwright-ct.config.ts'],
       ['a file merely named like the config', 'playwright.config.ts.bak'],
+      ['another playwright/ source', 'playwright/ct-port.ts'],
+      ['a spec pattern module test', 'playwright/root-spec-pattern.test.ts'],
       ['a CT-contract path', 'src/lib/styles/tokens.css'],
     ])('writes root_playwright_required=false when the diff touches %s', (_name, file) => {
       const { root, base } = checkoutWith(file);
