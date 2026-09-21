@@ -1,6 +1,37 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { createServer, type ViteDevServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
-const baseUrl = process.env.UI_PREVIEW_BASE_URL ?? 'http://127.0.0.1:5173';
+const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
+let baseUrl = externalBaseUrl ?? '';
+let server: ViteDevServer | undefined;
+
+test.describe.configure({ mode: 'default' });
+
+test.beforeAll(async () => {
+  if (externalBaseUrl) return;
+  const ownedServer = await createServer({
+    cacheDir: viteHarnessCacheDir('diagram-walkthrough-height'),
+    server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
+  });
+  server = ownedServer;
+  try {
+    await ownedServer.listen();
+    baseUrl = ownedServer.resolvedUrls?.local[0]?.replace(/\/$/, '') ?? '';
+    expect(baseUrl).not.toBe('');
+  } catch (error) {
+    await ownedServer.close().catch(() => undefined);
+    server = undefined;
+    throw error;
+  }
+});
+
+test.afterAll(async () => {
+  const ownedServer = server;
+  server = undefined;
+  await ownedServer?.close();
+});
+
 const states = [
   { id: 'request', nodes: ['chat', 'redux', 'user'], edges: ['w1', 'w2', 'w3'] },
   { id: 'execute', nodes: ['chat', 'daemon', 'redux'], edges: ['w3', 'w4', 'w5'] },
