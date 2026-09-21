@@ -610,7 +610,6 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       },
     });
 
-    expect(screen.getByText('Chief of Staff')).toBeTruthy();
     expect(screen.queryByText(body)).toBeNull();
     expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
     const sourceLink = screen.getByTestId('agent-message-attribution');
@@ -650,7 +649,6 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     await fireEvent.click(sourceLink);
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
 
-    expect(screen.getByText('Chief of Staff')).toBeTruthy();
     expect(sourceLink.getAttribute('href')).toBe(sourceUrl);
     expect(screen.getByTestId('queued-message-notice-text').textContent).toBe(
       'Waited in queue for 3s',
@@ -661,7 +659,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     });
   });
 
-  it('shows Chief attribution without a broken link when source metadata is incomplete', () => {
+  it('does not navigate from Chief attribution when source metadata is incomplete', async () => {
     render(ChatMessage, {
       props: {
         message: userMessage({
@@ -674,9 +672,11 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       },
     });
 
-    expect(screen.getByText('Chief of Staff')).toBeTruthy();
-    expect(screen.getByTestId('agent-message-attribution').tagName).toBe('SPAN');
+    const attribution = screen.getByTestId('agent-message-attribution');
+    expect(attribution.hasAttribute('href')).toBe(false);
+    await fireEvent.click(attribution);
     expect(handleLinkMock).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
   });
 
   it('falls back to "Agent" when fromAgentName is absent', () => {

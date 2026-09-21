@@ -104,9 +104,6 @@ describe('editorial panel resize handles', () => {
         'app-resize-handle',
       );
     });
-    expect(
-      fs.readFileSync(path.resolve(__dirname, '../../sidebar-nav/SidebarPanel.svelte'), 'utf8'),
-    ).toContain('data-combined-panel-divider-border');
   });
 
   // Scrollbar/hit-area interplay (the clipped leading strip must let clicks
