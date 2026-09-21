@@ -103,9 +103,11 @@ for (const { name, hostWidth, editable } of [
     await primary.press('Enter');
     if (editable) {
       await expect(component.getByRole('button', { name: 'View source' })).toHaveCount(0);
-      await expect(component.getByRole('textbox')).toHaveValue(SOURCE);
-      await component.getByRole('textbox').press('Escape');
-      await expect(component.getByRole('textbox')).toHaveCount(0);
+      const codeEditor = component.locator('.code-editor-wrapper').getByRole('textbox');
+      await expect(codeEditor).toHaveCount(1);
+      await expect(codeEditor).toHaveValue(SOURCE);
+      await codeEditor.press('Escape');
+      await expect(codeEditor).toHaveCount(0);
     } else {
       await expect(component.getByRole('button', { name: 'Edit code' })).toHaveCount(0);
       await expect(primary).toHaveAttribute('aria-pressed', 'true');

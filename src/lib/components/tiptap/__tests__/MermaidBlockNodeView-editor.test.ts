@@ -69,6 +69,12 @@ function declaration(rules: CSSStyleRule[], element: Element, property: string) 
     .at(-1);
 }
 
+function serializedDeclaration(property: string, value: string) {
+  const style = document.createElement('div').style;
+  style.setProperty(property, value);
+  return style.getPropertyValue(property);
+}
+
 afterEach(() => {
   cleanup();
   for (const style of styles.splice(0)) style.remove();
@@ -85,8 +91,8 @@ describe('Mermaid code editor child textarea', () => {
     // assertions or mocked geometry. Browser pixel alignment remains a separate gate.
     expect(declaration(rules, wrapper, 'position')).toBe('relative');
     expect(declaration(rules, textarea, 'position')).toBe('absolute');
-    expect(declaration(rules, textarea, 'top')).toBe('0');
-    expect(declaration(rules, textarea, 'left')).toBe('0');
+    expect(declaration(rules, textarea, 'top')).toBe(serializedDeclaration('top', '0'));
+    expect(declaration(rules, textarea, 'left')).toBe(serializedDeclaration('left', '0'));
     expect(declaration(rules, textarea, 'width')).toBe('100%');
     expect(declaration(rules, textarea, 'height')).toBe('100%');
     expect(declaration(rules, textarea, 'font')).toBe('inherit');
@@ -97,7 +103,7 @@ describe('Mermaid code editor child textarea', () => {
     expect(declaration(rules, textarea, 'resize')).toBe('none');
     expect(declaration(rules, textarea, 'overflow')).toBe('hidden');
     for (const layer of [textarea, highlight]) {
-      expect(declaration(rules, layer, 'margin')).toBe('0');
+      expect(declaration(rules, layer, 'margin')).toBe(serializedDeclaration('margin', '0'));
       expect(declaration(rules, layer, 'padding')).toBe('0.5rem');
       expect(declaration(rules, layer, 'white-space')).toBe('pre-wrap');
       expect(declaration(rules, layer, 'word-wrap')).toBe('break-word');
