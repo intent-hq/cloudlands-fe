@@ -28,6 +28,33 @@ const mockProviderModelsState = vi.hoisted(() => ({
   clearEpoch: 0,
 }));
 
+// Caller-role slices read by the real `selectIsWorkspaceCollaborator` gate
+// (guest window / collaborator seat / unsettled identity). Defaults to a
+// settled owner window so every existing test keeps the unlocked path.
+const mockRoleState = vi.hoisted(() => {
+  const ownerWindow = () => ({
+    workspace: {
+      hasLoaded: true,
+      workspaces: { idField: 'id', map: {}, ids: [] } as {
+        idField: 'id';
+        map: Record<string, { id: string; myRole?: 'owner' | 'collaborator' }>;
+        ids: string[];
+      },
+    },
+    connections: { windowBackendId: 'local', hasReceivedList: true },
+    guestSessions: {
+      sessions: { idField: 'id', map: {}, ids: [] } as {
+        idField: 'id';
+        map: Record<string, { id: string }>;
+        ids: string[];
+      },
+      hasReceivedList: true,
+      listUnavailable: false,
+    },
+  });
+  return { current: ownerWindow(), reset: () => ownerWindow() };
+});
+
 vi.mock('svelte-fa', async () => {
   const MockFa = (await import('../../ui/__tests__/mocks/Fa.svelte')).default;
   return { default: MockFa };
@@ -88,6 +115,7 @@ vi.mock('$store/renderer/store', async () => {
         byProviderId: mockProviderModelsState.byProviderId,
         clearEpoch: mockProviderModelsState.clearEpoch,
       },
+      ...mockRoleState.current,
     }),
     dispatch: mockSvelteDispatch,
   });
@@ -252,6 +280,7 @@ afterEach(() => {
   providerStaleFlags$.set({});
   mockProviderModelsState.byProviderId = {};
   mockProviderModelsState.clearEpoch = 0;
+  mockRoleState.current = mockRoleState.reset();
   reasoningEffort$.set(undefined);
   agentModelEffortLevels$.set(undefined);
 });
@@ -341,6 +370,163 @@ describe('ModelPicker locked state', () => {
     });
 
     expect(screen.getByRole('button').textContent).toContain('Claude Sonnet 4.5');
+  });
+});
+
+describe('ModelPicker guest / collaborator lock', () => {
+  const dispatchedTypes = () =>
+    mockSvelteDispatch.mock.calls.map(([action]) => (action as { type?: string }).type);
+
+  const hostCatalog = [{ value: 'auggie:sonnet4.6', label: 'Sonnet 4.6', description: 'Smart' }];
+
+  const asGuestWindow = () => {
+    mockRoleState.current.connections = { windowBackendId: 'host-1', hasReceivedList: true };
+    mockRoleState.current.guestSessions.sessions = {
+      idField: 'id',
+      map: { 'host-1': { id: 'host-1' } },
+      ids: ['host-1'],
+    };
+  };
+
+  const withWorkspaceRole = (myRole: 'owner' | 'collaborator') => {
+    mockRoleState.current.workspace.workspaces = {
+      idField: 'id',
+      map: { 'ws-1': { id: 'ws-1', myRole } },
+      ids: ['ws-1'],
+    };
+  };
+
+  const renderAgentPicker = (selectedModel = 'auggie:sonnet4.6') =>
+    render(ModelPicker, {
+      props: {
+        selectedModel,
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockModelState.selectedModel = 'gpt5.4';
+    mockModelState.loadError = null;
+    mockModelState.availableModels = [
+      { value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' },
+    ];
+    providerWarnings$.set({});
+    hasCheckedOnce$.set(true);
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    // The agent's provider is the guest's local active provider, so the
+    // owner-window per-agent fetch rule (provider differs from the active
+    // one and is unavailable) would not fire on its own.
+    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'auggie' });
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
+      providerId === 'auggie' ? { models: hostCatalog } : { models: [] },
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+    mockAgentSession$.set(undefined);
+    hasCheckedOnce$.set(true);
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+  });
+
+  it('guest window: renders disabled with the host catalog label and provider icon, no warning, no mutation', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    const { notify } = await import('$lib/components/patterns/notify');
+    asGuestWindow();
+    // Guest-local probes report no available provider (intent#5378).
+    availableProviderOverride$.set([]);
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(button.getAttribute('title')).toContain('workspace owner');
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+    await waitFor(() => {
+      expect(button.textContent).toContain('Sonnet 4.6');
+    });
+    expect(button.querySelector('span.inline-flex')).not.toBeNull();
+
+    await fireEvent.click(button);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByText('No provider available')).toBeNull();
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(vi.mocked(notify.error)).not.toHaveBeenCalled();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('guest window: a model missing from the host catalog shows its bare id without auto-fallback', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    asGuestWindow();
+    availableProviderOverride$.set([]);
+
+    renderAgentPicker('auggie:opus-legacy');
+
+    const button = screen.getByRole('button');
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(button.textContent).toContain('opus-legacy');
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('collaborator seat in an owner window: renders disabled with the catalog label and no warning', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    withWorkspaceRole('collaborator');
+    availableProviderOverride$.set([]);
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await waitFor(() => {
+      expect(button.textContent).toContain('Sonnet 4.6');
+    });
+    expect(button.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
+    expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
+  });
+
+  it('unsettled window identity: locks (fails closed)', () => {
+    mockRoleState.current.guestSessions.hasReceivedList = false;
+    withWorkspaceRole('owner');
+
+    renderAgentPicker();
+
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('owner window: the picker stays interactive', async () => {
+    withWorkspaceRole('owner');
+
+    renderAgentPicker();
+
+    const button = screen.getByRole('button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+
+    await fireEvent.click(button);
+    expect(await screen.findByRole('option', { name: /Sonnet 4\.6/ })).toBeTruthy();
   });
 });
 

@@ -80,6 +80,7 @@
     selectNormalizedProviderId,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
@@ -303,6 +304,19 @@
 
   const effectiveProviderId = $derived(explicitProviderId ?? $activeProviderId$);
 
+  // A guest window (multiplayer w4) or a `collaborator` seat cannot change an
+  // agent's model, and its local provider availability says nothing about the
+  // host: the agent-bound picker renders read-only with the host catalog
+  // label and no availability warnings (intent#5378). The selector fails
+  // closed while the window's identity is still the boot-time default.
+  const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
+  const isWorkspaceCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
+  const effectiveLocked = $derived(isLocked || isGuestLocked);
+
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
   >(null);
@@ -473,10 +487,12 @@
   // The per-agent fetch is only needed when the effective provider's models
   // aren't already covered by the all-providers fetch because the agent's
   // provider is since unavailable. Skipping it otherwise avoids a duplicate fetch.
+  // A guest-locked picker always runs it: the all-providers fetch follows the
+  // guest's local availability, so this is its only route to the host catalog.
   const usesAgentProviderFetch = $derived(
     canUseProviderModels(effectiveProviderId) &&
-      effectiveProviderId !== $activeProviderId$ &&
-      !isEffectiveProviderAvailable,
+      (isGuestLocked ||
+        (effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -1136,6 +1152,7 @@
   // and degraded failures are surfaced by the daemon-health UI instead.
   const hasNoAvailableProvider = $derived(
     !providerId &&
+      !isGuestLocked &&
       $hasCheckedOnce$ &&
       $daemonHealth$ === 'healthy' &&
       $availableEnabledProviderIds$.length === 0,
@@ -1331,6 +1348,7 @@
   });
 
   const isSelectedModelUnavailable = $derived.by(() => {
+    if (isGuestLocked) return false;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
@@ -1406,7 +1424,10 @@
     showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
   );
   const lockedButtonTitle = $derived(
-    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
+    isGuestLocked
+      ? m.chat_modelPicker_guestLocked_title()
+      : lockedTitle?.trim() ||
+          m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
   // The in-flight commit window is announced with `aria-busy` and re-entry is
   // ignored in `handleReasoningSelect`; it must not feed the HTML `disabled`
@@ -1414,6 +1435,7 @@
   let updatingReasoningEffort = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
+      isGuestLocked ||
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
@@ -1500,7 +1522,7 @@
   // Only show on pickers tied to an existing agent (agentId) — the workspace
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
-    !!agentId && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
+    !!agentId && !isGuestLocked && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
   // The selected model isn't in the catalog yet, but its provider hasn't
@@ -1555,6 +1577,7 @@
   // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
+    if (isGuestLocked) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
@@ -1664,6 +1687,7 @@
 
   $effect(() => {
     if (!silentFallback) return;
+    if (isGuestLocked) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
@@ -1746,6 +1770,7 @@
   }
 
   async function handleModelChange(value: string | string[], event?: MouseEvent) {
+    if (effectiveLocked) return;
     const modelValue = value as string;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
@@ -1789,7 +1814,7 @@
 
   // Expose open function for keyboard shortcut
   export function open() {
-    if (!isLocked) {
+    if (!effectiveLocked) {
       pointerInteraction = false;
       void dropdownRef?.openAndFocusSearch();
     }
@@ -1801,7 +1826,7 @@
   onkeydown={() => (pointerInteraction = false)}
 />
 
-{#if isLocked}
+{#if effectiveLocked}
   <!-- Show locked state without dropdown -->
   <Button
     {variant}

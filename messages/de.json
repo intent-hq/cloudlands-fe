@@ -2185,6 +2185,7 @@
   "chat_modelPicker_defaultModel_label": "Standardmodell",
   "chat_modelPicker_effort_label": "Aufwand: {levels}",
   "chat_modelPicker_groupModels_ariaLabel": "{group}-Modelle",
+  "chat_modelPicker_guestLocked_title": "Nur der Workspace-Besitzer kann das Modell ändern.",
   "chat_modelPicker_installAuggieHint_label": "Installieren Sie über \"npm install -g @augmentcode/auggie\" oder verwenden Sie den Auggie-Setup-Ablauf.",
   "chat_modelPicker_installCliHint_label": "Installieren Sie die {provider}-CLI und stellen Sie sicher, dass \"{command}\" im PATH ist.",
   "chat_modelPicker_installCodex_description": "Installieren Sie die Codex-CLI, um alle verfügbaren Modelle zu sehen.",
