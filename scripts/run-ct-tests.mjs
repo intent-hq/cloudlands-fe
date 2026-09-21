@@ -16,7 +16,12 @@
  *
  * Local CT bundle builds need the same 8 GB heap cap as CI's build step;
  * Node's default heap can run out while Vite bundles the component registry.
- * Default NODE_OPTIONS only when absent, preserving explicit caller options.
+ * Apply the heap default unless the caller already chose a heap size: an unset
+ * NODE_OPTIONS gets the flag, a pre-set one without a --max-old-space-size flag
+ * (e.g. a host-injected `--require` such as Datadog's dd-trace; see
+ * intent-hq/intent#4565) keeps its options with the flag appended, and one that
+ * already carries --max-old-space-size (or its V8 underscore alias) is left
+ * untouched.
  * CI keeps its per-step limits: 8 GB for building, 4 GB for cached test runs,
  * so the larger build allowance does not leak into its long-lived test phase.
  * Playwright rebuilds in-process when sources change between dependency
@@ -317,9 +322,16 @@ export function resolveCtAlignedPlaywrightCli() {
   return { cliPath, version: pkg.version };
 }
 
+/** Heap cap applied to the Playwright child unless the caller chose one. */
+const CT_HEAP_FLAG = '--max-old-space-size=8192';
+// NODE_OPTIONS accepts the V8 underscore alias (`--max_old_space_size=`, as
+// scripts/vite-build.mjs also honours) and double-quoted option tokens.
+const HEAP_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size=/;
+
 /**
- * Build the child environment: project-local transform cache plus the
- * HTML-report policy from `resolveHtmlReportOpen`.
+ * Build the child environment: project-local transform cache, the heap
+ * default described in the header, plus the HTML-report policy from
+ * `resolveHtmlReportOpen`.
  */
 export function buildChildEnv({ env = process.env, isTTY, openReport = false, root = repoRoot }) {
   // Playwright's default transform cache is host-wide. Persistent CI runners
@@ -330,7 +342,11 @@ export function buildChildEnv({ env = process.env, isTTY, openReport = false, ro
     env.PWTEST_CACHE_DIR?.trim() ||
     path.join(root, 'node_modules', '.cache', 'playwright-transform');
   const childEnv = { ...env, PWTEST_CACHE_DIR: transformCacheDir };
-  if (env.NODE_OPTIONS === undefined) childEnv.NODE_OPTIONS = '--max-old-space-size=8192';
+  const nodeOptions = env.NODE_OPTIONS?.trim();
+  if (!nodeOptions) childEnv.NODE_OPTIONS = CT_HEAP_FLAG;
+  else if (!HEAP_FLAG_RE.test(nodeOptions)) {
+    childEnv.NODE_OPTIONS = `${env.NODE_OPTIONS} ${CT_HEAP_FLAG}`;
+  }
   const { open, notice } = resolveHtmlReportOpen({ env, isTTY, openReport });
   if (open) childEnv.PLAYWRIGHT_HTML_OPEN = open;
   return { env: childEnv, notice };
