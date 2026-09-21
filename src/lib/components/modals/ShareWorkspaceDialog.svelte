@@ -178,6 +178,7 @@
   let confirmRemovePrincipalId = $state<string | null>(null);
   /** The existing-guest dropdown pick (`principalId`); `''` for none. */
   let selectedPrincipalId = $state('');
+  let existingGuestMenuOpen = $state(false);
 
   const principalItems = $derived(
     principals.map((principal) => ({
@@ -235,6 +236,7 @@
     untrack(resetPinDraft);
     confirmRemovePrincipalId = null;
     selectedPrincipalId = '';
+    existingGuestMenuOpen = false;
   });
   $effect(() => {
     if (createdLink) untrack(resetPinDraft);
@@ -371,7 +373,14 @@
 
   function handleKeydown(e: KeyboardEvent) {
     e.stopPropagation();
-    if (e.key === 'Escape') onClose?.();
+    if (e.key === 'Escape') {
+      if (existingGuestMenuOpen) {
+        e.preventDefault();
+        existingGuestMenuOpen = false;
+      } else {
+        onClose?.();
+      }
+    }
   }
 </script>
 
@@ -460,6 +469,7 @@
               <div class="flex items-center gap-2">
                 <div class="min-w-0 flex-1">
                   <Select.Root
+                    bind:open={existingGuestMenuOpen}
                     bind:value={selectedPrincipalId}
                     items={principalItems}
                     disabled={busy}
@@ -470,7 +480,7 @@
                     >
                       <Select.Value placeholder={m.workspace_share_existingGuest_placeholder()} />
                     </Select.Trigger>
-                    <Select.Content portal class="z-(--layer-modal)">
+                    <Select.Content class="z-(--layer-modal)">
                       {#each principals as principal (principal.principalId)}
                         <Select.Item
                           value={principal.principalId}
@@ -572,6 +582,7 @@
                       onkeydown={handlePinKeydown}
                     />
                     <Popover.Content
+                      portal={false}
                       customAnchor={pinAnchor}
                       align="start"
                       collisionPadding={8}

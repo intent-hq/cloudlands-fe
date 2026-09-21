@@ -53,7 +53,8 @@ test('suggestions paint above the roster and remain reachable in a short window'
   await mkdir(artifacts, { recursive: true });
   await page.screenshot({ path: resolve(artifacts, 'suggestions.png') });
 
-  const options = page.getByRole('option');
+  const options = page.getByRole('dialog').getByRole('listbox').getByRole('option');
+  await expect(options).toHaveCount(8);
   for (const option of await options.all()) {
     await option.scrollIntoViewIfNeeded();
     await expect
@@ -121,8 +122,13 @@ test('opening the other picker dismisses suggestions, and Escape closes one laye
   await expect(page.getByTestId('share-pin-suggestions')).toBeVisible();
   await page.getByRole('combobox', { name: /Invite an existing GitHub user/ }).click();
   await expect(page.getByTestId('share-pin-suggestions')).toBeHidden();
-  await expect(page.getByRole('option', { name: '@guest', exact: true })).toBeVisible();
-  await page.getByRole('option', { name: '@guest', exact: true }).click();
+  const guestOption = page.getByRole('dialog').getByRole('option', { name: '@guest', exact: true });
+  await expect(guestOption).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(guestOption).toBeHidden();
+  expect(closes).toBe(0);
+  await page.getByRole('combobox', { name: /Invite an existing GitHub user/ }).click();
+  await guestOption.click();
   await expect(page.getByTestId('share-existing-guest-invite')).toBeEnabled();
   await input.fill('wa');
   await input.fill('wat');
