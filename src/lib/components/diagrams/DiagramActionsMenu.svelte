@@ -9,9 +9,10 @@
   interface Props {
     container?: HTMLElement;
     fileName?: string;
+    compactTrigger?: boolean;
   }
 
-  let { container, fileName = 'diagram' }: Props = $props();
+  let { container, fileName = 'diagram', compactTrigger = false }: Props = $props();
 
   async function copyImage() {
     if (!container) return toast.error(m.diagram_actions_copyFailed_error());
@@ -48,7 +49,10 @@
 </script>
 
 <Menu.Root>
-  <Menu.Trigger aria-label={m.diagram_actions_menu_ariaLabel()}>
+  <Menu.Trigger
+    aria-label={m.diagram_actions_menu_ariaLabel()}
+    class={compactTrigger ? 'size-(--control-height-compact) p-0' : undefined}
+  >
     <Fa icon={faEllipsis} size="sm" />
   </Menu.Trigger>
   <Menu.Content align="end">

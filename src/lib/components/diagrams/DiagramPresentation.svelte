@@ -89,7 +89,11 @@
     >
       {@render actions?.()}
       {#if exportable}
-        <DiagramActionsMenu container={contentElement} {fileName} />
+        <DiagramActionsMenu
+          container={contentElement}
+          {fileName}
+          compactTrigger={actionsInTopMargin}
+        />
       {/if}
     </div>
   {/if}
