@@ -114,7 +114,7 @@
           <div class="text-danger">
             <p>{$error$}</p>
             <Button
-              class="mt-3 bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"
+              class="mt-3 border-none px-4 py-2 rounded cursor-pointer text-foreground"
               onclick={handleRetry}>{m.lib_githubAuth_tryAgain_label()}</Button
             >
           </div>

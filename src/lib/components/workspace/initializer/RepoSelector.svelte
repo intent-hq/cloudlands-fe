@@ -1517,7 +1517,7 @@
           <!-- Local repo: folder picker button -->
           <Button
             type="button"
-            class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 bg-sidebar text-left cursor-pointer"
+            class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 text-left cursor-pointer"
             onclick={handleSelectFolder}
           >
             <span

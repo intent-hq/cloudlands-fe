@@ -995,7 +995,7 @@
       <Button
         type="button"
         onclick={handleCloseQr}
-        class="mt-4 px-4 py-1.5 type-body font-medium text-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer"
+        class="mt-4 px-4 py-1.5 type-body font-medium text-foreground rounded-md transition-colors cursor-pointer"
       >
         {m.settings_wsApi_close()}
       </Button>
