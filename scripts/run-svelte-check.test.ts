@@ -353,34 +353,53 @@ describe('runSvelteCheck', () => {
   });
 
   describe('with a real child process', () => {
+    // The oracle (the child's own maxRSS) travels through a file named by this
+    // env var, not through stdout: anything preloaded into the child (a Datadog
+    // tracer's startup log, intent-hq/intent#5509) shares the child's stdout.
+    const ORACLE_FILE_ENV = 'RSS_TEST_ORACLE_FILE';
+    const touch256MiBAndExit = (exitCode: number) =>
+      [
+        "import { writeFileSync } from 'node:fs';",
+        'Buffer.alloc(256 * 1024 * 1024, 1);',
+        `writeFileSync(process.env.${ORACLE_FILE_ENV}, String(process.resourceUsage().maxRSS));`,
+        `process.exit(${exitCode});`,
+      ].join('\n');
+
     const runChild = async (code: string, nodeArgs = '') => {
       const dir = mkdtempSync(path.join(tmpdir(), 'rss-child-test-'));
       const outputPath = path.join(dir, 'output');
+      const oraclePath = path.join(dir, 'oracle');
       const outputFd = openSync(outputPath, 'w');
       const errors: string[] = [];
       const result = await runSvelteCheck({
         cliPath: code,
         args: [],
         outputFd,
-        env: { ...process.env, CT_NODE_ARGS: `${nodeArgs} --input-type=module --eval` },
+        env: {
+          ...process.env,
+          CT_NODE_ARGS: `${nodeArgs} --input-type=module --eval`,
+          [ORACLE_FILE_ENV]: oraclePath,
+        },
         printError: (message: string) => errors.push(message),
       });
       closeSync(outputFd);
       const output = readFileSync(outputPath, 'utf8');
+      const childMaxRssMiB = existsSync(oraclePath)
+        ? Math.round(Number(readFileSync(oraclePath, 'utf8')) / 1024)
+        : null;
       rmSync(dir, { recursive: true, force: true });
-      return { ...result, errors, output };
+      return { ...result, errors, output, childMaxRssMiB };
     };
 
     it.each([0, 1])(
       'reports a child that touched 256 MiB and exited %i, even within one interval',
       async (exitCode) => {
-        const { peakRssMiB, output, ...rest } = await runChild(
-          `Buffer.alloc(256 * 1024 * 1024, 1); console.log(process.resourceUsage().maxRSS); process.exit(${exitCode});`,
+        const { peakRssMiB, childMaxRssMiB, ...rest } = await runChild(
+          touch256MiBAndExit(exitCode),
         );
-        expect(rest).toEqual({ exitCode, errors: [] });
-        const childMaxRssMiB = Math.round(Number(output.trim()) / 1024);
+        expect(rest).toMatchObject({ exitCode, errors: [] });
         expect(childMaxRssMiB).toBeGreaterThanOrEqual(256);
-        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB);
+        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB as number);
       },
     );
 
@@ -394,15 +413,14 @@ describe('runSvelteCheck', () => {
       const preload = path.join(preloadDir, 'banner.cjs');
       writeFileSync(preload, `process.stdout.write(${JSON.stringify(`${banner}\n`)});`);
       try {
-        const { peakRssMiB, output, ...rest } = await runChild(
-          'Buffer.alloc(256 * 1024 * 1024, 1); console.log(process.resourceUsage().maxRSS); process.exit(0);',
+        const { peakRssMiB, childMaxRssMiB, output, ...rest } = await runChild(
+          touch256MiBAndExit(0),
           `--require ${preload}`,
         );
         expect(rest).toEqual({ exitCode: 0, errors: [] });
         expect(output).toContain(banner);
-        const childMaxRssMiB = Math.round(Number(output.trim()) / 1024);
         expect(childMaxRssMiB).toBeGreaterThanOrEqual(256);
-        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB);
+        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB as number);
       } finally {
         rmSync(preloadDir, { recursive: true, force: true });
       }
