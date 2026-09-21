@@ -40,16 +40,21 @@ function matchesRootIgnore(path) {
   return ROOT_IGNORED_SPEC_NAMES.some((name) => endsWithNocase(path, `/${name}`));
 }
 
-// True for exactly the files `playwright.config.ts` discovers and runs: under
-// `ROOT_TEST_DIR/`, matching `ROOT_TEST_MATCH`, and not matched by
-// `ROOT_TEST_IGNORE`.
+// True for the repo-relative paths `playwright.config.ts`'s `testMatch` accepts and
+// its `testIgnore` does not: under `ROOT_TEST_DIR/`, matching `ROOT_TEST_MATCH`,
+// and not matched by `ROOT_TEST_IGNORE`. This is pattern parity with the matcher,
+// not full discovery: Playwright's file collector also filters on a
+// case-sensitive extension list before matching, so `test/a.Spec.TS` matches
+// here but is never collected (only `.ts` files can be, so the distinction is
+// moot for the `.spec.ts` files the repo commits).
 export function isRootSpec(file) {
   const path = normalizeCtPath(file);
   return matchesRootSuffix(path) && !matchesRootIgnore(path);
 }
 
-// True for the files `playwright.config.ts` would discover but ignores: under
-// `ROOT_TEST_DIR/`, matching `ROOT_TEST_MATCH`, and matched by `ROOT_TEST_IGNORE`.
+// True for the paths `playwright.config.ts`'s `testMatch` accepts but its
+// `testIgnore` excludes: under `ROOT_TEST_DIR/`, matching `ROOT_TEST_MATCH`, and
+// matched by `ROOT_TEST_IGNORE`. Same matcher-parity caveat as `isRootSpec`.
 export function isIgnoredRootSpec(file) {
   const path = normalizeCtPath(file);
   return matchesRootSuffix(path) && matchesRootIgnore(path);

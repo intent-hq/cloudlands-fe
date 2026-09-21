@@ -76,6 +76,15 @@ const FULL_RISK_FILES = new Set([
   'vite.config.mjs',
   'vitest.config.ts',
 ]);
+// Files that decide which root specs playwright.config.ts runs: the config and the
+// modules it reads its testDir/testMatch/testIgnore from (root-spec-pattern.mjs
+// builds on ct-spec-pattern.mjs's matchers). The pull_request workflow's root
+// relevance step names the same set (`Evaluate root Playwright relevance`).
+const ROOT_PLAYWRIGHT_CONFIG_FILES = new Set([
+  'playwright.config.ts',
+  'playwright/root-spec-pattern.mjs',
+  'playwright/ct-spec-pattern.mjs',
+]);
 
 function slash(path) {
   return path.split(sep).join('/');
@@ -442,7 +451,7 @@ export function createVerificationPlan(files, options = {}) {
     if (file === 'tsconfig.json') boundaries.add('renderer');
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
-    else if (file === 'playwright.config.ts') fullPlaywright = true;
+    else if (ROOT_PLAYWRIGHT_CONFIG_FILES.has(file)) fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
     // Shared with the pull_request workflow's test-ct relevance step.
     if (isCtContractPath(file)) fullCt = true;

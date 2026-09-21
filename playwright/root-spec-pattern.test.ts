@@ -12,12 +12,17 @@ import {
   isRootSpec,
 } from './root-spec-pattern.mjs';
 
-// The oracle is the root runner's own matcher: the `playwright` that the
+// The oracle is the root runner's own pattern matcher: the `playwright` that the
 // top-level `@playwright/test` (the one `playwright.config.ts` runs under)
 // resolves. Playwright builds one `createFileMatcher` for `testMatch` and one
 // for `testIgnore` and keeps a file when `!testIgnore(file) && testMatch(file)`
 // (playwright/lib/runner, `collectFilesForProject`); `isRootSpec` /
 // `isIgnoredRootSpec` must agree, or a script routes a spec to the wrong lane.
+// This establishes testMatch/testIgnore parity over repo-relative paths only:
+// `collectFilesForProject` also filters on a case-sensitive extension list
+// before matching, so a `test/a.Spec.TS` passes the matcher (and this oracle)
+// but is never collected by `playwright test`. The extension filter is not
+// modelled here; the repo commits only `.ts` specs, for which the two agree.
 const rootRequire = createRequire(createRequire(import.meta.url).resolve('@playwright/test'));
 const { createFileMatcher } = rootRequire('playwright/lib/util') as {
   createFileMatcher: (patterns: string | string[]) => (filePath: string) => boolean;
@@ -30,11 +35,11 @@ const underTestDir = (file: string) => {
   const path = file.replace(/^(?:\.\/)+/, '');
   return path.startsWith(`${ROOT_TEST_DIR}/`) ? path : null;
 };
-const playwrightRuns = (file: string) => {
+const patternAccepts = (file: string) => {
   const path = underTestDir(file);
   return path !== null && !playwrightIgnores(path) && playwrightMatches(path);
 };
-const playwrightIgnoresSpec = (file: string) => {
+const patternIgnores = (file: string) => {
   const path = underTestDir(file);
   return path !== null && playwrightIgnores(path) && playwrightMatches(path);
 };
@@ -92,7 +97,7 @@ describe('isRootSpec', () => {
   it.each([...accepted, ...ignored, ...rejected])(
     "agrees with Playwright's testMatch and testIgnore on %s",
     (file) => {
-      expect(isRootSpec(file)).toBe(playwrightRuns(file));
+      expect(isRootSpec(file)).toBe(patternAccepts(file));
     },
   );
 });
@@ -109,7 +114,7 @@ describe('isIgnoredRootSpec', () => {
   it.each([...accepted, ...ignored, ...rejected])(
     "agrees with Playwright's testMatch and testIgnore on %s",
     (file) => {
-      expect(isIgnoredRootSpec(file)).toBe(playwrightIgnoresSpec(file));
+      expect(isIgnoredRootSpec(file)).toBe(patternIgnores(file));
     },
   );
 });

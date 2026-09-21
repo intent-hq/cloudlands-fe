@@ -1029,6 +1029,25 @@ describe('verification planning', () => {
     expect(ids).not.toContain('playwright-direct');
     expect(plan.fallbackReasons).toEqual([]);
   });
+
+  // playwright.config.ts reads testDir/testMatch/testIgnore from these modules, so
+  // a change there can reroute root discovery the same way a config edit does.
+  it.each(['playwright/root-spec-pattern.mjs', 'playwright/ct-spec-pattern.mjs'])(
+    'runs the whole Playwright browser suite when %s changes',
+    (module) => {
+      const root = fixtureRoot({ [module]: 'export const ROOT_TEST_DIR = "test";' });
+      const plan = createVerificationPlan([module], { root, ctTests: [] });
+      const ids = plan.checks.map((check) => check.id);
+      expect(ids).toContain('playwright-full');
+      expect(plan.fallbackReasons).toEqual([]);
+    },
+  );
+
+  it('does not run the whole Playwright browser suite for other playwright/ sources', () => {
+    const root = fixtureRoot({ 'playwright/ct-port.ts': 'export const CT_PORT = 3100;' });
+    const plan = createVerificationPlan(['playwright/ct-port.ts'], { root, ctTests: [] });
+    expect(plan.checks.map((check) => check.id)).not.toContain('playwright-full');
+  });
 });
 
 describe('empty change set guard', () => {
