@@ -72,7 +72,11 @@
   // Re-exported for existing importers; the implementation lives in the
   // dependency-light util so non-layout consumers (e.g. Settings → Devices)
   // can share it without importing this component.
-  import { formatConnectionLabel } from '$lib/utils/connection-label';
+  import {
+    formatConnectionLabel,
+    formatGuestSessionAddress,
+    formatGuestSessionLabel,
+  } from '$lib/utils/connection-label';
   export { formatConnectionLabel };
 </script>
 
@@ -91,6 +95,7 @@
   import {
     faPlus,
     faCheck,
+    faChevronRight,
     faTriangleExclamation,
     faUsers,
   } from '@fortawesome/free-solid-svg-icons';
@@ -101,6 +106,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import AgentMemoryBreakdownDialog from './AgentMemoryBreakdownDialog.svelte';
   import CertMismatchModal from './CertMismatchModal.svelte';
   import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
   import {
@@ -113,6 +119,8 @@
     selectUnslothStopping,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
+    agentMemoryBreakdownClosed,
+    agentMemoryBreakdownOpened,
     pollSystemStatus,
     pollUnslothStatus,
     stopUnslothRequested,
@@ -170,6 +178,7 @@
   const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
+  let agentMemoryDialogOpen = $state(false);
 
   const healthIconColors: Record<DaemonHealth, string> = {
     healthy: 'text-subtle',
@@ -400,6 +409,27 @@
     appStore.dispatch(stopUnslothRequested());
   }
 
+  // --- Agent memory breakdown ---------------------------------------------
+
+  // Agent-attributed memory from the last system.status poll. Null hides the
+  // row: older daemons omit the field, and a new daemon reports null until
+  // its first process-tree sample.
+  const agentMemoryBytes = $derived($stats$?.agentMemoryBytes ?? null);
+
+  function openAgentMemoryBreakdown() {
+    dropdownOpen = false;
+    agentMemoryDialogOpen = true;
+    appStore.dispatch(agentMemoryBreakdownOpened());
+  }
+
+  // The dialog routes every dismissal (Escape, X, backdrop) and the single
+  // Close button through onClose; both stop the refresh cadence and drop the
+  // stored usage.
+  function closeAgentMemoryBreakdown() {
+    agentMemoryDialogOpen = false;
+    appStore.dispatch(agentMemoryBreakdownClosed());
+  }
+
   // --- Multi-backend connect: menu actions -------------------------------
 
   function openDevicesSettings() {
@@ -444,7 +474,11 @@
       if (result.status === 'secret-unavailable') {
         const guest = $guestSessions$.find((session) => session.id === id);
         if (guest) {
-          toast.error(m.layout_daemonStatus_guestSecretUnavailable_error({ label: guest.label }));
+          toast.error(
+            m.layout_daemonStatus_guestSecretUnavailable_error({
+              label: formatGuestSessionLabel(guest),
+            }),
+          );
           void navigateToSettings({ tab: 'guest-sessions' });
           return;
         }
@@ -594,19 +628,23 @@
               {#if $stats$}
                 <div class="h-px bg-border my-1"></div>
 
-                <!-- Agent slots -->
-                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
-                  <span class="tabular-nums">
-                    {$stats$.agents}/{$stats$.maxAgents ?? '?'}
-                  </span>
-                </div>
+                <!-- Agent slots (administrator-only; omitted from the collaborator projection) -->
+                {#if $stats$.agents !== undefined}
+                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                    <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
+                    <span class="tabular-nums">
+                      {$stats$.agents}/{$stats$.maxAgents ?? '?'}
+                    </span>
+                  </div>
+                {/if}
 
-                <!-- Connected clients -->
-                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
-                  <span class="tabular-nums">{$stats$.clients}</span>
-                </div>
+                <!-- Connected clients (administrator-only; omitted from the collaborator projection) -->
+                {#if $stats$.clients !== undefined}
+                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                    <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
+                    <span class="tabular-nums">{$stats$.clients}</span>
+                  </div>
+                {/if}
 
                 <!-- Transport -->
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
@@ -696,6 +734,37 @@
                     <span class="tabular-nums text-xs" aria-live="off"
                       >{formatMemory($stats$.memoryBytes)}</span
                     >
+                  </div>
+                {/if}
+
+                <!--
+                  Agent memory (only once the daemon has sampled it). Clickable:
+                  opens the per-agent breakdown dialog. Same in-menu Button
+                  pattern as the Stop server action below; the wrapping div
+                  gives the row a box for the parent's vertical rhythm, which
+                  the Button's own display:contents wrapper would otherwise skip.
+                -->
+                {#if agentMemoryBytes !== null}
+                  <div>
+                    <Button
+                      variant="ghost"
+                      wrapContent={false}
+                      class="w-full flex justify-between gap-2 text-xs whitespace-nowrap hover:bg-muted/50 rounded px-1 -mx-1 py-0 h-auto min-h-0 font-normal cursor-pointer"
+                      aria-label={m.layout_daemonStatus_agentMemory_ariaLabel({
+                        memory: formatMemory(agentMemoryBytes),
+                      })}
+                      onclick={openAgentMemoryBreakdown}
+                    >
+                      <span class="text-subtle">{m.layout_daemonStatus_agentMemory_label()}</span>
+                      <span class="flex items-center gap-1.5">
+                        <span class="tabular-nums text-xs" aria-live="off"
+                          >{formatMemory(agentMemoryBytes)}</span
+                        >
+                        <span class="text-subtle" aria-hidden="true">
+                          <Fa icon={faChevronRight} size="xs" />
+                        </span>
+                      </span>
+                    </Button>
                   </div>
                 {/if}
 
@@ -984,12 +1053,22 @@
             {@const isCurrent = session.id === $currentConnectionId$}
             {@const open = $guestOpenIds$.includes(session.id)}
             {@const connected = open && $guestConnectedIds$.includes(session.id)}
+            {@const guestAddress = formatGuestSessionAddress(session)}
             <Menu.Item
               class="w-full cursor-pointer text-xs px-2 py-1.5"
               onSelect={() => handleOpenConnection(session.id)}
             >
               <span class="text-foreground shrink-0" aria-hidden="true"><Fa icon={faUsers} /></span>
-              <span class="min-w-0 flex-1 truncate">{session.label}</span>
+              <span class="min-w-0 flex-1 truncate">
+                {formatGuestSessionLabel(session)}
+                <!-- Mirrors the remote-connection `hostname (host:port)` shape:
+                     the dialled tc address / host stays visible once the
+                     captured machine name takes over as the primary label. -->
+                {#if guestAddress !== null}
+                  <span class="text-subtle" data-guest-address={guestAddress}>({guestAddress})</span
+                  >
+                {/if}
+              </span>
               <span class="flex items-center gap-1.5 shrink-0">
                 <!-- Status only for a host with a window (pooled client); a
                      joined host that was never opened has no status. -->
@@ -1038,6 +1117,11 @@
     variant="destructive"
     onConfirm={confirmStopUnsloth}
   />
+{/if}
+
+<!-- Mounted per open so the breakdown starts collapsed every time. -->
+{#if agentMemoryDialogOpen}
+  <AgentMemoryBreakdownDialog onClose={closeAgentMemoryBreakdown} />
 {/if}
 
 <!-- Cert-mismatch failure modal — driven by the connections:cert-mismatch push. -->

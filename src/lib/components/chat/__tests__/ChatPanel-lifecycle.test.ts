@@ -256,6 +256,10 @@ vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selector
 vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-selectors', () => ({
   selectWorkspaceNavigationMainPanel: mocks.selector({ type: 'empty' }),
 }));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentTypingPeople: mocks.selector([]),
+  selectPresenceOwnPrincipalId: mocks.selector(null),
+}));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', async (importOriginal) => ({
   ...(await importOriginal<
     typeof import('$store/renderer/slices/transient-ui/transient-ui-selectors')
@@ -1916,12 +1920,12 @@ describe('ChatPanel mounted lifecycle', () => {
     await fireEvent.input(editor, { target: { value: 'ab' } });
     await fireEvent.input(editor, { target: { value: 'abc' } });
 
-    expect(mocks.dispatch.mock.calls).toHaveLength(0);
+    const draftActionsOf = () =>
+      mocks.dispatch.mock.calls.filter(([action]) => action?.type === 'transientUi/setChatDraft');
+    expect(draftActionsOf()).toHaveLength(0);
     fireEvent.focusOut(screen.getByTestId('chat-composer-controls-inner'));
 
-    const draftActions = mocks.dispatch.mock.calls.filter(
-      ([action]) => action?.type === 'transientUi/setChatDraft',
-    );
+    const draftActions = draftActionsOf();
     expect(draftActions).toHaveLength(1);
     expect(draftActions[0][0].payload).toEqual(['workspace-a', 'agent-a', 'abc']);
   });

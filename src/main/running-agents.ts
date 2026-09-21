@@ -3,10 +3,16 @@
  *
  * Live agent turns run inside the intentd daemon (`agent.sendMessage`,
  * PROTOCOL §5.5) — not in this process. The quit prompt therefore consults
- * the daemon's per-agent `isResponding` flag (`agent.list`, §5.5/§7.1),
- * which is the authoritative "active worker" signal. The old check read the
- * main-process messageAccumulator Redux slice, which no longer exists (the
- * main-process store was removed in the port), so it crashed on every quit.
+ * the daemon's global mid-turn busy set (`agent.listActive`, §5.5), which is
+ * the authoritative "active worker" signal, and resolves each busy agent's
+ * display name with one `agent.get`. The previous shape — `workspace.list`
+ * followed by one unscoped `agent.list` per workspace — pulled every
+ * session row in the daemon at quit time; `agent.list` frames grow past
+ * 1 MiB on large hosts (intent-hq/intent#5531), so the quit check must stay
+ * bounded by the number of BUSY agents, not the number of sessions. The old
+ * check read the main-process messageAccumulator Redux slice, which no
+ * longer exists (the main-process store was removed in the port), so it
+ * crashed on every quit.
  *
  * Fail-open by design: if the daemon is unreachable or a query fails, we
  * report no running agents so quit is never blocked by a dead backend.
@@ -30,7 +36,7 @@ export interface RunningAgentsRpc {
 }
 
 /**
- * List agents the daemon reports as currently responding, across all
+ * List agents the daemon reports as currently mid-turn, across all
  * workspaces. Never throws: any transport/RPC failure yields `[]`.
  */
 export async function listRespondingAgents(client: RunningAgentsRpc): Promise<RespondingAgent[]> {
@@ -39,44 +45,39 @@ export async function listRespondingAgents(client: RunningAgentsRpc): Promise<Re
     return [];
   }
 
-  let workspaces: Record<string, unknown>[];
+  let streams: Record<string, unknown>[];
   try {
-    const result = await client.request<{ workspaces?: unknown[] }>('workspace.list');
-    workspaces = Array.isArray(result?.workspaces)
-      ? (result.workspaces as Record<string, unknown>[])
-      : [];
+    const result = await client.request<{ streams?: unknown[] }>('agent.listActive', {});
+    streams = Array.isArray(result?.streams) ? (result.streams as Record<string, unknown>[]) : [];
   } catch (error) {
-    logger.warn('workspace.list failed during quit check; assuming no running agents', {
+    logger.warn('agent.listActive failed during quit check; assuming no running agents', {
       error: error instanceof Error ? error.message : String(error),
     });
     return [];
   }
 
-  const perWorkspace = await Promise.all(
-    workspaces.map(async (ws) => {
-      const workspaceId = String(ws.id ?? ws.workspaceId ?? '');
-      if (!workspaceId) return [];
+  const resolved = await Promise.all(
+    streams.map(async (stream): Promise<RespondingAgent | null> => {
+      const agentId = String(stream.agentId ?? '');
+      if (!agentId) return null;
+      const workspaceId = String(stream.workspaceId ?? '');
+      let name = agentId;
       try {
-        const result = await client.request<{ agents?: unknown[] }>('agent.list', { workspaceId });
-        const agents = Array.isArray(result?.agents)
-          ? (result.agents as Record<string, unknown>[])
-          : [];
-        return agents
-          .filter((agent) => agent.isResponding === true)
-          .map((agent) => ({
-            agentId: String(agent.id ?? ''),
-            name: String(agent.name ?? agent.id ?? ''),
-            workspaceId,
-          }));
+        const result = await client.request<{ agent?: { name?: unknown } }>(
+          'agent.get',
+          workspaceId ? { agentId, workspaceId } : { agentId },
+        );
+        const wireName = result?.agent?.name;
+        if (typeof wireName === 'string' && wireName) name = wireName;
       } catch (error) {
-        logger.warn('agent.list failed during quit check; skipping workspace', {
-          workspaceId,
+        logger.warn('agent.get failed during quit check; falling back to the agent id', {
+          agentId,
           error: error instanceof Error ? error.message : String(error),
         });
-        return [];
       }
+      return { agentId, name, workspaceId };
     }),
   );
 
-  return perWorkspace.flat();
+  return resolved.filter((agent): agent is RespondingAgent => agent !== null);
 }

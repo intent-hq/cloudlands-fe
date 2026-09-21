@@ -42,6 +42,7 @@
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWindowIdentitySettled } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -98,6 +99,7 @@
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const windowIdentitySettled$ = selectWindowIdentitySettled();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -239,12 +241,16 @@
 
   // Provider keys and GitHub/Linear/Sentry connections are administrator-owned
   // daemon state (multiplayer w3): a collaborator-only client cannot read or
-  // change them, so those sections are withheld and their tabs redirect.
+  // change them, so those sections are withheld and their tabs redirect. The
+  // redirect waits for the window identity to settle: during boot the
+  // collaborator-only default is a safe placeholder, not an answer, and
+  // redirecting on it would drop a `?tab=providers` deep link for an
+  // administrator (intent-hq/intent#5514).
   const hiddenTabs = $derived<readonly SettingsTab[]>(
     $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
   );
   $effect(() => {
-    if (hiddenTabs.includes(activeTab)) setActiveTab('display');
+    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
   });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.

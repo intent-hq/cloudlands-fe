@@ -119,6 +119,8 @@
   "hud_card_attnFailed_label": ["ja", "ko", "de", "es"],
   "hud_card_pr_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "hud_tokenBurn_perMinute_label": ["fr", "es"],
+  "layout_agentMemoryBreakdown_pid_label": "*",
+  "layout_agentMemoryBreakdown_total_label": ["fr", "es"],
   "layout_agentTab_fontSample_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "layout_aiLayout_agentNumbered_fallback": ["de", "fr"],
   "layout_aiLayout_agent_fallback": ["de", "fr"],
@@ -304,6 +306,7 @@
   "workspace_prSection_pullRequests_label": ["de"],
   "workspace_progressCard_base_label": ["es", "fr"],
   "workspace_setupScriptEditor_variables_label": ["fr", "es"],
+  "workspace_share_invite_reusableDetail_label": ["de", "es", "fr", "ko", "zh-CN", "zh-TW"],
   "workspace_sidebarHeader_base_label": ["es", "fr"],
   "workspace_sidebarPrDropdown_trigger_ariaLabel": ["es", "fr"],
   "workspace_skills_title": ["de"],
@@ -315,5 +318,6 @@
   "settings_section_git": "*",
   "settings_sidebar_appBehavior_label": ["es"],
   "settings_sidebar_agents_label": ["fr"],
-  "workspace_hoverCard_member_ariaLabel": ["fr", "ko"]
+  "presence_avatarStack_more_label": "*",
+  "workspace_progressCard_presenceOffline_tooltip": ["de"]
 }

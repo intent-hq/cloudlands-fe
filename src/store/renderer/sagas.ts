@@ -33,6 +33,7 @@ import { chatSubscribeSaga } from './slices/chat-state/sagas/chat-subscribe-saga
 import { switchTimingSaga } from './slices/chat-state/sagas/switch-timing-saga';
 import { connectionsSaga } from './slices/connections/sagas/connections-saga';
 import { guestSessionsSaga } from './slices/guest-sessions/sagas/guest-sessions-saga';
+import { presenceSaga } from './slices/presence/sagas/presence-saga';
 import { contextSaga } from './slices/context/sagas/context-saga';
 import { daemonHealthSaga } from './slices/daemon-health/sagas/daemon-health-saga';
 import { directoryPickerSaga } from './slices/directory-picker/sagas/directory-picker-saga';
@@ -47,6 +48,7 @@ import { acceptChangesStatusSaga } from './slices/git/sagas/accept-changes-statu
 import { gitRootsSaga } from './slices/git-roots/sagas/git-roots-saga';
 import { githubAuthSaga } from './slices/github-auth/sagas/github-auth-saga';
 import { githubRepoSearchSaga } from './slices/github-repo-search/sagas/github-repo-search-saga';
+import { githubUserSearchSaga } from './slices/github-user-search/sagas/github-user-search-saga';
 import { actionKeySaga } from './slices/hardware-console/sagas/action-key-saga';
 import { hardwareConsoleDeviceSaga } from './slices/hardware-console/sagas/hardware-console-device-saga';
 import { keyPinPersistenceSaga } from './slices/hardware-console/sagas/key-pin-persistence-saga';
@@ -135,6 +137,7 @@ export const sagas = [
   daemonHealthSaga,
   connectionsSaga,
   guestSessionsSaga,
+  presenceSaga,
   settingsHydrationSaga,
   activeStreamsSaga,
   agentReadSaga,
@@ -194,6 +197,7 @@ export const sagas = [
   specialistProposalHistorySaga,
   githubAuthSaga,
   githubRepoSearchSaga,
+  githubUserSearchSaga,
   sentryAuthSaga,
   linearAuthSaga,
   mcpSettingsSaga,

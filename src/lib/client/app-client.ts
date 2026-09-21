@@ -522,6 +522,12 @@ export interface FileBlock {
 export interface AgentDeleteResult extends MutationResult {
   scheduled?: boolean;
   deleteAt?: string;
+  /**
+   * The daemon refused the delete with `-32003 Forbidden` (a collaborator
+   * connection): not transient, so the caller renders a not-permitted sentence
+   * instead of the raw transport message.
+   */
+  forbidden?: boolean;
 }
 
 /**

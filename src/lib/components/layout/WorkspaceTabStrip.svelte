@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -337,6 +338,7 @@
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
   }
+
   function tabAccessibleLabel(
     title: string,
     workspaceState: WorkspaceStatusPresentationState,
@@ -930,7 +932,6 @@
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
-          {@const canManageSharing = workspace.myRole === 'owner'}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
           {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
           {@const isArchived = workspace.status === WorkspaceStatus.Archived}
@@ -987,16 +988,12 @@
               durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
             />
             {#key isCurrent && pointerOpenEligibleWorkspaceHoverCardIds.has(workspaceId)}
-              <!-- The hover card offers member Remove only to the
-                   workspace's owner, so the card stays hoverable (see
-                   `disableHoverableContent`) when this window owns the workspace;
-                   otherwise it is a read-only preview that closes on leave. -->
               <TooltipRich
                 side="bottom"
                 align="start"
                 delayDuration={workspaceHoverCardOpenDelay}
                 onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-                disableHoverableContent={!canManageSharing}
+                disableHoverableContent={true}
                 disabled={isCurrent || draggedWorkspaceId !== null}
                 showArrow={false}
                 maxWidth="none"

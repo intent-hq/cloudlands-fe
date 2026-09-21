@@ -435,6 +435,7 @@ export class UnifiedAgentFactory {
           return {
             success: false,
             error: backendResult.error,
+            cause: backendResult.cause,
             sessionId,
           };
         }
@@ -718,7 +719,7 @@ export class UnifiedAgentFactory {
     provider?: string,
     _skipInitialPrompt?: boolean,
     nameExplicitlySet?: boolean,
-  ): Promise<{ success: boolean; agentId?: string; error?: string }> {
+  ): Promise<{ success: boolean; agentId?: string; error?: string; cause?: unknown }> {
     try {
       const request = {
         workspaceId: String(agent.workspaceId),
@@ -759,9 +760,12 @@ export class UnifiedAgentFactory {
       return { success: true, agentId: created.id ? String(created.id) : undefined };
     } catch (error) {
       logger.error('Daemon agent.create failed', error);
+      // Keep the thrown error alongside the flattened message: a daemon
+      // refusal (`-32003`) is only recognisable from the typed `rpcCode`.
       return {
         success: false,
         error: error instanceof Error ? error.message : m.agent_factory_daemon_error(),
+        cause: error,
       };
     }
   }

@@ -10,6 +10,8 @@ import {
   removeTaskAgentAssociation,
 } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
 import { appClient } from '$lib/client';
+import { store as appStore } from '$store/renderer/store';
+import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { Workspace } from '$shared/types';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { stripMarkdownFormatting } from '$shared/utils-client';
@@ -58,6 +60,16 @@ export async function runAssignAgentTaskMenuAction({
   storeDispatch: (action: AssignAgentStoreAction) => void;
   logger: LoggerLike;
 }): Promise<void> {
+  // The daemon refuses `agent.create` with -32003 for a collaborator
+  // connection; refuse here before any optimistic marker or wire call.
+  if (selectHidesAgentLifecycleActions.select(appStore.state, workspace.id)) {
+    logger.warn('Cannot assign an agent: agent lifecycle actions are not permitted here', {
+      workspaceId: workspace.id,
+      noteId,
+    });
+    return;
+  }
+
   const taskText = taskData.text || m.workspace_taskMenu_unknownTask_label();
   const taskPosition = parseInt(taskData.position) || 0;
   const occurrenceTaskKey = getTaskAssociationKeyAtPosition(editor, taskPosition, taskText);

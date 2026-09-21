@@ -331,6 +331,32 @@ export const IPC_CHANNELS = {
     DISMISS: 'quit-confirmation:dismiss',
   },
 
+  // Invite consent (renderer-rendered GitHub identity prompt of an invite join).
+  // Payload contracts live in src/shared/ipc/invite-consent.ts.
+  INVITE_CONSENT: {
+    /** Main → renderer: show the invite-consent modal for a request. */
+    SHOW: 'invite-consent:show',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'invite-consent:ack',
+    /** Renderer → main (invoke): the user's `open` / `cancel` decision. */
+    RESPONSE: 'invite-consent:response',
+    /** Main → renderer: close the modal with the request's outcome. */
+    DISMISS: 'invite-consent:dismiss',
+  },
+
+  // Invite notice (renderer-rendered failure / plaintext-credential notice of
+  // an invite join). Payload contracts live in src/shared/ipc/invite-notice.ts.
+  INVITE_NOTICE: {
+    /** Main → renderer: show the invite-notice modal for a request. */
+    SHOW: 'invite-notice:show',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'invite-notice:ack',
+    /** Renderer → main (invoke): the user acknowledged the notice (OK / Escape / backdrop). */
+    RESPONSE: 'invite-notice:response',
+    /** Main → renderer: close the modal for a superseded request. */
+    DISMISS: 'invite-notice:dismiss',
+  },
+
   // Window Management
   WINDOW: {
     RELOAD: 'window:reload',
@@ -693,6 +719,7 @@ export const IPC_CHANNELS = {
     GET_STATUS: 'github-auth:get-status',
     LIST_REPOS: 'github-auth:list-repos',
     SEARCH_REPOS: 'github-auth:search-repos',
+    SEARCH_USERS: 'github-auth:search-users',
   },
 
   // Linear Auth (via daemon API OAuth)
@@ -940,6 +967,15 @@ export const IPC_CHANNELS = {
     LEAVE: 'guest-sessions:leave',
     LEAVE_WORKSPACE: 'guest-sessions:leave-workspace',
     CHANGED: 'guest-sessions:changed',
+  },
+
+  // Workspace presence (multiplayer w5). The daemon connection is pooled per
+  // backend in main and `presence.update` replaces the CONNECTION's whole
+  // focus set, so each window reports its own focus / typing here and main
+  // merges every window of that backend into one `presence.update`. The
+  // reply carries the connection's opaque `typingSource`.
+  PRESENCE: {
+    REPORT: 'presence:report',
   },
 
   // Workspace transfer relay (main-process, wizard steps 3–4). The renderer

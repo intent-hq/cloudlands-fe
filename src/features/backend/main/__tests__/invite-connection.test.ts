@@ -9,10 +9,10 @@ import { PassThrough } from 'node:stream';
 import type { TailcatSpawn } from '../tailcat-tunnel';
 
 /**
- * `/invite` redemption client (features/backend/main/invite-connection.ts)
- * against a fake WSS daemon presenting a pinned self-signed cert. Covers the
- * two-phase `invite.redeem` wire shape (intentd #1872), the handshake-level
- * pin, `error.data.code` routing, and the multi-host race.
+ * `/invite` join client (features/backend/main/invite-connection.ts) against
+ * a fake WSS daemon presenting a pinned self-signed cert. Covers the
+ * challenge-and-prove wire shape (intentd #1967), the handshake-level pin,
+ * `error.data.code` routing, and the multi-host race.
  */
 
 const nodeRequire = createRequire(import.meta.url);
@@ -118,17 +118,38 @@ function relaySpawn(relayPort: number, children: RelayChild[], args: string[][])
   };
 }
 
-const START = {
-  flowId: 'flow_1',
-  userCode: 'ABCD-1234',
-  verificationUri: 'https://github.com/login/device',
-  expiresIn: 900,
-  interval: 5,
+/**
+ * Fake tailcat child that exits right away without relaying a byte — the
+ * shape of a real client given a tc address it cannot rendezvous on.
+ */
+class DyingChild extends EventEmitter {
+  stdin = new PassThrough();
+  stdout = new PassThrough();
+  stderr = new PassThrough();
+  exitCode: number | null = null;
+  signalCode = null;
+  constructor() {
+    super();
+    setImmediate(() => {
+      this.exitCode = 1;
+      this.emit('exit', 1);
+    });
+  }
+  kill(): boolean {
+    return true;
+  }
+}
+
+const dyingSpawn: TailcatSpawn = () => new DyingChild() as unknown as ChildProcess;
+
+const CHALLENGE = {
   workspaceId: 'ws_1',
   workspaceTitle: 'Shared project',
+  nonce: 'n'.repeat(43),
+  nonceExpiresAt: '2026-09-17T12:05:00Z',
 };
+const PROOF = { nonce: CHALLENGE.nonce, gistId: 'gist0123abcdef', login: 'octocat' };
 const CREDENTIAL = {
-  status: 'authorized',
   token: 't'.repeat(64),
   principalId: 'prn_7',
   login: 'octocat',
@@ -153,11 +174,11 @@ describe('openInviteConnection', () => {
     daemon.upgradeUrls = [];
   });
 
-  it('dials /invite and runs both invite.redeem phases with the documented params', async () => {
+  it('dials /invite and runs invite.challenge then invite.prove with the documented params', async () => {
     daemon.handler = (req) => {
-      if (req.method !== 'invite.redeem') return { error: { code: -32001, message: 'nope' } };
-      if (typeof req.params?.flowId === 'string') return { result: CREDENTIAL };
-      return { result: START };
+      if (req.method === 'invite.challenge') return { result: CHALLENGE };
+      if (req.method === 'invite.prove') return { result: CREDENTIAL };
+      return { error: { code: -32601, message: 'unknown' } };
     };
     const { openInviteConnection } = await import('../invite-connection');
     const conn = await openInviteConnection({
@@ -168,11 +189,87 @@ describe('openInviteConnection', () => {
     try {
       expect(conn.host).toBe('127.0.0.1');
       expect(daemon.upgradeUrls).toEqual(['/invite']);
-      await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
-      await expect(conn.redeemWait('flow_1', 5_000)).resolves.toEqual(CREDENTIAL);
+      await expect(conn.challenge('inv_1', 's3cret')).resolves.toEqual(CHALLENGE);
+      await expect(conn.prove('inv_1', 's3cret', PROOF, 5_000)).resolves.toEqual(CREDENTIAL);
       expect(daemon.requests.map((r) => [r.method, r.params])).toEqual([
-        ['invite.redeem', { inviteId: 'inv_1', secret: 's3cret' }],
-        ['invite.redeem', { flowId: 'flow_1' }],
+        ['invite.challenge', { inviteId: 'inv_1', secret: 's3cret' }],
+        [
+          'invite.prove',
+          {
+            inviteId: 'inv_1',
+            secret: 's3cret',
+            nonce: PROOF.nonce,
+            gistId: PROOF.gistId,
+            login: PROOF.login,
+          },
+        ],
+      ]);
+    } finally {
+      conn.close();
+    }
+  });
+
+  // The host's own proof refusals (intentd #1967) and the owner's self-join
+  // refusal (intentd #1986) route on `error.data.code` like every other
+  // invite refusal.
+  it.each(['proof-invalid', 'proof-expired', 'github-unreachable', 'owner-self-join'])(
+    'surfaces an invite.prove refusal with %s as inviteCode',
+    async (code) => {
+      daemon.handler = (req) =>
+        req.method === 'invite.prove'
+          ? { error: { code: -32602, message: 'refused', data: { code } } }
+          : { error: { code: -32601, message: 'unknown' } };
+      const { openInviteConnection, InviteRpcError } = await import('../invite-connection');
+      const conn = await openInviteConnection({
+        hosts: ['127.0.0.1'],
+        port: daemon.port,
+        fingerprint: daemon.fingerprint,
+      });
+      try {
+        const err = await conn.prove('inv_1', 's3cret', PROOF, 5_000).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(InviteRpcError);
+        expect(err).toMatchObject({ code: -32602, inviteCode: code });
+      } finally {
+        conn.close();
+      }
+    },
+  );
+
+  // Returning-guest join: `invite.inspect` previews without a proof and
+  // `invite.accept` joins with the stored credential; a credential the host no
+  // longer recognizes is the documented `credential-invalid` code.
+  it('runs invite.inspect and invite.accept with the documented params and result shapes', async () => {
+    const INSPECTION = {
+      workspaceId: 'ws_1',
+      workspaceTitle: 'Shared',
+      hostname: 'studio.local',
+      prettyHostname: 'Studio',
+    };
+    daemon.handler = (req) => {
+      if (req.method === 'invite.inspect') return { result: INSPECTION };
+      if (req.method === 'invite.accept') {
+        return req.params?.credential === 'stored-token'
+          ? { result: CREDENTIAL }
+          : { error: { code: -32602, message: 'nope', data: { code: 'credential-invalid' } } };
+      }
+      return { error: { code: -32601, message: 'unknown' } };
+    };
+    const { openInviteConnection, InviteRpcError } = await import('../invite-connection');
+    const conn = await openInviteConnection({
+      hosts: ['127.0.0.1'],
+      port: daemon.port,
+      fingerprint: daemon.fingerprint,
+    });
+    try {
+      await expect(conn.inspect('inv_1', 's3cret')).resolves.toEqual(INSPECTION);
+      await expect(conn.accept('inv_1', 's3cret', 'stored-token')).resolves.toEqual(CREDENTIAL);
+      const refused = await conn.accept('inv_1', 's3cret', 'revoked').catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(InviteRpcError);
+      expect(refused).toMatchObject({ code: -32602, inviteCode: 'credential-invalid' });
+      expect(daemon.requests.map((r) => [r.method, r.params])).toEqual([
+        ['invite.inspect', { inviteId: 'inv_1', secret: 's3cret' }],
+        ['invite.accept', { inviteId: 'inv_1', secret: 's3cret', credential: 'stored-token' }],
+        ['invite.accept', { inviteId: 'inv_1', secret: 's3cret', credential: 'revoked' }],
       ]);
     } finally {
       conn.close();
@@ -194,7 +291,7 @@ describe('openInviteConnection', () => {
       fingerprint: daemon.fingerprint,
     });
     try {
-      const err = await conn.redeemStart('inv_1', 's3cret').catch((e: unknown) => e);
+      const err = await conn.challenge('inv_1', 's3cret').catch((e: unknown) => e);
       expect(err).toBeInstanceOf(InviteRpcError);
       expect(err).toMatchObject({ code: -32602, inviteCode: 'invite-expired' });
     } finally {
@@ -220,7 +317,7 @@ describe('openInviteConnection', () => {
   });
 
   it('races candidate hosts and wins on the reachable one', async () => {
-    daemon.handler = () => ({ result: START });
+    daemon.handler = () => ({ result: CHALLENGE });
     const { openInviteConnection } = await import('../invite-connection');
     // 192.0.2.0/24 is TEST-NET-1: never routable, so it neither answers nor refuses.
     const conn = await openInviteConnection(
@@ -229,34 +326,59 @@ describe('openInviteConnection', () => {
     );
     try {
       expect(conn.host).toBe('127.0.0.1');
-      await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
+      await expect(conn.challenge('inv_1', 's3cret')).resolves.toEqual(CHALLENGE);
     } finally {
       conn.close();
     }
   });
 
-  it('rejects pending requests when the connection is closed', async () => {
+  it('rejects pending requests with connection-closed when the connection is closed', async () => {
     daemon.handler = () => new Promise(() => {});
-    const { openInviteConnection } = await import('../invite-connection');
+    const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
     const conn = await openInviteConnection({
       hosts: ['127.0.0.1'],
       port: daemon.port,
       fingerprint: daemon.fingerprint,
     });
-    const waiting = conn.redeemWait('flow_1', 0);
+    const waiting = conn.prove('inv_1', 's3cret', PROOF, 0);
     conn.close();
-    await expect(waiting).rejects.toThrow(/closed/);
-    await expect(conn.redeemStart('x', 'y')).rejects.toThrow(/closed/);
+    const closedError = await waiting.catch((e: unknown) => e);
+    expect(closedError).toBeInstanceOf(InviteTransportError);
+    expect(closedError).toMatchObject({ transportCode: 'connection-closed' });
+    const afterClose = await conn.challenge('x', 'y').catch((e: unknown) => e);
+    expect(afterClose).toBeInstanceOf(InviteTransportError);
+    expect(afterClose).toMatchObject({ transportCode: 'connection-closed' });
   });
 
-  it('rejects when every candidate is unreachable', async () => {
-    const { openInviteConnection } = await import('../invite-connection');
-    await expect(
-      openInviteConnection(
-        { hosts: ['127.0.0.1'], port: 1, fingerprint: daemon.fingerprint },
-        { timeoutMs: 3_000 },
-      ),
-    ).rejects.toThrow();
+  it('rejects a prove request the daemon never answers with host-unreachable', async () => {
+    daemon.handler = () => new Promise(() => {});
+    const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+    const conn = await openInviteConnection({
+      hosts: ['127.0.0.1'],
+      port: daemon.port,
+      fingerprint: daemon.fingerprint,
+    });
+    try {
+      const err = await conn.prove('inv_1', 's3cret', PROOF, 200).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteTransportError);
+      expect(err).toMatchObject({ transportCode: 'host-unreachable' });
+    } finally {
+      conn.close();
+    }
+  });
+
+  it('rejects with host-refused when the only candidate refuses the connection', async () => {
+    const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+    // Port 1 (tcpmux) has no listener on the test host: an immediate ECONNREFUSED.
+    const err = await openInviteConnection(
+      { hosts: ['127.0.0.1'], port: 1, fingerprint: daemon.fingerprint },
+      { timeoutMs: 3_000 },
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InviteTransportError);
+    expect(err).toMatchObject({ transportCode: 'host-refused' });
+    // A refused connection is not mistaken for a plain socket error: the
+    // library's ECONNREFUSED text (which names the address) is not carried.
+    expect((err as Error).message).not.toContain('127.0.0.1');
     await expect(
       openInviteConnection({ hosts: [], port: daemon.port, fingerprint: daemon.fingerprint }),
     ).rejects.toThrow(/no host/);
@@ -267,7 +389,7 @@ describe('openInviteConnection', () => {
     // candidates can complete a pin-verified handshake.
     const shared = new FakeInviteDaemon();
     await shared.start(undefined);
-    shared.handler = () => ({ result: START });
+    shared.handler = () => ({ result: CHALLENGE });
     const { openInviteConnection } = await import('../invite-connection');
     try {
       const conn = await openInviteConnection(
@@ -276,7 +398,7 @@ describe('openInviteConnection', () => {
       );
       try {
         expect(['127.0.0.1', 'localhost']).toContain(conn.host);
-        await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
+        await expect(conn.challenge('inv_1', 's3cret')).resolves.toEqual(CHALLENGE);
         // The loser — connecting or already open — is destroyed, so at most
         // the winner's socket remains open on the daemon side.
         await vi.waitFor(() => expect(shared.openClients()).toBe(1), { timeout: 3_000 });
@@ -305,14 +427,14 @@ describe('openInviteConnection', () => {
     });
     await new Promise<void>((res) => blackhole.listen(0, '127.0.0.1', () => res()));
     const port = (blackhole.address() as AddressInfo).port;
-    const { openInviteConnection } = await import('../invite-connection');
+    const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
     try {
-      await expect(
-        openInviteConnection(
-          { hosts: ['127.0.0.1'], port, fingerprint: daemon.fingerprint },
-          { timeoutMs: 500 },
-        ),
-      ).rejects.toThrow(/timed out/);
+      const err = await openInviteConnection(
+        { hosts: ['127.0.0.1'], port, fingerprint: daemon.fingerprint },
+        { timeoutMs: 500 },
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteTransportError);
+      expect(err).toMatchObject({ transportCode: 'host-unreachable' });
       await vi.waitFor(() => expect(accepted.length).toBe(1), { timeout: 3_000 });
       await vi.waitFor(() => expect(closedCount).toBe(1), { timeout: 3_000 });
     } finally {
@@ -334,7 +456,7 @@ describe('openInviteConnection', () => {
     });
 
     it('hosts=[] + tc (the daemon default) dials the tunnel with the pin enforced', async () => {
-      daemon.handler = () => ({ result: START });
+      daemon.handler = () => ({ result: CHALLENGE });
       const children: RelayChild[] = [];
       const args: string[][] = [];
       const { openInviteConnection } = await import('../invite-connection');
@@ -352,7 +474,7 @@ describe('openInviteConnection', () => {
         expect(conn.host).toBe('TC-Key-ABC');
         expect(args).toEqual([['TC-Key-ABC', String(daemon.port)]]);
         expect(daemon.upgradeUrls).toEqual(['/invite']);
-        await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
+        await expect(conn.challenge('inv_1', 's3cret')).resolves.toEqual(CHALLENGE);
       } finally {
         conn.close();
       }
@@ -362,7 +484,7 @@ describe('openInviteConnection', () => {
     });
 
     it('passes the tc address to tailcat byte-for-byte (base64url is case-sensitive)', async () => {
-      daemon.handler = () => ({ result: START });
+      daemon.handler = () => ({ result: CHALLENGE });
       const children: RelayChild[] = [];
       const args: string[][] = [];
       const tcAddress =
@@ -390,7 +512,7 @@ describe('openInviteConnection', () => {
     });
 
     it('falls back to the tunnel when every direct host fails, and closes it on failure', async () => {
-      daemon.handler = () => ({ result: START });
+      daemon.handler = () => ({ result: CHALLENGE });
       const children: RelayChild[] = [];
       const { openInviteConnection } = await import('../invite-connection');
       // Direct: port 1 refuses at once. The relay ignores the remote port
@@ -402,7 +524,7 @@ describe('openInviteConnection', () => {
       try {
         expect(conn.via).toBe('tunnel');
         expect(conn.host).toBe('tc-key');
-        await expect(conn.redeemStart('inv_1', 's3cret')).resolves.toEqual(START);
+        await expect(conn.challenge('inv_1', 's3cret')).resolves.toEqual(CHALLENGE);
       } finally {
         conn.close();
       }
@@ -429,6 +551,80 @@ describe('openInviteConnection', () => {
         },
         { timeout: 3_000 },
       );
+    });
+
+    it('rejects with tunnel-failed when the tailcat child exits immediately', async () => {
+      const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+      const err = await openInviteConnection(
+        { hosts: [], port: daemon.port, fingerprint: daemon.fingerprint, tcAddress: 'tc-bad' },
+        { timeoutMs: 3_000, tailcatSpawn: dyingSpawn },
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteTransportError);
+      expect(err).toMatchObject({ transportCode: 'tunnel-failed' });
+      expect((err as Error).message).not.toContain('tc-bad');
+    });
+
+    it('keeps host-refused when the pin-verified daemon behind the tunnel rejects the upgrade', async () => {
+      // A daemon presenting the pinned cert that answers `/invite` with a
+      // non-101 status: the tunnel carried the request, so the refusal is the
+      // daemon's, not the forwarder's.
+      const refusing = https.createServer({ cert: WSS_CERT_PEM, key: WSS_KEY_PEM });
+      refusing.on('upgrade', (_req, socket) => {
+        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      });
+      await new Promise<void>((res) => refusing.listen(0, '127.0.0.1', () => res()));
+      const refusingPort = (refusing.address() as AddressInfo).port;
+      const children: RelayChild[] = [];
+      try {
+        const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+        const err = await openInviteConnection(
+          { hosts: [], port: refusingPort, fingerprint: daemon.fingerprint, tcAddress: 'tc-key' },
+          { timeoutMs: 3_000, tailcatSpawn: relaySpawn(refusingPort, children, []) },
+        ).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(InviteTransportError);
+        expect(err).toMatchObject({ transportCode: 'host-refused' });
+        await vi.waitFor(
+          () => {
+            expect(children.length).toBeGreaterThan(0);
+            expect(children.every((c) => c.killed)).toBe(true);
+          },
+          { timeout: 3_000 },
+        );
+      } finally {
+        await new Promise<void>((res) => refusing.close(() => res()));
+      }
+    });
+
+    it('rejects with tailcat-unavailable when no tailcat binary can be resolved', async ({
+      skip,
+    }) => {
+      const { resolveTailcatBinaryPath } = await import('../tailcat-tunnel');
+      const override = process.env.TAILCAT_BIN;
+      process.env.TAILCAT_BIN = '/nonexistent/tailcat-for-invite-test';
+      try {
+        // A staged dev binary up the tree would satisfy the probe regardless
+        // of the override; the code path under test needs a truly absent one.
+        if (resolveTailcatBinaryPath() !== null) skip();
+        const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+        const err = await openInviteConnection(
+          { hosts: [], port: daemon.port, fingerprint: daemon.fingerprint, tcAddress: 'tc-key' },
+          { timeoutMs: 3_000, tailcatSpawn: dyingSpawn },
+        ).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(InviteTransportError);
+        expect(err).toMatchObject({ transportCode: 'tailcat-unavailable' });
+      } finally {
+        process.env.TAILCAT_BIN = override;
+      }
+    });
+
+    it('a refused direct host falling through to a dead tunnel reports the tunnel failure', async () => {
+      const { openInviteConnection, InviteTransportError } = await import('../invite-connection');
+      const err = await openInviteConnection(
+        { hosts: ['127.0.0.1'], port: 1, fingerprint: daemon.fingerprint, tcAddress: 'tc-bad' },
+        { timeoutMs: 3_000, tailcatSpawn: dyingSpawn },
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InviteTransportError);
+      expect(err).toMatchObject({ transportCode: 'tunnel-failed' });
     });
   });
 });

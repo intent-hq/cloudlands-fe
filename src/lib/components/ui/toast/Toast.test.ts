@@ -131,6 +131,27 @@ describe('Toast', () => {
     ]);
   });
 
+  it('omits the debug action when the application error carries no onDebug', () => {
+    render(ErrorToast, {
+      props: {
+        error: {
+          id: 'application-error',
+          type: 'error',
+          title: 'Workspace error',
+          message: 'The workspace could not be opened.',
+          timestamp: new Date('2026-09-07T00:00:00Z'),
+          recoverable: false,
+        },
+        onCopy: vi.fn(),
+      },
+    });
+
+    expect(screen.getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
+      'Copy',
+      '',
+    ]);
+  });
+
   it('renders the undo keyboard shortcut as a kbd chip', () => {
     const { container } = render(ToastUndoAction);
 

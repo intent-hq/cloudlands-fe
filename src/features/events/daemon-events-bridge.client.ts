@@ -226,6 +226,7 @@ import {
   removePendingAgentDeletion,
   setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
+import { isStructuredAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
 import {
   getAgentFailureEntry,
@@ -245,6 +246,8 @@ import {
   type PermissionRequest,
 } from '$store/renderer/slices/permission/permission-slice';
 import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
+import { presenceRosterReceived } from '$store/renderer/slices/presence/presence-slice';
+import { isPresenceRoster } from '$shared/types/presence';
 import {
   workspaceCreateProgressDone,
   workspaceCreateProgressReceived,
@@ -288,6 +291,7 @@ import {
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { formatGuestSessionLabel } from '$lib/utils/connection-label';
 import {
   reportStreamLifecycle,
   streamTurnCorrelation,
@@ -1647,6 +1651,17 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * `presence:changed` (§5.46) carries the workspace's whole online roster —
+ * a full replacement, never a diff — so it is mirrored straight into the
+ * presence slice; a payload off the documented shape is dropped.
+ */
+function handlePresenceChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: unknown }).data;
+  if (!isPresenceRoster(data)) return;
+  appStore.dispatch(presenceRosterReceived(data));
+}
+
+/**
  * `workspace:context-changed` (§5.1 / §6.5) carries the full recomputed
  * `{ workspaceId, items: ContextItem[] }` — self-sufficient per §6.7 — so the
  * renderer mirrors it straight into the context slice via `hydrateContextItems`
@@ -2624,7 +2639,11 @@ function handleWorkspaceMembershipRemoved(
   closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
     logger.warn('closeWorkspaceTabAndNavigateAway failed after membership removal', error);
   });
-  void showWorkspaceAccessRemovedToast({ workspaceId, title, hostLabel: session.label });
+  void showWorkspaceAccessRemovedToast({
+    workspaceId,
+    title,
+    hostLabel: formatGuestSessionLabel(session),
+  });
   return true;
 }
 
@@ -3513,6 +3532,14 @@ export function routeDaemonEventsNotification(
     return;
   }
 
+  // `presence:changed` (§5.46) carries a self-sufficient `data.workspaceId`
+  // and is transient by contract, so it is folded into the presence slice
+  // and never recorded on the activity timeline.
+  if (type === 'presence:changed') {
+    handlePresenceChangedEvent(event);
+    return;
+  }
+
   // `git:clone:progress` / `git:clone:done` frames carrying a `data.progressId`
   // correlate to an in-flight `workspace.create` by progressId, not by
   // workspaceId (server-minted mid-create, unknown to the FE), so they route
@@ -4137,6 +4164,11 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   'app:ui-navigate',
   'app:ui-highlight',
   'app:workspace-open',
+  // `presence:changed` (§5.46, multiplayer w5) — the transient who-is-here
+  // roster of a member workspace, a full replacement folded into the
+  // presence slice. Workspace-scoped on the daemon side, so the membership
+  // gate narrows it like any other row.
+  'presence:changed',
 ] as const;
 
 export async function refreshDaemonEventsAfterReconnect(
@@ -4194,62 +4226,53 @@ function sharedWorkspaceIdsToRefresh(): string[] {
 
 /**
  * Drop failure-registry entries whose agent no longer exists on the daemon.
- * One `agent.list` per DISTINCT workspace holding entries (no per-entry
- * fan-out — AGENTS.md "Event-driven refetches"); a failed or unverifiable
- * list (missing/non-array `agents`) keeps that workspace's entries
- * (unverifiable ≠ deleted — live events converge them later). Only entries
- * from the snapshot taken BEFORE the list, still identical in the registry
- * (the same identity-guard convention as retryAgent in the toast saga), are
- * dropped: a failure recorded or replaced while the list was in flight
- * predates nothing the stale result can prove, so it is kept. Never throws,
- * so the reconnect refresh can await it safely.
+ * One `agent.get` point read per entry — the registry is keyed by agentId, so
+ * that is one read per agent, never a whole-workspace `agent.list` frame
+ * (intent#5531; the registry holds a handful of ids, so this is bounded by
+ * the failures, not the workspace). An entry is dropped ONLY on the STRICT
+ * structured not-found rejection (`isStructuredAgentNotFoundError`: numeric
+ * `rpcCode === -32602` AND `data.code === "not-found"`, §9) — deliberately
+ * NOT the lenient `isAgentNotFoundError`, whose `rpcCode` + message fallback
+ * accepts errors that lost the discriminator; fine for closing a stale tab,
+ * but here a match DELETES a failure entry. Any other failure keeps the entry
+ * (unverifiable ≠ deleted — live events converge it later).
+ * Only the exact entry snapshotted BEFORE
+ * the read, still identical in the registry (the same identity-guard
+ * convention as retryAgent in the toast saga), is dropped: a failure
+ * recorded or replaced while the read was in flight predates nothing the
+ * stale result can prove, so it is kept. Never throws, so the reconnect
+ * refresh can await it safely.
  */
 async function reconcileAgentFailureRegistry(): Promise<void> {
   const entries = listAgentFailureEntries();
   if (entries.length === 0) return;
   const { backendRequest } = await import('$lib/client/live/backend-transport');
-  const workspaceIds = [...new Set(entries.map((entry) => entry.workspaceId))];
   await Promise.all(
-    workspaceIds.map(async (workspaceId) => {
-      let survivorIds: Set<string>;
+    entries.map(async (entry) => {
+      const { agentId, workspaceId } = entry;
       try {
-        // Deliberately unscoped (§5.5 row scope): failure entries can name
-        // delegated and background agents, so survivorship needs every bin.
-        const response = (await backendRequest('agent.list', { workspaceId })) as
-          { agents?: Array<{ id?: unknown }> } | undefined;
-        if (!Array.isArray(response?.agents)) {
-          logger.warn(
-            'agent.list returned no verifiable agents array during failure-registry reconciliation — keeping entries',
-            { workspaceId },
-          );
+        await backendRequest('agent.get', { agentId, workspaceId });
+        return;
+      } catch (error) {
+        if (!isStructuredAgentNotFoundError(error)) {
+          logger.warn('agent.get failed during failure-registry reconciliation — keeping entry', {
+            agentId,
+            workspaceId,
+            error,
+          });
           return;
         }
-        survivorIds = new Set(
-          response.agents
-            .map((agent) => agent?.id)
-            .filter((id): id is string => typeof id === 'string'),
-        );
-      } catch (error) {
-        logger.warn('agent.list failed during failure-registry reconciliation — keeping entries', {
-          workspaceId,
-          error,
-        });
-        return;
       }
-      for (const entry of entries) {
-        if (entry.workspaceId !== workspaceId) continue;
-        if (survivorIds.has(entry.agentId)) continue;
-        // Identity guard: only drop the exact entry snapshotted before the
-        // list. Removed mid-flight (live agent:deleted) → already gone;
-        // replaced mid-flight (re-failure) → the fresh entry postdates the
-        // list result, which proves nothing about it — keep it.
-        if (getAgentFailureEntry(entry.agentId) !== entry) continue;
-        logger.warn('Dropping failure entry for agent no longer on the daemon', {
-          agentId: entry.agentId,
-          workspaceId,
-        });
-        removeAgentFailure(entry.agentId);
-      }
+      // Identity guard: only drop the exact entry snapshotted before the
+      // read. Removed mid-flight (live agent:deleted) → already gone;
+      // replaced mid-flight (re-failure) → the fresh entry postdates the
+      // read result, which proves nothing about it — keep it.
+      if (getAgentFailureEntry(agentId) !== entry) return;
+      logger.warn('Dropping failure entry for agent no longer on the daemon', {
+        agentId,
+        workspaceId,
+      });
+      removeAgentFailure(agentId);
     }),
   );
 }

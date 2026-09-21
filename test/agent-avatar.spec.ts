@@ -4,6 +4,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { loadBundledInterFont } from './test-fonts';
 import {
   agentAvatarGeometry,
   agentAvatarVariants,
@@ -54,9 +55,12 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => server?.close());
 
+// Text metrics feed the avatar stack's overflow badge width, so the harness uses the
+// repo-bundled Inter Variable (like the CT harness and /sandbox) rather than host fonts.
 async function mountAvatarHost(page: Page) {
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/lib/styles/tokens.css` });
+  await loadBundledInterFont(page, { baseUrl });
   await page.evaluate(async () => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
     const [{ mount, tick }, { default: Host }] = await Promise.all([
@@ -144,7 +148,7 @@ async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer>
         );
         context.fill();
         context.fillStyle = style.color;
-        context.font = `500 ${12 * selectedScale}px system-ui`;
+        context.font = `500 ${12 * selectedScale}px 'Inter Variable'`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(
@@ -301,7 +305,7 @@ test('renders repeated Coordinator message cards with canonical identity on the 
             'Coordinator',
           );
           await expect(card.getByTestId('agent-message-disclosure-toggle')).toHaveAccessibleName(
-            /sent a message: Coordinator message/,
+            'sent a message',
           );
 
           const [rowBox, identityBox, avatarBox, glyphBox] = await Promise.all([

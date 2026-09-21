@@ -198,7 +198,7 @@ describe('window cycle-focus bridge (cycle-open-windows action)', () => {
   });
 });
 
-describe('window close bridge (Cmd+W cascade window step)', () => {
+describe('window close bridge (Cmd+W cascade window step, guest-offline "Close window")', () => {
   beforeEach(() => {
     resetMockIpcRouter();
   });

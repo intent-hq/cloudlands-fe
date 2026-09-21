@@ -74,6 +74,7 @@ import {
 } from '../../browser-tab-registry/browser-tab-registry-slice';
 import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import {
   replaceWorkspaceList,
   setWorkspaceEntity,
@@ -232,6 +233,8 @@ function storeState(
     userPreferences: userPreferencesInitialState,
     tabState: { currentTabId: activeWorkspaceId },
     connections: { activeId: activeBackendId, windowBackendId: activeBackendId },
+    // Settled owner window: guest list received, no host joined.
+    guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
     workspaceAgents: { byWorkspaceId: {} },
     workspace: { workspaces: createCollection('id'), detailHydrated: {} },
   };

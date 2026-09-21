@@ -11,6 +11,7 @@ import {
   type PreviewDefinition,
 } from '../src/lib/component-catalog/preview-definition';
 import { store } from '../src/store/renderer/configured-store';
+import { guestSessionsListUnavailable } from '../src/store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { registerMockIpcHandler } from '../src/shared/ipc-mock-router';
 import { installMockElectronBridge } from '../src/test/ct-mock-electron-bridge';
 
@@ -22,6 +23,12 @@ import { installMockElectronBridge } from '../src/test/ct-mock-electron-bridge';
 (window as { __PLAYWRIGHT_CT_STORE_BOOTSTRAP__?: boolean }).__PLAYWRIGHT_CT_STORE_BOOTSTRAP__ =
   true;
 store.init();
+// No app sagas run here, so the guest-sessions saga never settles the window
+// identity (`selectWindowIdentitySettled`). Outside Electron that saga settles
+// it as an owner window (`guestSessionsListUnavailable`); do the same so the
+// fail-closed owner-only surfaces (intent-hq/cloudlands-fe#2652) render in
+// previews as they do in the product instead of staying withheld forever.
+store.dispatch(guestSessionsListUnavailable());
 
 const previewDefinitionLoaders = import.meta.glob<PreviewDefinition<Record<string, unknown>>>(
   '../src/**/*.preview.{ts,svelte}',

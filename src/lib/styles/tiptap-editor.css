@@ -1296,19 +1296,40 @@ code.is-file-path:focus {
   background: rgba(239, 68, 68, 0.2);
 }
 
-/* Remote cursors (multiplayer): caret widget + selection highlight */
+/* Remote cursors (multiplayer): caret widget + selection highlight.
+   The widget is an empty inline span that only marks the caret position; the
+   bar and the name tag are anchor-positioned to it (each widget sets its own
+   `--remote-cursor-anchor` name) and their containing block is the positioned
+   `.ProseMirror` root (`@tiptap/core` injects `.ProseMirror { position:
+   relative }` with its default `injectCSS`; remote-cursor-tag.ct.spec.ts
+   asserts the tag is kept inside that box), so the tag is sized to its
+   content instead of being bounded by the zero-width span and can fall back
+   to the other side of the caret when it would overflow the editor. A name
+   wider than the editor itself is clamped to the editor's width and
+   ellipsized rather than clipped by the note's scroll container. The browser
+   measures the overflow
+   of each placement against the editor's box on every layout (caret move,
+   resize, name change): the tag extends right from the caret, flips to end at
+   the caret when that would leave the right edge, clamps to the editor's left
+   edge when both orientations overflow, and drops below the line only on the
+   first line of the document. */
+@position-try --remote-cursor-tag-start {
+  left: 0;
+  right: auto;
+}
+
 .remote-cursor {
-  position: relative;
   display: inline;
+  anchor-name: var(--remote-cursor-anchor);
   pointer-events: none;
   user-select: none;
 }
 
 .remote-cursor__bar {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -1px;
+  position-anchor: var(--remote-cursor-anchor);
+  top: anchor(top);
+  left: calc(anchor(left) - 1px);
   width: 2px;
   height: 1.2em;
   background: var(--remote-cursor-color);
@@ -1316,24 +1337,41 @@ code.is-file-path:focus {
 
 .remote-cursor__tag {
   position: absolute;
-  left: -1px;
-  bottom: 1.2em;
+  position-anchor: var(--remote-cursor-anchor);
+  left: calc(anchor(left) - 1px);
+  bottom: anchor(top);
+  position-try-fallbacks:
+    flip-inline,
+    --remote-cursor-tag-start,
+    flip-block,
+    flip-block flip-inline,
+    --remote-cursor-tag-start flip-block;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0 0.3rem;
-  height: 1.1rem;
-  border-radius: 0.25rem 0.25rem 0.25rem 0;
+  height: 1rem;
+  border-radius: 0.25rem;
   background: var(--remote-cursor-color);
   color: white;
-  font-size: 0.65rem;
+  font-size: 0.625rem;
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
   opacity: 0.9;
 }
 
+.remote-cursor__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .remote-cursor__avatar {
+  flex-shrink: 0;
   width: 0.8rem;
   height: 0.8rem;
   border-radius: 9999px;
