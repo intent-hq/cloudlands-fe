@@ -52,6 +52,8 @@
   } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import { cancelGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticating } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import { cancelGitLabAuth } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
+  import { selectGitLabAuthIsAuthenticating } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
 
   import ProjectPickerMessage from '$features/onboarding/messages/ProjectPickerMessage.svelte';
   import type { IssueSelectionData } from '$lib/components/workspace/initializer/IssueSuggestions.svelte';
@@ -66,7 +68,7 @@
   import ClaudeLoginButton from '$features/onboarding/messages/ClaudeLoginButton.svelte';
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
-  import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
+  import OnboardingForgeStep from '$features/onboarding/steps/OnboardingForgeStep.svelte';
   import OnboardingRequirementsStep from '$features/onboarding/steps/OnboardingRequirementsStep.svelte';
   import {
     selectAllRequirementsMet,
@@ -724,7 +726,7 @@
         onboardingTestPromptRunning = false;
       }
     }
-    appStore.dispatch(goToStep('github'));
+    appStore.dispatch(goToStep('forge'));
   }
 
   // Pull conflict state
@@ -753,7 +755,7 @@
   const onboardingStepIndex = $derived(ONBOARDING_STEP_ORDER.indexOf($onboardingStep$));
   const isRequirementsStep = $derived($onboardingStep$ === 'requirements');
   const isWelcomeStep = $derived($onboardingStep$ === 'welcome');
-  const isGitHubStep = $derived($onboardingStep$ === 'github');
+  const isForgeStep = $derived($onboardingStep$ === 'forge');
   const isProjectStep = $derived($onboardingStep$ === 'project');
   const isConfiguringStep = $derived(
     $onboardingStep$ === 'configuring' || $onboardingStep$ === 'ready',
@@ -762,7 +764,7 @@
     onboardingStepIndex >= ONBOARDING_STEP_ORDER.indexOf('configuring'),
   );
   const onboardingVisibleStep = $derived(
-    isConfiguringStep ? 4 : isProjectStep ? 3 : isGitHubStep ? 2 : 1,
+    isConfiguringStep ? 4 : isProjectStep ? 3 : isForgeStep ? 2 : 1,
   );
   // The 'requirements' gate is not counted in the visible step indicator, and
   // 'configuring' and 'ready' share one visible step, so the count is the
@@ -1029,14 +1031,17 @@
     if (isWelcomeStep && hasConnectedProvider) {
       e.preventDefault();
       advanceFromWelcomeStep();
-    } else if (isGitHubStep) {
+    } else if (isForgeStep) {
       // Continue when connected, skip otherwise — both advance to project.
-      // Skipping abandons a still-pending device flow, so cancel it rather
-      // than leaving it polling in the background (and resurfacing in
-      // Settings).
+      // Skipping abandons a still-pending device flow (GitHub or GitLab), so
+      // cancel it rather than leaving it polling in the background (and
+      // resurfacing in Settings).
       e.preventDefault();
       if (selectGitHubAuthIsAuthenticating.select(appStore.state)) {
         appStore.dispatch(cancelGitHubAuth());
+      }
+      if (selectGitLabAuthIsAuthenticating.select(appStore.state)) {
+        appStore.dispatch(cancelGitLabAuth());
       }
       appStore.dispatch(goToStep('project'));
     } else if (isProjectStep && projectSelection?.isValid) {
@@ -1693,16 +1698,16 @@
                             </p>
                           </div>
                         </div>
-                      {:else if isGitHubStep}
+                      {:else if isForgeStep}
                         <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 2">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
-                              {m.onboarding_page_connectGithub_title()}
+                              {m.onboarding_page_connectForge_title()}
                             </h2>
                             <p class="text-lg text-muted-foreground">
-                              {m.onboarding_page_connectGithub_before()}
+                              {m.onboarding_page_connectForge_before()}
                               <br />
-                              {m.onboarding_page_connectGithub_after()}
+                              {m.onboarding_page_connectForge_after()}
                             </p>
                           </div>
                         </div>
@@ -1824,9 +1829,9 @@
                             </div>
                           {/if}
                         </div>
-                      {:else if isGitHubStep}
+                      {:else if isForgeStep}
                         <div class="max-w-5xl mx-auto">
-                          <OnboardingGitHubStep
+                          <OnboardingForgeStep
                             onContinue={() => appStore.dispatch(goToStep('project'))}
                             onSkip={() => appStore.dispatch(goToStep('project'))}
                           />

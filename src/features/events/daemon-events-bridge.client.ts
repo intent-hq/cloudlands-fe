@@ -275,6 +275,7 @@ import {
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import { mapDaemonMcpState } from '$store/renderer/slices/mcp-settings/mcp-settings-normalization';
 import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
+import { gitlabAuthChanged } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
 import { shareMembershipChanged } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 import {
   browserTabClosed,
@@ -3182,6 +3183,29 @@ function handleGitHubAuthChangedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * `sourceControl:auth-changed` carries `data = { provider, host, status }` on
+ * every forge-auth transition. GitHub transitions still arrive as
+ * `github:auth-changed` (handled above), so only the GitLab provider is routed
+ * here — never a token or code.
+ */
+function handleSourceControlAuthChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (data?.provider !== 'gitlab') return;
+  const status = data.status;
+  if (
+    status === 'authorized' ||
+    status === 'expired' ||
+    status === 'denied' ||
+    status === 'error' ||
+    status === 'revoked'
+  ) {
+    appStore.dispatch(
+      gitlabAuthChanged(status, typeof data.host === 'string' ? data.host : undefined),
+    );
+  }
+}
+
+/**
  * `client:connected` / `client:disconnected` (REV-2, §5.17) are global — the
  * daemon publishes `data = { clientId, name?, capabilities }` when a logical
  * client gains its first / loses its last live connection. The payload is a
@@ -3521,6 +3545,10 @@ export function routeDaemonEventsNotification(
   // it must also run before the workspace-id gate below.
   if (type === 'github:auth-changed') {
     handleGitHubAuthChangedEvent(event);
+    return;
+  }
+  if (type === 'sourceControl:auth-changed') {
+    handleSourceControlAuthChangedEvent(event);
     return;
   }
 
@@ -4146,6 +4174,9 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `github:auth-changed` (§6.5) — device-flow terminal transitions and
   // `github.revoke`; global, so the connect UX converges without polling.
   'github:auth-changed',
+  // `sourceControl:auth-changed` — provider-generic forge-auth transitions
+  // (`{ provider, host, status }`); routes the GitLab connect UX.
+  'sourceControl:auth-changed',
   // REV-2 browser-client routing (§5.17): global logical-client transitions
   // (re-read `client.list`) and the workspace-scoped daemon tab-registry
   // change events (`{ tab, changes? }`, patched into the browser-clients

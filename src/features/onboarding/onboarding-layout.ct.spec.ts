@@ -2,7 +2,7 @@ import { expect, test } from '../../test/ct-test';
 import Preview from './onboarding-layout.preview.svelte';
 
 for (const width of [720, 1280]) {
-  for (const step of ['welcome', 'github', 'project', 'configuring'] as const) {
+  for (const step of ['welcome', 'forge', 'project', 'configuring'] as const) {
     test(`${step} shares the content edge at ${width}px`, async ({ mount, page }) => {
       await page.setViewportSize({ width, height: 1000 });
       const component = await mount(Preview, { props: { step } });
@@ -18,7 +18,7 @@ for (const width of [720, 1280]) {
           ? component.locator('div[role=button]').first()
           : step === 'configuring'
             ? component.locator('.rich-input-container')
-            : step === 'github'
+            : step === 'forge'
               ? component.getByRole('button', { name: /Connect GitHub/, exact: true })
               : component.getByRole('button', { name: /Let's go/ });
       await expect
