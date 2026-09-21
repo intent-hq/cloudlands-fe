@@ -161,7 +161,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -255,7 +255,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -349,7 +349,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -443,7 +443,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -537,7 +537,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -631,7 +631,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -725,7 +725,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -819,7 +819,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -951,7 +951,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1045,7 +1045,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1139,7 +1139,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1233,7 +1233,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -1327,7 +1327,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:collection:c
         <div aria-label="Test collection" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
           <div class="min-w-0 relative">
             <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-              <div class="absolute bg-selected" tokens=["--radius-row"]>
+              <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
             <div>
               <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                 <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -7435,7 +7435,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:checkbox-g
             <div class="min-w-72" data-catalog-rendered-state="one-line 36px-row selected-row keyboard-roving">
               <div aria-label="One-line notifications" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                 <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                  <div class="absolute bg-selected" tokens=["--radius-row"]>
+                  <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                 <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                   <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                     <svg aria-hidden="true" class="size-3">
@@ -7529,7 +7529,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:checkbox-g
             <div class="min-w-72" data-catalog-rendered-state="stacked inline none-selected contiguous-selected split-selected description custom-marker proximity-hover keyboard-roving disabled reduced-motion">
               <div aria-label="Notifications" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                 <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                  <div class="absolute bg-selected" tokens=["--radius-row"]>
+                  <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                 <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                   <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                     <svg aria-hidden="true" class="size-3">
@@ -7648,8 +7648,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:combobox:c
                       <div aria-busy="false" aria-labelledby="c<id>-label" class="isolate max-h-72 overflow-y-auto overscroll-contain p-1 relative" data-combobox-viewport="" data-list-overlay="" id="c<id>-listbox" role="listbox" tabindex="0">
                         <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="1" data-slot="menu-list-highlight">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                            <div class="absolute bg-selected" tokens=["--radius-row"]>
-                            <div class="absolute bg-hover" tokens=["--radius-row"]>
+                            <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                            <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                         <div data-combobox-group="" id="c<id>-group-0" role="group">
                           <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                             <span class="flex-1 min-w-0 truncate">
@@ -10499,8 +10499,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:proximity-
           <div class="bg-background fixture-preview min-h-20 rounded-md svelte-<scope>" data-catalog-fixture-id="proximity-highlight-state-matrix" data-catalog-preview="proximity-highlight">
             <div class="gap-1 grid relative w-64" data-catalog-rendered-state="pointer-proximity keyboard-focus selected merged-selection reduced-motion" data-catalog-renderer-fixture="proximity-highlight-state-matrix">
               <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                <div class="absolute bg-selected" tokens=["--radius-row"]>
-                <div class="absolute bg-hover" tokens=["--radius-row"]>
+                <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
               <div>
                 <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-8 inline-flex isolate items-center justify-center motion-reduce:transition-none px-2 py-0 relative rounded-(--radius-small) shrink-0 text-inherit text-left text-sm transition-[color,opacity] whitespace-nowrap z-10" data-slot="button" type="button">
                   <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
@@ -10586,7 +10586,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:radio-grou
             <div class="min-w-72" data-catalog-rendered-state="one-line 36px-row selected keyboard-roving">
               <div aria-disabled="false" aria-label="One-line delivery speed" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                 <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                  <div class="absolute bg-active" tokens=["--radius-row"]>
+                  <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                 <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="standard" id="bits-<id>" role="radio" tabindex="0" type="button">
                   <span class="first-line-icon">
                     <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -10679,7 +10679,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:radio-grou
             <div class="min-w-72" data-catalog-rendered-state="stacked inline selected description multi-line-label custom-marker proximity-hover keyboard-roving disabled reduced-motion">
               <div aria-disabled="false" aria-label="Delivery speed" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                 <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                  <div class="absolute bg-active" tokens=["--radius-row"]>
+                  <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                 <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="standard" id="bits-<id>" role="radio" tabindex="0" type="button">
                   <span class="first-line-icon">
                     <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -10938,8 +10938,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:select:sel
                       <div aria-labelledby="c<id>-trigger" class="flex-1 isolate max-h-32 min-h-0 overflow-y-auto p-1 relative" data-list-overlay="" data-select-viewport="" id="c<id>-listbox" role="listbox" tabindex="-1">
                         <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="0" data-slot="menu-list-highlight">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                            <div class="absolute bg-selected" tokens=["--radius-row"]>
-                            <div class="absolute bg-hover" tokens=["--radius-row"]>
+                            <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                            <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-highlighted="" data-label="Catalog option 01" data-menu-item="true" data-select-item="" data-selected="" data-value="option-01" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Catalog option 01"
@@ -11120,8 +11120,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:select:sel
                       <div aria-labelledby="c<id>-trigger" class="flex-1 isolate min-h-0 overflow-y-auto p-1 relative" data-list-overlay="" data-select-viewport="" id="c<id>-listbox" role="listbox" tabindex="-1">
                         <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="0" data-slot="menu-list-highlight">
                           <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                            <div class="absolute bg-selected" tokens=["--radius-row"]>
-                            <div class="absolute bg-hover" tokens=["--radius-row"]>
+                            <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                            <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                         <div aria-selected="true" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-highlighted="" data-label="Apple" data-menu-item="true" data-select-item="" data-selected="" data-value="apple" id="bits-<id>" role="option">
                           <div class="flex-1 min-w-0 truncate">
                             "Apple"
@@ -12025,7 +12025,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:tabs:tabs-
                 <div class="mt-4" data-orientation="horizontal" data-tabs-root="" id="bits-<id>">
                   <div aria-label="Subtle catalog tabs" aria-orientation="horizontal" class="gap-0.5 inline-flex isolate items-center max-w-full overflow-x-auto px-1 relative select-none" data-orientation="horizontal" data-tabs-list="" id="bits-<id>" role="tablist">
                     <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                      <div class="absolute bg-card dark:bg-surface-3 shadow-(--elevation-raised)" tokens=["--radius-row"]>
+                      <div class="absolute bg-card dark:bg-surface-3 shadow-(--elevation-raised)" data-proximity-highlight="selected" tokens=["--radius-row"]>
                     <button aria-selected="true" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="active" data-tabs-trigger="" data-value="one" data-variant="subtle" id="bits-<id>" role="tab" tabindex="0" type="button">
                       "Subtle one"
                     <button aria-selected="false" class="bg-transparent border-0 cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast gap-1.5 h-(--control-height-medium) inline-flex items-center justify-center motion-reduce:transition-none px-3 relative rounded-(--radius-medium) text-muted-foreground transition-colors type-caption z-10" data-orientation="horizontal" data-size="default" data-state="inactive" data-tabs-trigger="" data-value="two" data-variant="subtle" id="bits-<id>" role="tab" tabindex="-1" type="button">
@@ -12843,7 +12843,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'primitive:toggle-gro
               <div data-catalog-rendered-state="single multiple selected unselected disabled keyboard-focus">
                 <div aria-label="Display mode" class="bg-card border-0 gap-0.5 inline-flex isolate items-center justify-center relative rounded-(--radius-medium) shadow-(--elevation-raised) shrink-0" data-orientation="horizontal" data-toggle-group-root="" id="bits-<id>" role="group">
                   <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                    <div class="absolute bg-selected" tokens=["--radius-row"]>
+                    <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                   <button aria-checked="true" aria-label="List view" class="active:bg-active bg-transparent border-0 cursor-pointer data-[state=on]:[--text-caption-weight:500] data-[state=on]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal h-(--control-height-medium) hover:text-foreground inline-flex items-center justify-center min-w-8 motion-reduce:transition-none px-2 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,font-weight] type-caption whitespace-nowrap z-10" data-orientation="horizontal" data-state="on" data-toggle-group-item="" data-value="list" id="bits-<id>" role="radio" tabindex="0" type="button">
                     "List"
                   <button aria-checked="false" aria-label="Tree view" class="active:bg-active bg-transparent border-0 cursor-pointer data-[state=on]:[--text-caption-weight:500] data-[state=on]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-normal h-(--control-height-medium) hover:text-foreground inline-flex items-center justify-center min-w-8 motion-reduce:transition-none px-2 relative rounded-(--radius-medium) shrink-0 text-muted-foreground transition-[color,font-weight] type-caption whitespace-nowrap z-10" data-orientation="horizontal" data-state="off" data-toggle-group-item="" data-value="tree" id="bits-<id>" role="radio" tabindex="-1" type="button">
@@ -14110,7 +14110,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-labelledby="field-checkbox-group-filled-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14129,7 +14129,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-labelledby="field-checkbox-group-hover-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14148,7 +14148,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-labelledby="field-checkbox-group-focus-visible-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14167,7 +14167,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-describedby="field-checkbox-group-invalid-message" aria-labelledby="field-checkbox-group-invalid-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14188,7 +14188,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="true" aria-labelledby="field-checkbox-group-disabled-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-disabled="" data-state="checked" disabled="" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14207,7 +14207,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-labelledby="field-checkbox-group-read-only-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14226,7 +14226,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-describedby="field-checkbox-group-help-text-message" aria-labelledby="field-checkbox-group-help-text-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14251,7 +14251,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-labelledby="field-checkbox-group-required-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" data-required="true" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14270,7 +14270,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-labelledby="field-checkbox-group-long-label-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14289,7 +14289,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-labelledby="field-checkbox-group-compact-density-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14308,7 +14308,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-labelledby="field-checkbox-group-zoom-200-label" class="flex flex-col gap-0 isolate max-w-full relative select-none w-72" role="group">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" aria-readonly="false" aria-required="false" class="[--text-caption-weight:500] bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex gap-2 items-center min-h-(--control-height-medium) min-w-0 motion-reduce:transition-none px-2 py-1.5 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-checkbox-root="" data-choice-index="0" data-state="checked" id="bits-<id>" role="checkbox" tabindex="0" type="button">
                           <span class="bg-transparent border border-transparent flex items-center justify-center rounded-(--radius-small) shrink-0 size-4 text-foreground">
                             <svg aria-hidden="true" class="size-3">
@@ -14349,7 +14349,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="false" aria-labelledby="field-radio-group-filled-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14369,7 +14369,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="false" aria-labelledby="field-radio-group-hover-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14389,7 +14389,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="false" aria-labelledby="field-radio-group-focus-visible-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14409,7 +14409,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-describedby="field-radio-group-invalid-message" aria-disabled="false" aria-labelledby="field-radio-group-invalid-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14431,7 +14431,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="true" aria-labelledby="field-radio-group-disabled-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-disabled="" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-disabled="" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" disabled="" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14451,7 +14451,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="false" aria-labelledby="field-radio-group-read-only-label" aria-readonly="true" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" data-readonly="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-readonly="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14471,7 +14471,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-describedby="field-radio-group-help-text-message" aria-disabled="false" aria-labelledby="field-radio-group-help-text-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14497,7 +14497,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="false" aria-labelledby="field-radio-group-required-label" aria-required="true" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14517,7 +14517,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="false" aria-labelledby="field-radio-group-long-label-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14537,7 +14537,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="false" aria-labelledby="field-radio-group-compact-density-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -14557,7 +14557,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:fields:field
                     <div class="control-shell svelte-<scope>">
                       <div aria-disabled="false" aria-labelledby="field-radio-group-zoom-200-label" aria-required="false" class="flex flex-col gap-0 isolate max-w-full p-1 relative select-none w-72" data-orientation="vertical" data-radio-group-root="" id="bits-<id>" role="radiogroup">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-active" tokens=["--radius-row"]>
+                          <div class="absolute bg-active" data-proximity-highlight="selected" tokens=["--radius-row"]>
                         <button aria-checked="true" class="bg-transparent border border-transparent cursor-pointer disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-1 focus-visible:outline-focus-ring focus-visible:outline-offset-2 focus-visible:shadow-none font-medium gap-2 items-start justify-start min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) text-foreground text-left transition-[color,font-weight] type-caption z-10" data-choice-index="0" data-orientation="vertical" data-radio-group-item="" data-state="checked" data-value="alpha" id="bits-<id>" role="radio" tabindex="0" type="button">
                           <span class="first-line-icon">
                             <span class="bg-transparent border border-transparent flex items-center justify-center rounded-full shrink-0 size-4">
@@ -18782,7 +18782,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                         "Authentication"
                                       <div aria-label="Authentication" class="bg-card border border-border flex gap-0.5 isolate items-center justify-center relative rounded-(--radius-medium) shadow-none shrink-0 w-full" data-orientation="horizontal" data-toggle-group-root="" id="bits-<id>" role="group">
                                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                                          <div class="absolute bg-selected" tokens=["--radius-row"]>
+                                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                                         <button aria-checked="true" class="active:bg-active bg-transparent border-0 cursor-pointer data-[state=on]:[--text-caption-weight:500] data-[state=on]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex-1 font-normal h-(--control-height-medium) hover:text-foreground inline-flex items-center justify-center min-w-0 motion-reduce:transition-none px-2 relative rounded-(--radius-medium) text-muted-foreground transition-[color,font-weight] type-caption whitespace-nowrap z-10" data-orientation="horizontal" data-state="on" data-toggle-group-item="" data-value="agent" id="bits-<id>" role="radio" tabindex="0" type="button">
                                           "SSH Agent"
                                         <button aria-checked="false" class="active:bg-active bg-transparent border-0 cursor-pointer data-[state=on]:[--text-caption-weight:500] data-[state=on]:text-foreground disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast flex-1 font-normal h-(--control-height-medium) hover:text-foreground inline-flex items-center justify-center min-w-0 motion-reduce:transition-none px-2 relative rounded-(--radius-medium) text-muted-foreground transition-[color,font-weight] type-caption whitespace-nowrap z-10" data-orientation="horizontal" data-state="off" data-toggle-group-item="" data-value="keyfile" id="bits-<id>" role="radio" tabindex="-1" type="button">
@@ -18900,9 +18900,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                 <div aria-orientation="vertical" class="bg-popover border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate menu-overlay min-w-40 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden overflow-y-auto overscroll-contain p-1 relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-dropdown-menu-content="" data-list-overlay="" data-slot="menu-content" data-state="open" data-static-position="true" data-surface-level="3" id="c<id>-content" role="menu" tabindex="-1" tokens=["--bits-dropdown-menu-content-available-height","--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
                   <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="1" data-slot="menu-list-highlight">
                     <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                      <div class="absolute bg-selected" tokens=["--radius-row"]>
-                      <div class="absolute bg-selected" tokens=["--radius-row"]>
-                      <div class="absolute bg-hover" tokens=["--radius-row"]>
+                      <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                      <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                      <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                   <div aria-labelledby="bits-<id>" data-dropdown-menu-group="" id="bits-<id>" role="group">
                     <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption" data-dropdown-menu-group-heading="" id="bits-<id>" role="group">
                       "Workspace actions"
@@ -19018,8 +19018,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                     <div aria-labelledby="c<id>-trigger" class="isolate max-h-[300px] overflow-y-auto p-1 relative" data-list-overlay="" data-scroll-container="" id="c<id>-listbox" role="listbox" tabindex="-1">
                       <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="0" data-slot="menu-list-highlight">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
-                          <div class="absolute bg-hover" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                       <div>
                         <div class="relative">
                           <div>
@@ -19095,8 +19095,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                     <div aria-labelledby="c<id>-trigger" class="flex-1 isolate min-h-0 overflow-y-auto p-1 relative" data-list-overlay="" data-select-viewport="" id="c<id>-listbox" role="listbox" tabindex="-1">
                       <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="1" data-slot="menu-list-highlight">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
-                          <div class="absolute bg-hover" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                       <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-label="Ada Lovelace" data-menu-item="true" data-select-item="" data-value="ada" id="bits-<id>" role="option">
                         <div class="flex-1 min-w-0 truncate">
                           "Ada Lovelace"
@@ -19123,8 +19123,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                     <div aria-busy="false" aria-labelledby="c<id>-label" class="isolate max-h-72 overflow-y-auto overscroll-contain p-1 relative" data-combobox-viewport="" data-list-overlay="" id="c<id>-listbox" role="listbox" tabindex="0">
                       <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="1" data-slot="menu-list-highlight">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
-                          <div class="absolute bg-hover" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                       <div data-combobox-group="" id="c<id>-group-0" role="group">
                         <div class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-combobox-item="" data-label="Ada Lovelace" data-menu-item="true" data-slot="combobox-option-motion" data-value="ada" id="bits-<id>" role="option">
                           <span class="flex-1 min-w-0 truncate">
@@ -19165,8 +19165,8 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:popovers:non
                     <div aria-busy="false" aria-labelledby="c<id>-label" class="isolate max-h-72 overflow-y-auto overscroll-contain p-1 relative" data-combobox-viewport="" data-list-overlay="" role="region" tabindex="0">
                       <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="1" data-slot="menu-list-highlight">
                         <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                          <div class="absolute bg-selected" tokens=["--radius-row"]>
-                          <div class="absolute bg-hover" tokens=["--radius-row"]>
+                          <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
+                          <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                       <div aria-busy="false" aria-labelledby="c<id>-label" aria-owns="c<id>-group-0 c<id>-group-1" class="sr-only" id="c<id>-listbox" role="listbox">
                       <div class="font-medium px-2 py-1.5 text-muted-foreground type-caption">
                         <div class="inline" data-combobox-group-label="" id="bits-<id>">
@@ -19501,7 +19501,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   <div aria-label="Collection row states" aria-multiselectable="true" class="min-w-0 overflow-auto" data-slot="list-view" role="listbox">
                     <div class="min-w-0 relative">
                       <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div class="absolute bg-selected" tokens=["--radius-row"]>
+                        <div class="absolute bg-selected" data-proximity-highlight="selected" tokens=["--radius-row"]>
                       <div>
                         <div aria-selected="false" class="[&>[data-inset=card]]:mx-0 focus-visible:-outline-offset-1 group/collection-row has-[>[data-inset=card]]:mx-2 min-w-0 relative rounded-(--radius-row) z-10" data-list-index="0" data-slot="list-view-item" role="option" tabindex="0">
                           <div class="flex gap-3 items-start min-h-12 min-w-0 px-3 py-2.5" data-density="default" data-slot="list-row">
@@ -19732,7 +19732,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:rows:row-fam
                   <div aria-orientation="vertical" class="bg-popover border border-border data-[side=bottom]:origin-top data-[side=left]:origin-right data-[side=right]:origin-left data-[side=top]:origin-bottom data-[state=closed]:animate-out data-[state=closed]:duration-spring-moderate-exit data-[state=closed]:ease-spring-exit data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:duration-spring-moderate data-[state=open]:ease-spring-moderate data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 focus-visible:-outline-offset-1 focus-visible:border-input focus-visible:outline isolate menu-overlay min-w-40 motion-reduce:animate-none motion-reduce:transition-none overflow-hidden overflow-y-auto overscroll-contain p-1 relative rounded-md shadow-(--elevation-overlay) text-popover-foreground type-body w-full z-(--layer-popover)" data-dropdown-menu-content="" data-list-overlay="" data-slot="menu-content" data-state="open" data-static-position="true" data-surface-level="3" id="c<id>-content" role="menu" tabindex="-1" tokens=["--bits-dropdown-menu-content-available-height","--bits-floating-anchor-height","--bits-floating-anchor-width","--bits-floating-available-height","--bits-floating-available-width","--bits-floating-transform-origin"]>
                     <span aria-hidden="true" class="contents svelte-<scope>" data-active-index="1" data-slot="menu-list-highlight">
                       <div aria-hidden="true" class="absolute inset-0 pointer-events-none">
-                        <div class="absolute bg-hover" tokens=["--radius-row"]>
+                        <div class="absolute bg-hover" data-proximity-highlight="hover" tokens=["--radius-row"]>
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="-1">
                       "Default item"
                     <div aria-disabled="false" class="aria-disabled:opacity-50 aria-disabled:pointer-events-none bg-transparent border-none cursor-default data-[destructive]:focus:text-danger data-[destructive]:text-danger data-[disabled]:opacity-50 data-[disabled]:pointer-events-none duration-spring-fast ease-spring-fast flex focus-visible:outline-none focus:text-foreground font-normal gap-2 group/menu-item items-start justify-start menu-row min-h-(--control-height-small) min-w-0 motion-reduce:transition-none px-2 py-1 relative rounded-(--radius-row) select-none text-left transition-colors type-caption w-full z-10" data-dropdown-menu-item="" data-highlighted="true" data-menu-item="true" data-slot="menu-item" id="bits-<id>" role="menuitem" tabindex="0">

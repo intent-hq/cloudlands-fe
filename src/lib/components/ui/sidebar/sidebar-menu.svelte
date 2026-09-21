@@ -163,26 +163,27 @@
       {/if}
     {/each}
     {#key hover?.sessionId ?? 0}
-      {#if hoverRect && hoverIndex !== null}
+      <!-- Preserve exiting geometry while its row or menu is being removed. -->
+      {#each hoverRect && hoverIndex !== null ? [{ rect: hoverRect, index: hoverIndex, anchor: hoverAnchorRect }] : [] as item (0)}
         <Highlight
-          rect={hoverRect}
-          initialRect={hoverAnchorRect}
-          identity={hoverIndex}
+          rect={item.rect}
+          initialRect={item.anchor}
+          identity={item.index}
           tier="moderate"
           kind="hover"
           class="bg-hover z-0"
         />
-      {/if}
+      {/each}
     {/key}
-    {#if focusRect && focusIndex !== null}
+    {#each focusRect && focusIndex !== null ? [{ rect: focusRect, index: focusIndex }] : [] as item (0)}
       <Highlight
-        rect={focusRect}
-        identity={focusIndex}
+        rect={item.rect}
+        identity={item.index}
         tier="moderate"
         kind="focus"
         class="border-focus-ring z-20 border"
       />
-    {/if}
+    {/each}
     {@render children?.()}
   </ul>
 {/snippet}
