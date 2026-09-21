@@ -151,6 +151,8 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
     if (nextHardBreak < lineEnd) lineEnd = nextHardBreak;
     const slack = pieces ? PIECE_SEARCH_SLACK : ANCHOR_SEARCH_SLACK;
     const gap = Math.min(2 * (cursor - fromPos), MAX_ANCHOR_GAP);
+    // The markdown the block is looked for in.
+    const reach = toPos + gap + (lineEnd - cursor) + slack;
     let at = -1;
     let anchor = cursor;
     let whole = false;
@@ -159,7 +161,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
     // Among the probes tried, the hit that skips the least markdown wins, so
     // a probe is only looked for short of the hit found so far.
     const consider = (start: number, end: number) => {
-      let limit = toPos + gap + (end - cursor) + slack;
+      let limit = reach - (lineEnd - end);
       if (at !== -1) limit = Math.min(limit, at - 1 + (end - start));
       run.advanceTo(start);
       const skipped = new LineWalk(to, toPos);
@@ -207,8 +209,18 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
     // failed block included, so a long final paragraph is not skipped whole —
     // or once a block of it matches only beyond the run: the pieces consume
     // the markdown of the run's earlier blocks, and the block's own pieces
-    // then anchor its original rather than the duplicate.
-    if (!pieces && (beyond || lineEnd + 1 - fromPos > MAX_UNANCHORED_RUN)) {
+    // then anchor its original rather than the duplicate. Likewise once the
+    // markdown the block was looked for in holds an unanchorable line, unless
+    // the block is that line's text: the pieces of the blocks around the line
+    // anchor, so its text reaches the diff alone — the diff of a region that
+    // holds the line and a neighbouring paragraph too would match the
+    // paragraph's words inside the unmasked destination.
+    if (
+      !pieces &&
+      (beyond ||
+        lineEnd + 1 - fromPos > MAX_UNANCHORED_RUN ||
+        (!declined && overlaps(unanchorable, toPos, reach)))
+    ) {
       pieces = true;
       cursor = fromPos;
       run = new LineWalk(from, fromPos);
