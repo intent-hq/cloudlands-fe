@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { tweenedValue, type SpringTierName } from '$lib/motion';
   import { formatInteger } from '$lib/i18n/format';
+  import { onReducedMotionChange, prefersReducedMotion } from '$lib/utils/reduced-motion';
 
   interface Props {
     value: number;
@@ -41,14 +42,8 @@
   const displaySecondaryValue = tweenedValue(secondaryValue ?? 0, tier);
 
   onMount(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    reducedMotion = media.matches;
-    const handleChange = (event: MediaQueryListEvent) => {
-      reducedMotion = event.matches;
-    };
-    media.addEventListener('change', handleChange);
-    return () => media.removeEventListener('change', handleChange);
+    reducedMotion = prefersReducedMotion();
+    return onReducedMotionChange((reduced) => (reducedMotion = reduced));
   });
 
   // Retarget from the current frame. Reduced motion always snaps to the target.
@@ -154,7 +149,7 @@
     }
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .animated-number {
       animation: none !important;
       transform: none !important;

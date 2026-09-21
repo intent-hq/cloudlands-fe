@@ -586,7 +586,7 @@
       bind:ref={disclosureElement}
       variant="plain"
       type="button"
-      class="summary-control inline-flex h-6 w-auto min-w-0 items-center rounded px-1.5 !text-xs font-normal tabular-nums text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+      class="summary-control inline-flex h-6 w-auto min-w-0 items-center rounded border-transparent px-1.5 !text-xs font-normal tabular-nums text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       data-testid="token-usage-disclosure"
       aria-label={expanded
         ? m.workspace_tokenUsage_collapse_ariaLabel()
@@ -652,22 +652,24 @@
               />
             </span>
           </div>
-          {#if visibleCompositionRows.length > 0}
-            <div
-              class="composition-strip mb-5 flex h-1.5 w-full min-w-0 overflow-hidden"
-              role="img"
-              aria-label={compositionSummary}
-            >
-              {#each visibleCompositionRows as row (row.id)}
-                <span
-                  class="composition-strip-segment block h-full shrink-0"
-                  data-metric={row.id}
-                  style={`width: ${segmentWidth(row.share, visibleCompositionRows.length)}`}
-                  aria-hidden="true"
-                ></span>
-              {/each}
-            </div>
-          {/if}
+          <div class="mb-5 h-1.5">
+            {#if visibleCompositionRows.length > 0}
+              <div
+                class="composition-strip flex h-full w-full min-w-0 overflow-hidden"
+                role="img"
+                aria-label={compositionSummary}
+              >
+                {#each visibleCompositionRows as row (row.id)}
+                  <span
+                    class="composition-strip-segment block h-full shrink-0"
+                    data-metric={row.id}
+                    style={`width: ${segmentWidth(row.share, visibleCompositionRows.length)}`}
+                    aria-hidden="true"
+                  ></span>
+                {/each}
+              </div>
+            {/if}
+          </div>
           <dl class="composition-list">
             {#each compositionRows as row (row.id)}
               <div
@@ -799,7 +801,8 @@
                             role="presentation"
                             style={`width: ${segmentWidth(share(row.tokens, agentTokenTotal), agentSegmentRows.length)}`}
                           >
-                            <button
+                            <Button
+                              variant="plain"
                               type="button"
                               role="radio"
                               class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
@@ -829,7 +832,7 @@
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, agentRows, event)}
                               onclick={(event) => handleRowClick(row, event)}
-                            ></button>
+                            />
                           </li>
                         {/each}
                       </ol>
@@ -923,7 +926,8 @@
                             role="presentation"
                             style={`width: ${segmentWidth(share(row.tokens, modelTokenTotal), modelSegmentRows.length)}`}
                           >
-                            <button
+                            <Button
+                              variant="plain"
                               type="button"
                               role="radio"
                               class="breakdown-item-control block h-full w-full min-w-0 appearance-none rounded-none border-0 p-0 outline-none transition-colors motion-reduce:transition-none"
@@ -953,7 +957,7 @@
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, modelRows, event)}
                               onclick={(event) => handleRowClick(row, event)}
-                            ></button>
+                            />
                           </li>
                         {/each}
                       </ol>
@@ -1087,7 +1091,7 @@
 
   .composition-strip-segment[data-metric='input'],
   .composition-key[data-metric='input'] {
-    background: hsl(217 72% 53% / 84%);
+    background: hsl(var(--token-usage-input) / 84%);
   }
 
   .composition-strip-segment[data-metric='output'],
@@ -1098,11 +1102,6 @@
   .composition-strip-segment[data-metric='reasoning'],
   .composition-key[data-metric='reasoning'] {
     background: hsl(var(--warning) / 88%);
-  }
-
-  :global(.dark) .composition-strip-segment[data-metric='input'],
-  :global(.dark) .composition-key[data-metric='input'] {
-    background: hsl(213 88% 68% / 84%);
   }
 
   .composition-key[data-zero='true'] {
