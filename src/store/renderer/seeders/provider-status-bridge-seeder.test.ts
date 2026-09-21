@@ -1305,6 +1305,29 @@ describe('provider-status-bridge-seeder', () => {
       expect(aggregate.data?.hasAnyProvider).toBe(true);
     });
 
+    it.each([
+      ['a { success: false } envelope', { success: false, providerId: 'mock', error: 'boom' }],
+      ['a missing envelope', undefined],
+    ])('denies mock on %s and keeps mock hidden', async (_label, envelope) => {
+      bridgeWith(envelope);
+      routeDaemon({
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+      });
+
+      const single = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+      const aggregate = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(single).toEqual({ success: true, providerId: 'mock', data: { available: false } });
+      expect(aggregate.success).toBe(true);
+      expect(aggregate.data?.providers.mock).toEqual({ available: false });
+      expect(aggregate.data?.providers.auggie.available).toBe(true);
+      expect(aggregate.data?.hiddenProviders).toEqual(expect.arrayContaining(['mock']));
+    });
+
     it('reports mock unavailable without a preload bridge (web build)', async () => {
       (window as any).electronAPI = undefined;
       routeDaemon({
