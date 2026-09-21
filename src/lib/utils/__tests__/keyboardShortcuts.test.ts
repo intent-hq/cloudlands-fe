@@ -154,6 +154,38 @@ describe('spaces shortcut handling', () => {
     expect(action).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ['macOS plain O', 'meta', 'o', false],
+    ['Windows/Linux plain O', 'ctrl', 'o', false],
+    ['macOS Ctrl+O', 'meta', 'ctrl+o', true],
+  ] as const)(
+    'preserves prompt editing when rebound to %s',
+    (_label, platform, binding, ctrlKey) => {
+      const action = vi.fn();
+      createSpacesManager(action, platform, () => binding);
+      const editor = document.createElement('div');
+      editor.setAttribute('contenteditable', 'true');
+      editor.tabIndex = 0;
+      const paragraph = document.createElement('p');
+      editor.append(paragraph);
+      const button = document.createElement('button');
+      document.body.append(editor, button);
+      editor.focus();
+      const localHandler = vi.fn();
+      editor.addEventListener('keydown', localHandler);
+
+      for (const target of [editor, paragraph]) {
+        expect(dispatchShortcut(target, { key: 'o', ctrlKey }).defaultPrevented).toBe(false);
+      }
+      expect(localHandler).toHaveBeenCalledTimes(2);
+      expect(action).not.toHaveBeenCalled();
+
+      button.focus();
+      expect(dispatchShortcut(button, { key: 'o', ctrlKey }).defaultPrevented).toBe(true);
+      expect(action).toHaveBeenCalledOnce();
+    },
+  );
+
   it('leaves typing, macOS Ctrl+O, and other modifier combinations to the input', () => {
     const action = vi.fn();
     createSpacesManager(action, 'meta');
