@@ -24,10 +24,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const WORKFLOWS_DIR = '.github/workflows';
-// A single `|` (not `||`) followed by `grep` as a word; the rest of the line
-// is scanned for flags.
-const PIPE_TO_GREP = /(?:^|[^|])\|(?!\|)\s*grep(?=\s|$)([^\n]*)/g;
-const SHELL_OPERATOR = /[|;&<>()]/;
+// A single `|` (not `||`) followed by `grep` as a word. Every occurrence on a
+// line is examined; the grep command runs until the next command terminator.
+const PIPE_TO_GREP = /(?:^|[^|])\|(?!\|)\s*grep(?=[\s|;&<>()]|$)/g;
+const COMMAND_TERMINATOR = /\||;|\(|\)|(?<![<>])&/;
+const TOKEN_BOUNDARY = /[\s<>]+/;
 const QUOTED = /'[^']*'|"[^"]*"/g;
 const SHORT_QUIET_FLAG = /^-[A-Za-z]*q[A-Za-z]*$/;
 const LONG_QUIET_FLAGS = new Set(['--quiet', '--silent']);
@@ -51,15 +52,20 @@ const codeLines = (workflow: string): WorkflowLine[] =>
     .filter(({ text }) => !text.trim().startsWith('#'));
 
 const hasQuietFlag = (grepArgs: string): boolean => {
-  for (const token of grepArgs.replace(QUOTED, ' ').trim().split(/\s+/)) {
-    if (token === '' || token === '--' || SHELL_OPERATOR.test(token)) return false;
+  const command = grepArgs.split(COMMAND_TERMINATOR, 1)[0];
+  for (const token of command.split(TOKEN_BOUNDARY)) {
+    if (token === '--') return false;
     if (SHORT_QUIET_FLAG.test(token) || LONG_QUIET_FLAGS.has(token)) return true;
   }
   return false;
 };
 
-const isQuietGrepPipeline = (text: string): boolean =>
-  [...text.matchAll(PIPE_TO_GREP)].some(([, grepArgs]) => hasQuietFlag(grepArgs));
+const isQuietGrepPipeline = (text: string): boolean => {
+  const unquoted = text.replace(QUOTED, ' ');
+  return [...unquoted.matchAll(PIPE_TO_GREP)].some((match) =>
+    hasQuietFlag(unquoted.slice((match.index ?? 0) + match[0].length)),
+  );
+};
 
 const findQuietGrepPipelines = (workflow: string): WorkflowLine[] =>
   codeLines(workflow).filter(({ text }) => isQuietGrepPipeline(text));
@@ -86,6 +92,13 @@ describe('workflow grep -q pipeline detector', () => {
     ['echo "$OUT"| grep -q pattern'],
     ['xcrun simctl list runtimes 2>/dev/null | grep -q "^iOS "'],
     ['echo "$OUT" | grep -e pattern -q'],
+    ['printf x | grep x | grep -q x'],
+    ['printf x | grep x; printf x | grep -q x'],
+    ['printf x | grep x -q>/dev/null'],
+    ['printf x | grep x -q;'],
+    ['echo "$OUT" | grep -E x >/dev/null | grep -q y'],
+    ['echo "$OUT" | grep -q x 2>&1'],
+    ['FOUND=$(printf x | grep -q x && echo yes)'],
   ])('flags %s', (line) => {
     expect(lineNumbers(run('echo start', line))).toEqual([4]);
   });
@@ -109,6 +122,9 @@ describe('workflow grep -q pipeline detector', () => {
     ['echo "$OUT" | grep -E pattern >/dev/null && grep -q other file'],
     ['echo "$OUT" | grep-like -q pattern'],
     ['echo "$OUT" | grep -E "a -q b"'],
+    ['echo "$OUT" | grep x >/dev/null; grep -q y file'],
+    ['echo "$OUT" | grep x; echo "$OUT" | grep -E y >/dev/null'],
+    ['echo "a|b" | grep x'],
   ])('does not flag %s', (line) => {
     expect(lineNumbers(run('echo start', line))).toEqual([]);
   });
