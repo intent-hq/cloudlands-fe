@@ -72,30 +72,44 @@ function findPackagedApp(): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Kill any running packaged "Intent" processes to release the single instance lock.
- * The packaged app uses app.requestSingleInstanceLock() which prevents a second
- * instance from launching.
+ * Kill every process of the packaged "Intent" app (main process and Chromium
+ * helpers) on the current platform.
+ *
+ * Specs call this from `afterAll` after `electronApp.exit(0)`: on Linux the
+ * helper processes can outlive the main process and keep the worker's stdout
+ * pipe open, which stalls Playwright's worker teardown until its timeout.
+ *
+ * @param force - send SIGKILL (`pkill -9` / `taskkill /F`) instead of SIGTERM.
  */
-async function killExistingPackagedApp(): Promise<void> {
-  console.log('⚠️  Killing existing packaged "Intent" processes for clean test launch...');
+export function killPackagedAppProcesses(force = false): void {
   if (process.platform === 'win32') {
     try {
       execSync('taskkill /F /IM "Intent.exe"', { stdio: 'ignore', windowsHide: true });
     } catch {
       // No matching processes — that's fine
     }
-  } else {
-    // Match the packaged binary path so unrelated processes (e.g. intentd)
-    // are never touched. execFileSync: no intermediate shell whose own
-    // command line would match the pattern.
-    const pattern =
-      process.platform === 'linux' ? 'linux-unpacked/intent' : 'Intent\\.app/Contents/MacOS/Intent';
-    try {
-      execFileSync('pkill', ['-f', pattern], { stdio: 'ignore' });
-    } catch {
-      // No matching processes — that's fine
-    }
+    return;
   }
+  // Match the packaged binary path so unrelated processes (e.g. intentd)
+  // are never touched. execFileSync: no intermediate shell whose own
+  // command line would match the pattern.
+  const pattern =
+    process.platform === 'linux' ? 'linux-unpacked/intent' : 'Intent\\.app/Contents/MacOS/Intent';
+  try {
+    execFileSync('pkill', [...(force ? ['-9'] : []), '-f', pattern], { stdio: 'ignore' });
+  } catch {
+    // No matching processes — that's fine
+  }
+}
+
+/**
+ * Kill any running packaged "Intent" processes to release the single instance lock.
+ * The packaged app uses app.requestSingleInstanceLock() which prevents a second
+ * instance from launching.
+ */
+async function killExistingPackagedApp(): Promise<void> {
+  console.log('⚠️  Killing existing packaged "Intent" processes for clean test launch...');
+  killPackagedAppProcesses();
   // Wait for processes to fully terminate and release the lock file
   await new Promise((r) => setTimeout(r, 2000));
 }

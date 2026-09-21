@@ -26,6 +26,7 @@ import {
   archiveAndGoHome,
   setMockAgentBehavior,
   sendFollowUpMessage,
+  killPackagedAppProcesses,
 } from './build-smoke-helpers';
 
 const SCREENSHOT_DIR = path.join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -77,19 +78,7 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
         // app may already be closed
       }
       await new Promise((r) => setTimeout(r, 2_000));
-      try {
-        const { execSync } = await import('child_process');
-        if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent.exe"', {
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-        } else {
-          execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
-        }
-      } catch {
-        // No matching processes
-      }
+      killPackagedAppProcesses();
     }
     if (repoCleanup) {
       try {

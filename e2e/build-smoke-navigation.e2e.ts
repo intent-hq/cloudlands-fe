@@ -17,6 +17,7 @@ import {
   waitForAgentCompletion,
   setMockAgentBehavior,
   archiveAndGoHome,
+  killPackagedAppProcesses,
 } from './build-smoke-helpers';
 
 const SCREENSHOT_DIR = path.join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -61,19 +62,7 @@ test.describe('Build Smoke — Chat History Navigation', () => {
         // app may already be closed
       }
       await new Promise((r) => setTimeout(r, 2_000));
-      try {
-        const { execSync } = await import('child_process');
-        if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent.exe"', {
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-        } else {
-          execSync('pkill -9 -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
-        }
-      } catch {
-        // No matching processes
-      }
+      killPackagedAppProcesses(true);
     }
     if (repoCleanup) {
       try {
