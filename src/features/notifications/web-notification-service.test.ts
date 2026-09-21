@@ -568,6 +568,25 @@ describe('web-notification-service', () => {
       );
     });
 
+    it('drops the notification when agent.get rejects with a bare -32602 lacking the structured not-found code (unverified read)', async () => {
+      stubBackendWire();
+      const stub = mockBackendRequest.getMockImplementation()!;
+      mockBackendRequest.mockImplementation(async (method: string, params?: unknown) => {
+        // Same rpcCode and message as the daemon's not-found, but WITHOUT
+        // `data.code: "not-found"`: only the strict structured pair counts as absent.
+        if (method === 'agent.get')
+          throw Object.assign(new Error('Agent not found: agent-1'), { rpcCode: -32602 });
+        return stub(method, params);
+      });
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockPlayNotificationSound).not.toHaveBeenCalled();
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { busySet: false, workspaceGet: false }),
+      );
+    });
+
     it('drops the notification when agent.listActive fails (parity with a failed agent.list)', async () => {
       stubBackendWire();
       const stub = mockBackendRequest.getMockImplementation()!;

@@ -28,12 +28,15 @@
  * daemon reports `not-found` is treated as ABSENT from the workspace — the
  * idle agent then carries no flags (notify proceeds on the payload alone) and
  * a vanished sibling is not counted — which is what the old list read yielded
- * for a session deleted between the idle event and the read. Any other read
- * failure propagates to the caller's outer `catch`, which logs and drops the
- * notification, exactly as a failed `agent.list` did.
+ * for a session deleted between the idle event and the read. Only the STRICT
+ * structured rejection (`rpcCode -32602` AND `data.code "not-found"`) counts
+ * as absent: a bare `-32602` or a re-wrapped "not found" message is an
+ * unverified read and propagates like any other failure, to the caller's
+ * outer `catch`, which logs and drops the notification, exactly as a failed
+ * `agent.list` did.
  */
 
-import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
+import { isStructuredAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 
 /** The caller's JSON-RPC request fn (main `JsonRpcClient.request` / renderer `backendRequest`). */
 export type IdleGateRequest = (method: string, params: Record<string, unknown>) => Promise<unknown>;
@@ -59,7 +62,7 @@ export type IdleGateVerdict =
   | { kind: 'others-active'; idleAgent: IdleGateAgent | undefined; otherActiveCount: number }
   | { kind: 'notify'; idleAgent: IdleGateAgent | undefined };
 
-/** One `agent.get`; `undefined` when the daemon reports the row `not-found`. */
+/** One `agent.get`; `undefined` only on the daemon's structured `not-found` rejection. */
 async function getAgentRow(
   request: IdleGateRequest,
   workspaceId: string,
@@ -70,7 +73,7 @@ async function getAgentRow(
       { agent?: IdleGateAgent } | undefined;
     return result?.agent;
   } catch (error) {
-    if (isAgentNotFoundError(error)) return undefined;
+    if (isStructuredAgentNotFoundError(error)) return undefined;
     throw error;
   }
 }

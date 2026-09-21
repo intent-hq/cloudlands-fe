@@ -323,6 +323,26 @@ describe('notification sagas', () => {
     MockNotification.instances.length = 0;
     mocks.sound.mockClear();
 
+    // A bare `-32602` WITHOUT the structured `data.code: "not-found"` (a
+    // generic invalid-params rejection or a re-wrapped error) is an
+    // unverified read, not an absent row: the gate fails closed and drops
+    // the notification without reading the busy set.
+    mocks.backend.mockClear();
+    mocks.backend.mockImplementation(async (method, params) => {
+      if (method === 'settings.get')
+        return settingResult(params.path, params.path === 'notifications.enabled' ? true : false);
+      if (method === 'agent.get')
+        throw Object.assign(new Error('Agent not found: agent-1'), { rpcCode: -32602 });
+      throw new Error(`unexpected ${method}`);
+    });
+    emitMockIpcEvent('agent:idle', idle());
+    await flush();
+    expect(MockNotification.instances).toEqual([]);
+    expect(mocks.sound).not.toHaveBeenCalled();
+    expect(
+      mocks.backend.mock.calls.filter(([method]) => IDLE_GATE_METHODS.includes(method)),
+    ).toEqual([SELF_GET]);
+
     // A busy stream from ANOTHER workspace never holds this workspace's gate.
     mocks.backend.mockClear();
     mocks.backend.mockImplementation(async (method, params) => {

@@ -1751,6 +1751,25 @@ describe('NotificationService handleAgentIdle suppression via the bounded idle g
     expect(mockNotificationInstances.length).toBe(1);
   });
 
+  it('drops the notification when agent.get rejects with a bare -32602 lacking the structured not-found code (unverified read, fail-closed)', async () => {
+    agentListResponse.agents = [];
+    const defaultImpl = requestMock.getMockImplementation()!;
+    // Same rpcCode and message as the daemon's not-found, but WITHOUT
+    // `data.code: "not-found"` — a generic invalid-params rejection or a
+    // re-wrapped error. Only the strict structured pair counts as absent.
+    overrideMethod('agent.get', async () => {
+      throw Object.assign(new Error('Agent not found: agent-self'), { rpcCode: -32602 });
+    });
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+    requestMock.mockImplementation(defaultImpl);
+
+    expect(idleGateCalls()).toEqual([SELF_GET]);
+    expect(mockNotificationInstances.length).toBe(0);
+    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+  });
+
   it('drops the notification when agent.listActive fails for any other reason (parity with a failed agent.list)', async () => {
     agentListResponse.agents = [{ id: 'agent-self', isStreaming: false, isResponding: false }];
     const defaultImpl = requestMock.getMockImplementation()!;
