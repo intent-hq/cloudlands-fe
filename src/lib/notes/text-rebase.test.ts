@@ -26,6 +26,20 @@ vi.mock('diff', async (importOriginal) => {
   };
 });
 
+/**
+ * Run `fn` with the alignment deadline out of reach: `performance.now` is
+ * frozen, so an exactness assertion cannot flip to the clamped fallback on a
+ * loaded runner. Timing bounds are asserted in separate tests.
+ */
+function withoutDeadline<T>(fn: () => T): T {
+  const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    return fn();
+  } finally {
+    now.mockRestore();
+  }
+}
+
 /** A markdown piece and whether the editor projects it into the plain text. */
 type Piece = [markdown: string, shared: boolean];
 
@@ -366,17 +380,19 @@ describe('plain-text ↔ markdown alignment of a large note', () => {
   it('aligns a ≥150 KB note in well under a second', () => {
     const note = largeNote;
     const started = performance.now();
-    const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
+    const { bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
     const elapsed = performance.now() - started;
     // Generous CI bound; the alignment itself takes tens of milliseconds.
     expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
-    expect(aToB(4)).toBe(note.markdown.indexOf(note.plain.slice(0, 8)) + 4);
     expect(bToA(note.markdown.length)).toBe(note.plain.length);
   });
 
   it('maps every shared character exactly, in both directions', () => {
     const note = largeNote;
-    const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
+    const { aToB, bToA } = withoutDeadline(() =>
+      createBidirectionalOffsetMapper(note.plain, note.markdown),
+    );
+    expect(aToB(4)).toBe(note.markdown.indexOf(note.plain.slice(0, 8)) + 4);
     const misses: string[] = [];
     for (const [plainOffset, markdownOffset] of note.samples) {
       if (aToB(plainOffset) !== markdownOffset || bToA(markdownOffset) !== plainOffset) {
@@ -426,17 +442,19 @@ describe('plain-text ↔ markdown alignment of a note formatted on every line', 
 
   it('aligns inside the budget', () => {
     const started = performance.now();
-    const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
+    const { bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
     const elapsed = performance.now() - started;
     expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
     expect(bToA(note.markdown.length)).toBe(note.plain.length);
-    expect(aToB(1)).toBe(note.markdown.indexOf('aaaaaa') + 1);
   });
 
   it.each([0, 1, 1000, LINES >> 1, LINES - 2, LINES - 1])(
     'maps the verbatim runs of line %i exactly, in both directions',
     (line) => {
-      const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
+      const { aToB, bToA } = withoutDeadline(() =>
+        createBidirectionalOffsetMapper(note.plain, note.markdown),
+      );
+      expect(aToB(1)).toBe(note.markdown.indexOf('aaaaaa') + 1);
       for (const [plainStart, markdownStart, length] of runsOfLine(line)) {
         // The offset before a run may map to either side of the syntax that
         // precedes it; every other offset of the run maps to its counterpart.
@@ -449,6 +467,114 @@ describe('plain-text ↔ markdown alignment of a note formatted on every line', 
       }
     },
   );
+});
+
+describe('plain-text ↔ markdown alignment of one long formatted paragraph', () => {
+  /** One paragraph longer than any refine region, bold in every clause: no line of it is verbatim. */
+  const UNIT = 'alpha **beta** gamma ';
+  const PIECES = ['alpha ', 'beta', ' gamma '];
+  const UNITS = 1000;
+  let note: { plain: string; markdown: string };
+  beforeAll(async () => {
+    const markdown = UNIT.repeat(UNITS);
+    note = { markdown, plain: await projectWithEditor(markdown) };
+  }, 120_000);
+
+  /** `[plainStart, markdownStart, length]` of each verbatim run of unit `unit`, by forward search on both sides. */
+  function runsOfUnit(unit: number): Array<[number, number, number]> {
+    const runs: Array<[number, number, number]> = [];
+    let plainPos = 0;
+    let markdownPos = 0;
+    for (let i = 0; i <= unit; i += 1) {
+      for (const piece of PIECES) {
+        // The editor drops the paragraph's trailing space, so the last run is
+        // searched without it and cut at the end of the plain text.
+        const inPlain = note.plain.indexOf(piece.trimEnd(), plainPos);
+        const inMarkdown = note.markdown.indexOf(piece, markdownPos);
+        const length = Math.min(piece.length, note.plain.length - inPlain);
+        if (i === unit) runs.push([inPlain, inMarkdown, length]);
+        plainPos = inPlain + length;
+        markdownPos = inMarkdown + piece.length;
+      }
+    }
+    return runs;
+  }
+
+  it('projects to one plain line longer than a refine region', () => {
+    expect(note.markdown.length).toBeGreaterThan(20 * 1024);
+    expect(note.plain).toBe('alpha beta gamma '.repeat(UNITS).trimEnd());
+    expect(note.plain.length).toBeGreaterThan(16 * 1024);
+  });
+
+  it('aligns inside the budget', () => {
+    const started = performance.now();
+    const { bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
+    const elapsed = performance.now() - started;
+    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
+    expect(bToA(note.markdown.length)).toBe(note.plain.length);
+  });
+
+  it('maps the carets of the reviewed repro exactly', () => {
+    const { aToB, bToA } = withoutDeadline(() =>
+      createBidirectionalOffsetMapper(note.plain, note.markdown),
+    );
+    expect(aToB(1702)).toBe(2102);
+    expect(bToA(2102)).toBe(1702);
+  });
+
+  it.each([0, 1, 100, UNITS >> 1, UNITS - 2, UNITS - 1])(
+    'maps the verbatim runs of unit %i exactly, in both directions',
+    (unit) => {
+      const { aToB, bToA } = withoutDeadline(() =>
+        createBidirectionalOffsetMapper(note.plain, note.markdown),
+      );
+      for (const [plainStart, markdownStart, length] of runsOfUnit(unit)) {
+        for (let k = 1; k <= length; k += 1) {
+          expect(aToB(plainStart + k), `plain ${plainStart}+${k}`).toBe(markdownStart + k);
+        }
+        for (let k = 0; k <= length; k += 1) {
+          expect(bToA(markdownStart + k), `markdown ${markdownStart}+${k}`).toBe(plainStart + k);
+        }
+      }
+    },
+  );
+});
+
+describe('plain-text ↔ markdown alignment of repeated paragraphs', () => {
+  it('anchors a formatted paragraph onto itself, not onto a later verbatim duplicate', async () => {
+    const markdown = '**Repeated** heading\n\nRepeated heading';
+    const plain = await projectWithEditor(markdown);
+    expect(plain).toBe('Repeated heading\nRepeated heading');
+    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    // First paragraph: inside the bold word, not inside the second paragraph.
+    expect(aToB(4)).toBe(6);
+    expect(bToA(6)).toBe(4);
+    expect(aToB(plain.indexOf('heading') + 3)).toBe(markdown.indexOf('heading') + 3);
+    // Second paragraph.
+    const second = plain.lastIndexOf('Repeated');
+    const secondMarkdown = markdown.lastIndexOf('Repeated');
+    expect(aToB(second + 4)).toBe(secondMarkdown + 4);
+    expect(bToA(secondMarkdown + 4)).toBe(second + 4);
+    expect(bToA(markdown.length)).toBe(plain.length);
+  });
+
+  it('keeps a formatted duplicate between two verbatim ones in place', async () => {
+    const markdown = 'Repeated heading\n\n**Repeated** heading\n\nRepeated heading';
+    const plain = await projectWithEditor(markdown);
+    expect(plain).toBe('Repeated heading\nRepeated heading\nRepeated heading');
+    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    const starts = (text: string) =>
+      [0, 1, 2].map((i) => text.split('Repeated', i + 1).join('Repeated').length);
+    const plainStarts = starts(plain);
+    const markdownStarts = starts(markdown);
+    expect(plainStarts).toEqual([0, 17, 34]);
+    expect(markdownStarts).toEqual([0, 20, 40]);
+    for (let i = 0; i < 3; i += 1) {
+      // "Repe|ated" of each paragraph maps into the same paragraph.
+      expect(aToB(plainStarts[i] + 4), `paragraph ${i}`).toBe(markdownStarts[i] + 4);
+      expect(bToA(markdownStarts[i] + 4), `paragraph ${i}`).toBe(plainStarts[i] + 4);
+    }
+  });
 });
 
 describe('alignment of blocks that never anchor', () => {
@@ -489,7 +615,9 @@ describe('alignment of blocks that never anchor', () => {
   it('still anchors the blocks that do match after a run that does not', () => {
     const [a, b] = unanchorable(20 * 1024);
     const tail = 'A closing paragraph that both sides share verbatim.';
-    const { aToB, bToA } = createBidirectionalOffsetMapper(a + tail, b + tail);
+    const { aToB, bToA } = withoutDeadline(() =>
+      createBidirectionalOffsetMapper(a + tail, b + tail),
+    );
     const inTail = a.length + tail.indexOf('share');
     expect(aToB(inTail)).toBe(b.length + tail.indexOf('share'));
     expect(bToA(b.length + tail.indexOf('share'))).toBe(inTail);
@@ -544,6 +672,32 @@ describe('alignment when the diff budget is exhausted', () => {
     expect(bToA(note.markdown.length)).toBe(note.plain.length);
     const exact = note.samples.filter(([p, m]) => aToB(p) === m && bToA(m) === p).length;
     expect(exact, `${exact} of ${note.samples.length} samples exact`).toBeGreaterThan(0);
+  });
+
+  it('emits the text left once the deadline has passed as one span without probing it', () => {
+    // A run that survives whole between two pieces of syntax: refine's
+    // shortcut would find it inside `b` and map it exactly. Past the deadline
+    // the region is emitted as is instead, so nothing is searched after the
+    // budget is spent.
+    const run = 'q'.repeat(4096);
+    const a = `abc${run}xyz`;
+    const b = `abc<${run}>xyz`;
+    const exact = createBidirectionalOffsetMapper(a, b);
+    expect(exact.aToB(3 + 100)).toBe(4 + 100);
+    expect(exact.bToA(4 + 100)).toBe(3 + 100);
+
+    const now = vi.spyOn(performance, 'now');
+    now.mockReturnValueOnce(0).mockReturnValue(Number.MAX_SAFE_INTEGER);
+    try {
+      const { aToB, bToA } = createBidirectionalOffsetMapper(a, b);
+      expect(aToB(2)).toBe(2);
+      expect(aToB(3 + 100)).toBe(b.length - 3);
+      expect(aToB(a.length)).toBe(b.length);
+      expect(bToA(4 + 100)).toBe(a.length - 3);
+      expect(bToA(b.length)).toBe(a.length);
+    } finally {
+      now.mockRestore();
+    }
   });
 });
 

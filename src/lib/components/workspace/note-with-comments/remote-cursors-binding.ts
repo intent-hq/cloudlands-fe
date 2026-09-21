@@ -10,10 +10,11 @@
  * (`getBaseText` / `getBaseRev`, the text the editor was loaded from or last
  * saved) is the base both peers are assumed to be near.
  *
- * The alignment is a full character diff — seconds on a large note — so it is
- * cached per (editor text, base text) and shared by every consumer: selection
- * publishes, the presence heartbeat, and peer-caret renders reuse it until the
- * document text or the base text actually changes.
+ * The alignment anchors the blocks the two texts share and diffs only the
+ * text between them under a time budget — still tens of milliseconds on a
+ * large note — so it is cached per (editor text, base text) and shared by
+ * every consumer: selection publishes, the presence heartbeat, and peer-caret
+ * renders reuse it until the document text or the base text actually changes.
  */
 import type { Editor } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';

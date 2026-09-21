@@ -47,12 +47,15 @@ const TOKEN = /[\p{L}\p{N}_]+|\s+|./gsu;
 /** `TOKEN` anchored at `lastIndex`, for reading the one token that starts there. */
 const TOKEN_AT = /[\p{L}\p{N}_]+|\s+|./suy;
 const WORD_AT = /[\p{L}\p{N}_]+/uy;
+/** Every word of a line, for `skipsOwnWords`. */
+const WORD = /[\p{L}\p{N}_]+/gu;
 /** Textblocks at least this long are trusted as verbatim anchors. */
 const MIN_ANCHOR_LENGTH = 12;
 /**
  * A block is looked for at most this far beyond twice the unanchored text
- * before it; markdown syntax never doubles a region by more than this, and a
- * later block re-anchors once its gap grows.
+ * before it (see `MAX_ANCHOR_GAP`). A block whose markdown lies further away
+ * — the syntax before it expanded the text by more than that — stays
+ * unanchored, and the window of the blocks after it grows by its length.
  */
 const ANCHOR_SEARCH_SLACK = 8192;
 /**
@@ -98,10 +101,11 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * — plain paragraphs, headings, list items, fenced code — is anchored with a
  * forward `indexOf`, and only the short regions between anchors are diffed
  * (`refine`). A run of blocks that never match verbatim (inline formatting in
- * each) is anchored piecewise instead, see `MAX_UNANCHORED_RUN`. The anchor
- * loop and every diff share one deadline: past it, the remaining text is
- * emitted as one replaced span. A surrogate pair never straddles a span
- * boundary: anchors, trimmed prefixes and tokens stop outside pairs and
+ * each) is anchored piecewise instead, see `MAX_UNANCHORED_RUN`; so is a block
+ * whose only verbatim match is a later duplicate of it, see `skipsOwnWords`.
+ * The anchor loop and every diff share one deadline: past it, the remaining
+ * text is emitted as one replaced span. A surrogate pair never straddles a
+ * span boundary: anchors, trimmed prefixes and tokens stop outside pairs and
  * jsdiff's `diffChars` treats a pair as one character.
  *
  * Unlike `charHunks`, the result is not the minimal edit script; only the
@@ -116,10 +120,6 @@ function anchoredHunks(from: string, to: string): Hunk[] {
   let cursor = 0;
   let pieces = false;
   while (cursor < from.length && performance.now() < deadline) {
-    if (!pieces && cursor - fromPos > MAX_UNANCHORED_RUN) {
-      pieces = true;
-      cursor = fromPos;
-    }
     let lineEnd = from.indexOf('\n', cursor);
     if (lineEnd === -1) lineEnd = from.length;
     const probes = pieces
@@ -129,11 +129,16 @@ function anchoredHunks(from: string, to: string): Hunk[] {
         : [];
     const slack = pieces ? PIECE_SEARCH_SLACK : ANCHOR_SEARCH_SLACK;
     let anchored = false;
+    let duplicate = false;
     for (const probeEnd of probes) {
       const probe = from.slice(cursor, probeEnd);
       const gap = Math.min(2 * (cursor - fromPos), MAX_ANCHOR_GAP);
       const at = findAnchor(to, probe, toPos, toPos + gap + probe.length + slack);
       if (at === -1) continue;
+      if (probeEnd === lineEnd && skipsOwnWords(from, fromPos, lineEnd, to, toPos, at)) {
+        duplicate = true;
+        continue;
+      }
       const length = commonRun(from, cursor, to, at);
       refine(out, from, to, fromPos, cursor, toPos, at, deadline);
       fromPos = cursor + length;
@@ -143,10 +148,52 @@ function anchoredHunks(from: string, to: string): Hunk[] {
       anchored = true;
       break;
     }
-    if (!anchored) cursor = pieces ? cursor + tokenLength(from, cursor) : lineEnd + 1;
+    if (anchored) continue;
+    // Re-walk the unanchored run in pieces once it is long enough — this
+    // failed block included, so a long final paragraph is not skipped whole —
+    // or as soon as a block turned out to be there with inline formatting.
+    if (!pieces && (duplicate || lineEnd + 1 - fromPos > MAX_UNANCHORED_RUN)) {
+      pieces = true;
+      cursor = fromPos;
+    } else {
+      cursor = pieces ? cursor + tokenLength(from, cursor) : lineEnd + 1;
+    }
   }
   refine(out, from, to, fromPos, from.length, toPos, to.length, deadline);
   return out;
+}
+
+/**
+ * Whether `to[toStart, at)` — the text a whole-line anchor at `at` would skip
+ * over — holds every word of the unanchored run `from[start, end)` in order:
+ * the text since the last anchor with the line ending at `end` included. The
+ * run's earlier words account for their own (formatted) text in the region;
+ * if the line's words are still found after them, the line is there with
+ * inline formatting and `at` is a later duplicate of it
+ * (`**Repeated** heading\n\nRepeated heading`). Anchoring onto the duplicate
+ * would map the first paragraph's carets into the second, so the caller walks
+ * the run in pieces instead, anchoring the verbatim runs inside the formatting.
+ */
+function skipsOwnWords(
+  from: string,
+  start: number,
+  end: number,
+  to: string,
+  toStart: number,
+  at: number,
+): boolean {
+  if (at - toStart < end - start) return false;
+  const region = to.slice(toStart, at);
+  let pos = 0;
+  let words = 0;
+  WORD.lastIndex = start;
+  for (let word = WORD.exec(from); word && word.index < end; word = WORD.exec(from)) {
+    pos = region.indexOf(word[0], pos);
+    if (pos === -1) return false;
+    pos += word[0].length;
+    words += 1;
+  }
+  return words > 0;
 }
 
 /**
@@ -244,6 +291,16 @@ function refine(
     out.push(whole);
     return;
   }
+  // Nothing inside a long region anchored, and nothing is searched once the
+  // budget is spent: either way the region is emitted as is.
+  if (
+    fromEnd - fromStart > MAX_REFINE_LENGTH ||
+    toEnd - toStart > MAX_REFINE_LENGTH ||
+    performance.now() >= deadline
+  ) {
+    out.push(whole);
+    return;
+  }
   // A `from` region that survives whole inside the `to` region — text between
   // two pieces of inline syntax — is a pure insertion around it; the diff
   // would say the same, at a cost per gap.
@@ -252,10 +309,6 @@ function refine(
     if (inside > toStart) out.push({ fromStart, fromEnd: fromStart, toStart, toEnd: inside });
     const after = inside + (fromEnd - fromStart);
     if (after < toEnd) out.push({ fromStart: fromEnd, fromEnd, toStart: after, toEnd });
-    return;
-  }
-  if (fromEnd - fromStart > MAX_REFINE_LENGTH || toEnd - toStart > MAX_REFINE_LENGTH) {
-    out.push(whole);
     return;
   }
   const words = withinBudget(deadline, (timeout) =>
