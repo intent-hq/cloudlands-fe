@@ -73,7 +73,7 @@
     escapeKeydownBehavior="ignore"
     class="flex max-w-4xl flex-col gap-0 overflow-hidden rounded-lg border border-border bg-popover p-0"
   >
-    <div class="flex shrink-0 items-center border-b border-border px-6 py-4 pr-12">
+    <div class="flex shrink-0 items-center px-6 py-4 pr-12">
       <Dialog.Title class="type-title text-foreground">{m.modals_newSpace_title()}</Dialog.Title>
       <Dialog.Description class="sr-only">
         {m.workspace_repoSelector_whichRepo_description()}

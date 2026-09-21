@@ -33,6 +33,20 @@ for (const kind of [
     const primary = dialog.getByRole('button', { name: primaryName, exact: true });
     await expect(primary).toBeFocused();
     await page.evaluate(() => document.fonts.ready);
+    const headerBorders = await dialog.evaluate((node) => {
+      const borders: number[] = [];
+      let header = node.querySelector('[data-slot=dialog-title]');
+      while (header && header !== node) {
+        borders.push(parseFloat(getComputedStyle(header).borderBottomWidth));
+        header = header.parentElement;
+      }
+      return borders;
+    });
+    expect(headerBorders.length).toBeGreaterThan(0);
+    expect(
+      headerBorders.every((border) => border === 0),
+      'borderless modal header',
+    ).toBe(true);
     if (kind === 'form' || kind === 'confirm' || kind === 'direct') {
       const gap = await dialog.locator('[data-slot=dialog-header]').evaluate((header) => {
         const next = header.nextElementSibling!;

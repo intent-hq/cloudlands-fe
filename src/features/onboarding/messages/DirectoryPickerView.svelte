@@ -376,7 +376,7 @@
     aria-label={title}
     class="flex h-[32rem] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl focus:outline-none"
   >
-    <header class="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
+    <header class="flex h-12 shrink-0 items-center justify-between px-4">
       <div class="flex min-w-0 items-center gap-2">
         <Fa icon={faFolderOpen} class="shrink-0 text-muted-foreground" />
         <h2 class="truncate text-sm font-medium">{title}</h2>

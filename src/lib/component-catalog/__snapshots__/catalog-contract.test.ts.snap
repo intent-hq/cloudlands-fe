@@ -15813,7 +15813,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                       <div id="c<id>-setup-prompt-dialog-portal">
                       <div class="flex items-center justify-center" role="presentation">
                         <div aria-describedby="setup-prompt-description" aria-labelledby="setup-prompt-title" class="bg-background border border-border flex flex-col max-w-md overflow-hidden rounded-lg shadow-lg w-full" role="dialog" tabindex="-1">
-                          <div class="border-b border-border flex items-center justify-between px-6 py-4">
+                          <div class="flex items-center justify-between px-6 py-4">
                             <div class="flex gap-3 items-center">
                               <div class="text-primary-ink">
                                 <svg aria-hidden="true" data-icon="wand-magic-sparkles" data-weight="regular" role="img">
@@ -15852,7 +15852,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                       <div id="c<id>-pull-conflict-dialog-portal">
                       <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
                       <div aria-labelledby="bits-<id>" aria-modal="true" class="app-no-drag bg-surface-3 dialog-editorial-content gap-0 grid max-w-md motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative rounded-lg shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-pull-conflict-dialog="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-                        <div class="border-b border-border flex items-center justify-between px-6 py-4">
+                        <div class="flex items-center justify-between px-6 py-4">
                           <div class="flex gap-3 items-center">
                             <div class="text-danger">
                               <svg aria-hidden="true" data-icon="triangle-exclamation" data-weight="regular" role="img">
@@ -15959,7 +15959,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                         <div aria-level="2" class="[anchor-name:--dialog-title] font-bold sr-only text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
                           "Select folder"
                         <div aria-label="Select folder" aria-modal="true" class="bg-card border border-border flex flex-col focus:outline-none h-[32rem] max-w-3xl overflow-hidden rounded-xl shadow-2xl w-full" role="dialog" tabindex="-1">
-                          <header class="border-b border-border flex h-12 items-center justify-between px-4 shrink-0">
+                          <header class="flex h-12 items-center justify-between px-4 shrink-0">
                             <div class="flex gap-2 items-center min-w-0">
                               <svg aria-hidden="true" class="shrink-0 text-muted-foreground" data-icon="folder-open" data-weight="regular" role="img">
                                 <rect>
@@ -16763,7 +16763,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                       <div id="c<id>-release-notes-modal-portal">
                       <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
                       <div aria-labelledby="bits-<id>" aria-modal="true" class="bg-surface-3 dialog-editorial-content flex flex-col gap-0 max-w-2xl motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative release-notes-dialog rounded-lg shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-                        <div class="border-b border-border flex items-center pr-12 px-6 py-4 shrink-0">
+                        <div class="flex items-center pr-12 px-6 py-4 shrink-0">
                           <div aria-level="2" class="[anchor-name:--dialog-title] font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
                             "What's New in 2.140.0"
                         <div class="flex-1 min-h-0 overflow-y-auto px-6 py-5 release-notes-body svelte-<scope>">
@@ -16804,7 +16804,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                       <div id="c<id>-import-workspace-modal-portal">
                       <div class="bg-black/50 fixed flex inset-0 items-center justify-center z-50" role="presentation">
                         <div aria-labelledby="import-modal-title" aria-modal="true" class="bg-background border border-border flex flex-col max-w-md overflow-hidden rounded-lg shadow-lg w-full" role="dialog" tabindex="-1">
-                          <div class="border-b border-border flex items-center justify-between px-6 py-4">
+                          <div class="flex items-center justify-between px-6 py-4">
                             <h2 class="font-semibold text-lg" id="import-modal-title">
                               "Import workspace"
                             <div>
@@ -16846,7 +16846,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                       <div id="c<id>-transfer-workspace-modal-portal">
                       <div class="bg-black/50 fixed flex inset-0 items-center justify-center z-50" role="presentation">
                         <div aria-labelledby="transfer-modal-title" aria-modal="true" class="bg-background border border-border flex flex-col max-w-md overflow-hidden rounded-lg shadow-lg w-full" role="dialog" tabindex="-1">
-                          <div class="border-b border-border flex items-center justify-between px-6 py-4">
+                          <div class="flex items-center justify-between px-6 py-4">
                             <h2 class="font-semibold text-lg" id="transfer-modal-title">
                               "Transfer workspace"
                             <div>
@@ -17139,7 +17139,7 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                       <div id="c<id>-new-space-modal-portal">
                       <div class="absolute bg-black/40 dark:bg-black/80 inset-0 motion-reduce:animate-none motion-reduce:transition-none z-[var(--layer-modal)]" data-dialog-overlay="" data-slot="dialog-overlay" data-state="open" data-static-position="true" id="bits-<id>">
                       <div aria-describedby="bits-<id>" aria-labelledby="bits-<id>" aria-modal="true" class="bg-popover border border-border dialog-editorial-content flex flex-col gap-0 max-w-4xl motion-reduce:animate-none motion-reduce:transition-none mx-auto outline-none overflow-hidden overlay-surface overscroll-contain p-0 relative rounded-lg shadow-surface-3 text-popover-foreground w-full z-[var(--layer-modal)]" data-dialog-content="" data-model-picker-collision-boundary="true" data-new-space-modal="true" data-overlay-surface="true" data-size="default" data-slot="dialog-content" data-state="open" data-static-position="true" data-surface-level="3" id="bits-<id>" role="dialog" tabindex="-1">
-                        <div class="border-b border-border flex items-center pr-12 px-6 py-4 shrink-0">
+                        <div class="flex items-center pr-12 px-6 py-4 shrink-0">
                           <div aria-level="2" class="[anchor-name:--dialog-title] font-bold text-foreground type-title" data-dialog-title="" data-slot="dialog-title" data-state="open" id="bits-<id>" role="heading">
                             "New Workspace"
                           <div class="break-words sr-only text-muted-foreground type-caption" data-dialog-description="" data-slot="dialog-description" data-state="open" id="bits-<id>">
