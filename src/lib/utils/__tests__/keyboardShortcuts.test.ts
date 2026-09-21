@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createSpacesShortcut } from '$features/workspace/utils/spaces-shortcut';
 import { KeyboardShortcutManager } from '../keyboardShortcuts';
+import { SHORTCUT_DEFAULTS } from '../shortcut-bindings';
 
 function dispatchShortcut(target: EventTarget, init: KeyboardEventInit = {}) {
   const event = new KeyboardEvent('keydown', {
@@ -14,16 +16,10 @@ function dispatchShortcut(target: EventTarget, init: KeyboardEventInit = {}) {
 
 const managers: KeyboardShortcutManager[] = [];
 
-function createSpacesManager(action: () => void, modifier: 'meta' | 'ctrl') {
+function createSpacesManager(action: () => void) {
   const manager = new KeyboardShortcutManager();
   managers.push(manager);
-  manager.register({
-    key: 'o',
-    [modifier]: true,
-    description: 'Toggle All Spaces',
-    action,
-    skipInEditableElements: true,
-  });
+  manager.register(createSpacesShortcut(action, () => SHORTCUT_DEFAULTS['global.toggle-spaces']));
   manager.attach();
   return manager;
 }
@@ -59,59 +55,70 @@ function createGlobalCloseManager(
 afterEach(() => {
   for (const manager of managers.splice(0)) manager.destroy();
   document.body.replaceChildren();
+  vi.restoreAllMocks();
 });
 
 describe('spaces shortcut handling', () => {
-  it.each([
-    ['Cmd+O', 'input', 'meta', () => document.createElement('input')],
-    [
-      'Cmd+O',
-      'contenteditable',
-      'meta',
-      () => {
-        const editable = document.createElement('div');
-        editable.setAttribute('contenteditable', 'true');
-        editable.tabIndex = 0;
-        return editable;
-      },
-    ],
-    ['Ctrl+O', 'input', 'ctrl', () => document.createElement('input')],
-    [
-      'Ctrl+O',
-      'contenteditable',
-      'ctrl',
-      () => {
-        const editable = document.createElement('div');
-        editable.setAttribute('contenteditable', 'true');
-        editable.tabIndex = 0;
-        return editable;
-      },
-    ],
-  ] as const)(
-    'leaves %s unhandled from %s focus',
-    (_shortcut, _context, modifier, createTarget) => {
-      const action = vi.fn();
-      createSpacesManager(action, modifier);
-      const target = createTarget();
-      document.body.append(target);
-      target.focus();
-      const bubbled = vi.fn();
-      document.addEventListener('keydown', bubbled, { once: true });
+  describe.each(['MacIntel', 'Win32', 'Linux x86_64'])('on %s', (platform) => {
+    const isMac = platform === 'MacIntel';
+    const chord = { key: 'o', code: 'KeyO', metaKey: isMac, ctrlKey: !isMac };
 
-      const event = dispatchShortcut(target, {
-        key: 'o',
-        code: 'KeyO',
-        metaKey: modifier === 'meta',
-        ctrlKey: modifier === 'ctrl',
-        shiftKey: false,
-      });
+    beforeEach(() => {
+      vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+    });
 
-      expect(document.activeElement).toBe(target);
-      if (_context === 'input') expect(event.defaultPrevented).toBe(false);
-      expect(bubbled).toHaveBeenCalledOnce();
-      expect(action).not.toHaveBeenCalled();
-    },
-  );
+    it.each(['input', 'textarea', 'contenteditable', 'nested contenteditable'])(
+      'handles Mod+O from %s focus',
+      (context) => {
+        const action = vi.fn();
+        createSpacesManager(action);
+        const target = document.createElement(
+          context.includes('contenteditable') ? 'div' : context,
+        );
+        if (context.includes('contenteditable')) {
+          target.setAttribute('contenteditable', 'true');
+          target.tabIndex = 0;
+          target.append(document.createElement('span'));
+        }
+        document.body.append(target);
+        target.focus();
+        const bubbled = vi.fn();
+        target.addEventListener('keydown', bubbled);
+
+        const event = dispatchShortcut(
+          context === 'nested contenteditable' ? target.firstElementChild! : target,
+          chord,
+        );
+
+        expect(document.activeElement).toBe(target);
+        expect(event.defaultPrevented).toBe(true);
+        expect(bubbled).not.toHaveBeenCalled();
+        expect(action).toHaveBeenCalledOnce();
+      },
+    );
+
+    it.each(['terminal', 'shortcut recorder', 'plain O', 'Shift+Mod+O'])(
+      'preserves the %s exclusion',
+      (context) => {
+        const action = vi.fn();
+        createSpacesManager(action);
+        const input = document.createElement('textarea');
+        if (context === 'terminal') input.classList.add('xterm-helper-textarea');
+        if (context === 'shortcut recorder') input.dataset.shortcutInput = '';
+        document.body.append(input);
+        input.focus();
+
+        const event = dispatchShortcut(input, {
+          ...chord,
+          ...(context === 'plain O' ? { metaKey: false, ctrlKey: false } : {}),
+          shiftKey: context === 'Shift+Mod+O',
+        });
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(action).not.toHaveBeenCalled();
+      },
+    );
+  });
 });
 
 describe('global panel-tab close shortcut handling', () => {
