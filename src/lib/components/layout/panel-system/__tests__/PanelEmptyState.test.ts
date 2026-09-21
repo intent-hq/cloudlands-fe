@@ -173,6 +173,22 @@ describe('PanelEmptyState', () => {
     expect(screen.queryByRole('button', { name: /^New Browser/ })).toBeNull();
   });
 
+  it('withholds the agent card when the host offers no create handler (guest window)', () => {
+    renderEmptyState({ onCreateNote: vi.fn() });
+
+    expect(screen.queryByRole('button', { name: /^New Agent/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^New Note/ })).toBeTruthy();
+  });
+
+  it('keeps the agent card when only the specialist create handler is offered', async () => {
+    const onCreateAgentWithSpecialist = vi.fn();
+    renderEmptyState({ onCreateAgentWithSpecialist });
+
+    await fireEvent.click(screen.getByRole('button', { name: /^New Agent/ }));
+
+    expect(onCreateAgentWithSpecialist).toHaveBeenCalledWith(null, 'panel-1');
+  });
+
   it('reopens the clicked recent entry into this panel (monorepo#4553)', async () => {
     const now = Date.now();
     mocks.recentlyClosed = [

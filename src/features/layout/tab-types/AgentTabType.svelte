@@ -16,7 +16,10 @@
   import { selectAgentPresencePeople } from '$store/renderer/slices/presence/presence-selectors';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
 
-  import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectHidesAgentLifecycleActions,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { AgentSession } from '$shared/types';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToNote } from '$lib/utils/workspace-navigation';
@@ -76,6 +79,9 @@
 
   // Cache $workspace to prevent destruction during store reloads
   const workspace = selectWorkspaceById(workspaceIdStore);
+  // `agent.delete` is refused (-32003) for a collaborator connection: the
+  // menu item is withheld rather than disabled.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   const defaultModel = selectSelectedModel();
   // Other people whose focus is this chat (multiplayer w5 presence circles).
   const presencePeople$ = selectAgentPresencePeople(workspaceIdStore, agentIdStore);
@@ -234,7 +240,7 @@
   }
 
   async function handleDeleteAgent() {
-    if (!tab.agentId || isAgentDeleting) return;
+    if (!tab.agentId || isAgentDeleting || $hidesAgentLifecycleActions$) return;
     const agentIdToDelete = tab.agentId;
     const agentName = agentSession?.name || tab.title || '';
     isAgentDeleting = true;
@@ -337,14 +343,16 @@
       onclick={() => (replaceAgentModalOpen = true)}
     />
   {/if}
-  <Menu.CommandItem
-    icon={faTrash}
-    iconWeight="regular"
-    label={m.layout_agentTab_deleteAgent_tooltip()}
-    onclick={handleDeleteAgent}
-    disabled={isAgentDeleting}
-    destructive
-  />
+  {#if !$hidesAgentLifecycleActions$}
+    <Menu.CommandItem
+      icon={faTrash}
+      iconWeight="regular"
+      label={m.layout_agentTab_deleteAgent_tooltip()}
+      onclick={handleDeleteAgent}
+      disabled={isAgentDeleting}
+      destructive
+    />
+  {/if}
   {#if agentSpecialistName || harnessVersion}
     <Menu.Separator />
     {#if agentSpecialistName}

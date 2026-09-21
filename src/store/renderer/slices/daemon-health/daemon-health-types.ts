@@ -35,15 +35,29 @@ export interface DaemonStatusCheckFailure {
  * system.status wire payload shape (intentd control.rs §5.7, §12.3).
  * New fields (maxAgents, version, uptimeSeconds) are optional for graceful
  * degradation when the daemon lacks them.
+ *
+ * A Collaborator caller receives the guest-safe projection (intentd #1934,
+ * `control::collaborator_status_json`): only `running`, `listenMode`, `port`,
+ * `version`, `buildCommit`, `protocolVersion`, `fingerprint`, `localIps`,
+ * `tcAddress`, `hostname`, `prettyHostname` and `host.{os, arch, locality,
+ * deviceKind, hardwareModel}`. `transports`, daemon-global counts (`clients`,
+ * `agents`, `maxAgents`), process/disk telemetry and `host.hasDisplay` are
+ * administrator-only and therefore optional here — consumers derive row
+ * visibility from field presence, never from a guest flag. The exact
+ * projected key set is pinned as a typed literal in
+ * `daemon-health.test-fixtures.ts` (covered by `pnpm run check`).
  */
 export interface SystemStatusWirePayload {
   running: boolean;
   listenMode: string;
-  transports: string[];
+  /** Administrator-only: omitted from the collaborator projection. */
+  transports?: string[];
   port?: number | null;
-  clients: number;
-  agents: number;
-  /** New in PR #244, may be missing on older daemons. */
+  /** Administrator-only: omitted from the collaborator projection. */
+  clients?: number;
+  /** Administrator-only: omitted from the collaborator projection. */
+  agents?: number;
+  /** New in PR #244, may be missing on older daemons. Administrator-only. */
   maxAgents?: number;
   /** New in PR #244, may be missing on older daemons. */
   version?: string;
@@ -76,7 +90,8 @@ export interface SystemStatusWirePayload {
   host: {
     os: string;
     arch: string;
-    hasDisplay: boolean;
+    /** Administrator-only: omitted from the collaborator projection. */
+    hasDisplay?: boolean;
     locality: 'local' | 'remote';
   };
 }
@@ -194,8 +209,10 @@ export interface BackendTransportInfo {
  * Stats payload exposed by selectors for the health dropdown menu.
  */
 export interface DaemonHealthStats {
-  clients: number;
-  agents: number;
+  /** Absent when the daemon omits it (collaborator projection, intentd #1934). */
+  clients?: number;
+  /** Absent when the daemon omits it (collaborator projection, intentd #1934). */
+  agents?: number;
   maxAgents?: number;
   listenMode: string;
   port?: number | null;
@@ -255,6 +272,19 @@ export interface DaemonHealthState {
    * the first retry; the daemon-loss overlay renders it as retry progress.
    */
   reconnectAttempts: number;
+  /**
+   * True while the last connect attempt was refused with HTTP 503 by the
+   * host's guest connection cap (intent-hq/intentd#1917). Main keeps
+   * retrying on a slow bounded cadence; the daemon-loss overlay names the
+   * cap instead of the generic reconnect copy. Cleared on connect.
+   */
+  connectionLimited: boolean;
+  /**
+   * The wait main scheduled before its next attempt while `connectionLimited`
+   * (the daemon's `Retry-After`, clamped, or the default cadence); null
+   * otherwise. The overlay shows it where it names the cap.
+   */
+  connectionLimitRetryAfterMs: number | null;
   /**
    * Daemon-reported connection locality from the last system.status poll
    * (`host.locality`, PROTOCOL §5.7/§5.14), or null before the first poll.

@@ -545,6 +545,50 @@ describe('integrations-bridge-seeder', () => {
         ],
       });
     });
+
+    it('search-users forwards to github.users.search and maps the hits, nulling absent urls', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        users: [
+          {
+            id: 1,
+            login: 'octocat',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+            htmlUrl: 'https://github.com/octocat',
+          },
+          { id: 2, login: 'octokit' },
+        ],
+      });
+
+      const response = await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'octo' });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.users.search', { query: 'octo' });
+      expect(response).toEqual({
+        success: true,
+        data: [
+          {
+            id: 1,
+            login: 'octocat',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+            htmlUrl: 'https://github.com/octocat',
+          },
+          { id: 2, login: 'octokit', avatarUrl: null, htmlUrl: null },
+        ],
+      });
+    });
+
+    it('search-users refuses an empty query without a forge call and folds a daemon failure', async () => {
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: '' })).toEqual({
+        success: false,
+        error: 'query is required',
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+
+      mockedRequest.mockRejectedValueOnce(new Error('rate limited'));
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'octo' })).toEqual({
+        success: false,
+        error: 'rate limited',
+      });
+    });
   });
 
   describe('github-auth OAuth triggers → daemon device flow (§5.27 connect/cancelAuth/revoke)', () => {

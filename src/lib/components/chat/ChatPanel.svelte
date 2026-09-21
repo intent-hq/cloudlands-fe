@@ -158,6 +158,7 @@
     presenceTypingPulse,
     presenceTypingStopped,
   } from '$store/renderer/slices/presence/presence-slice';
+  import { selectPresenceOwnPrincipalId } from '$store/renderer/slices/presence/presence-selectors';
   import PresenceTypingIndicator from '$features/presence/components/PresenceTypingIndicator.svelte';
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
@@ -400,6 +401,7 @@
     isUserQueuedMessage,
     omitDrainedQueuedMessages,
   } from '$lib/utils/queued-message-visibility';
+  import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import {
     findPreviousUserMessage,
     isAutomatedChatMessage,
@@ -734,7 +736,7 @@
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
-      getUserMessageNavigationItems($agentMessages$),
+      getUserMessageNavigationItems($agentMessages$, workspace?.ownerPrincipalId),
     ),
   );
 
@@ -1112,6 +1114,16 @@
     omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
   );
 
+  // Queue-surface attribution (multiplayer w2): on only once the workspace
+  // has more than one member. Entries carry their own `author` projection;
+  // the transcript's projections are the fallback for daemons that stamp
+  // `fromPrincipalId` only.
+  const queuedMessageAuthors = $derived(
+    getQueueSurfaceAuthors(workspace?.memberCount, $agentMessages$),
+  );
+  // The viewer's own rows carry no author identity (transcript and queue).
+  const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
+
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
@@ -1323,7 +1335,12 @@
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
   const allSearchMatches = $derived.by(() => {
-    return findChatSearchMatches($agentMessages$, debouncedSearchQuery, messageIdToTurnKey);
+    return findChatSearchMatches(
+      $agentMessages$,
+      debouncedSearchQuery,
+      messageIdToTurnKey,
+      workspace?.ownerPrincipalId,
+    );
   });
 
   // Derive the match count from allSearchMatches
@@ -4710,7 +4727,9 @@
     const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
 
     onChatUpdate({
-      lastUserMessage: lastUserMessage ? getPresentedUserMessageText(lastUserMessage) : undefined,
+      lastUserMessage: lastUserMessage
+        ? getPresentedUserMessageText(lastUserMessage, workspace?.ownerPrincipalId)
+        : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
       isProcessing: $agentIsResponding$,
       messageCount: messages.length,
@@ -5823,6 +5842,7 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
+                      ownPrincipalId={$presenceOwnPrincipalId$}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -5841,6 +5861,7 @@
                         {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         isStreaming={isCurrentlyStreaming}
                         isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
@@ -5941,6 +5962,7 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
+                      ownPrincipalId={$presenceOwnPrincipalId$}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -5959,6 +5981,7 @@
                         {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         isStreaming={isCurrentlyStreaming}
                         isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
@@ -6371,6 +6394,7 @@
                                 messageId={message.id}
                                 ownsMessageIdentity={false}
                                 {workspace}
+                                ownPrincipalId={$presenceOwnPrincipalId$}
                                 onEditSubmit={isRetiredSession
                                   ? undefined
                                   : (newText, model, blocks) =>
@@ -6479,6 +6503,7 @@
                               messageId={message.id}
                               ownsMessageIdentity={false}
                               {workspace}
+                              ownPrincipalId={$presenceOwnPrincipalId$}
                               isStreaming={isCurrentlyStreaming}
                               isLastConversationMessage={isLastMessage}
                               onEditSubmit={isRetiredSession
@@ -6851,6 +6876,8 @@
                       <QueuedMessageList
                         bind:this={queuedMessageListRef}
                         messages={visibleQueuedMessages}
+                        authors={queuedMessageAuthors}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         onedit={handleEditQueuedMessage}
                         onremove={handleRemoveQueuedMessage}
                         onsendnow={handleSendQueuedMessageNow}

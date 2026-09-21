@@ -1,6 +1,7 @@
 /**
- * Allowlist for the GitHub device-flow verification URL the daemon returns
- * from `invite.redeem` (intentd #1872). The URL is server-supplied and ends
+ * Allowlist for the GitHub device-flow verification URL the local daemon
+ * returns from `github.connect` (the guest's own sign-in when an invite
+ * needs the gist identity proof). The URL is server-supplied and ends
  * up in `shell.openExternal`, so it is accepted only when it is `https:` on
  * the default port, points at `github.com` (or a subdomain) and at the
  * device-flow path — no other scheme, port or path, no embedded credentials,

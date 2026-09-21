@@ -38,6 +38,7 @@ import { githubAuthReducer } from './slices/github-auth/github-auth-slice';
 import { gitlabAuthReducer } from './slices/gitlab-auth/gitlab-auth-slice';
 import { githubReposReducer } from './slices/github-repos/github-repos-slice';
 import { githubRepoSearchReducer } from './slices/github-repo-search/github-repo-search-slice';
+import { githubUserSearchReducer } from './slices/github-user-search/github-user-search-slice';
 import { directoryPickerReducer } from './slices/directory-picker/directory-picker-slice';
 import { legacyImportReducer } from './slices/legacy-import/legacy-import-slice';
 import { linearAuthReducer } from './slices/linear-auth/linear-auth-slice';
@@ -142,6 +143,7 @@ export const reducers = {
   gitlabAuth: gitlabAuthReducer,
   githubRepos: githubReposReducer,
   githubRepoSearch: githubRepoSearchReducer,
+  githubUserSearch: githubUserSearchReducer,
   directoryPicker: directoryPickerReducer,
   legacyImport: legacyImportReducer,
   linearAuth: linearAuthReducer,

@@ -91,6 +91,10 @@
     activeFilePath?: string | null;
     activeFileStaged?: boolean | null;
     pullRequestCount?: number;
+    /** Owner-only controls (push / undo via `accept-changes.execute`, amend
+     * via `system.executeCommand`, base-commit context menu via
+     * `workspace.update`) render only when true. */
+    isOwner?: boolean;
   }
 
   let {
@@ -98,6 +102,7 @@
     activeFilePath = null,
     activeFileStaged = null,
     pullRequestCount = 0,
+    isOwner = true,
   }: Props = $props();
 
   // Redux selectors at component init
@@ -216,6 +221,7 @@
 
   // Context menu handlers
   function handleCommitContextMenu(e: MouseEvent, commitHash: string) {
+    if (!isOwner) return;
     e.preventDefault();
     e.stopPropagation();
     commitContextMenu = { x: e.clientX, y: e.clientY, commitHash };
@@ -398,7 +404,7 @@
     commit: { hash: string; message: string },
     index: number,
   ) {
-    if (canAmendCommit(index)) {
+    if (isOwner && canAmendCommit(index)) {
       e.stopPropagation();
       e.preventDefault();
       startEditingCommit(commit);
@@ -846,33 +852,38 @@
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-subtle" />
                 </Button>
-                <!-- Undo push button - absolutely positioned to overlap cloud icon -->
-                <div
-                  class="{!isOperatingOnThis &&
-                    'opacity-0'} group-hover:opacity-100 transition-opacity"
-                >
-                  <Button
-                    variant="ghost-light"
-                    size="icon-xs"
-                    onclick={() => handleUndoPush(index)}
-                    disabled={isPushing || undoState.undoing}
-                    tooltip={getUndoTooltip(index)}
-                    tooltipSide="top"
+                <!-- Undo push button - absolutely positioned to overlap cloud icon
+                     (accept-changes.execute, owner-only) -->
+                {#if isOwner}
+                  <div
+                    class="{!isOperatingOnThis &&
+                      'opacity-0'} group-hover:opacity-100 transition-opacity"
                   >
-                    {#if isOperatingOnThis && undoState.undoing}
-                      <IntentMarkLoader size={12} class="text-subtle" />
-                    {:else}
-                      <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
-                    {/if}
-                  </Button>
-                </div>
-              {:else}
-                <!-- Undo commit button for unpushed commits -->
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      data-testid="commit-undo-push-button"
+                      onclick={() => handleUndoPush(index)}
+                      disabled={isPushing || undoState.undoing}
+                      tooltip={getUndoTooltip(index)}
+                      tooltipSide="top"
+                    >
+                      {#if isOperatingOnThis && undoState.undoing}
+                        <IntentMarkLoader size={12} class="text-subtle" />
+                      {:else}
+                        <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
+                      {/if}
+                    </Button>
+                  </div>
+                {/if}
+              {:else if isOwner}
+                <!-- Undo commit button for unpushed commits (accept-changes.execute, owner-only) -->
                 <Button
                   variant="ghost-light"
                   size="icon-xs"
                   class="{!isOperatingOnThis &&
                     'opacity-0!'} group-hover:opacity-100! transition-opacity shrink-0"
+                  data-testid="commit-undo-button"
                   onclick={() => handleUndoCommit(index)}
                   disabled={isPushing || undoState.undoing || undoState.undoingCommit}
                   tooltip={getUndoCommitTooltip(index)}
@@ -891,6 +902,7 @@
                     size="icon-xs"
                     class="{!isOperatingOnThis &&
                       'opacity-0!'} group-hover:opacity-100! transition-opacity shrink-0"
+                    data-testid="commit-push-button"
                     onclick={() => handlePushCommits(index)}
                     disabled={isPushing || undoState.undoing || undoState.undoingCommit}
                     tooltip={getPushTooltip(index)}

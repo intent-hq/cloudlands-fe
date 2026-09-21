@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import type { Workspace } from '$shared/types';
+import { TC_ADDRESS } from '../../../test/fixtures/tc-address.fixture';
 import {
   HostedRosterOperationError,
   type HostedRoster,
@@ -234,6 +235,53 @@ describe('GuestSessionsSettings', () => {
     ).toBe('true');
   });
 
+  it('labels a joined host by its captured hostname and keeps the dialled address as secondary text', () => {
+    mocks.sessions = [
+      { ...guest, label: 'tc.example.ts.net', hostname: 'Clement’s Mac Studio' },
+      { ...guest, id: 'guest-2', label: 'tc2.example.ts.net', hostname: null },
+    ];
+    render(GuestSessionsSettings);
+    const joined = screen.getByTestId('guest-sessions-joined');
+    const captured = joined.querySelector('[data-session-id="guest-1"]') as HTMLElement;
+    const pending = joined.querySelector('[data-session-id="guest-2"]') as HTMLElement;
+
+    // Hostname captured: it is the primary label; the address moves to the
+    // secondary line rather than disappearing.
+    expect(within(captured).getByText('Clement’s Mac Studio')).toBeTruthy();
+    expect(captured.querySelector('[data-guest-address]')?.textContent).toBe('tc.example.ts.net');
+    expect(within(captured).getByRole('list', { name: /Clement’s Mac Studio/ })).toBeTruthy();
+    // Not yet captured: the address stays the primary label, with nothing to repeat.
+    expect(within(pending).getByText('tc2.example.ts.net')).toBeTruthy();
+    expect(pending.querySelector('[data-guest-address]')).toBeNull();
+  });
+
+  it('never shows an opaque tc address: "Unknown host" until the hostname arrives, then the hostname alone', () => {
+    mocks.sessions = [
+      { ...guest, label: TC_ADDRESS, tcAddress: TC_ADDRESS, hostname: null },
+      {
+        ...guest,
+        id: 'guest-2',
+        label: TC_ADDRESS,
+        tcAddress: TC_ADDRESS,
+        hostname: 'Clement’s Mac Studio',
+      },
+      { ...guest, id: 'guest-3', label: '10.0.0.9', hostname: null },
+    ];
+    render(GuestSessionsSettings);
+    const joined = screen.getByTestId('guest-sessions-joined');
+    const pending = joined.querySelector('[data-session-id="guest-1"]') as HTMLElement;
+    const captured = joined.querySelector('[data-session-id="guest-2"]') as HTMLElement;
+    const ip = joined.querySelector('[data-session-id="guest-3"]') as HTMLElement;
+
+    expect(within(pending).getByText('Unknown host')).toBeTruthy();
+    expect(pending.querySelector('[data-guest-address]')).toBeNull();
+    expect(within(captured).getByText('Clement’s Mac Studio')).toBeTruthy();
+    expect(captured.querySelector('[data-guest-address]')).toBeNull();
+    expect(joined.textContent).not.toContain(TC_ADDRESS);
+    // A plain IP is still a readable address and stays the primary label.
+    expect(within(ip).getByText('10.0.0.9')).toBeTruthy();
+  });
+
   it('nests the joined workspaces under their host, each with its own Leave', () => {
     mocks.sessions = [guest, { ...guest, id: 'guest-2', label: 'desk.local', workspaces: [] }];
     render(GuestSessionsSettings);
@@ -294,6 +342,46 @@ describe('GuestSessionsSettings', () => {
     await waitFor(() => expect(mocks.leaveWorkspace).toHaveBeenCalledTimes(2));
     expect(mocks.leaveWorkspace).toHaveBeenLastCalledWith('guest-1', 'ws-a');
     await waitFor(() => expect(screen.queryByTestId('guest-leave-workspace-error')).toBeNull());
+  });
+
+  describe('a joined workspace the host projects with an empty title', () => {
+    const untitled = { ...guest, workspaces: [{ id: 'ws-untitled', title: '' }] };
+
+    function untitledRow(): HTMLElement {
+      return screen
+        .getByTestId('guest-sessions-joined')
+        .querySelector('[data-workspace-id="ws-untitled"]') as HTMLElement;
+    }
+
+    it('shows the Untitled fallback in its row', () => {
+      mocks.sessions = [untitled];
+      render(GuestSessionsSettings);
+      expect(within(untitledRow()).getByText('Untitled')).toBeTruthy();
+    });
+
+    it('names it Untitled in the Leave confirm dialog', async () => {
+      mocks.sessions = [untitled];
+      render(GuestSessionsSettings);
+      await fireEvent.click(within(untitledRow()).getByRole('button', { name: 'Leave' }));
+      expect(screen.getByRole('dialog').textContent).toContain('Untitled');
+    });
+
+    it('names it Untitled when the leave fails', async () => {
+      mocks.sessions = [untitled];
+      mocks.leaveWorkspace.mockImplementationOnce((id, workspaceId) => ({
+        type: 'guestSessions/leaveGuestWorkspaceRequested',
+        payload: [id, workspaceId],
+        promise: Promise.reject(new Error('daemon')),
+      }));
+      render(GuestSessionsSettings);
+      await fireEvent.click(within(untitledRow()).getByRole('button', { name: 'Leave' }));
+      const confirmButtons = screen.getAllByRole('button', { name: 'Leave' });
+      await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+      const alert = await screen.findByTestId('guest-leave-workspace-error');
+      expect(alert.textContent).toContain('Untitled');
+      expect(mocks.leaveWorkspace).toHaveBeenCalledWith('guest-1', 'ws-untitled');
+    });
   });
 
   /**
@@ -373,7 +461,12 @@ describe('GuestSessionsSettings', () => {
     });
 
     it('Leave host: retry leaves A again, never the cancelled B', async () => {
-      const second: GuestSessionRecord = { ...guest, id: 'guest-2', label: 'second.local' };
+      const second: GuestSessionRecord = {
+        ...guest,
+        id: 'guest-2',
+        label: 'second.local',
+        hostname: 'second.local',
+      };
       mocks.sessions = [guest, second];
       const leaveA = pendingAction('guestSessions/leaveRequested', ['guest-1']);
       mocks.leave.mockImplementationOnce(() => leaveA.action);
@@ -920,6 +1013,26 @@ describe('GuestSessionsSettings', () => {
       expect(report.textContent).toContain('Shared project');
       await fireEvent.click(within(report).getByRole('button', { name: 'Retry' }));
       await waitFor(() => expect(mocks.removeAll).toHaveBeenCalledTimes(2));
+    });
+
+    it('names an untitled hosted workspace Untitled when its sweep fails', async () => {
+      mocks.hosted = [{ ...hostedWorkspace, title: '' } as Workspace];
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
+      mocks.removeAll.mockImplementationOnce((workspaceId) => ({
+        type: 'guestSessions/removeAllHostedGuestsRequested',
+        payload: [workspaceId],
+        promise: Promise.reject(new Error('forbidden')),
+      }));
+      render(GuestSessionsSettings);
+      const roster = screen.getByTestId('hosted-workspace-roster');
+
+      await fireEvent.click(within(roster).getByTestId('hosted-roster-remove-all'));
+      const confirmButtons = screen.getAllByRole('button', { name: 'Remove all guests' });
+      await fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+      const report = await screen.findByTestId('hosted-roster-remove-all-error');
+      expect(report.textContent).toContain('Untitled');
+      expect(mocks.removeAll).toHaveBeenCalledWith('ws-1');
     });
   });
 });

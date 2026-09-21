@@ -53,6 +53,18 @@ import {
 } from '../../agent-subscription-ui/agent-subscription-ui-slice';
 import { selectAgentSubscriptions } from '../../agent-subscription-ui/agent-subscription-ui-selectors';
 import {
+  connectionsListReceived,
+  connectionsReducer,
+  initialState as connectionsInitialState,
+} from '../../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../../guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '../../guest-sessions/guest-sessions-types';
+import { initialState as workspaceInitialState } from '../../workspace/workspace-slice';
+import {
   activateAgentRequested,
   deleteAgentWithUndoRequested,
   deleteAgentSessionRequested,
@@ -116,15 +128,65 @@ function session(id = A1, overrides: Partial<AgentSession> = {}): AgentSession {
  * `agentSessions` slice is folded through the real reducer on every dispatch, so
  * mid-request selects observe earlier writes the way the app store does.
  */
+const GUEST_SESSION: GuestSessionRecord = {
+  id: 'guest-1',
+  label: 'studio.local',
+  host: '10.0.0.5',
+  hosts: ['10.0.0.5'],
+  port: 8443,
+  fingerprint: 'AB:CD',
+  tcAddress: null,
+  hostname: 'studio.local',
+  principalId: 'prin-guest',
+  login: 'octocat',
+  tokenEncrypted: true,
+  updatedAt: 1,
+};
+
+/**
+ * Window identity for the delete gate: a settled owner window (guest session
+ * list hydrated, no joined host) or a settled guest window (the window's
+ * backend id is a joined host).
+ */
+function windowIdentity(guest = false) {
+  return {
+    workspace: { ...workspaceInitialState, hasLoaded: true },
+    connections: guest
+      ? connectionsReducer(
+          connectionsInitialState,
+          connectionsListReceived({
+            connections: [],
+            activeId: GUEST_SESSION.id,
+            windowBackendId: GUEST_SESSION.id,
+          }),
+        )
+      : connectionsInitialState,
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({
+        sessions: guest ? [GUEST_SESSION] : [],
+        openIds: [],
+        connectedIds: [],
+      }),
+    ),
+  };
+}
+
 function start(
   sessions: Record<string, AgentSession> = { [A1]: session() },
-  { live = false }: { live?: boolean } = {},
+  { live = false, guest = false }: { live?: boolean; guest?: boolean } = {},
 ) {
   const channel = stdChannel();
   const dispatched: any[] = [];
-  let state = { agentSessions: { ...agentSessionInitialState, byAgentId: sessions } };
+  const identity = windowIdentity(guest);
+  let state = {
+    ...identity,
+    agentSessions: { ...agentSessionInitialState, byAgentId: sessions },
+  };
   const dispatch = (action: any) => {
-    if (live) state = { agentSessions: agentSessionReducer(state.agentSessions, action) };
+    if (live) {
+      state = { ...identity, agentSessions: agentSessionReducer(state.agentSessions, action) };
+    }
     dispatched.push(action);
     channel.put(action);
     return action;
@@ -792,6 +854,34 @@ describe('agentMutationSaga', () => {
     await expect(deletion.promise).rejects.toThrow('delete rejected');
     expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
     expect(mocks.error).toHaveBeenCalledWith('delete rejected');
+    expect(listPendingAgentDeletions()).toEqual([]);
+    await stop(task);
+  });
+
+  it('refuses the delete in a guest window before hiding the session or sending anything', async () => {
+    mocks.deleteAgent.mockResolvedValue({ success: true, scheduled: true, deleteAt: 'x' });
+    const { channel, dispatched, task } = start(undefined, { guest: true });
+    const deletion = deleteAgentWithUndoRequested(WS, A1);
+    channel.put(deletion);
+
+    await expect(deletion.promise).rejects.toThrow("You can't delete agents in this workspace");
+    expect(mocks.deleteAgent).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledWith("You can't delete agents in this workspace");
+    expect(mocks.warning).not.toHaveBeenCalled();
+    expect(dispatched).not.toContainEqual(removeSession(A1));
+    expect(listPendingAgentDeletions()).toEqual([]);
+    await stop(task);
+  });
+
+  it('renders the not-permitted sentence when the daemon refuses the delete with -32003', async () => {
+    mocks.deleteAgent.mockResolvedValue({ success: false, forbidden: true, error: 'Forbidden' });
+    const { channel, dispatched, task } = start();
+    const deletion = deleteAgentWithUndoRequested(WS, A1);
+    channel.put(deletion);
+
+    await expect(deletion.promise).rejects.toThrow("You can't delete agents in this workspace");
+    expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
+    expect(mocks.error).toHaveBeenCalledWith("You can't delete agents in this workspace");
     expect(listPendingAgentDeletions()).toEqual([]);
     await stop(task);
   });

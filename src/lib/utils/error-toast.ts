@@ -5,7 +5,10 @@
 import { notify } from '$lib/components/patterns/notify';
 import { errorReporter } from '$lib/utils/error-reporter';
 import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
-import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import {
+  selectHidesAgentLifecycleActions,
+  selectWorkspaceById,
+} from '$store/renderer/slices/workspace/workspace-selectors';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { createAgentFromConfigRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -112,6 +115,17 @@ async function attemptRecovery(error: AppError): Promise<void> {
 }
 
 /**
+ * Whether "Debug with AI" may be offered: it creates an agent (`agent.create`),
+ * refused (-32003) for a collaborator connection, so the affordance is withheld
+ * for the active workspace of a guest / collaborator window.
+ */
+function canOfferDebugAgent(): boolean {
+  const state = appStore.state;
+  const activeWorkspaceId = selectCurrentWorkspaceTabId.select(state) ?? '';
+  return !selectHidesAgentLifecycleActions.select(state, activeWorkspaceId);
+}
+
+/**
  * Show an error as a toast notification
  */
 export function showErrorToast(error: AppError): void {
@@ -119,7 +133,7 @@ export function showErrorToast(error: AppError): void {
     {
       error,
       onCopy: () => copyError(error),
-      onDebug: () => sendToAgent(error),
+      onDebug: canOfferDebugAgent() ? () => sendToAgent(error) : undefined,
       onRetry: error.recoverable ? () => attemptRecovery(error) : undefined,
     },
     {

@@ -16,6 +16,12 @@
     compact?: boolean;
     /** Label of the open-verification-page button (defaults to the GitHub copy). */
     openLabel?: string;
+    /**
+     * Override for the "Open GitHub" action. When set, the card does not open
+     * the URL itself — the caller owns the open (e.g. the invite consent modal,
+     * where main opens the allowlisted URL and the modal enters its waiting state).
+     */
+    onOpen?: () => void;
   }
 
   let {
@@ -23,9 +29,14 @@
     verificationUri,
     compact = false,
     openLabel = m.lib_githubDeviceCode_openGithub_label(),
+    onOpen,
   }: Props = $props();
 
   function handleOpenGitHub() {
+    if (onOpen) {
+      onOpen();
+      return;
+    }
     // Forge URLs always route to the external browser via the link handler.
     void handleLink(verificationUri, {});
   }

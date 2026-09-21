@@ -1227,3 +1227,36 @@ export const QuitConfirmationResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
   proceed: z.boolean(),
 });
+
+// ============================================================================
+// Invite Consent Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite GitHub identity
+// prompt. The payload contract (all four channels) is documented in
+// `src/shared/ipc/invite-consent.ts`.
+// ============================================================================
+
+export const InviteConsentAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteConsentResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  action: z.enum(['open', 'cancel']),
+});
+
+// ============================================================================
+// Invite Notice Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite failure /
+// plaintext-credential notice. The payload contract (all four channels) is
+// documented in `src/shared/ipc/invite-notice.ts`.
+// ============================================================================
+
+export const InviteNoticeAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteNoticeResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});

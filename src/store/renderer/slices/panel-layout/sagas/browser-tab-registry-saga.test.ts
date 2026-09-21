@@ -28,6 +28,7 @@ vi.mock('$lib/utils/browser-url-resolution', () => ({
 }));
 
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
 import type { BrowserTab, BrowserTabListing } from '$shared/types/browser-clients';
 import { createAction, type StoreAction } from '@augmentcode/themis/utils/store/create-action';
 import {
@@ -165,6 +166,8 @@ function start(
     },
     daemonHealth: { health: opts.health ?? 'healthy', connectionGeneration: 1 },
     connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+    // Settled owner window: guest list received, no host joined.
+    guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
     workspace: {
       workspaces: createCollection(
         'id',

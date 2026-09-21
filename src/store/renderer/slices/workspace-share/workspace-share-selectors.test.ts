@@ -1,15 +1,28 @@
 /**
  * Hover-card roster selectors: the owner gate (`workspace.myRole === 'owner'`
- * and not withheld by the daemon) and the keyed roster reads, as pure
- * state-in / value-out cases.
+ * in a settled owner window and not withheld by the daemon) and the keyed
+ * roster reads, as pure state-in / value-out cases.
  */
 import { describe, expect, it } from 'vitest';
 
 import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
-import type { WorkspaceMember } from '$features/workspace-sharing/types';
+import type { HostPrincipal, WorkspaceMember } from '$features/workspace-sharing/types';
 import type { Workspace, WorkspaceRole } from '$shared/types';
 import type { StoreState } from '../../types';
 import {
+  connectionsListReceived,
+  connectionsReducer,
+  initialState as connectionsInitialState,
+} from '../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
+import {
+  selectShareCanManage,
+  selectShareInvitablePrincipals,
   selectWorkspaceRosterCanManage,
   selectWorkspaceRosterMembers,
   selectWorkspaceRosterRemoveError,
@@ -19,6 +32,9 @@ import {
 } from './workspace-share-selectors';
 import {
   initialState,
+  openShareDialog,
+  shareDataLoaded,
+  sharePrincipalsLoaded,
   shareRosterLoaded,
   shareRosterMemberRemoveRequested,
   shareRosterRequested,
@@ -36,6 +52,7 @@ const owner: WorkspaceMember = {
 };
 const guest: WorkspaceMember = { ...owner, principalId: 'p-guest', role: 'collaborator' };
 
+/** Settled owner window: the guest list arrived with no host joined. */
 function stateWith(
   roles: Record<string, WorkspaceRole | undefined>,
   ...actions: Parameters<typeof workspaceShareReducer>[1][]
@@ -46,7 +63,55 @@ function stateWith(
   return {
     workspaceShare: actions.reduce(workspaceShareReducer, initialState),
     workspace: { workspaces: createCollection('id', workspaces) },
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+    ),
   } as unknown as StoreState;
+}
+
+const GUEST_SESSION: GuestSessionRecord = {
+  id: 'guest-1',
+  label: 'studio.local',
+  host: '10.0.0.5',
+  hosts: ['10.0.0.5'],
+  port: 8443,
+  fingerprint: 'AB:CD',
+  tcAddress: null,
+  hostname: 'studio.local',
+  principalId: 'prin-guest',
+  login: 'octocat',
+  tokenEncrypted: true,
+  updatedAt: 1,
+};
+
+/** Bind the window to the joined host `GUEST_SESSION` (multiplayer w4). */
+function guestWindow(state: StoreState): StoreState {
+  return {
+    ...state,
+    connections: connectionsReducer(
+      connectionsInitialState,
+      connectionsListReceived({
+        connections: [],
+        activeId: GUEST_SESSION.id,
+        windowBackendId: GUEST_SESSION.id,
+      }),
+    ),
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+    ),
+  };
+}
+
+/** Nothing hydrated yet: the window's guest/owner identity is the boot-time default. */
+function unsettled(state: StoreState): StoreState {
+  return {
+    ...state,
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsInitialState,
+  };
 }
 
 const loaded = [
@@ -81,6 +146,67 @@ describe('selectWorkspaceRosterCanManage', () => {
     expect(selectWorkspaceRosterWithheld.select(state, 'ws-1')).toBe(true);
     expect(selectWorkspaceRosterCanManage.select(state, 'ws-2')).toBe(true);
     expect(selectWorkspaceRosterWithheld.select(state, 'ws-2')).toBe(false);
+  });
+
+  it('is false in a guest window even when the daemon reports myRole owner (host owner joined its own invite)', () => {
+    expect(
+      selectWorkspaceRosterCanManage.select(guestWindow(stateWith({ 'ws-1': 'owner' })), 'ws-1'),
+    ).toBe(false);
+  });
+
+  it('is false until the window identity settles, even when the row reports myRole owner', () => {
+    expect(
+      selectWorkspaceRosterCanManage.select(unsettled(stateWith({ 'ws-1': 'owner' })), 'ws-1'),
+    ).toBe(false);
+  });
+});
+
+describe('selectShareCanManage', () => {
+  const dialog = openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'ws-1' });
+
+  it('is true only for the owner of the open dialog workspace in a settled owner window', () => {
+    expect(selectShareCanManage.select(stateWith({ 'ws-1': 'owner' }, dialog))).toBe(true);
+    expect(selectShareCanManage.select(stateWith({ 'ws-1': 'collaborator' }, dialog))).toBe(false);
+    expect(selectShareCanManage.select(stateWith({ 'ws-1': undefined }, dialog))).toBe(false);
+    expect(selectShareCanManage.select(stateWith({ 'ws-1': 'owner' }))).toBe(false);
+  });
+
+  it('fails closed in a guest window and until the window identity settles, whatever myRole the row carries', () => {
+    expect(selectShareCanManage.select(guestWindow(stateWith({ 'ws-1': 'owner' }, dialog)))).toBe(
+      false,
+    );
+    expect(selectShareCanManage.select(unsettled(stateWith({ 'ws-1': 'owner' }, dialog)))).toBe(
+      false,
+    );
+  });
+});
+
+describe('selectShareInvitablePrincipals', () => {
+  it('lists the host principals not yet on the dialog roster, in daemon order', () => {
+    const erin: HostPrincipal = {
+      principalId: 'p-erin',
+      login: 'erin',
+      displayName: null,
+      avatarUrl: null,
+      githubUserId: 5,
+    };
+    const alreadyMember: HostPrincipal = { ...erin, principalId: 'p-guest', login: 'guest' };
+    const frank: HostPrincipal = { ...erin, principalId: 'p-frank', login: 'frank' };
+    const target = { workspaceId: 'ws-1', session: 1 };
+    const state = stateWith(
+      { 'ws-1': 'owner' },
+      openShareDialog({ workspaceId: 'ws-1', workspaceTitle: 'ws-1' }),
+      shareDataLoaded({
+        target,
+        generation: 0,
+        members: [owner, guest],
+        invites: [],
+        guestCount: null,
+        guestLimit: null,
+      }),
+      sharePrincipalsLoaded({ target, principals: [erin, alreadyMember, frank] }),
+    );
+    expect(selectShareInvitablePrincipals.select(state)).toEqual([erin, frank]);
   });
 });
 

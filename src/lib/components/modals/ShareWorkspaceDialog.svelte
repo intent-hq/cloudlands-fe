@@ -2,9 +2,16 @@
   /**
    * ShareWorkspaceDialog — the owner-side sharing surface (multiplayer w4).
    *
-   * Creates one-shot `intent://invite` links (optionally pinned to a GitHub
-   * login), lists the open invites with Revoke, and lists the member roster
-   * with Remove. Gated on the GitHub connection: members are identified by
+   * Offers the guests already authed on this host (`principal.list`, minus
+   * the current roster) in an "Invite an existing GitHub user" dropdown whose
+   * Invite attaches the pick directly (`workspace.members.add`, no link);
+   * creates `intent://invite` links (optionally pinned to a GitHub login;
+   * an unpinned link is reusable until it expires or is revoked, a pinned
+   * one is single-use), lists the open invites with Copy link + Revoke, and
+   * lists the member roster with Remove. A reusable row is labelled
+   * "Reusable · N joined" from the daemon's `reusable` / `redemptionCount`;
+   * a daemon that predates those fields (every link single-use) shows the
+   * pinned presentation for every row. Gated on the GitHub connection: members are identified by
    * their GitHub account, so a daemon without a configured login cannot mint
    * invites and the dialog shows a connect-first state instead.
    *
@@ -13,26 +20,54 @@
    * renders the owner-only notice instead of any control or row. Member Remove
    * is confirmation-gated (inline confirm on the row).
    *
+   * The pin field is a GitHub user typeahead: typing dispatches a debounced
+   * `github.users.search` through `onSearchUsers` and the suggestions arrive
+   * back as props from the github-user-search slice; picking a row pins the
+   * invite to that login (rendered as a chip), free text still submits as-is.
+   *
+   * The workspace's guest cap (`guestCount` / `guestLimit` from
+   * `workspace.members.list`, intent-hq/intentd#1917) is shown as
+   * "Guests n / N"; at the cap Create is disabled with the reason inline.
+   * The daemon still enforces the cap (`guest-limit`) for a raced create.
+   *
    * Fully presentational: every row and in-flight flag arrives from the
    * workspace-share slice through the Redux host, and user intent (create /
-   * revoke / remove) goes back as callbacks the host dispatches. Only the pin
-   * input draft, the pending Remove confirmation, and the clipboard copy live
-   * here; the invite url arrives as a plain prop and is never echoed.
+   * revoke / remove / add) goes back as callbacks the host dispatches. Only
+   * the pin input draft, the existing-guest pick, the pending Remove
+   * confirmation, and the clipboard copy live
+   * here. Invite links never ride the store: the host resolves them from the
+   * invite-link vault into `inviteLinks` (by invite id), and a row with no
+   * link (the daemon's Remote Access listener is down) has its Copy disabled.
    */
 
+  import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
-  import { faCopy, faLink, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faCopy, faLink, faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
+  import { menuItem } from '$lib/components/ui/menu';
+  import { Select } from '$lib/components/ui/select';
   import { ListView } from '$lib/components/patterns/collection';
   import { notify } from '$lib/components/patterns/notify';
-  import { formatRelativeTime } from '$lib/i18n/format';
+  import { formatInteger, formatRelativeTime } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceRole } from '$shared/types';
-  import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+  import type {
+    HostPrincipal,
+    WorkspaceInvite,
+    WorkspaceMember,
+  } from '$features/workspace-sharing/types';
+  import {
+    GITHUB_USER_QUERY_MIN_LENGTH,
+    normalizeGithubUserQuery,
+  } from '$features/workspace-sharing/utils/github-user-query';
+  import type { GithubUserSearchItem } from '$store/renderer/slices/github-user-search/github-user-search-slice';
   import type { WorkspaceShareCreatedLink } from '$store/renderer/slices/workspace-share/workspace-share-slice';
+
+  /** Rows shown in the pin typeahead (the daemon default page size). */
+  const MAX_USER_SUGGESTIONS = 8;
 
   interface Props {
     open?: boolean;
@@ -44,21 +79,46 @@
     canManage?: boolean;
     members?: WorkspaceMember[];
     invites?: WorkspaceInvite[];
+    /**
+     * Guests already authed on this host and not yet on the roster (the host
+     * filters `principal.list` against `members`); the section is hidden
+     * when empty.
+     */
+    principals?: HostPrincipal[];
+    /**
+     * `intent://invite` link per invite id (open rows + `createdLink`), resolved
+     * by the host from the invite-link vault; a missing entry disables Copy.
+     */
+    inviteLinks?: Readonly<Record<string, string>>;
+    /** Guests spent (collaborators + open invites); `null` while unknown. */
+    guestCount?: number | null;
+    /** The workspace's guest cap; `null` while unknown (no gating). */
+    guestLimit?: number | null;
     loading?: boolean;
     loadError?: string | null;
     creating?: boolean;
     createError?: string | null;
     createdLink?: WorkspaceShareCreatedLink | null;
-    /** The one-time url behind `createdLink`, resolved by the host. */
-    createdLinkUrl?: string | null;
     revokingInviteId?: string | null;
     removingPrincipalId?: string | null;
+    /** `workspace.members.add` in flight for this host principal. */
+    addingPrincipalId?: string | null;
     actionError?: string | null;
+    /** github-user-search slice: results for `userSearchQuery`. */
+    userSuggestions?: GithubUserSearchItem[];
+    userSearchLoading?: boolean;
+    userSearchError?: string | null;
+    /** The normalized query that produced `userSuggestions` (slice `lastQuery`). */
+    userSearchQuery?: string;
     onClose?: () => void;
     onConnectGitHub?: () => void;
     onCreateInvite?: (pinLogin: string) => void;
     onRevokeInvite?: (inviteId: string) => void;
     onRemoveMember?: (principalId: string) => void;
+    /** Attach a `principals` row as a collaborator (`workspace.members.add`). */
+    onAddMember?: (principalId: string) => void;
+    /** Debounced by the saga; `''` clears the cached results. */
+    onSearchUsers?: (query: string) => void;
   }
 
   let {
@@ -69,52 +129,180 @@
     canManage = false,
     members = [],
     invites = [],
+    principals = [],
+    inviteLinks = {},
+    guestCount = null,
+    guestLimit = null,
     loading = false,
     loadError = null,
     creating = false,
     createError = null,
     createdLink = null,
-    createdLinkUrl = null,
     revokingInviteId = null,
     removingPrincipalId = null,
+    addingPrincipalId = null,
     actionError = null,
+    userSuggestions = [],
+    userSearchLoading = false,
+    userSearchError = null,
+    userSearchQuery = '',
     onClose,
     onConnectGitHub,
     onCreateInvite,
     onRevokeInvite,
     onRemoveMember,
+    onAddMember,
+    onSearchUsers,
   }: Props = $props();
 
-  const busy = $derived(revokingInviteId !== null || removingPrincipalId !== null);
+  const busy = $derived(
+    revokingInviteId !== null || removingPrincipalId !== null || addingPrincipalId !== null,
+  );
+  /** The cap is known and spent: no further invite can be minted. */
+  const atGuestCap = $derived(
+    guestCount !== null && guestLimit !== null && guestCount >= guestLimit,
+  );
 
   let pinLogin = $state('');
+  /** Suggestion the user picked; wins over the free-text draft on submit. */
+  let selectedUser = $state<GithubUserSearchItem | null>(null);
+  /** Escape closes the list until the next keystroke. */
+  let suggestionsDismissed = $state(false);
+  /** Highlighted suggestion row; -1 means none. */
+  let activeSuggestion = $state(-1);
+  let pinInput = $state<ReturnType<typeof Input> | null>(null);
   /** Member row awaiting Remove confirmation. */
   let confirmRemovePrincipalId = $state<string | null>(null);
+  /** The existing-guest dropdown pick (`principalId`); `''` for none. */
+  let selectedPrincipalId = $state('');
+
+  const principalItems = $derived(
+    principals.map((principal) => ({
+      value: principal.principalId,
+      label: principalLabel(principal),
+    })),
+  );
+  const selectedPrincipal = $derived(
+    principals.find((principal) => principal.principalId === selectedPrincipalId) ?? null,
+  );
+
+  // A pick that left the list (added to the roster, or revoked itself) is cleared.
+  $effect(() => {
+    if (selectedPrincipalId && !selectedPrincipal) selectedPrincipalId = '';
+  });
+
+  const pinQuery = $derived(normalizeGithubUserQuery(pinLogin));
+  const pinSearchable = $derived(
+    githubConnected && pinQuery.length >= GITHUB_USER_QUERY_MIN_LENGTH,
+  );
+  /** The slice caught up with the input; anything else is stale or pending. */
+  const suggestionsCurrent = $derived(pinSearchable && userSearchQuery === pinQuery);
+  const visibleSuggestions = $derived(
+    suggestionsCurrent ? userSuggestions.slice(0, MAX_USER_SUGGESTIONS) : [],
+  );
+  const suggestionsOpen = $derived(pinSearchable && !selectedUser && !suggestionsDismissed);
+
+  function resetPinDraft() {
+    pinLogin = '';
+    selectedUser = null;
+    suggestionsDismissed = false;
+    activeSuggestion = -1;
+    onSearchUsers?.('');
+  }
 
   // Drafts reset when the dialog retargets and after a link is minted.
   $effect(() => {
     void open;
     void workspaceId;
-    pinLogin = '';
+    untrack(resetPinDraft);
     confirmRemovePrincipalId = null;
+    selectedPrincipalId = '';
   });
   $effect(() => {
-    if (createdLink) pinLogin = '';
+    if (createdLink) untrack(resetPinDraft);
   });
 
-  function createInvite() {
-    if (!workspaceId || !canManage || creating) return;
-    onCreateInvite?.(pinLogin.trim());
+  function handlePinInput(value: string) {
+    suggestionsDismissed = false;
+    activeSuggestion = -1;
+    if (!githubConnected) return;
+    onSearchUsers?.(normalizeGithubUserQuery(value));
   }
 
-  async function copyLink() {
-    if (!createdLinkUrl) return;
+  function handlePinKeydown(e: KeyboardEvent) {
+    if (!suggestionsOpen) return;
+    if (e.key === 'ArrowDown') {
+      if (!visibleSuggestions.length) return;
+      e.preventDefault();
+      activeSuggestion = Math.min(activeSuggestion + 1, visibleSuggestions.length - 1);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      if (!visibleSuggestions.length) return;
+      e.preventDefault();
+      activeSuggestion = Math.max(activeSuggestion - 1, -1);
+      return;
+    }
+    if (e.key === 'Enter') {
+      const highlighted = visibleSuggestions[activeSuggestion];
+      if (!highlighted) return;
+      e.preventDefault();
+      selectUser(highlighted);
+      return;
+    }
+    if (e.key === 'Escape') {
+      // Close the list only; a second Escape reaches the dialog and closes it.
+      e.preventDefault();
+      e.stopPropagation();
+      suggestionsDismissed = true;
+      activeSuggestion = -1;
+    }
+  }
+
+  function selectUser(user: GithubUserSearchItem) {
+    selectedUser = user;
+    pinLogin = user.login;
+    activeSuggestion = -1;
+    onSearchUsers?.('');
+  }
+
+  async function clearSelectedUser() {
+    selectedUser = null;
+    pinLogin = '';
+    await tick();
+    pinInput?.focus();
+  }
+
+  function createInvite() {
+    if (!workspaceId || !canManage || creating || atGuestCap) return;
+    onCreateInvite?.(selectedUser ? selectedUser.login : pinLogin.trim());
+  }
+
+  function inviteExistingGuest() {
+    if (!workspaceId || !canManage || busy || atGuestCap || !selectedPrincipal) return;
+    onAddMember?.(selectedPrincipal.principalId);
+  }
+
+  function principalLabel(principal: HostPrincipal): string {
+    return principal.login ? `@${principal.login}` : principal.displayName || principal.principalId;
+  }
+
+  async function copyLink(url: string) {
     try {
-      await navigator.clipboard.writeText(createdLinkUrl);
+      await navigator.clipboard.writeText(url);
       notify.success(m.workspace_share_linkCopied_toast());
     } catch {
       notify.error(m.workspace_share_linkCopyFailed_error());
     }
+  }
+
+  function inviteLink(inviteId: string): string | null {
+    return inviteLinks[inviteId] ?? null;
+  }
+
+  function copyInvite(invite: Pick<WorkspaceInvite, 'id'>) {
+    const url = inviteLink(invite.id);
+    if (url) void copyLink(url);
   }
 
   function revokeInvite(inviteId: string) {
@@ -144,11 +332,49 @@
       : m.workspace_share_invite_anyone_label();
   }
 
+  /**
+   * The row's secondary line: reuse + join count for a reusable link combined
+   * with the expiry through the catalog (`_reusableDetail_label`), so each
+   * locale owns the separator and order; the expiry alone otherwise.
+   */
+  function inviteDetail(
+    invite: Pick<WorkspaceInvite, 'reusable' | 'redemptionCount' | 'expiresAt'>,
+  ): string {
+    const expires = m.workspace_share_invite_expires_label({
+      when: formatRelativeTime(invite.expiresAt),
+    });
+    if (invite.reusable !== true) return expires;
+    const count = invite.redemptionCount ?? 0;
+    const reusable =
+      count === 1
+        ? m.workspace_share_invite_reusable_one()
+        : m.workspace_share_invite_reusable_many({ count: formatInteger(count) });
+    return m.workspace_share_invite_reusableDetail_label({ reusable, expires });
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     e.stopPropagation();
     if (e.key === 'Escape') onClose?.();
   }
 </script>
+
+{#snippet userAvatar(user: GithubUserSearchItem)}
+  {#if user.avatarUrl}
+    <img
+      src={user.avatarUrl}
+      alt=""
+      class="h-6 w-6 shrink-0 rounded-full"
+      loading="lazy"
+      data-testid="share-pin-avatar"
+    />
+  {:else}
+    <span
+      class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs"
+      aria-hidden="true"
+      data-testid="share-pin-avatar-fallback">{user.login.slice(0, 1).toUpperCase()}</span
+    >
+  {/if}
+{/snippet}
 
 {#if open}
   <div
@@ -205,6 +431,68 @@
             {m.workspace_share_dialog_description({ title: workspaceTitle })}
           </p>
 
+          {#if principals.length > 0}
+            <section
+              class="space-y-2"
+              aria-labelledby="share-existing-guest-label"
+              data-testid="share-existing-guest"
+            >
+              <Label id="share-existing-guest-label" for="share-existing-guest">
+                {m.workspace_share_existingGuest_label()}
+              </Label>
+              <div class="flex items-center gap-2">
+                <div class="min-w-0 flex-1">
+                  <Select.Root
+                    bind:value={selectedPrincipalId}
+                    items={principalItems}
+                    disabled={busy}
+                  >
+                    <Select.Trigger
+                      id="share-existing-guest"
+                      data-testid="share-existing-guest-trigger"
+                    >
+                      <Select.Value placeholder={m.workspace_share_existingGuest_placeholder()} />
+                    </Select.Trigger>
+                    <Select.Content portal>
+                      {#each principals as principal (principal.principalId)}
+                        <Select.Item
+                          value={principal.principalId}
+                          label={principalLabel(principal)}
+                        >
+                          <span class="flex min-w-0 items-center gap-2">
+                            {#if principal.avatarUrl}
+                              <img
+                                src={principal.avatarUrl}
+                                alt=""
+                                class="h-5 w-5 shrink-0 rounded-full"
+                                loading="lazy"
+                              />
+                            {/if}
+                            <span class="truncate">{principalLabel(principal)}</span>
+                          </span>
+                        </Select.Item>
+                      {/each}
+                    </Select.Content>
+                  </Select.Root>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!selectedPrincipal || busy || atGuestCap}
+                  title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
+                  onclick={inviteExistingGuest}
+                  data-testid="share-existing-guest-invite"
+                >
+                  <Fa icon={faUserPlus} />
+                  {addingPrincipalId !== null
+                    ? m.workspace_share_existingGuest_inviting_label()
+                    : m.workspace_share_existingGuest_invite_label()}
+                </Button>
+              </div>
+              <p class="text-xs text-subtle">{m.workspace_share_existingGuest_description()}</p>
+            </section>
+          {/if}
+
           <form
             class="space-y-2"
             onsubmit={(e) => {
@@ -212,22 +500,130 @@
               createInvite();
             }}
           >
-            <Label for="share-pin-login">{m.workspace_share_pinLogin_label()}</Label>
+            <Label id="share-pin-login-label" for="share-pin-login">
+              {m.workspace_share_pinLogin_label()}
+            </Label>
             <div class="flex items-center gap-2">
-              <Input
-                id="share-pin-login"
-                bind:value={pinLogin}
-                autocomplete="off"
-                spellcheck={false}
-                disabled={creating}
-              />
-              <Button type="submit" variant="secondary" size="sm" disabled={creating}>
+              {#if selectedUser}
+                <div
+                  class="flex h-(--control-height-medium) min-w-0 flex-1 items-center gap-2 rounded-(--radius-medium) border border-border bg-card px-2"
+                  role="group"
+                  aria-labelledby="share-pin-login-label"
+                  data-testid="share-pin-selected"
+                  data-login={selectedUser.login}
+                >
+                  {@render userAvatar(selectedUser)}
+                  <span class="min-w-0 flex-1 truncate text-sm">@{selectedUser.login}</span>
+                  <Button
+                    variant="ghost-light"
+                    size="icon-compact"
+                    iconOnly
+                    class="size-5 rounded-full"
+                    disabled={creating}
+                    onclick={() => void clearSelectedUser()}
+                    aria-label={m.workspace_share_pinSelected_clear_ariaLabel({
+                      login: `@${selectedUser.login}`,
+                    })}
+                  >
+                    <Fa icon={faXmark} size="xs" />
+                  </Button>
+                </div>
+              {:else}
+                <div class="relative min-w-0 flex-1">
+                  <Input
+                    id="share-pin-login"
+                    bind:this={pinInput}
+                    bind:value={pinLogin}
+                    autocomplete="off"
+                    spellcheck={false}
+                    disabled={creating}
+                    placeholder={m.workspace_share_pinLogin_placeholder()}
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-controls="share-pin-suggestions"
+                    aria-expanded={suggestionsOpen}
+                    aria-activedescendant={suggestionsOpen && visibleSuggestions[activeSuggestion]
+                      ? `share-pin-suggestion-${activeSuggestion}`
+                      : undefined}
+                    oninput={(e) => handlePinInput(e.currentTarget.value)}
+                    onkeydown={handlePinKeydown}
+                  />
+                  {#if suggestionsOpen}
+                    <div
+                      class="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded border border-border bg-background shadow-md"
+                      data-testid="share-pin-suggestions"
+                    >
+                      {#if visibleSuggestions.length > 0}
+                        <div
+                          id="share-pin-suggestions"
+                          role="listbox"
+                          aria-label={m.workspace_share_userSuggestions_ariaLabel()}
+                          class="max-h-72 overflow-y-auto py-1"
+                        >
+                          {#each visibleSuggestions as user, index (user.login)}
+                            <Button
+                              variant="ghost"
+                              id="share-pin-suggestion-{index}"
+                              role="option"
+                              aria-selected={index === activeSuggestion}
+                              class={`${menuItem()} h-auto rounded-none px-3 py-1.5 font-normal hover:border-transparent ${index === activeSuggestion ? 'bg-accent/20 hover:bg-accent/20' : 'hover:bg-muted/50'}`}
+                              data-testid="share-pin-suggestion"
+                              data-login={user.login}
+                              onclick={() => selectUser(user)}
+                              onmousemove={() => (activeSuggestion = index)}
+                            >
+                              {@render userAvatar(user)}
+                              <span class="truncate">@{user.login}</span>
+                            </Button>
+                          {/each}
+                        </div>
+                      {:else if suggestionsCurrent && userSearchError}
+                        <p
+                          class="px-3 py-2 text-xs text-danger"
+                          role="alert"
+                          data-testid="share-pin-search-error"
+                        >
+                          {userSearchError}
+                        </p>
+                      {:else if !suggestionsCurrent || userSearchLoading}
+                        <p
+                          class="px-3 py-2 text-xs text-subtle"
+                          role="status"
+                          data-testid="share-pin-searching"
+                        >
+                          {m.workspace_share_userSearch_searching_label()}
+                        </p>
+                      {:else}
+                        <p
+                          class="px-3 py-2 text-xs text-subtle"
+                          role="status"
+                          data-testid="share-pin-no-results"
+                        >
+                          {m.workspace_share_userSearch_noResults_label()}
+                        </p>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+              <Button
+                type="submit"
+                variant="secondary"
+                size="sm"
+                disabled={creating || atGuestCap}
+                title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
+              >
                 <Fa icon={faLink} />
                 {creating
                   ? m.workspace_share_creating_label()
                   : m.workspace_share_createLink_label()}
               </Button>
             </div>
+            {#if atGuestCap}
+              <p class="text-xs text-subtle" role="status" data-testid="share-guest-cap-reached">
+                {m.workspace_share_guestLimitReached_notice()}
+              </p>
+            {/if}
             {#if createError}
               <p class="text-xs text-danger" role="alert" data-testid="share-create-error">
                 {createError}
@@ -235,7 +631,8 @@
             {/if}
           </form>
 
-          {#if createdLink && createdLinkUrl}
+          {#if createdLink && inviteLink(createdLink.inviteId)}
+            {@const createdUrl = inviteLink(createdLink.inviteId) ?? ''}
             <div
               class="space-y-2 rounded border border-border bg-muted/50 p-3"
               data-testid="share-created-link"
@@ -247,14 +644,13 @@
               <div class="flex items-center gap-2">
                 <code
                   class="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 text-xs"
-                  data-testid="share-created-link-url">{createdLinkUrl}</code
+                  data-testid="share-created-link-url">{createdUrl}</code
                 >
-                <Button variant="secondary" size="sm" onclick={() => void copyLink()}>
+                <Button variant="secondary" size="sm" onclick={() => void copyLink(createdUrl)}>
                   <Fa icon={faCopy} />
                   {m.workspace_share_copyLink_label()}
                 </Button>
               </div>
-              <p class="text-xs text-subtle">{m.workspace_share_newLink_description()}</p>
             </div>
           {/if}
 
@@ -288,23 +684,39 @@
                   >
                     <div class="min-w-0">
                       <div class="truncate text-sm">{inviteAudience(invite)}</div>
-                      <div class="text-xs text-subtle">
-                        {m.workspace_share_invite_expires_label({
-                          when: formatRelativeTime(invite.expiresAt),
-                        })}
+                      <div class="text-xs text-subtle" data-testid="share-invite-detail">
+                        {inviteDetail(invite)}
                       </div>
                     </div>
-                    <Button
-                      variant="ghost-light"
-                      size="sm"
-                      disabled={busy}
-                      onclick={() => revokeInvite(invite.id)}
-                      aria-label={m.workspace_share_revoke_ariaLabel({
-                        audience: inviteAudience(invite),
-                      })}
-                    >
-                      {m.workspace_share_revoke_label()}
-                    </Button>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost-light"
+                        size="sm"
+                        disabled={!inviteLink(invite.id)}
+                        title={inviteLink(invite.id)
+                          ? undefined
+                          : m.workspace_share_listenerDown_error()}
+                        onclick={() => copyInvite(invite)}
+                        aria-label={m.workspace_share_copyInvite_ariaLabel({
+                          audience: inviteAudience(invite),
+                        })}
+                        data-testid="share-invite-copy"
+                      >
+                        <Fa icon={faCopy} />
+                        {m.workspace_share_copyLink_label()}
+                      </Button>
+                      <Button
+                        variant="ghost-light"
+                        size="sm"
+                        disabled={busy}
+                        onclick={() => revokeInvite(invite.id)}
+                        aria-label={m.workspace_share_revoke_ariaLabel({
+                          audience: inviteAudience(invite),
+                        })}
+                      >
+                        {m.workspace_share_revoke_label()}
+                      </Button>
+                    </div>
                   </div>
                 {/snippet}
               </ListView>
@@ -312,9 +724,24 @@
           {/if}
 
           <section class="space-y-2" aria-label={m.workspace_share_members_label()}>
-            <h3 class="type-caption font-medium text-subtle">
-              {m.workspace_share_members_label()}
-            </h3>
+            <div class="flex items-baseline justify-between gap-2">
+              <h3 class="type-caption font-medium text-subtle">
+                {m.workspace_share_members_label()}
+              </h3>
+              {#if guestCount !== null && guestLimit !== null}
+                <span
+                  class="text-xs text-subtle"
+                  data-testid="share-guest-count"
+                  data-guest-count={guestCount}
+                  data-guest-limit={guestLimit}
+                >
+                  {m.workspace_share_guests_label({
+                    count: formatInteger(guestCount),
+                    limit: formatInteger(guestLimit),
+                  })}
+                </span>
+              {/if}
+            </div>
             {#if loading && members.length === 0}
               <p class="text-xs text-subtle" data-testid="share-members-loading">
                 {m.workspace_share_loading_label()}
