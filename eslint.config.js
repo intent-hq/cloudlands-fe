@@ -377,6 +377,16 @@ const rendererBrowserSafetyRestrictedImportsOptions = {
   ],
 };
 
+// The shared CT-module restriction (see the `no-restricted-imports` block
+// below); also repeated by per-file `no-restricted-imports` overrides, since
+// flat-config rule entries replace rather than merge.
+const ctSharedModuleRestrictedImportPath = {
+  name: '@playwright/experimental-ct-svelte',
+  allowTypeImports: true,
+  message:
+    "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
+};
+
 export default [
   // .gitignore is the source of truth for scratch/sandbox exclusions (.dev/, .wt-*/); see vitest.config.ts.
   includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
@@ -607,12 +617,42 @@ export default [
       'no-restricted-imports': [
         'error',
         {
+          paths: [ctSharedModuleRestrictedImportPath],
+        },
+      ],
+    },
+  },
+  // ModelPicker reaches the agent-session mutation APIs (`agent.setModel`, the
+  // session `model` write, the reasoning-effort writers) only through the
+  // lock-checking funnel in agent-model-mutator.ts, so a guest-locked picker
+  // cannot issue a write by construction. Four heads / three fix rounds were
+  // needed to find every per-boundary re-check in cloudlands-fe#2735; this
+  // keeps a new dispatch path from bypassing the mutator. The shared CT-module
+  // path is repeated so this override does not drop that restriction.
+  {
+    files: ['src/lib/components/chat/input/ModelPicker.svelte'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
           paths: [
+            ctSharedModuleRestrictedImportPath,
             {
-              name: '@playwright/experimental-ct-svelte',
-              allowTypeImports: true,
+              name: '$features/agent/agent.client',
+              importNames: ['agentClient'],
               message:
-                "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
+                'ModelPicker must not call agentClient.setModel directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+            {
+              name: '$features/agent/reasoning-effort',
+              message:
+                'ModelPicker must not call applyReasoningEffort / reconcileAgentReasoningEffort directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
+            },
+            {
+              name: '$store/renderer/slices/agent-session/agent-session-slice',
+              importNames: ['updateSession'],
+              message:
+                'ModelPicker must not dispatch the agent-session updateSession action directly. Route the write through the lock-checking mutator in src/lib/components/chat/input/agent-model-mutator.ts (createAgentModelMutator).',
             },
           ],
         },
