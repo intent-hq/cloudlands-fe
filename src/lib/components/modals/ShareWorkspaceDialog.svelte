@@ -243,6 +243,14 @@
   /** The existing-guest dropdown pick (`principalId`); `''` for none. */
   let selectedPrincipalId = $state('');
   let existingGuestMenuOpen = $state(false);
+  let pinProviderMenuOpen = $state(false);
+  /** A Select menu is open inside the dialog; Escape closes it before the dialog. */
+  const selectMenuOpen = $derived(existingGuestMenuOpen || pinProviderMenuOpen);
+
+  function closeSelectMenus() {
+    existingGuestMenuOpen = false;
+    pinProviderMenuOpen = false;
+  }
 
   const principalItems = $derived(
     principals.map((principal) => ({
@@ -307,7 +315,7 @@
     untrack(resetPinDraft);
     confirmRemovePrincipalId = null;
     selectedPrincipalId = '';
-    existingGuestMenuOpen = false;
+    closeSelectMenus();
   });
   $effect(() => {
     if (createdLink) untrack(resetPinDraft);
@@ -478,9 +486,9 @@
   function handleKeydown(e: KeyboardEvent) {
     e.stopPropagation();
     if (e.key === 'Escape') {
-      if (existingGuestMenuOpen) {
+      if (selectMenuOpen) {
         e.preventDefault();
-        existingGuestMenuOpen = false;
+        closeSelectMenus();
       } else {
         onClose?.();
       }
@@ -646,6 +654,7 @@
               {#if pinProviderChoosable}
                 <div class="w-40 shrink-0">
                   <Select.Root
+                    bind:open={pinProviderMenuOpen}
                     value={pinProvider ?? ''}
                     onchange={handlePinProviderChange}
                     items={pinProviderItems}
@@ -658,7 +667,7 @@
                     >
                       <Select.Value />
                     </Select.Trigger>
-                    <Select.Content portal>
+                    <Select.Content class="z-(--layer-modal)">
                       {#each pinProviderItems as item (item.value)}
                         <Select.Item value={item.value} label={item.label}>
                           <span class="flex min-w-0 items-center gap-2">
