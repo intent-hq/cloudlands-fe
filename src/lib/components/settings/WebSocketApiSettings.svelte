@@ -721,35 +721,6 @@
             {/snippet}
           </SettingsFieldRow>
         </section>
-
-        <!-- This daemon's own tailcat tunnel address (copyable) — shown only
-             while the tunnel is on and the daemon reports one. -->
-        {#if tunnelEnabled && tcAddress}
-          <section data-tunnel-address-row>
-            <div class="flex items-center justify-between gap-2">
-              <span class="type-body text-muted-foreground">
-                {m.settings_tunnel_tcAddress_label()}
-              </span>
-              <div class="flex items-center gap-2 shrink-0">
-                <code
-                  class="type-caption font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
-                  title={tcAddress}>{tcAddress}</code
-                >
-                <Button
-                  variant="ghost"
-                  size="icon-compact"
-                  iconOnly
-                  type="button"
-                  onclick={handleCopyTcAddress}
-                  class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                  title={m.settings_tunnel_tcAddress_copy()}
-                >
-                  <Fa icon={faCopy} size="sm" />
-                </Button>
-              </div>
-            </div>
-          </section>
-        {/if}
       </div>
     {/if}
 
@@ -881,6 +852,34 @@
             <p class="type-body text-warning-ink">
               {m.settings_wsApi_tokenSecretWarning()}
             </p>
+            <!-- This daemon's own tailcat tunnel address (copyable) — shown only
+                 while the tunnel is on and the daemon reports one. -->
+            {#if tunnelSupported && tunnelEnabled && tcAddress}
+              <section data-tunnel-address-row>
+                <div class="flex items-center justify-between gap-2">
+                  <span class="type-body text-muted-foreground">
+                    {m.settings_tunnel_tcAddress_label()}
+                  </span>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <code
+                      class="type-caption font-mono text-foreground bg-muted px-2 py-0.5 rounded max-w-[280px] truncate"
+                      title={tcAddress}>{tcAddress}</code
+                    >
+                    <Button
+                      variant="ghost"
+                      size="icon-compact"
+                      iconOnly
+                      type="button"
+                      onclick={handleCopyTcAddress}
+                      class="text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                      title={m.settings_tunnel_tcAddress_copy()}
+                    >
+                      <Fa icon={faCopy} size="sm" />
+                    </Button>
+                  </div>
+                </div>
+              </section>
+            {/if}
           </section>
         {/if}
 

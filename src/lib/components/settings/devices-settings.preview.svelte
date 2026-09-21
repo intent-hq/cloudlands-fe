@@ -128,6 +128,7 @@
     localIps: ['192.0.2.10'],
     availableIps: ['192.0.2.10'],
     hostname: 'preview-device',
+    tcAddress: 'preview-tailcat-address',
   });
   onDestroy(() => {
     appClient.settings.list = previous.list;

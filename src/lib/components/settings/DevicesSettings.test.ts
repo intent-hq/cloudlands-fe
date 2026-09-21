@@ -1003,6 +1003,23 @@ describe('DevicesSettings', () => {
     });
   });
 
+  it.each(['local', 'remote'])('toggles the %s editor with the Edit action', async (kind) => {
+    render(DevicesSettings);
+    const name = kind === 'local' ? m.layout_daemonStatus_localConnection_label() : 'Studio Mac';
+    const editor = () =>
+      kind === 'local'
+        ? screen.queryByRole('button', { name: 'Advanced', exact: true })
+        : screen.queryByRole('form', { name: 'Edit Studio Mac' });
+
+    await openAction('Edit', name);
+    expect(editor()).toBeTruthy();
+    await openAction('Edit', name);
+    await waitFor(() => expect(editor()).toBeNull());
+    await openAction('Edit', name);
+    expect(editor()).toBeTruthy();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
   it('replaces the first inline panel when a second device action opens', async () => {
     mocks.connections = [
       local,

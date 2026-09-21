@@ -277,7 +277,8 @@
         void requestDaemonUpdate();
         break;
       case 'edit':
-        onOpenPanel('edit');
+        if (panelMode === 'edit') closePanel();
+        else onOpenPanel('edit');
         break;
       case 'remove':
         onRequestRemove(device);
