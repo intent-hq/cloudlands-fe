@@ -262,27 +262,35 @@ export function runPlaywright({
 
 /**
  * Heuristic hint for a child that exited with SIGABRT / 134. Names the heap
- * flag actually in effect for the child — a `CT_NODE_ARGS` flag (CLI flags
- * override NODE_OPTIONS), else the `NODE_OPTIONS` flag, else the launcher
- * default — printing only that token: hosts carry unrelated `--require` paths
- * in NODE_OPTIONS that must not be echoed. Returns null for any other exit.
+ * flag actually in effect for the child — `--max-old-space-size-percentage`
+ * overrides `--max-old-space-size` wherever either is set, and within a kind a
+ * `CT_NODE_ARGS` flag overrides NODE_OPTIONS (CLI flags win), else the
+ * launcher default — printing only that token: hosts carry unrelated
+ * `--require` paths in NODE_OPTIONS that must not be echoed. Returns null for
+ * any other exit.
  */
 export function heapExhaustionHint({ code, signal, env }) {
   if (signal !== 'SIGABRT' && code !== 134) return null;
   const sources = [
+    ['CT_NODE_ARGS', heapFlagToken(env.CT_NODE_ARGS, HEAP_PERCENTAGE_FLAG_RE)],
+    ['NODE_OPTIONS', heapFlagToken(env.NODE_OPTIONS, HEAP_PERCENTAGE_FLAG_RE)],
     ['CT_NODE_ARGS', heapFlagToken(env.CT_NODE_ARGS)],
     ['NODE_OPTIONS', heapFlagToken(env.NODE_OPTIONS)],
   ];
   const [source, flag] = sources.find(([, token]) => token) ?? ['launcher default', CT_HEAP_FLAG];
   const how = signal === 'SIGABRT' ? 'SIGABRT' : `exit code ${code}`;
-  // CLI flags win over NODE_OPTIONS, so a CT_NODE_ARGS cap can only be raised there.
+  // Raise the cap where it was set, with the flag kind that is in effect: a
+  // percentage retry always wins, and a CT_NODE_ARGS retry beats NODE_OPTIONS.
   const raiseVia = source === 'CT_NODE_ARGS' ? 'CT_NODE_ARGS' : 'NODE_OPTIONS';
+  const raised = HEAP_PERCENTAGE_FLAG_RE.test(flag)
+    ? `--max-old-space-size-percentage=${Math.min(100, 2 * Number(flag.split('=')[1]) || 50)}`
+    : '--max-old-space-size=16384';
   return [
     `[run-ct-tests] playwright exited with ${how}. This usually means V8 ran out of heap while`,
     'Vite bundled the component registry; look for "Ineffective mark-compacts near heap limit"',
     'or "JavaScript heap out of memory" above.',
     `[run-ct-tests] heap flag in effect for the child: ${flag} (${source}). To raise it, run e.g.`,
-    `  ${raiseVia}=--max-old-space-size=16384 pnpm run test:ct -- <args>`,
+    `  ${raiseVia}=${raised} pnpm run test:ct -- <args>`,
     '[run-ct-tests] this is a tooling/memory failure, not evidence of a test regression.',
   ].join('\n');
 }
@@ -360,13 +368,14 @@ const CT_HEAP_FLAG = '--max-old-space-size=8192';
 // NODE_OPTIONS accepts the V8 underscore alias (`--max_old_space_size=`, as
 // scripts/vite-build.mjs also honours) and double-quoted option tokens.
 const HEAP_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size=/;
+const HEAP_PERCENTAGE_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size[-_]percentage=/;
 
-/** The last heap-flag token in a space-separated option string (Node applies the last). */
-function heapFlagToken(value) {
+/** The last matching heap-flag token in a space-separated option string (Node applies the last). */
+function heapFlagToken(value, flagRe = HEAP_FLAG_RE) {
   const tokens = value?.trim().split(/\s+/) ?? [];
   return (
     tokens
-      .filter((token) => HEAP_FLAG_RE.test(token))
+      .filter((token) => flagRe.test(token))
       .at(-1)
       ?.replaceAll('"', '') ?? null
   );

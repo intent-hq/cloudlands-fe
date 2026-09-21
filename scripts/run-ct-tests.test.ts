@@ -390,6 +390,64 @@ describe('heapExhaustionHint', () => {
     expect(hint).not.toContain('CT_NODE_ARGS=');
   });
 
+  // --max-old-space-size-percentage overrides --max-old-space-size wherever
+  // either is set, so it is the flag in effect even next to the appended default.
+  it('names a NODE_OPTIONS percentage flag over the size flag the launcher appended', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS:
+          '--require /x/dd-trace/init --max-old-space-size-percentage=25 --max-old-space-size=8192',
+      },
+    });
+    expect(hint).toContain('--max-old-space-size-percentage=25 (NODE_OPTIONS)');
+    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain('dd-trace');
+  });
+
+  it('names a NODE_OPTIONS percentage flag over a CT_NODE_ARGS size flag', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS: '--max-old-space-size-percentage=25',
+        CT_NODE_ARGS: '--max-old-space-size=4096',
+      },
+    });
+    expect(hint).toContain('--max-old-space-size-percentage=25 (NODE_OPTIONS)');
+    expect(hint).not.toContain('4096');
+  });
+
+  it('names a CT_NODE_ARGS percentage flag over a NODE_OPTIONS percentage flag', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS: '--max-old-space-size-percentage=25',
+        CT_NODE_ARGS: '--max_old_space_size_percentage=30',
+      },
+    });
+    expect(hint).toContain('--max_old_space_size_percentage=30 (CT_NODE_ARGS)');
+    expect(hint).not.toContain('percentage=25');
+  });
+
+  it.each([
+    ['doubles the percentage', '--max-old-space-size-percentage=25', '50'],
+    ['caps the raised percentage at 100', '--max-old-space-size-percentage=60', '100'],
+    [
+      'falls back to 50 when the percentage is unparsable',
+      '--max-old-space-size-percentage=lots',
+      '50',
+    ],
+  ])('%s in the retry when a percentage cap is in effect', (_label, preset, raised) => {
+    const hint = heapExhaustionHint({ ...abort, env: { ...baseEnv, NODE_OPTIONS: preset } });
+    expect(hint).toContain(
+      `NODE_OPTIONS=--max-old-space-size-percentage=${raised} pnpm run test:ct`,
+    );
+    expect(hint).not.toContain('--max-old-space-size=16384');
+  });
+
   it('exposes the launcher options in its usage text', () => {
     expect(usage()).toContain(CT_HTML_REPORT_ENV);
     expect(usage()).toContain(OPEN_REPORT_FLAG);
