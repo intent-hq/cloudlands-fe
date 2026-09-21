@@ -86,16 +86,57 @@ function killPackagedAppProcesses(force = false): void {
     }
     return;
   }
-  // Match the packaged binary path so unrelated processes (e.g. intentd)
-  // are never touched. execFileSync: no intermediate shell whose own
-  // command line would match the pattern.
-  const pattern =
-    process.platform === 'linux' ? 'linux-unpacked/intent' : 'Intent\\.app/Contents/MacOS/Intent';
+  // Match the packaged binary path so unrelated processes (a developer's own
+  // intentd, other Electron apps) are never touched.
+  pkill(
+    process.platform === 'linux' ? 'linux-unpacked/intent' : 'Intent\\.app/Contents/MacOS/Intent',
+    force,
+  );
+}
+
+/** Command-line pattern of the intentd sidecar bundled inside the packaged app. */
+const PACKAGED_SIDECAR_PATTERN =
+  process.platform === 'linux'
+    ? 'linux-unpacked/resources/intentd/intentd'
+    : 'Intent\\.app/Contents/Resources/intentd/intentd';
+
+/** `pkill -f` without an intermediate shell whose own command line would match. */
+function pkill(pattern: string, force = false): void {
   try {
     execFileSync('pkill', [...(force ? ['-9'] : []), '-f', pattern], { stdio: 'ignore' });
   } catch {
     // No matching processes — that's fine
   }
+}
+
+function isRunning(pattern: string): boolean {
+  try {
+    execFileSync('pgrep', ['-f', pattern], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Stop the intentd sidecar the packaged app spawned.
+ *
+ * `app.exit()` skips the app's own shutdown, so the sidecar outlives the
+ * Electron process — and it holds the extra stdio pipes Playwright opened on
+ * that process, so Node never emits `close` for it and Playwright's worker
+ * teardown waits the full 300 s (observed on Linux CI: only the spec whose
+ * instance spawned the sidecar hung; the ones that reused it exited at once).
+ * SIGTERM first so intentd shuts down cleanly, SIGKILL if it is still around
+ * after the grace period. The next launch spawns a fresh sidecar.
+ */
+async function stopPackagedSidecar(): Promise<void> {
+  if (process.platform === 'win32') return;
+  pkill(PACKAGED_SIDECAR_PATTERN);
+  const deadline = Date.now() + 5_000;
+  while (isRunning(PACKAGED_SIDECAR_PATTERN) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  pkill(PACKAGED_SIDECAR_PATTERN, true);
 }
 
 /**
@@ -108,13 +149,15 @@ function killPackagedAppProcesses(force = false): void {
  * that session attached, so Node parks the exiting process on "Waiting for
  * the debugger to disconnect..." and the call never resolves (observed on
  * Linux). The remaining process tree is then force-killed, which also
- * releases the single-instance lock for the next spec.
+ * releases the single-instance lock for the next spec, and the sidecar it
+ * spawned is stopped (see `stopPackagedSidecar`).
  */
 export async function exitPackagedApp(app: ElectronApplication | null | undefined): Promise<void> {
   if (!app) return;
   const exited = app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => undefined);
   await Promise.race([exited, new Promise((r) => setTimeout(r, 2_000))]);
   killPackagedAppProcesses(true);
+  await stopPackagedSidecar();
 }
 
 /**
@@ -386,6 +429,40 @@ export interface CreateWorkspaceOptions {
 }
 
 /**
+ * When a provider card never appears, log what onboarding actually rendered
+ * and the main process's availability verdict so a CI failure is diagnosable
+ * from the run log alone — the packaged main process logs at WARN, so the
+ * availability sweep leaves no trace of its own.
+ */
+async function dumpProviderCardDiagnostics(page: Page, providerName: string): Promise<void> {
+  const describe = (e: unknown) => `unavailable: ${(e as Error).message}`;
+  const ariaLabels = await page
+    .evaluate(() =>
+      [...document.querySelectorAll('[data-onboarding-step] [aria-label]')].map((el) =>
+        el.getAttribute('aria-label'),
+      ),
+    )
+    .catch(describe);
+  const availability = await page
+    .evaluate(() =>
+      (
+        window as unknown as { electronAPI: { invoke: (channel: string) => Promise<unknown> } }
+      ).electronAPI.invoke('providers:get-availability'),
+    )
+    .catch(describe);
+  console.log(`❌ Provider card "Use ${providerName}" not found.`);
+  console.log(`   onboarding aria-labels: ${JSON.stringify(ariaLabels)}`);
+  console.log(`   providers:get-availability: ${JSON.stringify(availability)}`);
+  const shot = join(
+    process.cwd(),
+    'e2e-reports',
+    'build-smoke',
+    `provider-card-missing-${Date.now()}.png`,
+  );
+  await page.screenshot({ path: shot, fullPage: true }).catch(() => undefined);
+}
+
+/**
  * Create a new workspace from the new onboarding flow.
  *
  * Strategy:
@@ -443,7 +520,12 @@ export async function createWorkspaceWithPrompt(
     // when the provider is ready (available + authenticated).
     if (providerName) {
       const providerCard = page.locator(`[aria-label="Use ${providerName}"]`).first();
-      await providerCard.waitFor({ state: 'visible', timeout: 20_000 });
+      try {
+        await providerCard.waitFor({ state: 'visible', timeout: 20_000 });
+      } catch (error) {
+        await dumpProviderCardDiagnostics(page, providerName);
+        throw error;
+      }
       await providerCard.click();
       console.log(`🔄 Selected provider: ${providerName}`);
     }
