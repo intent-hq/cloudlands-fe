@@ -539,7 +539,8 @@
             <div class="mt-4 border-t border-border pt-4">
               <Button
                 type="button"
-                class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                variant="primary"
+                class="w-full px-4 py-2 text-sm font-medium"
                 disabled={$isConnecting$}
                 onclick={openRepairForAuthRejected}
                 data-testid="daemon-stopped-repair"
@@ -588,7 +589,8 @@
             <div class="mt-4 border-t border-border pt-4">
               <Button
                 type="button"
-                class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                variant="primary"
+                class="w-full px-4 py-2 text-sm font-medium"
                 disabled={$spawnPending$}
                 onclick={handleSpawnSidecar}
                 data-testid="daemon-stopped-spawn-sidecar"
@@ -653,7 +655,8 @@
             <div class="mt-4 border-t border-border pt-4">
               <Button
                 type="button"
-                class="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                variant="primary"
+                class="w-full px-4 py-2 text-sm font-medium"
                 disabled={$spawnPending$}
                 onclick={handleSpawnSidecar}
                 data-testid="daemon-stopped-spawn-sidecar"
