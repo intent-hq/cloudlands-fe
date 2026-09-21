@@ -72,11 +72,19 @@
     /** Rendered inside the combined Home panel: the panel owns the close
         button and height, so hide the close X and don't force a min height. */
     embedded?: boolean;
+    /** Hidden tabs keep the draft mounted without claiming focus or read state. */
+    isActive?: boolean;
     collapsed?: boolean;
     ontoggle?: () => void;
   }
 
-  let { expanded = false, embedded = false, collapsed = false, ontoggle }: Props = $props();
+  let {
+    expanded = false,
+    embedded = false,
+    isActive = true,
+    collapsed = false,
+    ontoggle,
+  }: Props = $props();
 
   const CHIEF_WORKSPACE_TIMESTAMP = '2026-01-01T00:00:00.000Z';
   const chiefWorkspace: Workspace = {
@@ -156,6 +164,7 @@
   $effect(() => {
     if (
       !expanded ||
+      !isActive ||
       !isWorkspaceRegistered ||
       !$chiefAgentsLoaded$ ||
       isCreatingThread ||
@@ -455,8 +464,8 @@
                 workspace={chiefWorkspace}
                 agentId={activeAgentId}
                 agentName={m.layout_chiefCard_title()}
-                isActive={true}
-                autoFocus={true}
+                isActive={isActive && !collapsed}
+                autoFocus={isActive && !collapsed && !embedded}
               />
             </div>
           {/key}

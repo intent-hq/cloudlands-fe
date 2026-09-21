@@ -11,21 +11,19 @@
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import * as Menu from '$lib/components/ui/menu';
+  import * as Tabs from '$lib/components/ui/tabs';
 
   import {
     selectPanelItem,
     selectPanelWidth,
-    selectCombinedPanelSplit,
-    selectIsChiefCollapsed,
     selectOnboardingActive,
     selectAllSpacesViewMode,
     selectShowArchivedWorkspaces,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import {
     closePanel,
+    openPanel,
     setPanelWidth as setPanelWidthAction,
-    setCombinedPanelSplit as setCombinedPanelSplitAction,
-    toggleChiefCollapsed,
     setAllSpacesViewMode,
     setShowArchivedWorkspaces,
     setShowCreateModal,
@@ -39,8 +37,6 @@
 
   const panelItem$ = selectPanelItem();
   const panelWidth$ = selectPanelWidth();
-  const combinedPanelSplit$ = selectCombinedPanelSplit();
-  const isChiefCollapsed$ = selectIsChiefCollapsed();
   const onboardingActive$ = selectOnboardingActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
@@ -52,8 +48,6 @@
   ] satisfies Array<{ value: AllSpacesViewMode; label: string }>;
   const MIN_WIDTH = 100;
   const MAX_WIDTH = 480;
-  const MIN_SPLIT = 0.15;
-  const MAX_SPLIT = 0.85;
 
   // ── Keep the panel mounted across open/close ──
   // Nothing renders until the panel is first opened; after that it stays
@@ -90,11 +84,22 @@
     return () => cancelAnimationFrame(raf);
   });
 
-  // Chief and All Workspaces open the same combined panel:
-  // workspace list on top, Chief chat below, separated by a resizable divider.
+  // Both destinations share one shell; the existing navigation state selects
+  // the tab, including when Intent is opened by a deep link.
   const isCombinedWorkspace = $derived(
     displayedPanelItem !== null && isCombinedWorkspacePanelItem(displayedPanelItem),
   );
+  const workspaceTab = $derived(displayedPanelItem === 'chief' ? 'chief' : 'all-workspaces');
+  let pointerTabChange = false;
+  let animateTabContent = $state(false);
+
+  function handleWorkspaceTabChange(value: string) {
+    if (value === 'chief' || value === 'all-workspaces') {
+      animateTabContent = pointerTabChange;
+      pointerTabChange = false;
+      appStore.dispatch(openPanel(value));
+    }
+  }
 
   const panelMeta = $derived.by(() => {
     switch (displayedPanelItem) {
@@ -117,46 +122,6 @@
   // Whether the workspace-list search input is shown (toggled from the header)
   let searchVisible = $state(false);
   let spacesOptionsOpen = $state(false);
-
-  // Combined-panel vertical split (fraction of height given to the workspace list)
-  let splitContainerEl = $state<HTMLDivElement | null>(null);
-  let liveSplit = $state($combinedPanelSplit$);
-  let isSplitResizing = $state(false);
-
-  // Hoisted cleanup references for split drag
-  let splitOnMouseMove: ((ev: MouseEvent) => void) | null = null;
-  let splitOnMouseUp: (() => void) | null = null;
-
-  $effect(() => {
-    liveSplit = $combinedPanelSplit$;
-  });
-
-  function handleSplitResizeStart(e: MouseEvent) {
-    const container = splitContainerEl;
-    if (!container) return;
-    e.preventDefault();
-    isSplitResizing = true;
-    document.body.classList.add('panel-resizing');
-    const rect = container.getBoundingClientRect();
-
-    splitOnMouseMove = (ev: MouseEvent) => {
-      const fraction = (ev.clientY - rect.top) / rect.height;
-      liveSplit = Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, fraction));
-    };
-
-    splitOnMouseUp = () => {
-      isSplitResizing = false;
-      document.body.classList.remove('panel-resizing');
-      appStore.dispatch(setCombinedPanelSplitAction(liveSplit));
-      if (splitOnMouseMove) window.removeEventListener('mousemove', splitOnMouseMove);
-      if (splitOnMouseUp) window.removeEventListener('mouseup', splitOnMouseUp);
-      splitOnMouseMove = null;
-      splitOnMouseUp = null;
-    };
-
-    window.addEventListener('mousemove', splitOnMouseMove);
-    window.addEventListener('mouseup', splitOnMouseUp);
-  }
 
   function handleAllSpacesViewModeChange(value: string) {
     const nextMode = allSpacesViewModes.find((option) => option.value === value)?.value;
@@ -253,12 +218,7 @@
         resizeRaf = null;
       }
     }
-    if (isSplitResizing) {
-      document.body.classList.remove('panel-resizing');
-    }
     // Remove any active event listeners
-    if (splitOnMouseMove) window.removeEventListener('mousemove', splitOnMouseMove);
-    if (splitOnMouseUp) window.removeEventListener('mouseup', splitOnMouseUp);
     if (resizeOnMouseMove) window.removeEventListener('mousemove', resizeOnMouseMove);
     if (resizeOnMouseUp) window.removeEventListener('mouseup', resizeOnMouseUp);
   });
@@ -283,20 +243,45 @@
       aria-label={m.layout_sidebarPanel_ariaLabel()}
     >
       {#if isCombinedWorkspace}
-        <div
+        <Tabs.Root
+          value={workspaceTab}
+          onValueChange={handleWorkspaceTabChange}
+          orientation={liveWidth <= 200 ? 'vertical' : 'horizontal'}
+          size="compact"
           class="flex-1 min-h-0 flex flex-col"
-          bind:this={splitContainerEl}
-          data-combined-panel-split
+          onpointerdowncapture={() => (pointerTabChange = true)}
+          onkeydowncapture={() => {
+            pointerTabChange = false;
+            animateTabContent = false;
+          }}
         >
-          <div
-            class="combined-panel-spaces min-h-0 overflow-hidden flex flex-col {$isChiefCollapsed$
-              ? 'flex-1'
-              : 'shrink-0'}"
-            style:height={$isChiefCollapsed$ ? undefined : `${liveSplit * 100}%`}
+          <div class="shrink-0 px-2 pt-2 pb-1">
+            <Tabs.List
+              aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
+              class="sidebar-view-tabs grid w-full grid-cols-2 rounded-lg bg-muted/60 p-1"
+            >
+              <Tabs.Trigger
+                value="all-workspaces"
+                class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+              >
+                <span class="truncate">{m.layout_sidebarPanel_workspacesTab_label()}</span>
+              </Tabs.Trigger>
+              <Tabs.Trigger
+                value="chief"
+                class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+              >
+                <span class="truncate">{m.layout_chiefCard_title()}</span>
+              </Tabs.Trigger>
+            </Tabs.List>
+          </div>
+          <!-- Tabs.Content hides rather than unmounts: keep search, scroll and drafts. -->
+          <Tabs.Content
+            value="all-workspaces"
+            class="mt-0 min-h-0 flex-1 overflow-hidden flex flex-col data-[state=inactive]:hidden"
+            inert={workspaceTab !== 'all-workspaces' ? true : undefined}
             data-combined-panel-spaces
+            data-tab-motion={animateTabContent}
           >
-            <!-- Combined workspace panel: workspace list stacked above the Chief chat
-               with a draggable horizontal divider between them. -->
             <div class="panel-header shrink-0">
               <div class="min-w-0 flex-1">
                 <h2 class="panel-title text-ui font-medium text-foreground truncate">
@@ -406,44 +391,25 @@
             <div class="min-h-0 flex-1 overflow-hidden flex flex-col">
               <AllWorkspacesCard expanded={true} {searchVisible} />
             </div>
-          </div>
-
-          {#if !$isChiefCollapsed$}
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div
-              class="app-resize-handle combined-panel-divider relative shrink-0"
-              data-resize-axis="y"
-              data-resizing={isSplitResizing}
-              data-testid="split-resize-handle"
-              onmousedown={handleSplitResizeStart}
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label={m.layout_sidebarPanel_resizeListAndChat_ariaLabel()}
-            >
-              <div
-                class="pointer-events-none h-px w-full bg-border"
-                data-combined-panel-divider-border
-              ></div>
-            </div>
-          {/if}
+          </Tabs.Content>
 
           <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
-               lets the Chief composer's streaming aurora bleed across the app
+               lets the Intent composer's streaming aurora bleed across the app
                frame's pl-2/pb-2 window inset to the window edges. -->
-          <div
-            class="min-h-0 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col {$isChiefCollapsed$
-              ? 'shrink-0'
-              : 'flex-1'}"
+          <Tabs.Content
+            value="chief"
+            class="mt-0 min-h-0 flex-1 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col data-[state=inactive]:hidden"
+            inert={workspaceTab !== 'chief' ? true : undefined}
             data-combined-panel-chief
+            data-tab-motion={animateTabContent}
           >
             <ChiefCard
               expanded={true}
               embedded={true}
-              collapsed={$isChiefCollapsed$}
-              ontoggle={() => appStore.dispatch(toggleChiefCollapsed())}
+              isActive={isOpen && workspaceTab === 'chief'}
             />
-          </div>
-        </div>
+          </Tabs.Content>
+        </Tabs.Root>
       {:else}
         <!-- Header -->
         <div class="panel-header shrink-0">
@@ -504,13 +470,34 @@
   <div class="fixed inset-0 z-50 cursor-col-resize" style="pointer-events: all;"></div>
 {/if}
 
-{#if isSplitResizing}
-  <div class="fixed inset-0 z-50 cursor-row-resize" style="pointer-events: all;"></div>
-{/if}
-
 <style>
   .sidebar-panel {
     container-type: inline-size;
+  }
+
+  /* Only the incoming pane moves; the outgoing pane becomes hidden/inert
+     immediately. No remount, focus delay or overlapping chat controls. */
+  .sidebar-panel :global([data-combined-panel-spaces]) {
+    --sidebar-tab-offset: -8px;
+  }
+
+  .sidebar-panel :global([data-combined-panel-chief]) {
+    --sidebar-tab-offset: 8px;
+  }
+
+  .sidebar-panel :global([data-tab-motion='true'][data-state='active']) {
+    animation: sidebar-tab-enter var(--spring-moderate) var(--spring-moderate-ease);
+  }
+
+  @keyframes sidebar-tab-enter {
+    from {
+      opacity: 0;
+      transform: translateX(var(--sidebar-tab-offset));
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
 
   /* The panel shell animates its width open/closed while staying mounted.
@@ -524,6 +511,10 @@
   }
 
   @container style(--motion-reduced: 1) {
+    .sidebar-panel :global([data-tab-motion][data-state='active']) {
+      animation: none;
+    }
+
     [data-panel-shell] {
       transition: none;
     }
@@ -559,29 +550,10 @@
     display: none;
   }
 
-  /* Divider between the workspace list and the Chief chat: a 1px line with
-     an enlarged invisible hit area for comfortable dragging. */
-  .combined-panel-divider {
-    padding: 8px 0;
-    margin: 0 0.5rem;
-    transition:
-      height var(--motion-standard) var(--ease-standard),
-      margin var(--motion-standard) var(--ease-standard),
-      opacity var(--motion-fast) var(--ease-standard),
-      padding var(--motion-standard) var(--ease-standard);
-  }
-
-  .combined-panel-spaces {
-    opacity: 1;
-    transition:
-      height var(--motion-slow) var(--ease-emphasized-out),
-      opacity var(--motion-standard) var(--ease-standard);
-  }
-
-  @container style(--motion-reduced: 1) {
-    .combined-panel-spaces,
-    .combined-panel-divider {
-      transition-duration: 0ms;
+  /* Keep both destinations readable even at the sidebar's minimum width. */
+  @container (max-width: 200px) {
+    :global(.sidebar-view-tabs) {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 

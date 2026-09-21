@@ -49,6 +49,23 @@ describe('ChiefCard combined header', () => {
     appStore.dispatch(removeSession(agentId));
   });
 
+  it('keeps chat mounted but pauses active behavior when its tab is hidden', async () => {
+    const { rerender } = render(ChiefCard, {
+      props: { expanded: true, embedded: true, isActive: false },
+    });
+    const chat = screen.getByTestId('mock-chat-panel');
+    expect(chat.getAttribute('data-active')).toBe('false');
+
+    await rerender({ expanded: true, embedded: true, isActive: true });
+    expect(screen.getByTestId('mock-chat-panel')).toBe(chat);
+    expect(chat.getAttribute('data-active')).toBe('true');
+    expect(chat.getAttribute('data-autofocus')).toBe('false');
+
+    await rerender({ expanded: true, embedded: true, isActive: false });
+    expect(screen.getByTestId('mock-chat-panel')).toBe(chat);
+    expect(chat.getAttribute('data-active')).toBe('false');
+  });
+
   it('toggles exactly once from every part of the collapsed header without opening the dropdown', async () => {
     const ontoggle = vi.fn();
     const { container, rerender } = render(ChiefCard, {

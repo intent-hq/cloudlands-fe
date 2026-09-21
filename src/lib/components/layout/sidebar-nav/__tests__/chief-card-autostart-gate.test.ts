@@ -86,6 +86,21 @@ describe('ChiefCard auto-start provider gate', () => {
     expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(true);
   });
 
+  it('does not auto-start in an inactive tab and starts once when Intent becomes active', async () => {
+    appStore.dispatch(setActiveProvider('auggie'));
+    const { rerender } = render(ChiefCard, {
+      props: { expanded: true, embedded: true, isActive: false },
+    });
+    await tick();
+    expect(launchActions).toHaveLength(0);
+
+    await rerender({ expanded: true, embedded: true, isActive: true });
+    await waitFor(() => expect(launchActions).toHaveLength(1));
+    await rerender({ expanded: true, embedded: true, isActive: false });
+    await rerender({ expanded: true, embedded: true, isActive: true });
+    expect(launchActions).toHaveLength(1);
+  });
+
   it('expands the preference and creates a thread when the expanded + is clicked', async () => {
     appStore.dispatch(setChiefCollapsed(true));
     dispatchSpy.mockClear();

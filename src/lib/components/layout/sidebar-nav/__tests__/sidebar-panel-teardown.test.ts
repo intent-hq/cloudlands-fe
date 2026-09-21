@@ -1,7 +1,7 @@
 /**
  * Regression tests: SidebarPanel drag teardown.
  *
- * The panel's split-drag and width-drag handlers add global window listeners
+ * The panel's width-drag handlers add global window listeners
  * and body classes. On unmount mid-drag, the component must remove all
  * listeners, cancel any pending RAF, and clear body classes to prevent leaks.
  */
@@ -63,7 +63,7 @@ describe('SidebarPanel teardown', () => {
     vi.restoreAllMocks();
   });
 
-  it('cleans up split-drag listeners and body class on unmount mid-drag', async () => {
+  it('cleans up tabbed sidebar width-drag listeners and body class on unmount mid-drag', async () => {
     const { container } = render(SidebarPanelHarness, {
       props: {
         setup: () => {
@@ -72,11 +72,10 @@ describe('SidebarPanel teardown', () => {
       },
     });
 
-    const splitHandle = container.querySelector('[data-testid="split-resize-handle"]');
-    expect(splitHandle).not.toBeNull();
+    const widthHandle = container.querySelector('[data-testid="width-resize-handle"]');
+    expect(widthHandle).not.toBeNull();
 
-    // Start split drag
-    await fireEvent.mouseDown(splitHandle!, { clientX: 100, clientY: 100 });
+    await fireEvent.mouseDown(widthHandle!, { clientX: 100 });
     expect(document.body.classList.contains('panel-resizing')).toBe(true);
 
     // Unmount mid-drag (before mouseup)
@@ -99,8 +98,8 @@ describe('SidebarPanel teardown', () => {
       },
     });
 
-    const splitHandle = container.querySelector('[data-testid="split-resize-handle"]');
-    await fireEvent.mouseDown(splitHandle!, { clientX: 100, clientY: 100 });
+    const widthHandle = container.querySelector('[data-testid="width-resize-handle"]');
+    await fireEvent.mouseDown(widthHandle!, { clientX: 100 });
 
     cleanup();
     dispatchSpy.mockClear();

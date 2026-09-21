@@ -11,7 +11,7 @@
     autoFocus?: boolean;
   }
 
-  let { agentId }: Props = $props();
+  let { agentId, isActive, autoFocus }: Props = $props();
 
   // Replicates ChatPanel's prop-mirroring init pattern
   // (`const agentIdStore = writable(agentId ?? '')` + mirroring effect).
@@ -34,4 +34,6 @@
   onDestroy(unsubscribe);
 </script>
 
-<div data-testid="mock-chat-panel">{$agentIdStore}</div>
+<div data-testid="mock-chat-panel" data-active={isActive} data-autofocus={autoFocus}>
+  {$agentIdStore}
+</div>
