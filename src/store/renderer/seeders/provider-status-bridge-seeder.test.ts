@@ -1188,6 +1188,79 @@ describe('provider-status-bridge-seeder', () => {
     });
   });
 
+  describe('mock provider → window.electronAPI.invoke (main-side env gating)', () => {
+    const originalElectronAPI = (window as any).electronAPI;
+    const MOCK_VERDICT = { available: true, authenticated: true };
+    /** Main's `providers:check-single` envelope for the mock provider. */
+    const MOCK_ENVELOPE = { success: true, providerId: 'mock', data: MOCK_VERDICT };
+
+    afterEach(() => {
+      (window as any).electronAPI = originalElectronAPI;
+    });
+
+    function bridgeWith(response: unknown) {
+      const invokeSpy = vi.fn(async () => response);
+      (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+      return invokeSpy;
+    }
+
+    it('forwards providers:check-single(mock) to the preload bridge when present', async () => {
+      const invokeSpy = bridgeWith(MOCK_ENVELOPE);
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+
+      expect(invokeSpy).toHaveBeenCalledTimes(1);
+      expect(invokeSpy).toHaveBeenCalledWith(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+      expect(response).toEqual({ success: true, providerId: 'mock', data: MOCK_VERDICT });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the bridged mock verdict in providers:get-availability and counts it', async () => {
+      const invokeSpy = bridgeWith(MOCK_ENVELOPE);
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(invokeSpy).toHaveBeenCalledWith(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+      expect(response.success).toBe(true);
+      expect(response.data?.providers.mock).toEqual(MOCK_VERDICT);
+      expect(response.data?.hasAnyProvider).toBe(true);
+    });
+
+    it('keeps main default-deny verdicts as-is (bridge present, env gate closed)', async () => {
+      const denied = { available: false, error: 'Mock provider requires TESTING=true' };
+      bridgeWith({ success: true, providerId: 'mock', data: denied });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+
+      expect(response).toEqual({ success: true, providerId: 'mock', data: denied });
+    });
+
+    it('reports mock unavailable without a preload bridge (web build)', async () => {
+      (window as any).electronAPI = undefined;
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+      });
+
+      const single = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+      const aggregate = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(single).toEqual({ success: true, providerId: 'mock', data: { available: false } });
+      expect(aggregate.data?.providers.mock).toEqual({ available: false });
+      expect(aggregate.data?.hasAnyProvider).toBe(false);
+    });
+  });
+
   describe('providers:get-paths → host.providerDiscovery', () => {
     it("maps every provider's resolvedPath plus the unsloth secondary path", async () => {
       // PROTOCOL §5.14 host.providerDiscovery-shaped snapshot: all providers,

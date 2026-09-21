@@ -41,9 +41,15 @@
  *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
  *                 to available providers; the wire `null` (unknown) folds to
  *                 undefined so no indicator renders.
- *  - mock:        gated behind an env var the renderer cannot verify —
- *                 hidden and unavailable, matching main's default-deny
- *                 gating.
+ *  - mock:        gated behind env vars only main can read (`TESTING=true`
+ *                 + `MOCK_AGENT_SCRIPT_PATH`, `checkMockAvailability`) — the
+ *                 `providers:check-single('mock')` probe is forwarded to the
+ *                 real preload bridge (`window.electronAPI.invoke`) when
+ *                 present so the packaged app gets main's verdict; without
+ *                 a bridge (web build) it stays unavailable, matching main's
+ *                 default-deny gating. The mock router intercepts every
+ *                 renderer `invoke()` in every build, so nothing else would
+ *                 ever reach main's handler.
  *
  * Handlers are registered at import time (host-bridge-seeder idiom) so the
  * AuggieSetupGate's onMount probes resolve against the daemon from the very
@@ -178,7 +184,7 @@ function withAuth(
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const hiddenProviders = computeHiddenProviders();
-  const [auggieCheck, toolsResult, authVerdicts, discovery] = await Promise.all([
+  const [auggieCheck, toolsResult, authVerdicts, discovery, mock] = await Promise.all([
     checkAuggie(),
     backendRequest<HostToolAvailabilityResult>('host.toolAvailability', {
       // `codex-acp` (the adapter) rides along for the codex warning —
@@ -193,6 +199,8 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     // successful discovery can omit a provider; a failed discovery is unknown
     // and must reach the existing failure envelope.
     fetchProviderDiscovery(),
+    // Main-side env gating via the preload bridge (packaged app only).
+    checkMockProvider(),
   ]);
   const tools = toolsResult?.tools ?? {};
   const tool = (name: string): HostCheckResult => tools[name] ?? { available: false };
@@ -239,7 +247,6 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     available: opencode.available && tool(PROVIDER_BINARIES.unsloth).available === true,
   };
   if (unsloth.available) unsloth.authenticated = true;
-  const mock: ProviderStatus = { available: false };
 
   withAuth(auggie, authVerdicts['auggie']);
   withAuth(claudeCode, authVerdicts['claude-code']);
@@ -256,6 +263,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       claudeCode.available ||
       codex.available ||
       cortex.available ||
+      mock.available ||
       opencode.available ||
       pi.available ||
       droid.available ||
@@ -308,6 +316,28 @@ function claudeCodeRunsViaOverride(discovery: ProviderDiscoverySnapshot | undefi
   return row?.installed === true && (row.resolvedPath ?? null) === null;
 }
 
+/** Main's `providers:check-single` envelope (provider-availability.service.ts). */
+interface CheckSingleEnvelope {
+  success?: boolean;
+  data?: ProviderStatus;
+}
+
+/**
+ * Mock provider — env-gated in main (`TESTING=true` + `MOCK_AGENT_SCRIPT_PATH`,
+ * `checkMockAvailability`), which the renderer cannot read. Forward the probe
+ * to the real preload bridge when present (packaged app; same idiom as
+ * window-state-bridge-seeder) and unwrap main's `{ success, data }` envelope;
+ * without a bridge, or when main did not answer with a verdict, keep main's
+ * default-deny `{ available: false }`.
+ */
+async function checkMockProvider(): Promise<ProviderStatus> {
+  const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
+  if (!bridge || typeof bridge.invoke !== 'function') return { available: false };
+  const response = (await bridge.invoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock')) as
+    CheckSingleEnvelope | undefined;
+  return response?.success === true && response.data ? response.data : { available: false };
+}
+
 /** Single-provider recheck (AgentGrid card refresh) — same verdicts as
  * above, defaulting to `force: true` so a login that just completed bypasses
  * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
@@ -330,9 +360,7 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
     return status;
   }
   if (providerId === 'mock') {
-    // Env-var gated — the renderer cannot verify it, so it stays
-    // unavailable (main's default-deny gating).
-    return { available: false };
+    return checkMockProvider();
   }
   if (providerId === 'unsloth') {
     // Rides the opencode binary AND requires the unsloth CLI itself;
