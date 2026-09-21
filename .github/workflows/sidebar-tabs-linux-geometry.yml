@@ -20,7 +20,7 @@ jobs:
       CI: 'true'
       GIT_TERMINAL_PROMPT: '0'
       SANDBOX_GEOMETRY_UPDATE: '0'
-      TARGET_SHA: b0473d68276a18ebc1ad119d254faf2c48261d36
+      TARGET_SHA: 56e5d3e9479df69eb1f3e3d5d56a4f85295b7218
       BASELINE: src/lib/components/layout/sidebar-nav/__geometry__/sidebar-tabs.geometry.json
     steps:
       - name: Checkout exact sidebar alignment source
