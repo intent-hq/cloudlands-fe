@@ -3,6 +3,7 @@
   import { InputMessage } from '$lib/components/ui/input-message';
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
   import {
+    textEntryCaretFocusClasses,
     textEntryControlClasses,
     textEntryFocusResetClasses,
     textEntryHeight,
@@ -100,6 +101,7 @@
     class={cn(
       'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground flex w-full min-w-0 rounded-(--radius-medium) border px-3 py-1',
       textEntryControlClasses,
+      textEntryCaretFocusClasses,
       textEntryHeight(resolvedSize),
       noFocusStyle && textEntryFocusResetClasses,
       className,

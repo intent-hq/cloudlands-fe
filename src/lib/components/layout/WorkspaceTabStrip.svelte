@@ -1,7 +1,8 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
-  import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { flushSync, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -43,6 +44,13 @@
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
+  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
+  import {
+    selectPresenceMembers,
+    selectPresenceOwnPrincipalId,
+    selectPresenceRosters,
+    selectWorkspacePresencePeople,
+  } from '$store/renderer/slices/presence/presence-selectors';
   import { WorkspaceStatus } from '$shared/types';
   import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
   import {
@@ -54,7 +62,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
-  import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
+  import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
     WORKSPACE_TAB_CORNER_RADIUS_PX,
@@ -158,7 +166,7 @@
   const ACTIVE_TAB_EDGE_GAP = 2;
   const POINTER_DRAG_THRESHOLD = 4;
   const activeTabBoundsPollers = new Set<() => void>();
-  const activeTabBoundsReporters = new Set<() => void>();
+  const activeTabBoundsReporters = new Set<(sync?: boolean) => void>();
   const activeTabBoundsControllers = new Map<string, (active: boolean) => void>();
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
@@ -168,31 +176,12 @@
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     if (!tabContextMenu) return [];
     const { workspaceId } = tabContextMenu;
-    const closeOthers = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'others');
-    const closeRight = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'right');
-    return [
-      {
-        id: 'close',
-        label: m.layout_panelTabBar_close_label(),
-        icon: faXmark,
-        onClick: () => closeWorkspace(workspaceId),
-      },
-      { type: 'separator' },
-      {
-        id: 'close-others',
-        label: m.layout_panelTabBar_closeAllOthers_label(),
-        icon: faLayerGroup,
-        disabled: closeOthers.length === 0,
-        onClick: () => closeWorkspaceTabs(closeOthers, workspaceId),
-      },
-      {
-        id: 'close-right',
-        label: m.layout_panelTabBar_closeTabsToRight_label(),
-        icon: faArrowRight,
-        disabled: closeRight.length === 0,
-        onClick: () => closeWorkspaceTabs(closeRight),
-      },
-    ];
+    return buildWorkspaceTabContextMenu({
+      order: $workspaceTabOrder$,
+      workspaceId,
+      onClose: () => closeWorkspace(workspaceId),
+      onCloseTabs: closeWorkspaceTabs,
+    });
   });
   const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
   const reportActiveTabTracking = ({ sync = true } = {}) =>
@@ -280,7 +269,7 @@
     const strip = stripElement;
     if (!strip) return;
     void renderedTabOrder;
-    const updateOverflow = () => {
+    const updateOverflow = (sync = true) => {
       isOverflowing = pendingOutroOverflow ?? strip.scrollWidth > strip.clientWidth;
       const fadeState = getWorkspaceTabScrollFadeState(
         strip.scrollLeft,
@@ -289,17 +278,19 @@
       );
       hasHiddenTabsLeft = fadeState.left;
       hasHiddenTabsRight = fadeState.right;
-      activeTabBoundsReporters.forEach((report) => report());
+      activeTabBoundsReporters.forEach((report) => report(sync));
     };
-    refreshOverflow = updateOverflow;
-    updateOverflow();
-    const observer = new ResizeObserver(updateOverflow);
+    const updateOverflowSync = () => updateOverflow();
+    refreshOverflow = updateOverflowSync;
+    // Effect bodies must not flush synchronously; event/rAF callers stay sync.
+    updateOverflow(false);
+    const observer = new ResizeObserver(updateOverflowSync);
     observer.observe(strip);
-    strip.addEventListener('scroll', updateOverflow);
+    strip.addEventListener('scroll', updateOverflowSync);
     return () => {
       observer.disconnect();
-      strip.removeEventListener('scroll', updateOverflow);
-      if (refreshOverflow === updateOverflow) refreshOverflow = () => {};
+      strip.removeEventListener('scroll', updateOverflowSync);
+      if (refreshOverflow === updateOverflowSync) refreshOverflow = () => {};
     };
   });
   $effect(() => {
@@ -308,7 +299,8 @@
     const trackingDuration = workspaceTabMotionDuration;
     if (activeTabBoundsPollers.size === 0) return;
     layoutTracking = true;
-    reportActiveTabTracking();
+    // Effect bodies must not flushSync: a nested flush nulls the outer batch.
+    reportActiveTabTracking({ sync: false });
     let startedAt: number | null = null;
     let frame: number | null = null;
     let cancelled = false;
@@ -335,7 +327,7 @@
   });
   $effect(() => {
     dragTracking = draggedWorkspaceId !== null;
-    reportActiveTabTracking();
+    reportActiveTabTracking({ sync: false });
     return () => {
       dragTracking = false;
       reportActiveTabTracking({ sync: false });
@@ -353,6 +345,18 @@
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
   }
+
+  const presenceRosters$ = selectPresenceRosters();
+  const presenceMembers$ = selectPresenceMembers();
+  const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
+  function getPresencePeople(workspaceId: string) {
+    void $presenceRosters$;
+    void $presenceMembers$;
+    void $presenceOwnPrincipalId$;
+    void $workspaceItems$;
+    return selectWorkspacePresencePeople.select(appStore.state, workspaceId);
+  }
+
   function tabAccessibleLabel(
     title: string,
     workspaceState: WorkspaceStatusPresentationState,
@@ -946,6 +950,8 @@
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
+          {@const canManageSharing = workspace.myRole === 'owner'}
+          {@const presencePeople = getPresencePeople(workspaceId)}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
           {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
           {@const isArchived = workspace.status === WorkspaceStatus.Archived}
@@ -1002,13 +1008,19 @@
               durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
             />
             {#key isCurrent && pointerOpenEligibleWorkspaceHoverCardIds.has(workspaceId)}
+              <!-- The hover card offers member Remove only to the
+                   workspace's owner, so the card stays hoverable (see
+                   `disableHoverableContent`) when this window owns the workspace;
+                   otherwise it is a read-only preview that closes on leave. The
+                   current tab normally has no preview, but a shared workspace's
+                   member rows stay reachable there too. -->
               <TooltipRich
                 side="bottom"
                 align="start"
                 delayDuration={workspaceHoverCardOpenDelay}
                 onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-                disableHoverableContent={true}
-                disabled={isCurrent || draggedWorkspaceId !== null}
+                disableHoverableContent={!canManageSharing}
+                disabled={(isCurrent && presencePeople.length === 0) || draggedWorkspaceId !== null}
                 showArrow={false}
                 maxWidth="none"
                 class="absolute -inset-px rounded-[inherit]"
@@ -1045,9 +1057,10 @@
                     data-workspace-tab-controls
                   >
                     <span
-                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
+                      class="pointer-events-none flex h-4 max-w-16 shrink-0 items-center justify-end gap-1 overflow-hidden"
                       data-workspace-tab-status-cluster
                     >
+                      <PresenceAvatarStack people={presencePeople} size={12} decorative />
                       <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
                     </span>
                     <span
@@ -1061,9 +1074,11 @@
             {/key}
             <Button
               variant="plain"
+              size="icon-compact"
+              iconOnly
               type="button"
               class={cn(
-                'absolute right-1 z-10 flex size-(--control-height-compact) shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
+                'absolute right-1 z-10 shrink-0 cursor-pointer rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
                 isCurrent ? 'opacity-70' : 'opacity-0 group-hover/workspace-tab:opacity-100',
               )}
               onclick={(event) => closeWorkspace(workspaceId, event)}

@@ -18,7 +18,12 @@ import {
 } from './paraglide-inputs-hash.mjs';
 
 const SCRIPTS_DIR = resolve(process.cwd(), 'scripts');
-const CLI_SCRIPTS = ['check-deps-fresh.mjs', 'check-node.mjs', 'paraglide-inputs-hash.mjs'];
+const CLI_SCRIPTS = [
+  'check-deps-fresh.mjs',
+  'check-node.mjs',
+  'paraglide-inputs-hash.mjs',
+  'verification-lock.mjs',
+];
 /** An engines.node range the Node running the tests satisfies. */
 const SUPPORTED_NODE = `>=${process.versions.node}`;
 /** A range no Node can satisfy, to exercise the preflight refusal. */

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/experimental-ct-svelte';
+import type { Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 
 // Real-browser contract for the tokens.css global motion blanket: the root
 // `data-reduce-motion` attribute (battery saver) must zero the same surfaces

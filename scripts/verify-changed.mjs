@@ -4,7 +4,14 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
+import {
+  CT_TEST_DIR,
+  ctGeometryScene,
+  hasCtSpecSuffix,
+  isCtSpec,
+} from '../playwright/ct-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
+import { isCtContractPath } from './ct-contract-paths.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   acquireVerificationLock,
@@ -53,10 +60,10 @@ const FORMAT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
-const CT_TEST_RE = /\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/;
-// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore),
-// playwright-ct.config.ts (testDir ./src) and the runner-owned excludes in
-// vitest.config.ts / tests/integration/vitest.integration.config.ts.
+// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore)
+// and the runner-owned excludes in vitest.config.ts /
+// tests/integration/vitest.integration.config.ts. The CT pattern is not mirrored:
+// `isCtSpec` and playwright-ct.config.ts both read playwright/ct-spec-pattern.mjs.
 const PLAYWRIGHT_TEST_RE = /^test\/.*\.spec\.ts$/;
 const PLAYWRIGHT_MANUAL_RE =
   /(?:^|\/)(?:catalog-manual-review\.capture|current-main-baseline)\.spec\.ts$/;
@@ -191,8 +198,8 @@ export function collectChangedFiles(root = REPO_ROOT, options = {}) {
 
 function listCtTests(root) {
   const files = [];
-  walk(resolve(root, 'src'), root, files);
-  return files.filter((file) => CT_TEST_RE.test(file));
+  walk(resolve(root, CT_TEST_DIR), root, files);
+  return files.filter(isCtSpec);
 }
 
 function importTargets(source, testPath, root) {
@@ -218,10 +225,9 @@ function importTargets(source, testPath, root) {
 }
 
 function geometrySnapshotTargets(testPath, root, readText) {
-  const match = testPath.match(/^(.*\/)?([^/]+)\.geometry\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/);
-  if (!match) return new Set();
-  const directory = match[1] ?? '';
-  const scene = match[2];
+  const geometry = ctGeometryScene(testPath);
+  if (!geometry) return new Set();
+  const { directory, scene } = geometry;
   const targets = new Set([
     `${directory}__geometry__/${scene}.geometry.json`,
     ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
@@ -241,6 +247,20 @@ function geometrySnapshotTargets(testPath, root, readText) {
   return targets;
 }
 
+// A CT spec usually mounts a host/harness `.svelte` that composes the component
+// under test, so follow one hop through each directly imported `.svelte` file
+// and add the `.svelte` files it imports (mirrors `geometrySnapshotTargets`).
+function hostComponentTargets(targets, root, readText) {
+  const hosted = new Set();
+  for (const host of [...targets].filter((target) => target.endsWith('.svelte'))) {
+    if (!existsSync(resolve(root, host))) continue;
+    for (const imported of importTargets(readText(host), host, root)) {
+      if (imported.endsWith('.svelte')) hosted.add(imported);
+    }
+  }
+  return hosted;
+}
+
 export function findRelatedCtTests(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
   const ctTests = options.ctTests ?? listCtTests(root);
@@ -254,6 +274,7 @@ export function findRelatedCtTests(files, options = {}) {
   for (const test of ctTests) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
+    for (const hosted of hostComponentTargets(targets, root, readText)) targets.add(hosted);
     const geometryTargets = geometrySnapshotTargets(test, root, readText);
     if (files.some((file) => geometryTargets.has(file))) selected.add(test);
     else if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
@@ -266,6 +287,9 @@ function isExisting(file, root) {
 }
 
 export function testRunner(file) {
+  // Before UNIT_TEST_RE: Playwright discovers CT specs case-insensitively, so a
+  // `.CT.SPEC.TS` under src/ is a CT spec although no unit-test pattern sees it.
+  if (isCtSpec(file)) return 'ct';
   if (!UNIT_TEST_RE.test(file)) return null;
   if (file.startsWith('test/')) {
     if (!PLAYWRIGHT_TEST_RE.test(file) || PLAYWRIGHT_MANUAL_RE.test(file)) return 'manual';
@@ -274,7 +298,7 @@ export function testRunner(file) {
   if (file.startsWith('tests/integration/')) {
     return INTEGRATION_TEST_RE.test(file) ? 'integration' : 'manual';
   }
-  if (CT_TEST_RE.test(file)) return file.startsWith('src/') ? 'ct' : 'manual';
+  if (hasCtSpecSuffix(file)) return 'manual';
   if (VISUAL_TEST_RE.test(file) || VITEST_EXCLUDED_RE.test(file)) return 'manual';
   return 'vitest';
 }
@@ -389,7 +413,7 @@ export function createVerificationPlan(files, options = {}) {
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
     (file) =>
-      /^(?:src|scripts)\//.test(file) &&
+      /^(?:src|scripts|playwright)\//.test(file) &&
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
@@ -419,9 +443,10 @@ export function createVerificationPlan(files, options = {}) {
     if (file === 'tsconfig.json') boundaries.add('renderer');
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
-    else if (file === 'playwright-ct.config.ts' || file.startsWith('playwright/')) fullCt = true;
     else if (file === 'playwright.config.ts') fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
+    // Shared with the pull_request workflow's test-ct relevance step.
+    if (isCtContractPath(file)) fullCt = true;
 
     const known =
       CODE_EXTENSIONS.has(extname(file)) ||
@@ -439,7 +464,6 @@ export function createVerificationPlan(files, options = {}) {
       boundaries.add('main');
       boundaries.add('preload');
       svelteCheck = true;
-      if (file === 'package.json' || file === 'pnpm-lock.yaml') fullCt = true;
     }
   }
 

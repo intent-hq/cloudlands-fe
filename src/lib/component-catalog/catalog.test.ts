@@ -1,3 +1,7 @@
+// @verify-changed-triggers: src/lib/components/**
+
+import { existsSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
 import { canonicalComponentManifest } from '$lib/components/ui/manifest';
@@ -151,14 +155,12 @@ it.each(catalogEntries)('resolves the public component export for $slug', (entry
   expect(entry.exports).toContain(expected);
 });
 
-const componentModules = import.meta.glob([
-  '/src/lib/components/**/index.ts',
-  '/src/lib/components/**/*.svelte',
-]);
-
+// Checked on disk rather than through a component glob: knip resolves glob
+// patterns in test entries, so a component glob here would mark every file
+// under `src/lib/components/` as referenced and hide dead components.
 function resolvesToModule(specifier: string): boolean {
-  const path = specifier.replace(/^\$lib\//, '/src/lib/');
-  return path in componentModules || `${path}/index.ts` in componentModules;
+  const path = resolve(process.cwd(), specifier.replace(/^\$lib\//, 'src/lib/'));
+  return (existsSync(path) && statSync(path).isFile()) || existsSync(resolve(path, 'index.ts'));
 }
 
 it.each(catalogEntries)('publishes resolvable import guidance for $slug', (entry) => {

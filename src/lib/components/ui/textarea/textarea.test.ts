@@ -30,22 +30,23 @@ describe('Textarea', () => {
     expect(textarea.className).toContain('read-only:text-muted-foreground');
   });
 
-  it('keeps the global keyboard-focus outline by default', () => {
+  it('keeps default textareas focusable and editable', async () => {
     const { getByRole } = render(Textarea, { props: { 'aria-label': 'Plain notes' } });
-    const textarea = getByRole('textbox', { name: 'Plain notes' });
+    const textarea = getByRole('textbox', { name: 'Plain notes' }) as HTMLTextAreaElement;
     textarea.focus();
     expect(document.activeElement).toBe(textarea);
-    expect(textarea.className).not.toMatch(/(?:^|\s)(?:focus-visible:)?outline-none(?:\s|$)/);
-    expect(textarea.className).not.toMatch(/(?:^|\s)focus-visible:!shadow-none(?:\s|$)/);
+    await fireEvent.input(textarea, { target: { value: 'Edited notes' } });
+    textarea.select();
+    expect(textarea.selectionEnd - textarea.selectionStart).toBe('Edited notes'.length);
   });
 
-  it('lets noFocusStyle opt out of the focus ring via utilities', () => {
+  it('keeps noFocusStyle textareas focusable for their composite owner', () => {
     const { getByRole } = render(Textarea, {
       props: { 'aria-label': 'Composite notes', noFocusStyle: true },
     });
-    const classes = getByRole('textbox', { name: 'Composite notes' }).className.split(/\s+/);
-    expect(classes).toContain('focus-visible:outline-none');
-    expect(classes).toContain('focus-visible:!shadow-none');
+    const textarea = getByRole('textbox', { name: 'Composite notes' });
+    textarea.focus();
+    expect(document.activeElement).toBe(textarea);
   });
 
   it('uses a contrast-validated invalid border without an outer ring', () => {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import DeleteWarningDialog from '../DeleteWarningDialog.svelte';
 import type { LocalChangesWarning } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
@@ -107,10 +107,69 @@ test('long local-changes row truncates instead of pushing the footer out of the 
   expect(within(await box(unpushedBadge), dialogBox)).toBe(true);
   expect(await unpushedBadge.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 
-  // The warning box stays clear of the close button instead of running under it.
+  // Only the title needs horizontal close clearance; the body is below it.
   const warningBox = unpushedBadge.locator('xpath=ancestor::div[1]');
   const closeButton = dialog.getByRole('button', { name: 'Close delete warning dialog' });
   const warningRect = await box(warningBox);
   const closeRect = await box(closeButton);
-  expect(warningRect.x + warningRect.width).toBeLessThanOrEqual(closeRect.x + 1);
+  expect(warningRect.y).toBeGreaterThan(closeRect.y + closeRect.height);
 });
+
+for (const width of [900, 380]) {
+  test(`open PR warning fills the dialog inner width at ${width}px`, async ({ mount, page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mount(DeleteWarningDialog, {
+      props: {
+        open: true,
+        openPrs: [
+          {
+            number: 418,
+            title: 'Refine workspace warning layout and preserve the full content width',
+            status: 'Open',
+            url: '',
+          },
+        ],
+      },
+    });
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const form = dialog.locator('[data-slot="form"]');
+    const warning = dialog.getByRole('list').locator('..');
+    const note = warning.locator('..').locator(':scope > p');
+    const formRect = await box(form);
+    const dialogRect = await box(dialog);
+    const closeRect = await box(
+      dialog.getByRole('button', { name: 'Close delete warning dialog' }),
+    );
+    const headingRect = await box(dialog.getByRole('heading'));
+
+    for (const content of [warning, note]) {
+      const rect = await box(content);
+      expect(Math.abs(rect.x - formRect.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(rect.width - formRect.width)).toBeLessThanOrEqual(1);
+      expect(within(rect, dialogRect)).toBe(true);
+      expect(rect.y).toBeGreaterThan(closeRect.y + closeRect.height);
+    }
+    expect(headingRect.x + headingRect.width).toBeLessThanOrEqual(closeRect.x + 1);
+    expect(formRect.x - dialogRect.x).toBeGreaterThan(0);
+    expect(
+      Math.abs(
+        formRect.x - dialogRect.x - (dialogRect.x + dialogRect.width - formRect.x - formRect.width),
+      ),
+    ).toBeLessThanOrEqual(1);
+    expect(dialogRect.width).toBeLessThan(width);
+    expect(await dialog.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+    expect(
+      within(await box(dialog.getByRole('button', { name: 'Stop work and delete' })), dialogRect),
+    ).toBe(true);
+    expect(within(await box(dialog.getByRole('button', { name: 'Cancel' })), dialogRect)).toBe(
+      true,
+    );
+    const title = dialog.getByText('Refine workspace warning layout', { exact: false });
+    expect(await title.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    expect(within(await box(dialog.getByText('#418', { exact: true })), dialogRect)).toBe(true);
+  });
+}

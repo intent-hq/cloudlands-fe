@@ -1,4 +1,4 @@
-import type { GitHubUser } from '$features/github-auth/types';
+import type { GitHubUser, StartAuthOptions } from '$features/github-auth/types';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type { GitHubAuthState, GitHubDeviceFlowInfo } from './github-auth-types';
@@ -25,8 +25,11 @@ export const initialState: GitHubAuthState = {
 /** Trigger: fetch auth state from backend and hydrate */
 export const initializeGitHubAuth = createAction('githubAuth/initialize');
 
-/** Trigger: start the OAuth authentication flow */
-export const startGitHubAuth = createAction('githubAuth/startAuth');
+/**
+ * Trigger: start the OAuth authentication flow. `{ reconnect: true }` forces
+ * a fresh device flow on an already-connected account (scope upgrades).
+ */
+export const startGitHubAuth = createAction<[options?: StartAuthOptions]>('githubAuth/startAuth');
 
 /** Trigger: cancel ongoing authentication */
 export const cancelGitHubAuth = createAction('githubAuth/cancelAuth');

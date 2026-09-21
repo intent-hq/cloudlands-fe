@@ -26,8 +26,13 @@ import {
   stopUnslothRequested,
   stopUnslothSucceeded,
   stopUnslothFailed,
+  agentMemoryBreakdownClosed,
+  agentMemoryUsageRequested,
+  agentMemoryUsageSucceeded,
+  agentMemoryUsageFailed,
 } from './daemon-health-slice';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
   SidecarRunLog,
   SystemStatusWirePayload,
@@ -61,6 +66,9 @@ describe('daemonHealthReducer', () => {
       unslothPolling: false,
       unslothStopping: false,
       unslothStopError: null,
+      agentMemoryUsage: null,
+      agentMemoryUsageFetching: false,
+      agentMemoryUsageError: false,
     });
   });
 
@@ -576,6 +584,11 @@ describe('daemonHealthReducer', () => {
         memoryBytes: 104857600,
         workspacesDiskAvailableBytes: 453316378624,
         workspacesDiskTotalBytes: 1099511627776,
+        childProcesses: 9,
+        childMemoryBytes: 3650000000,
+        childMemoryPeakBytes: 6970000000,
+        agentMemoryBytes: 3221225472,
+        agentProcessCount: 2,
         fingerprint: 'abc123',
         hostname: 'studio.local',
         protocolVersion: '2.0',
@@ -606,6 +619,11 @@ describe('daemonHealthReducer', () => {
         workspacesDiskAvailableBytes: 453316378624,
         workspacesDiskTotalBytes: 1099511627776,
         hostname: 'studio.local',
+        childProcesses: 9,
+        childMemoryBytes: 3650000000,
+        childMemoryPeakBytes: 6970000000,
+        agentMemoryBytes: 3221225472,
+        agentProcessCount: 2,
         os: 'macos',
         arch: 'aarch64',
         transport: undefined,
@@ -1154,6 +1172,86 @@ describe('daemonHealthReducer', () => {
       const next = daemonHealthReducer(state, stopUnslothFailed('transport error'));
       expect(next.unslothStopping).toBe(false);
       expect(next.unslothStopError).toBe('transport error');
+    });
+  });
+
+  describe('agent memory breakdown', () => {
+    const usage: AgentMemoryUsageWirePayload = {
+      sampledAt: '2026-09-20T06:00:00.000Z',
+      totalBytes: 3221225472,
+      agents: [
+        {
+          agentId: 'agent-1',
+          agentName: 'Implement dark mode',
+          workspaceId: 'ws-1',
+          provider: 'claude',
+          model: 'claude-sonnet-4',
+          rootPid: 100,
+          processCount: 1,
+          memoryBytes: 3221225472,
+          processes: [
+            {
+              pid: 100,
+              parentPid: 1,
+              name: 'claude-code-acp',
+              cmdline: 'claude-code-acp --stdio',
+              memoryBytes: 3221225472,
+            },
+          ],
+        },
+      ],
+    };
+
+    it('agentMemoryUsageRequested marks a fetch in flight', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageRequested());
+      expect(next.agentMemoryUsageFetching).toBe(true);
+    });
+
+    it('agentMemoryUsageSucceeded stores the wire payload as-is and clears a prior error', () => {
+      const state = {
+        ...initialState,
+        agentMemoryUsageFetching: true,
+        agentMemoryUsageError: true,
+      };
+      const next = daemonHealthReducer(state, agentMemoryUsageSucceeded(usage));
+      expect(next.agentMemoryUsageFetching).toBe(false);
+      expect(next.agentMemoryUsageError).toBe(false);
+      expect(next.agentMemoryUsage).toEqual(usage);
+    });
+
+    it('agentMemoryUsageSucceeded is ignored when no fetch is in flight (late resolve after close)', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageSucceeded(usage));
+      expect(next).toBe(initialState);
+      expect(next.agentMemoryUsage).toBeNull();
+    });
+
+    it('agentMemoryUsageFailed flags the error but keeps the last good usage', () => {
+      const state = { ...initialState, agentMemoryUsageFetching: true, agentMemoryUsage: usage };
+      const next = daemonHealthReducer(state, agentMemoryUsageFailed());
+      expect(next.agentMemoryUsageFetching).toBe(false);
+      expect(next.agentMemoryUsageError).toBe(true);
+      expect(next.agentMemoryUsage).toEqual(usage);
+    });
+
+    it('agentMemoryUsageFailed is ignored when no fetch is in flight', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageFailed());
+      expect(next).toBe(initialState);
+    });
+
+    it('agentMemoryBreakdownClosed drops the usage and cancels an in-flight fetch', () => {
+      const state = {
+        ...initialState,
+        agentMemoryUsageFetching: true,
+        agentMemoryUsageError: true,
+        agentMemoryUsage: usage,
+      };
+      const closed = daemonHealthReducer(state, agentMemoryBreakdownClosed());
+      expect(closed.agentMemoryUsage).toBeNull();
+      expect(closed.agentMemoryUsageFetching).toBe(false);
+      expect(closed.agentMemoryUsageError).toBe(false);
+
+      const late = daemonHealthReducer(closed, agentMemoryUsageSucceeded(usage));
+      expect(late.agentMemoryUsage).toBeNull();
     });
   });
 });

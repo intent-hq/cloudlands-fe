@@ -586,10 +586,16 @@ async function exerciseCanonicalPreview(page: Page, slug: (typeof catalogSlugs)[
     await expect(menu).toBeHidden();
     await expect(trigger).toBeFocused();
     await trigger.click();
+    await expect(menu).toBeVisible();
     const outsideTarget = page.getByRole('button', { name: 'Menu outside target' });
-    if ((page.viewportSize()?.width ?? 0) < 500) await outsideTarget.click({ force: true });
-    else await outsideTarget.click();
-    await expect(menu).toBeHidden();
+    // The menu arms its outside-pointerdown dismissal a few frames after it mounts, so a
+    // click that lands before that is ignored (a forced click skips the stability wait
+    // that usually covers this on a warm worker). Retry the outside click until it takes.
+    await expect(async () => {
+      if ((page.viewportSize()?.width ?? 0) < 500) await outsideTarget.click({ force: true });
+      else await outsideTarget.click();
+      await expect(menu).toBeHidden({ timeout: 1_000 });
+    }).toPass();
   } else if (slug === 'dialog' || slug === 'sheet') {
     if (slug === 'dialog') {
       const initialDialog = page.getByRole('dialog', {

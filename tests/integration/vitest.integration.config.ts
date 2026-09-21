@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -14,6 +15,8 @@ const isCI = !!process.env.CI && process.env.CI !== 'false';
 
 export default defineConfig({
   root: rootDir,
+  // Renderer selectors import the same Svelte-backed icon catalog as the app.
+  plugins: [svelte()],
   test: {
     name: 'integration',
     globals: true,
@@ -62,6 +65,21 @@ export default defineConfig({
       $shared: path.resolve(__dirname, '../../src/shared'),
       $store: path.resolve(__dirname, '../../src/store'),
       $utils: path.resolve(__dirname, '../../src/utils'),
+      '@fortawesome/fontawesome-common-types': path.resolve(
+        rootDir,
+        'src/lib/icons/phosphor-icons.ts',
+      ),
+      '@fortawesome/fontawesome-svg-core': path.resolve(rootDir, 'src/lib/icons/phosphor-icons.ts'),
+      '@fortawesome/free-brands-svg-icons': path.resolve(
+        rootDir,
+        'src/lib/icons/phosphor-icons.ts',
+      ),
+      '@fortawesome/free-regular-svg-icons': path.resolve(
+        rootDir,
+        'src/lib/icons/phosphor-icons.ts',
+      ),
+      '@fortawesome/free-solid-svg-icons': path.resolve(rootDir, 'src/lib/icons/phosphor-icons.ts'),
+      'svelte-fa': path.resolve(rootDir, 'src/lib/components/shared/icons/fa-proxy.ts'),
     },
   },
 });

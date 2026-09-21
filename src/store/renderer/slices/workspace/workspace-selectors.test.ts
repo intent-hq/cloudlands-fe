@@ -4,9 +4,16 @@ import type { WorkspaceGitStatus } from '$features/accept-changes/types';
 import type { TaskStats } from '$shared/utils/task-stats';
 import { describe, expect, it } from 'vitest';
 import type { StoreState } from '../../types';
-import { initialState, setWorkspaceEntity, workspaceReducer } from './workspace-slice';
+import {
+  initialState,
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+  workspaceReducer,
+} from './workspace-slice';
 import { initialState as daemonHealthInitialState } from '../daemon-health/daemon-health-slice';
 import {
+  selectIsCollaboratorOnlyClient,
   selectIsWorkspaceHostLocal,
   selectWorkflowStage,
   selectWorkspaceActivePrSummary,
@@ -21,6 +28,18 @@ import {
   prMonitorsUpdated,
 } from '../pr-monitor/pr-monitor-slice';
 import type { PrMonitorRow, PrMonitorSnapshot } from '$features/pr-monitor/pr-monitor-service';
+import {
+  connectionsListReceived,
+  connectionsReducer,
+  initialState as connectionsInitialState,
+} from '../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsListUnavailable,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../guest-sessions/guest-sessions-slice';
+import type { GuestSessionRecord } from '../guest-sessions/guest-sessions-types';
 
 const WS_ID = 'ws-1';
 
@@ -103,6 +122,132 @@ function mockLocalityState(hostLocality: 'local' | 'remote', workspace?: Workspa
     daemonHealth: { ...daemonHealthInitialState, hostLocality },
   } as StoreState;
 }
+
+describe('selectIsCollaboratorOnlyClient (multiplayer w3)', () => {
+  /** Owner window whose identity has settled: no host joined, so the guest list alone decides. */
+  function loadedState(workspaces: Workspace[], hasLoaded = true): StoreState {
+    const listed = workspaceReducer(initialState, replaceWorkspaceList(workspaces));
+    return {
+      workspace: workspaceReducer(listed, setWorkspaceHasLoaded(hasLoaded)),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+      ),
+    } as StoreState;
+  }
+
+  const GUEST_SESSION: GuestSessionRecord = {
+    id: 'guest-1',
+    label: 'studio.local',
+    host: '10.0.0.5',
+    hosts: ['10.0.0.5'],
+    port: 8443,
+    fingerprint: 'AB:CD',
+    tcAddress: null,
+    hostname: 'studio.local',
+    principalId: 'prin-guest',
+    login: 'octocat',
+    tokenEncrypted: true,
+    updatedAt: 1,
+  };
+
+  /** Bind the window to `backendId`, with `GUEST_SESSION` known as a joined host. */
+  function guestAware(state: StoreState, backendId: string): StoreState {
+    return {
+      ...state,
+      connections: connectionsReducer(
+        connectionsInitialState,
+        connectionsListReceived({
+          connections: [],
+          activeId: backendId,
+          windowBackendId: backendId,
+        }),
+      ),
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+      ),
+    };
+  }
+
+  it('is true from boot in a guest window (multiplayer w4) — before the list loads and with zero shared workspaces', () => {
+    expect(
+      selectIsCollaboratorOnlyClient.select(guestAware(loadedState([], false), GUEST_SESSION.id)),
+    ).toBe(true);
+    expect(
+      selectIsCollaboratorOnlyClient.select(guestAware(loadedState([]), GUEST_SESSION.id)),
+    ).toBe(true);
+  });
+
+  it('keeps owner semantics in an owner window that merely knows a guest session', () => {
+    expect(
+      selectIsCollaboratorOnlyClient.select(guestAware(loadedState([makeWorkspace()]), 'local')),
+    ).toBe(false);
+  });
+
+  it('reads as collaborator-only until the window identity settles (multiplayer w4) — even with a loaded empty list', () => {
+    const unsettled = {
+      ...loadedState([]),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsInitialState,
+    } as StoreState;
+    expect(selectIsCollaboratorOnlyClient.select(unsettled)).toBe(true);
+    // Guest list in with a joined host, but the window's backend id is still
+    // the boot-time local default: the guest window is not identifiable yet.
+    const guestListOnly = {
+      ...loadedState([]),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListReceived({ sessions: [GUEST_SESSION], openIds: [], connectedIds: [] }),
+      ),
+    } as StoreState;
+    expect(selectIsCollaboratorOnlyClient.select(guestListOnly)).toBe(true);
+    expect(selectIsCollaboratorOnlyClient.select(guestAware(loadedState([]), 'local'))).toBe(false);
+    // No list could be fetched (invoke failed / no Electron bridge): settled on
+    // what is known — owner semantics, never a permanent lockout.
+    const unavailable = {
+      ...loadedState([]),
+      connections: connectionsInitialState,
+      guestSessions: guestSessionsReducer(
+        guestSessionsInitialState,
+        guestSessionsListUnavailable(),
+      ),
+    } as StoreState;
+    expect(selectIsCollaboratorOnlyClient.select(unavailable)).toBe(false);
+  });
+
+  it('is true once the list has loaded and every workspace reports myRole collaborator', () => {
+    const state = loadedState([
+      makeWorkspace({ id: 'ws-a' as WorkspaceId, myRole: 'collaborator' }),
+      makeWorkspace({ id: 'ws-b' as WorkspaceId, myRole: 'collaborator' }),
+    ]);
+    expect(selectIsCollaboratorOnlyClient.select(state)).toBe(true);
+  });
+
+  it('is false when any workspace is owned by this principal', () => {
+    const state = loadedState([
+      makeWorkspace({ id: 'ws-a' as WorkspaceId, myRole: 'collaborator' }),
+      makeWorkspace({ id: 'ws-b' as WorkspaceId, myRole: 'owner' }),
+    ]);
+    expect(selectIsCollaboratorOnlyClient.select(state)).toBe(false);
+  });
+
+  it('is false for a pre-w3 daemon that omits myRole (owner semantics preserved)', () => {
+    const state = loadedState([makeWorkspace()]);
+    expect(selectIsCollaboratorOnlyClient.select(state)).toBe(false);
+  });
+
+  it('is false before the workspace list has loaded and for an empty list in a settled owner window', () => {
+    expect(
+      selectIsCollaboratorOnlyClient.select(
+        loadedState([makeWorkspace({ myRole: 'collaborator' })], false),
+      ),
+    ).toBe(false);
+    expect(selectIsCollaboratorOnlyClient.select(loadedState([]))).toBe(false);
+  });
+});
 
 describe('selectIsWorkspaceHostLocal (monorepo#2171)', () => {
   it('is true for a local workspace on a local daemon', () => {

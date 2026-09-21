@@ -56,7 +56,6 @@
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
   import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
-  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
@@ -385,11 +384,6 @@
     role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
   );
   let isAgentMessageExpanded = $state(false);
-  let agentMessagePreview = $derived(
-    message
-      ? (role === 'user' ? getPresentedUserMessageText(message) : extractAllContent(message)).trim()
-      : '',
-  );
   let agentMessageBodyId = $derived(`agent-message-body-${message?.id ?? 'pending'}`);
 
   // Queued-delivery info for messages drained from the pending queue
@@ -829,7 +823,8 @@
       $hydratedBlocks$,
     ).filter(
       (block: any) =>
-        block.type === 'image' && ((block.data && block.mimeType) || block.attachmentId),
+        block.type === 'image' &&
+        ((block.data && block.mimeType) || block.attachmentId || block.dataTruncated === true),
     );
   });
 
@@ -900,7 +895,7 @@
     blockId: string;
     openerElement: HTMLButtonElement;
     index: number;
-    thumbnailBlock: ContentBlock & { data: string; mimeType: string };
+    thumbnailBlock: ContentBlock;
   } | null>(null);
 
   function isAttachmentHydrationLoading(blockId: string | undefined): boolean {
@@ -931,9 +926,9 @@
       lightboxOpen = true;
       return;
     }
-    if (!isImageBlock(imageBlock)) return;
     const hydrationMessageId = message?.id ?? messageId;
     if (imageBlock.dataTruncated === true && agentId && hydrationMessageId && imageBlock.id) {
+      if (pendingLightboxHydration?.blockId === imageBlock.id) return;
       pendingLightboxHydration = {
         blockId: imageBlock.id,
         openerElement,
@@ -943,6 +938,7 @@
       appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageId, imageBlock.id));
       return;
     }
+    if (!isImageBlock(imageBlock) || !imageBlock.data) return;
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName =
       imageBlock.fileName ||
@@ -986,6 +982,9 @@
       );
     }
     pendingLightboxHydration = null;
+    // Legacy slim images have no thumbnail to fall back to. Keep the tile
+    // actionable for retry rather than opening an empty data URL on failure.
+    if (!isImageBlock(block) || !block.data) return;
     lightboxImageUrl = `data:${block.mimeType};base64,${block.data}`;
     lightboxImageName =
       block.fileName ||
@@ -1420,7 +1419,7 @@
             ? 'automated-wake-card'
             : undefined}
           class="{agentAttribution
-            ? `${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
+            ? `relative ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
@@ -1437,7 +1436,7 @@
             handleStartEdit()}
         >
           <!-- Actions -->
-          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded}
+          {#if (!agentAttribution && !automatedWakePresentation) || isAgentMessageExpanded || (automatedWakePresentation && isAutomatedWakeExpanded && queueInfo)}
             <MessageActions
               role="user"
               onCopy={handleCopy}
@@ -1445,7 +1444,10 @@
               {onScrollToPrevious}
               timestamp={message.timestamp}
               createdAt={messageCreatedAt}
-              class="absolute right-1 z-10 {agentAttribution ? 'bottom-1' : 'top-1'}"
+              {queueInfo}
+              class="absolute right-1 z-10 {agentAttribution || automatedWakePresentation
+                ? 'bottom-1'
+                : 'top-1'}"
             />
           {/if}
 
@@ -1453,7 +1455,6 @@
           {#if agentAttribution}
             <AgentMessageAttributionHeader
               attribution={agentAttribution}
-              preview={agentMessagePreview}
               expanded={isAgentMessageExpanded}
               controlsId={agentMessageBodyId}
               ontoggle={() => (isAgentMessageExpanded = !isAgentMessageExpanded)}
@@ -1485,11 +1486,6 @@
                   : undefined}
               transition:safeSubscriptionSlide
             >
-              <!-- Queued-delivery notice for messages drained from the pending queue -->
-              {#if queueInfo}
-                <QueuedMessageNoticeHeader {queueInfo} {isSticky} class="mb-1.5" />
-              {/if}
-
               <div
                 class="type-body select-text text-pretty {agentAttribution ||
                 automatedWakePresentation
@@ -1643,6 +1639,7 @@
                     <Button
                       type="button"
                       variant="plain"
+                      wrapContent={false}
                       class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 rounded {isAttachmentHydrationLoading(
                         imageBlock.id,
                       )

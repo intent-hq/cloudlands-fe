@@ -17,6 +17,8 @@
     faThumbsUp,
   } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import type { QueueInfo } from '$lib/utils/queue-info';
+  import QueuedMessageNoticeHeader from './QueuedMessageNoticeHeader.svelte';
   import {
     MESSAGE_ACTION_REVEAL_CLASS,
     MESSAGE_ACTION_SURFACE_CLASS,
@@ -45,6 +47,8 @@
     timestamp?: DateInput | null;
     /** Legacy fallback when the canonical timestamp is absent or invalid. */
     createdAt?: DateInput | null;
+    /** Delivery metadata, presented only with the user message's hover/focus actions. */
+    queueInfo?: QueueInfo | null;
   }
 
   let {
@@ -61,6 +65,7 @@
     onScrollToPrevious,
     timestamp,
     createdAt,
+    queueInfo,
   }: Props = $props();
 
   let actionDate = $derived(resolveMessageActionDate(timestamp, createdAt));
@@ -156,6 +161,7 @@
 <div
   data-testid="message-actions"
   data-message-actions-role={role}
+  style:max-width={queueInfo ? 'calc(100% - 0.5rem)' : undefined}
   class="{MESSAGE_ACTION_SURFACE_CLASS} {showOnHover
     ? MESSAGE_ACTION_REVEAL_CLASS
     : ''} {className}"
@@ -169,8 +175,13 @@
     >
   {/if}
 
+  {#if role === 'user' && queueInfo}
+    <QueuedMessageNoticeHeader {queueInfo} />
+  {/if}
+
   <ActionBar
     {actions}
+    class="shrink-0"
     overflowLabel={m.lib_commandPalette_quickActions_ariaLabel()}
     onAction={handleAction}
   />

@@ -360,8 +360,10 @@
     <Button
       type="button"
       variant="ghost"
+      size="icon-compact"
+      iconOnly
       onclick={handleDelete}
-      class="delete-btn absolute right-0 top-0 bottom-0 flex items-center justify-center w-5 rounded-r-md cursor-pointer
+      class="delete-btn absolute right-0 top-0 bottom-0 w-5 h-auto rounded-r-md cursor-pointer
         opacity-0 group-hover/pill:opacity-100 transition-opacity
         {selected ? 'bg-primary/20 hover:bg-primary/30' : 'bg-muted/60 hover:bg-muted'}"
       aria-label={m.tiptap_contextMention_remove_ariaLabel()}
@@ -389,9 +391,10 @@
       <Button
         type="button"
         variant="ghost"
+        size="icon-compact"
+        iconOnly
         onclick={handleSwitchToPRBranch}
-        class="branch-switch-btn inline-flex items-center justify-center w-5 h-5 ml-1 rounded cursor-pointer transition-colors
-          hover:bg-primary/20"
+        class="branch-switch-btn size-5 ml-1 rounded cursor-pointer transition-colors hover:bg-primary/20"
         aria-label={m.tiptap_contextMention_switchBranch_tooltip()}
       >
         <GitBranchIcon size={12} class="text-primary-ink hover:text-primary-ink/80" />

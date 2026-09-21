@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentMessage } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
@@ -351,8 +351,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(avatar.getAttribute('data-provider')).toBe('augment');
     expect(avatar.getAttribute('data-avatar-state')).toBe('idle');
     expect(avatar.getAttribute('data-avatar-variant')).toBe('standard');
-    const preview = screen.getByTestId('agent-message-preview');
-    expect(preview.textContent).toContain('hello from another agent');
+    expect(screen.queryByText('hello from another agent')).toBeNull();
     expect(screen.queryByTestId('agent-message-expanded-body')).toBeNull();
     const surface = screen.getByTestId('user-message-surface');
     for (const token of [
@@ -361,15 +360,9 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     ]) {
       expect(surface.classList.contains(token)).toBe(true);
     }
-    const disclosureHeader = screen.getByTestId('agent-message-disclosure-header');
-    for (const token of SUBSCRIPTION_DISCLOSURE_ROW_CLASS.split(' ')) {
-      expect(disclosureHeader.classList.contains(token)).toBe(true);
-    }
-    for (const token of ['min-h-9', 'px-3!', 'py-2!', 'type-body', 'font-normal']) {
-      expect(disclosureHeader.classList.contains(token)).toBe(true);
-    }
-    expect(disclosureHeader.classList.contains('gap-2')).toBe(true);
-    expect(disclosureHeader.classList.contains('justify-start!')).toBe(true);
+    expect(
+      screen.getByTestId('agent-message-disclosure-toggle').getAttribute('aria-expanded'),
+    ).toBe('false');
     expect(surface.querySelector('button button')).toBeNull();
   });
 
@@ -487,7 +480,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     style.remove();
   });
 
-  it('uses a single-line attributed preview without changing plain user messages', () => {
+  it('keeps attributed content expanded-only without hiding plain user messages', async () => {
     const { unmount } = render(ChatMessage, {
       props: {
         message: userMessage({
@@ -498,17 +491,19 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       },
     });
 
-    const preview = screen.getByTestId('agent-message-preview');
-    expect(preview.className).toContain('truncate');
-    expect(preview.className).toContain('whitespace-nowrap');
+    const toggle = screen.getByTestId('agent-message-disclosure-toggle');
+    expect(toggle.getAttribute('aria-label')).not.toContain('hello from another agent');
+    expect(screen.queryByText('hello from another agent')).toBeNull();
     expect(screen.queryByTestId('agent-message-expanded-body')).toBeNull();
+    await fireEvent.click(toggle);
+    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    await fireEvent.click(toggle);
+    expect(screen.queryByText('hello from another agent')).toBeNull();
 
     unmount();
     render(ChatMessage, { props: { message: userMessage() } });
 
-    const plainBody = screen.getByText('hello from another agent').closest('.type-body');
-    expect(plainBody?.className).toContain('line-clamp-6');
-    expect(plainBody?.className).not.toContain('line-clamp-2');
+    expect(screen.getByText('hello from another agent')).toBeTruthy();
   });
 
   it('expands and collapses the full attributed message inside the same card', async () => {
@@ -533,7 +528,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
 
     await fireEvent.click(toggle);
     const expanded = screen.getByTestId('agent-message-expanded-body');
-    const body = screen.getByText(longMessage).closest('.type-body');
+    const body = within(expanded).getByText(longMessage).closest('.type-body');
     expect(surface.contains(expanded)).toBe(true);
     expect(expanded.className).toContain('border-t');
     expect(expanded.className).toContain('px-3');
@@ -547,7 +542,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('hides the daemon sender header line from the preview and expanded body', async () => {
+  it('hides the daemon sender header line when disclosing the message', async () => {
     render(ChatMessage, {
       props: {
         message: userMessage(
@@ -561,12 +556,15 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
       },
     });
 
-    const preview = screen.getByTestId('agent-message-preview');
-    expect(preview.textContent).toContain('hello from another agent');
-    expect(preview.textContent).not.toContain('[MESSAGE FROM AGENT');
+    expect(screen.queryByText('hello from another agent')).toBeNull();
+    expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
 
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
-    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    expect(
+      within(screen.getByTestId('agent-message-expanded-body')).getByText(
+        'hello from another agent',
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
   });
 
@@ -612,10 +610,8 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     });
 
     expect(screen.getByText('Chief of Staff')).toBeTruthy();
-    expect(screen.getByTestId('agent-message-preview').textContent).toContain(body);
-    expect(screen.getByTestId('agent-message-preview').textContent).not.toContain(
-      '[MESSAGE FROM AGENT',
-    );
+    expect(screen.queryByText(body)).toBeNull();
+    expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
     const sourceLink = screen.getByTestId('agent-message-attribution');
     expect(sourceLink.tagName).toBe('A');
     expect(sourceLink.getAttribute('href')).toBe(sourceUrl);
@@ -629,7 +625,7 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     expect(dispatchMock).not.toHaveBeenCalled();
 
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
-    expect(screen.getByText(body)).toBeTruthy();
+    expect(within(screen.getByTestId('agent-message-expanded-body')).getByText(body)).toBeTruthy();
     expect(screen.queryByText(/\[MESSAGE FROM AGENT/)).toBeNull();
   });
 
@@ -731,10 +727,11 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     });
 
     await fireEvent.click(screen.getByTestId('agent-message-disclosure-toggle'));
-    await fireEvent.click(screen.getByText('hello from another agent'));
+    const expanded = within(screen.getByTestId('agent-message-expanded-body'));
+    await fireEvent.click(expanded.getByText('hello from another agent'));
 
     // Still rendering the message (no edit input swapped in)
-    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    expect(expanded.getByText('hello from another agent')).toBeTruthy();
     expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
   });
 
@@ -1003,10 +1000,8 @@ describe('ChatMessage hook wake attribution', () => {
     expect(screen.queryByTestId('queued-message-notice')).toBeNull();
     await expandAutomatedWake();
     const timing = screen.getByTestId('queued-message-notice');
-    expect(screen.getByTestId('automated-wake-details').contains(timing)).toBe(true);
-    // Automated-wake cards render on the subscription-card surface → muted tone.
-    expect(timing.className).toContain('text-subtle');
-    expect(timing.className).not.toContain('text-primary-foreground/80');
+    expect(screen.getByTestId('message-actions').contains(timing)).toBe(true);
+    expect(screen.getByTestId('automated-wake-details').contains(timing)).toBe(false);
     expect(screen.getByTestId('queued-message-notice-text').textContent).toBe(
       'Waited in queue for 3s',
     );

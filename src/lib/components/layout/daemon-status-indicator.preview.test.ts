@@ -3,6 +3,7 @@ import type { ReduxStoreContext } from '$store/renderer/types';
 import { initAppStore, store } from '$store/renderer/store';
 import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import {
+  selectAgentMemoryUsage,
   selectDaemonHealth,
   selectDaemonHealthLastUpdated,
   selectDaemonHealthStats,
@@ -68,6 +69,7 @@ describe('daemon status indicator preview fixture', () => {
   it('gives every scene its own failure count regardless of the scene rendered before it', () => {
     const expectedFailures: Record<string, number | null> = {
       healthy: null,
+      'agent-memory': null,
       'degraded-timeout': 1,
       'degraded-timeouts': 3,
       'degraded-check-failed': 1,
@@ -81,8 +83,24 @@ describe('daemon status indicator preview fixture', () => {
     for (const state of order) {
       enter(state);
       expect(health().failure?.consecutiveFailures ?? null, state).toBe(expectedFailures[state]);
-      expect(health().health, state).toBe(state === 'healthy' ? 'healthy' : 'degraded');
+      expect(health().health, state).toBe(
+        state === 'healthy' || state === 'agent-memory' ? 'healthy' : 'degraded',
+      );
     }
+  });
+
+  it('seeds the agent memory scene with a sampled breakdown and drops it on cleanup', () => {
+    enter('agent-memory');
+    expect(health().stats?.agentMemoryBytes).toBeGreaterThan(0);
+    const usage = selectAgentMemoryUsage.select(store.state);
+    expect(usage?.agents.length).toBeGreaterThan(0);
+    expect(usage?.agents.map((agent) => agent.memoryBytes)).toEqual(
+      [...usage!.agents.map((agent) => agent.memoryBytes)].sort((a, b) => b - a),
+    );
+
+    enter('healthy');
+    expect(health().stats?.agentMemoryBytes).toBeUndefined();
+    expect(selectAgentMemoryUsage.select(store.state)).toBeNull();
   });
 
   it('returns the connection to down after cleanup', () => {

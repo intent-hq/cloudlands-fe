@@ -163,6 +163,28 @@ export const liveCardFixtures: LiveCardFixture[] = [
       }),
     ],
   }),
+  ...livePairs('pr-paused', 'PR monitor paused by the GitHub rate limit', {
+    prs: [
+      pr('paused', 2107, {
+        lastPolledAt: relativeFixtureTime(-12 * 60_000),
+        pausedUntil: relativeFixtureTime(35 * 60_000),
+        lastError: 'forge rate limit hit; polling paused',
+        lastSnapshot: snapshot({
+          mergeable: false,
+          checks: {
+            total: 11,
+            passed: 7,
+            failed: 0,
+            pending: 4,
+            failingRequired: 0,
+            pendingRequired: 4,
+            requiredKnown: true,
+          },
+          approvals: { decision: 'review_required', have: 0, needed: 1, changesRequested: 0 },
+        }),
+      }),
+    ],
+  }),
   ...livePairs('pr-draft', 'Draft PR', {
     prs: [pr('draft', 2104, { lastSnapshot: snapshot({ isDraft: true, mergeable: false }) })],
   }),

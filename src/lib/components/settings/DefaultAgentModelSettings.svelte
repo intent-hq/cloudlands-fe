@@ -118,7 +118,6 @@
               kind: 'custom',
               id: 'default-agent-model',
               label: m.settings_aiBehavior_defaultModel_label(),
-              class: 'md:grid-cols-[minmax(0,1fr)_auto] md:items-center',
             },
           ],
         },
@@ -128,12 +127,19 @@
 </script>
 
 {#snippet defaultModelControl(_: SettingsControlContext)}
-  <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
+  <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
+    {#if anySpecialistHasExplicitModel}
+      <Button type="button" variant="link" size="sm" onclick={resetAllSpecialistsToInherit}>
+        {m.settings_aiBehavior_resetAllSpecialists()}
+      </Button>
+    {/if}
     <ModelPicker
       selectedModel={$selectedModel$}
       onModelChange={handleModelChange}
       showDefaultOption={false}
-      variant="default"
+      variant="outline"
+      showProviderWarningNotice
+      noticeClass="mt-2"
       size="sm"
       updateGlobalDefault
       showReasoning
@@ -142,11 +148,6 @@
         appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
       }}
     />
-    {#if anySpecialistHasExplicitModel}
-      <Button type="button" variant="link" size="sm" onclick={resetAllSpecialistsToInherit}>
-        {m.settings_aiBehavior_resetAllSpecialists()}
-      </Button>
-    {/if}
   </div>
 {/snippet}
 
@@ -154,6 +155,7 @@
   <SettingsForm
     {schema}
     embedded
+    compact={false}
     custom={defineSettingsCustomControls({ 'default-agent-model': defaultModelControl })}
   />
 </div>

@@ -401,8 +401,9 @@ describe('DeleteWarningDialog', () => {
     });
   });
 
-  it('cancels the dialog when Escape is pressed inside the dialog', async () => {
+  it.each(['Escape', 'Cancel', 'close'])('cancels without deleting via %s', async (action) => {
     const onCancel = vi.fn();
+    const onDeleteAnyway = vi.fn();
     const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 
     render(DeleteWarningDialog, {
@@ -410,6 +411,7 @@ describe('DeleteWarningDialog', () => {
         open: true,
         agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
         onCancel,
+        onDeleteAnyway,
       },
     });
 
@@ -417,9 +419,18 @@ describe('DeleteWarningDialog', () => {
       name: m.modals_deleteWarning_title(),
     });
 
-    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    if (action === 'Escape') {
+      await fireEvent.keyDown(dialog, { key: 'Escape' });
+    } else {
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: action === 'Cancel' ? 'Cancel' : 'Close delete warning dialog',
+        }),
+      );
+    }
 
     expect(onCancel).toHaveBeenCalledOnce();
+    expect(onDeleteAnyway).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

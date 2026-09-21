@@ -7,13 +7,42 @@ import { flushSync, tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import type { PresenceMember } from '$shared/types/presence';
+import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
 import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
+import {
+  initialState as presenceInitialState,
+  presenceMembersReceived,
+  presenceOwnPrincipalReceived,
+  presenceReducer,
+  presenceRosterReceived,
+} from '$store/renderer/slices/presence/presence-slice';
+import type { PresenceState } from '$store/renderer/slices/presence/presence-types';
 import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
-import { workspaceHoverCardIntentSession } from '$lib/components/workspace/utils/workspace-hover-card-intent';
+import {
+  WORKSPACE_HOVER_CARD_OPEN_DELAY_MS,
+  workspaceHoverCardIntentSession,
+} from '$lib/components/workspace/utils/workspace-hover-card-intent';
 import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
+import {
+  effectFlushSyncCalls,
+  resetEffectFlushSyncCalls,
+} from '$lib/components/chat/__tests__/mocks/effect-flush-sync-spy.svelte';
+
+// Count `flushSync` calls made from inside effect bodies: a nested flush during
+// an outer batch nulls the batch, and the next effect in that traversal that
+// writes state crashes in `schedule_effect` (sveltejs/svelte#18546).
+vi.mock('svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('svelte')>();
+  const { wrapFlushSync } =
+    await import('$lib/components/chat/__tests__/mocks/effect-flush-sync-spy.svelte');
+  return { ...actual, flushSync: wrapFlushSync(actual.flushSync) };
+});
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -24,6 +53,22 @@ const mocks = vi.hoisted(() => ({
   stateListeners: new Set<(state: unknown) => void>(),
   loadedWorkspaceIds: new Set<string>(),
   tabStatuses: {} as Record<string, WorkspaceTabStatus>,
+  presencePeople: {} as Record<
+    string,
+    Array<{
+      principalId: string;
+      login: string | null;
+      displayName: string | null;
+      avatarUrl: string | null;
+      owner?: boolean;
+      online?: boolean;
+      viewing?: boolean;
+      self?: boolean;
+    }>
+  >,
+  /** When set, the PRODUCTION people selector runs against this store state instead of `presencePeople`. */
+  presenceStore: { state: null as Record<string, unknown> | null },
+  presenceListeners: new Set<() => void>(),
   useRealTooltip: false,
 }));
 
@@ -33,6 +78,19 @@ const readable = <T>(value: T) => ({
     return () => {};
   },
 });
+
+/** A presence readable the test re-notifies through `emitPresence()`, like a store change would. */
+const presenceReadable = <T>(getter: () => T) => ({
+  subscribe(run: (value: T) => void) {
+    const notify = () => run(getter());
+    mocks.presenceListeners.add(notify);
+    notify();
+    return () => mocks.presenceListeners.delete(notify);
+  },
+});
+const emitPresence = () => {
+  for (const notify of [...mocks.presenceListeners]) notify();
+};
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$store/renderer/store', () => ({
@@ -46,8 +104,10 @@ vi.mock('$store/renderer/store', () => ({
       },
     }),
     get state() {
-      return { tabState: { currentTabId: mocks.nextCurrentId } };
+      return { tabState: { currentTabId: mocks.nextCurrentId }, ...mocks.presenceStore.state };
     },
+    createSelector: (select: (state: unknown, ...args: unknown[]) => unknown) =>
+      Object.assign(() => readable(undefined), { select }),
   },
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
@@ -77,6 +137,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           statusMessage: 'Polishing the workspace navigation experience.',
           activity: 'agent_running',
           displayStatus: 'in_progress',
+          myRole: 'owner',
         },
         {
           id: 'ws-2',
@@ -84,6 +145,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
           branch: 'main',
           repositoryName: 'intent',
           displayStatus: 'idle',
+          myRole: 'collaborator',
         },
         {
           id: 'ws-3',
@@ -99,6 +161,29 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectWorkspaceTabStatuses: () => readable(mocks.tabStatuses),
 }));
+vi.mock('$store/renderer/slices/presence/presence-selectors', async () => {
+  const actual = await vi.importActual<
+    typeof import('$store/renderer/slices/presence/presence-selectors')
+  >('$store/renderer/slices/presence/presence-selectors');
+  const presence = () =>
+    mocks.presenceStore.state?.presence as
+      { rosters: unknown; members: unknown; ownPrincipalId: string | null } | undefined;
+  return {
+    selectPresenceRosters: () =>
+      presenceReadable(() => presence()?.rosters ?? mocks.presencePeople),
+    selectPresenceMembers: () => presenceReadable(() => presence()?.members ?? {}),
+    selectPresenceOwnPrincipalId: () => presenceReadable(() => presence()?.ownPrincipalId ?? null),
+    selectWorkspacePresencePeople: {
+      select: (state: unknown, workspaceId: string) =>
+        mocks.presenceStore.state
+          ? actual.selectWorkspacePresencePeople.select(
+              state as Parameters<typeof actual.selectWorkspacePresencePeople.select>[0],
+              workspaceId,
+            )
+          : (mocks.presencePeople[workspaceId] ?? []),
+    },
+  };
+});
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
   selectWorkspaceTasksByWorkspaceId: () =>
     readable({
@@ -222,6 +307,9 @@ describe('WorkspaceTabStrip', () => {
     mocks.tabOrderListeners.clear();
     mocks.nextCurrentId = 'ws-2';
     mocks.tabOrder = ['ws-1', 'ws-2', 'ws-3'];
+    mocks.presencePeople = {};
+    mocks.presenceStore.state = null;
+    mocks.presenceListeners.clear();
     mocks.dispatch.mockImplementation((action: { type?: string; payload?: unknown[] }) => {
       if (action.type === 'tabState/openWorkspaceTab') {
         const workspaceId = String(action.payload?.[0] ?? '');
@@ -369,15 +457,271 @@ describe('WorkspaceTabStrip', () => {
 
     expect(tab.className).toContain('pl-3 pr-1');
     expect(tab.className).not.toContain('pr-8');
-    expect(cluster.className).toContain('max-w-14');
+    expect(cluster.className).toContain('max-w-16');
     expect(cluster.className).toContain('justify-end');
-    expect(cluster.className).not.toMatch(/(?:^|\s)w-14(?:\s|$)/);
+    expect(cluster.className).not.toMatch(/(?:^|\s)w-16(?:\s|$)/);
     expect(controls.className).toContain('ml-auto');
     expect(controls.lastElementChild).toBe(closeSpace);
     expect(title.className).toContain('min-w-0');
     expect(title.className).toContain('flex-1');
     expect(title.nextElementSibling).toBe(controls);
     expect(cluster.parentElement).toBe(controls);
+  });
+
+  describe('presence dots', () => {
+    const person = (index: number) => ({
+      principalId: `p-${index}`,
+      login: `user${index}`,
+      displayName: null,
+      avatarUrl: null,
+    });
+
+    it('renders no stack for a workspace nobody else is viewing', () => {
+      render(WorkspaceTabStrip);
+      const tab = screen.getByRole('tab', { name: /Alpha/ });
+      expect(tab.querySelector('[data-presence-avatar-stack]')).toBeNull();
+    });
+
+    describe('driven by the production selector over real store state', () => {
+      const roster = (
+        principalId: string,
+        focus: PresenceMember['focus'] = [],
+      ): PresenceMember => ({
+        principalId,
+        login: principalId,
+        displayName: null,
+        avatarUrl: null,
+        focus,
+        typing: [],
+      });
+      const accepted = (principalId: string, role: WorkspaceMember['role']): WorkspaceMember => ({
+        principalId,
+        login: principalId,
+        displayName: null,
+        avatarUrl: null,
+        role,
+        addedAt: '2026-09-14T12:00:00Z',
+      });
+      const sharedWith = (memberCount: number) => ({
+        workspaces: createCollection('id', [
+          { id: WorkspaceId('ws-1'), title: 'Alpha', ownerPrincipalId: 'me', memberCount },
+        ]),
+      });
+      const presenceState = (...actions: Parameters<typeof presenceReducer>[1][]) =>
+        actions.reduce(presenceReducer, presenceInitialState);
+      const membership = presenceMembersReceived('ws-1', [
+        accepted('me', 'owner'),
+        accepted('other', 'collaborator'),
+      ]);
+      const alone = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [roster('me', [{ workspaceId: 'ws-1' }])],
+      });
+      const joined = presenceRosterReceived({
+        workspaceId: 'ws-1',
+        members: [
+          roster('me', [{ workspaceId: 'ws-1' }]),
+          roster('other', [{ workspaceId: 'ws-1' }]),
+        ],
+      });
+      const show = (presence: PresenceState, memberCount = 2) => {
+        mocks.presenceStore.state = { presence, workspace: sharedWith(memberCount) };
+        emitPresence();
+      };
+      const alphaStack = () =>
+        screen.getByRole('tab', { name: /Alpha/ }).querySelector('[data-presence-avatar-stack]');
+
+      it('shows the badge only while someone else is online, and hides it again when they leave', async () => {
+        show(presenceState(alone, membership, presenceOwnPrincipalReceived('me')));
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+        expect(alphaStack()).toBeNull();
+
+        show(presenceState(joined, membership, presenceOwnPrincipalReceived('me')));
+        await tick();
+        const avatars = Array.from(
+          alphaStack()!.querySelectorAll<HTMLElement>('[data-presence-avatar]'),
+        );
+        expect(avatars.map((avatar) => avatar.hasAttribute('data-presence-self'))).toEqual([
+          true,
+          false,
+        ]);
+
+        show(presenceState(joined, membership, presenceOwnPrincipalReceived('me'), alone));
+        await tick();
+        expect(alphaStack()).toBeNull();
+      });
+
+      it('shows no badge while the own principal is unknown, then the people once identity arrives', async () => {
+        show(presenceState(joined, membership));
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+        expect(alphaStack()).toBeNull();
+
+        show(presenceState(joined, membership, presenceOwnPrincipalReceived('me')));
+        await tick();
+        expect(alphaStack()!.querySelectorAll('[data-presence-avatar]')).toHaveLength(2);
+      });
+
+      it('drops the badge the moment the workspace stops being shared', async () => {
+        const presence = presenceState(joined, membership, presenceOwnPrincipalReceived('me'));
+        show(presence);
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+        expect(alphaStack()!.querySelectorAll('[data-presence-avatar]')).toHaveLength(2);
+
+        show(presence, 1);
+        await tick();
+        expect(alphaStack()).toBeNull();
+      });
+    });
+
+    it('shows one dot per viewer up to three, then a +N overflow chip', () => {
+      mocks.presencePeople = { 'ws-1': [1, 2].map(person), 'ws-3': [1, 2, 3, 4, 5].map(person) };
+      render(WorkspaceTabStrip);
+
+      const alphaStack = screen
+        .getByRole('tab', { name: /Alpha/ })
+        .querySelector('[data-presence-avatar-stack]')!;
+      expect(alphaStack.querySelectorAll('[data-presence-avatar]')).toHaveLength(2);
+      expect(alphaStack.querySelector('[data-presence-overflow]')).toBeNull();
+      expect(alphaStack.getAttribute('aria-label')).toBe(
+        m.presence_avatarStack_people_many({ count: '2' }),
+      );
+
+      const gammaStack = screen
+        .getByRole('tab', { name: /Gamma/ })
+        .querySelector('[data-presence-avatar-stack]')!;
+      expect(gammaStack.querySelectorAll('[data-presence-avatar]')).toHaveLength(3);
+      expect(
+        gammaStack
+          .querySelector('[data-presence-overflow]')
+          ?.getAttribute('data-presence-overflow'),
+      ).toBe('2');
+      expect(gammaStack.querySelector('[data-presence-overflow]')?.textContent?.trim()).toBe(
+        m.presence_avatarStack_more_label({ count: '2' }),
+      );
+    });
+
+    it('rings the owner blue, an online member green and an offline member grey, marking self', () => {
+      mocks.presencePeople = {
+        'ws-1': [
+          { ...person(1), owner: true, online: true, viewing: true, self: true },
+          { ...person(2), owner: false, online: true, viewing: false, self: false },
+          { ...person(3), owner: false, online: false, viewing: false, self: false },
+        ],
+      };
+      render(WorkspaceTabStrip);
+
+      const stack = screen
+        .getByRole('tab', { name: /Alpha/ })
+        .querySelector('[data-presence-avatar-stack]')!;
+      const rings = Array.from(stack.querySelectorAll<HTMLElement>('[data-presence-avatar]')).map(
+        (avatar) => [
+          avatar.getAttribute('data-presence-ring'),
+          avatar.hasAttribute('data-presence-self'),
+        ],
+      );
+      expect(rings).toEqual([
+        ['owner', true],
+        ['member', false],
+        ['offline', false],
+      ]);
+      expect(stack.getAttribute('aria-label')).toBe(
+        m.presence_avatarStack_people_many({ count: '2' }),
+      );
+    });
+
+    // The card itself owns Remove (share slice, inline confirm); the strip only
+    // decides which tabs keep their card hoverable so those controls are reachable.
+    describe('hoverable card for owner-side member removal', () => {
+      const owner = { ...person(1), owner: true, online: true, viewing: true, self: true };
+      const collaborator = {
+        ...person(2),
+        owner: false,
+        online: true,
+        viewing: false,
+        self: false,
+      };
+
+      function tooltipRootOf(name: RegExp) {
+        return screen
+          .getByRole('tab', { name })
+          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
+      }
+
+      async function openHoverCard(name: RegExp) {
+        const root = tooltipRootOf(name);
+        await enterTabTooltip(root);
+        vi.advanceTimersByTime(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
+        await tick();
+        return root;
+      }
+
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('keeps only the tab whose card has a removable row hoverable, and mounts the card there', async () => {
+        mocks.presencePeople = {
+          'ws-1': [owner, collaborator],
+          'ws-3': [
+            { ...owner, self: false },
+            { ...collaborator, self: true },
+          ],
+        };
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
+
+        expect(tooltipRootOf(/Alpha/).getAttribute('data-tooltip-disable-hoverable-content')).toBe(
+          'false',
+        );
+        expect(tooltipRootOf(/Gamma/).getAttribute('data-tooltip-disable-hoverable-content')).toBe(
+          'true',
+        );
+
+        await openHoverCard(/Alpha/);
+        expect(
+          document.querySelector(
+            '[data-workspace-tab-hover-content="ws-1"] [data-workspace-hover-card]',
+          ),
+        ).toBeTruthy();
+      });
+
+      it('keeps the card reachable on the current tab too when the workspace is shared', async () => {
+        mocks.presencePeople = { 'ws-1': [owner, collaborator] };
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
+
+        expect(screen.getByRole('tab', { name: /Alpha/ }).getAttribute('aria-selected')).toBe(
+          'true',
+        );
+        expect(tooltipRootOf(/Alpha/).getAttribute('data-tooltip-disable-hoverable-content')).toBe(
+          'false',
+        );
+        await openHoverCard(/Alpha/);
+        expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
+      });
+
+      it('keeps a collaborator-side tab, and an owner alone, non-hoverable', () => {
+        // Beta is the tab this window does not own (`myRole: 'collaborator'`);
+        // Alpha is owned here and stays hoverable for its Share entry regardless
+        // of who is present.
+        mocks.presencePeople = {
+          'ws-2': [
+            { ...owner, self: false },
+            { ...collaborator, self: true },
+          ],
+          'ws-3': [owner],
+        };
+        render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-1' } });
+
+        for (const name of [/Beta/, /Gamma/]) {
+          expect(tooltipRootOf(name).getAttribute('data-tooltip-disable-hoverable-content')).toBe(
+            'true',
+          );
+        }
+      });
+    });
   });
 
   it.each([
@@ -466,7 +810,9 @@ describe('WorkspaceTabStrip', () => {
     expect(source).not.toContain('in:fly');
     expect(source).not.toContain('out:fly');
     expect(source).toContain('animate:flip');
-    expect(source).toContain('<WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />');
+    expect(source).toMatch(
+      /<WorkspaceHoverCard\s+\{workspace\}\s+activeAgentIds=\{runningAgentIds\}[\s\S]*?\/>/,
+    );
     expect(source).not.toContain('ensureWorkspaceTasksLoaded');
     expect(source).not.toContain('data-workspace-tab-progress');
   });
@@ -619,7 +965,16 @@ describe('WorkspaceTabStrip', () => {
       const alpha = screen.getByRole('tab', { name: /Alpha/ });
       expect(alpha.getAttribute('aria-selected')).toBe('false');
       const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('true');
+      // Alpha reports `myRole: 'owner'`: its card carries Share / Remove
+      // controls, so the pointer must be able to travel into it. Beta is a
+      // collaborator's read-only preview and still closes on leave.
+      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('false');
+      expect(
+        screen
+          .getByRole('tab', { name: /Beta/ })
+          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
+          .getAttribute('data-tooltip-disable-hoverable-content'),
+      ).toBe('true');
       await enterTabTooltip(tooltipRoot);
       vi.advanceTimersByTime(799);
       await tick();
@@ -926,7 +1281,7 @@ describe('WorkspaceTabStrip', () => {
     });
   });
 
-  describe('parent effects flushed from teardown paths', () => {
+  describe('parent effects flushed from tracking effects and teardown paths', () => {
     let defaultMatchMedia: (query: string) => MediaQueryList;
     let getAnimations: typeof Element.prototype.getAnimations;
 
@@ -946,17 +1301,22 @@ describe('WorkspaceTabStrip', () => {
       Element.prototype.getAnimations = getAnimations;
     });
 
-    function renderHarness(siblingGate: 'bounds-cleared' | 'tracking-idle') {
+    function renderHarness(
+      siblingGate: 'bounds-cleared' | 'tracking-idle',
+      measureInsetWhileTracking?: () => number,
+    ) {
       const errors: unknown[] = [];
       const onProbeMounted = vi.fn();
       const view = render(WorkspaceTabStripTeardownHarness, {
         props: {
           activeWorkspaceId: 'ws-1',
           siblingGate,
+          measureInsetWhileTracking,
           onError: (error) => errors.push(error),
           onProbeMounted,
         },
       });
+      expect(errors).toEqual([]);
       const strip = tabScroller();
       strip.getBoundingClientRect = () => makeRect(0, 20, 500);
       setTabGeometry();
@@ -1038,6 +1398,72 @@ describe('WorkspaceTabStrip', () => {
 
       expectSiblingMounted(container, errors);
       expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
+    });
+
+    it('keeps the batch alive when a later parent effect writes state the tracking effect reads', async () => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      const measureInsetWhileTracking = vi.fn(() => 4);
+      // The mount batch already runs the tracking effect; renderHarness asserts
+      // the boundary caught nothing there.
+      const { component, container, errors, onProbeMounted } = renderHarness(
+        'tracking-idle',
+        measureInsetWhileTracking,
+      );
+      expect(measureInsetWhileTracking).toHaveBeenCalled();
+      expect(container.querySelector('[data-active-tab-tracking="true"]')).toBeTruthy();
+      flushSync(() => component.update({ showSibling: true }));
+      expect(onProbeMounted).not.toHaveBeenCalled();
+
+      frames.at(-1)!(10_000);
+      await tick();
+      expectSiblingMounted(container, errors);
+      expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
+
+      try {
+        flushSync(() => component.update({ horizontalPositionTrackingKey: 1 }));
+      } catch (error) {
+        errors.push(error);
+      }
+      await tick();
+
+      expect(errors).toEqual([]);
+      expect(container.querySelector('[data-teardown-boundary-failed]')).toBeNull();
+      expect(container.querySelector('[data-active-tab-tracking="true"]')).toBeTruthy();
+      expect(container.querySelector('[data-teardown-effect-probe]')).toBeNull();
+
+      frames.at(-1)!(20_000);
+      await tick();
+
+      expectSiblingMounted(container, errors);
+      expect(container.querySelector('[data-active-tab-tracking="false"]')).toBeTruthy();
+    });
+
+    it('reports active-tab bounds from the overflow effect without flushing synchronously', async () => {
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      resetEffectFlushSyncCalls();
+      const { container, errors } = renderHarness('bounds-cleared');
+      expect(effectFlushSyncCalls()).toBe(0);
+
+      try {
+        flushSync(() => emitTabOrder(['ws-2', 'ws-1', 'ws-3']));
+      } catch (error) {
+        errors.push(error);
+      }
+      await tick();
+
+      expect(errors).toEqual([]);
+      expect(effectFlushSyncCalls()).toBe(0);
+      expect(container.querySelector('[data-teardown-boundary-failed]')).toBeNull();
+      expect(container.querySelector('[data-active-tab-bounds="set"]')).toBeTruthy();
+      expect(renderedTabOrder()).toEqual(['ws-2', 'ws-1', 'ws-3']);
     });
   });
 
@@ -1130,6 +1556,19 @@ describe('WorkspaceTabStrip', () => {
       (screen.getByRole('menuitem', { name: 'Close tabs to the right' }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it('does not offer Share from the tab context menu, even on an owned tab', async () => {
+    render(WorkspaceTabStrip);
+
+    // Alpha reports `myRole: 'owner'`; Share lives in the workspace ⋯ menu only.
+    await fireEvent.contextMenu(screen.getByRole('tab', { name: /Alpha/ }));
+    await screen.findByRole('menuitem', { name: 'Close' });
+
+    expect(screen.queryByRole('menuitem', { name: 'Share…' })).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'workspaceShare/openDialog' }),
+    );
   });
 
   it('closes other workspace tabs in order and focuses the context target', async () => {

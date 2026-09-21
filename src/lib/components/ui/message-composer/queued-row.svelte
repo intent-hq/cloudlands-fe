@@ -98,6 +98,6 @@
       onRemove(item);
     }}
   >
-    <XIcon size={13} weight="bold" aria-hidden="true" />
+    <XIcon size={13} weight="regular" aria-hidden="true" />
   </Button>
 </li>

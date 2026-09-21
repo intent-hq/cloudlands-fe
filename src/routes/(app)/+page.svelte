@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { EmptyState } from '$lib/components/patterns/screen';
   import { m } from '$shared/paraglide/messages.js';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -9,14 +10,12 @@
   <title>{m.home_page_title()}</title>
 </svelte:head>
 
-<div class="flex h-full flex-col items-start justify-center gap-1.5 text-left">
-  <p class="text-lg font-medium text-foreground">{m.home_emptyState_noSpaceSelected_label()}</p>
-  <p class="text-sm text-subtle">{m.home_emptyState_selectOrCreate_description()}</p>
-  <Button
-    variant="primary"
-    class="mt-3"
-    onclick={() => appStore.dispatch(setShowCreateModal(true))}
-  >
-    {m.home_emptyState_newSpace_label()}
-  </Button>
-</div>
+<EmptyState class="h-full overflow-y-auto" emphasis="prominent">
+  {#snippet title()}<h1>{m.home_emptyState_noSpaceSelected_label()}</h1>{/snippet}
+  {#snippet description()}<p>{m.home_emptyState_selectOrCreate_description()}</p>{/snippet}
+  {#snippet actions()}
+    <Button variant="primary" onclick={() => appStore.dispatch(setShowCreateModal(true))}>
+      {m.home_emptyState_newSpace_label()}
+    </Button>
+  {/snippet}
+</EmptyState>

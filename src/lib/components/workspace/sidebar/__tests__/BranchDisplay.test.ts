@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { warmImport } from '../../../../../test/warm-import';
+import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -94,6 +95,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => {
 });
 
 const mockInvoke = vi.fn();
+let restoreRename: (() => void) | undefined;
 
 async function renderBranchDisplay(overrides: Partial<Record<string, unknown>> = {}) {
   const BranchDisplay = (await import('../BranchDisplay.svelte')).default;
@@ -122,11 +124,10 @@ describe('BranchDisplay', () => {
     mockInvoke.mockReset();
     mocks.workspaceEntity.branch = 'feature/branch';
 
-    // Mock the generated IPC client's preload invoke dependency
-    (window as unknown as { electronAPI: { invoke: typeof mockInvoke } }).electronAPI = {
-      invoke: mockInvoke,
-    };
+    restoreRename = overrideMockIpcHandler('workspace:rename-branch', mockInvoke);
   });
+
+  afterEach(() => restoreRename?.());
 
   it('affirms repository branch metadata and alignment in every required visual state', async () => {
     const observed = await exerciseVisualStates(async () => {
@@ -214,5 +215,50 @@ describe('BranchDisplay', () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'workspace/setWorkspaceEntity' }),
     );
+  });
+
+  it('renames through the existing IPC and persists the successful branch response', async () => {
+    mockInvoke.mockResolvedValue({ success: true });
+    const updated = { ...mocks.workspaceEntity, branch: 'feature/renamed' };
+    mockUpdate.mockResolvedValue({ ok: true, data: updated });
+    const { container } = await renderBranchDisplay();
+    await fireEvent.click(container.querySelector('button')!);
+    const input = container.querySelector('input')!;
+    await fireEvent.input(input, { target: { value: ' feature/renamed ' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledExactlyOnceWith({
+        id: 'ws-1',
+        newBranchName: 'feature/renamed',
+      }),
+    );
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledExactlyOnceWith({ id: 'ws-1', branch: 'feature/renamed' }),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'workspace/setWorkspaceEntity',
+      payload: [updated],
+    });
+  });
+
+  it('shift-copy preserves full long values without renaming or unlocking the target', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const longBranch = 'feature/a-long-working-branch-that-is-truncated-only-visually';
+    mocks.workspaceEntity.branch = longBranch;
+    const { container } = await renderBranchDisplay({
+      canChangeTrunk: false,
+      trunkBranch: 'release/locked-target',
+    });
+    await fireEvent.click(container.querySelector('button')!, { shiftKey: true });
+    expect(writeText).toHaveBeenCalledWith(longBranch);
+    expect(container.querySelector('[data-branch-field="working"] input')).toBeNull();
+    const target = container.querySelector<HTMLInputElement>('[data-branch-field="target"] input')!;
+    expect(target.readOnly).toBe(true);
+    await fireEvent.click(target, { shiftKey: true });
+    expect(writeText).toHaveBeenLastCalledWith('release/locked-target');
+    expect(container.querySelector('[data-testid="branch-selector"]')).toBeNull();
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

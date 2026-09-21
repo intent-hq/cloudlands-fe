@@ -7,7 +7,7 @@ token vocabulary in a component, feature stylesheet, or theme adapter.
 ## I need to…
 
 Start with a pattern, not a primitive. The generated
-[cheatsheet](../../docs/fe/DESIGN_SYSTEM_CHEATSHEET.md) has the complete public API summary, and
+[cheatsheet](DESIGN_SYSTEM_CHEATSHEET.md) has the complete public API summary, and
 [`/sandbox/recipes`](../src/routes/sandbox/recipes/+page.svelte) renders copyable full compositions.
 
 ### …notify the user
@@ -128,11 +128,12 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 - Never use raw `text-xs`, `text-sm`, `text-base`, or `text-lg` in settings surfaces; use `type-caption` for compact controls, navigation and short metadata, `type-body` for messages, documents, explanatory copy and expanded form content, and `type-title` / `type-display` for section / page headings. Pair `font-medium!` with a `type-*` role on the same element. `intent/no-raw-typography` enforces this in settings components, routes and patterns.
 
 - Never add raw `<button>`, `<input>`, `<select>`, or `<textarea>` controls; use their UI primitives.
+- Never render an icon-only `Button` (icon child only, or `iconOnly`) without an icon size (`size="icon"`, `icon-compact`, `icon-sm`, `icon-lg`); `intent/icon-only-button-size` enforces this.
 - Never hand-roll a menu or listbox row; apply the shared `menuItem()` recipe.
 - Never import `svelte-sonner` directly; route transient feedback through `notify`.
 - Never call `window.alert`, `window.confirm`, or `window.prompt`; use the Confirm pattern.
 - Never import `svelte/motion` or `svelte/transition` outside `$lib/motion`.
-- Never use arbitrary duration, easing, background, or text-color utilities; use semantic tokens.
+- Never use arbitrary or Tailwind-scale duration/easing utilities (`duration-300`, `ease-out`), or arbitrary background/text-color utilities; use semantic tokens.
 - Never mount `Dialog.Root` directly in a feature; use `FormDialog` or the Confirm service.
 - Never hand-compose settings row layout from primitives; use `SettingsFieldRow` for bespoke controls, or define a schema and render `SettingsForm` for a settings section.
 
@@ -418,6 +419,20 @@ for continuously retargeted values.
   one continuous background; split the background only where the selected index set has a gap.
 - **Exits are crisp.** Enter and retarget motion use the chosen spring tier. Dismissal uses its
   shorter paired exit rather than replaying the spring in reverse.
+
+### Resize affordances
+
+Sidebar and inter-panel dividers share `.app-resize-handle` from
+`src/lib/styles/resize-handles.css`. Keep the hit target transparent and the indicator hidden
+at rest. Hover, keyboard focus, press, and active drag reveal one neutral line using the
+shared muted-foreground treatment; leaving or blurring hides it again unless a drag is active.
+Do not add a Button hover surface, a persistent grip, or component-local color overrides.
+
+Use `data-resize-axis="x"` or `"y"` for the full-span line. The short-indicator option changes
+only its length, never its idle visibility. Preserve the forgiving hit area and scrollbar
+click-through clipping independently of the indicator. Keep keyboard resizing focusable,
+set `data-resizing` throughout pointer drag, and retain the shared reduced-motion behavior.
+The workspace canvas has no outer-right resize target; resizing belongs to its panel gutters.
 
 ### Size ladder and ratchets
 

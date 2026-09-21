@@ -1,5 +1,5 @@
 // @verify-changed-triggers: ../Panel.svelte, ../PanelContainer.svelte, ../PanelLayout.svelte,
-//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte, ../LayoutPresetDropdown.svelte,
+//   ../PanelSplitHandle.svelte, ../PanelTabBar.svelte,
 //   ../../WindowTitleBar.svelte, ../../WorkspaceTabStrip.svelte,
 //   ../../sidebar-nav/SidebarNav.svelte, ../../sidebar-nav/SidebarPanel.svelte,
 //   ../../../workspace/WorkspaceLayout.svelte, ../../../workspace/WorkspaceSidebarHeader.svelte,
@@ -61,9 +61,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(panel).toContain('min-width: 0');
     expect(panel).not.toContain('min-width: 30em');
     expect(panel).toContain('box-shadow: var(--elevation-raised)');
-    expect(panel).toMatch(
-      /\.panel\[data-empty-panel-shell='true'\]:not\(\[data-focus-border-visible='true'\]\)\s*\{\s*border-width: 0;/,
-    );
+    // Focus-invariant border and child geometry are exercised in panel-shell-corners.ct.spec.ts.
     expect(panel).toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*box-shadow: none;/);
     expect(panel).not.toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*border-width: 0;/);
     expect(panel).not.toContain('.panel:focus-visible');
@@ -130,17 +128,15 @@ describe('editorial workspace shell presentation contract', () => {
     expect(tabBar).not.toContain('color-mix');
   });
 
-  it('limits direct manipulation and presets to the horizontal panel stack', () => {
+  it('limits direct manipulation to the horizontal panel stack', () => {
     const panel = source('../Panel.svelte');
     const layout = source('../PanelLayout.svelte');
-    const presets = source('../LayoutPresetDropdown.svelte');
 
     expect(panel).toContain('Tabless panels only split along the horizontal stack.');
     expect(layout).toContain("if (direction !== 'horizontal') return;");
     expect(layout).toMatch(
       /moveTabToSplitLevel\(\s*draggedPane\.tabId,\s*draggedPane\.panelId,\s*\[\],\s*placement\.position,\s*'horizontal',\s*\)/,
     );
-    expect(presets).not.toContain("id: 'split-vertical'");
   });
 
   it('reserves browser-style tab chords for global workspace tabs', () => {
@@ -175,7 +171,7 @@ describe('editorial workspace shell presentation contract', () => {
     expect(sidebar).toContain('data-sidebar-agent={agent.id}');
     expect(launcherMarkup).toContain('itemContent={launcherAgentAvatar}');
     expect(launcherMarkup).toContain('data-sidebar-context={note.id}');
-    expect(launcherMarkup).toContain('data-sidebar-changes-resource');
+    // Launcher action/expansion behavior: MultiSelectTabbedSidebar.open-in.test.ts round-trip.
     expect(launcherMarkup).not.toContain('data-sidebar-change=');
     expect(launcherMarkup).not.toContain('content={`${tab.label}:');
     expect(launcherMarkup).toContain('data-files-open-in');

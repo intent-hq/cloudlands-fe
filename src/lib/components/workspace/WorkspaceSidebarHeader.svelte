@@ -468,18 +468,18 @@
           bind:value={editedTitle}
           onblur={saveTitle}
           onkeydown={handleTitleKeydown}
-          class="edit-input type-title relative z-10 w-full rounded border-none bg-transparent py-0.5 text-foreground
-                 outline-none leading-normal
-                 focus:ring-none! focus:outline-none!
-                 transition-all duration-150"
+          aria-label={m.workspace_sidebarHeader_editTitle_tooltip()}
+          class="type-title h-auto w-full rounded border-none bg-transparent px-0 py-0.5 text-foreground leading-normal
+                 hover:bg-transparent focus-visible:bg-transparent focus-visible:shadow-none
+                 focus-visible:outline-solid focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]"
           placeholder={m.ui_editableName_placeholder()}
         />
       {:else}
         <Button
           variant="ghost"
-          class="type-title relative z-10 cursor-text rounded border-none bg-transparent py-0.5 pr-1 text-left text-foreground
+          class="type-title relative z-10 h-auto cursor-text rounded border-none bg-transparent px-0 py-0.5 pr-1 text-left text-foreground
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-                 transition-all duration-150 leading-normal line-clamp-3
+                 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-normal line-clamp-3
                 focus-visible:outline focus-visible:outline-1
                  focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                  disabled:cursor-default disabled:opacity-50 {!workspace?.title
@@ -494,12 +494,6 @@
           {/if}
         </Button>
       {/if}
-      <span
-        aria-hidden="true"
-        class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
-          ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
-          : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
-      ></span>
     </div>
 
     <!-- status message -->
@@ -516,7 +510,7 @@
         class="type-body max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded bg-none py-0.5 text-foreground
                outline-none leading-snug
                focus:ring-none! focus:outline-none!
-               transition-all duration-150 disabled:opacity-50"
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
         style="field-sizing: content;"
         placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
       ></Textarea>
@@ -529,7 +523,7 @@
           ? 'italic text-ghost'
           : ''}
                max-w-full break-words whitespace-pre-wrap
-               transition-all duration-150 leading-snug
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug
                hover:text-foreground hover:opacity-80
                focus-visible:outline focus-visible:outline-1
                focus-visible:outline-ring focus-visible:outline-offset-[-1px]
@@ -572,7 +566,7 @@
               disabled={isSavingBranch}
               class="type-caption h-5 w-0 min-w-0 flex-1 rounded-sm bg-none px-1 py-0 leading-5 text-foreground
                      outline-none focus:ring-none! focus:outline-none!
-                     transition-all duration-150 disabled:opacity-50"
+                     transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
             />
           {:else}
@@ -585,8 +579,8 @@
               contentClass="border-0!"
               contentContainerClass="p-0! space-y-0!"
               showArrow={false}
-              class="type-caption flex h-5 w-0 min-w-0 flex-1 cursor-text items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border-none bg-transparent p-0 text-left leading-5 text-muted-foreground
-                     transition-all duration-150 hover:text-foreground
+              class="type-caption flex h-5 w-0 min-w-0 flex-1 cursor-text items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border-none bg-transparent p-0 text-left font-normal leading-5 text-muted-foreground
+                     transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:text-foreground
                      focus-visible:outline focus-visible:outline-1
                      focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
@@ -628,7 +622,7 @@
           variant="ghost-light"
           size="icon-sm"
           aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
-          class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
+          class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
           disabled={isDeleting}
           data-workspace-actions-trigger
         >

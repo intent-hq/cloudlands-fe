@@ -119,4 +119,9 @@
   {/if}
 {/snippet}
 
-<SettingsForm {schema} embedded descriptions={{ 'backend-sync': syncDescription }} />
+<SettingsForm
+  {schema}
+  embedded
+  compact={false}
+  descriptions={{ 'backend-sync': syncDescription }}
+/>

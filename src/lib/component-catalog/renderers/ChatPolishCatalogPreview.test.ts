@@ -70,7 +70,9 @@ describe('ChatPolishCatalogPreview', () => {
       ]),
     );
     for (const trigger of triggers) {
-      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(
+        trigger.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
+      ).toHaveLength(1);
       expect(trigger.querySelector('[data-testid="task-progress-icon-stack"]')).toBeNull();
       expect(trigger.querySelector('[data-testid="task-progress-overflow-indicator"]')).toBeNull();
     }

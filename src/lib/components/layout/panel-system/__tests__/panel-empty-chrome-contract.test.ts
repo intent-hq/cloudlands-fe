@@ -39,9 +39,7 @@ describe('empty panel chrome', () => {
     expect(panel).toContain(
       "data-empty-panel-shell={panel.tabs.length === 0 ? 'true' : undefined}",
     );
-    expect(panel).toMatch(
-      /\.panel\[data-empty-panel-shell='true'\]:not\(\[data-focus-border-visible='true'\]\)\s*\{\s*border-width: 0;/,
-    );
+    // Focus-invariant border and child geometry are exercised in panel-shell-corners.ct.spec.ts.
     expect(panel).toMatch(/\.panel\[data-empty-panel-shell='true'\]\s*\{\s*box-shadow: none;/);
     expect(panel).toMatch(
       /\.panel\s*\{[\s\S]*?border: 1px solid transparent;[\s\S]*?box-shadow: var\(--elevation-raised\);/,

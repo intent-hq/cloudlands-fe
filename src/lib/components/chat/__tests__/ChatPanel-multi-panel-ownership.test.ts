@@ -154,6 +154,9 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
   selectWorkspaceTasks: testState.selector([]),
   selectWorkspaceTasksInitialized: testState.selector(false),
 }));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentTypingPeople: testState.selector([]),
+}));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: testState.selector([]),
   selectPanels: testState.selector([]),
@@ -166,6 +169,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
   selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectComposerContextItems: testState.selector([]),
   selectChatDraft: { select: vi.fn(() => '') },
 }));
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
@@ -196,9 +200,6 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
-}));
-vi.mock('../DateSeparator.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../EventWakeupBanner.svelte', async () => ({
@@ -296,6 +297,7 @@ describe('ChatPanel multi-panel context ownership', () => {
       'ResizeObserver',
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );

@@ -53,10 +53,6 @@ const movedAsyncDataBaselinePaths = [
   ['src/routes/test-input/+page.svelte', 'src/routes/(app)/test-input/+page.svelte'],
   ['src/routes/test-mentions/+page.svelte', 'src/routes/(app)/test-mentions/+page.svelte'],
   [
-    'src/routes/test-mentions/compact-initializer-test.svelte',
-    'src/routes/(app)/test-mentions/compact-initializer-test.svelte',
-  ],
-  [
     'src/routes/test-mentions/compact/+page.svelte',
     'src/routes/(app)/test-mentions/compact/+page.svelte',
   ],
@@ -109,8 +105,8 @@ describe('catalog route shell', () => {
     expect(baselineSource).toBeDefined();
     const baselinePaths = [...baselineSource!.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 
-    expect(baselinePaths).toHaveLength(153);
-    expect(new Set(baselinePaths).size).toBe(153);
+    expect(baselinePaths).toHaveLength(141);
+    expect(new Set(baselinePaths).size).toBe(141);
     for (const [oldPath, newPath] of movedAsyncDataBaselinePaths) {
       expect(baselinePaths).not.toContain(oldPath);
       expect(baselinePaths).toContain(newPath);

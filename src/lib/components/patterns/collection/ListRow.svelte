@@ -43,7 +43,7 @@
   {#if leading}<div class="flex shrink-0 items-center justify-center">{@render leading()}</div>{/if}
   <div class="min-w-0 flex-1">
     <div class="flex min-w-0 items-baseline gap-2">
-      <div class="min-w-0 truncate type-caption font-medium! text-foreground">
+      <div class="min-w-0 truncate type-caption text-foreground">
         {@render title()}
       </div>
       {#if meta}<div class="shrink-0 type-caption text-muted-foreground">{@render meta()}</div>{/if}

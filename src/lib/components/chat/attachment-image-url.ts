@@ -8,6 +8,7 @@
  */
 import { getAttachmentInfo } from './input/context-api';
 import { createLogger } from '$lib/utils/client-logger';
+import { onBackendReconnected } from '$lib/client/live/backend-transport';
 
 const logger = createLogger('AttachmentImageUrl');
 
@@ -36,6 +37,57 @@ const inflight = new Map<string, Promise<string | null>>();
  */
 export function evictAttachmentImageUrl(workspaceId: string, attachmentId: string): void {
   urlCache.delete(`${workspaceId}/${attachmentId}`);
+}
+
+/** Resolve a mounted image and retry failed reads after a backend reconnect. */
+export function observeAttachmentImageUrl(
+  workspaceId: string,
+  attachmentId: string,
+  onUrl: (url: string | null) => void,
+): { imageFailed: () => void; dispose: () => void } {
+  let disposed = false;
+  let resolving = false;
+  let retryPending = false;
+  let failed = false;
+
+  async function resolve(): Promise<void> {
+    if (disposed) return;
+    if (resolving) {
+      retryPending = true;
+      return;
+    }
+    resolving = true;
+    try {
+      const url = await resolveAttachmentImageUrl(workspaceId, attachmentId);
+      if (!disposed) {
+        failed = url === null;
+        onUrl(url);
+      }
+    } finally {
+      resolving = false;
+      if (retryPending) {
+        retryPending = false;
+        void resolve();
+      }
+    }
+  }
+
+  const unsubscribe = onBackendReconnected(() => {
+    if (failed || resolving) void resolve();
+  });
+  void resolve();
+  return {
+    imageFailed() {
+      if (disposed) return;
+      failed = true;
+      evictAttachmentImageUrl(workspaceId, attachmentId);
+      onUrl(null);
+    },
+    dispose() {
+      disposed = true;
+      unsubscribe();
+    },
+  };
 }
 
 /**

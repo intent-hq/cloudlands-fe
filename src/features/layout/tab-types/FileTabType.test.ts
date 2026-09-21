@@ -263,10 +263,6 @@ vi.mock('$lib/components/editor/FileViewer.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockFileViewer.svelte')).default,
 }));
 
-vi.mock('$lib/components/ui/SaveIndicator.svelte', async () => ({
-  default: (await import('./__tests__/mocks/MockSaveIndicator.svelte')).default,
-}));
-
 vi.mock('$features/external-editors/components/OpenComboButton.svelte', async () => ({
   default: (await import('./__tests__/mocks/MockOpenComboButton.svelte')).default,
 }));
@@ -341,6 +337,12 @@ describe('FileTabType Redux integration', () => {
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
 
+    expect(screen.queryByTestId('open-combo-button')).toBeNull();
+    expect(
+      screen
+        .getByRole('menuitem', { name: m.layout_fileTab_deleteFile_tooltip() })
+        .getAttribute('aria-disabled'),
+    ).not.toBe('true');
     expect(screen.getByRole('menuitemcheckbox', { name: 'Wrap lines' })).toBeTruthy();
     expect(screen.getByRole('menuitemcheckbox', { name: 'Diff indicators' })).toBeTruthy();
 

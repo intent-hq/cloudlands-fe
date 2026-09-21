@@ -11,7 +11,10 @@
    * workspace repository's owner or the workspace repository is unknown.
    * Expanding the row reveals last-refresh details (readiness,
    * checks/approvals/threads summary, last-change time, pending-emit
-   * status); the kebab opens a 4-item action menu — check and flush
+   * status). While the daemon reports a forge rate-limit pause
+   * (`pausedUntil` in the future) the readiness line is replaced by a
+   * "monitoring paused until …" status and the checklist summaries are
+   * marked stale as of `lastPolledAt`; the kebab opens a 4-item action menu — check and flush
    * (`prMonitor.flush` with `check: true`, always enabled), open the PR in
    * the embedded browser panel, open it in the external browser, cancel
    * monitor (`prMonitor.cancel`).
@@ -36,7 +39,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
-  import { formatDateTime, formatInteger } from '$lib/i18n/format';
+  import { formatDateTime, formatInteger, formatRelativeTime, formatTime } from '$lib/i18n/format';
   import { getPrRepoLabel } from '$lib/utils/pr-chip-label';
   import { handleLink, openInBrowserPanel } from '$features/navigation/link-handler';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -86,6 +89,16 @@
   }: Props = $props();
   let expandedMonitorId = $state<string | null>(null);
   let disclosureKey = $state('');
+  // Re-evaluated periodically so an elapsed pause deadline stops rendering
+  // as paused even when no wire update arrives.
+  let now = $state(Date.now());
+
+  $effect(() => {
+    const id = setInterval(() => {
+      now = Date.now();
+    }, 30_000);
+    return () => clearInterval(id);
+  });
 
   $effect(() => {
     const nextKey = `${workspaceId}:${agentId}`;
@@ -179,6 +192,33 @@
     });
   }
 
+  /** The rate-limit pause deadline while it is still ahead; undefined when
+   * `pausedUntil` is absent, unparseable, or already elapsed. */
+  function pauseDeadline(monitor: PrMonitorRow): Date | undefined {
+    if (!monitor.pausedUntil) return undefined;
+    const deadline = new Date(monitor.pausedUntil);
+    return deadline.getTime() > now ? deadline : undefined;
+  }
+
+  function pausedSummary(monitor: PrMonitorRow, deadline: Date): string {
+    const time = formatTime(deadline);
+    return monitor.lastPolledAt
+      ? m.chat_monitoredPrs_status_paused({
+          time,
+          lastChecked: formatRelativeTime(monitor.lastPolledAt),
+        })
+      : m.chat_monitoredPrs_status_pausedUnchecked({ time });
+  }
+
+  /** Marks a checklist summary as stale while paused, when its poll time is known. */
+  function staleSummary(monitor: PrMonitorRow, summary: string | undefined): string | undefined {
+    if (summary === undefined || !pauseDeadline(monitor) || !monitor.lastPolledAt) return summary;
+    return m.chat_monitoredPrs_hover_staleAsOf({
+      time: formatRelativeTime(monitor.lastPolledAt),
+      summary,
+    });
+  }
+
   /** Only surface checks that still need attention; completed checks are implied by readiness. */
   function checksSummary(monitor: PrMonitorRow): string | undefined {
     const checks = monitor.lastSnapshot?.checks;
@@ -261,6 +301,8 @@
   }
 
   function readinessSummary(monitor: PrMonitorRow): string {
+    const deadline = pauseDeadline(monitor);
+    if (deadline) return pausedSummary(monitor, deadline);
     const snapshot = monitor.lastSnapshot;
     if (snapshot?.isDraft) return m.chat_monitoredPrs_status_draft();
     if (snapshot?.state === 'open' && snapshot.isInMergeQueue) {
@@ -310,6 +352,7 @@
       <div
         class="overflow-hidden {SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS}"
         data-monitor-state={monitor.state}
+        data-monitor-paused={pauseDeadline(monitor) ? 'true' : undefined}
         data-subscription-motion-row="pr-monitor"
         role="group"
         aria-label={monitorLabel(monitor)}
@@ -470,19 +513,27 @@
             data-testid="monitored-pr-details"
             transition:safeSubscriptionSlide
           >
-            <span class="text-muted-foreground">{readinessSummary(monitor)}</span>
+            <span class="text-muted-foreground" data-testid="monitored-pr-readiness"
+              >{readinessSummary(monitor)}</span
+            >
             {#if !workspaceRepo || monitor.repo !== workspaceRepo}
               <!-- i18n-ignore (org/repo#number identifier, not user-facing prose) -->
               <span class="text-muted-foreground">{monitor.repo}#{monitor.prNumber}</span>
             {/if}
             {#if checksSummary(monitor)}
-              <span class="text-muted-foreground">{checksSummary(monitor)}</span>
+              <span class="text-muted-foreground"
+                >{staleSummary(monitor, checksSummary(monitor))}</span
+              >
             {/if}
             {#if approvalsSummary(monitor)}
-              <span class="text-muted-foreground">{approvalsSummary(monitor)}</span>
+              <span class="text-muted-foreground"
+                >{staleSummary(monitor, approvalsSummary(monitor))}</span
+              >
             {/if}
             {#if threadsSummary(monitor)}
-              <span class="text-muted-foreground">{threadsSummary(monitor)}</span>
+              <span class="text-muted-foreground"
+                >{staleSummary(monitor, threadsSummary(monitor))}</span
+              >
             {/if}
             {#if monitor.lastChangeAt}
               <span class="text-muted-foreground">

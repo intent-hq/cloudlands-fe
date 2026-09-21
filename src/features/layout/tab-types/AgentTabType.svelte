@@ -13,6 +13,8 @@
   import { subscribeToAgent } from '$features/agent/browser';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
   import { selectInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { selectAgentPresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+  import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { AgentSession } from '$shared/types';
@@ -25,6 +27,8 @@
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
   import * as Menu from '$lib/components/ui/menu';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import Fa from 'svelte-fa';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -33,6 +37,8 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
+    faBell,
+    faBellSlash,
     faCheck,
     faCircleInfo,
     faCopy,
@@ -47,7 +53,10 @@
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
-  import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    deleteAgentWithUndoRequested,
+    setAgentNotificationsMutedRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('AgentTabType');
@@ -68,6 +77,8 @@
   // Cache $workspace to prevent destruction during store reloads
   const workspace = selectWorkspaceById(workspaceIdStore);
   const defaultModel = selectSelectedModel();
+  // Other people whose focus is this chat (multiplayer w5 presence circles).
+  const presencePeople$ = selectAgentPresencePeople(workspaceIdStore, agentIdStore);
 
   // Reactive store subscription for specialist names
   const specialists$ = selectSpecialists();
@@ -81,6 +92,11 @@
   // Get agent model from session, falling back to $workspace default
   const agent$ = useAgentSession(() => tab.agentId);
   const agentModel = $derived($agent$?.model || $defaultModel);
+
+  // Daemon-owned per-agent notification mute (AgentLite `notificationsMuted`,
+  // converged through agent:updated). Drives the header indicator and the
+  // actions-menu toggle label.
+  const isNotificationsMuted = $derived($agent$?.notificationsMuted === true);
 
   // Subscribe to agent session updates
   let agentSession = $state<AgentSession | undefined>(undefined);
@@ -204,6 +220,19 @@
     }
   }
 
+  async function handleToggleNotificationsMuted() {
+    if (!tab.agentId) return;
+    const action = setAgentNotificationsMutedRequested(
+      workspaceId,
+      tab.agentId,
+      !isNotificationsMuted,
+    );
+    appStore.dispatch(action);
+    // The saga surfaces the failure toast and rolls back; swallow here so a
+    // daemon rejection never becomes an unhandled rejection.
+    await action.promise.catch(() => {});
+  }
+
   async function handleDeleteAgent() {
     if (!tab.agentId || isAgentDeleting) return;
     const agentIdToDelete = tab.agentId;
@@ -242,6 +271,19 @@
 
 {#snippet agentPrimaryActions()}
   <div class="flex min-w-0 items-center gap-1.5">
+    <PresenceAvatarStack people={$presencePeople$} size={18} class="mr-1" />
+    {#if isNotificationsMuted}
+      <Tooltip content={m.chat_agentCard_notificationsMuted_tooltip()} side="bottom">
+        <span
+          class="inline-flex shrink-0 items-center text-subtle"
+          role="img"
+          aria-label={m.chat_agentCard_notificationsMuted_tooltip()}
+          data-testid="agent-tab-muted-indicator"
+        >
+          <Fa icon={faBellSlash} class="h-3! w-3!" />
+        </span>
+      </Tooltip>
+    {/if}
     <TaskProgressControl tasks={taskProgressItems} presentation="checklist" />
     {#if tab.agentId}
       <BrowserTabsMenu {workspaceId} agentId={tab.agentId} />
@@ -265,25 +307,39 @@
   {#if agentTaskNoteId}
     <Menu.CommandItem
       icon={faNote}
+      iconWeight="regular"
       label={m.layout_agentTab_goToTaskNote_tooltip()}
       onclick={(event) => handleGoToTaskNote(event)}
     />
   {/if}
   <Menu.CommandItem
     icon={agentCopyFeedback ? faCheck : faCopy}
+    iconWeight="regular"
     label={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
     onclick={handleCopyAgentConversation}
     disabled={agentMessages.length === 0}
   />
+  {#if $agent$}
+    <Menu.CommandItem
+      icon={isNotificationsMuted ? faBell : faBellSlash}
+      iconWeight="regular"
+      label={isNotificationsMuted
+        ? m.chat_agentCard_menu_unmuteNotifications_label()
+        : m.chat_agentCard_menu_muteNotifications_label()}
+      onclick={handleToggleNotificationsMuted}
+    />
+  {/if}
   {#if canReplaceAgent}
     <Menu.CommandItem
       icon={faRightLeft}
+      iconWeight="regular"
       label={m.layout_agentTab_replaceAgent_tooltip()}
       onclick={() => (replaceAgentModalOpen = true)}
     />
   {/if}
   <Menu.CommandItem
     icon={faTrash}
+    iconWeight="regular"
     label={m.layout_agentTab_deleteAgent_tooltip()}
     onclick={handleDeleteAgent}
     disabled={isAgentDeleting}
@@ -294,6 +350,7 @@
     {#if agentSpecialistName}
       <Menu.CommandItem
         icon={faUserTie}
+        iconWeight="regular"
         label={m.chat_agentCard_menu_specialist_label({ name: agentSpecialistName })}
         disabled
       />
@@ -301,6 +358,7 @@
     {#if harnessVersion}
       <Menu.CommandItem
         icon={faCircleInfo}
+        iconWeight="regular"
         label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
         onclick={() => (harnessModalOpen = true)}
       />

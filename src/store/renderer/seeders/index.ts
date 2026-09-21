@@ -10,6 +10,8 @@ import './active-streams-bridge-seeder';
 import './agent-ipc-bridge-seeder';
 import './backend-status-bridge-seeder';
 import './connections-bridge-seeder';
+import './guest-sessions-bridge-seeder';
+import './presence-bridge-seeder';
 import './host-bridge-seeder';
 import './git-bridge-seeder';
 import './file-bridge-seeder';

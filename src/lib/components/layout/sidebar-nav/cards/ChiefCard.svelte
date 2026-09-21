@@ -393,12 +393,13 @@
         {/if}
       </div>
       <div
-        class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-150 motion-reduce:transition-none {collapsed
+        class="flex shrink-0 items-center overflow-hidden transition-[width,opacity,margin] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {collapsed
           ? 'pointer-events-none -mr-1 w-0 opacity-0'
           : 'mr-0 w-6 opacity-100'}"
       >
         <Button
           variant="ghost"
+          size="icon-compact"
           class="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           onclick={handleNewThreadClick}
           disabled={isCreatingThread || collapsed}

@@ -18,9 +18,9 @@
    * component issues no wire requests itself). Offers actionable recovery when
    * the connection is down (T20, Open-only — no action retargets this window):
    * "Start local intentd" in a local window (spawns the app-managed sidecar) /
-   * "Open local" in a remote window (spawns if needed and opens the local
+   * "Switch to Local" in a remote window (spawns if needed and opens the local
    * backend's windows), the sidecar retry when the supervisor gave up
-   * restarting, plus one-click Open actions for the other saved backends so
+   * restarting, plus one-click open actions for the other saved backends so
    * the user can fail over without opening the daemon-status menu.
    */
   import { page } from '$app/stores';
@@ -55,6 +55,8 @@
     selectCurrentConnectionCertWarnings,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
+  import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { leaveGuestSessionRequested } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
   import type { ConnectionRecord } from '$shared/types/connections';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
@@ -148,8 +150,8 @@
   const isSidecarFailure = $derived(($sidecarStartupFailed$ || $sidecarGaveUp$) && !isExternalMode);
   // Local recovery is offered in any external mode — external-uds AND
   // external-ws (T20). In a local window the action just spawns the on-demand
-  // sidecar ("Start local intentd"); in a remote window it becomes "Open local"
-  // — spawn (if needed) plus open/focus the local backend's windows, leaving
+  // sidecar ("Start local intentd"); in a remote window it becomes "Switch to
+  // Local" — spawn (if needed) plus open/focus the local backend's windows, leaving
   // THIS window on its own backend (Open-only: no overlay action retargets a
   // window). Once a spawn is in flight (or failed), the section stays visible
   // even if a status broadcast flips the transport to sidecar-uds mid-spawn —
@@ -163,7 +165,7 @@
   const isRemoteWindow = $derived($activeConnectionId$ !== LOCAL_CONNECTION_ID);
 
   // Other saved backends the user can open windows for without leaving this
-  // one (T20, Open-only). Excludes the local entry — "Open local" / "Start
+  // one (T20, Open-only). Excludes the local entry — "Switch to Local" / "Start
   // local intentd" is its dedicated action — and this window's own backend.
   const otherConnections = $derived(
     $connections$.filter((c) => !c.isLocal && c.id !== $activeConnectionId$),
@@ -180,6 +182,34 @@
   // (connectOperationStarted).
   const isAuthRejected = $derived($authRejected$ !== null);
   let repairModalOpen = $state(false);
+
+  // Revoked-guest posture (multiplayer w4): this window is bound to a host
+  // joined as a guest and that host rejected the credential — the owner
+  // revoked the principal (or disabled the WS API). There is nothing to
+  // re-pair: a guest credential is minted by the invite flow, so the only
+  // action is *Leave host* (best-effort `principal.revokeSelf`, local delete,
+  // window teardown — main-owned). Every owner-side recovery (re-pair,
+  // spawn / open local, other backends) is withheld.
+  const guestSession$ = selectWindowGuestSession();
+  const isGuestRevoked = $derived(isAuthRejected && $guestSession$ !== null);
+  let guestLeaving = $state(false);
+  let guestLeaveError = $state<string | null>(null);
+
+  async function handleLeaveHost() {
+    const session = $guestSession$;
+    if (!session || guestLeaving) return;
+    guestLeaving = true;
+    guestLeaveError = null;
+    try {
+      const action = leaveGuestSessionRequested(session.id);
+      appStore.dispatch(action);
+      await action.promise;
+    } catch {
+      guestLeaveError = m.settings_guestSessions_leave_error({ name: session.label });
+    } finally {
+      guestLeaving = false;
+    }
+  }
 
   // The re-pair modal serves both the auth-rejected posture and the
   // secret-unavailable fail-over; the latter takes precedence while set.
@@ -213,21 +243,29 @@
     return conn.label;
   }
 
-  // Connection details for the lost external daemon (#1750): prefer this
-  // window's connection record's `hostname (host:port)` label (captured from
-  // host.status on first connect); fall back to the transport target (sanitized
-  // WS URL or UDS socket path) when the window's backend is the local entry
-  // (external-uds adoption) or the record has not loaded.
+  // Machine name for the unreachable external daemon (#1750): prefer this
+  // window's connection record's `hostname` (the machine's pretty name captured
+  // from host.status on first connect), then its user-given label, then the
+  // raw host; fall back to the transport target (sanitized WS URL or UDS
+  // socket path) when the window's backend is the local entry (external-uds
+  // adoption) or the record has not loaded. `null` keeps the generic copy.
   const activeConnection = $derived(
     $connections$.find((c) => c.id === $activeConnectionId$) ?? null,
   );
-  const externalTargetLabel = $derived.by(() => {
-    if (activeConnection && !activeConnection.isLocal) return connectionLabel(activeConnection);
-    return $transport$?.target ?? null;
+  const machineName = $derived.by(() => {
+    if (activeConnection && !activeConnection.isLocal) {
+      const name =
+        activeConnection.hostname?.trim() ||
+        activeConnection.label?.trim() ||
+        activeConnection.host?.trim();
+      if (name) return name;
+    }
+    const target = $transport$?.target?.trim();
+    return target || null;
   });
 
   function handleSpawnSidecar() {
-    // Remote window: "Open local" — main spawns the sidecar (if needed) and
+    // Remote window: "Switch to Local" — main spawns the sidecar (if needed) and
     // opens/focuses the local backend's windows in one main-side action, so
     // recovery completes even if this renderer goes away mid-flight. This
     // window keeps its own (dead) backend and this overlay.
@@ -278,12 +316,18 @@
         class="mx-4 w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl"
       >
         <h2 id="daemon-stopped-title" class="text-lg font-semibold text-foreground">
-          {#if isAuthRejected}
+          {#if isGuestRevoked}
+            {m.daemonStatus_overlay_guestRevokedTitle_label()}
+          {:else if isAuthRejected}
             {m.daemonStatus_overlay_authRejectedTitle_label()}
           {:else if isSidecarFailure}
             {$sidecarStartupFailed$
               ? m.daemonStatus_overlay_startupFailedTitle_label()
               : m.daemonStatus_overlay_stoppedUnexpectedlyTitle_label()}
+          {:else if isExternalMode && machineName}
+            {$hasEverConnected$
+              ? m.daemonStatus_overlay_machineLostTitle_label({ machine: machineName })
+              : m.daemonStatus_overlay_cannotConnectMachineTitle_label({ machine: machineName })}
           {:else if !$hasEverConnected$}
             {m.daemonStatus_overlay_cannotConnectTitle_label()}
           {:else}
@@ -292,7 +336,9 @@
         </h2>
 
         <p id="daemon-stopped-description" class="mt-2 text-sm text-muted-foreground">
-          {#if isAuthRejected && $authRejected$}
+          {#if isGuestRevoked && $guestSession$}
+            {m.daemonStatus_overlay_guestRevoked_description({ host: $guestSession$.label })}
+          {:else if isAuthRejected && $authRejected$}
             {$authRejected$.statusCode === 403
               ? m.daemonStatus_overlay_authRejectedDisabled_description({
                   host: $authRejected$.host,
@@ -316,6 +362,12 @@
                   })
                 : m.daemonStatus_overlay_gaveUp_description()}
             {/if}
+          {:else if isExternalMode && machineName}
+            {$hasEverConnected$
+              ? m.daemonStatus_overlay_externalLostMachine_description({ machine: machineName })
+              : m.daemonStatus_overlay_externalNeverConnectedMachine_description({
+                  machine: machineName,
+                })}
           {:else if isExternalMode}
             {#if $hasEverConnected$}
               {m.daemonStatus_overlay_externalLost_description()}
@@ -328,20 +380,6 @@
             {m.daemonStatus_overlay_neverConnected_description()}
           {/if}
         </p>
-
-        {#if !isSidecarFailure && !isAuthRejected && isExternalMode && externalTargetLabel}
-          <p
-            class="mt-2 truncate font-mono text-xs text-muted-foreground"
-            title={externalTargetLabel}
-            data-testid="daemon-stopped-connection-details"
-          >
-            {$hasEverConnected$
-              ? m.daemonStatus_overlay_externalLostDetail_label({ target: externalTargetLabel })
-              : m.daemonStatus_overlay_externalNeverConnectedDetail_label({
-                  target: externalTargetLabel,
-                })}
-          </p>
-        {/if}
 
         {#if !isSidecarFailure && !isAuthRejected}
           <p class="mt-3 text-sm text-muted-foreground" data-testid="daemon-stopped-retrying">
@@ -388,7 +426,29 @@
           </div>
         {/if}
 
-        {#if isAuthRejected}
+        {#if isGuestRevoked}
+          <div class="mt-4 border-t border-border pt-4">
+            <Button
+              class="w-full"
+              disabled={guestLeaving}
+              onclick={handleLeaveHost}
+              data-testid="daemon-stopped-guest-leave"
+            >
+              {guestLeaving
+                ? m.settings_guestSessions_leaving_label()
+                : m.settings_guestSessions_leave_label()}
+            </Button>
+            {#if guestLeaveError}
+              <p
+                class="mt-2 text-sm text-danger"
+                role="alert"
+                data-testid="daemon-stopped-guest-leave-error"
+              >
+                {guestLeaveError}
+              </p>
+            {/if}
+          </div>
+        {:else if isAuthRejected}
           <div class="mt-4 border-t border-border pt-4">
             <Button
               type="button"
@@ -402,7 +462,9 @@
           </div>
         {/if}
 
-        {#if isSidecarFailure}
+        {#if isGuestRevoked}
+          <!-- Leave host is the only action for a revoked guest. -->
+        {:else if isSidecarFailure}
           <div class="mt-4 border-t border-border pt-4">
             <Button
               type="button"
@@ -477,7 +539,7 @@
               {#if $spawnPending$}
                 {m.daemonStatus_overlay_startingIntentd_label()}
               {:else if isRemoteWindow}
-                {m.daemonStatus_overlay_openLocal_label()}
+                {m.daemonStatus_overlay_switchToLocal_label()}
               {:else}
                 {m.daemonStatus_overlay_startLocalIntentd_label()}
               {/if}
@@ -491,7 +553,7 @@
 
             <p class="mt-2 text-xs text-muted-foreground">
               {isRemoteWindow
-                ? m.daemonStatus_overlay_openLocalDataNote_label()
+                ? m.daemonStatus_overlay_switchToLocalNote_label()
                 : isExternalMode
                   ? m.daemonStatus_overlay_externalDataNote_label()
                   : m.daemonStatus_overlay_dataDirNote_label()}
@@ -499,7 +561,7 @@
           </div>
         {/if}
 
-        {#if otherConnections.length > 0}
+        {#if otherConnections.length > 0 && !isGuestRevoked}
           <div class="mt-4 border-t border-border pt-4" data-testid="daemon-stopped-known-backends">
             <p class="text-xs text-muted-foreground">
               {m.daemonStatus_overlay_knownBackends_label()}
@@ -514,7 +576,7 @@
                   onclick={() => handleOpenConnection(conn.id)}
                   data-testid="daemon-stopped-open-backend"
                 >
-                  {m.daemonStatus_overlay_openBackend_label({ label: connectionLabel(conn) })}
+                  {connectionLabel(conn)}
                 </Button>
               {/each}
             </div>

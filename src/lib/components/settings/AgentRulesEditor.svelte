@@ -307,7 +307,8 @@
       <!-- Saved indicator -->
       <div
         data-testid="agent-rules-saved-indicator"
-        class="absolute top-2 right-2 transition-opacity duration-200 {saveStatus === 'saved'
+        class="absolute top-2 right-2 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {saveStatus ===
+        'saved'
           ? 'opacity-100'
           : 'opacity-0'}"
       >

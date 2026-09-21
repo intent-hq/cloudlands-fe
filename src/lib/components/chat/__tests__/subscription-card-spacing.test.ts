@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '$shared/types';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import {
   getSubscriptionCardSeam,
+  hasVisibleTurnBody,
   isChatCardMessage,
   isSubscriptionCardMessage,
 } from '../subscription-card-spacing';
@@ -94,5 +96,74 @@ describe('subscription card boundaries', () => {
     expect(isSubscriptionCardMessage(message({}, '[PR monitor intent-hq/intent#42] Ready'))).toBe(
       true,
     );
+  });
+});
+
+describe('visible turn body spacing', () => {
+  const question: NonNullable<AgentMessage['contentBlocks']>[number] = {
+    type: 'resource',
+    resource: {
+      uri: 'intent-question://spacing',
+      mimeType: QUESTION_RESOURCE_MIME_TYPE,
+      text: '{"attachmentId":"spacing"}',
+    },
+  };
+  const assistant = (
+    contentBlocks: AgentMessage['contentBlocks'],
+    metadata: AgentMessage['metadata'] = {},
+  ): AgentMessage => ({ ...message(metadata), role: 'assistant', contentBlocks });
+
+  it.each([
+    [],
+    [assistant([])],
+    [assistant([{ type: 'text', text: '  ' }])],
+    [assistant([{ type: 'text', text: '<!-- suggested-prompts\nContinue\n-->' }])],
+    [assistant([question])],
+    [assistant([question, { type: 'text', text: ' ' }]), assistant([])],
+  ])('keeps cards adjacent across non-rendering assistant rows %j', (...assistantMessages) => {
+    const before = structuredClone(assistantMessages);
+    expect(hasVisibleTurnBody({ assistantMessages })).toBe(false);
+    expect(assistantMessages).toEqual(before);
+  });
+
+  it.each([
+    [{ type: 'text', text: 'Visible answer' }],
+    [{ type: 'tool_use', id: 'tool', name: 'view', input: {} }],
+    [{ type: 'thinking', text: 'Reasoning' }],
+    [question, { type: 'text', text: 'Visible answer' }],
+    [
+      {
+        type: 'resource',
+        resource: { uri: 'other://resource', mimeType: 'text/plain', text: 'Body' },
+      },
+    ],
+  ] satisfies NonNullable<AgentMessage['contentBlocks']>[])(
+    'preserves visible content %j',
+    (...blocks) => {
+      expect(hasVisibleTurnBody({ assistantMessages: [assistant(blocks)] })).toBe(true);
+    },
+  );
+
+  it('preserves visible notices and pending/streaming/error status without message text', () => {
+    expect(hasVisibleTurnBody({ assistantMessages: [], hasVisibleNotice: true })).toBe(true);
+    expect(hasVisibleTurnBody({ assistantMessages: [], hasPendingStatus: true })).toBe(true);
+    expect(hasVisibleTurnBody({ assistantMessages: [assistant([])], hasPendingStatus: true })).toBe(
+      true,
+    );
+  });
+
+  it('preserves stopped and finish notices, matching coordination suppression', () => {
+    const assistantMessages = [
+      assistant([question], { interrupted: true, stopReason: 'cancelled' }),
+    ];
+    expect(hasVisibleTurnBody({ assistantMessages })).toBe(true);
+    expect(
+      hasVisibleTurnBody({ assistantMessages, suppressCoordinationStoppedIndicator: true }),
+    ).toBe(false);
+    for (const finishReason of ['refusal', 'max_tokens', 'max_turn_requests']) {
+      expect(hasVisibleTurnBody({ assistantMessages: [assistant([], { finishReason })] })).toBe(
+        true,
+      );
+    }
   });
 });

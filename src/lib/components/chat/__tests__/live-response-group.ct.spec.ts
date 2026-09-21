@@ -1,6 +1,55 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import LiveResponseGroupHost from './LiveResponseGroupHost.svelte';
 import StreamingResponseGroupLifecycleHost from './StreamingResponseGroupLifecycleHost.svelte';
+
+test('preserves the header seam and alignment through live disclosure changes', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(LiveResponseGroupHost);
+  const trigger = component.getByTestId('response-group-disclosure');
+  const row = component.locator('[data-operational-disclosure-row]');
+  // The host's mounted root is the response group, not a wrapper around it.
+  const readSeam = () =>
+    component.evaluate((node) => {
+      const rect = (selector: string) => node.querySelector(selector)!.getBoundingClientRect();
+      const row = rect('[data-operational-disclosure-row]');
+      const scroller = rect('.cylinder-scroller');
+      const summary = rect('[data-testid="response-group-name"]');
+      const line = rect('[data-testid="live-stream-line"]');
+      const icon = rect('[data-response-group-disclosure-icon] svg');
+      const guide = rect('[data-operational-expanded-guide]');
+      return {
+        gap: scroller.top - row.bottom,
+        contentOffset: line.x - summary.x,
+        guideOffset: guide.x + guide.width / 2 - icon.x - icon.width / 2,
+      };
+    });
+  const previewSeam = { gap: 8, contentOffset: 0, guideOffset: 0 };
+  await expect.poll(readSeam).toEqual(previewSeam);
+  const headerBox = await row.boundingBox();
+
+  await trigger.press('Enter');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect.poll(readSeam).toEqual({ ...previewSeam, gap: 16 });
+  expect(await row.boundingBox()).toEqual(headerBox);
+
+  await trigger.press('Space');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await expect.poll(readSeam).toEqual(previewSeam);
+  await component.update({ props: { chunk: 'more live content', lineCount: 12 } });
+  await expect
+    .poll(() => component.locator('.cylinder-scroller').evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(0);
+  await expect.poll(readSeam).toEqual(previewSeam);
+  expect(await row.boundingBox()).toEqual(headerBox);
+
+  await component.update({ props: { isStreaming: false } });
+  await expect(component.locator('.cylinder-scroller')).toHaveCount(0);
+  const groupBox = await component.boundingBox();
+  expect(groupBox!.height).toBe(headerBox!.height);
+});
 
 test('keeps all live rows in the cylinder and the expanded history', async ({ mount }) => {
   const component = await mount(LiveResponseGroupHost);

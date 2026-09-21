@@ -74,7 +74,7 @@
     data-sidebar-launcher-row
   >
     <span class="cursor-pointer truncate text-sm font-semibold flex-1" data-sidebar-launcher-label
-      >{m.workspace_multiSelectSidebar_browser_label()}</span
+      >{m.workspace_multiSelectSidebar_browserTab_label()}</span
     >
     {#if browserTarget && !hasOpenBrowserTab}
       <Button

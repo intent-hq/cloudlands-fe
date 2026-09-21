@@ -4,7 +4,11 @@ import { createCollection } from '@augmentcode/themis/utils/collections/collecti
 import type { StoreState } from '$store/renderer/types';
 import type { Workspace } from '$shared/types';
 import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
-import { tabStateReducer, type TabState } from '$store/renderer/slices/tab-state/tab-state-slice';
+import {
+  loadWorkspaceTabsState,
+  tabStateReducer,
+  type TabState,
+} from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectWorkspaceTabOrder } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import {
   closeFocusedPanelTab,
@@ -23,6 +27,7 @@ import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
 import { SHORTCUTS } from '$lib/utils/shortcuts';
 import {
   closeActivePanelTab,
+  closeActiveTabCascade,
   closeActiveWorkspaceTab,
   cycleWorkspaceTab,
   moveActiveWorkspaceTab,
@@ -49,6 +54,8 @@ const makeTabState = (currentTabId: string | null = 'ws-1'): TabState => ({
   recentlyClosedTabAt: {},
   version: 0,
   hydratedBackendId: null,
+  mountedBrowserTabLeases: {},
+  browserTabRecoveryRequests: {},
 });
 
 function makeStore(
@@ -409,6 +416,246 @@ describe('global workspace tab navigation', () => {
     });
   });
 
+  describe('closeActiveTabCascade', () => {
+    const soleTabStrip = (store: ReturnType<typeof makeStore>, workspaceId: string) => {
+      store.state.tabState.openTabs = { [workspaceId]: true };
+      store.state.tabState.workspaceStacks = [[workspaceId]];
+      store.state.tabState.currentTabId = workspaceId;
+    };
+
+    it('closes panel content first and leaves the workspace tab open', () => {
+      const store = makeStore('ws-2', layoutWith([makePanel('p1', ['t1', 't2'])], 'p1'));
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', { navigate, closeWindow })).toBe(
+        'panel',
+      );
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p1.tabs).toHaveLength(1);
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-2', 'ws-3']);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(closeWindow).not.toHaveBeenCalled();
+    });
+
+    it('closes the workspace tab once its last column is empty and switches to a sibling', () => {
+      const store = makeStore('ws-2', layoutWith([makePanel('p1', ['t1'])], 'p1'));
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+      const options = { navigate, closeWindow };
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBe('panel');
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBe('workspace');
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-3']);
+      expect(store.state.tabState.recentlyClosedTabIds).toEqual(['ws-2']);
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-3');
+      expect(closeWindow).not.toHaveBeenCalled();
+    });
+
+    it('closes the window with three presses in a two-column, one-tab-each sole workspace', () => {
+      const store = makeStore(
+        'ws-2',
+        layoutWith([makePanel('p1', ['t1']), makePanel('p2', ['t2'])], 'p2'),
+      );
+      soleTabStrip(store, 'ws-2');
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+      const options = { navigate, closeWindow };
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBe('panel');
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].columnCount).toBe(1);
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBe('panel');
+      expect(store.state.panelLayout.byWorkspaceId['ws-2'].panels.p1.tabs).toEqual([]);
+      expect(closeWindow).not.toHaveBeenCalled();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBe('window');
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
+      expect(closeWindow).toHaveBeenCalledOnce();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('never closes the window while another workspace tab is open', () => {
+      const store = makeStore('ws-2', layoutWith([makePanel('p1')], 'p1'));
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', { navigate, closeWindow })).toBe(
+        'workspace',
+      );
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-3']);
+      expect(closeWindow).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith('/workspace/ws-3');
+    });
+
+    it('selects the surviving tab instead of closing the window when no tab is current', () => {
+      const store = makeStore(null, layoutWith([makePanel('p1')], 'p1', [], 'ws-1'));
+      store.state.tabState.openTabs = { 'ws-1': true, 'ws-2': true };
+      store.state.tabState.workspaceStacks = [['ws-1'], ['ws-2']];
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-1', { navigate, closeWindow })).toBe(
+        'workspace',
+      );
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-2']);
+      expect(store.state.tabState.currentTabId).toBe('ws-2');
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-2');
+      expect(closeWindow).not.toHaveBeenCalled();
+    });
+
+    it('selects the surviving tab when the loaded current id is absent from the tab strip', () => {
+      const store = makeStore(null, layoutWith([makePanel('p1')], 'p1', [], 'ws-1'));
+      store.dispatch(
+        loadWorkspaceTabsState({
+          openTabs: ['ws-1', 'ws-2'],
+          currentTabId: 'ws-stale',
+          pinnedTabs: [],
+          unsavedTabs: [],
+          optimisticTabs: [],
+          tabOrder: ['ws-1', 'ws-2'],
+          workspaceStacks: [['ws-1'], ['ws-2']],
+        }),
+      );
+      expect(store.state.tabState.currentTabId).toBe('ws-stale');
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-2']);
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-1', { navigate, closeWindow })).toBe(
+        'workspace',
+      );
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-2']);
+      expect(store.state.tabState.currentTabId).toBe('ws-2');
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/workspace/ws-2');
+      expect(closeWindow).not.toHaveBeenCalled();
+    });
+
+    it('ignores an unreachable current id on the web fallback once the tab strip is empty', () => {
+      const store = makeStore(null, layoutWith([makePanel('p1')], 'p1', [], 'ws-1'), [
+        { id: 'ws-other', status: 'Active' },
+      ]);
+      store.dispatch(
+        loadWorkspaceTabsState({
+          openTabs: ['ws-1'],
+          currentTabId: 'ws-stale',
+          pinnedTabs: [],
+          unsavedTabs: [],
+          optimisticTabs: [],
+          tabOrder: ['ws-1'],
+          workspaceStacks: [['ws-1']],
+        }),
+      );
+      expect(store.state.tabState.currentTabId).toBe('ws-stale');
+      const navigate = vi.fn();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-1', { navigate })).toBe('workspace');
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/');
+    });
+
+    it('degrades to the empty-window destination when no window close is available', () => {
+      const store = makeStore('ws-2', layoutWith([makePanel('p1')], 'p1'), [
+        { id: 'ws-other', status: 'Active' },
+      ]);
+      soleTabStrip(store, 'ws-2');
+      const navigate = vi.fn();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', { navigate })).toBe('workspace');
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/');
+    });
+
+    it('stops at a non-closable tab instead of closing the workspace', () => {
+      const locked = makePanel('locked', ['locked-tab']);
+      locked.tabs[0].closable = false;
+      const store = makeStore('ws-2', layoutWith([locked], 'locked'));
+      soleTabStrip(store, 'ws-2');
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', { navigate, closeWindow })).toBeNull();
+      expect(store.actions).toEqual([]);
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-2']);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(closeWindow).not.toHaveBeenCalled();
+    });
+
+    it('does not close the workspace while tabs remain in an unfocused column', () => {
+      const locked = makePanel('locked', ['locked-tab']);
+      locked.tabs[0].closable = false;
+      const store = makeStore('ws-2', layoutWith([locked, makePanel('empty')], 'empty'));
+      const navigate = vi.fn();
+      const closeWindow = vi.fn();
+      const options = { navigate, closeWindow };
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBe('panel');
+      const workspace = store.state.panelLayout.byWorkspaceId['ws-2'];
+      expect(workspace.columnCount).toBe(1);
+      expect(workspace.panels.empty).toBeUndefined();
+      expect(workspace.panels.locked.tabs).toHaveLength(1);
+      expect(workspace.focusedPanelId).toBe('locked');
+      expect(store.actions.map((action) => action.type)).toEqual([
+        'panelLayout/closeFocusedPanelTab',
+      ]);
+
+      expect(closeActiveTabCascade(store, '/workspace/ws-2', options)).toBeNull();
+      expect(store.actions).toHaveLength(1);
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-2', 'ws-3']);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(closeWindow).not.toHaveBeenCalled();
+    });
+
+    it('does not close a workspace whose layout is missing or still restoring', () => {
+      const pending = layoutWith([makePanel('p1')], 'p1');
+      pending.byWorkspaceId['ws-2'].restoreStatus = 'pending';
+      for (const layout of [undefined, pending]) {
+        const store = makeStore('ws-2', layout);
+        const navigate = vi.fn();
+        const closeWindow = vi.fn();
+
+        expect(
+          closeActiveTabCascade(store, '/workspace/ws-2', { navigate, closeWindow }),
+        ).toBeNull();
+        expect(store.actions).toEqual([]);
+        expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['ws-1', 'ws-2', 'ws-3']);
+        expect(closeWindow).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each(['/settings', '/workspace/new', '/'])(
+      'does nothing on %s while a workspace tab is still open',
+      (path) => {
+        const store = makeStore('ws-2', layoutWith([makePanel('p1')], 'p1'));
+        soleTabStrip(store, 'ws-2');
+        const navigate = vi.fn();
+        const closeWindow = vi.fn();
+
+        expect(closeActiveTabCascade(store, path, { navigate, closeWindow })).toBeNull();
+        expect(store.actions).toEqual([]);
+        expect(navigate).not.toHaveBeenCalled();
+        expect(closeWindow).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['/workspace/new', '/'])(
+      'closes the window from %s when the tab strip is empty',
+      (path) => {
+        const store = makeStore(null);
+        store.state.tabState.openTabs = {};
+        store.state.tabState.workspaceStacks = [];
+        const navigate = vi.fn();
+        const closeWindow = vi.fn();
+
+        expect(closeActiveTabCascade(store, path, { navigate, closeWindow })).toBe('window');
+        expect(store.actions).toEqual([]);
+        expect(closeWindow).toHaveBeenCalledOnce();
+        expect(navigate).not.toHaveBeenCalled();
+
+        expect(closeActiveTabCascade(store, path, { navigate })).toBeNull();
+        expect(closeWindow).toHaveBeenCalledOnce();
+      },
+    );
+  });
+
   it.each([
     ['macOS', true, true, false],
     ['Windows', false, false, true],
@@ -461,6 +708,43 @@ describe('global workspace tab navigation', () => {
       expect(navigate).not.toHaveBeenCalled();
     },
   );
+
+  it('escalates Mod+W through workspace-tab close to the injected window close', () => {
+    const shortcuts: KeyboardShortcut[] = [];
+    const store = makeStore('ws-2', layoutWith([makePanel('p1', ['t1'])], 'p1'));
+    store.state.tabState.openTabs = { 'ws-2': true };
+    store.state.tabState.workspaceStacks = [['ws-2']];
+    const navigate = vi.fn();
+    const closeWindow = vi.fn();
+
+    registerWorkspaceTabShortcuts({
+      isMac: true,
+      register: (shortcut) => shortcuts.push(shortcut),
+      store,
+      getCurrentPath: () => '/workspace/ws-2',
+      navigate,
+      openNewWorkspace: vi.fn(),
+      closeWindow,
+    });
+    const shortcut = shortcuts.find(
+      (candidate) => candidate.key.toLowerCase() === 'w' && !candidate.shift,
+    )!;
+
+    shortcut.action();
+    expect(store.actions.map((action) => action.type)).toEqual([
+      'panelLayout/closeFocusedPanelTab',
+    ]);
+    expect(closeWindow).not.toHaveBeenCalled();
+
+    shortcut.action();
+    expect(store.actions.map((action) => action.type)).toEqual([
+      'panelLayout/closeFocusedPanelTab',
+      'tabState/closeWorkspaceTab',
+    ]);
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
+    expect(closeWindow).toHaveBeenCalledOnce();
+    expect(navigate).not.toHaveBeenCalled();
+  });
 
   it.each([
     ['macOS', true, true, false],

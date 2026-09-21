@@ -7,7 +7,11 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './test',
   testMatch: '**/*.spec.ts',
-  testIgnore: ['**/catalog-manual-review.capture.spec.ts', '**/current-main-baseline.spec.ts'],
+  testIgnore: [
+    '**/catalog-manual-review.capture.spec.ts',
+    '**/current-main-baseline.spec.ts',
+    '**/electron-browser-lifetime.spec.ts',
+  ],
 
   // Run tests in parallel
   fullyParallel: true,

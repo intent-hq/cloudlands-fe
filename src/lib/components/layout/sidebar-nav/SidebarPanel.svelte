@@ -458,7 +458,9 @@
           <div class="flex items-center gap-0.5 shrink-0">
             <Button
               variant="ghost"
-              class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+              size="icon-compact"
+              iconOnly
+              class="text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
               onclick={() => appStore.dispatch(closePanel())}
               aria-label={m.layout_sidebarPanel_close_ariaLabel()}
             >

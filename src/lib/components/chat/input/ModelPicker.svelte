@@ -105,6 +105,7 @@
     faChevronDown,
     faLock,
     faPlus,
+    faXmark,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -1235,7 +1236,6 @@
         .map((group) => group.parentKey ?? group.key),
     ]),
   ]);
-  const providerTabsEnabled = $derived(showReasoning && providerTabIds.length > 1);
   const preferredBrowseProviderId = $derived(
     providerTabIds.includes(selectedModelProviderId)
       ? selectedModelProviderId
@@ -1244,20 +1244,27 @@
         : (providerTabIds[0] ?? ''),
   );
   let activeBrowseProviderId = $state('');
+  let providerBrowseChanged = $state(false);
+  const providerTabsEnabled = $derived(activeBrowseProviderId !== '');
 
   $effect(() => {
-    if (!providerTabIds.includes(activeBrowseProviderId)) {
+    if (
+      !providerTabIds.includes(activeBrowseProviderId) ||
+      (dropdownOpen && !providerBrowseChanged)
+    ) {
       activeBrowseProviderId = preferredBrowseProviderId;
     }
   });
 
   $effect(() => {
-    if (dropdownOpen && providerTabsEnabled) {
-      activeBrowseProviderId = preferredBrowseProviderId;
+    if (dropdownOpen) {
+      activeBrowseProviderId = untrack(() => preferredBrowseProviderId);
+    } else {
+      providerBrowseChanged = false;
     }
   });
 
-  // Display groups — provider tabs replace the tall group stack in the chat picker.
+  // Display groups — every picker browses one provider at a time.
   const displayGroups = $derived.by(() =>
     groupedModelOptions
       .filter((group) => {
@@ -1382,9 +1389,7 @@
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
   );
   const showTriggerReasoningGauge = $derived(
-    currentReasoningEffort !== null &&
-      currentReasoningEffort !== 'none' &&
-      currentReasoningLevelIndex >= 0,
+    showReasoningFooter && currentReasoningEffort !== 'none',
   );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
@@ -1408,29 +1413,43 @@
       nonBlockingProviderWarnings.length > 0,
   );
 
+  const railProviderIds = $derived(providerTabIds);
+  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
+  let pointerInteraction = $state(false);
+
+  function clearModelSearch(event: MouseEvent) {
+    modelSearchValue = '';
+    (event.currentTarget as HTMLElement)
+      .closest('[data-slot="dropdown-content"]')
+      ?.querySelector<HTMLInputElement>('[role="searchbox"]')
+      ?.focus();
+  }
+
   function selectProviderTab(providerId: string) {
+    providerBrowseChanged = true;
     activeBrowseProviderId = providerId;
   }
 
   function handleProviderTabKeydown(event: KeyboardEvent, providerId: string) {
-    const currentIndex = providerTabIds.indexOf(providerId);
+    const currentIndex = railProviderIds.indexOf(providerId);
     if (currentIndex < 0) return;
 
     let nextIndex: number | undefined;
-    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % providerTabIds.length;
-    if (event.key === 'ArrowLeft') {
-      nextIndex = (currentIndex - 1 + providerTabIds.length) % providerTabIds.length;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
+      nextIndex = (currentIndex + 1) % railProviderIds.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + railProviderIds.length) % railProviderIds.length;
     }
     if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = providerTabIds.length - 1;
+    if (event.key === 'End') nextIndex = railProviderIds.length - 1;
     if (nextIndex === undefined) return;
 
     event.preventDefault();
     event.stopPropagation();
-    activeBrowseProviderId = providerTabIds[nextIndex] ?? providerId;
-    const tabs = (
-      event.currentTarget as HTMLButtonElement
-    ).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    selectProviderTab(railProviderIds[nextIndex] ?? providerId);
+    const tabs = (event.currentTarget as HTMLButtonElement)
+      .closest('[role="tablist"]')
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     tabs?.[nextIndex]?.focus();
   }
 
@@ -1696,6 +1715,7 @@
   let dropdownRef = $state<{
     focusTrigger: () => void;
     dismissAndFocusTrigger: () => void;
+    openAndFocusSearch: () => Promise<void>;
   } | null>(null);
 
   $effect(() => {
@@ -1715,7 +1735,7 @@
     clearFallbackInfo();
   }
 
-  async function handleModelChange(value: string | string[]) {
+  async function handleModelChange(value: string | string[], event?: MouseEvent) {
     const modelValue = value as string;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
@@ -1739,7 +1759,9 @@
         return;
       }
     }
-    if (modalAware) {
+    // Keyboard selection removes the focused search/listbox. Return to its
+    // trigger instead of leaving focus on body; pointer callers keep their policy.
+    if (modalAware || !event) {
       queueMicrotask(() => {
         dropdownOpen = false;
         dropdownRef?.focusTrigger();
@@ -1758,10 +1780,16 @@
   // Expose open function for keyboard shortcut
   export function open() {
     if (!isLocked) {
-      dropdownOpen = true;
+      pointerInteraction = false;
+      void dropdownRef?.openAndFocusSearch();
     }
   }
 </script>
+
+<svelte:window
+  onpointerdown={() => (pointerInteraction = true)}
+  onkeydown={() => (pointerInteraction = false)}
+/>
 
 {#if isLocked}
   <!-- Show locked state without dropdown -->
@@ -1784,14 +1812,11 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if showReasoningFooter && currentReasoningEffort === null}
-        <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-          >· {currentReasoningLabel}</span
-        >
-      {:else if showTriggerReasoningGauge}
+      {#if showTriggerReasoningGauge}
         <EffortGauge
           value={currentReasoningLevelIndex}
           max={Math.max(1, reasoningLevels.length - 1)}
+          centered={currentReasoningEffort === null}
           testId="model-reasoning-effort-gauge"
           class="[&_line]:transition-none!"
         />
@@ -1805,14 +1830,11 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if showReasoningFooter && currentReasoningEffort === null}
-          <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-            >· {currentReasoningLabel}</span
-          >
-        {:else if showTriggerReasoningGauge}
+        {#if showTriggerReasoningGauge}
           <EffortGauge
             value={currentReasoningLevelIndex}
             max={Math.max(1, reasoningLevels.length - 1)}
+            centered={currentReasoningEffort === null}
             testId="model-reasoning-effort-gauge"
             class="[&_line]:transition-none!"
           />
@@ -1845,21 +1867,6 @@
   {/snippet}
 
   {#snippet dropdownFooter()}
-    {#if showReasoningFooter}
-      <div class="px-2 py-2" data-testid="model-reasoning-section">
-        <EffortPicker
-          mode="embedded"
-          {agentId}
-          {workspaceId}
-          effortLevels={reasoningLevels}
-          effort={persistedReasoningEffort}
-          disabled={reasoningControlDisabled}
-          busy={updatingReasoningEffort}
-          {modalAware}
-          onEffortChange={handleReasoningSelect}
-        />
-      </div>
-    {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
       <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
         <IntentMarkLoader size={12} />
@@ -1881,6 +1888,22 @@
         {/each}
       </div>
     {/if}
+    {#if showReasoningFooter}
+      <div class="w-full min-w-0 px-3 py-2" data-testid="model-reasoning-section">
+        <EffortPicker
+          mode="embedded"
+          class="w-full min-w-0 gap-2! [&>div]:w-24 [&>span]:min-w-0 [&>span>span]:truncate"
+          {agentId}
+          {workspaceId}
+          effortLevels={reasoningLevels}
+          effort={persistedReasoningEffort}
+          disabled={reasoningControlDisabled}
+          busy={updatingReasoningEffort}
+          {modalAware}
+          onEffortChange={handleReasoningSelect}
+        />
+      </div>
+    {/if}
   {/snippet}
 
   <Dropdown
@@ -1897,20 +1920,21 @@
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
     searchChrome
-    placeholder={m.chat_modelPicker_searchModels_placeholder()}
-    class="min-w-0"
-    headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}
+    placeholder={m.ui_dropdown_search_ariaLabel()}
+    class="min-w-0 max-w-full"
+    headerClass={cn('model-picker-header border-b-0!', !hasNoAvailableProvider && 'pt-9')}
     triggerClass={cn(
-      'max-w-full',
+      'max-w-full px-2!',
       (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
       triggerClass,
     )}
     contentClass={cn(
-      'max-w-[calc(100vw-32px)] bg-background! text-foreground! [--selected:var(--muted)]',
-      showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
+      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 h-[360px] min-h-0 flex flex-col rounded-xl pl-12',
+      pointerInteraction && 'model-picker-pointer',
     )}
-    contentMaxHeight={showReasoning ? 360 : undefined}
-    fillContentHeight={showReasoning}
+    contentMaxHeight={360}
+    fillContentHeight
+    animate={false}
     {portal}
     {collisionBoundary}
     {groupHeader}
@@ -1946,14 +1970,11 @@
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
-          {#if showReasoningFooter && currentReasoningEffort === null}
-            <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-              >· {currentReasoningLabel}</span
-            >
-          {:else if showTriggerReasoningGauge}
+          {#if showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
               max={Math.max(1, reasoningLevels.length - 1)}
+              centered={currentReasoningEffort === null}
               testId="model-reasoning-effort-gauge"
               class="[&_line]:transition-none!"
             />
@@ -1968,21 +1989,26 @@
     {/snippet}
 
     {#snippet header()}
-      {#if providerTabsEnabled}
+      <div
+        class="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 border-r border-border bg-muted/20 py-2"
+        data-testid="model-provider-rail"
+      >
         <div
-          class="flex items-center gap-1 px-2 pt-2"
+          class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto"
           role="tablist"
+          aria-orientation="vertical"
           aria-label={m.chat_modelPicker_modelProviders_label()}
           data-testid="model-provider-tabs"
         >
-          {#each providerTabIds as providerTabId (providerTabId)}
+          {#each railProviderIds as providerTabId (providerTabId)}
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="icon-sm"
               iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
               aria-label={providerDisplayName(providerTabId)}
+              title={providerDisplayName(providerTabId)}
               tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
               class={cn(
                 'text-muted-foreground hover:bg-muted/40',
@@ -1994,9 +2020,11 @@
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
             </Button>
           {/each}
+        </div>
+        {#if !hasNoAvailableProvider}
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             iconOnly={true}
             aria-label={m.chat_modelPicker_noProviderAvailable_openSettings_label()}
             class="text-muted-foreground hover:bg-muted/40"
@@ -2005,31 +2033,50 @@
           >
             <Fa icon={faPlus} class="size-3 text-muted-foreground/50" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            iconOnly={true}
-            title={m.chat_modelPicker_refreshGroup_title({
-              group: providerDisplayName(activeBrowseProviderId),
-            })}
-            aria-label={m.chat_modelPicker_refreshGroup_title({
-              group: providerDisplayName(activeBrowseProviderId),
-            })}
-            class={cn(
-              'ml-auto text-subtle hover:bg-muted/40',
-              refreshingProviders.has(activeBrowseProviderId) && 'opacity-50! cursor-not-allowed',
-            )}
-            data-testid="model-provider-refresh-button"
-            disabled={refreshingProviders.has(activeBrowseProviderId)}
-            onclick={() => void handleRefreshProvider(activeBrowseProviderId)}
-          >
+        {/if}
+      </div>
+      {#if modelSearchValue}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly
+          class="absolute right-10 top-1.5 z-20"
+          aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
+          onclick={clearModelSearch}
+        >
+          <Fa icon={faXmark} class="size-3" />
+        </Button>
+      {/if}
+      {#if refreshProviderId}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly={true}
+          title={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          aria-label={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          class={cn(
+            'absolute right-2 top-1.5 text-subtle hover:bg-muted/40',
+            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
+          )}
+          data-testid="model-provider-refresh-button"
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          disabled={refreshingProviders.has(refreshProviderId)}
+          onclick={() => void handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}
+            <IntentMarkLoader size={12} />
+          {:else}
             <Fa
               icon={faArrowsRotate}
               size={10}
               class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             />
-          </Button>
-        </div>
+          {/if}
+        </Button>
       {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
@@ -2052,7 +2099,7 @@
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
-      <div class="flex gap-2 w-full min-w-0">
+      <div class="flex items-center gap-2.5 w-full min-w-0 py-1">
         {#if providerLoading}
           <div class="flex items-center gap-2 text-muted-foreground text-sm">
             <IntentMarkLoader size={12} />
@@ -2069,7 +2116,7 @@
           <div class="flex-1 min-w-0">
             <span
               class={cn(
-                'block truncate text-sm font-medium',
+                'block truncate text-sm font-normal',
                 option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
               )}
             >
@@ -2109,3 +2156,41 @@
     class={resolvedNoticeClass}
   />
 {/if}
+
+<style>
+  :global(.model-picker-panel > div:has(> input[role='searchbox'])) {
+    position: absolute;
+    top: 0.25rem;
+    left: 3.5rem;
+    right: 2.5rem;
+    width: auto;
+    padding: 0;
+    z-index: 10;
+    background: transparent;
+    border-radius: var(--radius-medium);
+  }
+  :global(.model-picker-panel > div:has(> input[role='searchbox']) > svg) {
+    display: none;
+  }
+  :global(.model-picker-panel input[role='searchbox']) {
+    height: 2rem;
+    padding: 0 1.75rem 0 0.25rem;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    border-radius: var(--radius-medium);
+    caret-color: var(--color-foreground);
+  }
+  :global(.model-picker-panel.model-picker-pointer) {
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  @container style(--motion-reduced: 1) {
+    :global(.model-picker-panel.model-picker-pointer) {
+      transition: none;
+    }
+  }
+</style>

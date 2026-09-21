@@ -83,6 +83,7 @@
   } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
 
   import { safeDisclosureTransition } from '../disclosure-motion';
+  import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
 
   const logger = createLogger('SimpleRichInput');
 
@@ -90,6 +91,8 @@
   const pttRecording$ = selectPttRecording();
   const voiceTranscribing$ = selectVoiceTranscribing();
   const effectiveVoiceEngine$ = selectEffectiveVoiceEngine();
+  const sendShortcut$ = effectiveShortcutReadable('chat.send');
+  const forceSendShortcut$ = effectiveShortcutReadable('chat.force-send');
 
   // Catalog-backed local shims for the legacy provider-config helpers.
   function normalizeProviderId(providerId: string): string {
@@ -1479,7 +1482,7 @@
 <div
   bind:this={containerRef}
   class={cn(
-    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border-0 p-2 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+    'relative rich-input-container flex flex-col overflow-hidden rounded-(--radius-large) border-0 p-2 has-[[data-chat-input-queue-region]>_*]:pt-0 text-card-foreground transition-[box-shadow,color,min-height] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
     surfaceClasses(2, 2),
     isAutoExpand
       ? 'transition-[border-color,background-color,box-shadow,min-height]'
@@ -1530,7 +1533,7 @@
 
   {#if queueRegion}
     <div
-      class="min-h-0 shrink overflow-y-auto overscroll-contain has-[>_*]:pb-1"
+      class="min-h-0 shrink overflow-y-auto overscroll-contain has-[>_*]:mb-2"
       style:max-height="{(containerHeight ?? maxAutoHeight) / 2}px"
       data-chat-input-queue-region
     >
@@ -1694,7 +1697,7 @@
         {selectedModel}
         variant="ghost-light"
         size="xs"
-        triggerClass="px-0 font-medium text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-4"
+        triggerClass="relative -left-2 font-medium text-muted-foreground hover:bg-hover hover:text-foreground [&_svg]:size-4"
         isLocked={isModelLocked}
         confirmModelChange={confirmModelSwitch}
         deferUpdate={isStreaming}
@@ -1861,7 +1864,13 @@
       {/if}
       <TooltipShortcut
         label={buttonTooltipLabel}
-        shortcut={buttonMode === 'stop' ? undefined : 'Enter'}
+        shortcut={buttonMode === 'stop' ? undefined : $sendShortcut$}
+        secondary={buttonMode === 'queue' && onforcesubmit && $forceSendShortcut$
+          ? {
+              label: m.chat_queuedMessages_sendImmediately_label(),
+              shortcut: $forceSendShortcut$,
+            }
+          : undefined}
         side="top"
         portalTarget={tooltipPortalTarget}
       >
@@ -1885,7 +1894,7 @@
               {#if buttonMode === 'stop'}
                 <span class="size-3 rounded-[3px] bg-current" aria-hidden="true"></span>
               {:else}
-                <ArrowUpIcon size={19} weight="bold" aria-hidden="true" />
+                <ArrowUpIcon size={19} weight="regular" aria-hidden="true" />
               {/if}
             </span>
           {/key}

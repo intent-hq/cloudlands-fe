@@ -302,6 +302,7 @@
   :global(.catalog-layout) {
     display: grid;
     grid-template-columns: 256px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     align-items: start;
     min-height: 100svh;
   }
@@ -399,6 +400,7 @@
   @media (max-width: 767px) {
     :global(.catalog-layout) {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr);
     }
 
     :global(.catalog-sidebar) {

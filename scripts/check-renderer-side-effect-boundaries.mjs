@@ -28,6 +28,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   ['src/store/renderer/seeders/file-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   ['src/store/renderer/seeders/git-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
+  ['src/store/renderer/seeders/guest-sessions-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
   ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 16 }],
   ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 27 }],
   [
@@ -41,6 +42,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/panel-layout-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/pi-mcp-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/power-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  ['src/store/renderer/seeders/presence-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/provider-status-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
   ['src/store/renderer/seeders/quit-confirmation-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/release-notes-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
@@ -52,7 +54,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/user-activity-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/user-mcp-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/voice-local-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
-  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 6 }],
+  ['src/store/renderer/seeders/window-state-bridge-seeder.ts', { registerMockIpcHandler: 7 }],
   [
     'src/store/renderer/seeders/workspace-summaries-bridge-seeder.ts',
     { registerMockIpcHandler: 2 },

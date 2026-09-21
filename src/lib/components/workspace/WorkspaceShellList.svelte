@@ -135,7 +135,7 @@
               class="flex h-full min-w-0 flex-1 cursor-pointer items-center justify-start gap-2 px-0 py-0 text-left"
               onclick={() => openTerminalInPanel(terminal.id, terminalName)}
             >
-              <span class="min-w-0 truncate text-sm font-medium text-foreground"
+              <span class="min-w-0 truncate type-body font-normal text-foreground"
                 >{terminalName}</span
               >
             </Button>
@@ -240,7 +240,7 @@
                 data-script-status-indicator
               ></span>
               <span
-                class="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+                class="min-w-0 flex-1 truncate type-body font-normal text-foreground"
                 title={script.name}
               >
                 {script.name}

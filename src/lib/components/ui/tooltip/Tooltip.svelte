@@ -57,6 +57,9 @@
     onclick,
   }: Props = $props();
 
+  // Keep the ID on the rendered node; the floating layer drops it (intent#5201).
+  const contentId = $props.id();
+
   // Variant styles
   const variantStyles = {
     default: 'bg-foreground text-background',
@@ -123,6 +126,7 @@
     {#if content && !disabled}
       <TooltipPrimitive.Portal to={portalTarget}>
         <TooltipPrimitive.Content
+          id={contentId}
           role="tooltip"
           {side}
           {align}
@@ -133,36 +137,42 @@
           data-overlay-surface
           onFocusOutside={() => {}}
         >
-          {#if typeof content === 'string'}
-            {content}
-          {:else if content && typeof content === 'function'}
-            {@render content?.()}
-          {/if}
+          {#snippet child({ props, wrapperProps })}
+            <div {...wrapperProps}>
+              <div {...props} id={contentId}>
+                {#if typeof content === 'string'}
+                  {content}
+                {:else if content && typeof content === 'function'}
+                  {@render content?.()}
+                {/if}
 
-          {#if showArrow}
-            <div
-              class={cn(
-                'absolute bg-border',
-                // Top/bottom arrows - horizontal positioning based on align
-                side === 'top' && 'w-px h-1.5 -bottom-1.5',
-                side === 'bottom' && 'w-px h-1.5 -top-1.5',
-                (side === 'top' || side === 'bottom') &&
-                  align === 'center' &&
-                  'left-1/2 -translate-x-1/2',
-                (side === 'top' || side === 'bottom') && align === 'start' && 'left-1.5',
-                (side === 'top' || side === 'bottom') && align === 'end' && 'right-1.5',
-                // Left/right arrows - vertical positioning based on align
-                side === 'left' && 'h-px w-1.5 -right-1.5',
-                side === 'right' && 'h-px w-1.5 -left-1.5',
-                (side === 'left' || side === 'right') &&
-                  align === 'center' &&
-                  'top-1/2 -translate-y-1/2',
-                (side === 'left' || side === 'right') && align === 'start' && 'top-1.5',
-                (side === 'left' || side === 'right') && align === 'end' && 'bottom-1.5',
-                arrowClass,
-              )}
-            ></div>
-          {/if}
+                {#if showArrow}
+                  <div
+                    class={cn(
+                      'absolute bg-border',
+                      // Top/bottom arrows - horizontal positioning based on align
+                      side === 'top' && 'w-px h-1.5 -bottom-1.5',
+                      side === 'bottom' && 'w-px h-1.5 -top-1.5',
+                      (side === 'top' || side === 'bottom') &&
+                        align === 'center' &&
+                        'left-1/2 -translate-x-1/2',
+                      (side === 'top' || side === 'bottom') && align === 'start' && 'left-1.5',
+                      (side === 'top' || side === 'bottom') && align === 'end' && 'right-1.5',
+                      // Left/right arrows - vertical positioning based on align
+                      side === 'left' && 'h-px w-1.5 -right-1.5',
+                      side === 'right' && 'h-px w-1.5 -left-1.5',
+                      (side === 'left' || side === 'right') &&
+                        align === 'center' &&
+                        'top-1/2 -translate-y-1/2',
+                      (side === 'left' || side === 'right') && align === 'start' && 'top-1.5',
+                      (side === 'left' || side === 'right') && align === 'end' && 'bottom-1.5',
+                      arrowClass,
+                    )}
+                  ></div>
+                {/if}
+              </div>
+            </div>
+          {/snippet}
         </TooltipPrimitive.Content>
       </TooltipPrimitive.Portal>
     {/if}

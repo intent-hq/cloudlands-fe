@@ -8,7 +8,7 @@ export const collapsiblePanelProductMetadata = {
   exports: ['default'],
   category: 'product',
   owner: 'design-system',
-  callers: ['src/lib/components/ui/ScrollableSection.svelte'],
+  callers: [],
   replacement: '$lib/components/ui/accordion',
   characterizationTest: null,
   removalGate:

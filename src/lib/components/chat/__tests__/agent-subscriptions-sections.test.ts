@@ -42,6 +42,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
       effect: function* (agentId: string) {
         return sessionState.byId.get(agentId) ?? null;
       },
+      select: (_state: unknown, agentId: string) => sessionState.byId.get(agentId) ?? null,
     },
   ),
   selectAgentSessionsByIds: (agentIds: {
@@ -62,6 +63,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   }),
   selectAgentIsResponding: (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
     makeDerivedReadable(agentId, (id) => mockIsResponding.get(id) ?? false),
+  selectAgentDetailHydrated: () => makeReadable(false),
   selectAgentPreview: Object.assign(
     (agentId: { subscribe: (run: (value: string) => void) => () => void }) =>
       makeDerivedReadable(agentId, (id) => {
@@ -1290,7 +1292,9 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
     expect(nativeTrigger.className).toContain('w-fit');
     for (const trigger of [nativeTrigger, linkedTrigger]) {
       expect(within(trigger).getByTestId('task-progress-checklist-icon')).toBeTruthy();
-      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(
+        trigger.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
+      ).toHaveLength(1);
       expect(within(trigger).queryByTestId('task-progress-icon-stack')).toBeNull();
       expect(within(trigger).queryByTestId('task-progress-status-icon')).toBeNull();
       expect(within(trigger).queryByTestId('task-progress-overflow-indicator')).toBeNull();
@@ -1384,7 +1388,9 @@ describe('AgentSubscriptions unified waiting disclosure', () => {
       expect(trigger.getAttribute('aria-label')).toBe(
         `Task progress: ${completed} of ${tasks.length} completed`,
       );
-      expect(trigger.querySelectorAll('[data-icon="list-check"]')).toHaveLength(1);
+      expect(
+        trigger.querySelectorAll('[data-testid="task-progress-checklist-icon"] svg'),
+      ).toHaveLength(1);
       expect(within(trigger).queryByTestId('task-progress-icon-stack')).toBeNull();
       expect(within(trigger).queryByTestId('task-progress-status-icon')).toBeNull();
       expect(within(trigger).queryByTestId('task-progress-overflow-indicator')).toBeNull();

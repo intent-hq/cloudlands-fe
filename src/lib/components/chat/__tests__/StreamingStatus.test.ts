@@ -70,14 +70,14 @@ describe('StreamingStatus rendered UI', () => {
     expect(row.className).toContain(
       'grid-cols-[var(--operational-leading-slot-size)_minmax(0,1fr)_auto]',
     );
-    expect(row.className).toContain('mt-2');
+    expect(row.className).toContain('mt-[var(--space-3)]');
     expect(mark.getAttribute('data-variant')).toBe('pulse');
     expect(mark.getAttribute('data-playing')).toBe('true');
     expect(mark.getAttribute('width')).toBe('16');
     expect(mark.parentElement?.className).toContain('size-[var(--operational-leading-slot-size)]');
     expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(label.textContent).toBe('Thinking');
-    expect(label.className).toContain('text-foreground');
+    expect(label.className).toContain('sr-only');
     expect(lifecycle.textContent).toBe('Sent prompt…');
     expect(lifecycle.className).toContain('text-muted-foreground');
     expect(lifecycle.className).toContain('truncate');

@@ -172,6 +172,60 @@ describe('agent-send wire contract (pending agent, first message)', () => {
     expect(params).not.toHaveProperty('sessionId');
   }, 30000);
 
+  it.each([
+    { type: 'image' as const, data: 'synthetic-base64', mimeType: 'image/png' },
+    { type: 'image' as const, attachmentId: 'synthetic-reference', mimeType: 'image/png' },
+  ])(
+    'preserves image blocks on the optimistic row and acknowledged send (case %#)',
+    async (image) => {
+      backendRequestMock.mockImplementation(async (method: string) => {
+        if (method === 'agent.get') return { agent: daemonPendingAgent };
+        if (method === 'agent.sendMessage') {
+          const optimistic = appStore.state.agentSessions.byAgentId[AGENT].messages.find(
+            (message) => message.role === 'user',
+          );
+          expect(optimistic?.contentBlocks).toEqual([
+            { type: 'text', text: 'fixture image' },
+            image,
+          ]);
+          return { success: true, queued: false, messageId: 'fixture-ack' };
+        }
+        return {};
+      });
+      await sendMessage(AGENT, 'fixture image', workspace(), {
+        imageBlocks: [image],
+        userAppMessageId: 'fixture-app-message',
+      });
+      const sendCall = backendRequestMock.mock.calls.find(
+        ([method]) => method === 'agent.sendMessage',
+      )!;
+      expect(sendCall[1]).toEqual({
+        agentId: AGENT,
+        workspaceId: WS,
+        content: 'fixture image',
+        model: 'opus4.7',
+        contextReferences: undefined,
+        imageBlocks: [image],
+        fileBlocks: undefined,
+        noteIds: undefined,
+        stdinContext: undefined,
+        assistantMessageId: expect.any(String),
+        userAppMessageId: 'fixture-app-message',
+        assistantAppMessageId: expect.any(String),
+        priority: undefined,
+      });
+      const userMessages = appStore.state.agentSessions.byAgentId[AGENT].messages.filter(
+        (message) => message.role === 'user',
+      );
+      expect(userMessages).toHaveLength(1);
+      expect(userMessages[0].contentBlocks).toEqual([
+        { type: 'text', text: 'fixture image' },
+        image,
+      ]);
+    },
+    30000,
+  );
+
   it('sends attachment-only content on the wire with an empty text field', async () => {
     const fileBlocks = [
       {

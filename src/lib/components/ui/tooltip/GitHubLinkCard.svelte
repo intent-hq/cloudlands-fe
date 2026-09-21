@@ -10,6 +10,7 @@
     faCircleCheck,
     faCodeMerge,
     faCodePullRequest,
+    faHourglassHalf,
     type IconDefinition,
   } from '$lib/icons/phosphor-icons';
   import type { ComponentProps } from 'svelte';
@@ -63,6 +64,13 @@
             iconClass: 'text-danger',
             badge: 'destructive',
             label: m.ui_linkTooltip_gitHubStateClosed_label(),
+          };
+        case 'queued':
+          return {
+            icon: faHourglassHalf,
+            iconClass: 'text-info',
+            badge: 'info',
+            label: m.ui_linkTooltip_gitHubStateQueued_label(),
           };
         default:
           return {

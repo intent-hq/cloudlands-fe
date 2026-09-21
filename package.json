@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.161.0",
+  "version": "2.171.1",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -61,12 +61,13 @@
     "deps:check": "node scripts/check-deps-fresh.mjs",
     "format": "prettier --write .",
     "format:check": "node scripts/check-deps-fresh.mjs && prettier --check .",
-    "lint": "node scripts/check-deps-fresh.mjs && eslint --cache --cache-strategy content . && node scripts/pnpm-run.mjs lint:i18n-strings && node scripts/pnpm-run.mjs lint:i18n-completeness && node scripts/pnpm-run.mjs lint:package-scripts && node scripts/pnpm-run.mjs lint:dead-code && node scripts/pnpm-run.mjs lint:ui-components",
+    "lint": "node scripts/check-deps-fresh.mjs && eslint --cache --cache-strategy content . && node scripts/pnpm-run.mjs lint:i18n-strings && node scripts/pnpm-run.mjs lint:i18n-completeness && node scripts/pnpm-run.mjs lint:package-scripts && node scripts/pnpm-run.mjs lint:dead-code && node scripts/pnpm-run.mjs lint:ui-components && node scripts/pnpm-run.mjs lint:design-cheatsheet && node scripts/pnpm-run.mjs format:check",
     "lint:fix": "eslint --fix .",
-    "lint:dead-code": "node scripts/paraglide-inputs-hash.mjs --if-stale && knip",
+    "lint:dead-code": "node scripts/paraglide-inputs-hash.mjs --if-stale && node scripts/check-dead-code.mjs",
     "lint:i18n-strings": "node scripts/check-hardcoded-strings.mjs",
     "lint:i18n-completeness": "node scripts/check-i18n-completeness.mjs",
     "lint:ui-components": "tsx scripts/ui-component-audit.ts check",
+    "lint:design-cheatsheet": "tsx scripts/generate-design-cheatsheet.ts --check",
     "lint:package-scripts": "node scripts/check-package-scripts.mjs",
     "lint:dispatch-gate": "node scripts/check-workspace-event-dispatchers.mjs",
     "lint:selector-active-workspace": "node scripts/check-selector-active-workspace-hygiene.mjs",
@@ -91,7 +92,9 @@
     "test:playwright": "playwright test",
     "test:playwright:manual:catalog": "playwright test --config=playwright.manual.config.ts test/catalog-manual-review.capture.spec.ts",
     "test:playwright:manual:baseline": "playwright test --config=playwright.manual.config.ts test/current-main-baseline.spec.ts",
+    "test:playwright:manual:browser-lifetime": "playwright test --config=playwright.manual.config.ts test/electron-browser-lifetime.spec.ts",
     "test:ct": "node scripts/run-ct-tests.mjs",
+    "ct:failures": "node scripts/ct-run-failures.mjs",
     "test:playwright:ui": "playwright test --ui",
     "test:playwright:headed": "playwright test --headed",
     "test:run": "node scripts/pnpm-run.mjs test:unit && node scripts/pnpm-run.mjs test:integration && node scripts/pnpm-run.mjs test:playwright",
@@ -278,7 +281,7 @@
     "d3": "^7.9.0",
     "diff": "^9.0.0",
     "dompurify": "^3.4.14",
-    "electron": "^42.8.0",
+    "electron": "^44.3.0",
     "electron-builder": "^26.15.3",
     "eslint": "^10.9.1",
     "eslint-plugin-svelte": "^3.23.0",
@@ -319,7 +322,7 @@
     "wait-on": "^9.1.0"
   },
   "dependencies": {
-    "@augmentcode/themis": "0.2.7",
+    "@augmentcode/themis": "0.2.9",
     "body-parser": "^2.3.0",
     "chrome-remote-interface": "^0.34.0",
     "date-fns": "^4.4.0",
@@ -365,8 +368,7 @@
     ],
     "patchedDependencies": {
       "bits-ui@2.18.1": "patches/bits-ui@2.18.1.patch",
-      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch",
-      "@augmentcode/themis@0.2.7": "patches/@augmentcode__themis@0.2.7.patch"
+      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch"
     }
   }
 }

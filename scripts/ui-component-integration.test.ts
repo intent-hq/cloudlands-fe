@@ -146,7 +146,6 @@ describe('Gate C generated migration ledger', () => {
         'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
         'src/lib/components/chat/input/ModelPicker.svelte',
         'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
-        'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
         'src/lib/components/chat/input/model-picker-groups.ts',
         'src/lib/components/chat/input/model-picker-utils.ts',
         'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
@@ -179,7 +178,7 @@ describe('Gate C generated migration ledger', () => {
       buildUiMigrationLedger(root).map((entry) => [entry.oldImport, entry.callers.length]),
     );
     expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(15);
-    expect(retained.get('$lib/components/ui/dropdown')).toBe(8);
+    expect(retained.get('$lib/components/ui/dropdown')).toBe(7);
   });
 });
 

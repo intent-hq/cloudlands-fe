@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatEventGeometryHost from './ChatEventGeometryHost.svelte';
 
 function contrastRatio(foreground: string, background: string): number {
@@ -144,11 +144,8 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               'box-shadow',
             ];
             const rowProperties = [
-              'height',
               'padding-inline-start',
               'padding-inline-end',
-              'padding-block-start',
-              'padding-block-end',
               'font-family',
               'font-size',
               'line-height',
@@ -173,10 +170,9 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             const eventStatus = element('event-wakeup-status');
             const agentChevron = element('agent-message-chevron-column');
             const eventChevron = element('event-wakeup-chevron-column');
-            const preview = element('agent-message-preview');
-            const senderName = element('agent-message-attribution').querySelector(
-              'span.truncate[title]',
-            )!;
+            const nameRange = document.createRange();
+            nameRange.selectNodeContents(agentName);
+            const rowBounds = agentRow.getBoundingClientRect();
             return {
               agentSurface: style(agentCard, surfaceProperties),
               eventSurface: style(eventCard, surfaceProperties),
@@ -198,15 +194,14 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
               eventStatusRect: rect(eventStatus),
               agentChevronRect: rect(agentChevron),
               eventChevronRect: rect(eventChevron),
-              ellipsisStyles: [preview, senderName].map((node) => {
-                const computed = getComputedStyle(node);
-                return {
-                  hasTruncateClass: node.classList.contains('truncate'),
-                  overflowX: computed.overflowX,
-                  textOverflow: computed.textOverflow,
-                  whiteSpace: computed.whiteSpace,
-                };
-              }),
+              senderContained: [...nameRange.getClientRects()].every(
+                (bounds) =>
+                  bounds.left >= rowBounds.left &&
+                  bounds.right <= rowBounds.right &&
+                  bounds.top >= rowBounds.top &&
+                  bounds.bottom <= rowBounds.bottom,
+              ),
+              senderOverflows: agentName.scrollWidth > agentName.clientWidth,
             };
           });
 
@@ -235,18 +230,32 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             12 * zoom,
             1,
           );
-          expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
-            36 * zoom,
-            1,
-          );
-          expect(collapsed.agentRowRect.bottom - collapsed.agentRowRect.top).toBeCloseTo(
-            collapsed.eventRowRect.bottom - collapsed.eventRowRect.top,
-            1,
-          );
-          expect(collapsed.agentCardRect.bottom - collapsed.agentCardRect.top).toBeCloseTo(
-            collapsed.eventCardRect.bottom - collapsed.eventCardRect.top,
-            1,
-          );
+          const agentRowHeight = collapsed.agentRowRect.bottom - collapsed.agentRowRect.top;
+          const senderTopInset = collapsed.agentNameRect.top - collapsed.agentRowRect.top;
+          const senderBottomInset = collapsed.agentRowRect.bottom - collapsed.agentNameRect.bottom;
+          expect(senderTopInset).toBeGreaterThanOrEqual(6 * zoom);
+          expect(senderBottomInset).toBeCloseTo(senderTopInset, 1);
+          if (labelLength === 'short') {
+            // Fixed-height event rows and wrapping sender rows have different CSS
+            // padding, but the visible single-line text must have the same inset.
+            expect(senderTopInset).toBeCloseTo(
+              collapsed.eventNameRect.top - collapsed.eventRowRect.top,
+              1,
+            );
+            expect(agentRowHeight).toBeCloseTo(36 * zoom, 1);
+            expect(agentRowHeight).toBeCloseTo(
+              collapsed.eventRowRect.bottom - collapsed.eventRowRect.top,
+              1,
+            );
+            expect(collapsed.agentCardRect.bottom - collapsed.agentCardRect.top).toBeCloseTo(
+              collapsed.eventCardRect.bottom - collapsed.eventCardRect.top,
+              1,
+            );
+          } else {
+            expect(agentRowHeight).toBeGreaterThanOrEqual(36 * zoom);
+          }
+          expect(collapsed.senderContained).toBe(true);
+          expect(collapsed.senderOverflows).toBe(false);
           expect(
             (collapsed.agentIconRect.top + collapsed.agentIconRect.bottom) / 2 -
               (collapsed.agentRowRect.top + collapsed.agentRowRect.bottom) / 2,
@@ -263,17 +272,6 @@ test('matches sent-message disclosures to real finished event rows', async ({ mo
             collapsed.eventChevronRect.bottom - collapsed.eventChevronRect.top,
             1,
           );
-          if (labelLength === 'long') {
-            for (const ellipsisStyle of collapsed.ellipsisStyles) {
-              expect(ellipsisStyle).toEqual({
-                hasTruncateClass: true,
-                overflowX: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              });
-            }
-          }
-
           const interactionStyle = async (state: 'hover' | 'focus', target: typeof agentToggle) => {
             if (state === 'hover') await target.hover();
             else await target.focus();

@@ -44,6 +44,7 @@
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
   import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
+  import ShareWorkspaceDialogHost from '$lib/components/modals/ShareWorkspaceDialogHost.svelte';
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
   import ReleaseNotesModal from '$lib/components/modals/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
@@ -87,6 +88,8 @@
   import { openTabInRightmostColumnRequested } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { resolveTerminalShortcutWorkspaceId } from '$features/terminal/terminal-shortcut-context';
   import {
+    selectIsCollaboratorOnlyClient,
+    selectIsWorkspaceCollaborator,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -111,6 +114,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+  import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { dismissSplashElement } from '$features/backend/splash-gate';
@@ -163,6 +167,8 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  // Workspace creation (repo picker) is administrator-only (multiplayer w3).
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const backendSetupGate = selectBackendSetupGate();
   const bootGateResolved = selectBootRouteGateResolved();
   const currentWorkspaceTabId = selectCurrentWorkspaceTabId();
@@ -320,22 +326,6 @@
 
     // Remove the static drag region from app.html now that Svelte's own drag region is active
     document.getElementById('app-drag-region')?.remove();
-
-    // ===== PERF: Animation pause when tab hidden =====
-    // Adds/removes 'animations-paused' class on body to pause CSS animations
-    // when the page is not visible, reducing GPU usage
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        document.body.classList.add('animations-paused');
-      } else {
-        document.body.classList.remove('animations-paused');
-      }
-    };
-    // Set initial state
-    if (document.hidden) {
-      document.body.classList.add('animations-paused');
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // ===== Link tooltip on hover =====
     // Attach tooltip handler to document.body so hovering over any <a> in the
@@ -532,6 +522,9 @@
           }
         : {}),
       onWorkspaceTabMoved: (detail) => dispatchWindowEvent(WORKSPACE_TAB_MOVED_EVENT, detail),
+      ...(hasCapability('windowChrome')
+        ? { closeWindow: () => invoke(IPC_CHANNELS.WINDOW.CLOSE) }
+        : {}),
       resolveBinding: getEffectiveShortcut,
     });
 
@@ -639,15 +632,11 @@
       description: 'Go to Line (Mac)',
       action: openGoToLineAction,
     });
-    // Cmd+Shift+F (Mac) / Ctrl+Shift+F (Win/Linux) -> search
-    register({
-      key: 'f',
-      meta: isMac,
-      ctrl: !isMac,
-      shift: true,
-      shortcutId: 'global.search',
-      description: 'Search in files', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      action: openSearch,
+    // Mod+F yields to local find; Mod+Shift+F opens global search directly.
+    registerGlobalSearchShortcuts(paletteShortcuts, {
+      isMac,
+      openSearch,
+      resolveBinding: () => getEffectiveShortcut('global.search'),
     });
     // Alt/Option + Z -> toggle word wrap (like VS Code)
     register({
@@ -660,6 +649,9 @@
     // Ctrl+` -> toggle terminal overlay (matches VS Code behavior - Ctrl on all platforms including Mac)
     // Registered globally so it works on workspace and non-workspace pages alike.
     const toggleTerminal = () => {
+      // Collaborators (multiplayer w3) are refused on terminal methods: no root
+      // overlay for a collaborator-only client, none for a collaborator workspace.
+      if ($isCollaboratorOnlyClient$) return;
       const isOnWorkspacePage = $page.url.pathname.startsWith('/workspace/');
       const terminalContextId = resolveTerminalShortcutWorkspaceId({
         isOnWorkspacePage,
@@ -667,6 +659,7 @@
         selectedWorkspaceId: $currentWorkspaceTabId,
         routeWorkspaceId: currentWorkspaceId,
       });
+      if (selectIsWorkspaceCollaborator.select(appStore.state, terminalContextId)) return;
       appStore.dispatch(toggleTerminalOverlay(terminalContextId));
     };
     register({
@@ -840,7 +833,6 @@
         'sveltekit:navigation-error',
         handleNavigationError as EventListener,
       );
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
       disposeInterruptedAgents();
@@ -988,7 +980,9 @@
             </div>
 
             <!-- Root Quake Terminal Overlay (self-gates on __root__ terminal state) -->
-            <RootQuakeTerminalOverlay />
+            {#if !$isCollaboratorOnlyClient$}
+              <RootQuakeTerminalOverlay />
+            {/if}
           </main>
         </div>
       </div>
@@ -1078,7 +1072,7 @@
 
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
-    open={$showCreateModal$}
+    open={$showCreateModal$ && !$isCollaboratorOnlyClient$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 
@@ -1090,6 +1084,9 @@
 
   <!-- Redux-owned Import-from-file wizard host (opened from the File menu) -->
   <ImportWorkspaceModalHost />
+
+  <!-- Redux-owned owner-side Share dialog host (sidebar kebab + tab context menu) -->
+  <ShareWorkspaceDialogHost />
 
   <SetupPromptDialog />
 

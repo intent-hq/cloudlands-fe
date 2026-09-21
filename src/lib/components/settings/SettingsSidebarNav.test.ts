@@ -35,6 +35,7 @@ describe('SettingsSidebarNav', () => {
     expect(
       screen.getByRole('button', { name: 'Providers' }).getAttribute('aria-current'),
     ).toBeNull();
+    expect(screen.queryAllByRole('img')).toHaveLength(0);
   });
 
   it('selects a category when clicked', async () => {
@@ -75,19 +76,32 @@ describe('SettingsSidebarNav', () => {
     expect(onSelect).toHaveBeenCalledWith(id);
   });
 
-  it('delegates specialist navigation without making the section heading clickable', async () => {
-    const onSelectSpecialist = vi.fn();
+  it('withholds hidden categories while keeping the rest navigable (collaborator, multiplayer w3)', () => {
     render(SettingsSidebarNav, {
-      activeTab: 'specialists',
+      activeTab: 'display',
       onSelect: vi.fn(),
-      agentsNavigation: createSpecialistsNavigation(onSelectSpecialist),
+      agentsNavigation: createSpecialistsNavigation(),
+      hiddenTabs: ['providers', 'connections'],
     });
 
-    expect(screen.getByRole('heading', { level: 3, name: 'Specialists' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Specialists' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Providers' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Connections' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Workspace setup' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Agent defaults' })).toBeTruthy();
+  });
+
+  it('delegates specialist navigation without making the section heading clickable', async () => {
+    const onSelectSpecialist = vi.fn();
+    const onSelect = vi.fn();
+    render(SettingsSidebarNav, {
+      activeTab: 'specialists',
+      onSelect,
+      agentsNavigation: createSpecialistsNavigation(onSelectSpecialist),
+    });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Implementor' }));
 
     expect(onSelectSpecialist).toHaveBeenCalledWith('Implementor');
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

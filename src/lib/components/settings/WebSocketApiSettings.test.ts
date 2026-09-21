@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { m } from '$shared/paraglide/messages.js';
 import WebSocketApiSettings from './WebSocketApiSettings.svelte';
 
@@ -114,7 +115,72 @@ describe('WebSocketApiSettings', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+  });
+
+  describe('mobile pairing dialog', () => {
+    async function renderPairing() {
+      mocks.mockSettingsList.mockResolvedValue([
+        { path: 'server.wsApi.enabled', value: true },
+        { path: 'server.wsApi.port', value: 5181 },
+      ]);
+      mocks.mockPairingInfo.mockResolvedValue({
+        token: 'fixture-token',
+        port: 5181,
+        certFingerprint: 'AA:BB',
+        localIps: ['192.0.2.10'],
+        hostname: 'fixture-device',
+      });
+      render(WebSocketApiSettings);
+      await screen.findByRole('button', { name: m.settings_wsApi_showQrCode() });
+    }
+
+    it('removes the sensitive pairing image after 30 seconds without a settings write', async () => {
+      await renderPairing();
+      vi.useFakeTimers();
+      await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_showQrCode() }));
+      await vi.dynamicImportSettled();
+      await tick();
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(screen.getByRole('img', { name: m.settings_wsApi_qrImageAlt() })).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByRole('img', { name: m.settings_wsApi_qrImageAlt() })).toBeNull();
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it.each(['button', 'backdrop', 'escape'] as const)(
+      'dismisses by %s and keeps a newly opened code for a fresh expiry period',
+      async (method) => {
+        await renderPairing();
+        vi.useFakeTimers();
+        const open = screen.getByRole('button', { name: m.settings_wsApi_showQrCode() });
+        await fireEvent.click(open);
+        await vi.dynamicImportSettled();
+        await tick();
+        expect(screen.getByRole('dialog')).toBeTruthy();
+        await vi.advanceTimersByTimeAsync(10_000);
+        if (method === 'button') {
+          await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_close() }));
+        } else if (method === 'backdrop') {
+          await fireEvent.click(screen.getByRole('dialog'));
+        } else {
+          await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+        }
+        expect(screen.queryByRole('dialog')).toBeNull();
+        await fireEvent.click(open);
+        await vi.dynamicImportSettled();
+        await tick();
+        expect(screen.getByRole('dialog')).toBeTruthy();
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(screen.getByRole('dialog')).toBeTruthy();
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+      },
+    );
   });
 
   it('shows toast.error when settings.update rejects on toggle enable', async () => {

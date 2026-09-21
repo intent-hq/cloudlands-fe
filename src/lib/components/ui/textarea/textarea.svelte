@@ -3,7 +3,11 @@
   import type { HTMLTextareaAttributes } from 'svelte/elements';
   import { InputMessage } from '$lib/components/ui/input-message';
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
-  import { textEntryControlClasses, textEntryFocusResetClasses } from '../text-entry';
+  import {
+    textEntryCaretFocusClasses,
+    textEntryControlClasses,
+    textEntryFocusResetClasses,
+  } from '../text-entry';
 
   interface Props extends HTMLTextareaAttributes {
     ref?: HTMLTextAreaElement | null;
@@ -93,6 +97,7 @@
   class={cn(
     'type-caption text-foreground placeholder:text-muted-foreground flex w-full rounded-(--radius-medium) border px-3',
     textEntryControlClasses,
+    textEntryCaretFocusClasses,
     resolvedSize === 'compact' ? 'py-1.5' : 'py-2',
     shouldAutoResize ? 'resize-none overflow-hidden' : 'min-h-20',
     noFocusStyle && textEntryFocusResetClasses,

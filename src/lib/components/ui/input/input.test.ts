@@ -83,22 +83,23 @@ describe('Input', () => {
     );
   });
 
-  it('keeps the global keyboard-focus outline by default', () => {
+  it('keeps default text entries focusable and editable', async () => {
     const { getByRole } = render(Input, { props: { 'aria-label': 'Plain field' } });
-    const input = getByRole('textbox', { name: 'Plain field' });
+    const input = getByRole('textbox', { name: 'Plain field' }) as HTMLInputElement;
     input.focus();
     expect(document.activeElement).toBe(input);
-    expect(input.className).not.toMatch(/(?:^|\s)(?:focus-visible:)?outline-none(?:\s|$)/);
-    expect(input.className).not.toMatch(/(?:^|\s)focus-visible:!shadow-none(?:\s|$)/);
+    await fireEvent.input(input, { target: { value: 'Edited name' } });
+    input.select();
+    expect(input.selectionEnd! - input.selectionStart!).toBe('Edited name'.length);
   });
 
-  it('lets noFocusStyle opt out of the focus ring via utilities', () => {
+  it('keeps noFocusStyle text entries focusable for their composite owner', () => {
     const { getByRole } = render(Input, {
       props: { 'aria-label': 'Composite field', noFocusStyle: true },
     });
-    const classes = getByRole('textbox', { name: 'Composite field' }).className.split(/\s+/);
-    expect(classes).toContain('focus-visible:outline-none');
-    expect(classes).toContain('focus-visible:!shadow-none');
+    const input = getByRole('textbox', { name: 'Composite field' });
+    input.focus();
+    expect(document.activeElement).toBe(input);
   });
 });
 

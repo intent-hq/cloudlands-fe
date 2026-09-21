@@ -40,6 +40,7 @@ export const cardMetadata = parseUiComponentMetadata({
   owner: '012-E',
   callers: [
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
+    'src/lib/components/chat/RegularAgentWelcome.svelte',
     'src/lib/components/patterns/collection/ListRow.svelte',
     'src/lib/components/patterns/screen/EmptyState.svelte',
     'src/lib/components/patterns/screen/LoadingState.svelte',

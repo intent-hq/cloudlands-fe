@@ -889,14 +889,7 @@ describe('panel context menu routing', () => {
     expect(onMoveActivePane).toHaveBeenCalledWith('panel-1', 'next');
   });
 
-  it('uses a high-visibility kebab icon for panel actions', () => {
-    const { container } = renderTabBar();
-    const icon = container.querySelector<SVGElement>('[data-testid="panel-actions-trigger"] svg');
-
-    expect(icon?.getAttribute('viewBox')).toBe('0 0 16 16');
-    expect(icon?.getAttribute('class')).toContain('size-3');
-    expect(icon?.querySelector('path')?.getAttribute('d')).toContain('M8 2a1.5');
-  });
+  // Kebab ink, target geometry, focus, and action coverage live in agent-header-icons.ct.spec.ts.
 
   it('opens the shared panel actions menu from the tabless header without tab actions', async () => {
     const onMoveRight = vi.fn();

@@ -255,6 +255,7 @@
               id: 'cli-optimization',
               label: m.settings_section_cliOptimization(),
               layout: 'full-width',
+              class: 'py-0 first:pt-0 last:pb-0',
               when: () => Boolean(shellAdditions),
             },
           ],
@@ -340,6 +341,7 @@
 <div data-settings-git-workspace>
   <SettingsForm
     {schema}
+    compact={false}
     custom={defineSettingsCustomControls({
       'ssh-key-path': sshKeyControl,
       'worktrees-location': worktreesControl,

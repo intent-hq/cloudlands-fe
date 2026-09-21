@@ -190,6 +190,27 @@ describe('BubbleMenu', () => {
     expect(bubbleMenu).toBeTruthy();
   });
 
+  it('renders every toolbar button with a name and an icon', async () => {
+    renderBubbleMenu();
+
+    await triggerSelectionUpdate();
+
+    // Open the link input so its confirm/cancel buttons are included too
+    await fireEvent.click(document.body.querySelector('[aria-label="Add link"]')!);
+    await tick();
+
+    const buttons = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('.bubble-menu-floating button'),
+    );
+    expect(buttons.length).toBe(10);
+
+    for (const button of buttons) {
+      const label = button.getAttribute('aria-label');
+      expect(label, 'toolbar button must be named').toBeTruthy();
+      expect(button.querySelector('svg'), `${label} must render an icon`).toBeTruthy();
+    }
+  });
+
   it('should toggle bold formatting', async () => {
     renderBubbleMenu();
 

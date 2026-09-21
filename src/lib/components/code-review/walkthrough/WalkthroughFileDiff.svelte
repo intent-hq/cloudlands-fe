@@ -570,11 +570,13 @@
                       <Button
                         type="button"
                         variant="ghost"
-                        class="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-primary-ink transition-all shrink-0"
+                        size="icon-compact"
+                        iconOnly
+                        class="size-5 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary-ink transition-all shrink-0"
                         onclick={() => handleOpenComment(lineKey)}
                         title={m.codeReview_fileDiff_askLine_tooltip()}
                       >
-                        <Fa icon={faEllipsisH} class="h-3 w-3" />
+                        <Fa icon={faEllipsisH} />
                       </Button>
                     {/if}
                   </div>
