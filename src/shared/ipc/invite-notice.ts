@@ -55,6 +55,7 @@ export type InviteFailureReason =
   | 'proof-invalid'
   | 'proof-expired'
   | 'host-github-unreachable'
+  | 'identity-unverifiable'
   | 'workspace-full'
   | 'owner-self-join'
   | 'denied'
@@ -64,6 +65,9 @@ export type InviteFailureReason =
   | 'proof-not-connected'
   | 'proof-scope-missing'
   | 'proof-github-unreachable'
+  | 'proof-gitlab-not-connected'
+  | 'proof-gitlab-scope-missing'
+  | 'proof-gitlab-unreachable'
   | 'proof-failed'
   | 'cert-mismatch'
   | 'tailcat-unavailable'
@@ -85,6 +89,8 @@ export interface InviteNoticeShowPayload {
   workspaceTitle?: string;
   /** Host (or tunnel address) of the daemon, when the dial got that far. */
   hostLabel?: string;
+  /** For `identity-unverifiable`: the forge instance the host could not read the proof on. */
+  identityHost?: string;
 }
 
 /** `invite-notice:ack` payload (renderer → main invoke). */

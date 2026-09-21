@@ -73,6 +73,16 @@ export type InviteConsentOutcome = 'joined' | 'failed' | 'cancelled' | 'supersed
 /** Why the guest must sign in to GitHub before the join can proceed. */
 export type InviteSignInReason = 'not-connected' | 'scope-missing';
 
+/**
+ * The forge account the proof is made with: the guest's GitHub connection
+ * when it has one, else its GitLab connection (`host` names the instance).
+ */
+export interface InviteIdentityProvider {
+  provider: 'github' | 'gitlab';
+  /** Bare instance host (`github.com`, `gitlab.com`, a self-managed `host[:port]`). */
+  host: string;
+}
+
 interface InviteConsentShowBase {
   requestId: string;
   /** Which prompt the modal renders. */
@@ -98,8 +108,10 @@ interface InviteConsentSignInRequiredPayload extends InviteConsentShowBase {
 /** `invite-consent:show` payload for a first join: prove the signed-in identity to the host. */
 interface InviteConsentProvePayload extends InviteConsentShowBase {
   mode: 'prove';
-  /** GitHub login the guest's own Intent is signed in as. */
+  /** Forge login the guest's own Intent is signed in as. */
   login: string;
+  /** Which forge the proof names; absent means GitHub (older main builds). */
+  identity?: InviteIdentityProvider;
 }
 
 /** `invite-consent:show` payload for a returning guest: confirm with the stored identity. */

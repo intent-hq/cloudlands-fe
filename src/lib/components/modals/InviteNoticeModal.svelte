@@ -38,7 +38,9 @@
   );
   const message = $derived(
     failed
-      ? describeInviteFailureReason(payload?.reason ?? 'generic')
+      ? describeInviteFailureReason(payload?.reason ?? 'generic', {
+          identityHost: payload?.identityHost,
+        })
       : m.deeplink_invitePlaintext_message(),
   );
   const context = $derived(

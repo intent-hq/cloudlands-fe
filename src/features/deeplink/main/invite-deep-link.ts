@@ -21,15 +21,18 @@
  *    `invite.challenge { inviteId, secret }` for the invite's preview and a
  *    short-lived single-use nonce. No fingerprint confirmation is asked of
  *    the user — the pin is checked mechanically at the handshake, not by eye.
- * 2. Read the GitHub account the guest's OWN daemon is signed in as
- *    (`github.getUser` — the same `GET /user` probe `github.authStatus`
+ * 2. Read the forge account the guest's OWN daemon is signed in as: GitHub
+ *    first (`github.getUser` — the same `GET /user` probe `github.authStatus`
  *    reduces to `isConfigured`, but returning the login the prove prompt
- *    names). Not signed in — or, later, a token that predates the
- *    `gist` scope the proof needs (`github-scope-missing`) — puts the consent
- *    modal in its `sign-in-required` state: the guest's own `github.connect`
- *    device flow (code copied to the clipboard; "Open GitHub" opens the URL)
- *    is awaited while the modal shows "waiting for GitHub". This prompt
- *    appears only at join time, never at startup.
+ *    names), else GitLab (`sourceControl.authStatus { provider: "gitlab" }`,
+ *    whose `host` names the instance the proof is made on). Neither signed
+ *    in — or, later, a GitHub token that predates the `gist` scope the proof
+ *    needs (`github-scope-missing`) — puts the consent modal in its
+ *    `sign-in-required` state: the guest's own `github.connect` device flow
+ *    (code copied to the clipboard; "Open GitHub" opens the URL) is awaited
+ *    while the modal shows "waiting for GitHub"; the modal also points at
+ *    Settings → Connections for a GitLab sign-in instead. This prompt appears
+ *    only at join time, never at startup.
  * 3. Consent proper: the modal's `prove` state ("Join <title> on <host> as
  *    @login", "what the host learns", Join). It renders in the renderer
  *    (`main/invite-consent.ts`, `invite-consent:*` channels) and stays up in
@@ -41,6 +44,13 @@
  *    { inviteId, secret, nonce, gistId, login }` has the host read it, and
  *    `github.identityProof.delete { gistId }` removes it afterwards (best
  *    effort, after the store write — a delete failure never fails the join).
+ *    A GitLab identity runs the same three steps through
+ *    `sourceControl.identityProof.create / .delete { provider: "gitlab",
+ *    host, … }` (a public snippet on the instance) and `invite.prove { …,
+ *    provider: "gitlab", host, proofId, login }`; a host that can read the
+ *    snippet neither anonymously nor with a connection of its own refuses
+ *    with `identity-unverifiable`, shown as "cannot verify identity on
+ *    <host>".
  *    A `proof-expired` or `proof-invalid` refusal offers one retry with a
  *    fresh challenge: a nonce purged by a later challenge surfaces as
  *    `proof-invalid`, so both mean "restart the challenge".
@@ -73,6 +83,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   InviteConsentOutcome,
   InviteConsentShowPayload,
+  InviteIdentityProvider,
   InviteSignInReason,
 } from '$shared/ipc/invite-consent';
 import type { InviteFailureReason, InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
@@ -98,6 +109,7 @@ import {
   type InviteChallenge,
   type InviteConnection,
   type InviteInspection,
+  type InviteProof,
 } from '../../backend/main/invite-connection';
 import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
@@ -130,10 +142,18 @@ interface PromptLabels {
 /**
  * Display labels of the notices, filled in as the flow learns them: the
  * dialed address once the connection is up, then the prompt labels once the
- * host has described the invite. Whatever is known at the time of a failure
- * is what the notice shows.
+ * host has described the invite, then the forge instance a GitLab proof is
+ * made on. Whatever is known at the time of a failure is what the notice
+ * shows.
  */
-type NoticeLabels = Partial<PromptLabels>;
+type NoticeLabels = Partial<PromptLabels> & { identityHost?: string };
+
+/** The forge account the guest's own daemon is signed in as. */
+interface LocalIdentity extends InviteIdentityProvider {
+  login: string;
+}
+
+const GITHUB_HOST = 'github.com';
 
 /**
  * Why the returning-guest path did not complete the join, as a bounded code
@@ -172,14 +192,18 @@ class InviteFlowError extends Error {
 
 /**
  * The guest daemon's documented `error.data.code` values for
- * `github.identityProof.create` / `.delete` (intentd #1967). Like the host's
- * invite codes, the closed set is the only daemon-authored text that leaves
- * {@link IdentityProofError}; anything else maps to `null`.
+ * `github.identityProof.create` / `.delete` (intentd #1967) and their
+ * per-provider `sourceControl.identityProof.*` counterparts for GitLab. Like
+ * the host's invite codes, the closed set is the only daemon-authored text
+ * that leaves {@link IdentityProofError}; anything else maps to `null`.
  */
 const IDENTITY_PROOF_ERROR_CODES = [
   'github-not-connected',
   'github-scope-missing',
   'github-unreachable',
+  'gitlab-not-connected',
+  'gitlab-scope-missing',
+  'gitlab-unreachable',
 ] as const;
 
 type IdentityProofErrorCode = (typeof IDENTITY_PROOF_ERROR_CODES)[number];
@@ -294,7 +318,7 @@ export async function handleInviteDeepLink(url: string): Promise<void> {
     labels.hostLabel = connection.host;
     const returning = await joinAsReturningGuest(connection, envelope, prompts, labels);
     if (returning.kind === 'handled') return;
-    logger.info('No usable stored credential for this host; proving identity through GitHub', {
+    logger.info('No usable stored credential for this host; proving identity through a forge', {
       reason: returning.reason,
     });
     await joinWithIdentityProof(connection, envelope, prompts, labels);
@@ -349,8 +373,8 @@ async function joinWithIdentityProof(
   };
   Object.assign(noticeLabels, labels);
 
-  let login = await readLocalLogin(client);
-  let signInReason: InviteSignInReason | null = login === null ? 'not-connected' : null;
+  let identity = await readLocalIdentity(client);
+  let signInReason: InviteSignInReason | null = identity === null ? 'not-connected' : null;
   let signedIn = false;
   let consented = false;
   let retried = false;
@@ -365,16 +389,20 @@ async function joinWithIdentityProof(
       const signIn = await signInToGitHub(client, signInReason, labels, prompts);
       if (signIn.kind === 'cancelled') return;
       signedIn = true;
-      login = signIn.login;
+      identity = { provider: 'github', host: GITHUB_HOST, login: signIn.login };
       signInReason = null;
       // The account may differ from the one first read: consent names it anew.
       consented = false;
     }
+    const current = identity as LocalIdentity;
+    // A GitLab proof is read back on the instance; the failure notice names it.
+    noticeLabels.identityHost = current.provider === 'gitlab' ? current.host : undefined;
     if (!consented) {
       consent = prompts.show({
         requestId: randomUUID(),
         mode: 'prove',
-        login: login as string,
+        login: current.login,
+        identity: { provider: current.provider, host: current.host },
         ...labels,
       });
       const decision = await consent.decision;
@@ -384,7 +412,7 @@ async function joinWithIdentityProof(
         return;
       }
       // No renderer to show the modal (cold start / no ack): native box.
-      if (decision === null && !(await showConfirmProve(login as string, labels.workspaceTitle))) {
+      if (decision === null && !(await showConfirmProve(current.login, labels.workspaceTitle))) {
         logger.info('User cancelled the invite before proving identity');
         return;
       }
@@ -396,7 +424,7 @@ async function joinWithIdentityProof(
       envelope,
       challenge,
       labels,
-      login as string,
+      current,
       consent,
     );
     switch (outcome.kind) {
@@ -408,7 +436,7 @@ async function joinWithIdentityProof(
         signInReason = outcome.reason;
         break;
       case 'account-changed':
-        login = outcome.login;
+        identity = { ...current, login: outcome.login };
         consent = null;
         consented = false;
         break;
@@ -432,11 +460,11 @@ async function joinWithIdentityProof(
 /**
  * One proof attempt against the current challenge. `consent` is the prompt
  * in its waiting state (or `null` on a retry, when nothing is up): a Cancel
- * that lands before `invite.prove` is sent aborts the attempt — the gist is
- * deleted — while the prove answer is the point of no return. `login` is the
- * account the user consented to: a proof the guest daemon creates under any
- * other account is deleted, unproven, and reported as `account-changed` so
- * the host never learns an account the user did not approve. The gist is
+ * that lands before `invite.prove` is sent aborts the attempt — the proof is
+ * deleted — while the prove answer is the point of no return. `identity` is
+ * the account the user consented to: a proof the guest daemon creates under
+ * any other account is deleted, unproven, and reported as `account-changed`
+ * so the host never learns an account the user did not approve. The proof is
  * deleted best-effort on every path but `sign-in-required` (where none was
  * created).
  */
@@ -446,7 +474,7 @@ async function proveIdentity(
   envelope: InviteEnvelope,
   challenge: InviteChallenge,
   labels: PromptLabels,
-  login: string,
+  identity: LocalIdentity,
   consent: InviteConsentPrompt | null,
 ): Promise<ProveOutcome> {
   let cancelled = false;
@@ -454,12 +482,9 @@ async function proveIdentity(
     cancelled = true;
   });
 
-  let proof: { gistId: string; login: string };
+  let proof: PublishedProof;
   try {
-    proof = await client.request<{ gistId: string; login: string }>('github.identityProof.create', {
-      nonce: challenge.nonce,
-      hostLabel: labels.hostLabel,
-    });
+    proof = await createProof(client, identity, challenge.nonce, labels.hostLabel);
   } catch (error) {
     const refusal = IdentityProofError.from(error);
     if (refusal.proofCode === 'github-scope-missing') {
@@ -471,27 +496,29 @@ async function proveIdentity(
     throw refusal;
   }
   if (cancelled) {
-    void deleteProof(client, proof.gistId);
+    void deleteProof(client, proof);
     consent?.dismiss('cancelled');
     logger.info('User cancelled the invite while the identity proof was being made');
     return { kind: 'cancelled' };
   }
-  if (proof.login !== login) {
-    void deleteProof(client, proof.gistId);
+  if (proof.login !== identity.login) {
+    void deleteProof(client, proof);
     consent?.dismiss('superseded');
-    logger.info('Identity proof named a different GitHub account than consented; asking again');
+    logger.info('Identity proof named a different forge account than consented; asking again', {
+      provider: identity.provider,
+    });
     return { kind: 'account-changed', login: proof.login };
   }
 
   let credential: Awaited<ReturnType<InviteConnection['prove']>>;
   try {
-    credential = await connection.prove(envelope.inviteId, envelope.secret, {
-      nonce: challenge.nonce,
-      gistId: proof.gistId,
-      login: proof.login,
-    });
+    credential = await connection.prove(
+      envelope.inviteId,
+      envelope.secret,
+      proofParamsFor(proof, challenge.nonce),
+    );
   } catch (error) {
-    void deleteProof(client, proof.gistId);
+    void deleteProof(client, proof);
     if (
       error instanceof InviteRpcError &&
       (error.inviteCode === 'proof-expired' || error.inviteCode === 'proof-invalid')
@@ -510,9 +537,51 @@ async function proveIdentity(
     credential,
     challenge.workspaceTitle,
     labels,
-    () => deleteProof(client, proof.gistId),
+    () => deleteProof(client, proof),
   );
   return { kind: 'joined' };
+}
+
+/**
+ * The proof the guest's own daemon published, by forge: a GitHub gist
+ * (`github.identityProof.create`, the alias every daemon serves) or a GitLab
+ * snippet on `host` (`sourceControl.identityProof.create`). `login` is the
+ * account the daemon actually published under.
+ */
+type PublishedProof =
+  | { provider: 'github'; gistId: string; login: string }
+  | { provider: 'gitlab'; host: string; proofId: string; login: string };
+
+async function createProof(
+  client: JsonRpcClient,
+  identity: LocalIdentity,
+  nonce: string,
+  hostLabel: string,
+): Promise<PublishedProof> {
+  if (identity.provider === 'github') {
+    const result = await client.request<{ gistId: string; login: string }>(
+      'github.identityProof.create',
+      { nonce, hostLabel },
+    );
+    return { provider: 'github', gistId: result.gistId, login: result.login };
+  }
+  const result = await client.request<{ proofId: string; login: string }>(
+    'sourceControl.identityProof.create',
+    { provider: 'gitlab', host: identity.host, nonce, hostLabel },
+  );
+  return { provider: 'gitlab', host: identity.host, proofId: result.proofId, login: result.login };
+}
+
+/** The `invite.prove` proof fields: `gistId` for GitHub (every host reads it), the triple for GitLab. */
+function proofParamsFor(proof: PublishedProof, nonce: string): InviteProof {
+  if (proof.provider === 'github') return { nonce, gistId: proof.gistId, login: proof.login };
+  return {
+    nonce,
+    provider: 'gitlab',
+    host: proof.host,
+    proofId: proof.proofId,
+    login: proof.login,
+  };
 }
 
 /** Wire shape of `github.connect` (PROTOCOL §5.27): the guest's own device flow. */
@@ -727,15 +796,54 @@ async function readLocalLogin(client: JsonRpcClient): Promise<string | null> {
   }
 }
 
+/** The `sourceControl.authStatus` fields the GitLab identity read uses (PROTOCOL §5.27). */
+interface ForgeAuthStatusResult {
+  isConfigured?: boolean;
+  host?: unknown;
+  user?: { login?: unknown } | null;
+}
+
 /**
- * Remove the proof gist once the host has read it (or the attempt ended).
- * Best effort: a failure is logged by bounded code and never fails the join.
+ * The forge account the guest's own daemon is signed in as: GitHub when it
+ * has a GitHub connection, else GitLab (the instance the daemon's connection
+ * targets), else `null`. A daemon that predates `sourceControl.*` fails the
+ * GitLab probe, which reads as "not connected".
  */
-async function deleteProof(client: JsonRpcClient, gistId: string): Promise<void> {
+async function readLocalIdentity(client: JsonRpcClient): Promise<LocalIdentity | null> {
+  const githubLogin = await readLocalLogin(client);
+  if (githubLogin !== null) return { provider: 'github', host: GITHUB_HOST, login: githubLogin };
   try {
-    await client.request('github.identityProof.delete', { gistId });
+    const result = await client.request<ForgeAuthStatusResult>('sourceControl.authStatus', {
+      provider: 'gitlab',
+    });
+    const host = nonBlank(result?.host);
+    const login = nonBlank(result?.user?.login);
+    if (result?.isConfigured !== true || host === undefined || login === undefined) return null;
+    return { provider: 'gitlab', host, login };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Remove the published proof once the host has read it (or the attempt
+ * ended). Best effort: a failure is logged by bounded code and never fails
+ * the join.
+ */
+async function deleteProof(client: JsonRpcClient, proof: PublishedProof): Promise<void> {
+  try {
+    if (proof.provider === 'github') {
+      await client.request('github.identityProof.delete', { gistId: proof.gistId });
+    } else {
+      await client.request('sourceControl.identityProof.delete', {
+        provider: 'gitlab',
+        host: proof.host,
+        proofId: proof.proofId,
+      });
+    }
   } catch (error) {
-    logger.warn('Could not delete the identity proof gist', {
+    logger.warn('Could not delete the identity proof', {
+      provider: proof.provider,
       code: IdentityProofError.from(error).proofCode,
     });
   }
@@ -1117,6 +1225,8 @@ function classifyInviteFailure(error: unknown): InviteFailureReason {
       return 'proof-expired';
     case 'github-unreachable':
       return 'host-github-unreachable';
+    case 'identity-unverifiable':
+      return 'identity-unverifiable';
     case 'workspace-full':
       return 'workspace-full';
     case 'owner-self-join':
@@ -1150,6 +1260,12 @@ function classifyProofFailure(error: IdentityProofError): InviteFailureReason {
       return 'proof-scope-missing';
     case 'github-unreachable':
       return 'proof-github-unreachable';
+    case 'gitlab-not-connected':
+      return 'proof-gitlab-not-connected';
+    case 'gitlab-scope-missing':
+      return 'proof-gitlab-scope-missing';
+    case 'gitlab-unreachable':
+      return 'proof-gitlab-unreachable';
     case null:
       return 'proof-failed';
   }
@@ -1163,7 +1279,7 @@ async function showFailure(
     await showNotice(payload, handoff, {
       type: 'error',
       title: m.deeplink_inviteFailed_title(),
-      message: describeInviteFailureReason(payload.reason),
+      message: describeInviteFailureReason(payload.reason, { identityHost: payload.identityHost }),
       buttons: [m.deeplink_inviteFailed_ok_button()],
       defaultId: 0,
     });

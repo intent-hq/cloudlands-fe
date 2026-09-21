@@ -11,10 +11,17 @@
    *
    * `mode: "prove"` (first join on the host, signed in) and `mode: "confirm"`
    * (returning guest with a stored credential): no code or URL — an identity
-   * line names the signed-in login (prove) or the login the host already
-   * knows (confirm), the "what the host learns" section stays, and the
-   * primary "Join" button reports `open`, keeping the dialog up in a brief
-   * joining state until main dismisses it.
+   * line names the signed-in login (prove; the forge — GitHub, or GitLab with
+   * its instance host — comes from `identity`) or the login the host already
+   * knows (confirm), the "what the host learns" section stays (worded for the
+   * forge the proof is made on), and the primary "Join" button reports
+   * `open`, keeping the dialog up in a brief joining state until main
+   * dismisses it.
+   *
+   * The `sign-in-required` state runs the GitHub device flow inline; a guest
+   * who would rather join with a GitLab account is pointed at Settings →
+   * Connections (the link cancels the join, which the user reopens after
+   * connecting).
    *
    * In every mode Escape / backdrop / × / Cancel report `cancel` (also allowed
    * while waiting — it aborts the join until the host commits it, when main
@@ -29,6 +36,7 @@
   import type { InviteConsentAction, InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import { m } from '$shared/paraglide/messages.js';
   import { FocusTrap } from '$lib/utils/accessibility';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
   interface Props {
     open?: boolean;
@@ -47,6 +55,10 @@
   let openedRequestId = $state<string | null>(null);
   const waiting = $derived(payload !== null && openedRequestId === payload.requestId);
   const signInMode = $derived(payload?.mode === 'sign-in-required');
+  // The forge the proof names; a `prove` payload without `identity` is GitHub.
+  const gitlabIdentity = $derived(
+    payload?.mode === 'prove' && payload.identity?.provider === 'gitlab' ? payload.identity : null,
+  );
 
   // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
   // reaches the keydown handler immediately, and trap it there so Tab cycles
@@ -80,6 +92,11 @@
       e.stopPropagation();
       cancel();
     }
+  }
+
+  function openConnectionsSettings() {
+    cancel();
+    void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
   }
 </script>
 
@@ -140,14 +157,36 @@
                   ? m.inviteConsent_modal_signInScopeMissing_description()
                   : m.inviteConsent_modal_signInNotConnected_description()}
               </p>
+              {#if payload.reason === 'not-connected'}
+                <p class="text-xs text-subtle">
+                  {m.inviteConsent_modal_signInGitLabInstead_before()}<Button
+                    type="button"
+                    variant="link"
+                    class="h-auto p-0 text-xs underline underline-offset-2"
+                    data-testid="invite-consent-connect-gitlab"
+                    onclick={openConnectionsSettings}
+                    >{m.inviteConsent_modal_signInGitLabInstead_link()}</Button
+                  >{m.inviteConsent_modal_signInGitLabInstead_after()}
+                </p>
+              {/if}
             </section>
           {:else}
             <div class="flex items-center gap-2 text-sm text-foreground">
               <Fa icon={faUser} class="shrink-0 text-subtle" />
-              <span>
-                {payload.mode === 'prove'
-                  ? m.inviteConsent_modal_signedInGitHub_label({ login: `@${payload.login}` })
-                  : m.inviteConsent_modal_signedInAs_label({ login: `@${payload.login}` })}
+              <span
+                data-testid="invite-consent-identity"
+                data-provider={gitlabIdentity ? 'gitlab' : 'github'}
+              >
+                {#if payload.mode !== 'prove'}
+                  {m.inviteConsent_modal_signedInAs_label({ login: `@${payload.login}` })}
+                {:else if gitlabIdentity}
+                  {m.inviteConsent_modal_signedInGitLab_label({
+                    host: gitlabIdentity.host,
+                    login: `@${payload.login}`,
+                  })}
+                {:else}
+                  {m.inviteConsent_modal_signedInGitHub_label({ login: `@${payload.login}` })}
+                {/if}
               </span>
             </div>
           {/if}
@@ -156,7 +195,9 @@
               {m.inviteConsent_modal_hostLearns_title()}
             </h3>
             <p class="text-xs text-subtle">
-              {m.inviteConsent_modal_hostLearns_description()}
+              {gitlabIdentity
+                ? m.inviteConsent_modal_hostLearnsGitLab_description({ host: gitlabIdentity.host })
+                : m.inviteConsent_modal_hostLearns_description()}
             </p>
           </section>
           {#if payload.mode === 'sign-in-required'}

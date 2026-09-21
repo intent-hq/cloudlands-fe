@@ -44,6 +44,12 @@
     selectShareWorkspaceTitle,
   } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
+  import {
+    selectGitLabAuthHost,
+    selectGitLabAuthIsConfigured,
+  } from '$store/renderer/slices/gitlab-auth/gitlab-auth-selectors';
+  import { selectIdentityProvider } from '$store/renderer/slices/identity/identity-selectors';
+  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { searchGithubUsers } from '$store/renderer/slices/github-user-search/github-user-search-slice';
   import {
     selectGithubUserSearchError,
@@ -57,6 +63,9 @@
   const workspaceId$ = selectShareWorkspaceId();
   const workspaceTitle$ = selectShareWorkspaceTitle();
   const githubConnected$ = selectGitHubAuthIsAuthenticated();
+  const gitlabConnected$ = selectGitLabAuthIsConfigured();
+  const gitlabHost$ = selectGitLabAuthHost();
+  const identityProvider$ = selectIdentityProvider();
   const canManage$ = selectShareCanManage();
   const members$ = selectShareMembers();
   const invites$ = selectShareInvites();
@@ -93,6 +102,9 @@
   workspaceId={$workspaceId$}
   workspaceTitle={$workspaceTitle$}
   githubConnected={$githubConnected$}
+  gitlabConnected={$gitlabConnected$}
+  gitlabHost={$gitlabHost$}
+  identityProvider={$identityProvider$}
   canManage={$canManage$}
   members={$members$}
   invites={$invites$}
@@ -115,7 +127,12 @@
   userSearchQuery={$userSearchQuery$}
   onClose={() => appStore.dispatch(closeShareDialog())}
   onConnectGitHub={() => appStore.dispatch(openGitHubAuthModal(null))}
-  onCreateInvite={(pinLogin) => appStore.dispatch(shareInviteCreateRequested({ pinLogin }))}
+  onOpenConnections={() => {
+    appStore.dispatch(closeShareDialog());
+    void navigateToSettings({ tab: 'connections', hash: 'integrations' }).catch(() => {});
+  }}
+  onCreateInvite={(pinLogin, pin) =>
+    appStore.dispatch(shareInviteCreateRequested(pin ? { pinLogin, pin } : { pinLogin }))}
   onRevokeInvite={(inviteId) => appStore.dispatch(shareInviteRevokeRequested(inviteId))}
   onRemoveMember={(principalId) => appStore.dispatch(shareMemberRemoveRequested(principalId))}
   onAddMember={(principalId) => appStore.dispatch(shareMemberAddRequested(principalId))}

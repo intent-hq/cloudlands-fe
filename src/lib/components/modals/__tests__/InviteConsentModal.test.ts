@@ -10,8 +10,12 @@ vi.mock('svelte-fa', async () => ({
   default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
 }));
 
-const { handleLink } = vi.hoisted(() => ({ handleLink: vi.fn(() => Promise.resolve()) }));
+const { handleLink, navigateToSettings } = vi.hoisted(() => ({
+  handleLink: vi.fn(() => Promise.resolve()),
+  navigateToSettings: vi.fn(() => Promise.resolve()),
+}));
 vi.mock('$features/navigation/link-handler', () => ({ handleLink }));
+vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings }));
 
 /** The guest's own sign-in (`sign-in-required`): device code + URL, "Open GitHub" primary. */
 const PAYLOAD: InviteConsentShowPayload = {
@@ -32,6 +36,13 @@ const PROVE_PAYLOAD: InviteConsentShowPayload = {
   login: 'octocat',
   workspaceTitle: 'Alpha',
   hostLabel: 'host.example',
+};
+
+/** First join proved with the guest's GitLab connection (no GitHub one). */
+const PROVE_GITLAB_PAYLOAD: InviteConsentShowPayload = {
+  ...PROVE_PAYLOAD,
+  requestId: 'req-4',
+  identity: { provider: 'gitlab', host: 'gitlab.example.com' },
 };
 
 const CONFIRM_PAYLOAD: InviteConsentShowPayload = {
@@ -276,6 +287,49 @@ describe('InviteConsentModal', () => {
 
     expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('prove mode: names the GitLab instance the proof is made on, and GitHub without an identity', async () => {
+    const InviteConsentModal = await loadModal();
+
+    const { rerender } = render(InviteConsentModal, {
+      props: { open: true, payload: PROVE_GITLAB_PAYLOAD, onRespond: vi.fn() },
+    });
+    const identity = screen.getByTestId('invite-consent-identity');
+    expect(identity.getAttribute('data-provider')).toBe('gitlab');
+    expect(identity.textContent).toContain('@octocat');
+    expect(identity.textContent).toContain('gitlab.example.com');
+    expect(screen.getByText(/snippet on gitlab\.example\.com/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Join' })).toBeTruthy();
+
+    // Older main builds send no `identity`: the line stays GitHub.
+    await rerender({ open: true, payload: PROVE_PAYLOAD, onRespond: vi.fn() });
+    const github = screen.getByTestId('invite-consent-identity');
+    expect(github.getAttribute('data-provider')).toBe('github');
+    expect(github.textContent).not.toContain('gitlab.example.com');
+    expect(screen.queryByText(/snippet on/)).toBeNull();
+  });
+
+  it('sign-in-required (not connected): the GitLab alternative cancels the join and opens Connections', async () => {
+    const onRespond = vi.fn();
+    const InviteConsentModal = await loadModal();
+
+    render(InviteConsentModal, { props: { open: true, payload: PAYLOAD, onRespond } });
+    await fireEvent.click(screen.getByTestId('invite-consent-connect-gitlab'));
+
+    expect(onRespond).toHaveBeenCalledExactlyOnceWith('cancel');
+    expect(navigateToSettings).toHaveBeenCalledWith({ tab: 'connections', hash: 'integrations' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('sign-in-required (scope missing): offers no GitLab alternative, the GitHub connection just needs re-consent', async () => {
+    const InviteConsentModal = await loadModal();
+
+    render(InviteConsentModal, {
+      props: { open: true, payload: { ...PAYLOAD, reason: 'scope-missing' }, onRespond: vi.fn() },
+    });
+
+    expect(screen.queryByTestId('invite-consent-connect-gitlab')).toBeNull();
   });
 
   it('prove mode: a cancel from the joining state is still reported until main dismisses', async () => {

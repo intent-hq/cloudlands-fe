@@ -30,7 +30,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/git-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
   ['src/store/renderer/seeders/guest-sessions-bridge-seeder.ts', { registerMockIpcHandler: 3 }],
   ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 16 }],
-  ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 32 }],
+  ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 33 }],
   ['src/store/renderer/seeders/invite-consent-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-notice-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   [

@@ -612,7 +612,7 @@ describe('handleInviteDeepLink', () => {
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
     expect(showMessageBox).toHaveBeenCalledTimes(1);
     await vi.waitFor(() =>
-      expect(logLines.join('\n')).toContain('Could not delete the identity proof gist'),
+      expect(logLines.join('\n')).toContain('Could not delete the identity proof'),
     );
     expect(logLines.join('\n')).toContain('"code":"github-unreachable"');
     expect(logLines.join('\n')).not.toContain(SECRET);
@@ -720,6 +720,7 @@ describe('handleInviteDeepLink — renderer consent modal (prove)', () => {
       requestId: expect.any(String),
       mode: 'prove',
       login: 'octocat',
+      identity: { provider: 'github', host: 'github.com' },
       workspaceTitle: CHALLENGE.workspaceTitle,
       hostLabel: '192.168.1.10',
     });
@@ -2248,6 +2249,182 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
     expect(reasons).toEqual(['denied', 'flow-expired', 'sign-in-failed']);
     expect(showMessageBox).not.toHaveBeenCalled();
   });
+});
+
+/**
+ * A guest whose only forge connection is GitLab: the identity comes from
+ * `sourceControl.authStatus { provider: "gitlab" }`, the proof is a snippet
+ * (`sourceControl.identityProof.create / .delete { provider: "gitlab", host }`)
+ * and `invite.prove` names it by `provider` / `host` / `proofId`. The GitHub
+ * path above stays byte-identical (it never sends `provider` / `proofId`).
+ */
+describe('handleInviteDeepLink — GitLab identity', () => {
+  const GITLAB_HOST = 'gitlab.example.com';
+  const GITLAB_PROOF = {
+    proofId: 'snip-77',
+    login: 'gl-user',
+    provider: 'gitlab',
+    host: GITLAB_HOST,
+  };
+
+  /** A guest daemon with no GitHub connection and a configured GitLab one. */
+  function gitlabOnlyDaemon(): void {
+    localMethods.clear();
+    onLocal('github.getUser', () => ({ user: null }));
+    onLocal('sourceControl.authStatus', (params) => {
+      expect(params).toEqual({ provider: 'gitlab' });
+      return {
+        provider: 'gitlab',
+        host: GITLAB_HOST,
+        isConfigured: true,
+        user: { login: 'gl-user' },
+      };
+    });
+    onLocal('sourceControl.identityProof.create', () => GITLAB_PROOF);
+    onLocal('sourceControl.identityProof.delete', () => ({ ok: true }));
+  }
+
+  function noticePayload() {
+    return showInviteNotice.mock.calls[0][0] as Record<string, unknown>;
+  }
+
+  beforeEach(() => {
+    gitlabOnlyDaemon();
+    prove.mockResolvedValue({ ...CREDENTIAL, principalId: 'gl:4711', login: 'gl-user' });
+  });
+
+  it('joins with a snippet proof: consent names GitLab, prove carries provider/host/proofId, snippet deleted', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showInviteConsent.mock.calls[0][0]).toEqual({
+      requestId: expect.any(String),
+      mode: 'prove',
+      login: 'gl-user',
+      identity: { provider: 'gitlab', host: GITLAB_HOST },
+      workspaceTitle: CHALLENGE.workspaceTitle,
+      hostLabel: '192.168.1.10',
+    });
+    expect(localCalls('sourceControl.identityProof.create')).toEqual([
+      [
+        'sourceControl.identityProof.create',
+        {
+          provider: 'gitlab',
+          host: GITLAB_HOST,
+          nonce: CHALLENGE.nonce,
+          hostLabel: '192.168.1.10',
+        },
+      ],
+    ]);
+    expect(prove).toHaveBeenCalledWith('inv-1', SECRET, {
+      nonce: CHALLENGE.nonce,
+      provider: 'gitlab',
+      host: GITLAB_HOST,
+      proofId: 'snip-77',
+      login: 'gl-user',
+    });
+    expect(localCalls('github.identityProof.create')).toEqual([]);
+    expect(localCalls('github.connect')).toEqual([]);
+    expect(localCalls('sourceControl.identityProof.delete')).toEqual([
+      [
+        'sourceControl.identityProof.delete',
+        { provider: 'gitlab', host: GITLAB_HOST, proofId: 'snip-77' },
+      ],
+    ]);
+    expect(guestAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ principalId: 'gl:4711', login: 'gl-user', token: TOKEN }),
+    );
+    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('GitHub wins when both forges are connected (the GitLab probe is never made)', async () => {
+    onLocal('github.getUser', () => ({ user: { login: 'octocat' } }));
+    onLocal('github.identityProof.create', () => PROOF);
+    onLocal('github.identityProof.delete', () => ({ ok: true }));
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    await handleInviteDeepLink(LINK);
+    expect(localCalls('sourceControl.authStatus')).toEqual([]);
+    expect(prove).toHaveBeenCalledWith('inv-1', SECRET, {
+      nonce: CHALLENGE.nonce,
+      gistId: PROOF.gistId,
+      login: PROOF.login,
+    });
+  });
+
+  it('a GitLab connection without a resolved user or a daemon without sourceControl.* reads as not connected', async () => {
+    onLocal('sourceControl.authStatus', () => ({
+      isConfigured: true,
+      host: GITLAB_HOST,
+      user: null,
+    }));
+    onLocal('github.connect', () => CONNECT);
+    onLocal('github.cancelAuth', () => ({ ok: true }));
+    const { prompt } = fakeConsent('cancel');
+    showInviteConsent.mockReturnValue(prompt);
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({
+      mode: 'sign-in-required',
+      reason: 'not-connected',
+    });
+    expect(localCalls('sourceControl.identityProof.create')).toEqual([]);
+    expect(prove).not.toHaveBeenCalled();
+  });
+
+  it('identity-unverifiable: the notice names the GitLab instance, the snippet is deleted, nothing minted', async () => {
+    prove.mockRejectedValue(
+      new InviteRpcError(-32603, { code: 'identity-unverifiable', host: GITLAB_HOST }),
+    );
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    showInviteNotice.mockResolvedValue(true);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(showInviteNotice).toHaveBeenCalledTimes(1);
+    expect(noticePayload()).toMatchObject({
+      kind: 'failed',
+      reason: 'identity-unverifiable',
+      identityHost: GITLAB_HOST,
+      hostLabel: '192.168.1.10',
+    });
+    expect(prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
+    expect(localCalls('sourceControl.identityProof.delete')).toHaveLength(1);
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('a native failure box for identity-unverifiable reads the same sentence, host included', async () => {
+    prove.mockRejectedValue(
+      new InviteRpcError(-32603, { code: 'identity-unverifiable', host: GITLAB_HOST }),
+    );
+    await handleInviteDeepLink(LINK);
+    const failure = showMessageBox.mock.calls.at(-1)?.[0] as { type: string; message: string };
+    expect(failure.type).toBe('error');
+    expect(failure.message).toContain(GITLAB_HOST);
+    expect(failure.message.toLowerCase()).not.toContain('timed out');
+  });
+
+  it.each([
+    ['gitlab-not-connected', 'proof-gitlab-not-connected'],
+    ['gitlab-scope-missing', 'proof-gitlab-scope-missing'],
+    ['gitlab-unreachable', 'proof-gitlab-unreachable'],
+  ])(
+    'a %s refusal from the guest daemon is a failure (no GitHub device flow), reason %s',
+    async (code, reason) => {
+      onLocal('sourceControl.identityProof.create', () => {
+        throw localRefusal(code);
+      });
+      showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
+      showInviteNotice.mockResolvedValue(true);
+      await handleInviteDeepLink(LINK);
+      expect(noticePayload()).toMatchObject({ kind: 'failed', reason });
+      expect(localCalls('github.connect')).toEqual([]);
+      expect(prove).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('routeInviteLinkFromOs', () => {

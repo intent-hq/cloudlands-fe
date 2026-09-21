@@ -12,6 +12,7 @@
   import SentryIcon from '$lib/components/icons/SentryIcon.svelte';
   import GitHubAuthConnection from './GitHubAuthConnection.svelte';
   import GitLabAuthConnection from './GitLabAuthConnection.svelte';
+  import ForgeIdentityChoice from './ForgeIdentityChoice.svelte';
   import LinearAuthConnection from './LinearAuthConnection.svelte';
   import SentryAuthConnection from './SentryAuthConnection.svelte';
 
@@ -78,6 +79,7 @@
   <div class="divide-y divide-border [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
     <GitHubAuthConnection />
     <GitLabAuthConnection />
+    <ForgeIdentityChoice />
     <LinearAuthConnection />
     <SentryAuthConnection />
   </div>

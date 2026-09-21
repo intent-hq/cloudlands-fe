@@ -14,7 +14,9 @@
  *    nonce (the guest publishes it through its own daemon's
  *    `github.identityProof.create`), answering the collaborator credential
  *    exactly once: `{ status: "authorized", token, principalId, login,
- *    workspaceId }`.
+ *    workspaceId }`. A GitLab identity proves with `{ …, provider: "gitlab",
+ *    host, proofId, login }` instead (`sourceControl.identityProof.create`
+ *    publishes a public snippet the host reads back on that instance).
  *
  * A guest that already holds a credential for the host skips the proof:
  * `invite.inspect { inviteId, secret }` is the challenge's validation and
@@ -108,12 +110,14 @@ export interface InviteChallenge extends InviteInspection {
   nonceExpiresAt: string;
 }
 
-/** The guest's published identity proof, as `invite.prove` names it. */
-interface InviteProof {
-  nonce: string;
-  gistId: string;
-  login: string;
-}
+/**
+ * The guest's published identity proof, as `invite.prove` names it: a GitHub
+ * gist by `gistId` (the pre-provider-neutral spelling every host understands),
+ * or a proof on a named forge by `provider` / `host` / `proofId`.
+ */
+export type InviteProof =
+  | { nonce: string; login: string; gistId: string }
+  | { nonce: string; login: string; provider: 'gitlab'; host: string; proofId: string };
 
 /** Join result (`invite.prove` / `invite.accept`): the collaborator credential, returned exactly once. */
 interface InviteCredential {
@@ -133,7 +137,9 @@ interface InviteCredential {
  * the gist, the nonce is spent or past `nonceExpiresAt`, or the host could
  * not reach GitHub — from intentd #1967; `owner-self-join` — the proven or
  * presented identity is the host owner's own account, which never joins its
- * own host as a guest — from intentd #1986). The closed set is the ONLY
+ * own host as a guest — from intentd #1986; `identity-unverifiable` — the
+ * GitLab instance named by `invite.prove` refuses anonymous reads and the
+ * host has no connection of its own to it). The closed set is the ONLY
  * server-authored text that ever leaves {@link InviteRpcError}: a code
  * outside it maps to `null`.
  */
@@ -149,6 +155,7 @@ const INVITE_ERROR_CODES = [
   'proof-invalid',
   'proof-expired',
   'github-unreachable',
+  'identity-unverifiable',
   'owner-self-join',
 ] as const;
 
@@ -647,7 +654,7 @@ function attachRpc(
     prove: (inviteId, secret, proof, timeoutMs = INVITE_PROVE_TIMEOUT_MS) =>
       request(
         INVITE_PROVE_METHOD,
-        { inviteId, secret, nonce: proof.nonce, gistId: proof.gistId, login: proof.login },
+        { inviteId, secret, ...proof },
         timeoutMs,
       ) as Promise<InviteCredential>,
     inspect: (inviteId, secret) =>
