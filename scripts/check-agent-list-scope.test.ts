@@ -26,6 +26,20 @@ describe('agent.list scope guard', () => {
       'saga tuple',
       'const rows = yield call([appClient.agents, appClient.agents.list], workspaceId);',
     ],
+    [
+      'request after a URL string literal',
+      'const u = "https://x"; client.request(\'agent.list\', {})',
+    ],
+    ['request after a URL template literal', "const u = `https://x`; request('agent.list', {})"],
+    [
+      'request after a file URL string literal',
+      'const u = "file:///tmp/x"; request(\'agent.list\', {})',
+    ],
+    ['request after a `//` inside a string', 'const p = "a//b"; request(\'agent.list\', {})'],
+    [
+      'request after a block-comment opener in a string',
+      'const s = "/*"; request(\'agent.list\', {})',
+    ],
   ])('flags an unscoped %s request', (_name, ...lines) => {
     const hits = findUnscopedAgentListRequests(lines.join('\n'));
     const expectedLine = lines.findIndex((line) => /agents?\.list/.test(line)) + 1;
@@ -48,6 +62,9 @@ describe('agent.list scope guard', () => {
     ['method definition', 'const agents = { list(workspaceId: string) { return rows; } };'],
     ['line comment', "// the old code did request('agent.list', { workspaceId })"],
     ['block comment', '/* request(`agent.list`, { workspaceId }) */'],
+    ['URL in a line comment', "// see https://x — request('agent.list', { workspaceId })"],
+    ['line comment after a URL string', 'const u = "https://x"; // request(\'agent.list\', {})'],
+    ['Svelte HTML comment', "<!-- request('agent.list', { workspaceId }) -->"],
   ])('ignores %s', (_name, ...lines) => {
     expect(findUnscopedAgentListRequests(lines.join('\n'))).toEqual([]);
   });

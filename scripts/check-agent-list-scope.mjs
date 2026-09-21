@@ -36,10 +36,7 @@ export const REMEDIATION_HINT = [
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
 const TEST_PATH_PATTERN =
   /(?:^|\/)(?:__tests__|test|mocks)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|\.(?:ct|visual)\.spec\./;
-// Line comments, block comments, and Svelte HTML comments are blanked (newlines kept)
-// so a documented example cannot trigger the gate — or satisfy the scope check — and
-// line numbers stay accurate.
-const COMMENT_PATTERN = /\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<=^|[^:'"`])\/\/[^\n]*/gm;
+const QUOTES = new Set(["'", '"', '`']);
 // Wire form: the `'agent.list'` literal as a call argument (`request('agent.list', …)`,
 // including a generic `request<T>(\n 'agent.list', …)`). Wrapper form: a direct
 // `.agents.list(` / `.agents.listWithMeta(`, the method reference passed to a saga
@@ -56,8 +53,50 @@ const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, ''
 export const isScannedPath = (filePath) =>
   SCANNED_EXTENSIONS.has(path.posix.extname(filePath)) && !TEST_PATH_PATTERN.test(filePath);
 
-const blankComments = (text) =>
-  text.replace(COMMENT_PATTERN, (match) => match.replace(/[^\n]/g, ' '));
+// End (exclusive) of the string or template literal opening at `start`. A quoted string
+// left open at a newline ends there, so stray markup apostrophes cannot swallow a file.
+function literalEnd(text, start) {
+  const quote = text[start];
+  for (let i = start + 1; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === '\\') i += 1;
+    else if (char === quote) return i + 1;
+    else if (char === '\n' && quote !== '`') return i;
+  }
+  return text.length;
+}
+
+// Line comments, block comments, and Svelte HTML comments are blanked (newlines kept)
+// so a documented example cannot trigger the gate — or satisfy the scope check — and
+// line numbers stay accurate. String and template literals are walked rather than
+// pattern-matched so a `//` inside one (`"https://…"`) never opens a comment that would
+// blank a request later on the same line.
+function blankComments(text) {
+  const parts = [];
+  let kept = 0;
+  let i = 0;
+  const closeAt = (token, from) => {
+    const at = text.indexOf(token, from);
+    return at === -1 ? text.length : at + token.length;
+  };
+  const blankTo = (end) => {
+    parts.push(text.slice(kept, i), text.slice(i, end).replace(/[^\n]/g, ' '));
+    kept = i = end;
+  };
+  while (i < text.length) {
+    const char = text[i];
+    if (char === '/' && text[i + 1] === '/') {
+      const newline = text.indexOf('\n', i);
+      blankTo(newline === -1 ? text.length : newline);
+    } else if (char === '/' && text[i + 1] === '*') blankTo(closeAt('*/', i + 2));
+    else if (text.startsWith('<!--', i)) blankTo(closeAt('-->', i + 4));
+    else if (char === '\\') i += 2;
+    else if (QUOTES.has(char)) i = literalEnd(text, i);
+    else i += 1;
+  }
+  parts.push(text.slice(kept));
+  return parts.join('');
+}
 
 const previousToken = (text, index) => {
   for (let i = index - 1; i >= 0; i -= 1) if (!/\s/.test(text[i])) return text[i];
