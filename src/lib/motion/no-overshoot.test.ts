@@ -1,7 +1,7 @@
 // @verify-changed-triggers: src/**/*.css, src/**/*.svelte, src/**/*.ts
 // Guard literal CSS easing curves, including those embedded in renderer strings.
 // Keyframe trajectories and computed JS easing are outside this scan: review their
-// start/end values separately. springs.test.ts simulates the shared physical tiers.
+// start/end values separately. springs.test.ts exercises real retargeted motion.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { expect, it } from 'vitest';

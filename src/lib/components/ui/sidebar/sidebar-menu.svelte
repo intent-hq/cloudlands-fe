@@ -168,7 +168,7 @@
           rect={hoverRect}
           initialRect={hoverAnchorRect}
           identity={hoverIndex}
-          tier="fast"
+          tier="moderate"
           kind="hover"
           class="bg-hover z-0"
         />
@@ -178,7 +178,7 @@
       <Highlight
         rect={focusRect}
         identity={focusIndex}
-        tier="fast"
+        tier="moderate"
         kind="focus"
         class="border-focus-ring z-20 border"
       />

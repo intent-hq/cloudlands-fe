@@ -1,4 +1,4 @@
-import { cubicOut, linear } from 'svelte/easing';
+import { linear } from 'svelte/easing';
 import {
   blur as svelteBlur,
   draw as svelteDraw,
@@ -72,7 +72,7 @@ function tierConfig(node: Element, tier: SpringTierName, exit = false) {
     duration: cssTimeMs(customProperty(style, `--spring-${tier}${suffix}`), fallback),
     easing: exit
       ? spring[tier].exit.easing
-      : (linearEasing(customProperty(style, `--spring-${tier}-ease`)) ?? cubicOut),
+      : (linearEasing(customProperty(style, `--spring-${tier}-ease`)) ?? spring[tier].easing),
   };
 }
 
