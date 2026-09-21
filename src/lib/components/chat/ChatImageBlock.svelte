@@ -40,7 +40,8 @@
   // A truncated block renders its thumbnail (or placeholder); clicking asks
   // for the original first — the lightbox opens once hydration swaps the
   // full block in (dataTruncated then disappears from the merged block).
-  const needsHydration = $derived(dataTruncated && onHydrate !== undefined);
+  const hasOriginal = $derived(!dataTruncated && !dataIsThumbnail);
+  const needsHydration = $derived(!hasOriginal && onHydrate !== undefined);
 
   function handleClick() {
     if (needsHydration) {
@@ -79,7 +80,7 @@
           onerror={() => (failedImageUrl = imageUrl)}
         />
       </Button>
-      {#if !dataTruncated}
+      {#if hasOriginal}
         <!-- Truncated blocks only carry the low-res write-time thumbnail, so
              the menu would download/copy/inspect the wrong bytes; clicking
              hydrates the original, after which the menu (and the lightbox's)
@@ -122,6 +123,6 @@
     {imageUrl}
     imageName={alt}
     {openerElement}
-    showActionsMenu
+    showActionsMenu={hasOriginal}
   />
 {/if}

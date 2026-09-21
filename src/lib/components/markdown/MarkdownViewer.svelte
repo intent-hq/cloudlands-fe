@@ -13,7 +13,7 @@
   import { splitWorkspaceVideoMarkdown } from '$lib/utils/workspace-file-video';
   import RecursiveMarkdownViewer from './MarkdownViewer.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
-  import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
+  import { parseWorkspaceFileImageUrl, supportsImageActions } from '$lib/utils/image-actions';
   import {
     createWorkspaceFileVersion,
     parseIntentFileTarget,
@@ -163,13 +163,13 @@
     }
   });
 
-  // Lightbox state for inline workspace-file images
+  // Lightbox state for supported inline images.
   let lightboxOpen = $state(false);
   let lightboxImageUrl = $state('');
   let lightboxImageAlt = $state<string | undefined>(undefined);
   let lightboxOpenerElement = $state<HTMLElement | null>(null);
 
-  // Hover overlay: workspace-backed images get an image actions menu.
+  // Hover overlay: supported image sources share one image actions menu.
   // The images live in {@html}-managed DOM, so a single Svelte-rendered
   // trigger is positioned over whichever image is hovered or focused.
   let hoveredImage = $state<HTMLImageElement | null>(null);
@@ -177,19 +177,34 @@
   let imageActionsOpen = $state(false);
   let imageActionsOverlayElement = $state<HTMLElement | null>(null);
 
-  function isWorkspaceImage(image: HTMLImageElement): boolean {
-    const src = image.getAttribute('src') || '';
-    return src.startsWith('workspace-file://') || src.startsWith('workspace-asset://');
+  function isActionableImage(image: HTMLImageElement): boolean {
+    return supportsImageActions(image.getAttribute('src') || '');
+  }
+
+  function imageActionsHaveFocus(): boolean {
+    const active = document.activeElement;
+    return Boolean(
+      active &&
+      (active === hoveredImage ||
+        active === hoveredImage?.closest('a') ||
+        imageActionsOverlayElement?.contains(active)),
+    );
   }
 
   function handleImageInteraction(event: MouseEvent | FocusEvent): void {
     const target = event.target;
-    if (target instanceof HTMLImageElement && isWorkspaceImage(target)) {
-      if (hoveredImage === target) return;
+    const image =
+      target instanceof HTMLImageElement
+        ? target
+        : target instanceof HTMLAnchorElement
+          ? target.querySelector('img')
+          : null;
+    if (image && isActionableImage(image)) {
+      if (hoveredImage === image) return;
       const container = event.currentTarget as HTMLElement;
-      const imageRect = target.getBoundingClientRect();
+      const imageRect = image.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
-      hoveredImage = target;
+      hoveredImage = image;
       hoveredImagePosition = {
         top: imageRect.top - containerRect.top + 6,
         left: imageRect.right - containerRect.left - 34,
@@ -197,12 +212,13 @@
     } else if (hoveredImage && !imageActionsOpen) {
       // Keep the overlay while the pointer is on the trigger itself.
       if (target instanceof Node && imageActionsOverlayElement?.contains(target)) return;
+      if (event.type === 'mouseover' && imageActionsHaveFocus()) return;
       hoveredImage = null;
     }
   }
 
   function handleImageHoverLeave(): void {
-    if (!imageActionsOpen) hoveredImage = null;
+    if (!imageActionsOpen && !imageActionsHaveFocus()) hoveredImage = null;
   }
 
   function mediaFallbacks(node: HTMLElement) {
@@ -251,7 +267,7 @@
 
     function reconcile() {
       for (const image of node.querySelectorAll<HTMLImageElement>('img')) {
-        if (isWorkspaceImage(image)) {
+        if (isActionableImage(image) && !image.closest('a')) {
           image.tabIndex = 0;
           image.setAttribute('role', 'button');
         }
@@ -301,11 +317,11 @@
     const target = event.target as HTMLElement;
     const anchor = target.closest('a');
 
-    // Inline workspace-file images open in the lightbox (unless wrapped in a
+    // Supported inline images open in the lightbox (unless wrapped in a
     // link, in which case the link wins)
     if (!anchor && target instanceof HTMLImageElement) {
       const src = target.getAttribute('src') || '';
-      if (src.startsWith('workspace-file://') || src.startsWith('workspace-asset://')) {
+      if (supportsImageActions(src)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -397,7 +413,7 @@
   function handleLinkKeydown(event: KeyboardEvent): void {
     if (
       event.target instanceof HTMLImageElement &&
-      isWorkspaceImage(event.target) &&
+      isActionableImage(event.target) &&
       (event.key === 'Enter' || event.key === ' ')
     ) {
       handleLinkClick(event);
@@ -931,9 +947,8 @@
     border-radius: 0.375rem;
   }
 
-  /* Workspace-backed images open in a lightbox on click */
-  .markdown-viewer :global(img[src^='workspace-file://']),
-  .markdown-viewer :global(img[src^='workspace-asset://']) {
+  /* Only unlinked, supported images open in the lightbox. */
+  .markdown-viewer :global(img[role='button']) {
     cursor: zoom-in;
   }
 

@@ -8,6 +8,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MarkdownViewer from '../MarkdownViewer.svelte';
 
+const imageSources = [
+  'workspace-asset://asset-123',
+  'https://example.com/diagram.png',
+  'data:image/png;base64,iVBORw0KGgo=',
+];
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -187,9 +193,9 @@ describe('MarkdownViewer static rendering', () => {
     },
   );
 
-  it('offers image actions for a note workspace asset without chat thumbnails', async () => {
+  it.each(imageSources)('offers keyboard image actions for %s', async (src) => {
     const { container } = render(MarkdownViewer, {
-      props: { content: '![note image](workspace-asset://asset-123)' },
+      props: { content: `![note image](${src})` },
     });
     const image = await waitFor(() => {
       const element = container.querySelector<HTMLImageElement>('img');
@@ -205,8 +211,8 @@ describe('MarkdownViewer static rendering', () => {
     expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
   });
 
-  it('keeps image actions interactive across streaming HTML updates', async () => {
-    const content = '![streamed image](workspace-asset://asset-123)';
+  it.each(imageSources)('keeps %s actions interactive across streaming updates', async (src) => {
+    const content = `![streamed image](${src})`;
     const view = render(MarkdownViewer, { props: { content, isStreaming: true } });
     const image = await waitFor(() => {
       const element = view.container.querySelector<HTMLImageElement>('img');
@@ -226,6 +232,59 @@ describe('MarkdownViewer static rendering', () => {
     await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
     expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
   });
+
+  it('keeps keyboard image actions reachable when the pointer leaves', async () => {
+    const { container } = render(MarkdownViewer, {
+      props: { content: '![diagram](https://example.com/diagram.png)\n\nOther content.' },
+    });
+    const image = await screen.findByRole('button', { name: 'diagram' });
+    image.focus();
+    const trigger = await screen.findByRole('button', { name: /image options/i });
+
+    await fireEvent.mouseOver(screen.getByText('Other content.'));
+    await fireEvent.mouseLeave(container.querySelector('.markdown-viewer')!);
+    expect(trigger.isConnected).toBe(true);
+    trigger.focus();
+    await fireEvent.mouseLeave(container.querySelector('.markdown-viewer')!);
+    expect(document.activeElement).toBe(trigger);
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(await screen.findByRole('menuitem', { name: /copy image/i })).toBeTruthy();
+  });
+
+  it.each(imageSources)('previews %s with the keyboard and restores image focus', async (src) => {
+    const { container } = render(MarkdownViewer, { props: { content: `![preview](${src})` } });
+    const image = await waitFor(() => {
+      const element = container.querySelector<HTMLImageElement>('img');
+      expect(element?.tabIndex).toBe(0);
+      return element!;
+    });
+    image.focus();
+    await fireEvent.keyDown(image, { key: 'Enter' });
+    const dialog = await screen.findByRole('dialog', { name: /image preview/i });
+    expect(dialog.querySelector('img')?.getAttribute('src')).toBe(src);
+    await fireEvent.click(screen.getByRole('button', { name: /close preview/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(image);
+  });
+
+  it.each(['http://example.com/image.png', 'file:///tmp/image.png', 'blob:untrusted'])(
+    'does not add image actions or preview to unsupported %s',
+    async (src) => {
+      const { container } = render(MarkdownViewer, {
+        props: { content: `![unsupported](${src})\n\nrender complete` },
+      });
+      await screen.findByText('render complete');
+      const image = container.querySelector<HTMLImageElement>('img');
+      if (image) {
+        expect(image.tabIndex).toBe(-1);
+        await fireEvent.mouseOver(image);
+        await fireEvent.click(image);
+        await fireEvent.keyDown(image, { key: 'Enter' });
+      }
+      expect(screen.queryByRole('button', { name: /image options/i })).toBeNull();
+      expect(screen.queryByRole('dialog')).toBeNull();
+    },
+  );
 
   it.each([
     ['recursive', 'workspace-asset://other-ws/demo.webm', 'ws-abc'],

@@ -127,6 +127,41 @@ describe('ChatImageBlock', () => {
     expect(screen.queryByRole('button', { name: /image options/i })).toBeNull();
   });
 
+  it('does not export a thumbnail through the lightbox when hydration is unavailable', async () => {
+    render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', dataTruncated: true, dataIsThumbnail: true },
+    });
+    await fireEvent.click(screen.getByRole('button'));
+    await screen.findByRole('dialog', { name: /image preview/i });
+    expect(screen.queryByRole('button', { name: /image options/i })).toBeNull();
+  });
+
+  it('downloads only the original payload after the thumbnail has hydrated', async () => {
+    const onHydrate = vi.fn();
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const view = render(ChatImageBlock, {
+      props: {
+        data: pngData,
+        mimeType: 'image/png',
+        alt: 'original',
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        onHydrate,
+      },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: /load full-size/i }));
+    expect(onHydrate).toHaveBeenCalledOnce();
+    expect(anchorClick).not.toHaveBeenCalled();
+    const original = btoa('original image bytes, not the thumbnail');
+    await view.rerender({ data: original, dataTruncated: false, dataIsThumbnail: false });
+    await openImageActionsMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: /download/i }));
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledOnce());
+    const anchor = anchorClick.mock.instances[0] as HTMLAnchorElement;
+    expect(anchor.href).toBe(`data:image/png;base64,${original}`);
+    expect(anchor.download).toBe('original.png');
+  });
+
   it('exposes the actions menu inside the opened lightbox', async () => {
     render(ChatImageBlock, {
       props: { data: pngData, mimeType: 'image/png', alt: 'screenshot.png' },

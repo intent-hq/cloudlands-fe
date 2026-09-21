@@ -25,6 +25,7 @@
     isHttpsImageUrl,
     parseBase64DataUrl,
     parseWorkspaceFileImageUrl,
+    supportsImageActions,
   } from '$lib/utils/image-actions';
 
   interface Props {
@@ -107,12 +108,15 @@
   }
 
   async function download() {
+    let objectUrl: string | null = null;
     try {
       let href = imageUrl;
-      let objectUrl: string | null = null;
+      let mimeType = dataUrl?.mimeType;
       if (!dataUrl) {
         // eslint-disable-next-line intent/no-component-async-data-fetch -- local blob read feeding the browser download, not domain data
-        objectUrl = URL.createObjectURL(await getImageBlob());
+        const blob = await getImageBlob();
+        mimeType = blob.type;
+        objectUrl = URL.createObjectURL(blob);
         href = objectUrl;
       }
       const link = document.createElement('a');
@@ -120,14 +124,18 @@
       link.download = imageDownloadFileName({
         workspacePath: workspaceFile?.path,
         imageName,
-        mimeType: dataUrl?.mimeType,
+        mimeType,
       });
       document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+      }
     } catch {
       notify.error(m.ui_imageActionsMenu_downloadFailed_error());
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     }
   }
 
@@ -185,62 +193,64 @@
   }
 </script>
 
-<Menu.Root bind:open>
-  <Menu.Trigger
-    class={cn(
-      'flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white',
-      'hover:bg-black/75',
-      triggerClass,
-    )}
-    onclick={(event: MouseEvent) => event.stopPropagation()}
-  >
-    {#snippet child({ props })}
-      <Button
-        {...props}
-        variant="plain"
-        size="icon-sm"
-        wrapContent={false}
-        active={open}
-        aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
-      >
-        <Fa icon={faEllipsis} size="sm" />
-      </Button>
-    {/snippet}
-  </Menu.Trigger>
-  <Menu.Content class={contentClass} align="end">
-    <Menu.Item onSelect={() => void download()}>
-      {m.ui_imageActionsMenu_download_label()}
-    </Menu.Item>
-    <Menu.Item onSelect={() => void copyImage()}>
-      {m.ui_imageActionsMenu_copyImage_label()}
-    </Menu.Item>
-    {#if workspaceFile}
-      <Menu.Item onSelect={() => void copyPath()}>
-        {m.ui_imageActionsMenu_copyPath_label()}
-      </Menu.Item>
-    {:else if isHttpsImage}
-      <Menu.Item onSelect={() => void copyLink()}>
-        {m.ui_imageActionsMenu_copyLink_label()}
-      </Menu.Item>
-    {/if}
-    {#if dimensions || byteSize !== null}
-      <Menu.Separator />
-      {#if dimensions}
-        <div
-          class="type-caption px-2 py-1 text-muted-foreground"
-          data-testid="image-info-dimensions"
+{#if supportsImageActions(imageUrl)}
+  <Menu.Root bind:open>
+    <Menu.Trigger
+      class={cn(
+        'flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white',
+        'hover:bg-black/75',
+        triggerClass,
+      )}
+      onclick={(event: MouseEvent) => event.stopPropagation()}
+    >
+      {#snippet child({ props })}
+        <Button
+          {...props}
+          variant="plain"
+          size="icon-sm"
+          wrapContent={false}
+          active={open}
+          aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
         >
-          {m.ui_imageActionsMenu_dimensions_label({
-            width: formatInteger(dimensions.width),
-            height: formatInteger(dimensions.height),
-          })}
-        </div>
+          <Fa icon={faEllipsis} size="sm" />
+        </Button>
+      {/snippet}
+    </Menu.Trigger>
+    <Menu.Content class={contentClass} align="end">
+      <Menu.Item onSelect={() => void download()}>
+        {m.ui_imageActionsMenu_download_label()}
+      </Menu.Item>
+      <Menu.Item onSelect={() => void copyImage()}>
+        {m.ui_imageActionsMenu_copyImage_label()}
+      </Menu.Item>
+      {#if workspaceFile}
+        <Menu.Item onSelect={() => void copyPath()}>
+          {m.ui_imageActionsMenu_copyPath_label()}
+        </Menu.Item>
+      {:else if isHttpsImage}
+        <Menu.Item onSelect={() => void copyLink()}>
+          {m.ui_imageActionsMenu_copyLink_label()}
+        </Menu.Item>
       {/if}
-      {#if byteSize !== null}
-        <div class="type-caption px-2 py-1 text-muted-foreground" data-testid="image-info-size">
-          {formatBytesBinary(byteSize)}
-        </div>
+      {#if dimensions || byteSize !== null}
+        <Menu.Separator />
+        {#if dimensions}
+          <div
+            class="type-caption px-2 py-1 text-muted-foreground"
+            data-testid="image-info-dimensions"
+          >
+            {m.ui_imageActionsMenu_dimensions_label({
+              width: formatInteger(dimensions.width),
+              height: formatInteger(dimensions.height),
+            })}
+          </div>
+        {/if}
+        {#if byteSize !== null}
+          <div class="type-caption px-2 py-1 text-muted-foreground" data-testid="image-info-size">
+            {formatBytesBinary(byteSize)}
+          </div>
+        {/if}
       {/if}
-    {/if}
-  </Menu.Content>
-</Menu.Root>
+    </Menu.Content>
+  </Menu.Root>
+{/if}
