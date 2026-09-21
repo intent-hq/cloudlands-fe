@@ -25,6 +25,7 @@ vi.mock('$lib/utils/client-logger', () => ({
 import { m } from '$shared/paraglide/messages.js';
 import {
   cancelGitLabAuth,
+  checkGitLabAuthStatus,
   connectGitLabWithToken,
   gitlabAuthChanged,
   gitlabAuthReducer,
@@ -92,6 +93,35 @@ function harness(seed = initialState) {
 
 describe('gitlabAuthSaga', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('verifier: a focus read begun before default-host hydration cannot attach the old identity', async () => {
+    let resolveDefault!: (value: unknown) => void;
+    let resolveFocus!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation(
+      (_provider: string, host?: string) =>
+        new Promise((resolve) => {
+          if (host === undefined) resolveDefault = resolve;
+          else resolveFocus = resolve;
+        }),
+    );
+    const run = harness();
+    try {
+      run.channel.put(initializeGitLabAuth());
+      await settle();
+      run.channel.put(checkGitLabAuthStatus());
+      await settle();
+      expect(mocks.getStatus).toHaveBeenLastCalledWith('gitlab', OTHER_HOST);
+      resolveDefault({ ...UNCONFIGURED_STATUS, host: HOST });
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+      resolveFocus({ ...CONFIGURED_STATUS, host: OTHER_HOST });
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
 
   it('verifier: target-host authorization during initialize cannot attach its identity to the old host', async () => {
     let resolveInitial!: (value: unknown) => void;

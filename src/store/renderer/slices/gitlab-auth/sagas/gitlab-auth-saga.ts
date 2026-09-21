@@ -105,12 +105,15 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
  * from a fresh one when both concern the same host.
  *
  * Invariant: the slice host is the *only* record of the instance the latest
- * intent targets. Every writer that targets a host publishes it with
- * `setGitLabHost` before its daemon round trip, in the same step that bumps
- * the generation, so no writer or daemon event can observe a target host the
- * slice has not learned yet. A second copy of the target (e.g. on the fence)
- * would let an event for the target be accepted, and complete on the slice's
- * previous host, before the selection had been published.
+ * intent targets, and every change of it bumps the generation. A writer that
+ * targets a host publishes it with `setGitLabHost` before its daemon round
+ * trip, in the same step that bumps, so no writer or daemon event can observe
+ * a target host the slice has not learned yet; an unscoped read that learns a
+ * different default host bumps before it hydrates, so a read begun for the
+ * previous host cannot write onto the new one. A second copy of the target
+ * (e.g. on the fence) would let an event for the target be accepted, and
+ * complete on the slice's previous host, before the selection had been
+ * published.
  */
 type IntentFence = { generation: number };
 
@@ -218,6 +221,11 @@ function* pollDeviceFlowWorker(
  * already shows it. The write is dropped when a newer intent landed while the
  * read was in flight: that intent's own read or connect owns the state now,
  * and a stale result must not put the previous host or identity back.
+ *
+ * An unscoped read learns the daemon's default host only when it resolves;
+ * when that differs from the slice host, the hydration is a host change like
+ * any other and bumps the generation first, so a read begun for the previous
+ * host (a focus re-check) cannot complete on the new one.
  */
 function* initialize(
   host: string | undefined,
@@ -229,7 +237,9 @@ function* initialize(
     const target = host ?? (yield* selectGitLabAuthHost.effect());
     const status = yield* call(readStatus, host);
     if (!status || superseded(fence, generation)) return;
-    yield* put(setGitLabAuthStatus(statusPayload(status, target)));
+    const payload = statusPayload(status, target);
+    if (!sameHost(payload.host, target)) bumpIntent(fence);
+    yield* put(setGitLabAuthStatus(payload));
     // A pending grant is resumed so a settings remount or client refresh does
     // not drop the in-flight code.
     if (validPendingFlow(status.deviceFlow)) {
