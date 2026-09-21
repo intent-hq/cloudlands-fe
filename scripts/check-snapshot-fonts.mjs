@@ -2,22 +2,34 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import {
+  CT_TEST_DIR,
+  CT_TEST_MATCH,
+  isCtSpec,
+  normalizeCtPath,
+} from '../playwright/ct-spec-pattern.mjs';
 
 // Pixel snapshots render text, so a spec that captures one before the bundled Inter
 // Variable face is loaded regenerates its goldens against the host fallback font and
 // fails on the CI runner. The CT harness loads the face for every `.ct.spec.ts`
 // (`playwright/index.ts`, intent-hq/intent#5033); the root `test/` harness has no shared
 // load, so cloudlands-fe#2709 tripped the same trap five days later. This scan makes the
-// safe path mandatory: a root spec that takes a pixel snapshot imports the shared helper,
-// and the CT harness keeps its font import while any CT spec takes one.
+// safe path mandatory: a root spec that takes a pixel snapshot imports and calls the
+// shared helper, and the CT harness keeps its font import while any CT spec takes one.
+// Whether the call precedes the first snapshot is not statically decidable (fixtures,
+// hooks, and helpers can run it); the helper itself throws when the face is not loaded,
+// so the runtime assertion is the second layer.
 export const SNAPSHOT_MATCHERS = Object.freeze(['toHaveScreenshot', 'toMatchSnapshot']);
 export const ESCAPE_TOKEN = 'snapshot-font-ok';
 export const HELPER_MODULE = 'test/test-fonts';
 export const HELPER_EXPORT = 'loadBundledInterFont';
 export const CT_HARNESS = 'playwright/index.ts';
 export const CT_FONT_IMPORT = '@fontsource-variable/inter';
-export const ROOT_SPEC_GLOB = 'test/**/*.spec.ts';
-export const CT_SPEC_GLOB = 'src/**/*.ct.spec.ts';
+// `playwright.config.ts`: `testDir: './test'`, `testMatch: '**/*.spec.ts'`.
+export const ROOT_TEST_DIR = 'test';
+export const ROOT_SPEC_SUFFIX = '.spec.ts';
+export const ROOT_SPEC_GLOB = `${ROOT_TEST_DIR}/**/*${ROOT_SPEC_SUFFIX}`;
+export const CT_SPEC_GLOB = `${CT_TEST_DIR}/${CT_TEST_MATCH}`;
 export const INCIDENTS = Object.freeze([
   'https://github.com/intent-hq/cloudlands-fe/pull/2709',
   'https://github.com/intent-hq/intent/issues/5033',
@@ -27,7 +39,8 @@ export const REMEDIATION_HINT = [
   'otherwise goldens regenerate against the host fallback font and fail on CI',
   `(cloudlands-fe#2709 ${INCIDENTS[0]}, intent-hq/intent#5033 ${INCIDENTS[1]}).`,
   `Root specs (${ROOT_SPEC_GLOB}): add \`import { ${HELPER_EXPORT} } from './test-fonts';\``,
-  `and call \`await ${HELPER_EXPORT}(page, { baseUrl });\` before the first snapshot.`,
+  `and call \`await ${HELPER_EXPORT}(page, { baseUrl });\` before the first snapshot`,
+  '(the gate checks import + call; the helper throws at runtime when the face is not loaded).',
   `CT specs (${CT_SPEC_GLOB}): keep \`import '${CT_FONT_IMPORT}';\` in ${CT_HARNESS}.`,
   `A text-only snapshot may opt out per line with \`// ${ESCAPE_TOKEN}: <reason>\`;`,
   'a bare token, or one inside a string, does not exempt.',
@@ -35,17 +48,51 @@ export const REMEDIATION_HINT = [
 
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
 const SCRIPT_EXTENSION = /\.[cm]?[jt]sx?$/;
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // An escape only counts as a comment carrying a reason on the line of the call:
 // `// token: <reason>` or `/* token: <reason> */`, the reason at least one
-// non-whitespace character that does not close the block comment.
-const ESCAPE_PATTERN = new RegExp(`^(?://|/\\*)\\s*${ESCAPE_TOKEN}:\\s*(?!\\*/)\\S`);
+// non-whitespace character that does not close the block comment. The token is a
+// literal, so it is escaped before interpolation into the pattern.
+export const createEscapePattern = (token) =>
+  new RegExp(`^(?://|/\\*)\\s*${escapeRegExp(token)}:\\s*(?!\\*/)\\S`);
+const ESCAPE_PATTERN = createEscapePattern(ESCAPE_TOKEN);
 
-const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
-export const isRootSpec = (filePath) => path.posix.matchesGlob(filePath, ROOT_SPEC_GLOB);
-export const isCtSpec = (filePath) => path.posix.matchesGlob(filePath, CT_SPEC_GLOB);
+const normalize = (value) => normalizeCtPath(value);
+// Playwright's `createFileMatcher` compares `testMatch` case-insensitively with dot
+// segments included (see playwright/ct-spec-pattern.mjs), so the root suite is matched
+// the same way as the shared CT classifier rather than with `path.matchesGlob`.
+export const isRootSpec = (filePath) => {
+  const normalized = normalize(filePath);
+  return (
+    normalized.startsWith(`${ROOT_TEST_DIR}/`) &&
+    normalized.toLowerCase().endsWith(ROOT_SPEC_SUFFIX.toLowerCase())
+  );
+};
+export { isCtSpec };
 
 const parse = (filePath, content) =>
   ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+const unwrapParentheses = (node) => {
+  while (ts.isParenthesizedExpression(node)) node = node.expression;
+  return node;
+};
+
+// `x.toHaveScreenshot(...)`, `x['toHaveScreenshot'](...)`, and either wrapped in
+// parentheses: `{ name, position }` of the matcher name, else `undefined`.
+function snapshotMatcherOf(call) {
+  const callee = unwrapParentheses(call.expression);
+  if (ts.isPropertyAccessExpression(callee) && SNAPSHOT_MATCHERS.includes(callee.name.text)) {
+    return { name: callee.name.text, position: callee.name.getStart() };
+  }
+  if (ts.isElementAccessExpression(callee)) {
+    const argument = unwrapParentheses(callee.argumentExpression);
+    if (ts.isStringLiteralLike(argument) && SNAPSHOT_MATCHERS.includes(argument.text)) {
+      return { name: argument.text, position: argument.getStart() };
+    }
+  }
+  return undefined;
+}
 
 // Every comment in the file, keyed by the line it starts on. Comments are trivia of
 // the token they precede or follow, so walking all tokens (not just AST nodes) finds
@@ -80,18 +127,11 @@ export function findSnapshotCalls(filePath, content) {
   const lines = content.split('\n');
   const calls = [];
   const visit = (node) => {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      SNAPSHOT_MATCHERS.includes(node.expression.name.text)
-    ) {
-      const { line } = sourceFile.getLineAndCharacterOfPosition(node.expression.name.getStart());
+    const matcher = ts.isCallExpression(node) ? snapshotMatcherOf(node) : undefined;
+    if (matcher) {
+      const { line } = sourceFile.getLineAndCharacterOfPosition(matcher.position);
       if (!isExempt(comments.get(line))) {
-        calls.push({
-          line: line + 1,
-          matcher: node.expression.name.text,
-          text: lines[line].trim(),
-        });
+        calls.push({ line: line + 1, matcher: matcher.name, text: lines[line].trim() });
       }
     }
     ts.forEachChild(node, visit);
@@ -105,32 +145,72 @@ const resolveRelative = (specifier, filePath) =>
     .normalize(path.posix.join(path.posix.dirname(filePath), specifier))
     .replace(SCRIPT_EXTENSION, '');
 
-/** Whether the file has a value import of `loadBundledInterFont` resolving to `test/test-fonts`. */
-export function importsFontHelper(filePath, content) {
-  return parse(filePath, content).statements.some((statement) => {
+// Local names bound by value imports of `loadBundledInterFont` from `test/test-fonts`
+// (`load` for `import { loadBundledInterFont as load }`).
+function fontHelperBindings(sourceFile, filePath) {
+  const names = [];
+  for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
-      return false;
+      continue;
     }
     const specifier = statement.moduleSpecifier.text;
-    if (!specifier.startsWith('./') && !specifier.startsWith('../')) return false;
-    if (resolveRelative(specifier, filePath) !== HELPER_MODULE) return false;
+    if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
+    if (resolveRelative(specifier, filePath) !== HELPER_MODULE) continue;
     const clause = statement.importClause;
-    if (!clause || clause.isTypeOnly || !clause.namedBindings) return false;
-    if (!ts.isNamedImports(clause.namedBindings)) return false;
-    return clause.namedBindings.elements.some(
-      (element) =>
-        !element.isTypeOnly && (element.propertyName ?? element.name).text === HELPER_EXPORT,
-    );
-  });
+    if (!clause || clause.isTypeOnly || !clause.namedBindings) continue;
+    if (!ts.isNamedImports(clause.namedBindings)) continue;
+    for (const element of clause.namedBindings.elements) {
+      if (!element.isTypeOnly && (element.propertyName ?? element.name).text === HELPER_EXPORT) {
+        names.push(element.name.text);
+      }
+    }
+  }
+  return names;
 }
 
-/** Whether the CT harness has the side-effect import of the bundled Inter face. */
+/** Whether the file has a value import of `loadBundledInterFont` resolving to `test/test-fonts`. */
+export function importsFontHelper(filePath, content) {
+  return fontHelperBindings(parse(filePath, content), filePath).length > 0;
+}
+
+/**
+ * Whether the file both imports `loadBundledInterFont` (see `importsFontHelper`) and
+ * has at least one call expression invoking that binding. Call order relative to the
+ * snapshot is not checked: it is not statically decidable, and the helper throws at
+ * runtime when the face is not loaded.
+ */
+export function callsFontHelper(filePath, content) {
+  const sourceFile = parse(filePath, content);
+  const bindings = new Set(fontHelperBindings(sourceFile, filePath));
+  if (bindings.size === 0) return false;
+  let called = false;
+  const visit = (node) => {
+    if (called) return;
+    if (ts.isCallExpression(node)) {
+      const callee = unwrapParentheses(node.expression);
+      if (ts.isIdentifier(callee) && bindings.has(callee.text)) {
+        called = true;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return called;
+}
+
+/**
+ * Whether the CT harness has the bare side-effect import of the bundled Inter face,
+ * `import '@fontsource-variable/inter';`. Any import clause is rejected: a type-only
+ * clause is erased at compile time and never loads the stylesheet.
+ */
 export function harnessImportsFont(content) {
   return parse(CT_HARNESS, content).statements.some(
     (statement) =>
       ts.isImportDeclaration(statement) &&
       ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text === CT_FONT_IMPORT,
+      statement.moduleSpecifier.text === CT_FONT_IMPORT &&
+      statement.importClause === undefined,
   );
 }
 
@@ -170,6 +250,12 @@ export function findSnapshotFontHits(files, harness) {
         path: filePath,
         ...first,
         reason: `no \`import { ${HELPER_EXPORT} }\` from \`./test-fonts\` (${HELPER_MODULE}.ts)`,
+      });
+    } else if (root && !callsFontHelper(filePath, file.content)) {
+      hits.push({
+        path: filePath,
+        ...first,
+        reason: `\`${HELPER_EXPORT}\` is imported but never called`,
       });
     } else if (!root && !harnessOk) {
       hits.push({

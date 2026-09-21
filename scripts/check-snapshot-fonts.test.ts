@@ -11,24 +11,31 @@ import {
   ESCAPE_TOKEN,
   HELPER_EXPORT,
   INCIDENTS,
+  callsFontHelper,
   collectSpecFiles,
+  createEscapePattern,
   findSnapshotCalls,
   findSnapshotFontHits,
   harnessImportsFont,
   importsFontHelper,
+  isCtSpec,
+  isRootSpec,
 } from './check-snapshot-fonts.mjs';
 
 const scriptPath = join(process.cwd(), 'scripts/check-snapshot-fonts.mjs');
 const HELPER_IMPORT = `import { ${HELPER_EXPORT} } from './test-fonts';`;
+const HELPER_CALL = `  await ${HELPER_EXPORT}(page, { baseUrl });`;
 const ROOT_SPEC_BODY = [
   "import { expect, test } from '@playwright/test';",
   '',
   "test('renders', async ({ page }) => {",
   "  await page.goto('/');",
+  HELPER_CALL,
   "  expect(await page.screenshot()).toMatchSnapshot('avatar.png');",
   '});',
   '',
 ];
+const SNAPSHOT_LINE = ROOT_SPEC_BODY.findIndex((line) => line.includes('toMatchSnapshot')) + 1;
 const CT_SPEC = [
   "import { expect, test } from '../src/test/ct-test';",
   "test('looks right', async ({ mount }) => {",
@@ -93,12 +100,35 @@ describe('pixel-snapshot call detection', () => {
     ]);
   });
 
-  it('ignores the matcher names inside comments and string literals', () => {
+  it('finds element-access and parenthesised callee forms of both matchers', () => {
+    const content = [
+      "await expect(page)['toHaveScreenshot']();",
+      '(expect(page).toHaveScreenshot)();',
+      'const text = render();',
+      'expect(tree)["toMatchSnapshot"]();',
+      '(expect(tree).toMatchSnapshot)();',
+      '((expect(tree))[(`toMatchSnapshot`)])();',
+    ].join('\n');
+    expect(
+      findSnapshotCalls('test/a.spec.ts', content).map((call) => [call.line, call.matcher]),
+    ).toEqual([
+      [1, 'toHaveScreenshot'],
+      [2, 'toHaveScreenshot'],
+      [4, 'toMatchSnapshot'],
+      [5, 'toMatchSnapshot'],
+      [6, 'toMatchSnapshot'],
+    ]);
+  });
+
+  it('ignores the matcher names inside comments, string literals, and regex literals', () => {
     const content = [
       '// toHaveScreenshot is documented here',
       '/* expect(x).toMatchSnapshot() */',
       "const note = 'call toMatchSnapshot() later';",
       'const tpl = `toHaveScreenshot(${name})`;',
+      'const re = /expect\\(x\\)\\["toMatchSnapshot"\\]\\(\\)/;',
+      'expect(page)[matcherName]();',
+      "expect(page)['toHaveScreenshot' + '']();",
     ].join('\n');
     expect(findSnapshotCalls('test/a.spec.ts', content)).toEqual([]);
   });
@@ -109,6 +139,15 @@ describe('pixel-snapshot call detection', () => {
       `expect(tree).toMatchSnapshot(); /* ${ESCAPE_TOKEN}: serialized JSON */`,
     ].join('\n');
     expect(findSnapshotCalls('test/a.spec.ts', content)).toEqual([]);
+  });
+
+  it('matches the exported escape token literally, including regex metacharacters', () => {
+    expect(createEscapePattern(ESCAPE_TOKEN).test(`// ${ESCAPE_TOKEN}: reason`)).toBe(true);
+    expect(createEscapePattern(ESCAPE_TOKEN).test('// snapshotXfontXok: reason')).toBe(false);
+    const bracketed = createEscapePattern('[snapshot-font-ok]');
+    expect(bracketed.test('// [snapshot-font-ok]: reason')).toBe(true);
+    expect(bracketed.test('// s: reason')).toBe(false);
+    expect(bracketed.test('// snapshot-font-ok: reason')).toBe(false);
   });
 
   it('does not exempt a bare token, an empty reason, or a token inside a string', () => {
@@ -160,10 +199,135 @@ describe('font load detection', () => {
     expect(importsFontHelper('test/a.spec.ts', `const s = "${HELPER_IMPORT}";`)).toBe(false);
   });
 
+  it('requires a call expression invoking the imported helper binding', () => {
+    const imported = [HELPER_IMPORT, ...ROOT_SPEC_BODY].join('\n');
+    expect(callsFontHelper('test/a.spec.ts', imported)).toBe(true);
+    expect(
+      callsFontHelper(
+        'test/a.spec.ts',
+        imported.replace(HELPER_CALL, `  (${HELPER_EXPORT})(page);`),
+      ),
+    ).toBe(true);
+    expect(
+      callsFontHelper(
+        'test/a.spec.ts',
+        [
+          `import { ${HELPER_EXPORT} as load } from './test-fonts';`,
+          ...ROOT_SPEC_BODY.map((line) => line.replace(`${HELPER_EXPORT}(`, 'load(')),
+        ].join('\n'),
+      ),
+    ).toBe(true);
+    expect(callsFontHelper('test/a.spec.ts', imported.replace(HELPER_CALL, ''))).toBe(false);
+    expect(
+      callsFontHelper(
+        'test/a.spec.ts',
+        imported.replace(HELPER_CALL, `  // ${HELPER_CALL.trim()}`),
+      ),
+    ).toBe(false);
+    expect(
+      callsFontHelper(
+        'test/a.spec.ts',
+        imported.replace(HELPER_CALL, `  const fn = ${HELPER_EXPORT}; void fn;`),
+      ),
+    ).toBe(false);
+    expect(callsFontHelper('test/a.spec.ts', ROOT_SPEC_BODY.join('\n'))).toBe(false);
+  });
+
   it('detects the CT harness side-effect import of the bundled face', () => {
     expect(harnessImportsFont(HARNESS)).toBe(true);
     expect(harnessImportsFont(HARNESS.replace(`import '${CT_FONT_IMPORT}';`, ''))).toBe(false);
     expect(harnessImportsFont(`// import '${CT_FONT_IMPORT}';`)).toBe(false);
+  });
+
+  it('rejects CT harness import forms that are erased or not the bare side-effect import', () => {
+    for (const statement of [
+      `import type {} from '${CT_FONT_IMPORT}';`,
+      `import type Inter from '${CT_FONT_IMPORT}';`,
+      `import type * as inter from '${CT_FONT_IMPORT}';`,
+      `import { type Inter } from '${CT_FONT_IMPORT}';`,
+      `import inter from '${CT_FONT_IMPORT}';`,
+      `import * as inter from '${CT_FONT_IMPORT}';`,
+    ]) {
+      expect(harnessImportsFont(`import '../src/app.css';\n${statement}\n`), statement).toBe(false);
+    }
+  });
+});
+
+describe('spec discovery', () => {
+  it('matches the root suite case-insensitively with dot segments, like Playwright', () => {
+    for (const file of [
+      'test/a.spec.ts',
+      'test/nested/a.spec.ts',
+      'test/.visual/a.spec.ts',
+      'test/.a.spec.ts',
+      'test/a.SPEC.ts',
+      'test/a.Spec.TS',
+      './test/a.spec.ts',
+    ]) {
+      expect(isRootSpec(file), file).toBe(true);
+    }
+    for (const file of [
+      'test/a.test.ts',
+      'test/a.spec.js',
+      'test/a.spec.tsx',
+      'test/a.ct.spec.ts.bak',
+      'tests/a.spec.ts',
+      'src/test/a.spec.ts',
+      'src/a.ct.spec.ts',
+      'test',
+    ]) {
+      expect(isRootSpec(file), file).toBe(false);
+    }
+  });
+
+  it('classifies CT specs with the shared Playwright classifier', () => {
+    for (const file of [
+      'src/a.ct.spec.ts',
+      'src/.visual/a.ct.spec.ts',
+      'src/.a.ct.spec.ts',
+      'src/a.CT.SPEC.ts',
+    ]) {
+      expect(isCtSpec(file), file).toBe(true);
+    }
+    for (const file of ['src/a.spec.ts', 'src/a.ct.test.ts', 'test/a.ct.spec.ts']) {
+      expect(isCtSpec(file), file).toBe(false);
+    }
+  });
+
+  it('guards dot-segment and upper-case specs that Playwright discovers', () => {
+    const root = writeTree({
+      ...passingTree,
+      'test/.visual/hidden.spec.ts': ROOT_SPEC_BODY.join('\n'),
+      'test/upper.SPEC.ts': ROOT_SPEC_BODY.join('\n'),
+      'src/.hidden/thing.ct.spec.ts': CT_SPEC,
+      'src/features/thing/__tests__/upper.CT.SPEC.ts': CT_SPEC,
+    });
+    const files = collectSpecFiles(root);
+    expect(files.map((file) => file.path).sort()).toEqual([
+      'src/.hidden/thing.ct.spec.ts',
+      'src/features/thing/__tests__/thing.ct.spec.ts',
+      'src/features/thing/__tests__/upper.CT.SPEC.ts',
+      'test/.visual/hidden.spec.ts',
+      'test/agent-avatar.spec.ts',
+      'test/upper.SPEC.ts',
+    ]);
+    expect(
+      findSnapshotFontHits(files, HARNESS)
+        .map((hit) => hit.path)
+        .sort(),
+    ).toEqual(['test/.visual/hidden.spec.ts', 'test/upper.SPEC.ts']);
+    const stripped = HARNESS.replace(`import '${CT_FONT_IMPORT}';`, '');
+    expect(
+      findSnapshotFontHits(files, stripped)
+        .map((hit) => hit.path)
+        .sort(),
+    ).toEqual([
+      'src/.hidden/thing.ct.spec.ts',
+      'src/features/thing/__tests__/thing.ct.spec.ts',
+      'src/features/thing/__tests__/upper.CT.SPEC.ts',
+      'test/.visual/hidden.spec.ts',
+      'test/upper.SPEC.ts',
+    ]);
   });
 });
 
@@ -188,14 +352,55 @@ describe('snapshot font gate', () => {
     });
     const hits = findSnapshotFontHits(collectSpecFiles(root), HARNESS);
     expect(hits.map((hit) => [hit.path, hit.line, hit.matcher])).toEqual([
-      ['test/agent-avatar.spec.ts', 5, 'toMatchSnapshot'],
+      ['test/agent-avatar.spec.ts', SNAPSHOT_LINE, 'toMatchSnapshot'],
     ]);
     const { exitCode, output } = runGate(root);
     expect(exitCode).toBe(1);
-    expect(output).toContain('test/agent-avatar.spec.ts:5:');
+    expect(output).toContain(`test/agent-avatar.spec.ts:${SNAPSHOT_LINE}:`);
     expect(output).toContain(HELPER_IMPORT);
     expect(output).toContain(`await ${HELPER_EXPORT}(page, { baseUrl })`);
     for (const incident of INCIDENTS) expect(output).toContain(incident);
+  });
+
+  it('fails a root spec that imports the helper but never calls it', () => {
+    const root = writeTree({
+      ...passingTree,
+      'test/agent-avatar.spec.ts': [HELPER_IMPORT, ...ROOT_SPEC_BODY]
+        .filter((line) => line !== HELPER_CALL)
+        .join('\n'),
+    });
+    const hits = findSnapshotFontHits(collectSpecFiles(root), HARNESS);
+    expect(hits.map((hit) => [hit.path, hit.line, hit.reason])).toEqual([
+      [
+        'test/agent-avatar.spec.ts',
+        SNAPSHOT_LINE,
+        `\`${HELPER_EXPORT}\` is imported but never called`,
+      ],
+    ]);
+    const { exitCode, output } = runGate(root);
+    expect(exitCode).toBe(1);
+    expect(output).toContain(`test/agent-avatar.spec.ts:${SNAPSHOT_LINE}:`);
+    expect(output).toContain('imported but never called');
+  });
+
+  it('accepts a root spec that snapshots through element access once the helper is called', () => {
+    const root = writeTree({
+      ...passingTree,
+      'test/agent-avatar.spec.ts': [HELPER_IMPORT, ...ROOT_SPEC_BODY]
+        .join('\n')
+        .replace(".toMatchSnapshot('avatar.png')", "['toMatchSnapshot']('avatar.png')"),
+    });
+    expect(findSnapshotFontHits(collectSpecFiles(root), HARNESS)).toEqual([]);
+    const withoutHelper = writeTree({
+      ...passingTree,
+      'test/agent-avatar.spec.ts': ROOT_SPEC_BODY.join('\n').replace(
+        ".toMatchSnapshot('avatar.png')",
+        "['toMatchSnapshot']('avatar.png')",
+      ),
+    });
+    expect(
+      findSnapshotFontHits(collectSpecFiles(withoutHelper), HARNESS).map((hit) => hit.line),
+    ).toEqual([SNAPSHOT_LINE]);
   });
 
   it('reports only the first offending call per file', () => {
@@ -207,7 +412,7 @@ describe('snapshot font gate', () => {
       ].join('\n'),
     });
     expect(findSnapshotFontHits(collectSpecFiles(root), HARNESS).map((hit) => hit.line)).toEqual([
-      5,
+      SNAPSHOT_LINE,
     ]);
   });
 
@@ -232,7 +437,20 @@ describe('snapshot font gate', () => {
       ),
     });
     expect(findSnapshotFontHits(collectSpecFiles(root), HARNESS).map((hit) => hit.line)).toEqual([
-      5,
+      SNAPSHOT_LINE,
+    ]);
+    expect(runGate(root).exitCode).toBe(1);
+  });
+
+  it('fails CT pixel-snapshot specs when the harness import is type-only', () => {
+    const erased = HARNESS.replace(
+      `import '${CT_FONT_IMPORT}';`,
+      `import type {} from '${CT_FONT_IMPORT}';`,
+    );
+    const root = writeTree({ ...passingTree, [CT_HARNESS]: erased });
+    const hits = findSnapshotFontHits(collectSpecFiles(root), erased);
+    expect(hits.map((hit) => [hit.path, hit.line])).toEqual([
+      ['src/features/thing/__tests__/thing.ct.spec.ts', 4],
     ]);
     expect(runGate(root).exitCode).toBe(1);
   });
