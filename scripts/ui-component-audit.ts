@@ -231,23 +231,95 @@ function tagEnd(source: string, start: number): number {
   return source.length;
 }
 
-function buttonOpaqueBackgrounds(tag: string): string[] {
-  if (/(?<![\w-])variant\s*=|\{variant\}/.test(tag)) return [];
-  const classes = new Set<string>();
-  for (const match of tag.matchAll(/(?<![\w:-])class\s*=\s*(?:"([^"]*)"|'([^']*)'|(\{))/g)) {
-    if (match[3] === undefined) {
-      opaqueBackgroundClasses(match[1] ?? match[2] ?? '').forEach((token) => classes.add(token));
+// Returns the end index (exclusive) of the balanced `{...}` expression opening at `start`,
+// honouring quoted strings so braces inside them do not affect the depth.
+function expressionEnd(source: string, start: number): number {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (char === quote) quote = null;
       continue;
     }
-    const expression = tag.slice(match.index + match[0].length, tagEnd(tag, match.index) - 1);
-    for (const literal of expression.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`/g)) {
-      opaqueBackgroundClasses(literal[1] ?? literal[2] ?? literal[3] ?? '').forEach((token) =>
+    if (char === "'" || char === '"' || char === '`') quote = char;
+    else if (char === '{') depth += 1;
+    else if (char === '}' && (depth -= 1) === 0) return index + 1;
+  }
+  return source.length;
+}
+
+interface TagAttribute {
+  // Attribute name, or the identifier of a `{shorthand}` attribute.
+  name: string;
+  // Attribute value without its delimiters; `{...}` expressions keep the inner source.
+  value: string;
+  expression: boolean;
+}
+
+// Tokenizes the attributes of the single opening tag `tag` (`<Name ...>`), so callers can
+// inspect attribute names and values without regexes leaking across attribute boundaries.
+function tagAttributes(tag: string): TagAttribute[] {
+  const attributes: TagAttribute[] = [];
+  let index = /^<[^\s/>]*/.exec(tag)?.[0].length ?? 0;
+  while (index < tag.length) {
+    const char = tag[index];
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+    if (char === '/' || char === '>') break;
+    if (char === '{') {
+      const end = expressionEnd(tag, index);
+      const inner = tag.slice(index + 1, end - 1).trim();
+      attributes.push({ name: inner, value: inner, expression: true });
+      index = end;
+      continue;
+    }
+    const name = /^[^\s=/>{]+/.exec(tag.slice(index))?.[0] ?? '';
+    index += name.length;
+    const equals = /^\s*=\s*/.exec(tag.slice(index));
+    if (!equals) {
+      attributes.push({ name, value: '', expression: false });
+      continue;
+    }
+    index += equals[0].length;
+    const opener = tag[index];
+    if (opener === '{') {
+      const end = expressionEnd(tag, index);
+      attributes.push({ name, value: tag.slice(index + 1, end - 1), expression: true });
+      index = end;
+    } else if (opener === '"' || opener === "'") {
+      const close = tag.indexOf(opener, index + 1);
+      const end = close === -1 ? tag.length : close;
+      attributes.push({ name, value: tag.slice(index + 1, end), expression: false });
+      index = end + 1;
+    } else {
+      const bare = /^[^\s/>]*/.exec(tag.slice(index))?.[0] ?? '';
+      attributes.push({ name, value: bare, expression: false });
+      index += bare.length;
+    }
+  }
+  return attributes;
+}
+
+function buttonOpaqueBackgrounds(tag: string): string[] {
+  const attributes = tagAttributes(tag);
+  if (attributes.some((attribute) => /^(?:bind:)?variant$/.test(attribute.name))) return [];
+  const classes = new Set<string>();
+  for (const attribute of attributes) {
+    if (attribute.name === 'class') {
+      const values = attribute.expression
+        ? [...attribute.value.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`/g)].map(
+            (literal) => literal[1] ?? literal[2] ?? literal[3] ?? '',
+          )
+        : [attribute.value];
+      values.flatMap(opaqueBackgroundClasses).forEach((token) => classes.add(token));
+    } else if (attribute.name.startsWith('class:')) {
+      opaqueBackgroundClasses(attribute.name.slice('class:'.length)).forEach((token) =>
         classes.add(token),
       );
     }
-  }
-  for (const match of tag.matchAll(/(?<![\w:-])class:(bg-[\w-]+)/g)) {
-    opaqueBackgroundClasses(match[1]).forEach((token) => classes.add(token));
   }
   return [...classes].sort(sortText);
 }

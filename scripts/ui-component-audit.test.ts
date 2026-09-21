@@ -319,6 +319,7 @@ describe('Button background override guard', () => {
           '    Open',
           '  </Button>',
           '  <Button class:bg-danger={armed}>Delete</Button>',
+          '  <Button class={variant === "danger" ? "bg-danger" : "bg-primary"}>Apply</Button>',
           '</div>',
         ].join('\n'),
       },
@@ -328,6 +329,11 @@ describe('Button background override guard', () => {
           { file: 'src/features/example/Accept.svelte', line: 2, classes: ['bg-primary'] },
           { file: 'src/features/example/Accept.svelte', line: 5, classes: ['bg-success'] },
           { file: 'src/features/example/Accept.svelte', line: 11, classes: ['bg-danger'] },
+          {
+            file: 'src/features/example/Accept.svelte',
+            line: 12,
+            classes: ['bg-danger', 'bg-primary'],
+          },
         ]);
         expect(audit.failures[0]).toMatch(
           /^src\/features\/example\/Accept\.svelte:2: <Button> without variant sets bg-primary; .*use variant="primary"/,
@@ -354,6 +360,8 @@ describe('Button background override guard', () => {
           '<Button class="bg-success/10 text-success hover:bg-muted focus-visible:bg-accent dark:bg-muted">Soft</Button>',
           '<Button class="bg-transparent bg-cover bg-gradient-to-r bg-[url(/x.png)]">Ghost</Button>',
           '<Button class={cn("px-2", active && "bg-muted/50")}>Toggle</Button>',
+          '<Button class={cn("px-2")} title="bg-primary" data-tone={tone === "bg-danger"}>Plain</Button>',
+          '<Button bind:variant class="bg-primary">Bound</Button>',
           '<ButtonGroup class="bg-primary"><span class="bg-primary">not a Button</span></ButtonGroup>',
         ].join('\n'),
         'src/routes/sandbox/button/+page.svelte': '<Button class="bg-primary">fixture</Button>',
