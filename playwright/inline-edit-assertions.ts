@@ -1,4 +1,4 @@
-import { expect } from '@playwright/experimental-ct-svelte';
+import { expect } from '../src/test/ct-test';
 import type { Locator } from '@playwright/test';
 
 /** The outer edit decoration owns the boundary; the focused control must not paint another. */

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../test/ct-test';
 import { expectUnpaintedEditControl } from '../../../../playwright/inline-edit-assertions';
 import Preview from './editable-text.preview.svelte';
 

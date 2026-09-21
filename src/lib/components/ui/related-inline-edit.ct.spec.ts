@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../test/ct-test';
 import { expectUnpaintedEditControl } from '../../../../playwright/inline-edit-assertions';
 import WorkspaceHost from '../workspace/sidebar/__tests__/mocks/WorkspaceProgressCardEditGeometryHost.svelte';
 import FileTreeHost from '../file-explorer/__tests__/mocks/VirtualizedFileTreeEditGeometryHost.svelte';
