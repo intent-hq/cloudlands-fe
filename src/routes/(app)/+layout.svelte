@@ -32,6 +32,7 @@
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
+  import { registerWorkspaceSpacesShortcut } from '$features/workspace/utils/workspace-spaces-shortcut';
   import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -614,16 +615,9 @@
       action: openCommandPalette,
     });
     // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
-    const toggleAllSpaces = () => {
-      appStore.dispatch(togglePanel('all-workspaces'));
-    };
-    register({
-      key: 'o',
-      meta: true,
-      shortcutId: 'global.toggle-spaces',
-      description: 'Toggle All Spaces (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      skipInEditableElements: true,
-      action: toggleAllSpaces,
+    registerWorkspaceSpacesShortcut(paletteShortcuts, {
+      toggleSpaces: () => appStore.dispatch(togglePanel('all-workspaces')),
+      resolveBinding: getEffectiveShortcut,
     });
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
     // F12 - Go to Definition (dispatches event for Monaco editor to handle)
