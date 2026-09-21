@@ -33,6 +33,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
 import { backendRequest } from '$lib/client/live/backend-transport';
 import {
   __resetGitHubAuthStatusForTests,
+  GITHUB_AUTH_STATUS_TTL_MS,
   readGitHubAuthStatus,
 } from '$features/github-auth/renderer/github-auth-status.client';
 import { mockInvoke } from '$shared/ipc-mock-router';
@@ -543,6 +544,50 @@ describe('integrations-bridge-seeder', () => {
         ],
       });
     });
+
+    it('search-users forwards to github.users.search and maps the hits, nulling absent urls', async () => {
+      mockedRequest.mockResolvedValueOnce({
+        users: [
+          {
+            id: 1,
+            login: 'octocat',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+            htmlUrl: 'https://github.com/octocat',
+          },
+          { id: 2, login: 'octokit' },
+        ],
+      });
+
+      const response = await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'octo' });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.users.search', { query: 'octo' });
+      expect(response).toEqual({
+        success: true,
+        data: [
+          {
+            id: 1,
+            login: 'octocat',
+            avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+            htmlUrl: 'https://github.com/octocat',
+          },
+          { id: 2, login: 'octokit', avatarUrl: null, htmlUrl: null },
+        ],
+      });
+    });
+
+    it('search-users refuses an empty query without a forge call and folds a daemon failure', async () => {
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: '' })).toEqual({
+        success: false,
+        error: 'query is required',
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+
+      mockedRequest.mockRejectedValueOnce(new Error('rate limited'));
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.SEARCH_USERS, { query: 'octo' })).toEqual({
+        success: false,
+        error: 'rate limited',
+      });
+    });
   });
 
   describe('github-auth OAuth triggers → daemon device flow (§5.27 connect/cancelAuth/revoke)', () => {
@@ -562,6 +607,36 @@ describe('integrations-bridge-seeder', () => {
         success: true,
         alreadyAuthenticated: true,
         needsScopeUpdate: false,
+      });
+    });
+
+    it('start with reconnect forwards to github.connect even when a token is configured (#5206)', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: '',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: null,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          userCode: 'WXYZ-5678',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        });
+
+      const result = await mockInvoke(GITHUB_AUTH_CHANNELS.START_AUTH, { reconnect: true });
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.connect');
+      expect(result).toEqual({
+        success: true,
+        oauthUrl: 'https://github.com/login/device',
+        userCode: 'WXYZ-5678',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 899,
+        interval: 5,
       });
     });
 
@@ -651,6 +726,129 @@ describe('integrations-bridge-seeder', () => {
           },
         },
       });
+    });
+
+    it.each(['pending', 'expired', 'denied', 'error'] as const)(
+      'poll stays incomplete while a reconnect device flow is %s on top of a configured token (#5206)',
+      async (flowStatus) => {
+        mockedRequest.mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: 'https://github.com/login/device',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: {
+            status: flowStatus,
+            userCode: 'WXYZ-5678',
+            verificationUri: 'https://github.com/login/device',
+            expiresIn: 899,
+            interval: 5,
+          },
+        });
+
+        expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+          success: true,
+          data: { isComplete: false, user: null },
+        });
+        expect(mockedRequest).not.toHaveBeenCalledWith('github.getUser');
+      },
+    );
+
+    it('poll completes for a reconnect only once the daemon clears the flow slot on authorize (#5206)', async () => {
+      const pendingFlow = {
+        status: 'pending',
+        userCode: 'WXYZ-5678',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 899,
+        interval: 5,
+      };
+      mockedRequest
+        .mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: 'https://github.com/login/device',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: pendingFlow,
+        })
+        .mockResolvedValueOnce({
+          isConfigured: true,
+          oauthUrl: '',
+          configuredButNeedsUpdate: false,
+          updatedScopes: '',
+          deviceFlow: null,
+        })
+        .mockResolvedValueOnce({ user: WIRE_USER });
+
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+        success: true,
+        data: { isComplete: false, user: null },
+      });
+      githubLifecycle.notification?.({
+        method: 'events.event',
+        params: { event: { type: 'github:auth-changed', data: { status: 'authorized' } } },
+      });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+        success: true,
+        data: {
+          isComplete: true,
+          user: {
+            login: 'octocat',
+            name: null,
+            email: null,
+            avatar_url: WIRE_USER.avatarUrl,
+          },
+        },
+      });
+      expect(mockedRequest.mock.calls.map(([method]) => method)).toEqual([
+        'github.authStatus',
+        'github.authStatus',
+        'github.getUser',
+      ]);
+    });
+
+    it('poll observes the authorized flow past the cache TTL even when github:auth-changed is missed (#5362)', async () => {
+      vi.useFakeTimers();
+      try {
+        const pendingFlow = {
+          status: 'pending',
+          userCode: 'WXYZ-5678',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        };
+        mockedRequest
+          .mockResolvedValueOnce({
+            isConfigured: true,
+            oauthUrl: 'https://github.com/login/device',
+            configuredButNeedsUpdate: false,
+            updatedScopes: '',
+            deviceFlow: pendingFlow,
+          })
+          .mockResolvedValueOnce({
+            isConfigured: true,
+            oauthUrl: '',
+            configuredButNeedsUpdate: false,
+            updatedScopes: '',
+            deviceFlow: null,
+          })
+          .mockResolvedValueOnce({ user: WIRE_USER });
+
+        expect(await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)).toEqual({
+          success: true,
+          data: { isComplete: false, user: null },
+        });
+        vi.advanceTimersByTime(GITHUB_AUTH_STATUS_TTL_MS);
+        const result = (await mockInvoke(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN)) as {
+          data: { isComplete: boolean };
+        };
+        expect(result.data.isComplete).toBe(true);
+        expect(mockedRequest.mock.calls.map(([method]) => method)).toEqual([
+          'github.authStatus',
+          'github.authStatus',
+          'github.getUser',
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('poll stays incomplete (user null) while the PAT does not validate', async () => {

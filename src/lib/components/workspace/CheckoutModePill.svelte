@@ -27,6 +27,8 @@
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { writable } from 'svelte/store';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { runShrinkWorkspaceAction } from './shrink-workspace-action';
   import { pollWorkspaceDiskUsage } from './disk-usage-poll';
   import { resolveEffectiveIsolationMode } from './initializer/isolation-mode';
@@ -52,6 +54,12 @@
   // When a workspace is provided, its checkoutMode is authoritative so the
   // label always matches the workspace whose diskUsage the tooltip shows.
   const mode = $derived(workspace ? workspace.checkoutMode : checkoutMode);
+
+  // The shrink link launches an agent (`agent.create`), refused (-32003) for a
+  // collaborator connection: the affordance is withheld.
+  const workspaceIdStore = writable('');
+  $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
 
   // A `cow` checkoutMode records that the clone was provisioned with CoW
   // primitives, not that agents are isolated from it: cache-hydrated
@@ -217,7 +225,7 @@
   });
 
   function handleShrinkClick() {
-    if (!workspace) return;
+    if (!workspace || $hidesAgentLifecycleActions$) return;
     void runShrinkWorkspaceAction(workspace);
   }
 </script>
@@ -276,17 +284,19 @@
           {/each}
         </ul>
       {/if}
-      <div class="mt-0.5 flex flex-col gap-1 border-t border-border pt-1.5 text-xs">
-        <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
-        <Button
-          variant="ghost"
-          type="button"
-          class="self-start cursor-pointer border-none bg-transparent p-0 font-medium text-accent-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
-          onclick={handleShrinkClick}
-        >
-          {m.workspace_diskUsagePill_shrink_label()}
-        </Button>
-      </div>
+      {#if !$hidesAgentLifecycleActions$}
+        <div class="mt-0.5 flex flex-col gap-1 border-t border-border pt-1.5 text-xs">
+          <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
+          <Button
+            variant="ghost"
+            type="button"
+            class="self-start cursor-pointer border-none bg-transparent p-0 font-medium text-accent-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
+            onclick={handleShrinkClick}
+          >
+            {m.workspace_diskUsagePill_shrink_label()}
+          </Button>
+        </div>
+      {/if}
     {:else if loading}
       <div
         class="flex w-full flex-col gap-2 py-1 {presentation === 'pill' ? 'min-w-56' : 'min-w-0'}"

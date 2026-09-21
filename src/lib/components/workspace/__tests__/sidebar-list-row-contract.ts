@@ -1,4 +1,5 @@
-import { expect, type ComponentFixtures } from '@playwright/experimental-ct-svelte';
+import type { ComponentFixtures } from '@playwright/experimental-ct-svelte';
+import { expect } from '../../../../test/ct-test';
 
 // Keep locator and page types on the same Playwright version as CT's expect.
 type Page = ReturnType<Awaited<ReturnType<ComponentFixtures['mount']>>['page']>;
@@ -103,6 +104,7 @@ export async function assertSidebarListRows(component: Locator, page: Page) {
   const file = component.locator('[data-file-path="/sample/A-long-reference-document.md"]');
   const tree = component.getByRole('tree');
   await tree.focus();
+  await expect(tree).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
@@ -117,17 +119,28 @@ export async function assertSidebarListRows(component: Locator, page: Page) {
     .getByRole('button', { name: 'src', exact: true })
     .click();
   await expect(component.getByText('sidebar-layout.ts', { exact: true })).toHaveCount(0);
+  // Folder clicks return focus to the tree on the next animation frame (#5287).
+  // Observe that handoff before the next click or a browser-row keyboard action.
+  await expect(tree).toBeFocused();
   await component
     .locator('[data-row-card="Files"]')
     .getByRole('button', { name: 'src', exact: true })
     .click();
   await expect(component.getByText('sidebar-layout.ts', { exact: true })).toBeVisible();
+  await expect(tree).toBeFocused();
 
   const browsers = component.locator('[data-row-card="Browsers"]');
-  await browsers.getByRole('button', { name: 'Interface reference', exact: true }).press('Enter');
+  const visibleBrowser = browsers.getByRole('button', { name: 'Interface reference', exact: true });
+  await visibleBrowser.focus();
+  await expect(visibleBrowser).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(selection).toContainText('"openedBrowser":"row-browser"');
-  await browsers
-    .getByRole('button', { name: /A deliberately long hidden browser page title/ })
-    .press('Enter');
+  const hiddenBrowser = browsers.getByRole('button', {
+    name: /A deliberately long hidden browser page title/,
+  });
+  await expect(hiddenBrowser).toBeEnabled();
+  await hiddenBrowser.focus();
+  await expect(hiddenBrowser).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(selection).toContainText('"openedBrowser":"row-browser-hidden"');
 }

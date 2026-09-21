@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { extractAllContent, type AgentMessage } from '$shared/types';
+  import { extractAllContent, type AgentMessage, type Workspace } from '$shared/types';
   import ChatMessage from './ChatMessage.svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import InterruptionNotice from './InterruptionNotice.svelte';
@@ -31,6 +31,8 @@
     animationDuration?: number;
     onCopy?: (content: string) => void;
     workspaceId?: string;
+    /** Owning workspace; its `ownerPrincipalId` gates the collaborator preamble strip. */
+    workspace?: Workspace | null;
   }
 
   let {
@@ -46,10 +48,12 @@
     animationDuration = spring.slow.settleMs,
     onCopy,
     workspaceId,
+    workspace = null,
   }: Props = $props();
 
   // PERF: Cache for filtered messages to avoid re-filtering on unrelated updates
-  // Keyed by message count + search query to invalidate when relevant data changes
+  // Keyed by message count + search query + owner principal (it changes which
+  // preamble text is searchable) to invalidate when relevant data changes
   let lastFilterKey = '';
   let cachedFilteredMessages: AgentMessage[] = [];
 
@@ -60,15 +64,16 @@
       return messages;
     }
 
-    // Create a cache key based on message count and search query
-    const filterKey = `${messages.length}:${searchQuery}`;
+    // Create a cache key based on message count, search query and owner principal
+    const ownerPrincipalId = workspace?.ownerPrincipalId ?? null;
+    const filterKey = `${messages.length}:${ownerPrincipalId ?? ''}:${searchQuery}`;
     if (filterKey === lastFilterKey) {
       return cachedFilteredMessages;
     }
 
     const lowerQuery = searchQuery.toLowerCase();
     const result = messages.filter((msg) => {
-      const content = extractSearchableContent(msg);
+      const content = extractSearchableContent(msg, ownerPrincipalId);
       return content.toLowerCase().includes(lowerQuery);
     });
 
@@ -142,7 +147,12 @@
              regardless of the exact role the daemon persists. -->
         <AutoUnarchivedNotice title={extractAllContent(message) || undefined} />
       {:else if message.role === 'user'}
-        <ChatMessage {message} onCopy={() => handleCopy(getPresentedUserMessageText(message))} />
+        <ChatMessage
+          {message}
+          {workspace}
+          onCopy={() =>
+            handleCopy(getPresentedUserMessageText(message, workspace?.ownerPrincipalId))}
+        />
       {:else if message.role === 'assistant'}
         <div class="assistant-message-container">
           {#if isStreaming && index === messages.length - 1}

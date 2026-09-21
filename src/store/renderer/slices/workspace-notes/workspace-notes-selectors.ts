@@ -29,11 +29,6 @@ export const selectNotesLoading = store.createSelector(
     state.workspaceNotes.byWorkspaceId[workspaceId]?.loading ?? false,
 );
 
-export const selectNotesError = store.createSelector(
-  (state, workspaceId: string): string | null =>
-    state.workspaceNotes.byWorkspaceId[workspaceId]?.error ?? null,
-);
-
 export const selectSelectedNoteId = store.createSelector(
   (state, workspaceId: string): string | null =>
     state.workspaceNotes.byWorkspaceId[workspaceId]?.selectedNoteId ?? null,
@@ -42,11 +37,6 @@ export const selectSelectedNoteId = store.createSelector(
 export const selectNewlyCreatedNoteId = store.createSelector(
   (state, workspaceId: string): string | null =>
     state.workspaceNotes.byWorkspaceId[workspaceId]?.newlyCreatedNoteId ?? null,
-);
-
-export const selectNotesVersion = store.createSelector(
-  (state, workspaceId: string): number =>
-    state.workspaceNotes.byWorkspaceId[workspaceId]?.notesVersion ?? 0,
 );
 
 // ============================================================================

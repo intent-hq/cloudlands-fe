@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Page } from '@playwright/test';
 import ResizablePanel from '../ResizablePanel.svelte';
 import ResizablePanelHandleHitAreaHarness from './mocks/ResizablePanelHandleHitAreaHarness.svelte';

@@ -28,6 +28,10 @@ const semanticColorBaseline = Object.assign(
   {},
   ...designSystemBaseline['no-arbitrary-motion-or-color'].map((entry) => entry.counts ?? {}),
 );
+const iconOnlyButtonSizeBaseline = Object.assign(
+  {},
+  ...(designSystemBaseline['icon-only-button-size'] ?? []).map((entry) => entry.counts ?? {}),
+);
 import noColdSvelteImportInTestsRule from './eslint-rules/no-cold-svelte-import-in-tests.js';
 import noFlushSyncInTeardownRule from './eslint-rules/no-flushsync-in-teardown.js';
 import noDirectReducedMotionQueryRule, {
@@ -164,7 +168,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/features/workspace/SpacesSwitcherOverlay.svelte',
   'src/lib/components/AuggieSetupGate.svelte',
   'src/lib/components/CommandPalette.svelte',
-  'src/lib/components/ErrorDisplay.svelte',
   'src/lib/components/GitCredentialsModal.svelte',
   'src/lib/components/GitHubAuthBanner.svelte',
   'src/lib/components/GitHubAuthModal.svelte',
@@ -198,21 +201,16 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
   'src/lib/components/file-explorer/file-explorer-layout.svelte',
   'src/lib/components/file-explorer/file-tree-view.svelte',
-  'src/lib/components/file-tracking/FileChangesList.svelte',
   'src/lib/components/layout/WindowTitleBar.svelte',
   'src/lib/components/layout/panel-system/PanelLayout.svelte',
-  'src/lib/components/layout/panel-system/PanelLayoutControls.svelte',
-  'src/lib/components/layout/panel-system/PanelLayoutHeader.svelte',
   'src/lib/components/layout/panel-system/PanelTabBar.svelte',
   'src/lib/components/layout/sidebar-nav/SidebarNav.svelte',
   'src/lib/components/layout/sidebar-nav/cards/ActiveWorkspacesCard.svelte',
   'src/lib/components/layout/sidebar-nav/cards/AllWorkspacesCard.svelte',
-  'src/lib/components/layout/sidebar-nav/cards/NewWorkspaceCard.svelte',
   'src/lib/components/markdown/MarkdownViewer.svelte',
   'src/lib/components/markdown/MermaidRenderer.svelte',
   'src/lib/components/modals/FeatureCodeDialog.svelte',
   'src/lib/components/modals/PullConflictDialog.svelte',
-  'src/lib/components/notes/NotesPanel.svelte',
   'src/lib/components/notes/primitives/AgentActionBlock.svelte',
   'src/lib/components/notes/primitives/CliBlock.svelte',
   'src/lib/components/notes/primitives/DiagramBlock.svelte',
@@ -230,7 +228,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/settings/ProviderSelector.svelte',
   'src/lib/components/settings/RtkSettings.svelte',
   'src/lib/components/settings/SentryAuthConnection.svelte',
-  'src/lib/components/shared/AgentAttributionBadge.svelte',
   'src/lib/components/terminal/QuakeTerminalOverlay.svelte',
   'src/lib/components/terminal/ScriptOutputViewer.svelte',
   'src/lib/components/terminal/SetupScriptBanner.svelte',
@@ -243,19 +240,16 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/tiptap/TaskAgentStatus.svelte',
   'src/lib/components/tiptap/TaskItemNodeView.svelte',
   'src/lib/components/tiptap/TaskMenu.svelte',
-  'src/lib/components/tiptap/comments/UnifiedCommentThreadDemo.svelte',
   'src/lib/components/ui/CopyButton.svelte',
   'src/features/external-editors/components/FileActionsDropdown.svelte',
   'src/features/external-editors/components/OpenComboButton.svelte',
   'src/lib/components/ui/VirtualList.svelte',
   'src/features/workspace/components/WorkspaceActionsMenu.svelte',
   'src/features/file-tracking/components/diff/TrackedChangeDiffViewer.svelte',
-  'src/lib/components/ui/list/ListExample.svelte',
   'src/lib/components/ui/searchable-combobox/searchable-combobox.svelte',
   'src/lib/components/ui/searchable-select/searchable-select.svelte',
   'src/lib/components/visualization/repo-visualizer/RepoVisualizer.svelte',
   'src/lib/components/visualization/repo-visualizer/TreeCanvas.svelte',
-  'src/lib/components/workspace/CommentSystemDemo.svelte',
   'src/lib/components/workspace/CompactWorkspaceInitializer.svelte',
   'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
   'src/lib/components/workspace/NoteCodeChangesCard.svelte',
@@ -272,7 +266,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/workspace/initializer/BranchSelector.svelte',
   'src/lib/components/workspace/initializer/InitialAgentPicker.svelte',
   'src/lib/components/workspace/initializer/IssueSuggestions.svelte',
-  'src/lib/components/workspace/initializer/RemoteSetupSelector.svelte',
   'src/lib/components/workspace/initializer/RepoSelector.svelte',
   'src/lib/components/workspace/initializer/SetupScriptAgent.svelte',
   'src/lib/components/workspace/sidebar/BranchDisplay.svelte',
@@ -296,7 +289,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/routes/(app)/test-error-boundary/+page.svelte',
   'src/routes/(app)/test-input/+page.svelte',
   'src/routes/(app)/test-mentions/+page.svelte',
-  'src/routes/(app)/test-mentions/compact-initializer-test.svelte',
   'src/routes/(app)/test-mentions/compact/+page.svelte',
   'src/routes/(app)/workspace/[id]/+page.svelte',
 ];
@@ -597,6 +589,36 @@ export default [
       ],
     },
   },
+  // Every Playwright CT spec and CT helper takes `test` / `expect` from the shared
+  // module, which turns off ct-core's per-worker browser-context reuse (the
+  // reuse reset raced `mount()` on the merge queue: intent-hq/intent#4373, #4783,
+  // #5236, #5249, #5279, #5481). A spec that imports them from the package
+  // directly runs without that override, so forbid every value import of the
+  // package — named, namespace (`import * as ct`) and default alike; an
+  // `importNames` list would let `ct.test` / `ct.expect` through a default import.
+  // Type imports (`Locator`, `Page`, `ComponentFixtures`, ...) still come from the
+  // package. The shared module itself is the one sanctioned value importer.
+  // Main-process files are excluded so this block does not replace their
+  // child_process ban above.
+  {
+    files: ['src/**/*.{js,mjs,ts,tsx,svelte}'],
+    ignores: ['src/test/ct-test.ts', ...mainProcessFiles],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@playwright/experimental-ct-svelte',
+              allowTypeImports: true,
+              message:
+                "Only type imports may come from '@playwright/experimental-ct-svelte'. Import `test` / `expect` (and any other runtime export) from the shared CT module (src/test/ct-test.ts) so the browser-context isolation applies to this spec.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Type-aware lint for Electron main-process + preload code. An unawaited
   // promise inside a try/catch silently succeeds: the Electron 42→44 bump made
   // `clipboard.writeText()` async and the WRITE_CLIPBOARD handler kept
@@ -730,6 +752,7 @@ export default [
         { allowlist: namedColorAllowlist, baseline: semanticColorBaseline },
       ],
       'intent/no-button-compatibility-aliases': 'warn',
+      'intent/icon-only-button-size': ['error', { baseline: iconOnlyButtonSizeBaseline }],
       'intent/no-dialog-root-outside-patterns': 'error',
       'intent/no-direct-toast': 'error',
       'intent/no-legacy-spinner': 'error',

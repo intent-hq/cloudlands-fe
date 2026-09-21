@@ -489,12 +489,12 @@
       tabindex={isClickable ? 0 : undefined}
     >
       <div
-        class="absolute w-1 right-0 h-full rounded-sm bg-muted transition-[width] duration-200 group-hover/span:w-1.5"
+        class="absolute w-1 right-0 h-full rounded-sm bg-muted transition-[width] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none group-hover/span:w-1.5"
         style:opacity={span.opacity}
       ></div>
       <!-- Avatar and label for spans (shown on hover) -->
       <div
-        class="flex flex-row items-center gap-1 leading-none absolute right-0 pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/span:opacity-100 transition-opacity duration-200"
+        class="flex flex-row items-center gap-1 leading-none absolute right-0 pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/span:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
         style:top="{span.labelTop - span.top}px"
       >
         {#if span.author?.type === 'agent'}

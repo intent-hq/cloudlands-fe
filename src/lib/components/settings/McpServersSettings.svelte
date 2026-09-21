@@ -719,9 +719,14 @@
                         {:else}
                           <Button
                             variant="ghost"
+                            size="icon-compact"
+                            iconOnly
                             type="button"
-                            class="p-1 rounded-md hover:bg-muted transition-colors cursor-pointer"
+                            class="hover:bg-muted transition-colors cursor-pointer"
                             onclick={() => startInstall(option)}
+                            aria-label={m.settings_mcpServers_install_ariaLabel({
+                              name: option.label,
+                            })}
                           >
                             <Fa icon={faPlus} size="sm" class="text-subtle" />
                           </Button>

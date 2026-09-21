@@ -10,6 +10,15 @@ import {
   panelLayoutReducer as rawPanelLayoutReducer,
 } from '../../panel-layout/panel-layout-slice';
 import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
+import { initialState as guestSessionsInitialState } from '../../guest-sessions/guest-sessions-slice';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+
+/** The window-identity slices `selectIsWorkspaceCollaborator` reads: an owner window on the local backend. */
+const ownerWindowSlices = {
+  connections: { activeId: LOCAL_CONNECTION_ID, windowBackendId: LOCAL_CONNECTION_ID },
+  // Settled owner window: guest list received, no host joined.
+  guestSessions: { ...guestSessionsInitialState, hasReceivedList: true },
+};
 import type { PanelLayoutSliceState } from '../../panel-layout/panel-layout-types';
 import {
   openWorkspaceActivityChanges,
@@ -152,9 +161,11 @@ describe('workspaceNavigationTabSaga', () => {
     const channel = stdChannel();
     const dispatch = vi.fn();
     const state = {
+      ...ownerWindowSlices,
       panelLayout: {
         byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-focused' } },
       },
+      workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'owner' }]) },
     };
     const task = runSaga({ channel, dispatch, getState: () => state }, workspaceNavigationTabSaga);
     const event = { id: 'event-1', type: 'file:changed', timestamp: 42 } as never;
@@ -210,6 +221,30 @@ describe('workspaceNavigationTabSaga', () => {
         panelId: 'panel-focused',
         tab: { type: 'code-review', data: { status: 'completed', result: 'Looks good' } },
       },
+    });
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('drops browser opens for a collaborator workspace (owner-only, multiplayer w3)', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const state = {
+      ...ownerWindowSlices,
+      panelLayout: {
+        byWorkspaceId: { 'ws-1': { focusedPanelId: 'panel-focused' } },
+      },
+      workspace: { workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'collaborator' }]) },
+    };
+    const task = runSaga({ channel, dispatch, getState: () => state }, workspaceNavigationTabSaga);
+
+    channel.put(openWorkspaceBrowser('ws-1', 'https://example.com'));
+    channel.put(openWorkspaceCodeReview('ws-1', { status: 'completed', result: 'Looks good' }));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual(['panelLayout/openTab']);
+    expect(dispatch.mock.calls[0]?.[0]).toMatchObject({
+      payload: { tab: { type: 'code-review' } },
     });
     task.cancel();
     await task.toPromise();

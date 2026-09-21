@@ -71,6 +71,7 @@ describe('isCtContractPath', () => {
     'playwright/index.ts',
     'playwright/app-stubs/stores.ts',
     'scripts/run-ct-tests.mjs',
+    'src/test/ct-test.ts',
     'src/lib/component-catalog/capture-stability.ts',
     'src/lib/component-catalog/geometry-probe.ts',
     'src/lib/component-catalog/preview-definition.ts',
@@ -89,6 +90,7 @@ describe('isCtContractPath', () => {
     'src/lib/component-catalog/catalog.ts',
     'src/lib/component-catalog/geometry-probe.test.ts',
     'src/lib/component-catalog/nested/preview-definition.ts',
+    'src/test/ct-console-errors.ts',
     'playwright.config.ts',
     'scripts/verify-changed.mjs',
     'scripts/ct-contract-paths.mjs',
@@ -101,7 +103,7 @@ describe('isCtContractPath', () => {
     expect(isCtContractPath(file)).toBe(false);
   });
 
-  it('exports exactly the ten paths the CT harness depends on', () => {
+  it('exports exactly the eleven paths the CT harness depends on', () => {
     expect([...CT_CONTRACT_PATHS].sort()).toEqual([
       'package.json',
       'playwright-ct.config.ts',
@@ -113,6 +115,7 @@ describe('isCtContractPath', () => {
       'src/lib/component-catalog/geometry-probe.ts',
       'src/lib/component-catalog/preview-definition.ts',
       'src/lib/styles/**',
+      'src/test/ct-test.ts',
     ]);
   });
 });
@@ -122,8 +125,14 @@ describe('isCtTestArtifact', () => {
     'src/lib/components/ui/button/button.geometry.ct.spec.ts',
     'src/features/agent/components/agent-avatar/__tests__/agent-avatar-waiting.ct.spec.ts',
     'src/top-level.ct.spec.ts',
+    // Playwright's testMatch matcher is nocase + dot: these are discovered too.
+    'src/.fixtures/button.ct.spec.ts',
+    'src/.hidden.ct.spec.ts',
+    'src/button.CT.spec.ts',
     'src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
     './src/lib/components/workspace/__geometry__/workspace-hover-card.geometry.json',
+    'src/.fixtures/__geometry__/button.geometry.json',
+    'src/x/__geometry__/.button.geometry.json',
   ])('matches %s', (file) => {
     expect(isCtTestArtifact(file)).toBe(true);
   });

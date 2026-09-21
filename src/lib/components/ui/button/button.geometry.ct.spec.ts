@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../../test/ct-test';
 import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import ButtonPreview from './button.preview.svelte';
 

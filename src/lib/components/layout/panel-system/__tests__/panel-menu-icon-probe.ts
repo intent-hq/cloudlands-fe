@@ -1,5 +1,14 @@
+/** True when the menu rect is unchanged from the current read to the next animation-frame callback. */
+export function isPanelMenuSettled(root: Element) {
+  const before = JSON.stringify(root.getBoundingClientRect());
+  return new Promise<boolean>((resolve) => {
+    requestAnimationFrame(() => resolve(JSON.stringify(root.getBoundingClientRect()) === before));
+  });
+}
+
 /** Native painted-ink measurements; transparent SVG viewBox rectangles are excluded. */
 export function probePanelMenuIcons(root: Element) {
+  const bounds = root.getBoundingClientRect();
   const crossSections: Record<string, [number, number, number, number]> = {
     font: [80, 152, 0, 1],
     expand: [48, 72, 1, 0],
@@ -13,7 +22,7 @@ export function probePanelMenuIcons(root: Element) {
     'arrow-up-right-from-square': [40, 144, 1, 0],
     'up-right-from-square': [40, 144, 1, 0],
   };
-  return [...root.querySelectorAll<SVGSVGElement>('svg[data-icon]')].map((svg) => {
+  const icons = [...root.querySelectorAll<SVGSVGElement>('svg[data-icon]')].map((svg) => {
     const id = svg.dataset.icon!;
     const box = svg.getBoundingClientRect();
     const row = svg.closest('[data-menu-item], [data-slot="menu-label"]')!;
@@ -56,4 +65,8 @@ export function probePanelMenuIcons(root: Element) {
       menuTransform: getComputedStyle(root).transform,
     };
   });
+  return {
+    bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+    icons,
+  };
 }

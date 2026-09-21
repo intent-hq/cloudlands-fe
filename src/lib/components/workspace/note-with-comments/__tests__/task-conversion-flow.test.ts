@@ -20,7 +20,6 @@ const {
   mockLogger,
   constantReadable,
   currentNoteReadable,
-  notesVersionReadable,
   resetNotes,
   replaceNotes,
   selectCurrentNote,
@@ -333,8 +332,11 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectSelectedNoteId: Object.assign(() => constantReadable('spec'), {
     select: () => 'spec',
   }),
-  selectNotesVersion: () => notesVersionReadable,
   selectWorkspaceNotesState: () => constantReadable({ initialized: true }),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesAgentLifecycleActions: () => constantReadable(false),
 }));
 
 vi.mock('$store/renderer/slices/comments/comments-selectors', () => ({

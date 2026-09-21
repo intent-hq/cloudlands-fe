@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import { fileURLToPath } from 'node:url';
 import { defineGeometrySnapshotSuite } from '$lib/component-catalog/geometry-snapshot';
 import WorkspaceHoverCardPreview from './workspace-hover-card.preview.svelte';
@@ -194,6 +194,8 @@ test('uses compact bottom-row typography while preserving the header body title'
     props: fixture('working'),
   });
   const card = preview.locator('[data-workspace-hover-card]');
+  await expect(card.locator('[data-workspace-hover-card-agent-time]').first()).toBeVisible();
+  await expect(card.locator('[data-workspace-hover-card-pr-status]').first()).toBeVisible();
   const typography = await card.evaluate((node) => {
     const read = (selector: string) => {
       const element = node.querySelector(selector);

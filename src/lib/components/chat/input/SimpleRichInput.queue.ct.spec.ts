@@ -1,5 +1,14 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import SimpleRichInputQueueHost from './SimpleRichInputQueueHost.svelte';
+
+// With no queue the prompt text sits directly below the composer padding-top
+// (8px) plus the `.tiptap-editor` padding-top (0.25rem = 4px) scoped in
+// TipTapEditor.svelte. The value is asserted as a constant rather than sampled
+// after mount: on CI the editor's scoped stylesheet can apply after the
+// visibility/placeholder gates, so a mount-time sample (or a getComputedStyle
+// oracle taken at the same instant) pinned a stale 8-9px baseline the settled
+// composer never matched (intent-hq/intent#5324).
+const EMPTY_TEXT_INSET = 12;
 
 test('preserves the empty composer and insets prompt text below expanded and collapsed queues', async ({
   mount,
@@ -13,14 +22,22 @@ test('preserves the empty composer and insets prompt text below expanded and col
   await expect(editor).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   await expect(editor.locator('p')).toHaveAttribute('data-placeholder', /.+/);
+  const surfaceTextInset = () =>
+    input.evaluate(
+      (node) =>
+        node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
+        node.getBoundingClientRect().top,
+    );
+  // Settle on the CSS-defined inset before any other geometry is sampled, so
+  // every read below sees the editor's scoped styles applied.
+  await expect.poll(surfaceTextInset).toBe(EMPTY_TEXT_INSET);
   const geometry = await input.evaluate((node) => {
     const surface = node.getBoundingClientRect();
     const text = node.querySelector('.tiptap-editor p')!.getBoundingClientRect();
     const actions = node.querySelector('.action-bar')!.getBoundingClientRect();
     return { top: text.top - surface.top, bottom: actions.top - text.bottom };
   });
-  expect(geometry.top).toBeGreaterThanOrEqual(8);
-  expect(geometry.top).toBeLessThanOrEqual(12);
+  expect(geometry.top).toBe(EMPTY_TEXT_INSET);
   expect(Math.abs(geometry.bottom - geometry.top)).toBeLessThanOrEqual(4);
   expect(await queue.evaluate((node) => node.getBoundingClientRect().height)).toBe(0);
   const emptyBox = await input.boundingBox();
@@ -86,12 +103,7 @@ test('preserves the empty composer and insets prompt text below expanded and col
   await expect(header).toHaveCount(0);
   await expect.poll(queueEditorGap).toBe(0);
   await expect.poll(() => input.boundingBox()).toEqual(emptyBox);
-  const restoredTextInset = await input.evaluate(
-    (node) =>
-      node.querySelector('.tiptap-editor p')!.getBoundingClientRect().top -
-      node.getBoundingClientRect().top,
-  );
-  expect(restoredTextInset).toBe(geometry.top);
+  await expect.poll(surfaceTextInset).toBe(EMPTY_TEXT_INSET);
 });
 
 for (const streaming of [false, true]) {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
@@ -118,7 +118,7 @@ for (const [index, panelType] of panelTypes.entries()) {
   test(`keeps the ${panelType} panel menu portalled and operable at narrow 200% zoom`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     const stackCount = stackCounts[index % 3];
     const component = await mount(PanelHeaderActionsHost, {
       props: { panelType, width: 240, zoom: 2, stackCount },
@@ -174,14 +174,42 @@ for (const [index, panelType] of panelTypes.entries()) {
       await expect(agentAvatar).toHaveAttribute('data-avatar-variant', 'emphasized');
     }
 
-    const identity = header.locator(
-      panelType === 'agent' ? '[data-panel-agent-header-identity]' : '[data-panel-header-identity]',
-    );
-    const identityBox = await identity.boundingBox();
-    const panelControlsBox = await panelControls.boundingBox();
-    expect(identityBox).not.toBeNull();
-    expect(panelControlsBox).not.toBeNull();
-    expect(identityBox!.x + identityBox!.width).toBeLessThanOrEqual(panelControlsBox!.x + 0.5);
+    const layout = await header.evaluate((node) => {
+      const header = node.getBoundingClientRect();
+      const identity = node
+        .querySelector('[data-panel-agent-header-identity], [data-panel-header-identity]')!
+        .getBoundingClientRect();
+      const controls = node.querySelector('[data-panel-header-actions]')!.getBoundingClientRect();
+      return {
+        header: header.toJSON(),
+        identity: identity.toJSON(),
+        controls: controls.toJSON(),
+        // Agent actions may occupy a second row at the editing-width minimum.
+        noCollision:
+          identity.right <= controls.left ||
+          controls.right <= identity.left ||
+          identity.bottom <= controls.top ||
+          controls.bottom <= identity.top,
+        contained: [identity, controls].every(
+          (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left >= header.left &&
+            rect.right <= header.right &&
+            rect.top >= header.top &&
+            rect.bottom <= header.bottom,
+        ),
+      };
+    });
+    await testInfo.attach('narrow-header-geometry', {
+      body: JSON.stringify(layout),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('narrow-header', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    expect(layout).toMatchObject({ noCollision: true, contained: true });
     if (panelType === 'agent') {
       await expect(header.locator('[data-pane-stack]')).toHaveCount(0);
       await expect(component.locator('[data-pane-stack-layer]')).toHaveCount(0);

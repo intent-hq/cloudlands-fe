@@ -7,6 +7,7 @@
    */
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
+  import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     selectHudGridFilter,
     selectHudWorkspaceCards,
@@ -23,13 +24,19 @@
 
   const cards$ = selectHudWorkspaceCards();
   const filter$ = selectHudGridFilter();
+  // A guest window (bound to a joined host, multiplayer w4) lists only the
+  // workspaces shared with it, so its "all" option is labelled accordingly.
+  const isGuestWindow$ = selectIsGuestWindow();
 
   let repoMenuOpen = $state(false);
   let stateMenuOpen = $state(false);
 
   const repos = $derived(repoOptions($cards$));
   const counts = $derived(stateCounts($cards$));
-  const repoLabel = $derived($filter$.repo ?? m.hud_filter_allWorkspaces_label());
+  const allWorkspacesLabel = $derived(
+    $isGuestWindow$ ? m.hud_filter_allSharedWorkspaces_label() : m.hud_filter_allWorkspaces_label(),
+  );
+  const repoLabel = $derived($filter$.repo ?? allWorkspacesLabel);
   const stateLabel = $derived(
     $filter$.states.length === 0
       ? m.hud_filter_allStatuses_label()
@@ -79,7 +86,7 @@
         <Menu.Item class="hud-header-menu-row" onSelect={() => pickRepo(null)}>
           <!-- i18n-ignore (glyph) -->
           <span class="hud-header-menu-avatar hud-header-menu-avatar-all">∗</span>
-          <span class="hud-header-menu-name">{m.hud_filter_allWorkspaces_label()}</span>
+          <span class="hud-header-menu-name">{allWorkspacesLabel}</span>
           <span class="hud-header-menu-count">{$cards$.length}</span>
         </Menu.Item>
         <Menu.Separator class="hud-header-menu-sep" />

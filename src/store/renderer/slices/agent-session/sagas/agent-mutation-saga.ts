@@ -16,6 +16,7 @@ import {
   setPendingAgentDeletion,
   type PendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
+import { dismissAgentAttentionToast } from '$features/agent/agent-attention-toast-service';
 import { readAgentSession } from '$features/agent/agent-read-service';
 import { appClient } from '$lib/client';
 import { withToastCountdown } from '$lib/components/patterns/notify';
@@ -24,6 +25,7 @@ import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { AgentActivationState } from '$shared/types/agent-session';
+import { deriveAgentHasUnread } from '$shared/utils/agent-unread';
 import { pruneRecentlyClosed } from '../../panel-layout/panel-layout-slice';
 import {
   cancelAgentSubscriptionsRequested,
@@ -48,6 +50,7 @@ import {
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
   saveAgentSessionRequested,
+  setAgentNotificationsMutedRequested,
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
 } from '../../workspace-agents/workspace-agents-slice';
@@ -59,6 +62,7 @@ import {
 } from '../agent-session-slice';
 import type { StoredAgentSession, WireAgentSession } from '../agent-session-types';
 import { selectAgentSession } from '../agent-session-selectors';
+import { selectHidesAgentLifecycleActions } from '../../workspace/workspace-selectors';
 
 const logger = createLogger('AgentMutationSaga');
 const UNDO_DURATION_MS = 15_000;
@@ -366,6 +370,62 @@ function* stopAgent(action: ReturnType<typeof stopAgentSessionRequested>): SagaG
   }
 }
 
+function* setNotificationsMuted(
+  action: ReturnType<typeof setAgentNotificationsMutedRequested>,
+): SagaGenerator<void> {
+  const [wsId, agentId, notificationsMuted] = action.payload;
+  // Optimistic flip so the menu label / indicator respond immediately; the
+  // `agent:updated` push re-derives the same fields through normalizeAgent.
+  const previous = yield* selectAgentSession.effect(agentId);
+  const previousMuted = previous?.notificationsMuted;
+  if (previous !== undefined) {
+    yield* put(
+      updateSession(agentId, {
+        notificationsMuted,
+        hasUnread: deriveAgentHasUnread({ ...previous, notificationsMuted }),
+      }),
+    );
+  }
+  let settled = false;
+  try {
+    const result = yield* call([appClient.agents, appClient.agents.setNotificationsMuted], {
+      agentId,
+      workspaceId: wsId,
+      notificationsMuted,
+    });
+    if (!result.success)
+      throw new Error(result.error || m.agent_mutation_setNotificationsMutedFailed_error());
+    yield* put(action.success(undefined as never));
+    settled = true;
+    // A muted agent never alerts: drop the sticky attention toast it may
+    // already have raised — the service only skips NEW toasts for muted agents.
+    if (notificationsMuted) yield* call(dismissAgentAttentionToast, agentId);
+  } catch (error) {
+    const failure = mutationError(error, m.agent_mutation_setNotificationsMutedFailed_error());
+    if (previous !== undefined) {
+      // Re-derive unread from the live session rather than the pre-request
+      // snapshot: a message or seen-marker may have landed while the RPC was
+      // pending, and only the mute flag itself is being rolled back.
+      const current = yield* selectAgentSession.effect(agentId);
+      if (current !== undefined && current.notificationsMuted === notificationsMuted) {
+        yield* put(
+          updateSession(agentId, {
+            notificationsMuted: previousMuted,
+            hasUnread: deriveAgentHasUnread({ ...current, notificationsMuted: previousMuted }),
+          }),
+        );
+      }
+    }
+    yield* call(showError, failure.message);
+    yield* put(action.failure(failure));
+    settled = true;
+  } finally {
+    if (!settled && (yield* cancelled())) {
+      yield* put(action.failure(new Error(m.agent_mutation_setNotificationsMutedFailed_error())));
+    }
+  }
+}
+
 function* dismissQuestions(
   action: ReturnType<typeof agentSessionDismissQuestionsRequested>,
 ): SagaGenerator<void> {
@@ -511,6 +571,17 @@ function* deleteWithUndo(
   let entry: PendingAgentDeletion | null = null;
   let clearerSpawned = false;
   try {
+    // `agent.delete` is refused with -32003 for a collaborator connection: the
+    // delete affordances are withheld, and a request that still arrives is
+    // refused here before the session is hidden or anything is sent.
+    if (yield* selectHidesAgentLifecycleActions.effect(wsId)) {
+      logger.warn('Agent deletion refused for a collaborator connection', { workspaceId: wsId });
+      const failure = new Error(m.agent_mutation_deleteNotPermitted_error());
+      yield* call(showError, failure.message);
+      yield* put(action.failure(failure));
+      settled = true;
+      return;
+    }
     const snapshot = yield* selectAgentSession.effect(agentId);
     if (!snapshot) {
       yield* put(action.success(null));
@@ -535,7 +606,11 @@ function* deleteWithUndo(
       removePendingAgentDeletion(agentId);
       entry = null;
       yield* call(restoreHiddenSession, wsId, snapshot);
-      const failure = new Error(result.error || m.agent_mutation_deleteFailed_error());
+      const failure = new Error(
+        result.forbidden
+          ? m.agent_mutation_deleteNotPermitted_error()
+          : result.error || m.agent_mutation_deleteFailed_error(),
+      );
       yield* call(showError, failure.message);
       yield* put(action.failure(failure));
       settled = true;
@@ -657,6 +732,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(saveAgentSessionRequested, saveAgent),
     takeEvery(renameAgentSessionRequested, renameAgent),
     takeEvery(stopAgentSessionRequested, stopAgent),
+    takeEvery(setAgentNotificationsMutedRequested, setNotificationsMuted),
     takeEvery(agentSessionDismissQuestionsRequested, dismissQuestions),
     takeEvery(agentProposalResolveRequested, resolveProposal),
     takeEvery(cancelAgentSubscriptionsRequested, cancelAgentSubscriptions),

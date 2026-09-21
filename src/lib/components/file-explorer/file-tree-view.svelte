@@ -327,7 +327,7 @@
   let lastSyncTime = 0;
 
   // Watch for changes in the stores and sync local git status display
-  // This ensures we stay in sync with CodeChangesPanel WITHOUT triggering cascading refreshes
+  // WITHOUT triggering cascading refreshes
   $effect(() => {
     if (initialized && workspaceId) {
       // Watch for changes in file tracking store

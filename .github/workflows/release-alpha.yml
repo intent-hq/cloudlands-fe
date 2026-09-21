@@ -120,7 +120,7 @@ jobs:
           if [ "$STATUS" -eq 0 ]; then
             echo "::error::Release v${VERSION} already exists on intent-hq/cloudlands-releases. Delete it there first to rebuild this tag."
             exit 1
-          elif echo "$RESPONSE" | grep -q "HTTP 404"; then
+          elif grep -q "HTTP 404" <<<"$RESPONSE"; then
             echo "No existing v${VERSION} release on intent-hq/cloudlands-releases, proceeding"
           else
             echo "::error::Failed to check for existing v${VERSION} release on intent-hq/cloudlands-releases: ${RESPONSE}"
@@ -827,7 +827,7 @@ jobs:
           fi
           # The value comes from a downloaded asset; validate its shape before it
           # reaches GITHUB_OUTPUT (guards against corrupt/multi-line values)
-          if [ -n "$INTENTD_BASE" ] && ! printf '%s' "$INTENTD_BASE" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          if [ -n "$INTENTD_BASE" ] && ! grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$INTENTD_BASE"; then
             echo "Ignoring malformed intentdVersion in ${PREV_FE_TAG} manifest; falling back to pin-only notes"
             INTENTD_BASE=""
           fi

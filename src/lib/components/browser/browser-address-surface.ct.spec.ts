@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import EmbeddedPreview from './embedded-browser.preview.svelte';
 import ViewerPreview from './browser-viewer-tab.preview.svelte';
@@ -33,6 +33,15 @@ for (const kind of ['embedded', 'viewer'] as const) {
           'true',
         );
       } else await mount(ViewerPreview, { props: { mirror, width: 640 } });
+
+      // The toolbar's viewport-menu label re-lays out by a sub-pixel once Inter replaces the
+      // fallback font (font-display: swap), and the flex-1 address surface absorbs that shift.
+      // Force a layout so the font request is issued, then settle fonts before the resting
+      // read so hover is the only variable measured below.
+      await page.evaluate(async () => {
+        document.body.getBoundingClientRect();
+        await document.fonts.ready;
+      });
 
       const outer = page.locator('[data-browser-address-surface]');
       const trigger = page.getByRole('button', { name: addressName });

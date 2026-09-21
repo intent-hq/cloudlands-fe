@@ -73,11 +73,6 @@ export function conversationMessageUrl(
  */
 export const TASK_LINK_REGEX_FLEXIBLE = /\[([^\]]+)\]\(intent:\/\/local\/task\/([^)]+)\)/g;
 
-/**
- * Same as TASK_HREF_REGEX but with flexible ID pattern
- */
-export const TASK_HREF_REGEX_FLEXIBLE = /^intent:\/\/local\/task\/(.+)$/;
-
 // ============================================================================
 // UUID Validation
 // ============================================================================

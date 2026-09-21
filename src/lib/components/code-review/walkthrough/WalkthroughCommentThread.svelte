@@ -175,11 +175,13 @@
       <Button
         type="button"
         variant="ghost"
+        size="icon-compact"
+        iconOnly
         onclick={onClose}
-        class="shrink-0 p-1 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
+        class="shrink-0 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
         title={m.codeReview_commentThread_dismiss_tooltip()}
       >
-        <Fa icon={faTimes} class="h-3.5 w-3.5" />
+        <Fa icon={faTimes} />
       </Button>
     {/if}
   </div>
@@ -256,9 +258,10 @@
         />
         <Button
           type="button"
+          variant="primary"
           onclick={handleSend}
           disabled={!replyText.trim() || isSending}
-          class="h-8 w-8 flex items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          class="h-8 w-8 p-0"
         >
           {#if isSending}
             <IntentMarkLoader size={14} />

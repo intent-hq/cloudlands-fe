@@ -226,7 +226,7 @@
           <div class="flex flex-col items-center text-center space-y-6">
             <!-- Warning Icon with Recovery Animation - Large and centered -->
             <div
-              class="w-14 h-14 rounded-full bg-warning/15 flex items-center justify-center ring-1 ring-warning/20 animate-in fade-in zoom-in duration-300"
+              class="w-14 h-14 rounded-full bg-warning/15 flex items-center justify-center ring-1 ring-warning/20 animate-in fade-in zoom-in duration-spring-slow ease-spring-slow motion-reduce:animate-none"
             >
               {#if isRecovering}
                 <IntentMarkLoader size={40} class="text-warning-ink" />

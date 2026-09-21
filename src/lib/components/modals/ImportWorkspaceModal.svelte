@@ -124,7 +124,7 @@
           >
             {#if progressFraction != null}
               <div
-                class="h-full bg-primary transition-[width] duration-300"
+                class="h-full bg-primary transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
                 style="width: {Math.round(progressFraction * 100)}%"
               ></div>
             {:else}

@@ -7,7 +7,6 @@
     agentAvatarGeometry,
     agentAvatarVariants,
   } from '$features/agent/components/agent-avatar/avatar-size';
-  import Tab from '$features/layout/components/panel-tabs/Tab.svelte';
   import AgentSubscriptions from '$lib/components/chat/AgentSubscriptions.svelte';
   import AgentMessageAttributionHeader from '$lib/components/chat/AgentMessageAttributionHeader.svelte';
   import { initAppStore, store as appStore } from '$store/renderer/store';
@@ -73,18 +72,6 @@
         </div>
       {/each}
     {/each}
-  </section>
-  <section data-live-panel-header style="width: 180px; overflow: hidden">
-    <Tab
-      id="avatar-evidence"
-      active={true}
-      runningAgents={[
-        { agentId: 'panel-agent-1', state: 'running', specialist: 'coordinator' },
-        { agentId: 'panel-agent-2', state: 'unread', specialist: 'implementor' },
-        { agentId: 'panel-agent-3', state: 'waiting', specialist: 'verifier' },
-        { agentId: 'panel-agent-4', state: 'running', specialist: 'implementor' },
-      ]}>Avatar evidence</Tab
-    >
   </section>
   <section data-live-subscription-row>
     <AgentSubscriptions

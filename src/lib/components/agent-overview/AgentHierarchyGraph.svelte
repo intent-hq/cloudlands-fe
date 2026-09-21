@@ -682,8 +682,10 @@
     >
       <Button
         variant="ghost"
+        size="icon"
+        iconOnly
         type="button"
-        class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+        class="zoom-btn hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={zoomOut}
         title={m.agentOverview_hierarchyGraph_zoomOut_tooltip()}
       >
@@ -704,8 +706,10 @@
 
       <Button
         variant="ghost"
+        size="icon"
+        iconOnly
         type="button"
-        class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+        class="zoom-btn hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={zoomIn}
         title={m.agentOverview_hierarchyGraph_zoomIn_tooltip()}
       >
@@ -719,8 +723,10 @@
 
       <Button
         variant="ghost"
+        size="icon"
+        iconOnly
         type="button"
-        class="zoom-btn w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+        class="zoom-btn hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
         onclick={fitToView}
         title={m.agentOverview_hierarchyGraph_fitToView_tooltip()}
       >

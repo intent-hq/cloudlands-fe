@@ -55,7 +55,11 @@
     currentAgentId?: string;
     onToggle?: (id: string) => void;
     onToggleSelection?: (id: string) => void;
-    /** Called after an item is picked, allowing an embedding menu to close. */
+    /**
+     * Called after a mention chip (terminal/script) is inserted into the editor,
+     * allowing an embedding menu to close. Toggling checkbox items or adding
+     * searched files/notes keeps the picker open for multi-selection.
+     */
     onPick?: () => void;
     /** Callback to insert a mention chip into the editor (for types not in PanelContextItem) */
     onInsertMention?: (mention: {
@@ -157,7 +161,6 @@
 
   function handleToggleSelectionItem(id: string) {
     onToggleSelection?.(id);
-    onPick?.();
   }
 
   function truncateText(text: string, maxLength: number = 50): string {
@@ -258,7 +261,6 @@
 
   function handleToggleItem(id: string) {
     onToggle?.(id);
-    onPick?.();
   }
 
   function handleSelectSearchResult(result: MentionCandidate) {
@@ -302,7 +304,6 @@
     // Clear search but keep popover open so user can add more items
     searchQuery = '';
     searchResults = [];
-    onPick?.();
   }
 
   async function performSearch(query: string, generation: number) {

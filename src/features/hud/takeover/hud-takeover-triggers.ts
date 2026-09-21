@@ -20,6 +20,9 @@
  * off `kind`. Agent names never render as raw `agent-{uuid}` ids: the
  * caller-supplied resolver (store-backed) is consulted and an unresolvable
  * name is OMITTED from the detail rather than falling back to the id.
+ * Muted agents (§5.5 `notificationsMuted` — the payload stamp on
+ * `agent:attention-requested`, else the caller-supplied mute resolver over
+ * the hydrated session slice) never open an agent-family takeover.
  */
 import type { WorkspaceEvent } from '$features/events/types';
 import { isHudAttentionValue } from '$store/renderer/slices/hud/hud-types';
@@ -63,8 +66,11 @@ const DISPLAY_STATUS_TAKEOVER_KINDS: Readonly<Record<string, HudTakeoverKind>> =
 /** Event types that can open a takeover (keys of the trigger-kind const). */
 export const HUD_TAKEOVER_EVENT_TYPES = Object.keys(HUD_TAKEOVER_TRIGGER_KINDS);
 
-/** Store-backed agent-id → display-name lookup (see `friendly-labels.ts`). */
+/** Store-backed agent-id → display-name lookup. */
 export type HudAgentNameResolver = (agentId: string) => string | undefined;
+
+/** Store-backed agent-id → `notificationsMuted` lookup (§5.5 AgentLite). */
+export type HudAgentMuteResolver = (agentId: string) => boolean;
 
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
@@ -88,8 +94,25 @@ function agentDisplayName(
 }
 
 /**
+ * True when the event's agent is muted: the payload's own `notificationsMuted`
+ * stamp (only `agent:attention-requested` carries it; absent when false), else
+ * the caller-supplied resolver over the hydrated session slice.
+ */
+function isMutedAgentEvent(
+  data: Record<string, unknown>,
+  isAgentMuted?: HudAgentMuteResolver,
+): boolean {
+  if (data.notificationsMuted === true) return true;
+  const agentId = str(data.agentId);
+  return agentId !== undefined && isAgentMuted !== undefined && isAgentMuted(agentId);
+}
+
+/**
  * Map one daemon event to a takeover trigger, or null when the event is not
  * a takeover family or fails its per-family gate:
+ *  - every agent family (`agent:created` / `agent:started` / `agent:failed` /
+ *    `agent:stream:end` / `agent:attention-requested`) returns null when the
+ *    agent is muted (`isMutedAgentEvent`);
  *  - `task:status-changed` only fires on `newStatus === "complete"`;
  *  - `workspace:attention-changed` only fires when raising a HUD attention
  *    value (`isHudAttentionValue` allowlist — "none" and non-attention values
@@ -113,11 +136,13 @@ function agentDisplayName(
  *    displayStatus value;
  *    the raw wire word never travels as `detail` — the banner renders the
  *    workspace title with the localized kind chip;
- *  - `agent:failed` / `agent:created` / `agent:started` always fire.
+ *  - `agent:failed` / `agent:created` / `agent:started` always fire (unless
+ *    muted).
  */
 export function mapEventToTakeoverTrigger(
   event: WorkspaceEvent,
   resolveAgentName?: HudAgentNameResolver,
+  isAgentMuted?: HudAgentMuteResolver,
 ): HudTakeoverTrigger | null {
   const type: string = typeof event.type === 'string' ? event.type : '';
   let kind = HUD_TAKEOVER_TRIGGER_KINDS[type];
@@ -140,9 +165,11 @@ export function mapEventToTakeoverTrigger(
     }
     case 'agent:created':
     case 'agent:started':
+      if (isMutedAgentEvent(data, isAgentMuted)) return null;
       detail = agentDisplayName(data, resolveAgentName) ?? '';
       break;
     case 'agent:failed':
+      if (isMutedAgentEvent(data, isAgentMuted)) return null;
       detail = [agentDisplayName(data, resolveAgentName), str(data.error)]
         .filter(Boolean)
         .join(': ');
@@ -154,6 +181,7 @@ export function mapEventToTakeoverTrigger(
       break;
     }
     case 'agent:stream:end': {
+      if (isMutedAgentEvent(data, isAgentMuted)) return null;
       const question = extractQuestionsFromStreamEnd(event)[0];
       if (!question) return null;
       detail = question.question;
@@ -164,6 +192,7 @@ export function mapEventToTakeoverTrigger(
     case 'agent:attention-requested': {
       const parentAgentId = str(data.parentAgentId);
       if (parentAgentId) return null;
+      if (isMutedAgentEvent(data, isAgentMuted)) return null;
       const kindValue = str(data.kind);
       const reason = str(data.reason);
       if ((kindValue !== 'discussion' && kindValue !== 'blocker') || !reason) return null;

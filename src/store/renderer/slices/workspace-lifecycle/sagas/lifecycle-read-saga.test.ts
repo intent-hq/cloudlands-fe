@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   terminals: { list: vi.fn() },
   getAgentLineStats: vi.fn(),
   isAgentDeletionPending: vi.fn(),
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('$lib/client', () => ({
@@ -43,7 +44,7 @@ vi.mock('$features/agent/utils/pending-agent-deletions', () => ({
   isAgentDeletionPending: mocks.isAgentDeletionPending,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
-  createLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }),
+  createLogger: () => mocks.logger,
 }));
 
 import { AgentStatus, GitFileStatus, type AgentSession } from '$shared/types';
@@ -59,9 +60,18 @@ import { refreshScripts } from '../../scripts/scripts-slice';
 import { loadGitStatus } from '../../git/git-slice';
 import { loadSkillsRequested } from '../../skills/skills-slice';
 import { hydrateTaskAgentAssociationsRequested } from '../../task-agent-associations/task-agent-associations-slice';
-import { hydrateTerminalsRequested } from '../../terminals/terminals-slice';
+import { scriptsReducer, setScriptsData } from '../../scripts/scripts-slice';
+import { selectScriptEntries, selectScriptsInitialized } from '../../scripts/scripts-selectors';
+import {
+  addTerminal,
+  hydrateTerminalsRequested,
+  terminalsReducer,
+} from '../../terminals/terminals-slice';
+import { selectTerminalsForWorkspace } from '../../terminals/terminals-selectors';
 import { fetchWorkspaceTokenUsage } from '../../token-usage/token-usage-slice';
 import {
+  fetchBackgroundAgentsRequested,
+  fetchDelegatedAgentsRequested,
   fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setAgentsLoaded,
@@ -83,12 +93,18 @@ import { consoleOwnerChanged } from '../../hardware-console/hardware-console-sli
 import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import { selectAgentSessionsById } from '../../agent-session/agent-session-selectors';
 import { store as appStore } from '../../../store';
-import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 import { gitReadSaga } from '../../git/sagas/git-read-saga';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
 import { MAX_CONCURRENT_WORKSPACE_READS } from './workspace-read-scheduler';
 
 const WS = 'ws-lifecycle';
+/** Default hydration read: the parentless-foreground bin (§5.5 row scope). */
+const TOP_LEVEL = { scope: 'topLevel' } as const;
 const NOW = new Date('2026-07-31T00:00:00.000Z');
 
 const settle = async () => {
@@ -110,6 +126,8 @@ function state(currentTabId: string | null = null, eventsNextToken: string | nul
       byWorkspaceId: eventsNextToken ? { [WS]: { nextToken: eventsNextToken } } : {},
     },
     prStatus: { byWorkspaceId: {} },
+    terminals: terminalsReducer(undefined, { type: '@@init' } as never),
+    scripts: scriptsReducer(undefined, { type: '@@init' } as never),
   };
 }
 
@@ -121,6 +139,32 @@ function start(current = state()) {
     lifecycleReadSaga,
   );
   return { channel, actions, task };
+}
+
+// Flows that dispatch loadWorkspacesRequested from inside the saga, or that
+// branch on the loaded flag, need dispatched actions looped back into the
+// channel (the default start() only records them) and the real
+// workspaceReducer applied to observe store convergence.
+function startWithLoopback() {
+  const channel = stdChannel();
+  const actions: { type: string }[] = [];
+  let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
+  const dispatch = (action: { type: string }) => {
+    actions.push(action);
+    workspaceState = workspaceReducer(workspaceState, action);
+    channel.put(action);
+    return action;
+  };
+  const current = state();
+  const task = runSaga(
+    {
+      channel,
+      dispatch,
+      getState: () => ({ ...current, workspace: workspaceState }),
+    },
+    lifecycleReadSaga,
+  );
+  return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
 }
 
 async function stop(task: ReturnType<typeof runSaga>) {
@@ -247,35 +291,150 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  describe('workspace list retry until the daemon transport connects', () => {
+    const TRANSPORT_DOWN = {
+      ok: false as const,
+      error: 'tailcat tunnel did not connect within 3000ms',
+    };
+    const listActions = (actions: { type: string }[], type: string) =>
+      actions.filter((action) => action.type === type);
+
+    it('retries a boot workspace.list that failed before the list loaded and loads it exactly once', async () => {
+      const workspace = { id: WS, branch: 'main' };
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce(TRANSPORT_DOWN)
+        .mockResolvedValueOnce({ ok: true, data: [workspace] });
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([]);
+      expect(run.getWorkspaceState().hasLoaded).toBe(false);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+
+      // One bounded retry delay, then the list lands once the transport is up.
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([
+        { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
+      ]);
+      expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toEqual([
+        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local'] },
+      ]);
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      // Retries stop once loaded: no further reads on any later tick.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    });
+
+    it('backs off 1s, 2s, 5s and then holds at the 15s cap while the transport stays down', async () => {
+      mocks.workspaceServiceList.mockResolvedValue(TRANSPORT_DOWN);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      let calls = 1;
+      for (const delayMs of [1_000, 2_000, 5_000, 15_000, 15_000]) {
+        await vi.advanceTimersByTimeAsync(delayMs - 1);
+        expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(calls);
+        await vi.advanceTimersByTimeAsync(1);
+        await settle();
+        calls += 1;
+        expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(calls);
+      }
+      // Every attempt so far was one sequential read — never a concurrent fan-out.
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([]);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    });
+
+    it('re-requests the workspace list on backendReconnected', async () => {
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      run.channel.put(backendReconnected());
+      await settle();
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+      expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toHaveLength(2);
+      await stop(run.task);
+    });
+
+    it('reads immediately on backendReconnected during a retry wait, exactly once', async () => {
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce(TRANSPORT_DOWN)
+        .mockResolvedValue({ ok: true, data: [] });
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      // No timer advance: the reconnect itself drives the read.
+      run.channel.put(backendReconnected());
+      await settle();
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      // Neither the abandoned backoff timer nor a trailing rerun adds a read.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      await stop(run.task);
+    });
+
+    it('does not retry a failed refresh once the list has loaded (log only)', async () => {
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce({ ok: true, data: [] })
+        .mockResolvedValueOnce(TRANSPORT_DOWN);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error.mock.calls[0]?.[0]).toBe('Refresh failed for workspaces');
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      await stop(run.task);
+    });
+
+    it.each([
+      ['the IPC-flattened -32003 envelope message', { ok: false as const, error: 'Forbidden' }],
+      [
+        'a structured -32003 daemon error response',
+        Object.assign(new Error('capability refused'), { rpcCode: -32003 }),
+      ],
+    ])('does not retry %s', async (_label, refusal) => {
+      if (refusal instanceof Error) mocks.workspaceServiceList.mockRejectedValueOnce(refusal);
+      else mocks.workspaceServiceList.mockResolvedValueOnce(refusal);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(run.getWorkspaceState().hasLoaded).toBe(false);
+      await stop(run.task);
+    });
+  });
+
   describe('attention reconciliation on focus / console-owner acquisition', () => {
     const wireWorkspace = (attention: 'none' | 'unread') =>
       ({ id: WS, branch: 'main', attention }) as unknown as import('$shared/types').Workspace;
-
-    // These triggers dispatch loadWorkspacesRequested from inside the saga, so
-    // the harness must loop dispatched actions back into the channel (the
-    // default start() only records them) and apply the real workspaceReducer
-    // to observe store convergence.
-    function startWithLoopback() {
-      const channel = stdChannel();
-      const actions: { type: string }[] = [];
-      let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
-      const dispatch = (action: { type: string }) => {
-        actions.push(action);
-        workspaceState = workspaceReducer(workspaceState, action);
-        channel.put(action);
-        return action;
-      };
-      const current = state();
-      const task = runSaga(
-        {
-          channel,
-          dispatch,
-          getState: () => ({ ...current, workspace: workspaceState }),
-        },
-        lifecycleReadSaga,
-      );
-      return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
-    }
 
     it('refetches the workspace list when the window regains focus and converges stale attention', async () => {
       const run = startWithLoopback();
@@ -663,6 +822,86 @@ describe('lifecycleReadSaga', () => {
       { type: 'terminals/loadWorkspaceTerminals', payload: [WS, [terminal]] },
     ]);
     await stop(run.task);
+  });
+
+  describe('owner-only script and terminal reads for collaborators (multiplayer w3)', () => {
+    const script = { id: 'script-1', name: 'test', command: 'pnpm test' };
+    const forbidden = () => Object.assign(new Error('Forbidden'), { rpcCode: -32003 });
+
+    /** Prepopulated store whose dispatch folds saga output through the real reducers. */
+    function startWithReducers() {
+      let current = {
+        ...state(),
+        terminals: terminalsReducer(state().terminals, addTerminal(WS, 'term-1', 'Shell')),
+        scripts: scriptsReducer(state().scripts, setScriptsData(WS, [script] as never)),
+      };
+      const channel = stdChannel();
+      const actions: unknown[] = [];
+      const task = runSaga(
+        {
+          channel,
+          dispatch: (action) => {
+            actions.push(action);
+            current = {
+              ...current,
+              terminals: terminalsReducer(current.terminals, action as never),
+              scripts: scriptsReducer(current.scripts, action as never),
+            };
+          },
+          getState: () => current,
+        },
+        lifecycleReadSaga,
+      );
+      return { channel, actions, task, getState: () => current as never };
+    }
+
+    it('settles a -32003 refusal to empty, initialized stores without logging an error', async () => {
+      mocks.scripts.list.mockRejectedValue(forbidden());
+      mocks.terminals.list.mockRejectedValue(forbidden());
+      const run = startWithReducers();
+      expect(selectTerminalsForWorkspace.select(run.getState(), WS)).toHaveLength(1);
+      expect(selectScriptEntries.select(run.getState(), WS)).toHaveLength(1);
+
+      run.channel.put(refreshScripts(WS));
+      await settle();
+      run.channel.put(hydrateTerminalsRequested(WS));
+      await settle();
+
+      expect(run.actions).toEqual([
+        { type: 'scripts/setScriptsData', payload: { wsId: WS, scripts: [] } },
+        { type: 'scripts/setInitialized', payload: [WS, true] },
+        { type: 'terminals/removeTerminal', payload: [WS, 'term-1'] },
+        { type: 'terminals/loadWorkspaceTerminals', payload: [WS, [], null, undefined] },
+      ]);
+      expect(selectScriptEntries.select(run.getState(), WS)).toEqual([]);
+      expect(selectScriptsInitialized.select(run.getState(), WS)).toBe(true);
+      expect(selectTerminalsForWorkspace.select(run.getState(), WS)).toEqual([]);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    });
+
+    it('keeps other read failures as logged errors that leave the stores untouched', async () => {
+      const internal = Object.assign(new Error('boom'), { rpcCode: -32603 });
+      mocks.scripts.list.mockRejectedValue(internal);
+      mocks.terminals.list.mockRejectedValue(new Error('socket closed'));
+      const run = startWithReducers();
+
+      run.channel.put(refreshScripts(WS));
+      await settle();
+      run.channel.put(hydrateTerminalsRequested(WS));
+      await settle();
+
+      expect(run.actions).toEqual([]);
+      expect(selectScriptEntries.select(run.getState(), WS)).toHaveLength(1);
+      expect(selectScriptsInitialized.select(run.getState(), WS)).toBe(false);
+      expect(selectTerminalsForWorkspace.select(run.getState(), WS)).toHaveLength(1);
+      expect(mocks.logger.error).toHaveBeenCalledWith(`Refresh failed for scripts:${WS}`, internal);
+      expect(mocks.logger.error).toHaveBeenCalledWith(
+        `Refresh failed for terminals:${WS}`,
+        expect.any(Error),
+      );
+      await stop(run.task);
+    });
   });
 
   it('loads the next older events page from the stored cursor', async () => {
@@ -1558,8 +1797,12 @@ describe('lifecycleReadSaga', () => {
     expect(run.actions).toEqual([
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, [background, kept]] },
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[background, kept]] },
+      {
+        type: 'agentSessions/bulkUpsertSessions',
+        payload: [[background, kept], { listProjection: true }],
+      },
       { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-keep'] },
     ]);
     await stop(run.task);
@@ -1592,7 +1835,10 @@ describe('lifecycleReadSaga', () => {
     expect(bulkUpserts).toEqual([
       {
         type: 'agentSessions/bulkUpsertSessions',
-        payload: [[staleRow, normalRow], { staleRuntimeFlagClearAgentIds: ['agent-stale'] }],
+        payload: [
+          [staleRow, normalRow],
+          { staleRuntimeFlagClearAgentIds: ['agent-stale'], listProjection: true },
+        ],
       },
     ]);
     await stop(run.task);
@@ -1674,7 +1920,7 @@ describe('lifecycleReadSaga', () => {
       (action) => action.type === 'agentSessions/bulkUpsertSessions',
     );
     expect(bulkUpserts).toEqual([
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[raceRow]] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[raceRow], { listProjection: true }] },
     ]);
     await stop(run.task);
   });
@@ -1698,7 +1944,7 @@ describe('lifecycleReadSaga', () => {
       (action) => action.type === 'agentSessions/bulkUpsertSessions',
     );
     expect(bulkUpserts).toEqual([
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[liveRow]] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[liveRow], { listProjection: true }] },
     ]);
     await stop(run.task);
   });
@@ -1717,7 +1963,7 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    expect(mocks.agents.listWithMeta).toHaveBeenCalledWith(WS);
+    expect(mocks.agents.listWithMeta).toHaveBeenCalledWith(WS, { scope: 'topLevel' });
     expect(run.actions).toContainEqual({
       type: 'workspaceAgents/setRetiredCount',
       payload: [WS, 1],
@@ -1759,6 +2005,7 @@ describe('lifecycleReadSaga', () => {
     expect(run.actions).toEqual([
       { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);
@@ -1797,7 +2044,7 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.agents.list.mock.calls).toEqual([[WS, { retiredOnly: true }]]);
     expect(run.actions).toEqual([
       { type: 'workspaceAgents/setIsLoadingRetiredAgents', payload: [WS, true] },
-      { type: 'agentSessions/bulkUpsertSessions', payload: [[retired]] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[retired], { listProjection: true }] },
       { type: 'workspaceAgents/addAgent', payload: [WS, retired] },
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 1] },
       { type: 'workspaceAgents/setRetiredAgentsLoaded', payload: [WS, true] },
@@ -1937,7 +2184,7 @@ describe('lifecycleReadSaga', () => {
     });
     expect(run.actions).toContainEqual({
       type: 'agentSessions/bulkUpsertSessions',
-      payload: [[preserved]],
+      payload: [[preserved], { listProjection: true }],
     });
     await stop(run.task);
   });
@@ -1973,6 +2220,223 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  // §5.5 row scope: the default hydration read is `scope: "topLevel"`; the
+  // Delegated / Background bins render from `scopeCounts` and load lazily.
+  const COUNTS = { topLevel: 1, delegated: 2, background: 1 };
+
+  it('hydrates with scope topLevel and stores the daemon-served scopeCounts (§5.5 row scope)', async () => {
+    const top = agent('agent-top');
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [top],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+    });
+    const run = start();
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // Exactly one wire read on a fresh open, and it is the top-level bin.
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setAgentsLoaded', payload: [WS, true] },
+      { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, COUNTS] },
+      { type: 'workspaceAgents/setAgents', payload: [WS, [top]] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[top], { listProjection: true }] },
+      { type: 'workspaceAgents/setActiveAgentId', payload: [WS, 'agent-top'] },
+    ]);
+    await stop(run.task);
+  });
+
+  it('falls back to the all-rows partition when an older daemon serves no scopeCounts', async () => {
+    // An older daemon ignores `scope` and answers the plain read: delegated and
+    // background rows ride the default frame, and NO scoped bin reads follow —
+    // `scopeCounts: null` records that there are no lazy bins to render.
+    const top = agent('agent-top');
+    const child = agent('agent-child', { metadata: { createdByAgentId: 'agent-top' } as never });
+    const bg = agent('agent-bg', { isBackground: true });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { delegatedAgentsLoaded: true, backgroundAgentsLoaded: true },
+    } as never;
+    mocks.agents.listWithMeta.mockResolvedValue({ agents: [top, child, bg], retiredCount: 0 });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setScopeCounts',
+      payload: [WS, null],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setAgents',
+      payload: [WS, [top, child, bg]],
+    });
+    await stop(run.task);
+  });
+
+  it('rehydrates loaded delegated and background bins alongside the top-level read', async () => {
+    const top = agent('agent-top');
+    const child = agent('agent-child', { metadata: { createdByAgentId: 'agent-top' } as never });
+    const bg = agent('agent-bg', { isBackground: true });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedAgentsLoaded: true, backgroundAgentsLoaded: true },
+    } as never;
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [top],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+    });
+    mocks.agents.list.mockImplementation(async (_ws: string, options: { scope?: string }) =>
+      options.scope === 'delegated' ? [child] : [bg],
+    );
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, { scope: 'delegated' }],
+      [WS, { scope: 'background' }],
+    ]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setAgents',
+      payload: [WS, [top, child, bg]],
+    });
+    await stop(run.task);
+  });
+
+  it('lazy-loads a scoped bin on demand and re-baselines its count', async () => {
+    const child = agent('agent-child', { metadata: { createdByAgentId: 'agent-top' } as never });
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = { [WS]: { scopeCounts: COUNTS } } as never;
+    mocks.agents.list.mockResolvedValue([child]);
+    const run = start(current);
+
+    run.channel.put(fetchDelegatedAgentsRequested(WS));
+    await settle();
+
+    // One scoped fetch per expand; the count re-baselines from 2 to the 1 row served.
+    expect(mocks.agents.list.mock.calls).toEqual([[WS, { scope: 'delegated' }]]);
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingLazyBin', payload: [WS, 'delegated', true] },
+      { type: 'agentSessions/bulkUpsertSessions', payload: [[child], { listProjection: true }] },
+      { type: 'workspaceAgents/addAgent', payload: [WS, child] },
+      { type: 'workspaceAgents/adjustScopeCount', payload: [WS, 'delegated', -1] },
+      { type: 'workspaceAgents/setLazyBinLoaded', payload: [WS, 'delegated', true] },
+      { type: 'workspaceAgents/setIsLoadingLazyBin', payload: [WS, 'delegated', false] },
+    ]);
+
+    mocks.agents.list.mockResolvedValue([agent('agent-bg', { isBackground: true })]);
+    run.channel.put(fetchBackgroundAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list.mock.calls[1]).toEqual([WS, { scope: 'background' }]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setLazyBinLoaded',
+      payload: [WS, 'background', true],
+    });
+    await stop(run.task);
+  });
+
+  it('skips a scoped bin load when the rows are already hydrated or no counts are held', async () => {
+    const current = state();
+    // Old daemon (no counts): every row already rode the default read.
+    current.workspaceAgents.byWorkspaceId = { [WS]: { scopeCounts: null } } as never;
+    const run = start(current);
+
+    run.channel.put(fetchDelegatedAgentsRequested(WS));
+    run.channel.put(fetchBackgroundAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+
+    // Already loaded: no refetch on a re-expand.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedAgentsLoaded: true },
+    } as never;
+    run.channel.put(fetchDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+    await stop(run.task);
+  });
+
+  it('clears the scoped-bin loading flag and stays retryable after a failed load', async () => {
+    const current = state();
+    current.workspaceAgents.byWorkspaceId = { [WS]: { scopeCounts: COUNTS } } as never;
+    mocks.agents.list.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([]);
+    const run = start(current);
+
+    run.channel.put(fetchBackgroundAgentsRequested(WS));
+    await settle();
+    expect(run.actions).toEqual([
+      { type: 'workspaceAgents/setIsLoadingLazyBin', payload: [WS, 'background', true] },
+      { type: 'workspaceAgents/setIsLoadingLazyBin', payload: [WS, 'background', false] },
+    ]);
+
+    run.channel.put(fetchBackgroundAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list.mock.calls).toEqual([
+      [WS, { scope: 'background' }],
+      [WS, { scope: 'background' }],
+    ]);
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/setLazyBinLoaded',
+      payload: [WS, 'background', true],
+    });
+    await stop(run.task);
+  });
+
+  it('re-arms a scoped bin load that completes mid-hydration (snapshot eviction guard)', async () => {
+    let resolvePending!: (value: boolean) => void;
+    mocks.isAgentDeletionPending.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolvePending = resolve;
+      }) as never,
+    );
+    const current = state();
+    mocks.agents.listWithMeta.mockResolvedValue({
+      agents: [agent('agent-top')],
+      retiredCount: 0,
+      scopeCounts: COUNTS,
+    });
+    const run = start(current);
+
+    run.channel.put(hydrateAgentsRequested(WS));
+    await settle();
+
+    // The delegated worker finished while hydration was parked.
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: { scopeCounts: COUNTS, delegatedAgentsLoaded: true },
+    } as never;
+    resolvePending(false);
+    await settle();
+
+    const setAgentsIndex = run.actions.findIndex(
+      (action) => action.type === 'workspaceAgents/setAgents',
+    );
+    expect(setAgentsIndex).toBeGreaterThanOrEqual(0);
+    expect(run.actions.slice(setAgentsIndex)).toContainEqual({
+      type: 'workspaceAgents/setLazyBinLoaded',
+      payload: [WS, 'delegated', false],
+    });
+    expect(run.actions).toContainEqual({
+      type: 'workspaceAgents/fetchDelegatedAgentsRequested',
+      payload: [WS],
+    });
+    expect(run.actions).not.toContainEqual({
+      type: 'workspaceAgents/fetchBackgroundAgentsRequested',
+      payload: [WS],
+    });
+    await stop(run.task);
+  });
+
   it('does not cancel concurrent agent hydrates across workspaces (#1934)', async () => {
     const otherWorkspaceId = 'ws-other';
     type ListWithMeta = { agents: AgentSession[]; retiredCount: number };
@@ -1990,7 +2454,10 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(otherWorkspaceId));
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [otherWorkspaceId]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([
+      [WS, TOP_LEVEL],
+      [otherWorkspaceId, TOP_LEVEL],
+    ]);
 
     resolvers[WS]!({ agents: [], retiredCount: 0 });
     resolvers[otherWorkspaceId]!({ agents: [], retiredCount: 0 });
@@ -2018,11 +2485,14 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
     resolveFirst({ agents: [], retiredCount: 0 });
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([
+      [WS, TOP_LEVEL],
+      [WS, TOP_LEVEL],
+    ]);
     expect(run.actions.filter((action) => action.type === setAgentsLoaded.type)).toHaveLength(2);
     await stop(run.task);
   });
@@ -2043,15 +2513,19 @@ describe('lifecycleReadSaga', () => {
     run.channel.put(hydrateAgentsRequested(WS));
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
 
     rejectFirst(new Error('offline'));
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([
+      [WS, TOP_LEVEL],
+      [WS, TOP_LEVEL],
+    ]);
     expect(run.actions).toEqual([
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);
@@ -2078,15 +2552,19 @@ describe('lifecycleReadSaga', () => {
     resolveFirst({ agents: [agent('agent-late')], retiredCount: 0 });
     await settle();
 
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS, TOP_LEVEL]]);
     expect(run.actions).toEqual([]);
 
     run.channel.put(hydrateAgentsRequested(WS));
     await settle();
-    expect(mocks.agents.listWithMeta.mock.calls).toEqual([[WS], [WS]]);
+    expect(mocks.agents.listWithMeta.mock.calls).toEqual([
+      [WS, TOP_LEVEL],
+      [WS, TOP_LEVEL],
+    ]);
     expect(run.actions).toEqual([
       setAgentsLoaded(WS, true),
       { type: 'workspaceAgents/setRetiredCount', payload: [WS, 0] },
+      { type: 'workspaceAgents/setScopeCounts', payload: [WS, null] },
       { type: 'workspaceAgents/setAgents', payload: [WS, []] },
     ]);
     await stop(run.task);

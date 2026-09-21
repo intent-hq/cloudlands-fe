@@ -64,7 +64,6 @@ export const menuMetadata = {
     'src/lib/components/chat/input/SimpleRichInput.svelte',
     'src/lib/components/chat/SpecialistDropdown.svelte',
     'src/lib/components/layout/DaemonStatusIndicator.svelte',
-    'src/lib/components/layout/panel-system/LayoutPresetDropdown.svelte',
     'src/lib/components/layout/panel-system/PanelTabBar.svelte',
     'src/lib/components/modals/PullConflictDialog.svelte',
     'src/lib/components/notes/primitives/DiagramBlock.svelte',

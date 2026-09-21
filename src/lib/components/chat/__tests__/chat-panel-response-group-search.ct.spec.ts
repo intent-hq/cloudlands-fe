@@ -1,9 +1,7 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
-import { recordCdpLifecycle } from '../../../../test/ct-cdp-lifecycle-recorder';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
-recordCdpLifecycle(test);
 
 test('search reveals a completed response group and restores only search-owned state', async ({
   mount,

@@ -188,7 +188,7 @@
 </script>
 
 <div
-  class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden transition-all duration-500"
+  class="{OPERATIONAL_ROW_GEOMETRY_TOKENS_CLASS} w-full overflow-hidden transition-all duration-spring-slow ease-spring-slow motion-reduce:transition-none"
 >
   <!-- Header -->
   <div
@@ -198,7 +198,7 @@
     <div class="inline-grid *:[grid-area:1/1]">
       {#key allDone}
         <h3
-          class="text-lg font-semibold tracking-[-0.016em] transition-colors duration-500"
+          class="text-lg font-semibold tracking-[-0.016em] transition-colors duration-spring-slow ease-spring-slow motion-reduce:transition-none"
           in:blur={{ tier: 'slow', distance: 3 }}
           out:blur={{ tier: 'slow', distance: 3 }}
         >
@@ -309,7 +309,7 @@
         </span>
         <div class="mt-1 h-[2px] w-full max-w-64 rounded-full bg-secondary overflow-hidden">
           <div
-            class="h-full bg-foreground/60 transition-[width] duration-300 ease-out"
+            class="h-full bg-foreground/60 transition-[width] duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             style="width: {maxPercent}%"
             role="progressbar"
             aria-label={createProgressLabel($progressEntry$)}

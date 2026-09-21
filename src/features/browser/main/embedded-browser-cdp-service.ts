@@ -343,6 +343,7 @@ class EmbeddedBrowserCdpService {
    */
   async requestPanelBrowserTabs(
     workspaceId?: string,
+    recoverTabId?: string,
   ): Promise<{ tabs: PanelBrowserTab[]; stale: boolean }> {
     if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
       // i18n-ignore (agent-facing protocol error, not user-facing)
@@ -370,6 +371,7 @@ class EmbeddedBrowserCdpService {
     const delivery = sendToWorkspaceWindows(workspaceId, IPC_CHANNELS.BROWSER.LIST_TABS_REQUEST, {
       requestId,
       workspaceId,
+      ...(recoverTabId ? { recoverTabId } : {}),
     });
     if (!delivery.delivered) {
       // Nothing received the request, so no reply is coming — answer from the
@@ -430,6 +432,10 @@ class EmbeddedBrowserCdpService {
    * Register a browser tab for CDP access
    */
   registerTab(tabId: string, webContentsId: number): void {
+    // A dom-ready registration can arrive after its guest has already died.
+    // Never replace a live mapping or settle mount waiters with that stale id.
+    const wc = webContents.fromId(webContentsId);
+    if (!wc || wc.isDestroyed()) return;
     logger.info('Registering browser tab', { tabId, webContentsId });
     if (this.tabRegistry.get(tabId) !== webContentsId) {
       this.tabsWithDeviceMetricsOverride.delete(tabId);
@@ -456,7 +462,6 @@ class EmbeddedBrowserCdpService {
     // Ownership is deliberately NOT cleared here: a destroyed webContents
     // also happens on unmount (panel caching), and ownership is persistent —
     // it ends only on a confirmed tab close (monorepo#2857).
-    const wc = webContents.fromId(webContentsId);
     if (wc && !wc.isDestroyed()) {
       wc.once('destroyed', () => {
         logger.info('WebContents destroyed, cleaning up tab registry', { tabId, webContentsId });
@@ -678,7 +683,10 @@ class EmbeddedBrowserCdpService {
    * - webContentsId: number if mounted (can run CDP commands)
    * - webContentsId: -1 if unmounted (need to focusTab first)
    */
-  async listAllTabs(workspaceId?: string): Promise<{
+  async listAllTabs(
+    workspaceId?: string,
+    recoverTabId?: string,
+  ): Promise<{
     tabs: (TabInfo & {
       mounted: boolean;
       ownerAgentId?: string;
@@ -690,7 +698,10 @@ class EmbeddedBrowserCdpService {
     stale: boolean;
   }> {
     // Get panel layout tabs (includes unmounted)
-    const { tabs: panelTabs, stale } = await this.requestPanelBrowserTabs(workspaceId);
+    const { tabs: panelTabs, stale } = await this.requestPanelBrowserTabs(
+      workspaceId,
+      recoverTabId,
+    );
 
     // Get mounted webviews
     const mountedTabs = this.listTabs();

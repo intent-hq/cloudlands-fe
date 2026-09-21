@@ -340,7 +340,7 @@
       <Button
         variant="ghost"
         type="button"
-        class="flex-1 px-3 py-2.5 text-sm rounded-md cursor-pointer transition-all duration-200
+        class="flex-1 px-3 py-2.5 text-sm rounded-md cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none
           {activeTab === tab.id
           ? 'bg-foreground font-medium text-background shadow-sm'
           : 'text-muted-foreground hover:text-foreground'}"

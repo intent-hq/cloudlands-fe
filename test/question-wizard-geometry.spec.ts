@@ -89,9 +89,11 @@ async function readGeometry(page: Page) {
       document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
     const boundary = rect('[data-testid="conversation-composer-boundary"]');
     const wrapper = rect('[data-testid="question-wizard-slot"]');
-    // Wave 11 rebuild (d7663537) delegates the expanded surface to AskUserQuestions.
+    // Wave 11 rebuild (d7663537) delegates the expanded surface to AskUserQuestions; the
+    // collapsed pill owns its own bordered surface since #2531 (898107a1).
     const expanded = document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]');
-    const cardNode = expanded ?? document.querySelector<HTMLElement>('[data-question-wizard]')!;
+    const cardNode =
+      expanded ?? document.querySelector<HTMLElement>('[data-question-state="collapsed"]')!;
     const card = cardNode.getBoundingClientRect();
     const safeArea = rect('[data-testid="platform-safe-area"]');
     const skipButton = [...cardNode.querySelectorAll<HTMLButtonElement>('button')].find(
@@ -108,11 +110,6 @@ async function readGeometry(page: Page) {
         )
       : [];
     const cardStyle = getComputedStyle(cardNode);
-    const surfaceProbe = document.createElement('div');
-    surfaceProbe.className = 'shadow-surface-2';
-    cardNode.append(surfaceProbe);
-    const expectedShadow = expanded ? getComputedStyle(surfaceProbe).boxShadow : 'none';
-    surfaceProbe.remove();
     const inputBoundary = document.querySelector<HTMLElement>(
       '[data-testid="question-wizard-card"] textarea',
     )?.parentElement;
@@ -130,19 +127,19 @@ async function readGeometry(page: Page) {
     const boundaryStyle = getComputedStyle(
       document.querySelector<HTMLElement>('[data-testid="conversation-composer-boundary"]')!,
     );
-    const headerNode = cardNode.querySelector<HTMLElement>(
+    const metadataNode = cardNode.querySelector<HTMLElement>(
       '[data-slot="ask-user-questions-metadata"]',
     );
     const titleNode = cardNode.querySelector<HTMLElement>('h3');
-    const counterNode =
-      headerNode?.children.length === 2 ? (headerNode.firstElementChild as HTMLElement) : null;
-    const actionsNode = headerNode?.lastElementChild as HTMLElement | null;
-    const skipNode = [...(footerNode?.querySelectorAll<HTMLElement>('button') ?? [])].find(
-      (button) => button.textContent?.trim() === 'Skip',
-    );
-    const submitNode = [...(footerNode?.querySelectorAll<HTMLElement>('button') ?? [])].find(
-      (button) => /Continue|Finish/.test(button.textContent ?? ''),
-    );
+    const counterNode = metadataNode?.firstElementChild as HTMLElement | null;
+    const footerButtons = [...(footerNode?.querySelectorAll<HTMLElement>('button') ?? [])];
+    const footerButton = (label: RegExp) =>
+      footerButtons.find((button) => label.test(button.textContent?.trim() ?? ''));
+    const skipNode = footerButton(/^Skip$/);
+    const submitNode = footerButton(/Continue|Finish/);
+    // #2530/#2531 (41c3428a, 898107a1) moved Hide/Dismiss from the metadata row into the footer.
+    const hideNode = footerButton(/^Hide$/);
+    const dismissNode = footerButton(/^Dismiss$/);
     const compactRect = (node: HTMLElement | null | undefined) => {
       if (!node) return null;
       const nodeRect = node.getBoundingClientRect();
@@ -167,20 +164,18 @@ async function readGeometry(page: Page) {
         : null,
       safeArea: safeArea.height,
       boxShadow: cardStyle.boxShadow,
-      expectedShadow,
       cardBorderWidths: borderWidths(cardNode),
       inputBorderWidths: borderWidths(inputBoundary),
       indicatorBorderWidths: borderWidths(indicator),
       boundaryOverflow: `${boundaryStyle.overflowX}/${boundaryStyle.overflowY}`,
-      header: headerNode
-        ? {
-            rect: compactRect(headerNode),
-            title: compactRect(titleNode),
-            counter: compactRect(counterNode),
-            actions: compactRect(actionsNode),
-            titleTruncated: titleNode ? titleNode.scrollWidth > titleNode.clientWidth : false,
-          }
+      title: compactRect(titleNode),
+      metadata: metadataNode
+        ? { rect: compactRect(metadataNode), counter: compactRect(counterNode) }
         : null,
+      footerActions:
+        footer && hideNode && dismissNode
+          ? { hide: compactRect(hideNode)!, dismiss: compactRect(dismissNode)! }
+          : null,
       footerTypography:
         skipNode && submitNode
           ? {
@@ -200,8 +195,8 @@ function expectFlushGeometry(geometry: Awaited<ReturnType<typeof readGeometry>>,
   expect(geometry.safeArea).toBeCloseTo(safeArea, 1);
   expect(geometry.card.left).toBeGreaterThanOrEqual(geometry.boundary.left - 1);
   expect(geometry.card.right).toBeLessThanOrEqual(geometry.boundary.right + 1);
-  // Wave 11 AskUserQuestions + surface ladder (388bffff, d7663537): level 2, 1px border.
-  expect(geometry.boxShadow).toBe(geometry.expectedShadow);
+  // #2531 (898107a1) flattens both question surfaces: no elevation shadow, 1px border.
+  expect(geometry.boxShadow).toBe('none');
   expect(geometry.cardBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
   expect(geometry.boundaryOverflow).toBe('visible/visible');
 }
@@ -229,15 +224,16 @@ test('expanded card is flush with the shared question footer across rendered geo
     const geometry = await readGeometry(page);
     expectFlushGeometry(geometry, scenario.props.safeArea ?? 0);
     expect(geometry.footer).not.toBeNull();
-    // Wave 11 primitive footer: 4px above, 8px below; 4px content padding + 1px border.
+    // Compact primitive footer (#2531, 898107a1): 4px above, 6px below; 4px content
+    // padding + 1px border.
     const scale = 'zoom' in scenario ? scenario.zoom! : 1;
     expect(geometry.card.bottom - geometry.footer!.bottom).toBeCloseTo(5 * scale, 1);
     expect(geometry.footer!.topInset).toBeCloseTo(4 * scale, 1);
-    expect(geometry.footer!.bottomInset).toBeCloseTo(8 * scale, 1);
+    expect(geometry.footer!.bottomInset).toBeCloseTo(6 * scale, 1);
   }
 });
 
-test('metadata stays on one row above the question and footer actions share typography', async ({
+test('metadata sits above the question and footer actions share one row and typography', async ({
   page,
 }) => {
   const cases: Array<{
@@ -262,14 +258,28 @@ test('metadata stays on one row above the question and footer actions share typo
   for (const scenario of cases) {
     await mountWizard(page, scenario.viewport, scenario.props, scenario);
     const geometry = await readGeometry(page);
-    expect(geometry.header).not.toBeNull();
-    // Wave 11 rebuild (d7663537) moves the question below the metadata/actions row.
-    expect(geometry.header!.title!.top).toBeGreaterThanOrEqual(geometry.header!.rect!.bottom);
+    // #2530 (41c3428a): the metadata row only renders the step counter, and only for
+    // multi-step wizards; Hide/Dismiss moved into the footer alongside Skip/Continue.
     if (scenario.props.questionCount === 1) {
-      expect(geometry.header!.counter).toBeNull();
+      expect(geometry.metadata).toBeNull();
     } else {
-      expect(geometry.header!.counter!.right).toBeLessThanOrEqual(geometry.header!.actions!.left);
-      expect(geometry.header!.counter!.centerY).toBeCloseTo(geometry.header!.actions!.centerY, 1);
+      expect(geometry.metadata).not.toBeNull();
+      expect(geometry.metadata!.counter).not.toBeNull();
+      expect(geometry.title!.top).toBeGreaterThanOrEqual(geometry.metadata!.rect!.bottom);
+      expect(geometry.metadata!.counter!.top).toBeGreaterThanOrEqual(geometry.metadata!.rect!.top);
+      expect(geometry.metadata!.counter!.bottom).toBeLessThanOrEqual(
+        geometry.metadata!.rect!.bottom,
+      );
+    }
+    expect(geometry.footerActions).not.toBeNull();
+    const { hide, dismiss } = geometry.footerActions!;
+    expect(hide.top).toBeGreaterThanOrEqual(geometry.title!.bottom);
+    expect(Math.max(hide.bottom, dismiss.bottom)).toBeLessThanOrEqual(geometry.footer!.bottom);
+    // The footer wraps at narrow widths (the zoomed case lays out at ~240 CSS px); at
+    // phone width and above Hide and Dismiss share one row.
+    if (!scenario.zoom) {
+      expect(hide.right).toBeLessThanOrEqual(dismiss.left);
+      expect(hide.centerY).toBeCloseTo(dismiss.centerY, 1);
     }
     expect(geometry.footerTypography!.skipFontSize).toBe(geometry.footerTypography!.submitFontSize);
     expect(geometry.footerTypography!.skipLineHeight).toBe(

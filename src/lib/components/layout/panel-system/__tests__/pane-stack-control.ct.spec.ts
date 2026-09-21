@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import PaneStackControlHost from './mocks/PaneStackControlHost.svelte';
 
 const panelTypes = [
@@ -41,23 +41,23 @@ test('shows one selector for every stacked active pane type and none for one pan
   }
 });
 
-test('keeps glyph geometry, action spacing, attention, and motion safe at 100% and 200%', async ({
-  mount,
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(PaneStackControlHost, {
-    props: {
-      paneTypes: ['agent', 'note'],
-      stackCount: 2,
-      initialActiveTabId: 'agent-pane',
-      attentionTabIds: ['note-pane'],
-      width: 190,
-    },
-  });
+for (const zoom of [1, 2]) {
+  test(`keeps glyph geometry, action spacing, attention, and motion safe at ${zoom * 100}%`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(PaneStackControlHost, {
+      props: {
+        paneTypes: ['agent', 'note'],
+        stackCount: 2,
+        initialActiveTabId: 'agent-pane',
+        attentionTabIds: ['note-pane'],
+        width: 190,
+        zoom,
+      },
+    });
 
-  for (const zoom of [1, 2]) {
-    await component.update({ props: { zoom } });
     const trigger = component.getByTestId('pane-stack-selector-trigger');
     await expect(trigger).toHaveAttribute('data-attention', '');
     const geometry = await component.locator('[data-panel-content-header]').evaluate((header) => {
@@ -70,36 +70,62 @@ test('keeps glyph geometry, action spacing, attention, and motion safe at 100% a
       const actionsRect = actions.getBoundingClientRect();
       const glyphRect = glyph.getBoundingClientRect();
       return {
+        rectangles: {
+          header: headerRect.toJSON(),
+          identity: identityRect.toJSON(),
+          actions: actionsRect.toJSON(),
+        },
         glyphWidth: glyphRect.width / scale,
         glyphHeight: glyphRect.height / scale,
-        noCollision: identityRect.right <= actionsRect.left,
-        actionsInside: actionsRect.right <= headerRect.right,
+        // Skinny agent headers intentionally wrap; shared x ranges alone are not a collision.
+        noCollision:
+          identityRect.right <= actionsRect.left ||
+          actionsRect.right <= identityRect.left ||
+          identityRect.bottom <= actionsRect.top ||
+          actionsRect.bottom <= identityRect.top,
+        contained: [identityRect, actionsRect].every(
+          (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left >= headerRect.left &&
+            rect.right <= headerRect.right &&
+            rect.top >= headerRect.top &&
+            rect.bottom <= headerRect.bottom,
+        ),
         lineCount: glyph.querySelectorAll('[data-pane-stack-line]').length,
       };
     });
 
-    expect(geometry).toEqual({
+    await testInfo.attach(`header-geometry-${zoom}`, {
+      body: JSON.stringify(geometry),
+      contentType: 'application/json',
+    });
+    await testInfo.attach(`header-${zoom}`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    expect(geometry).toMatchObject({
       glyphWidth: 14,
       glyphHeight: 14,
       noCollision: true,
-      actionsInside: true,
+      contained: true,
       lineCount: 2,
     });
-  }
 
-  await component.update({
-    props: {
-      paneTypes: panelTypes.slice(0, 7),
-      stackCount: 7,
-      attentionTabIds: [],
-    },
+    await component.update({
+      props: {
+        paneTypes: panelTypes.slice(0, 7),
+        stackCount: 7,
+        attentionTabIds: [],
+      },
+    });
+    await expect(component.locator('[data-pane-stack-glyph]')).toHaveAttribute(
+      'data-pane-stack-visible-lines',
+      '6',
+    );
+    await expect(component.locator('[data-pane-stack-line]')).toHaveCount(6);
   });
-  await expect(component.locator('[data-pane-stack-glyph]')).toHaveAttribute(
-    'data-pane-stack-visible-lines',
-    '6',
-  );
-  await expect(component.locator('[data-pane-stack-line]')).toHaveCount(6);
-});
+}
 
 test('switches agent panes with keyboard-accessible menu identity and current state', async ({
   mount,

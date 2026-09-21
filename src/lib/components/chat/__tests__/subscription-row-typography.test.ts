@@ -29,16 +29,20 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
     readable({ id: 'ws-1', repositoryOwner: 'acme', repositoryName: 'widgets' }),
   selectIsWorkspaceHostLocal: () => readable(true),
 }));
+const { watchedSession } = vi.hoisted(() => ({
+  watchedSession: {
+    id: 'agent-a',
+    name: 'Watched agent',
+    status: 'completed',
+    messages: [],
+    createdAt: '2026-08-13T09:00:00Z',
+    updatedAt: '2026-08-13T10:00:00Z',
+  },
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: () =>
-    readable({
-      id: 'agent-a',
-      name: 'Watched agent',
-      status: 'completed',
-      messages: [],
-      createdAt: '2026-08-13T09:00:00Z',
-      updatedAt: '2026-08-13T10:00:00Z',
-    }),
+  selectAgentSession: Object.assign(() => readable(watchedSession), {
+    select: () => watchedSession,
+  }),
   selectAgentSessionsByIds: () =>
     readable([
       { id: 'agent-a', status: 'active', updatedAt: '2026-08-13T10:00:00Z' },
@@ -53,6 +57,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
   }),
   selectAgentIsResponding: () => readable(false),
+  selectAgentDetailHydrated: () => readable(false),
   selectAgentPreview: Object.assign(() => readable(null), { select: () => null }),
   selectAgentIsWaiting: () => readable(false),
   selectAgentIsBlockedWaiting: () => readable(false),

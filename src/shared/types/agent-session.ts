@@ -14,7 +14,7 @@
 
 import type { AgentId, WorkspaceId } from './branded-ids';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
-import type { AgentMessage } from './agent-message';
+import type { AgentMessage, MessageAuthor } from './agent-message';
 import { AgentStatus } from './agent.types';
 import type { AgentMetadata } from '../types';
 
@@ -81,9 +81,18 @@ export interface QueuedMessage {
    * eventTypes, events? }` so the UI can render them as system notifications
    * instead of raw `[WORKSPACE EVENTS]` text. Agent-to-agent messages carry
    * `{ type: 'agent_message', fromAgentId, fromAgentName? }` so the UI can
-   * render sender attribution.
+   * render sender attribution. User-typed entries carry the daemon's
+   * `fromPrincipalId` principal stamp (intent-hq/intentd#1869).
    */
   messageMetadata?: Record<string, unknown>;
+  /**
+   * Serve-time projection of the principal that enqueued the entry
+   * (multiplayer w2), resolved by the daemon from the `fromPrincipalId`
+   * stamp. Authoritative when present: `null` means the principal row is
+   * gone (no author, no fallback). Absent on older daemons, where the queue
+   * surface falls back to the projections the transcript already carries.
+   */
+  author?: MessageAuthor | null;
 }
 
 /**
@@ -110,6 +119,29 @@ export interface SessionStats {
 }
 
 /**
+ * `agent.list` row scope (§5.5 row scope, intent-hq/intent#5383). The three
+ * bins partition the workspace's NON-retired sessions: `topLevel` = no parent
+ * and foreground (the rows the sidebar lists by default), `delegated` = any
+ * parented row (a background CHILD is delegated, not background),
+ * `background` = unparented background agents. `all` is the default read.
+ */
+export type AgentListScope = 'all' | 'topLevel' | 'delegated' | 'background';
+
+/** One of the three `agent.list` bins (the non-default scopes). */
+export type AgentListBin = Exclude<AgentListScope, 'all'>;
+
+/**
+ * Per-bin counts of the workspace's non-retired sessions, served as
+ * `scopeCounts` on every `agent.list` response by daemons that support
+ * `scope`. Absent on older daemons (which also ignore `scope`).
+ */
+export interface AgentScopeCounts {
+  topLevel: number;
+  delegated: number;
+  background: number;
+}
+
+/**
  * Canonical AgentSession interface
  *
  * Represents a runtime session for an agent within a workspace.
@@ -133,6 +165,15 @@ export interface AgentSession {
 
   /** Workspace this agent belongs to */
   workspaceId: WorkspaceId;
+
+  /**
+   * Daemon parent linkage (§5.5 `AgentLite.parentAgentId`): the agent that
+   * spawned this one via `agent.delegate` / `ws.agent.create`. The daemon
+   * partitions the `agent.list` bins by this field, so it is the primary
+   * delegated-row marker; `metadata.createdByAgentId` is the older fallback.
+   * Omitted (never `null`) on top-level rows.
+   */
+  parentAgentId?: AgentId;
 
   /** Optional thread ID for conversation threading */
   threadId?: string;
@@ -224,6 +265,14 @@ export interface AgentSession {
   /** True if this is a background agent */
   isBackground?: boolean;
 
+  /**
+   * Daemon-owned per-agent notification mute (`notificationsMuted`, §5.5
+   * AgentLite). Set via `agent.update { changes: { notificationsMuted } }`
+   * and converged through `agent:updated`. A muted agent never derives
+   * `hasUnread` (see `deriveAgentHasUnread`).
+   */
+  notificationsMuted?: boolean;
+
   /** Current turn number for this session */
   currentTurnNumber?: number;
 
@@ -236,8 +285,9 @@ export interface AgentSession {
    * counts as unread). See `deriveAgentHasUnread` and
    * intent-hq/monorepo#1597. Always `false` for daemons that omit
    * `lastMessageId`, for background agents (`isBackground` /
-   * `metadata.isBackground`), and for delegated child agents
-   * (`metadata.createdByAgentId` set).
+   * `metadata.isBackground`), for delegated child agents
+   * (`metadata.createdByAgentId` set), and for muted agents
+   * (`notificationsMuted`).
    */
   hasUnread?: boolean;
 

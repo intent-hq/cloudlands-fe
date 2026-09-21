@@ -244,6 +244,8 @@
       </div>
       {#if showExpandButton}
         <Button
+          size="icon-compact"
+          iconOnly
           class="expand-button"
           onclick={openFullscreen}
           title={m.markdown_mermaid_expand_tooltip()}
@@ -311,31 +313,26 @@
     height: auto;
   }
 
-  .expand-button {
+  /* Sizing comes from the Button `icon-compact` size (square, zero padding). */
+  .mermaid-svg-container :global(.expand-button) {
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 1.75rem;
-    height: 1.75rem;
-    padding: 0;
     background: rgb(0 0 0 / 0.6);
     border: 0;
     border-radius: 0.375rem;
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.2s ease-in-out;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     color: white;
     z-index: 10;
   }
 
-  .expand-button:hover {
+  .mermaid-svg-container :global(.expand-button:hover) {
     background: rgb(0 0 0 / 0.75);
   }
 
-  .expand-button:active {
+  .mermaid-svg-container :global(.expand-button:active) {
     transform: scale(0.95);
   }
 

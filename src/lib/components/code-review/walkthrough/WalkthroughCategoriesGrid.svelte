@@ -59,7 +59,7 @@
       <Button
         type="button"
         variant="ghost"
-        class="text-left p-4 rounded-lg border transition-all duration-200 {getCategoryColor(
+        class="text-left p-4 rounded-lg border transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {getCategoryColor(
           index,
         )}"
         onclick={() => onCategoryClick?.(index)}

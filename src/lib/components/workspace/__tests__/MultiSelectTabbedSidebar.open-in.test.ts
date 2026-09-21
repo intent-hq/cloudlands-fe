@@ -147,6 +147,11 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectIsLoadingRetiredAgents: mocks.selector(false),
   selectRetiredAgentsLoaded: mocks.selector(false),
   selectRetiredCount: mocks.selector(0),
+  selectScopeCounts: mocks.selector(null),
+  selectDelegatedAgentsLoaded: mocks.selector(false),
+  selectIsLoadingDelegatedAgents: mocks.selector(false),
+  selectBackgroundAgentsLoaded: mocks.selector(false),
+  selectIsLoadingBackgroundAgents: mocks.selector(false),
   selectWorkspaceHasUnreadForegroundAgents: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
@@ -173,6 +178,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   })),
   selectWorkspaceActivePullRequest: mocks.selector(null),
   selectIsWorkspaceHostLocal: mocks.selector(true),
+  isWorkspacePullRequestPoolTruncated: () => false,
+  selectIsWorkspaceCollaborator: mocks.selector(false),
 }));
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
   selectPrMonitors: mocks.selector([]),

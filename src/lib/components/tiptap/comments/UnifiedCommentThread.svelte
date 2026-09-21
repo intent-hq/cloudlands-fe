@@ -216,7 +216,7 @@
 {:else}
   <!-- Unified container with consistent styling -->
   <div
-    class="flex flex-col bg-background rounded w-full transition-all duration-200 border border-border"
+    class="flex flex-col bg-background rounded w-full transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none border border-border"
     class:max-w-[380px]={!isCollapsed}
     class:max-h-[400px]={!isCollapsed}
     class:overflow-hidden={!isCollapsed}

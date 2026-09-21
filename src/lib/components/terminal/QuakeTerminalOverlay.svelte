@@ -1336,7 +1336,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class={cn(
-                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none min-w-0 max-w-90 whitespace-nowrap group/tab',
                 'hover:text-foreground hover:bg-muted/80',
                 isActive && 'text-foreground bg-sidebar shadow-sm',
               )}
@@ -1380,7 +1380,7 @@
                 variant="plain"
                 size="icon-xs"
                 iconOnly
-                class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
                 aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
               >
@@ -1400,7 +1400,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               class={cn(
-                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none min-w-0 max-w-90 whitespace-nowrap group/tab',
                 'hover:text-foreground hover:bg-muted/80',
                 isScriptActive && 'text-foreground bg-sidebar shadow-sm',
               )}
@@ -1477,7 +1477,7 @@
                   variant="plain"
                   size="icon-xs"
                   iconOnly
-                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                   data-dismiss-script-tab={script.id}
                   onclick={(event) => dismissPreviouslyRunningTab(script.id, event)}
                   aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}

@@ -13,6 +13,7 @@ describe('workspace sidebar preview', () => {
       'narrow',
       'key-slots',
       'status-groups',
+      'activity-times',
     ]);
     expect(preview.states.busy.props.workspaces[0]).toMatchObject({
       id: 'preview-workspace-primary',

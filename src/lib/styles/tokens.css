@@ -169,7 +169,7 @@
   --theme-dark-overlay: 255 255 255;
   --theme-dark-hover: rgb(var(--theme-dark-overlay) / 0.06);
   --theme-dark-active: rgb(var(--theme-dark-overlay) / 0.1);
-  --theme-dark-selected: 0 0% 32%;
+  --theme-dark-selected: 0 0% 18%;
 
   /*
    * Surface ladder: level 1 is the page substrate; overlays rise two levels, capped at 8.

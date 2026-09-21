@@ -142,15 +142,16 @@ test('keeps resource tiles and compact header insets exact across the geometry m
     expect(result.radius, result.scenario).toBe('7px');
     expect(result.glyphWidth, result.scenario).toBe('16px');
     expect(result.glyphHeight, result.scenario).toBe('16px');
-    // Upstream panel polish (668dd5c2): compact actions use 14px; scroll uses its 16px icon.
-    expect(result.listWidth, result.scenario).toBe('14px');
-    expect(result.listHeight, result.scenario).toBe('14px');
+    // Shared-control alignment: the navigator trigger uses CHAT_ICON_SIZE.compact (16px, 898107a1 #2531)
+    // and the panel kebab/close icons moved from 14px to 16px (8eb767aa #2533); scroll keeps its 16px icon.
+    expect(result.listWidth, result.scenario).toBe('16px');
+    expect(result.listHeight, result.scenario).toBe('16px');
     expect(result.arrowWidth, result.scenario).toBe('16px');
     expect(result.arrowHeight, result.scenario).toBe('16px');
-    expect(result.kebabWidth, result.scenario).toBe('14px');
-    expect(result.kebabHeight, result.scenario).toBe('14px');
-    expect(result.closeWidth, result.scenario).toBe('14px');
-    expect(result.closeHeight, result.scenario).toBe('14px');
+    expect(result.kebabWidth, result.scenario).toBe('16px');
+    expect(result.kebabHeight, result.scenario).toBe('16px');
+    expect(result.closeWidth, result.scenario).toBe('16px');
+    expect(result.closeHeight, result.scenario).toBe('16px');
     expect(result.background, result.scenario).toBe(result.expectedBackground);
     expect(result.foreground, result.scenario).toBe(result.expectedForeground);
     expect(result.background, result.scenario).not.toBe('rgba(0, 0, 0, 0)');

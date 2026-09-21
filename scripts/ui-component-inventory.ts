@@ -66,18 +66,12 @@ const standalonePatterns = new Map<string, string>([
   ['Header.svelte', 'design-system'],
   ['HoverCard.svelte', 'design-system'],
   ['ImageLightbox.svelte', 'design-system'],
-  ['NavigationButtons.svelte', '007-B1'],
   ['PanelWrapper.svelte', 'design-system'],
   ['Portal.svelte', 'design-system'],
   ['RelativeTime.svelte', 'design-system'],
   ['RichTextarea.svelte', '007-B2'],
-  ['SaveIndicator.svelte', '007-B1'],
-  ['ScrollableSection.svelte', 'design-system'],
   ['ShimmerOverlay.svelte', '007-B1'],
-  ['TypewriterText.svelte', 'design-system'],
   ['VirtualList.svelte', 'design-system'],
-  ['VSCodePanel.svelte', 'design-system'],
-  ['VSCodeScrollablePanel.svelte', 'design-system'],
 ]);
 const deprecatedFamilies = new Map<string, { owner: string; replacement: string }>([
   [
