@@ -41,6 +41,7 @@ import {
 } from './daemon-events-saga';
 import { DAEMON_EVENTS_SUBSCRIBE_TYPES } from '$features/events/daemon-events-bridge.client';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
+import { daemonEventsSubscribed } from '$store/renderer/slices/workspace-events/workspace-events-slice';
 import {
   loadWorkspaceTabsState,
   openWorkspaceTab,
@@ -281,6 +282,7 @@ describe('daemonEventsSaga', () => {
       'app:ui-navigate',
       'app:ui-highlight',
       'app:workspace-open',
+      'presence:changed',
     ]);
   });
 
@@ -303,6 +305,33 @@ describe('daemonEventsSaga', () => {
     task.cancel();
     await task.toPromise();
     expect(mocks.unsubscribe).toHaveBeenLastCalledWith('sub-new');
+  });
+
+  it('announces firehose readiness only once a subscription id is held, on boot and reconnect', async () => {
+    const dispatch = vi.fn();
+    mocks.subscribe
+      .mockResolvedValueOnce({ subscriptionId: 'sub-old' })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ subscriptionId: 'sub-new' });
+    const { task } = startSaga(null, dispatch);
+    await settle();
+    const subscribed = () =>
+      dispatch.mock.calls.filter(([action]) => action.type === daemonEventsSubscribed.type);
+    expect(subscribed()).toHaveLength(1);
+    expect(dispatch.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.subscribe.mock.invocationCallOrder[0],
+    );
+
+    mocks.reconnectHandler!();
+    await settle();
+    expect(subscribed()).toHaveLength(1);
+
+    mocks.reconnectHandler!();
+    await settle();
+    expect(subscribed()).toHaveLength(2);
+    expect(mocks.subscribe).toHaveBeenCalledTimes(3);
+    task.cancel();
+    await task.toPromise();
   });
 
   it('replays BOTH the firehose and the scoped file lease on reconnect', async () => {

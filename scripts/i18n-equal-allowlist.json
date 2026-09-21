@@ -119,6 +119,8 @@
   "hud_card_attnFailed_label": ["ja", "ko", "de", "es"],
   "hud_card_pr_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "hud_tokenBurn_perMinute_label": ["fr", "es"],
+  "layout_agentMemoryBreakdown_pid_label": "*",
+  "layout_agentMemoryBreakdown_total_label": ["fr", "es"],
   "layout_agentTab_fontSample_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "layout_aiLayout_agentNumbered_fallback": ["de", "fr"],
   "layout_aiLayout_agent_fallback": ["de", "fr"],
@@ -315,5 +317,7 @@
   "settings_section_git": "*",
   "settings_sidebar_appBehavior_label": ["es"],
   "settings_sidebar_agents_label": ["fr"],
-  "workspace_hoverCard_member_ariaLabel": ["fr", "ko"]
+  "presence_avatarStack_more_label": "*",
+  "workspace_hoverCard_personOnline_label": ["de"],
+  "workspace_hoverCard_personOffline_label": ["de"]
 }

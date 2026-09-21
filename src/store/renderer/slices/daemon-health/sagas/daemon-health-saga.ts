@@ -21,6 +21,11 @@ import { createElectronChannel } from '$store/renderer/utils/ipc-channel';
 import { takeWithBackoff } from '$store/renderer/utils/take-with-backoff';
 import { selectDaemonConnectionGeneration } from '../daemon-health-selectors';
 import {
+  agentMemoryBreakdownClosed,
+  agentMemoryBreakdownOpened,
+  agentMemoryUsageFailed,
+  agentMemoryUsageRequested,
+  agentMemoryUsageSucceeded,
   connectionStatusChanged,
   fetchSidecarRunLogFailed,
   fetchSidecarRunLogRequested,
@@ -40,6 +45,7 @@ import {
   unslothStatusSuccess,
 } from '../daemon-health-slice';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
   DaemonStatusCheckFailureKind,
   SidecarRunLog,
@@ -49,6 +55,7 @@ import type {
 
 const BACKEND = IPC_CHANNELS.BACKEND;
 const POLL_INTERVAL_MS = 10_000;
+const AGENT_MEMORY_REFRESH_INTERVAL_MS = 5_000;
 const INITIAL_DISCONNECTED_BACKOFF_MS = 1_000;
 const MAX_DISCONNECTED_BACKOFF_MS = 5_000;
 
@@ -433,6 +440,46 @@ function* fetchSidecarRunLogSaga() {
   }
 }
 
+function* fetchAgentMemoryUsageSaga() {
+  try {
+    const usage = yield* call(backendRequest<AgentMemoryUsageWirePayload>, 'agent.memoryUsage');
+    yield* put(agentMemoryUsageSucceeded(usage));
+  } catch {
+    yield* put(agentMemoryUsageFailed());
+  }
+}
+
+/**
+ * One open-dialog session: a single-flight request watcher plus the refresh
+ * cadence (request now, then on a fixed interval). The watcher is
+ * `takeLeading`, so a tick landing while a fetch is still in flight is dropped
+ * rather than fanned out. It is forked inside the session so that cancelling
+ * the session also cancels the watcher and any in-flight fetch — a request
+ * started in one session can never complete into the next.
+ */
+function* agentMemoryBreakdownSession() {
+  yield* takeLeading(agentMemoryUsageRequested, fetchAgentMemoryUsageSaga);
+  while (true) {
+    yield* put(agentMemoryUsageRequested());
+    yield* delay(AGENT_MEMORY_REFRESH_INTERVAL_MS);
+  }
+}
+
+/**
+ * A session runs only between an `agentMemoryBreakdownOpened` and the next
+ * `agentMemoryBreakdownClosed`; there is no background polling. Each open
+ * starts a fresh session with an immediate fetch.
+ */
+function* watchAgentMemoryBreakdown() {
+  while (true) {
+    yield* take(agentMemoryBreakdownOpened);
+    yield* race({
+      session: call(agentMemoryBreakdownSession),
+      closed: take(agentMemoryBreakdownClosed),
+    });
+  }
+}
+
 function* watchDaemonControls() {
   yield* takeEvery(spawnSidecarRequested, spawnSidecarSaga);
   yield* takeEvery(openLocalAndSpawnRequested, openLocalAndSpawnSaga);
@@ -447,5 +494,6 @@ export function* daemonHealthSaga() {
   yield* fork(watchSystemStatusPolls);
   yield* fork(daemonStatusSaga);
   yield* fork(watchUnslothStatusPolls);
+  yield* fork(watchAgentMemoryBreakdown);
   yield* fork(watchDaemonControls);
 }

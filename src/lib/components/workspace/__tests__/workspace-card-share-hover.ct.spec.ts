@@ -18,11 +18,11 @@ async function enterCardFromRow(page: Page, component: MountResult) {
   await row.hover();
   const surface = page.locator('[data-workspace-card-hover-surface]');
   await expect(surface).toBeVisible();
-  const members = surface.locator('[data-workspace-hover-card-members]');
-  await expect(members.locator('[data-workspace-hover-card-member-row]')).toHaveCount(2);
+  const people = surface.locator('[data-workspace-hover-card-people]');
+  await expect(people.locator('[data-workspace-hover-card-person-row]')).toHaveCount(2);
   await moveInSteps(page, row, surface);
   await expect(surface).toBeVisible();
-  return { row, surface, members, state: component.locator('[data-share-hover-state]') };
+  return { row, surface, people, state: component.locator('[data-share-hover-state]') };
 }
 
 async function moveInSteps(page: Page, from: Locator, to: Locator) {
@@ -55,17 +55,17 @@ test('first Remove asks for confirmation and Cancel dispatches no removal', asyn
   const component = await mount(WorkspaceCardShareHoverHarness, {
     props: { scenario: 'cancel' },
   });
-  const { surface, members, state } = await enterCardFromRow(page, component);
+  const { surface, people, state } = await enterCardFromRow(page, component);
 
-  await expect(members.getByRole('button', { name: 'Remove Alice' })).toHaveCount(0);
-  await members.getByRole('button', { name: 'Remove bob' }).click();
+  await expect(people.getByRole('button', { name: 'Remove Alice' })).toHaveCount(0);
+  await people.getByRole('button', { name: 'Remove bob' }).click();
   await expect(surface).toBeVisible();
-  await expect(surface.locator('[data-workspace-hover-card-member-remove-confirm]')).toBeVisible();
+  await expect(surface.locator('[data-workspace-hover-card-person-remove-confirm]')).toBeVisible();
   await expect(state).toHaveAttribute('data-removing-principal-id', '');
   await expect(state).toHaveAttribute('data-member-count', '2');
 
-  await members.getByRole('button', { name: 'Cancel' }).click();
-  await expect(surface.locator('[data-workspace-hover-card-member-remove-confirm]')).toHaveCount(0);
+  await people.getByRole('button', { name: 'Cancel' }).click();
+  await expect(surface.locator('[data-workspace-hover-card-person-remove-confirm]')).toHaveCount(0);
   await expect(surface).toBeVisible();
   await expect(state).toHaveAttribute('data-removing-principal-id', '');
   await expect(state).toHaveAttribute('data-member-count', '2');
@@ -78,15 +78,15 @@ test('confirming removes only the collaborator and keeps the card open', async (
   const component = await mount(WorkspaceCardShareHoverHarness, {
     props: { scenario: 'confirm' },
   });
-  const { surface, members, state } = await enterCardFromRow(page, component);
+  const { surface, people, state } = await enterCardFromRow(page, component);
 
-  await members.getByRole('button', { name: 'Remove bob' }).click();
-  await members.getByRole('button', { name: 'Confirm removing bob' }).click();
+  await people.getByRole('button', { name: 'Remove bob' }).click();
+  await people.getByRole('button', { name: 'Confirm removing bob' }).click();
 
   await expect(state).toHaveAttribute('data-removing-principal-id', 'p-bob');
   await expect(surface).toBeVisible();
-  await expect(members.getByRole('button', { name: 'Remove bob' })).toBeDisabled();
-  await expect(members.locator('[data-workspace-hover-card-member-row]')).toHaveCount(2);
+  await expect(people.getByRole('button', { name: 'Remove bob' })).toBeDisabled();
+  await expect(people.locator('[data-workspace-hover-card-person-row]')).toHaveCount(2);
 });
 
 // Pointer parked far from the row and card so only focus drives the surface.
@@ -98,7 +98,7 @@ async function openCardFromKeyboard(page: Page, component: MountResult) {
   await trigger.focus();
   const surface = page.locator('[data-workspace-card-hover-surface]');
   await expect(surface).toBeVisible();
-  await expect(surface.locator('[data-workspace-hover-card-member-row]')).toHaveCount(2);
+  await expect(surface.locator('[data-workspace-hover-card-person-row]')).toHaveCount(2);
   return { trigger, surface, outside: component.locator('[data-share-hover-outside]') };
 }
 
@@ -143,7 +143,7 @@ test('keyboard: Enter on Remove keeps the card open with the confirmation focuse
   await page.keyboard.press('Enter');
   await expect(state).toHaveAttribute('data-removing-principal-id', 'p-bob');
   await expect(surface).toBeVisible();
-  await expect(surface.locator('[data-workspace-hover-card-member-remove-confirm]')).toHaveCount(0);
+  await expect(surface.locator('[data-workspace-hover-card-person-remove-confirm]')).toHaveCount(0);
   await expect
     .poll(() =>
       page.evaluate(
@@ -171,7 +171,7 @@ test('keyboard: Cancel returns focus to Remove and a genuine blur still dismisse
   await page.keyboard.press('Enter');
   await tabUntilFocused(page, surface.getByRole('button', { name: 'Cancel' }));
   await page.keyboard.press('Enter');
-  await expect(surface.locator('[data-workspace-hover-card-member-remove-confirm]')).toHaveCount(0);
+  await expect(surface.locator('[data-workspace-hover-card-person-remove-confirm]')).toHaveCount(0);
   await expect(remove).toBeFocused();
   await expect(surface).toBeVisible();
   await expect(state).toHaveAttribute('data-removing-principal-id', '');

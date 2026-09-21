@@ -154,6 +154,11 @@
   import { appClient } from '$lib/client';
   import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import {
+    presenceTypingPulse,
+    presenceTypingStopped,
+  } from '$store/renderer/slices/presence/presence-slice';
+  import PresenceTypingIndicator from '$features/presence/components/PresenceTypingIndicator.svelte';
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
@@ -1767,6 +1772,14 @@
     const workspaceId = workspace?.id;
     if (!workspaceId || !agentId) return;
     pendingDraftWrite = { workspaceId, agentId, draft };
+  }
+
+  // Presence typing (multiplayer w5): each user edit is a pulse for this
+  // agent; an emptied composer ends the episode at once (the saga throttles
+  // the wire sends and ends an idle episode on its own).
+  function reportTypingActivity(value: string): void {
+    if (!agentId) return;
+    appStore.dispatch(value.trim() ? presenceTypingPulse(agentId) : presenceTypingStopped());
   }
 
   // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
@@ -4900,6 +4913,7 @@
       inputValue = '';
       inputComponent?.clear();
       commitDraftWrite('');
+      appStore.dispatch(presenceTypingStopped());
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
@@ -6795,12 +6809,20 @@
                 {#if draftManager.gateVisible}
                   <ChatDraftLoadingGate />
                 {/if}
+                {#if workspace && agentId}
+                  <PresenceTypingIndicator
+                    workspaceId={workspace.id}
+                    {agentId}
+                    class={isChiefWorkspace ? 'px-3 pb-1' : 'regular-composer-content-inset pb-1'}
+                  />
+                {/if}
                 <SimpleRichInput
                   bind:this={inputComponent}
                   bind:contextItems={getContextItems, setContextItems}
                   bind:value={inputValue}
                   onvaluechange={(value) => {
                     scheduleDraftWrite(value);
+                    reportTypingActivity(value);
                   }}
                   onsubmit={handleSend}
                   onforcesubmit={handleForceSubmit}

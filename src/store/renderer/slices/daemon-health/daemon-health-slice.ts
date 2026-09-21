@@ -9,6 +9,7 @@
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import type {
+  AgentMemoryUsageWirePayload,
   DaemonHealthState,
   DaemonHealthStats,
   DaemonStatusCheckFailure,
@@ -47,6 +48,9 @@ export const initialState: DaemonHealthState = {
   unslothPolling: false,
   unslothStopping: false,
   unslothStopError: null,
+  agentMemoryUsage: null,
+  agentMemoryUsageFetching: false,
+  agentMemoryUsageError: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -200,6 +204,38 @@ export const stopUnslothSucceeded = createAction<[stopped: boolean]>(
  */
 export const stopUnslothFailed = createAction<[error: string]>('daemonHealth/stopUnslothFailed');
 
+/**
+ * The agent memory breakdown dialog opened. The saga fetches
+ * agent.memoryUsage right away and re-fetches on a fixed cadence until
+ * `agentMemoryBreakdownClosed`.
+ */
+export const agentMemoryBreakdownOpened = createAction('daemonHealth/agentMemoryBreakdownOpened');
+
+/**
+ * The agent memory breakdown dialog closed. Stops the refresh cadence,
+ * cancels any in-flight fetch, and drops the stored usage — it is stale by
+ * the next open.
+ */
+export const agentMemoryBreakdownClosed = createAction('daemonHealth/agentMemoryBreakdownClosed');
+
+/**
+ * Fetch agent.memoryUsage (saga trigger, single-flight: a request while one
+ * is in flight is dropped). Only handled while the breakdown is open.
+ */
+export const agentMemoryUsageRequested = createAction('daemonHealth/agentMemoryUsageRequested');
+
+/**
+ * agent.memoryUsage resolved with the wire payload.
+ */
+export const agentMemoryUsageSucceeded = createAction<[usage: AgentMemoryUsageWirePayload]>(
+  'daemonHealth/agentMemoryUsageSucceeded',
+);
+
+/**
+ * agent.memoryUsage failed (older daemon without the method, transport error).
+ */
+export const agentMemoryUsageFailed = createAction('daemonHealth/agentMemoryUsageFailed');
+
 // ---------------------------------------------------------------------------
 // Reducer
 // ---------------------------------------------------------------------------
@@ -334,6 +370,11 @@ daemonHealthReducer.with(
       workspacesDiskAvailableBytes: wirePayload.workspacesDiskAvailableBytes,
       workspacesDiskTotalBytes: wirePayload.workspacesDiskTotalBytes,
       hostname: wirePayload.hostname,
+      childProcesses: wirePayload.childProcesses,
+      childMemoryBytes: wirePayload.childMemoryBytes,
+      childMemoryPeakBytes: wirePayload.childMemoryPeakBytes,
+      agentMemoryBytes: wirePayload.agentMemoryBytes,
+      agentProcessCount: wirePayload.agentProcessCount,
       os: wirePayload.host.os,
       arch: wirePayload.host.arch,
       transport: state.stats?.transport ?? state.transport ?? undefined,
@@ -420,4 +461,32 @@ daemonHealthReducer.with(stopUnslothSucceeded, (state) => {
 });
 daemonHealthReducer.with(stopUnslothFailed, (state, { payload: [error] }) => {
   return { ...state, unslothStopping: false, unslothStopError: error };
+});
+daemonHealthReducer.with(agentMemoryBreakdownClosed, (state) => {
+  // Closing acts as a cancellation: a fetch that resolves late must not
+  // re-populate the usage the close dropped.
+  return {
+    ...state,
+    agentMemoryUsage: null,
+    agentMemoryUsageFetching: false,
+    agentMemoryUsageError: false,
+  };
+});
+daemonHealthReducer.with(agentMemoryUsageRequested, (state) => {
+  return { ...state, agentMemoryUsageFetching: true };
+});
+daemonHealthReducer.with(agentMemoryUsageSucceeded, (state, { payload: [usage] }) => {
+  if (!state.agentMemoryUsageFetching) return state;
+  return {
+    ...state,
+    agentMemoryUsageFetching: false,
+    agentMemoryUsageError: false,
+    agentMemoryUsage: usage,
+  };
+});
+daemonHealthReducer.with(agentMemoryUsageFailed, (state) => {
+  if (!state.agentMemoryUsageFetching) return state;
+  // Keep the last good usage (if any) so a transient failure mid-refresh
+  // does not blank the open breakdown; the error flag reports it.
+  return { ...state, agentMemoryUsageFetching: false, agentMemoryUsageError: true };
 });

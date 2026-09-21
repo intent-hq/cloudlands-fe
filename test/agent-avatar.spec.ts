@@ -54,18 +54,28 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => server?.close());
 
+// Text metrics feed the avatar stack's overflow badge width, so the harness uses the
+// repo-bundled Inter Variable (like the CT harness and /sandbox) rather than host fonts.
+const HARNESS_FONT_UI =
+  "'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
 async function mountAvatarHost(page: Page) {
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/lib/styles/tokens.css` });
-  await page.evaluate(async () => {
+  await page.addStyleTag({ url: `${baseUrl}node_modules/@fontsource-variable/inter/index.css` });
+  await page.evaluate(async (fontUi) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
+    document.documentElement.style.setProperty('--font-ui', fontUi);
+    document.body.style.fontFamily = 'var(--font-ui)';
+    await document.fonts.load("500 12px 'Inter Variable'");
+    await document.fonts.ready;
     const [{ mount, tick }, { default: Host }] = await Promise.all([
       import('/@id/svelte'),
       import('/test/fixtures/AgentAvatarHost.svelte'),
     ]);
     mount(Host, { target: document.body });
     await tick();
-  });
+  }, HARNESS_FONT_UI);
 }
 
 type Rgba = [number, number, number, number];
@@ -144,7 +154,7 @@ async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer>
         );
         context.fill();
         context.fillStyle = style.color;
-        context.font = `500 ${12 * selectedScale}px system-ui`;
+        context.font = `500 ${12 * selectedScale}px 'Inter Variable'`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(
@@ -301,7 +311,7 @@ test('renders repeated Coordinator message cards with canonical identity on the 
             'Coordinator',
           );
           await expect(card.getByTestId('agent-message-disclosure-toggle')).toHaveAccessibleName(
-            /sent a message: Coordinator message/,
+            'sent a message',
           );
 
           const [rowBox, identityBox, avatarBox, glyphBox] = await Promise.all([

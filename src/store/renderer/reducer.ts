@@ -93,6 +93,7 @@ import { prBranchLookupReducer } from './slices/pr-branch-lookup/pr-branch-looku
 import { daemonHealthReducer } from './slices/daemon-health/daemon-health-slice';
 import { connectionsReducer } from './slices/connections/connections-slice';
 import { guestSessionsReducer } from './slices/guest-sessions/guest-sessions-slice';
+import { presenceReducer } from './slices/presence/presence-slice';
 import { hostRequirementsReducer } from './slices/host-requirements/host-requirements-slice';
 import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
@@ -196,6 +197,7 @@ export const reducers = {
   daemonHealth: daemonHealthReducer,
   connections: connectionsReducer,
   guestSessions: guestSessionsReducer,
+  presence: presenceReducer,
   hostRequirements: hostRequirementsReducer,
   hud: hudReducer,
   setupPrompt: setupPromptReducer,
