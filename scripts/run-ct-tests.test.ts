@@ -13,6 +13,7 @@ import {
   collectNonFontOsDeps,
   exitCodeFromChild,
   forwardSignalsToChild,
+  heapExhaustionHint,
   parseLauncherArgs,
   resolveHtmlReportOpen,
   runPlaywright,
@@ -260,6 +261,115 @@ describe('runPlaywright', () => {
       child.emit('error', new Error('ENOENT'));
     });
     expect(code).toBe(1);
+  });
+
+  const exitWith = (code: number | null, signal: string | null, env = baseEnv) => {
+    const child = new EventEmitter();
+    const errors: string[] = [];
+    const exits: number[] = [];
+    runPlaywright({
+      cliPath: '/ct/cli.js',
+      args: [],
+      env,
+      spawnImpl: (() => child) as never,
+      printError: (message: string) => errors.push(message),
+      exit: (code: number) => exits.push(code),
+    });
+    child.emit('exit', code, signal);
+    return { errors, exits };
+  };
+
+  it('prints the heap-exhaustion hint once after the SIGABRT line, before exiting', () => {
+    const { errors, exits } = exitWith(null, 'SIGABRT');
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toBe('playwright died with SIGABRT');
+    expect(errors[1]).toBe(heapExhaustionHint({ code: null, signal: 'SIGABRT', env: baseEnv }));
+    expect(exits).toEqual([exitCodeFromChild(null, 'SIGABRT')]);
+  });
+
+  it('prints the heap-exhaustion hint on exit code 134 and keeps the exit code', () => {
+    const { errors, exits } = exitWith(134, null);
+    expect(errors).toEqual([heapExhaustionHint({ code: 134, signal: null, env: baseEnv })]);
+    expect(exits).toEqual([134]);
+  });
+
+  it.each([
+    [1, null],
+    [0, null],
+  ])('prints no hint for exit code %s', (code, signal) => {
+    const { errors, exits } = exitWith(code, signal);
+    expect(errors).toEqual([]);
+    expect(exits).toEqual([code]);
+  });
+});
+
+describe('heapExhaustionHint', () => {
+  const abort = { code: null, signal: 'SIGABRT' };
+
+  it.each([
+    ['SIGABRT', { code: null, signal: 'SIGABRT' }],
+    ['exit code 134', { code: 134, signal: null }],
+  ])('describes the likely heap exhaustion on %s', (_label, exit) => {
+    const hint = heapExhaustionHint({ ...exit, env: baseEnv });
+    expect(hint).toEqual(expect.any(String));
+    expect(hint).toMatch(/heap/i);
+    expect(hint).toContain('Ineffective mark-compacts near heap limit');
+    expect(hint).toContain('JavaScript heap out of memory');
+    expect(hint).toMatch(/not (evidence of )?a test regression/i);
+    expect(hint).toContain('NODE_OPTIONS=--max-old-space-size=');
+  });
+
+  it.each([
+    ['exit code 1', { code: 1, signal: null }],
+    ['exit code 0', { code: 0, signal: null }],
+    ['SIGTERM', { code: null, signal: 'SIGTERM' }],
+    ['SIGSEGV', { code: null, signal: 'SIGSEGV' }],
+  ])('returns null on %s', (_label, exit) => {
+    expect(heapExhaustionHint({ ...exit, env: baseEnv })).toBeNull();
+  });
+
+  it('names the launcher default when neither NODE_OPTIONS nor CT_NODE_ARGS chooses a heap size', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: { ...baseEnv, NODE_OPTIONS: '--require /x/dd-trace/init' },
+    });
+    expect(hint).toContain('--max-old-space-size=8192');
+    expect(hint).not.toContain('dd-trace');
+  });
+
+  it('names only the heap-flag token from NODE_OPTIONS, never the full value', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: { ...baseEnv, NODE_OPTIONS: '--require /x/dd-trace/init --max-old-space-size=2048' },
+    });
+    expect(hint).toContain('--max-old-space-size=2048');
+    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain('dd-trace');
+    expect(hint).not.toContain('--require');
+  });
+
+  it.each([
+    ['V8 underscore alias', '--max_old_space_size=3072', '--max_old_space_size=3072'],
+    ['double-quoted token', '"--max-old-space-size=3072"', '--max-old-space-size=3072'],
+  ])('recognises the %s spelling', (_label, preset, token) => {
+    const hint = heapExhaustionHint({ ...abort, env: { ...baseEnv, NODE_OPTIONS: preset } });
+    expect(hint).toContain(token);
+    expect(hint).not.toContain('8192');
+  });
+
+  it('names a CT_NODE_ARGS heap flag, which overrides NODE_OPTIONS', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS: '--require /x/dd-trace/init --max-old-space-size=8192',
+        CT_NODE_ARGS: '--single-threaded-gc --max-old-space-size=4096',
+      },
+    });
+    expect(hint).toContain('--max-old-space-size=4096');
+    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain('dd-trace');
+    expect(hint).not.toContain('--single-threaded-gc');
   });
 
   it('exposes the launcher options in its usage text', () => {
