@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.172.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.1...v2.172.2) (2026-09-21)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.92 ([#2741](https://github.com/intent-hq/cloudlands-fe/issues/2741)) ([c57e6a0](https://github.com/intent-hq/cloudlands-fe/commit/c57e6a04100847e74145c1d2c803909fd859b508))
+* **chat:** lock the model picker in guest and collaborator windows ([#2735](https://github.com/intent-hq/cloudlands-fe/issues/2735)) ([f709a4c](https://github.com/intent-hq/cloudlands-fe/commit/f709a4cf1fcd9c0895fadc2b3dedbb1df3c06519))
+* **ct:** apply the launcher heap default when NODE_OPTIONS is pre-set ([#2730](https://github.com/intent-hq/cloudlands-fe/issues/2730)) ([317785a](https://github.com/intent-hq/cloudlands-fe/commit/317785a39eff7e6fe356d46ef88a6c8a18be7c6b))
+* **ct:** print a heap-exhaustion hint when the CT child dies with SIGABRT / 134 ([#2739](https://github.com/intent-hq/cloudlands-fe/issues/2739)) ([e357451](https://github.com/intent-hq/cloudlands-fe/commit/e35745142e4339eeb25492f6b2931e0239520b5d))
+* **deeplink:** await the invite GitHub sign-in from the moment the code is shown ([#2733](https://github.com/intent-hq/cloudlands-fe/issues/2733)) ([44d2dd8](https://github.com/intent-hq/cloudlands-fe/commit/44d2dd888b4ca036e3df7e676783922a531d62bc))
+* **lint:** exclude knip canary dir from tsconfig so type-check can run concurrently ([#2728](https://github.com/intent-hq/cloudlands-fe/issues/2728)) ([4be2578](https://github.com/intent-hq/cloudlands-fe/commit/4be2578c5cdfece4130414e8c484b7998e134a36))
+* **ui:** route accent buttons through Button variants and guard bg-* overrides ([#2734](https://github.com/intent-hq/cloudlands-fe/issues/2734)) ([f3d4c57](https://github.com/intent-hq/cloudlands-fe/commit/f3d4c578470cf155003bd74f59b3b7951ca9c8db))
+
 ## [2.172.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.0...v2.172.1) (2026-09-21)
 
 
