@@ -59,7 +59,8 @@ const SKIPPED_FILES = new Set([ROOT_PATTERN_MODULE, CT_PATTERN_MODULE]);
 const TEST_FILE_PATTERN = /\.test\.[cm]?[jt]sx?$/;
 const QUOTES = new Set(["'", '"']);
 const DECLARED_NAME_PATTERN = /^(?:ROOT|PLAYWRIGHT)_/;
-const DECLARATION_PATTERN = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*$/;
+// `const NAME = `, optionally with a TypeScript annotation (`const NAME: string = `).
+const DECLARATION_PATTERN = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*$/;
 // A `/` opens a regex literal after these characters or keywords; anywhere else it is
 // a division.
 const REGEX_PRECEDERS = new Set([...'(,=:[!&|?{};+-*%<>~^']);
@@ -99,7 +100,7 @@ const previousWord = (text, index) => {
   while (end > 0 && /\s/.test(text[end - 1])) end -= 1;
   let start = end;
   while (start > 0 && /[\w$]/.test(text[start - 1])) start -= 1;
-  return { char: end > 0 ? text[end - 1] : '', word: text.slice(start, end) };
+  return { char: end > 0 ? text[end - 1] : '', word: text.slice(start, end).join('') };
 };
 
 const opensRegex = (text, index) => {
@@ -161,19 +162,30 @@ function templateEnd(text, start) {
 }
 
 // Every string, template, and regex literal in the source as `{ start, text }` (`text`
-// without its delimiters). Comments are skipped, so a documented pattern is never a
-// literal; `//` inside a string never opens a comment.
-export function extractLiterals(source) {
+// without its delimiters), plus `code`: the source with every comment blanked to spaces
+// (newlines kept, so offsets match). Comments are skipped, so a documented pattern is
+// never a literal; `//` inside a string never opens a comment. The regex/division and
+// declaration lookbacks run on `code`, so a comment between `=` and a literal cannot
+// hide it.
+function tokenize(source) {
   const literals = [];
+  const code = source.split('');
+  const blank = (from, to) => {
+    for (let k = from; k < to; k += 1) if (code[k] !== '\n') code[k] = ' ';
+  };
   let i = 0;
   while (i < source.length) {
     const char = source[i];
     if (char === '/' && source[i + 1] === '/') {
       const newline = source.indexOf('\n', i);
-      i = newline === -1 ? source.length : newline;
+      const end = newline === -1 ? source.length : newline;
+      blank(i, end);
+      i = end;
     } else if (char === '/' && source[i + 1] === '*') {
       const close = source.indexOf('*/', i + 2);
-      i = close === -1 ? source.length : close + 2;
+      const end = close === -1 ? source.length : close + 2;
+      blank(i, end);
+      i = end;
     } else if (QUOTES.has(char)) {
       const end = stringEnd(source, i);
       literals.push({
@@ -188,7 +200,7 @@ export function extractLiterals(source) {
         text: source.slice(i + 1, source[end - 1] === '`' ? end - 1 : end),
       });
       i = end;
-    } else if (char === '/' && opensRegex(source, i)) {
+    } else if (char === '/' && opensRegex(code, i)) {
       const end = regexEnd(source, i);
       if (end === -1) i += 1;
       else {
@@ -197,20 +209,23 @@ export function extractLiterals(source) {
       }
     } else i += 1;
   }
-  return literals;
+  return { literals, code: code.join('') };
 }
 
-// The `ROOT_*` / `PLAYWRIGHT_*` name a literal initialises, or null.
-const declaredRootName = (source, start) => {
-  const name = DECLARATION_PATTERN.exec(source.slice(Math.max(0, start - 200), start))?.[1];
+export const extractLiterals = (source) => tokenize(source).literals;
+
+// The `ROOT_*` / `PLAYWRIGHT_*` name a literal initialises, or null. `code` is the
+// comment-blanked source from `tokenize`.
+const declaredRootName = (code, start) => {
+  const name = DECLARATION_PATTERN.exec(code.slice(Math.max(0, start - 200), start))?.[1];
   return name && DECLARED_NAME_PATTERN.test(name) ? name : null;
 };
 
-const offendingRule = (source, { start, text }) => {
+const offendingRule = (code, { start, text }) => {
   if (ROOT_DIR_PREFIX.test(text) && ROOT_SUFFIX.test(text)) return 'rootPattern';
   if (CT_SUFFIX.test(text)) return 'ctSuffix';
   if (IGNORED_STEMS.test(text)) return 'ignoredSpec';
-  if (declaredRootName(source, start) && (ROOT_DIR_ONLY.test(text) || ROOT_SUFFIX.test(text))) {
+  if (declaredRootName(code, start) && (ROOT_DIR_ONLY.test(text) || ROOT_SUFFIX.test(text))) {
     return 'rootConstant';
   }
   return null;
@@ -220,8 +235,9 @@ const offendingRule = (source, { start, text }) => {
 export function findOffenders(source) {
   const hits = [];
   const lines = source.split('\n');
-  for (const literal of extractLiterals(source)) {
-    const rule = offendingRule(source, literal);
+  const { literals, code } = tokenize(source);
+  for (const literal of literals) {
+    const rule = offendingRule(code, literal);
     if (!rule) continue;
     const line = source.slice(0, literal.start).split('\n').length;
     hits.push({ line, text: lines[line - 1].trim(), rule });

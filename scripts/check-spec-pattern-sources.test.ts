@@ -40,6 +40,23 @@ describe('spec pattern sources guard', () => {
     ['ROOT_ suffix regex', 'const ROOT_SPEC_RE = /\\.spec\\.ts$/;', 'rootConstant'],
     ['PLAYWRIGHT_ suffix template', 'let PLAYWRIGHT_MATCH = `**/*.spec.ts`;', 'rootConstant'],
     ['ROOT_ constant after a comment', '// dir\nconst ROOT_TEST_DIR =\n  "test";', 'rootConstant'],
+    [
+      'root regex behind a block comment',
+      'const RE = /* root specs */ /^test\\/.*\\.spec\\.ts$/;',
+      'rootPattern',
+    ],
+    [
+      'root regex behind a line comment',
+      'const RE = // root specs\n  /^test\\/.*\\.spec\\.ts$/;',
+      'rootPattern',
+    ],
+    ['typed ROOT_ suffix constant', "const ROOT_SPEC_SUFFIX: string = '.spec.ts';", 'rootConstant'],
+    ['typed ROOT_ dir constant', "export const ROOT_TEST_DIR: string = 'test';", 'rootConstant'],
+    [
+      'typed ROOT_ constant with a comment before the value',
+      "const ROOT_SPEC_SUFFIX: string = /* suffix */ '.spec.ts';",
+      'rootConstant',
+    ],
   ])('flags %s', (_name, line, rule) => {
     expect(rules(line)).toEqual([rule]);
   });
@@ -75,6 +92,13 @@ describe('spec pattern sources guard', () => {
     ['comment after a URL string', "const u = 'https://x'; // test/**/*.spec.ts"],
     ['division, not a regex', 'const ratio = total / count; // test/**/*.spec.ts'],
     ['division between calls', 'const r = a() / b() / 2;'],
+    ['division behind a block comment', 'const r = total /* items */ / count;'],
+    [
+      'block comment holding a typed declaration',
+      "/* const ROOT_SPEC_SUFFIX: string = '.spec.ts'; */",
+    ],
+    ['typed constant not on a ROOT_ name', "const suffix: string = '.spec.ts';"],
+    ['typed ROOT_ name holding something else', "const ROOT_PACKAGE: string = 'package.json';"],
   ])('ignores %s', (_name, line) => {
     expect(rules(line)).toEqual([]);
   });
@@ -123,7 +147,12 @@ describe('spec pattern sources guard', () => {
     const { hits, stale } = checkSpecPatternSources(
       [
         file('scripts/new.mjs', 'const RE = /^test\\/.*\\.spec\\.ts$/;'),
-        file('scripts/new.test.ts', "expect(isRootSpec('test/a.spec.ts')).toBe(true);"),
+        file(
+          'scripts/new.test.ts',
+          "expect(isRootSpec('test/a.spec.ts')).toBe(true);",
+          "const ROOT_SPEC_SUFFIX: string = '.spec.ts';",
+          'const RE = /* fixture */ /^test\\/.*\\.spec\\.ts$/;',
+        ),
         file('scripts/legacy.mjs', "const CT = '.ct.spec.ts';"),
         file('scripts/clean.mjs', "import { isCtSpec } from '../playwright/ct-spec-pattern.mjs';"),
       ],
