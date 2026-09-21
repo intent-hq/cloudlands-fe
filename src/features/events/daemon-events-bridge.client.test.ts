@@ -10638,6 +10638,53 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       ]);
     });
 
+    // A match here DELETES a failure entry, so the classifier is the strict
+    // §9 pair (-32602 AND data.code "not-found") — not the shared
+    // isAgentNotFoundError, whose message fallback would let an unstructured
+    // "not found" rejection erase a legitimate failure toast.
+    it('keeps an entry on a not-found LOOKALIKE that lacks the structured discriminator', async () => {
+      recordAgentFailure({ agentId: 'agent-message-only', workspaceId: WS, error: 'boom' });
+      recordAgentFailure({ agentId: 'agent-string-code-only', workspaceId: WS, error: 'boom' });
+      recordAgentFailure({ agentId: 'agent-wrong-rpc-code', workspaceId: WS, error: 'boom' });
+      recordAgentFailure({ agentId: 'agent-deleted', workspaceId: WS, error: 'boom' });
+      backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method !== 'agent.get') return Promise.resolve({});
+        const { agentId } = params as { agentId: string };
+        switch (agentId) {
+          // Right rpcCode, "not found" message, no data.code at all.
+          case 'agent-message-only':
+            return Promise.reject(Object.assign(new Error('Agent not found'), { rpcCode: -32602 }));
+          // Right rpcCode, string code only (lossy re-wrap dropped `data`).
+          case 'agent-string-code-only':
+            return Promise.reject(
+              Object.assign(new Error('Agent not found'), {
+                rpcCode: -32602,
+                code: 'not-found',
+              }),
+            );
+          // Structured data.code under a different numeric code.
+          case 'agent-wrong-rpc-code':
+            return Promise.reject(
+              Object.assign(new Error('Agent not found'), {
+                rpcCode: -32000,
+                code: 'not-found',
+                data: { code: 'not-found' },
+              }),
+            );
+          default:
+            return Promise.reject(agentNotFound());
+        }
+      });
+
+      await refreshDaemonEventsAfterReconnect(null);
+
+      expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual([
+        'agent-message-only',
+        'agent-string-code-only',
+        'agent-wrong-rpc-code',
+      ]);
+    });
+
     it('keeps an entry whose agent.get resolves (the agent still exists)', async () => {
       recordAgentFailure({ agentId: 'agent-alive', workspaceId: WS, error: 'boom' });
       backendRequestSpy.mockImplementation((method: string) => {

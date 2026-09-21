@@ -227,7 +227,6 @@ import {
   setPendingAgentDeletion,
 } from '$features/agent/utils/pending-agent-deletions';
 import { notifyInterruptedAgentUpdated } from '$features/agent/interrupted-agents-service';
-import { isAgentNotFoundError } from '$features/agent/utils/agent-not-found-error';
 import {
   getAgentFailureEntry,
   listAgentFailureEntries,
@@ -4219,15 +4218,38 @@ function sharedWorkspaceIdsToRefresh(): string[] {
   return [...ids];
 }
 
+/** Numeric JSON-RPC code the daemon answers `agent.get` on an unknown agent with (§5.5). */
+const AGENT_NOT_FOUND_RPC_CODE = -32602;
+
+/**
+ * STRICT structured not-found classifier for the reconciliation below:
+ * numeric `rpcCode === -32602` AND `data.code === "not-found"` (§9), same
+ * exact-match shape as `extractConflict` in live-support. Deliberately NOT the
+ * shared `isAgentNotFoundError`, whose `rpcCode` + message fallback (and
+ * bare string `code`) accepts errors that lost the structured discriminator —
+ * fine for closing a stale tab, but here a match DELETES a failure entry, so
+ * a generic `-32602` invalid-params rejection or a re-wrapped error with a
+ * "not found" message must not count. Both live transports preserve the
+ * daemon's `data.code` on the thrown error, so the strict field is available
+ * whenever the daemon actually sent it.
+ */
+function isStructuredAgentNotFound(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  if ((error as { rpcCode?: unknown }).rpcCode !== AGENT_NOT_FOUND_RPC_CODE) return false;
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== 'object') return false;
+  return (data as { code?: unknown }).code === 'not-found';
+}
+
 /**
  * Drop failure-registry entries whose agent no longer exists on the daemon.
  * One `agent.get` point read per entry — the registry is keyed by agentId, so
  * that is one read per agent, never a whole-workspace `agent.list` frame
  * (intent#5531; the registry holds a handful of ids, so this is bounded by
  * the failures, not the workspace). An entry is dropped ONLY on the
- * structured not-found rejection (`-32602` with `error.data.code:
- * "not-found"`, §9); any other failure keeps it (unverifiable ≠ deleted —
- * live events converge it later). Only the exact entry snapshotted BEFORE
+ * structured not-found rejection (`isStructuredAgentNotFound`); any other
+ * failure keeps it (unverifiable ≠ deleted — live events converge it later).
+ * Only the exact entry snapshotted BEFORE
  * the read, still identical in the registry (the same identity-guard
  * convention as retryAgent in the toast saga), is dropped: a failure
  * recorded or replaced while the read was in flight predates nothing the
@@ -4245,7 +4267,7 @@ async function reconcileAgentFailureRegistry(): Promise<void> {
         await backendRequest('agent.get', { agentId, workspaceId });
         return;
       } catch (error) {
-        if (!isAgentNotFoundError(error)) {
+        if (!isStructuredAgentNotFound(error)) {
           logger.warn('agent.get failed during failure-registry reconciliation — keeping entry', {
             agentId,
             workspaceId,
