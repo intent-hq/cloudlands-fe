@@ -55,13 +55,15 @@
   </div>
   <Button
     type="button"
-    class="inline-flex items-center justify-center gap-2 rounded border-none bg-success text-success-foreground cursor-pointer hover:bg-success/90 {compact
-      ? 'px-3 py-1.5 text-xs'
-      : 'px-6 py-3 text-base w-full'}"
+    variant="primary"
+    size={compact ? 'compact' : 'default'}
+    class={compact ? undefined : 'w-full'}
     onclick={handleOpenGitHub}
   >
-    <span>{m.lib_githubDeviceCode_openGithub_label()}</span>
-    <Fa icon={faArrowUpRightFromSquare} size="xs" />
+    {m.lib_githubDeviceCode_openGithub_label()}
+    {#snippet trailingIcon()}
+      <Fa icon={faArrowUpRightFromSquare} size="xs" />
+    {/snippet}
   </Button>
   <p class="text-xs text-subtle">
     {m.lib_githubDeviceCode_enterCodeAt_before()}
