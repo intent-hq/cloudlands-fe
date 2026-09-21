@@ -271,20 +271,17 @@ export function runPlaywright({
  */
 export function heapExhaustionHint({ code, signal, env }) {
   if (signal !== 'SIGABRT' && code !== 134) return null;
-  const sources = [
-    ['CT_NODE_ARGS', heapFlagToken(env.CT_NODE_ARGS, HEAP_PERCENTAGE_FLAG_RE)],
-    ['NODE_OPTIONS', heapFlagToken(env.NODE_OPTIONS, HEAP_PERCENTAGE_FLAG_RE)],
-    ['CT_NODE_ARGS', heapFlagToken(env.CT_NODE_ARGS)],
-    ['NODE_OPTIONS', heapFlagToken(env.NODE_OPTIONS)],
-  ];
-  const [source, flag] = sources.find(([, token]) => token) ?? ['launcher default', CT_HEAP_FLAG];
+  const effective = effectiveHeapFlag(env);
+  const source = effective?.source ?? 'launcher default';
+  const flag = effective?.token ?? CT_HEAP_FLAG;
   const how = signal === 'SIGABRT' ? 'SIGABRT' : `exit code ${code}`;
   // Raise the cap where it was set, with the flag kind that is in effect: a
   // percentage retry always wins, and a CT_NODE_ARGS retry beats NODE_OPTIONS.
   const raiseVia = source === 'CT_NODE_ARGS' ? 'CT_NODE_ARGS' : 'NODE_OPTIONS';
-  const raised = HEAP_PERCENTAGE_FLAG_RE.test(flag)
-    ? `--max-old-space-size-percentage=${Math.min(100, 2 * Number(flag.split('=')[1]) || 50)}`
-    : '--max-old-space-size=16384';
+  const raised =
+    effective?.kind === 'percentage'
+      ? `--max-old-space-size-percentage=${Math.min(100, 2 * Number(effective.value) || 50)}`
+      : '--max-old-space-size=16384';
   return [
     `[run-ct-tests] playwright exited with ${how}. This usually means V8 ran out of heap while`,
     'Vite bundled the component registry; look for "Ineffective mark-compacts near heap limit"',
@@ -365,22 +362,58 @@ export function resolveCtAlignedPlaywrightCli() {
 
 /** Heap cap applied to the Playwright child unless the caller chose one. */
 const CT_HEAP_FLAG = '--max-old-space-size=8192';
-// NODE_OPTIONS accepts the V8 underscore alias (`--max_old_space_size=`, as
-// scripts/vite-build.mjs also honours) and double-quoted option tokens.
-const HEAP_SIZE_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size=/;
-const HEAP_PERCENTAGE_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size[-_]percentage=/;
-/** Either heap cap: the caller chose one, so the launcher default must not be appended. */
-const HEAP_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size(?:[-_]percentage)?=/;
+// Both heap caps accept the V8 underscore alias (`--max_old_space_size=`, as
+// scripts/vite-build.mjs also honours). The percentage flag is Node's own and
+// also takes its value as the next token; the absolute flag is a V8
+// pass-through that only accepts `=N`.
+const HEAP_FLAG_RE =
+  /^--max[-_]old[-_]space[-_]size(?<percentage>[-_]percentage)?(?:=(?<value>.*))?$/;
 
-/** The last matching heap-flag token in a space-separated option string (Node applies the last). */
-function heapFlagToken(value, flagRe = HEAP_SIZE_FLAG_RE) {
-  const tokens = value?.trim().split(/\s+/) ?? [];
-  return (
-    tokens
-      .filter((token) => flagRe.test(token))
-      .at(-1)
-      ?.replaceAll('"', '') ?? null
-  );
+/**
+ * Every heap-cap flag in a space-separated option string (NODE_OPTIONS or CLI
+ * args; double-quoted tokens are unwrapped), in order, as
+ * `{ kind: 'size' | 'percentage', token, value }` where `token` is the flag as
+ * written. The single recognizer for the launcher default and the hint.
+ */
+function parseHeapFlags(options) {
+  const tokens = (options?.trim().split(/\s+/) ?? [])
+    .map((token) => token.replaceAll('"', ''))
+    .filter(Boolean);
+  const flags = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const match = HEAP_FLAG_RE.exec(tokens[i]);
+    if (!match) continue;
+    const kind = match.groups.percentage ? 'percentage' : 'size';
+    let { value } = match.groups;
+    let token = tokens[i];
+    if (value === undefined) {
+      if (kind !== 'percentage' || i + 1 >= tokens.length) continue;
+      value = tokens[++i];
+      token = `${token} ${value}`;
+    }
+    flags.push({ kind, token, value });
+  }
+  return flags;
+}
+
+/**
+ * The heap cap in effect for the child among the caller's settings, with its
+ * `source`, or null: a percentage flag overrides an absolute one wherever
+ * either is set, within a kind a CT_NODE_ARGS flag overrides NODE_OPTIONS (CLI
+ * flags win), and Node applies the last of repeated flags.
+ */
+function effectiveHeapFlag(env) {
+  const flags = [
+    ...parseHeapFlags(env.CT_NODE_ARGS).map((flag) => ({ ...flag, source: 'CT_NODE_ARGS' })),
+    ...parseHeapFlags(env.NODE_OPTIONS).map((flag) => ({ ...flag, source: 'NODE_OPTIONS' })),
+  ];
+  for (const kind of ['percentage', 'size']) {
+    for (const source of ['CT_NODE_ARGS', 'NODE_OPTIONS']) {
+      const flag = flags.filter((f) => f.kind === kind && f.source === source).at(-1);
+      if (flag) return flag;
+    }
+  }
+  return null;
 }
 
 /**
@@ -399,7 +432,7 @@ export function buildChildEnv({ env = process.env, isTTY, openReport = false, ro
   const childEnv = { ...env, PWTEST_CACHE_DIR: transformCacheDir };
   const nodeOptions = env.NODE_OPTIONS?.trim();
   if (!nodeOptions) childEnv.NODE_OPTIONS = CT_HEAP_FLAG;
-  else if (!HEAP_FLAG_RE.test(nodeOptions)) {
+  else if (parseHeapFlags(nodeOptions).length === 0) {
     childEnv.NODE_OPTIONS = `${env.NODE_OPTIONS} ${CT_HEAP_FLAG}`;
   }
   const { open, notice } = resolveHtmlReportOpen({ env, isTTY, openReport });

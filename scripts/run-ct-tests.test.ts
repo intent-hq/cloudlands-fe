@@ -178,6 +178,8 @@ describe('buildChildEnv', () => {
     ['V8 underscore alias', '--max_old_space_size_percentage=25'],
     ['double-quoted token', '"--max-old-space-size-percentage=25"'],
     ['flag after other options', '--require /x/dd-trace/init --max-old-space-size-percentage=25'],
+    ['space-separated value', '--require /x/dd-trace/init --max-old-space-size-percentage 25'],
+    ['double-quoted space-separated pair', '"--max-old-space-size-percentage" "25"'],
   ])('keeps a pre-set NODE_OPTIONS that chooses a heap percentage (%s)', (_label, preset) => {
     const { env } = buildChildEnv({
       env: { ...baseEnv, NODE_OPTIONS: preset },
@@ -458,6 +460,35 @@ describe('heapExhaustionHint', () => {
     });
     expect(hint).toContain('--max_old_space_size_percentage=30 (CT_NODE_ARGS)');
     expect(hint).not.toContain('percentage=25');
+  });
+
+  // Node also takes the percentage as the next token (the absolute flag is a
+  // V8 pass-through and only accepts `=N`).
+  it.each([
+    [
+      'NODE_OPTIONS',
+      { NODE_OPTIONS: '--require /x/dd-trace/init --max-old-space-size-percentage 25' },
+    ],
+    ['NODE_OPTIONS', { NODE_OPTIONS: '"--max-old-space-size-percentage" "25"' }],
+    ['CT_NODE_ARGS', { CT_NODE_ARGS: '--max-old-space-size-percentage 25 --no-opt' }],
+  ])('names a space-separated percentage flag verbatim from %s', (source, vars) => {
+    const hint = heapExhaustionHint({ ...abort, env: { ...baseEnv, ...vars } });
+    expect(hint).toContain(`--max-old-space-size-percentage 25 (${source})`);
+    expect(hint).toContain(`${source}=--max-old-space-size-percentage=50 pnpm run test:ct`);
+    expect(hint).not.toContain('8192');
+    expect(hint).not.toContain('--no-opt');
+    expect(hint).not.toContain('dd-trace');
+  });
+
+  it('ignores a trailing percentage flag with no value', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: {
+        ...baseEnv,
+        NODE_OPTIONS: '--max-old-space-size=2048 --max-old-space-size-percentage',
+      },
+    });
+    expect(hint).toContain('--max-old-space-size=2048 (NODE_OPTIONS)');
   });
 
   it.each([
