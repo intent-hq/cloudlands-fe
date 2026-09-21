@@ -372,6 +372,24 @@ describe('heapExhaustionHint', () => {
     expect(hint).not.toContain('--single-threaded-gc');
   });
 
+  it('tells the caller to raise the CT_NODE_ARGS flag, since NODE_OPTIONS cannot override it', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: { ...baseEnv, CT_NODE_ARGS: '--max-old-space-size=4096' },
+    });
+    expect(hint).toContain('CT_NODE_ARGS=--max-old-space-size=16384');
+    expect(hint).not.toContain('NODE_OPTIONS=');
+  });
+
+  it('suggests raising NODE_OPTIONS when the flag does not come from CT_NODE_ARGS', () => {
+    const hint = heapExhaustionHint({
+      ...abort,
+      env: { ...baseEnv, NODE_OPTIONS: '--max-old-space-size=2048', CT_NODE_ARGS: '--no-opt' },
+    });
+    expect(hint).toContain('NODE_OPTIONS=--max-old-space-size=16384');
+    expect(hint).not.toContain('CT_NODE_ARGS=');
+  });
+
   it('exposes the launcher options in its usage text', () => {
     expect(usage()).toContain(CT_HTML_REPORT_ENV);
     expect(usage()).toContain(OPEN_REPORT_FLAG);

@@ -275,12 +275,14 @@ export function heapExhaustionHint({ code, signal, env }) {
   ];
   const [source, flag] = sources.find(([, token]) => token) ?? ['launcher default', CT_HEAP_FLAG];
   const how = signal === 'SIGABRT' ? 'SIGABRT' : `exit code ${code}`;
+  // CLI flags win over NODE_OPTIONS, so a CT_NODE_ARGS cap can only be raised there.
+  const raiseVia = source === 'CT_NODE_ARGS' ? 'CT_NODE_ARGS' : 'NODE_OPTIONS';
   return [
     `[run-ct-tests] playwright exited with ${how}. This usually means V8 ran out of heap while`,
     'Vite bundled the component registry; look for "Ineffective mark-compacts near heap limit"',
     'or "JavaScript heap out of memory" above.',
     `[run-ct-tests] heap flag in effect for the child: ${flag} (${source}). To raise it, run e.g.`,
-    '  NODE_OPTIONS=--max-old-space-size=16384 pnpm run test:ct -- <args>',
+    `  ${raiseVia}=--max-old-space-size=16384 pnpm run test:ct -- <args>`,
     '[run-ct-tests] this is a tooling/memory failure, not evidence of a test regression.',
   ].join('\n');
 }
