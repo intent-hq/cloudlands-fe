@@ -26,7 +26,11 @@
  * so the larger build allowance does not leak into its long-lived test phase.
  * Playwright rebuilds in-process when sources change between dependency
  * population and begin(), so concurrent edits during a cold build can exceed
- * the cap; this is upstream behavior, not a launcher concern.
+ * the cap; this is upstream behavior, not a launcher concern. When the child
+ * still dies with SIGABRT / exit 134 (V8's heap-exhaustion signature; stderr is
+ * inherited, so the OOM text itself cannot be matched) the launcher prints a
+ * one-shot hint naming the heap flag in effect and how to raise it, so the
+ * failure is not misread as a test regression.
  *
  * It also owns the HTML-report policy (intent-hq/intent#4652): Playwright's
  * html reporter defaults to `open: 'on-failure'`, which keeps the process
@@ -249,9 +253,36 @@ export function runPlaywright({
   });
   child.on('exit', (code, signal) => {
     if (code === null && signal) printError(`playwright died with ${signal}`);
+    const hint = heapExhaustionHint({ code, signal, env });
+    if (hint) printError(hint);
     exit(exitCodeFromChild(code, signal));
   });
   return child;
+}
+
+/**
+ * Heuristic hint for a child that exited with SIGABRT / 134. Names the heap
+ * flag actually in effect for the child — a `CT_NODE_ARGS` flag (CLI flags
+ * override NODE_OPTIONS), else the `NODE_OPTIONS` flag, else the launcher
+ * default — printing only that token: hosts carry unrelated `--require` paths
+ * in NODE_OPTIONS that must not be echoed. Returns null for any other exit.
+ */
+export function heapExhaustionHint({ code, signal, env }) {
+  if (signal !== 'SIGABRT' && code !== 134) return null;
+  const sources = [
+    ['CT_NODE_ARGS', heapFlagToken(env.CT_NODE_ARGS)],
+    ['NODE_OPTIONS', heapFlagToken(env.NODE_OPTIONS)],
+  ];
+  const [source, flag] = sources.find(([, token]) => token) ?? ['launcher default', CT_HEAP_FLAG];
+  const how = signal === 'SIGABRT' ? 'SIGABRT' : `exit code ${code}`;
+  return [
+    `[run-ct-tests] playwright exited with ${how}. This usually means V8 ran out of heap while`,
+    'Vite bundled the component registry; look for "Ineffective mark-compacts near heap limit"',
+    'or "JavaScript heap out of memory" above.',
+    `[run-ct-tests] heap flag in effect for the child: ${flag} (${source}). To raise it, run e.g.`,
+    '  NODE_OPTIONS=--max-old-space-size=16384 pnpm run test:ct -- <args>',
+    '[run-ct-tests] this is a tooling/memory failure, not evidence of a test regression.',
+  ].join('\n');
 }
 
 /** How long a signalled Playwright child gets to tear down before SIGKILL. */
@@ -327,6 +358,17 @@ const CT_HEAP_FLAG = '--max-old-space-size=8192';
 // NODE_OPTIONS accepts the V8 underscore alias (`--max_old_space_size=`, as
 // scripts/vite-build.mjs also honours) and double-quoted option tokens.
 const HEAP_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size=/;
+
+/** The last heap-flag token in a space-separated option string (Node applies the last). */
+function heapFlagToken(value) {
+  const tokens = value?.trim().split(/\s+/) ?? [];
+  return (
+    tokens
+      .filter((token) => HEAP_FLAG_RE.test(token))
+      .at(-1)
+      ?.replaceAll('"', '') ?? null
+  );
+}
 
 /**
  * Build the child environment: project-local transform cache, the heap
