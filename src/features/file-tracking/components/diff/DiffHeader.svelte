@@ -12,6 +12,7 @@
     faFileCode,
     faPencil,
   } from '@fortawesome/free-solid-svg-icons';
+  import { Button } from '$lib/components/ui/button';
   import type { DiffAction } from './types.js';
 
   interface Props {
@@ -58,10 +59,12 @@
 </script>
 
 <div class="diff-header">
-  <button
-    type="button"
-    class="diff-header-content"
-    class:clickable={collapsible}
+  <Button
+    variant="plain"
+    size="compact"
+    class="diff-header-content {collapsible ? 'clickable' : ''}"
+    truncateLabel={false}
+    labelClass="flex min-w-0 flex-1 items-center gap-2"
     onclick={collapsible ? onToggle : undefined}
     disabled={!collapsible}
   >
@@ -97,22 +100,32 @@
         {/if}
       </span>
     {/if}
-  </button>
+  </Button>
 
   {#if actions.length > 0}
     <div class="diff-header-actions">
       {#each actions as action}
-        <button
-          type="button"
-          class="diff-action-button"
-          class:primary={action.variant === 'primary'}
-          class:success={action.variant === 'success'}
-          class:danger={action.variant === 'danger'}
+        <Button
+          variant={action.variant === 'primary'
+            ? 'primary'
+            : action.variant === 'danger'
+              ? 'destructive'
+              : action.variant === 'success'
+                ? 'plain'
+                : 'outline'}
+          size="compact"
+          class="diff-action-button {action.variant === 'primary'
+            ? 'primary'
+            : action.variant === 'success'
+              ? 'success'
+              : action.variant === 'danger'
+                ? 'danger'
+                : ''}"
           disabled={action.disabled}
           onclick={action.onClick}
         >
           {action.label}
-        </button>
+        </Button>
       {/each}
     </div>
   {/if}
@@ -128,9 +141,10 @@
     gap: 0.5rem;
   }
 
-  .diff-header-content {
+  :global(.diff-header-content) {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.5rem;
     flex: 1;
     min-width: 0;
@@ -142,13 +156,18 @@
     color: inherit;
     text-align: left;
     cursor: default;
+    height: auto;
   }
 
-  .diff-header-content.clickable {
+  :global(.diff-header-content:disabled) {
+    opacity: 1;
+  }
+
+  :global(.diff-header-content.clickable) {
     cursor: pointer;
   }
 
-  .diff-header-content.clickable:hover {
+  :global(.diff-header-content.clickable:hover) {
     opacity: 0.8;
   }
 
@@ -209,7 +228,7 @@
     gap: 0.5rem;
   }
 
-  .diff-action-button {
+  :global(.diff-action-button) {
     padding: 0.25rem 0.75rem;
     font-size: 0.75rem;
     font-weight: 500;
@@ -225,28 +244,28 @@
       opacity 0.15s;
   }
 
-  .diff-action-button:hover:not(:disabled) {
+  :global(.diff-action-button:hover:not(:disabled)) {
     background: var(--accent, hsl(var(--accent)));
   }
 
-  .diff-action-button:disabled {
+  :global(.diff-action-button:disabled) {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .diff-action-button.primary {
+  :global(.diff-action-button.primary) {
     background: var(--primary, hsl(var(--primary)));
     color: var(--primary-foreground, hsl(var(--primary-foreground)));
     border-color: transparent;
   }
 
-  .diff-action-button.success {
+  :global(.diff-action-button.success) {
     background: var(--color-emerald-600, #059669);
     color: white;
     border-color: transparent;
   }
 
-  .diff-action-button.danger {
+  :global(.diff-action-button.danger) {
     background: var(--color-red-600, #dc2626);
     color: white;
     border-color: transparent;

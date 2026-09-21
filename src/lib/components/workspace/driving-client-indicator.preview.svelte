@@ -15,12 +15,16 @@
     ownClientIdReceived,
     workspaceBrowserClientReceived,
   } from '$store/renderer/slices/browser-clients/browser-clients-slice';
+  import { initializeLayout } from '$store/renderer/slices/panel-layout/panel-layout-slice';
+  import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 
   /**
-   * The live sidebar card over a seeded `browserClients` slice (REV-2, spec
-   * Model 8): the driving-client indicator under the repository/branch row and
-   * the "Set Current Client as Primary" ellipsis-menu action.
+   * The live sidebar card over a seeded `browserClients` slice and panel
+   * layout (REV-2, spec Model 8): the driving-client indicator under the
+   * repository/branch row and the "Set Current Client as Primary"
+   * ellipsis-menu action. The indicator needs a browser tab in the layout
+   * (except for an offline pin), so every state seeds the layout too.
    */
   export interface DrivingClientIndicatorPreviewProps {
     width: number;
@@ -69,10 +73,33 @@
     ...PREVIEW_FIXTURE_TIMESTAMPS,
   })();
 
-  /** Seed the real store the way the saga would after `client.list` + `workspace.getBrowserClient`. */
-  function seed(clients: LiveClient[], browserClient: WorkspaceBrowserClient) {
+  const browserTab: PanelTab = {
+    id: 'preview-browser-tab',
+    type: 'browser',
+    title: 'Preview',
+    closable: true,
+    browserUrl: 'http://127.0.0.1:5173/',
+  };
+
+  /**
+   * Seed the real store the way the sagas would after `client.list` +
+   * `workspace.getBrowserClient` and a layout restore with (or without) a
+   * browser tab in the panel.
+   */
+  function seed(
+    clients: LiveClient[],
+    browserClient: WorkspaceBrowserClient,
+    tabs: PanelTab[] = [browserTab],
+  ) {
     return () => {
       store.dispatch(setWorkspaceEntity(workspace));
+      store.dispatch(
+        initializeLayout(PREVIEW_WORKSPACE_ID, {
+          root: { type: 'panel', panelId: 'main' },
+          panels: { main: { id: 'main', tabs, activeTabId: tabs[0]?.id ?? null } },
+          focusedPanelId: 'main',
+        }),
+      );
       store.dispatch(ownClientIdReceived(PREVIEW_OWN_CLIENT_ID));
       store.dispatch(liveClientsReceived(clients));
       store.dispatch(workspaceBrowserClientReceived(PREVIEW_WORKSPACE_ID, browserClient));
@@ -108,13 +135,21 @@
           resolved: resolved(otherClient),
         }),
       },
+      'no-browser-tabs': {
+        props: { width: 360 },
+        setup: seed(
+          [ownClient, otherClient],
+          { source: 'default', resolved: resolved(otherClient) },
+          [],
+        ),
+      },
       'pinned-offline': {
         props: { width: 360 },
-        setup: seed([ownClient], {
-          source: 'workspace',
-          clientId: OFFLINE_CLIENT_ID,
-          resolved: null,
-        }),
+        setup: seed(
+          [ownClient],
+          { source: 'workspace', clientId: OFFLINE_CLIENT_ID, resolved: null },
+          [],
+        ),
       },
     },
   });

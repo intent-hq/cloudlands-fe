@@ -141,8 +141,8 @@ class IPCDebugTracker {
 
     logger.warn(`IPC validation error on channel ${channel}:`, error);
 
-    // Force immediate save for validation errors
-    this.saveToFile();
+    // Force immediate save for validation errors; saveToFile handles its own errors.
+    void this.saveToFile();
   }
 
   trackMissingHandler(channel: string, data?: any): void {
@@ -159,9 +159,9 @@ class IPCDebugTracker {
 
     logger.error(`Missing IPC handler for channel: ${channel}`);
 
-    // Immediately save both missing handlers and debug log
-    this.saveMissingHandlers();
-    this.saveToFile();
+    // Immediately save both missing handlers and debug log; both handle their own errors.
+    void this.saveMissingHandlers();
+    void this.saveToFile();
   }
 
   private addEntry(entry: IPCDebugEntry): void {
@@ -182,7 +182,8 @@ class IPCDebugTracker {
     }
 
     this.writeDebounceTimer = setTimeout(() => {
-      this.saveToFile();
+      // Fire-and-forget debounced write; saveToFile handles its own errors.
+      void this.saveToFile();
     }, 5000); // Save after 5 seconds of inactivity
   }
 
@@ -282,14 +283,16 @@ class IPCDebugTracker {
   clearDebugData(): void {
     this.entries = [];
     this.missingHandlers.clear();
-    this.saveToFile();
-    this.saveMissingHandlers();
+    // Fire-and-forget writes; both save methods handle their own errors.
+    void this.saveToFile();
+    void this.saveMissingHandlers();
     logger.info('IPC debug data cleared');
   }
 
   forceSave(): void {
-    this.saveToFile();
-    this.saveMissingHandlers();
+    // Fire-and-forget writes; both save methods handle their own errors.
+    void this.saveToFile();
+    void this.saveMissingHandlers();
     logger.info('IPC debug data force saved');
   }
 
@@ -312,10 +315,10 @@ class IPCDebugTracker {
       clearTimeout(this.writeDebounceTimer);
       this.writeDebounceTimer = null;
     }
-    // Final save before shutdown
+    // Final save before shutdown; both save methods handle their own errors.
     if (this.enabled) {
-      this.saveToFile();
-      this.saveMissingHandlers();
+      void this.saveToFile();
+      void this.saveMissingHandlers();
     }
     logger.info('IPC debug tracker disposed');
   }

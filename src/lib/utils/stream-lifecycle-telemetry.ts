@@ -54,6 +54,18 @@ function lateReserveKind(diagnostic: StreamLifecycleDiagnostic): 'failure' | 're
   ) {
     return 'failure';
   }
+  // A dropped or held snapshot is the breadcrumb that diagnoses the next
+  // stuck transcript late in a session, so the snapshot-guard family
+  // (`snapshot-dropped-*` / `snapshot-held-*`) stays reserve-eligible. The
+  // event-name qualifier keeps routine pre-ack `push` buffering out of the
+  // reserve.
+  if (
+    diagnostic.pushKind === 'snapshot' &&
+    (diagnostic.callbackResult === 'ignored' || diagnostic.callbackResult === 'buffered') &&
+    diagnostic.event.startsWith('snapshot-')
+  ) {
+    return 'failure';
+  }
   return undefined;
 }
 

@@ -626,8 +626,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
             agentId: session.config.agentId,
           });
 
-          // Attempt recovery
-          this.attemptStreamRecoveryInternal(streamId);
+          // Attempt recovery; fire-and-forget from the health-check timer.
+          void this.attemptStreamRecoveryInternal(streamId);
         }
       } else if (timeSinceActivity > STREAM_CONFIG.STALLED_TIMEOUT / 2) {
         session.healthStatus = 'degraded';
@@ -724,8 +724,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
     const recoveryTimer = setTimeout(() => {
       const currentSession = this.sessions.get(streamId);
       if (currentSession && currentSession.healthStatus === 'degraded') {
-        // Recovery failed, try again or fail
-        this.attemptStreamRecoveryInternal(streamId);
+        // Recovery failed, try again or fail; fire-and-forget from the timer.
+        void this.attemptStreamRecoveryInternal(streamId);
       }
     }, STREAM_CONFIG.RECOVERY_TIMEOUT);
 

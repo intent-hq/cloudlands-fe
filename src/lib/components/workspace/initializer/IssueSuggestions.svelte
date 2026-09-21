@@ -1,8 +1,10 @@
 <script lang="ts" module>
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
   import type { SentryIssueResult } from '$store/renderer/slices/sentry-auth/sentry-auth-types';
   import { createLogger } from '$lib/utils/client-logger';
-  import { formatRelativeTime as formatRelative } from '$lib/i18n/format';
+  import { formatInteger, formatRelativeTime as formatRelative } from '$lib/i18n/format';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { invoke } from '$shared/generated/ipc-client';
 
@@ -64,7 +66,7 @@
     github?: IssueCache<{ issues: GitHubIssueLocal[]; nextToken: string | null; key: string }>;
   } = {};
 
-  // Per-filter cache for GitHub PRs (keyed by repo + filter)
+  // Per-filter cache for GitHub PRs (keyed by repo set + filter)
   type PRFilterType = 'all' | 'assigned' | 'created' | 'review-requested' | 'involves';
   const githubPRCache: Map<
     string,
@@ -72,16 +74,15 @@
   > = new Map();
   const PR_CACHE_DURATION_MS = 60000; // 1 minute
 
-  function getPRCacheKey(owner: string, repo: string, filter: PRFilterType): string {
-    return `${owner}/${repo}:${filter}`;
+  function getPRCacheKey(repoSetKey: string, filter: PRFilterType): string {
+    return `${repoSetKey}:${filter}`;
   }
 
   function getCachedPRs(
-    owner: string,
-    repo: string,
+    repoSetKey: string,
     filter: PRFilterType,
   ): { data: GitHubPRLocal[]; nextToken: string | null } | null {
-    const key = getPRCacheKey(owner, repo, filter);
+    const key = getPRCacheKey(repoSetKey, filter);
     const cached = githubPRCache.get(key);
     if (cached && Date.now() - cached.timestamp < PR_CACHE_DURATION_MS) {
       return { data: cached.data, nextToken: cached.nextToken };
@@ -90,14 +91,73 @@
   }
 
   function setCachedPRs(
-    owner: string,
-    repo: string,
+    repoSetKey: string,
     filter: PRFilterType,
     data: GitHubPRLocal[],
     nextToken: string | null,
   ): void {
-    const key = getPRCacheKey(owner, repo, filter);
+    const key = getPRCacheKey(repoSetKey, filter);
     githubPRCache.set(key, { data, nextToken, timestamp: Date.now() });
+  }
+
+  /** `{ owner, repo }` reference to a GitHub repository. */
+  interface GitHubRepoRef {
+    owner: string;
+    repo: string;
+  }
+
+  /** The daemon caps `github.relatedRepos.list` at this many submodule repos. */
+  const MAX_RELATED_REPOS = 5;
+
+  function repoRefKey(ref: GitHubRepoRef): string {
+    return `${ref.owner}/${ref.repo}`;
+  }
+
+  /** Cache key for the repo set a GitHub issues/PRs listing was fetched against. */
+  function repoSetKey(owner: string, repo: string, related: GitHubRepoRef[]): string {
+    return [repoRefKey({ owner, repo }), ...related.map(repoRefKey)].join(',');
+  }
+
+  // Related (submodule) repos per primary `owner/repo`, resolved once per
+  // session via `git-tracking:list-related-repos` and shared across mounts.
+  // Only a settled list is retained; failures fall back to the primary repo
+  // alone and are retried on the next mount.
+  const relatedReposCache: Map<string, GitHubRepoRef[]> = new Map();
+  const relatedReposInFlight: Map<string, Promise<GitHubRepoRef[]>> = new Map();
+
+  async function resolveRelatedRepos(owner: string, repo: string): Promise<GitHubRepoRef[]> {
+    const key = repoRefKey({ owner, repo });
+    const cached = relatedReposCache.get(key);
+    if (cached) return cached;
+    const inFlight = relatedReposInFlight.get(key);
+    if (inFlight) return inFlight;
+    const request = (async () => {
+      const response = await invoke<{
+        success: boolean;
+        data?: GitHubRepoRef[];
+        error?: string;
+      }>('git-tracking:list-related-repos', { owner, repo });
+      if (!response?.success) {
+        throw new Error(response?.error ?? 'Failed to list related repositories');
+      }
+      const seen = new Set<string>([key]);
+      const related: GitHubRepoRef[] = [];
+      for (const ref of response.data ?? []) {
+        const refKey = repoRefKey(ref);
+        if (seen.has(refKey)) continue;
+        seen.add(refKey);
+        related.push({ owner: ref.owner, repo: ref.repo });
+        if (related.length >= MAX_RELATED_REPOS) break;
+      }
+      relatedReposCache.set(key, related);
+      return related;
+    })();
+    relatedReposInFlight.set(key, request);
+    try {
+      return await request;
+    } finally {
+      relatedReposInFlight.delete(key);
+    }
   }
 
   function isCacheValid<T>(cache: IssueCache<T> | undefined): cache is IssueCache<T> {
@@ -218,10 +278,11 @@
 <script lang="ts">
   /* eslint-disable max-lines */
   import { onMount, onDestroy, tick, untrack } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Fa from 'svelte-fa';
-  import { faChevronDown, faPlus, faSearch, faSync } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faPlus, faSearch } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { Select } from '$lib/components/ui/select';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { linearAuthClient } from '$features/linear-auth/renderer/linear-auth.client';
@@ -406,6 +467,48 @@
   const githubPRs = $derived(githubPRsPage.items);
   let isLoadingGitHubPRs = $state(false);
   let _isRefreshingGitHubPRs = $state(false);
+
+  // Submodule repos searched alongside the primary repo on the GitHub tabs.
+  // Empty until `git-tracking:list-related-repos` resolves for the current
+  // primary repo; the listing then refreshes once with the extras.
+  let relatedRepos = $state<GitHubRepoRef[]>([]);
+  const githubRepoSetKey = $derived(
+    repositoryOwner && repositoryName
+      ? repoSetKey(repositoryOwner, repositoryName, relatedRepos)
+      : '',
+  );
+  // Row labels are only shown when more than one repo contributes. Short
+  // `repo` name, or `owner/repo` when two repos in play share a name.
+  const showRepoLabels = $derived(relatedRepos.length > 0);
+  const repoLabels = $derived.by(() => {
+    const labels = new Map<string, string>();
+    if (!repositoryOwner || !repositoryName) return labels;
+    const inPlay: GitHubRepoRef[] = [
+      { owner: repositoryOwner, repo: repositoryName },
+      ...relatedRepos,
+    ];
+    const nameCounts = new Map<string, number>();
+    for (const ref of inPlay) nameCounts.set(ref.repo, (nameCounts.get(ref.repo) ?? 0) + 1);
+    for (const ref of inPlay) {
+      labels.set(repoRefKey(ref), (nameCounts.get(ref.repo) ?? 0) > 1 ? repoRefKey(ref) : ref.repo);
+    }
+    return labels;
+  });
+  function repoLabelFor(owner: string, repo: string): string {
+    return repoLabels.get(repoRefKey({ owner, repo })) ?? repoRefKey({ owner, repo });
+  }
+  const relatedReposCountLabel = $derived(
+    relatedRepos.length === 1
+      ? m.workspace_issueSuggestions_moreRepos_one({ count: formatInteger(relatedRepos.length) })
+      : m.workspace_issueSuggestions_moreRepos_many({
+          count: formatInteger(relatedRepos.length),
+        }),
+  );
+  function reposRequestOption(): { repos?: GitHubRepoRef[] } {
+    return relatedRepos.length > 0
+      ? { repos: relatedRepos.map(({ owner, repo }) => ({ owner, repo })) }
+      : {};
+  }
 
   // GitHub PR filter - uses GitHub search API @me filter
   // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the filter default
@@ -889,6 +992,7 @@
         per_page: 20,
         filter: 'all',
         ...(query ? { query } : {}),
+        ...reposRequestOption(),
         ...(token ? { nextToken: token } : {}),
       },
     });
@@ -961,7 +1065,7 @@
       }
 
       if (isElectronPlatform()) {
-        const cacheKey = `${repositoryOwner}/${repositoryName}`;
+        const cacheKey = githubRepoSetKey;
         const query = committedQueries['github-issues'];
         const cached =
           query === '' &&
@@ -1009,21 +1113,26 @@
     }
   }
 
-  // Fetch and map one page of PRs for a specific filter
-  async function fetchGitHubPRsPage(filter: PRFilterType, query: string, token: string | null) {
+  // Fetch and map one page of PRs for a specific filter. `repos` defaults to
+  // the live related set; the prefetch loop passes a snapshot instead.
+  async function fetchGitHubPRsPage(
+    filter: PRFilterType,
+    query: string,
+    token: string | null,
+    repos: { repos?: GitHubRepoRef[] } = reposRequestOption(),
+  ) {
     if (!repositoryOwner || !repositoryName) {
       return { items: [] as GitHubPRLocal[], nextToken: null };
     }
-    const owner = repositoryOwner;
-    const repo = repositoryName;
     const response = await invoke<any>('git-tracking:search-pull-requests', {
-      owner,
-      repo,
+      owner: repositoryOwner,
+      repo: repositoryName,
       options: {
         state: 'open',
         per_page: 50,
         filter,
         ...(query ? { query } : {}),
+        ...repos,
         ...(token ? { nextToken: token } : {}),
       },
     });
@@ -1038,6 +1147,8 @@
         description?: string;
         htmlUrl: string;
         state: 'open' | 'closed' | 'merged' | 'draft';
+        owner: string;
+        repo: string;
         author?: { login?: string; name?: string };
         assignees?: string[];
         sourceBranch?: string;
@@ -1051,8 +1162,8 @@
         body: pr.description,
         url: pr.htmlUrl,
         state: pr.state,
-        owner,
-        repo,
+        owner: pr.owner,
+        repo: pr.repo,
         authorLogin: pr.author?.login,
         authorName: pr.author?.name,
         assignees: pr.assignees || [],
@@ -1069,7 +1180,12 @@
   }
 
   // Prefetch other filters in background for instant switching
-  async function prefetchOtherPRFilters(currentFilter: PRFilterType, owner: string, repo: string) {
+  async function prefetchOtherPRFilters(currentFilter: PRFilterType) {
+    // Snapshot the repo set and its cache key together so every page fetched
+    // by this loop is stored under the key it was requested against, even if
+    // the related set resolves mid-loop.
+    const repoKey = githubRepoSetKey;
+    const repos = reposRequestOption();
     const allFilters: PRFilterType[] = [
       'all',
       'assigned',
@@ -1081,12 +1197,15 @@
 
     // Prefetch each filter with a small delay to not overwhelm the API
     for (const filter of otherFilters) {
+      // A new repo set reloads the listing and starts its own prefetch loop;
+      // stop filling the superseded key.
+      if (githubRepoSetKey !== repoKey) return;
       // Skip if already cached
-      if (getCachedPRs(owner, repo, filter)) continue;
+      if (getCachedPRs(repoKey, filter)) continue;
 
       try {
-        const page = await fetchGitHubPRsPage(filter, '', null);
-        setCachedPRs(owner, repo, filter, page.items, page.nextToken);
+        const page = await fetchGitHubPRsPage(filter, '', null, repos);
+        setCachedPRs(repoKey, filter, page.items, page.nextToken);
         logger.debug('Prefetched GitHub PRs', { filter, count: page.items.length });
       } catch (err) {
         // Silently fail prefetch - it's just optimization
@@ -1111,8 +1230,8 @@
       if (isElectronPlatform()) {
         // 1. Check cache first - show cached data immediately for snappy UI
         const query = committedQueries['github-prs'];
-        const cachedPRs =
-          query === '' ? getCachedPRs(repositoryOwner, repositoryName, filter) : null;
+        const repoKey = githubRepoSetKey;
+        const cachedPRs = query === '' ? getCachedPRs(repoKey, filter) : null;
         if (cachedPRs) {
           githubPRsPager.seed(cachedPRs.data, cachedPRs.nextToken);
           // Still refresh in background, but user sees data instantly
@@ -1136,14 +1255,13 @@
             githubPRFilter === filter
           ) {
             setCachedPRs(
-              repositoryOwner,
-              repositoryName,
+              repoKey,
               filter,
               githubPRsPager.state.items,
               githubPRsPager.state.nextToken,
             );
             // 4. Prefetch other filters in background for instant switching
-            prefetchOtherPRFilters(filter, repositoryOwner, repositoryName);
+            prefetchOtherPRFilters(filter);
           }
           logger.debug('Loaded GitHub PRs', {
             count: githubPRsPager.state.items.length,
@@ -1406,6 +1524,25 @@
     }
   });
 
+  // Resolve the primary repo's submodule repos; when they arrive (and differ
+  // from what the listing was fetched against), refresh both GitHub tabs
+  // once so the blended list includes them.
+  async function loadRelatedRepos(owner: string, repo: string) {
+    if (!isElectronPlatform()) return;
+    let related: GitHubRepoRef[];
+    try {
+      related = await resolveRelatedRepos(owner, repo);
+    } catch (error) {
+      logger.warn('Failed to list related repositories', { owner, repo, error });
+      return;
+    }
+    if (repositoryOwner !== owner || repositoryName !== repo) return;
+    if (repoSetKey(owner, repo, related) === githubRepoSetKey) return;
+    relatedRepos = related;
+    loadGitHubIssues();
+    loadGitHubPRs();
+  }
+
   // Reload GitHub issues/PRs when repository context changes
   $effect(() => {
     // Track the deps - these must be accessed before the condition
@@ -1417,8 +1554,16 @@
       // Use untrack to prevent infinite loop - the load functions update state
       // which would re-trigger this effect otherwise
       untrack(() => {
+        // Search the primary repo alone until the related set is known;
+        // a session-cached set applies immediately.
+        relatedRepos = relatedReposCache.get(repoRefKey({ owner, repo })) ?? [];
         loadGitHubIssues();
         loadGitHubPRs();
+        void loadRelatedRepos(owner, repo);
+      });
+    } else {
+      untrack(() => {
+        relatedRepos = [];
       });
     }
   });
@@ -1499,10 +1644,33 @@
   }
 </script>
 
+<!-- "+N repos" badge with a tooltip listing the submodule repos also searched -->
+{#snippet relatedReposBadge()}
+  <TooltipRich side="top" align="start" delayDuration={300} maxWidth="24rem">
+    {#snippet trigger()}
+      <span
+        class="px-1.5 py-0.5 text-xs rounded-full bg-muted/60 text-subtle whitespace-nowrap cursor-default"
+        >{relatedReposCountLabel}</span
+      >
+    {/snippet}
+    {#snippet content()}
+      <div class="space-y-1">
+        <div class="text-xs text-subtle">
+          {m.workspace_issueSuggestions_alsoSearching_label()}
+        </div>
+        {#each relatedRepos as related (repoRefKey(related))}
+          <div class="text-xs font-mono">{related.owner}/{related.repo}</div>
+        {/each}
+      </div>
+    {/snippet}
+  </TooltipRich>
+{/snippet}
+
 <div class="context-picker w-full">
   <!-- Trigger button (hidden when hideToggle is true) -->
   {#if !hideToggle}
-    <button
+    <Button
+      variant="ghost"
       type="button"
       onclick={togglePanel}
       class="inline-flex items-center gap-2.5 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -1510,7 +1678,9 @@
       <Fa
         icon={faPlus}
         size={11}
-        class="transform transition-transform duration-200 {isOpen ? '-rotate-45' : ''}"
+        class="transform transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isOpen
+          ? '-rotate-45'
+          : ''}"
       />
       <span>{m.workspace_issueSuggestions_addContext_label()}</span>
       <!-- Show all provider icons when collapsed -->
@@ -1522,35 +1692,36 @@
         {/each}
       </div>
       <!-- {/if} -->
-    </button>
+    </Button>
   {/if}
 
   <!-- Expandable panel -->
   {#if isOpen}
     <div
       class="{hideToggle ? '' : ''} rounded-lg border border-border bg-muted/20 overflow-hidden"
-      transition:slide={{ duration: 200 }}
+      transition:slide={{ tier: 'moderate' }}
     >
       <!-- Search + filter bar -->
       <div class="flex items-center gap-2 px-3 py-2 border-b border-border">
         <Fa icon={faSearch} class="w-3 h-3 text-ghost opacity-50" />
-        <input
-          bind:this={searchInputEl}
+        <Input
+          bind:ref={searchInputEl}
           type="text"
           bind:value={searchQuery}
           placeholder={getSearchPlaceholder(activeSource)}
-          class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 focus:ring-0 focus:outline-none"
+          class="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus:ring-0 focus:outline-none"
         />
         <!-- Refreshing indicator -->
         {#if isRefreshing}
-          <Fa icon={faSync} class="w-2.5 h-2.5 mr-1 text-ghost animate-spin" />
+          <IntentMarkLoader size={10} class="mr-1 text-ghost" />
         {/if}
         <!-- Source tabs with issue count (hidden when controlled externally) -->
         {#if !hideSourceTabs}
           <div class="flex items-center gap-1 ml-auto">
             {#each sources as source (source.id)}
               {@const count = getSourceCount(source.id)}
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 onclick={() => {
                   userSelectedTab = true;
@@ -1565,16 +1736,26 @@
                 {#if count > 0}
                   <span class="text-subtle">{count}</span>
                 {/if}
-              </button>
+              </Button>
             {/each}
           </div>
         {/if}
       </div>
 
+      <!-- Repo context: primary repo plus the submodule repos also searched -->
+      {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && showRepoLabels && repositoryOwner && repositoryName}
+        <div class="flex items-center gap-1.5 px-3 py-1.5 border-b border-border text-xs">
+          <GitHubIcon class="w-3 h-3 text-ghost shrink-0 opacity-50" />
+          <span class="text-subtle truncate">{repositoryOwner}/{repositoryName}</span>
+          {@render relatedReposBadge()}
+        </div>
+      {/if}
+
       <!-- Subtle filter bar - only show when there are multiple options -->
       {#if activeSource === 'sentry' && sentryProjects.length > 1}
         <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border">
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => (selectedSentryProject = null)}
             class="px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer {selectedSentryProject ===
@@ -1583,9 +1764,10 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_all_label()}
-          </button>
+          </Button>
           {#each sentryProjects as project}
-            <button
+            <Button
+              variant="ghost"
               type="button"
               onclick={() => (selectedSentryProject = project.slug)}
               class="px-2 py-0.5 text-xs rounded-full transition-colors cursor-pointer whitespace-nowrap {selectedSentryProject ===
@@ -1594,7 +1776,7 @@
                 : 'text-muted-foreground hover:text-foreground'}"
             >
               {project.name}
-            </button>
+            </Button>
           {/each}
         </div>
       {/if}
@@ -1637,7 +1819,8 @@
       <!-- GitHub PR filter: All / Assigned / Review Requested / Created / Involves -->
       {#if activeSource === 'github-prs' && isGitHubAuthenticated}
         <div class="flex items-center gap-1 px-3 py-1.5 border-b border-border flex-wrap">
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'all') {
@@ -1651,8 +1834,9 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_all_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'review-requested') {
@@ -1666,8 +1850,9 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_reviewRequested_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'assigned') {
@@ -1681,8 +1866,9 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_assigned_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'created') {
@@ -1696,8 +1882,9 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_created_label()}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onclick={() => {
               if (githubPRFilter !== 'involves') {
@@ -1711,7 +1898,7 @@
               : 'text-muted-foreground hover:text-foreground'}"
           >
             {m.workspace_issueSuggestions_involvesMe_label()}
-          </button>
+          </Button>
         </div>
       {/if}
 
@@ -1749,26 +1936,34 @@
               {m.workspace_issueSuggestions_noIssuesMatch_label({ query: searchQuery })}
             {:else if activeSource === 'github-issues'}
               {m.workspace_issueSuggestions_noIssuesFoundFor_before()}
-              <button
+              <Button
+                variant="ghost"
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/issues`, {
                     workspaceId: workspaceId as WorkspaceId | undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
-                >{repositoryOwner}/{repositoryName}</button
+                >{repositoryOwner}/{repositoryName}</Button
               >
+              {#if showRepoLabels}
+                {@render relatedReposBadge()}
+              {/if}
             {:else if activeSource === 'github-prs'}
               {m.workspace_issueSuggestions_noPullRequestsFoundFor_before()}
-              <button
+              <Button
+                variant="ghost"
                 onclick={() => {
                   handleLink(`https://github.com/${repositoryOwner}/${repositoryName}/pulls`, {
                     workspaceId: workspaceId as WorkspaceId | undefined,
                   });
                 }}
                 class="underline underline-offset-2 decoration-muted-foreground/20 cursor-pointer"
-                >{repositoryOwner}/{repositoryName}</button
+                >{repositoryOwner}/{repositoryName}</Button
               >
+              {#if showRepoLabels}
+                {@render relatedReposBadge()}
+              {/if}
             {:else}
               {m.workspace_issueSuggestions_noIssuesFound_label()}
             {/if}
@@ -1794,7 +1989,8 @@
                     handleTooltipOpenChange(`linear-assigned-${issue.id}`, open)}
                 >
                   {#snippet trigger()}
-                    <button
+                    <Button
+                      variant="ghost"
                       type="button"
                       onclick={() => handleLinearIssueClick(issue)}
                       class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -1812,7 +2008,7 @@
                           >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                         >
                       {/if}
-                    </button>
+                    </Button>
                   {/snippet}
                   {#snippet content()}
                     <div class="space-y-2">
@@ -1867,7 +2063,8 @@
                     handleTooltipOpenChange(`linear-created-${issue.id}`, open)}
                 >
                   {#snippet trigger()}
-                    <button
+                    <Button
+                      variant="ghost"
                       type="button"
                       onclick={() => handleLinearIssueClick(issue)}
                       class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -1885,7 +2082,7 @@
                           >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                         >
                       {/if}
-                    </button>
+                    </Button>
                   {/snippet}
                   {#snippet content()}
                     <div class="space-y-2">
@@ -1935,7 +2132,8 @@
                 onOpenChange={(open) => handleTooltipOpenChange(`linear-search-${issue.id}`, open)}
               >
                 {#snippet trigger()}
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     onclick={() => handleLinearIssueClick(issue)}
                     class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
@@ -1951,7 +2149,7 @@
                         >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                       >
                     {/if}
-                  </button>
+                  </Button>
                 {/snippet}
                 {#snippet content()}
                   <div class="space-y-2">
@@ -1990,25 +2188,27 @@
 
           <!-- Sentry issues -->
           {#each visibleSentryIssues as issue (issue.id)}
-            <button
-              type="button"
-              onclick={() => handleSentryIssueClick(issue)}
-              class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
-              transition:slide={{ duration: 150 }}
-            >
-              <SentryIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
-              <span class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground"
-                >{issue.title}</span
+            <div transition:slide={{ tier: 'moderate' }}>
+              <Button
+                type="button"
+                variant="plain"
+                onclick={() => handleSentryIssueClick(issue)}
+                class="h-auto! w-full px-3! py-2! flex items-center gap-2 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
               >
-              {#if sentryProjects.length > 1 && !selectedSentryProject}
-                <span class="text-xs text-subtle shrink-0">{issue.projectName}</span>
-              {/if}
-              {#if issue.lastSeen}
-                <span class="text-xs text-subtle shrink-0"
-                  >{formatRelativeTime(issue.lastSeen)}</span
+                <SentryIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
+                <span class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground"
+                  >{issue.title}</span
                 >
-              {/if}
-            </button>
+                {#if sentryProjects.length > 1 && !selectedSentryProject}
+                  <span class="text-xs text-subtle shrink-0">{issue.projectName}</span>
+                {/if}
+                {#if issue.lastSeen}
+                  <span class="text-xs text-subtle shrink-0"
+                    >{formatRelativeTime(issue.lastSeen)}</span
+                  >
+                {/if}
+              </Button>
+            </div>
           {/each}
 
           <!-- GitHub issues -->
@@ -2024,13 +2224,19 @@
               onOpenChange={(open) => handleTooltipOpenChange(`github-${issue.id}`, open)}
             >
               {#snippet trigger()}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => handleGitHubIssueClick(issue)}
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
                 >
                   <GitHubIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
-                  <span class="text-xs font-medium text-subtle shrink-0">#{issue.number}</span>
+                  <span class="text-xs font-medium text-subtle shrink-0"
+                    >{#if showRepoLabels}{repoLabelFor(
+                        issue.owner,
+                        issue.repo,
+                      )}{/if}#{issue.number}</span
+                  >
                   <span
                     class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground min-w-0"
                     >{issue.title}</span
@@ -2040,13 +2246,18 @@
                       >{formatRelativeTime(issue.updatedAt || issue.createdAt)}</span
                     >
                   {/if}
-                </button>
+                </Button>
               {/snippet}
               {#snippet content()}
                 <div class="space-y-2">
                   <div class="flex items-center gap-2">
                     <GitHubIcon class="w-4 h-4 text-ghost shrink-0" />
-                    <span class="text-xs font-medium text-subtle">#{issue.number}</span>
+                    <span class="text-xs font-medium text-subtle"
+                      >{#if showRepoLabels}{repoLabelFor(
+                          issue.owner,
+                          issue.repo,
+                        )}{/if}#{issue.number}</span
+                    >
                     {#if issue.state}
                       <span
                         class="text-xs px-1.5 py-0.5 rounded {issue.state === 'open'
@@ -2089,13 +2300,16 @@
               onOpenChange={(open) => handleTooltipOpenChange(`github-pr-${pr.id}`, open)}
             >
               {#snippet trigger()}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => handleGitHubPRClick(pr)}
                   class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/40 transition-colors group cursor-pointer"
                 >
                   <GitHubIcon class="w-3.5 h-3.5 text-ghost shrink-0 opacity-50" />
-                  <span class="text-xs font-medium text-subtle shrink-0">#{pr.number}</span>
+                  <span class="text-xs font-medium text-subtle shrink-0"
+                    >{#if showRepoLabels}{repoLabelFor(pr.owner, pr.repo)}{/if}#{pr.number}</span
+                  >
                   <span
                     class="text-sm truncate flex-1 text-foreground/80 group-hover:text-foreground min-w-0"
                     >{pr.title}</span
@@ -2110,13 +2324,15 @@
                       >{formatRelativeTime(pr.updatedAt || pr.createdAt)}</span
                     >
                   {/if}
-                </button>
+                </Button>
               {/snippet}
               {#snippet content()}
                 <div class="space-y-2">
                   <div class="flex items-center gap-2">
                     <GitHubIcon class="w-4 h-4 text-ghost shrink-0" />
-                    <span class="text-xs font-medium text-subtle">#{pr.number}</span>
+                    <span class="text-xs font-medium text-subtle"
+                      >{#if showRepoLabels}{repoLabelFor(pr.owner, pr.repo)}{/if}#{pr.number}</span
+                    >
                     {#if pr.state}
                       <span
                         class="text-xs px-1.5 py-0.5 rounded {pr.state === 'open'
@@ -2165,7 +2381,7 @@
           <!-- Infinite scroll: loading-more spinner + sentinel -->
           {#if activeIsLoadingMore}
             <div class="flex items-center justify-center gap-2 px-3 py-2 text-xs text-subtle">
-              <Fa icon={faSync} class="w-2.5 h-2.5 animate-spin" />
+              <IntentMarkLoader size={10} />
               <span>{m.workspace_issueSuggestions_loadingMore_label()}</span>
             </div>
           {/if}
@@ -2178,22 +2394,23 @@
         {#if activeSource === 'linear' && !isLoading && !isLinearAuthenticated}
           <div
             class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
-            transition:slide={{ duration: 150 }}
+            transition:slide={{ tier: 'moderate' }}
           >
             <div class="flex items-center gap-2">
               <LinearIcon class="w-3.5 h-3.5 text-ghost" />
               <span class="text-subtle">{m.workspace_issueSuggestions_connectLinear_label()}</span>
             </div>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               disabled={$linearIsAuthenticating$}
               onclick={() => appStore.dispatch(startLinearAuth())}
-              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              class="text-primary-ink hover:text-primary-ink/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {$linearIsAuthenticating$
                 ? m.workspace_issueSuggestions_connecting_label()
                 : m.workspace_issueSuggestions_connect_label()}
-            </button>
+            </Button>
           </div>
         {/if}
 
@@ -2201,7 +2418,7 @@
         {#if (activeSource === 'github-issues' || activeSource === 'github-prs') && !isLoading && !isGitHubAuthenticated}
           <div
             class="flex items-center justify-between px-3 py-2 text-sm border-t border-border"
-            transition:slide={{ duration: 150 }}
+            transition:slide={{ tier: 'moderate' }}
           >
             <div class="flex items-center gap-2">
               <GitHubIcon class="w-3.5 h-3.5 text-ghost" />
@@ -2211,16 +2428,17 @@
                   : m.workspace_issueSuggestions_connectGithubIssues_label()}</span
               >
             </div>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               disabled={$githubAuthIsAuthenticating$}
               onclick={() => appStore.dispatch(startGitHubAuth())}
-              class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              class="text-primary-ink hover:text-primary-ink/80 transition-colors font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {$githubAuthIsAuthenticating$
                 ? m.workspace_issueSuggestions_connecting_label()
                 : m.workspace_issueSuggestions_connect_label()}
-            </button>
+            </Button>
           </div>
         {/if}
         <!-- Show repository hint when authenticated but no repo selected -->
@@ -2243,7 +2461,7 @@
 
         <!-- Sentry auth status - only show when not authenticated -->
         {#if activeSource === 'sentry' && !isLoading && !isSentryAuthenticated}
-          <div class="border-t border-border" transition:slide={{ duration: 150 }}>
+          <div class="border-t border-border" transition:slide={{ tier: 'moderate' }}>
             {#if !sentryShowForm}
               <div class="flex items-center justify-between px-3 py-2 text-sm">
                 <div class="flex items-center gap-2">
@@ -2252,24 +2470,25 @@
                     >{m.workspace_issueSuggestions_connectSentry_label()}</span
                   >
                 </div>
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   onclick={() => (sentryShowForm = true)}
-                  class="text-primary hover:text-primary/80 transition-colors font-medium cursor-pointer"
+                  class="text-primary-ink hover:text-primary-ink/80 transition-colors font-medium cursor-pointer"
                 >
                   {m.workspace_issueSuggestions_connect_label()}
-                </button>
+                </Button>
               </div>
             {:else}
-              <div class="px-3 py-2 space-y-2" transition:slide={{ duration: 150 }}>
+              <div class="px-3 py-2 space-y-2" transition:slide={{ tier: 'moderate' }}>
                 <div class="flex items-center gap-2">
-                  <input
+                  <Input
                     type="text"
                     class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_organizationSlug_placeholder()}
                     bind:value={sentryOrg}
                   />
-                  <input
+                  <Input
                     type="password"
                     class="flex-1 min-w-0 bg-background/50 border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:opacity-40"
                     placeholder={m.workspace_issueSuggestions_apiToken_placeholder()}
@@ -2280,24 +2499,26 @@
                       }
                     }}
                   />
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     disabled={$sentryIsConnecting$ || !sentryOrg.trim() || !sentryToken.trim()}
                     onclick={() =>
                       appStore.dispatch(connectSentry(sentryOrg.trim(), sentryToken.trim()))}
-                    class="shrink-0 text-xs text-primary hover:text-primary/80 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="shrink-0 text-xs text-primary-ink hover:text-primary-ink/80 font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {$sentryIsConnecting$
                       ? m.workspace_issueSuggestions_connecting_label()
                       : m.workspace_issueSuggestions_connect_label()}
-                  </button>
+                  </Button>
                 </div>
                 {#if $sentryError$}
                   <p class="text-xs text-danger">{$sentryError$}</p>
                 {/if}
-                <p class="text-xs text-subtle opacity-50">
+                <p class="text-xs text-muted-foreground">
                   {m.workspace_issueSuggestions_createTokenAt_label()}
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     onclick={() =>
                       handleLink('https://sentry.io/settings/account/api/auth-tokens/', {
@@ -2307,7 +2528,7 @@
                   >
                     <!-- i18n-ignore (domain name) -->
                     sentry.io
-                  </button>
+                  </Button>
                   {m.workspace_issueSuggestions_withScopes_label()}
                   <!-- i18n-ignore (API scope names) -->
                   <span class="font-mono">org:read, project:read, event:read</span>

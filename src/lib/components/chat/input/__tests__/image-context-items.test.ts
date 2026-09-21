@@ -4,11 +4,11 @@
  * filename fallback, and per-file failure toasts on unreadable input.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 import { imageFilesToContextItems } from '../image-context-items';
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUg==';
@@ -42,8 +42,8 @@ describe('imageFilesToContextItems', () => {
     });
     expect(items[0].id).toMatch(/^file-upload-\d+-\d+-shot\.png$/);
     expect(items[0].description).toContain('image/png');
-    expect(toast.success).toHaveBeenCalledTimes(1);
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(notify.success).toHaveBeenCalledTimes(1);
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('rejects files over maxBytes with one too-large toast and no items', async () => {
@@ -55,9 +55,9 @@ describe('imageFilesToContextItems', () => {
 
     expect(items).toHaveLength(0);
     expect(readFile).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(toast.error).mock.calls[0][0]).toContain('big-a.png, big-b.png');
-    expect(toast.success).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('big-a.png, big-b.png');
+    expect(notify.success).not.toHaveBeenCalled();
   });
 
   it('keeps files at exactly maxBytes and drops only the oversized ones', async () => {
@@ -67,9 +67,9 @@ describe('imageFilesToContextItems', () => {
     );
 
     expect(items.map((i) => i.label)).toEqual(['fits.png']);
-    expect(toast.success).toHaveBeenCalledTimes(1);
-    expect(toast.error).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(toast.error).mock.calls[0][0]).toContain('big.png');
+    expect(notify.success).toHaveBeenCalledTimes(1);
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('big.png');
   });
 
   it('falls back to a generated file name derived from the mime type', async () => {
@@ -94,9 +94,9 @@ describe('imageFilesToContextItems', () => {
     );
 
     expect(items.map((i) => i.label)).toEqual(['ok.png']);
-    expect(toast.error).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(toast.error).mock.calls[0][0]).toContain('broken.png');
-    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notify.error).mock.calls[0][0]).toContain('broken.png');
+    expect(notify.success).toHaveBeenCalledTimes(1);
   });
 
   it('toasts a per-file failure when reading the file rejects', async () => {
@@ -108,7 +108,7 @@ describe('imageFilesToContextItems', () => {
     });
 
     expect(items).toHaveLength(0);
-    expect(toast.error).toHaveBeenCalledTimes(1);
-    expect(toast.success).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalledTimes(1);
+    expect(notify.success).not.toHaveBeenCalled();
   });
 });

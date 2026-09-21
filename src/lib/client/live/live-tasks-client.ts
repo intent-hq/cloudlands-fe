@@ -57,7 +57,7 @@ function stringArray(field: string, value: unknown): string[] | undefined {
 }
 
 /**
- * Relation fields (v6.8, presence-detected): `dependsOn` / `conflictsWith`
+ * Task relation fields (§5.4, presence-detected): `dependsOn` / `conflictsWith`
  * plus the daemon-computed `unmetDependsOn`, all read from the source shape —
  * top-level on `task.list` rows, `metadata.task` on note-shaped entities
  * (monorepo#1979).
@@ -310,7 +310,7 @@ export class LiveTasksClient implements TasksClient {
   }
 
   /**
-   * `task.setRelations` (PROTOCOL §5.4, v6.8): replace the task's relation
+   * `task.setRelations` (PROTOCOL §5.4): replace the task's relation
    * lists. Omitted params are NOT sent — the daemon keeps the existing list;
    * `[]` is sent and clears it.
    */

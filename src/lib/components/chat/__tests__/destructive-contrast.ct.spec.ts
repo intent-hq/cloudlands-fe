@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import DestructiveContrastHost from './DestructiveContrastHost.svelte';
 
 type Rgba = [number, number, number, number];
@@ -23,7 +23,12 @@ test('keeps destructive and operational secondary text readable in both themes',
   const targets = [
     { name: 'failed attachment chip', selector: '[data-placement-status="failed"]', alpha: 0.1 },
     { name: 'streaming error title', selector: '[data-testid="error-title"]', alpha: 0 },
-    { name: 'turn-failure alert', selector: '.turn-failure-notice', alpha: 0.1 },
+    { name: 'turn-failure alert', selector: '.turn-failure-notice', alpha: 0 },
+    {
+      name: 'turn-failure detail',
+      selector: '.turn-failure-notice span.whitespace-pre-wrap',
+      alpha: 0,
+    },
     {
       name: 'operational secondary',
       selector: '[data-testid="operational-secondary-surface"] [data-operational-icon-box]',
@@ -82,6 +87,7 @@ test('keeps destructive and operational secondary text readable in both themes',
       });
 
       expect(measurement.surfaceAlpha, `${target.name} surface alpha`).toBeCloseTo(target.alpha, 2);
+      expect(measurement.effectiveBackground[3], `${target.name} opaque backing`).toBe(1);
       expect(
         contrastRatio(measurement.effectiveForeground, measurement.effectiveBackground),
         `${theme} ${target.name}: ${JSON.stringify(measurement)}`,

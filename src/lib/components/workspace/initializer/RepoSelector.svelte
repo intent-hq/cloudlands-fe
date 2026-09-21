@@ -5,8 +5,10 @@
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import { Select } from '$lib/components/ui/select';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { debugConfig } from '$lib/config/debug';
   import { m } from '$shared/paraglide/messages.js';
   import { createLogger } from '$lib/utils/client-logger';
@@ -14,6 +16,7 @@
   import { performanceMonitor } from '$lib/utils/performance';
   import { invoke } from '$lib/electron-bridge';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { ActionRow, menuItem } from '$lib/components/ui/menu';
   import { getRecentRepos } from '$lib/utils/workspace-utils';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
   import type { KnownRepo } from '$shared/types/known-repo';
@@ -32,13 +35,7 @@
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type { WorkspaceInitializerRemoteSetup } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import {
-    faFolder,
-    faXmark,
-    faPlus,
-    faSpinner,
-    faChevronDown,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faFolder, faXmark, faPlus, faChevronDown } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
@@ -72,6 +69,7 @@
     type IsolationMode,
   } from './isolation-mode';
   import {
+    getGitHubPickOwner,
     getRecentRepoLabel,
     getRecentRepoTooltip,
     getWorkspaceOwnedCheckoutPaths,
@@ -188,9 +186,9 @@
   // svelte-ignore state_referenced_locally - intentional initial capture; prop only seeds the input
   let inputValue = $state(value);
   let searchTerm = $state(''); // Separate search term that starts empty
-  let inputElement: any;
+  let inputElement = $state<Input>();
   /** The GitHub tab's owner/repo input, so the window-level Enter interceptor
-   *  can target it exactly rather than matching any focused <input>. */
+   *  can target it exactly rather than matching any focused text field. */
   let githubInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -521,13 +519,29 @@
     return val && parseGitHubUrl(val) ? 'github' : 'local';
   }
 
+  /** Whether two GitHub values (URL or shorthand) name the same owner/repo. */
+  function isSameGitHubRepo(a: string, b: string): boolean {
+    const left = parseGitHubUrl(a);
+    const right = parseGitHubUrl(b);
+    return (
+      !!left &&
+      !!right &&
+      left.owner.toLowerCase() === right.owner.toLowerCase() &&
+      left.repo.toLowerCase() === right.repo.toLowerCase()
+    );
+  }
+
   // Update internal state when value prop changes; re-derive the repo type so
-  // the dropdown opens on the tab matching the restored selection.
+  // the dropdown opens on the tab matching the restored selection. A confirmed
+  // GitHub URL only survives when the new value still names the same repo.
   $effect(() => {
     if (value && value !== selectedValue) {
       selectedValue = value;
       inputValue = value;
       selectedRepoType = repoTypeForValue(value);
+      if (confirmedGithubUrl && !isSameGitHubRepo(confirmedGithubUrl, value)) {
+        confirmedGithubUrl = '';
+      }
     }
   });
 
@@ -823,11 +837,6 @@
       performanceMonitor.end('loadRecentRepos');
     }
   });
-
-  // Get GitHub avatar URL for org/user
-  function getGitHubAvatarUrl(owner: string, size: number = 32): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
 
   // Parse GitHub URL using the URL API for robust parsing
   function parseGitHubUrl(input: string): { owner: string; repo: string } | null {
@@ -1425,6 +1434,10 @@
   }
 
   const triggerDisplayValue = $derived(displayValue ?? formatDisplayValue());
+  // Owner avatar next to the trigger label; GitHub picks only, never local repos
+  const triggerAvatarOwner = $derived(
+    getGitHubPickOwner({ selectedValue, selectedRepoType, confirmedGithubUrl }, parseGitHubUrl),
+  );
 </script>
 
 <div class="relative">
@@ -1440,6 +1453,10 @@
           <Fa icon={triggerIcon} size="xs" />
         {:else if showEmptyIcon && !selectedValue}
           <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
+        {/if}
+        {#if !triggerIcon && triggerAvatarOwner}
+          <!-- Decorative: the adjacent label already names the owner. -->
+          <GitHubAvatar identity={triggerAvatarOwner} class="w-4 h-4 rounded-full shrink-0" />
         {/if}
         {#if !triggerIcon && (selectedValue || emptyLabel)}
           <span class="flex-1 text-left truncate">
@@ -1462,11 +1479,12 @@
       </div>
     </Select.Trigger>
     <Select.Content
-      class="max-w-[500px] min-w-[400px]! max-h-[600px] overflow-hidden flex flex-col"
+      class="w-[400px] min-w-0 max-h-[min(600px,calc(var(--bits-select-content-available-height,100dvh)-8px))] overflow-hidden flex flex-col"
+      wrapperClass="flex flex-col"
       portal
     >
       <!-- Header -->
-      <div class="px-4 pt-2 pb-3">
+      <div class="shrink-0 px-4 pt-2 pb-3">
         <h2 class="text-base font-semibold text-foreground">
           {m.workspace_repoSelector_whichRepo_label()}
         </h2>
@@ -1476,26 +1494,28 @@
       </div>
 
       <!-- Tab bar -->
-      <div class="flex gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
+      <div class="flex shrink-0 gap-0 mx-3 mb-3 bg-sidebar rounded-lg p-1">
         {#each [{ id: 'github' as TabId, label: m.workspace_repoSelector_pickARepo_tab() }, { id: 'local' as TabId, label: m.workspace_repoSelector_copyLocalRepo_tab() }, { id: 'new' as TabId, label: m.workspace_repoSelector_newRepo_tab() }, ...($remoteWorkspacesEnabled$ ? [{ id: 'remote' as TabId, label: m.workspace_repoSelector_remoteServer_tab() }] : [])] as tab}
-          <button
+          <Button
+            variant="ghost"
             type="button"
-            class="flex-1 px-3 py-1.5 text-sm whitespace-nowrap rounded-md cursor-pointer transition-all {activeTab ===
+            truncateLabel={false}
+            class="flex-1 min-w-0 h-auto min-h-(--control-height-medium) px-2 py-1.5 text-sm whitespace-normal rounded-md cursor-pointer transition-all {activeTab ===
             tab.id
               ? 'bg-background font-medium text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'}"
             onclick={() => (activeTab = tab.id)}
           >
             {tab.label}
-          </button>
+          </Button>
         {/each}
       </div>
 
       <!-- Input section - changes based on tab -->
-      <div class="px-3 mb-3">
+      <div class="shrink-0 px-3 mb-3">
         {#if activeTab === 'local'}
           <!-- Local repo: folder picker button -->
-          <button
+          <Button
             type="button"
             class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border-0 bg-sidebar text-left cursor-pointer"
             onclick={handleSelectFolder}
@@ -1506,7 +1526,7 @@
               {inputValue || m.workspace_repoSelector_selectAFolder_placeholder()}
             </span>
             <Fa icon={faFolder} class="text-ghost opacity-50" />
-          </button>
+          </Button>
         {:else if activeTab === 'github'}
           <!-- GitHub: URL input with prefix (path-less pick — no clone destination) -->
           <div
@@ -1524,7 +1544,7 @@
               oninput={(e) => handleGitHubInputChange(e.currentTarget.value)}
               onpaste={handleGitHubPaste}
               onkeydown={handleGitHubInputKeydown}
-              class="bg-sidebar border-none px-1 py-2.5! h-auto"
+              class="min-w-0 bg-sidebar border-none px-1 py-2.5! h-auto text-sm"
               noFocusStyle
               role="combobox"
               aria-autocomplete="list"
@@ -1548,13 +1568,14 @@
           {:else if $githubReposError$}
             <div class="mt-2 px-1 text-sm text-subtle flex items-center gap-2">
               <span>{m.workspace_repoSelector_suggestionsUnavailable_label()}</span>
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 class="underline underline-offset-2 cursor-pointer hover:no-underline"
                 onclick={retryGithubRepos}
               >
                 {m.workspace_repoSelector_retrySuggestions_label()}
-              </button>
+              </Button>
             </div>
           {:else if githubSuggestions.length > 0}
             <div
@@ -1564,34 +1585,32 @@
               class="mt-2 max-h-56 overflow-y-auto"
             >
               {#each githubSuggestions as repo, index (repo.id)}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   id="repo-selector-github-suggestion-{index}"
                   role="option"
                   aria-selected={index === suggestionIndex}
-                  class="w-full flex items-center gap-2 py-1.5 px-2 text-left rounded-md transition-colors cursor-pointer {index ===
-                  suggestionIndex
-                    ? 'bg-accent/20'
-                    : 'hover:bg-muted/50'}"
+                  class={`${menuItem()} gap-2 py-1.5 cursor-pointer ${
+                    index === suggestionIndex ? 'bg-accent/20' : 'hover:bg-muted/50'
+                  }`}
                   onclick={() => handleSelectGithubSuggestion(repo)}
                   onmousemove={() => (suggestionIndex = index)}
                 >
-                  <img
-                    src={getGitHubAvatarUrl(repo.owner, 32)}
+                  <GitHubAvatar
+                    identity={repo.owner}
                     alt={repo.owner}
                     class="w-4 h-4 rounded-full shrink-0"
-                    loading="lazy"
-                    onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
                   />
                   <span class="text-sm text-foreground truncate">
                     <span class="text-subtle mr-1">{repo.owner} /</span>{repo.name}
                   </span>
-                </button>
+                </Button>
               {/each}
             </div>
           {:else if githubQuery && $githubSearchLoading$}
             <div class="mt-2 flex items-center gap-2 px-1 text-sm text-subtle">
-              <Fa icon={faSpinner} size="xs" class="animate-spin" />
+              <IntentMarkLoader size={12} />
               <span>{m.workspace_repoSelector_searchingGithub_label({ query: githubQuery })}</span>
             </div>
           {/if}
@@ -1609,8 +1628,10 @@
           {/if}
         {:else if activeTab === 'new'}
           <!-- New repo: parent folder + folder name -->
-          <button
+          <Button
             type="button"
+            variant="plain"
+            wrapContent={false}
             class="w-full flex items-center gap-3 mb-2 text-left cursor-pointer"
             onclick={handleSelectNewRepoParent}
           >
@@ -1618,7 +1639,7 @@
               >{m.workspace_repoSelector_parentFolder_label()}</span
             >
             <span
-              class="flex-1 text-sm px-3 py-2.5 bg-sidebar rounded-lg flex items-center justify-between {newRepoParentPath
+              class="flex-1 min-w-0 text-sm h-(--control-height-medium) px-3 bg-sidebar rounded-(--radius-medium) flex items-center justify-between {newRepoParentPath
                 ? 'text-foreground'
                 : 'text-subtle'} truncate"
             >
@@ -1627,7 +1648,7 @@
               </div>
               <Fa icon={faFolder} class="text-ghost shrink-0 opacity-50" />
             </span>
-          </button>
+          </Button>
           <div class="flex items-center gap-3">
             <span class="text-sm text-subtle shrink-0 w-24 pl-1"
               >{m.workspace_repoSelector_folderName_label()}</span
@@ -1662,7 +1683,7 @@
               <!-- Status message and action -->
               {#if isCheckingNewRepoPath}
                 <div class="flex items-center gap-2 text-sm text-subtle">
-                  <Fa icon={faSpinner} class="animate-spin" size="sm" />
+                  <IntentMarkLoader size={14} />
                   <span>{m.workspace_repoSelector_checking_label()}</span>
                 </div>
               {:else if newRepoPathStatus?.exists && newRepoPathStatus?.isGitRepo}
@@ -1678,11 +1699,15 @@
               {:else if newRepoPathStatus?.exists && !newRepoPathStatus?.isGitRepo}
                 <!-- Existing folder but not a git repo -->
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-sm text-amber-500">
+                  <span class="text-sm text-warning-ink">
                     {m.workspace_repoSelector_folderNotGitRepo_label()}
                   </span>
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0" disabled
-                    >{m.workspace_repoSelector_create_label()}</Button
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onclick={handleConfirmNewRepo}
+                    class="shrink-0"
+                    disabled>{m.workspace_repoSelector_create_label()}</Button
                   >
                 </div>
               {:else}
@@ -1691,8 +1716,11 @@
                   <span class="text-sm text-subtle"
                     >{m.workspace_repoSelector_newRepoWillBeCreated_label()}</span
                   >
-                  <Button size="sm" onclick={handleConfirmNewRepo} class="shrink-0"
-                    >{m.workspace_repoSelector_create_label()}</Button
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onclick={handleConfirmNewRepo}
+                    class="shrink-0">{m.workspace_repoSelector_create_label()}</Button
                   >
                 </div>
               {/if}
@@ -1723,18 +1751,21 @@
                       : `${setup.username}@${setup.host}:${setup.port}`}
                   </div>
                 </div>
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
+                  size="icon-compact"
+                  iconOnly
                   onclick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
                     handleRemoveRemoteSetup(setup.id);
                   }}
-                  class="ml-1 p-0.5 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
+                  class="ml-1 rounded text-muted-foreground hover:text-danger hover:bg-danger-background/10"
                   title={m.workspace_repoSelector_removeSetup_tooltip()}
                 >
                   <Fa icon={faXmark} size="xs" />
-                </button>
+                </Button>
               </div>
             {/each}
             {#if remoteSetups.length === 0}
@@ -1742,14 +1773,15 @@
                 {m.workspace_repoSelector_noRemoteSetups_label()}
               </div>
             {/if}
-            <button
+            <Button
+              variant="ghost"
               type="button"
               class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left cursor-pointer hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
               onclick={handleAddRemoteSetup}
             >
               <Fa icon={faPlus} size="sm" />
               {m.workspace_repoSelector_addRemoteSetup_label()}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -1781,8 +1813,8 @@
 
       <!-- Recent repos section - only show for local and github tabs when there are repos -->
       {#if activeTab !== 'new' && activeTab !== 'remote' && (isLoading || filteredRepos().length > 0)}
-        <div class="overflow-y-auto flex-1 px-4 pb-3 pt-2">
-          <Header size={6} class="mb-1">{m.workspace_repoSelector_recent_label()}</Header>
+        <div class="min-h-16 overflow-y-auto flex-1 px-4 pb-3 pt-2">
+          <Header size={5} class="mb-2">{m.workspace_repoSelector_recent_label()}</Header>
           {#if isLoading && recentRepos.length === 0}
             <div class="space-y-1">
               {#each [1, 2, 3] as { }}
@@ -1793,45 +1825,43 @@
               {/each}
             </div>
           {:else}
-            <div class="">
+            <div class="-mx-2" data-testid="recent-repositories">
               {#each filteredRepos() as repo, index (repo.path || repo.name)}
                 {@const label = getRecentRepoLabel(repo)}
                 {@const tooltip = getRecentRepoTooltip(repo)}
                 {#snippet repoRow()}
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-2 py-1.5 text-left hover:bg-muted/50 rounded-md px-2 pl-3 -mx-2 transition-colors cursor-pointer {index ===
-                    highlightedIndex
-                      ? 'bg-accent/20'
-                      : ''}"
+                  <ActionRow
+                    selected={index === highlightedIndex}
+                    class="cursor-pointer"
                     onclick={() => handleSelectRepo(repo)}
                   >
-                    {#if label.ownerPrefix}
-                      <img
-                        src={getGitHubAvatarUrl(label.ownerPrefix, 32)}
-                        alt={label.ownerPrefix}
-                        class="w-4 h-4 rounded-full shrink-0"
-                        loading="lazy"
-                        onerror={(e) =>
-                          ((e.currentTarget as HTMLImageElement).style.display = 'none')}
-                      />
-                    {:else}
-                      <Fa
-                        icon={repo.type === 'github' ? faGithub : faFolder}
-                        class="text-subtle shrink-0 opacity-50"
-                        size={12}
-                      />
-                    {/if}
-                    <span class="text-sm text-foreground truncate">
+                    {#snippet leading()}
                       {#if label.ownerPrefix}
-                        <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                        <GitHubAvatar identity={label.ownerPrefix} class="size-4 rounded-full">
+                          {#snippet fallback()}
+                            <Fa icon={faGithub} class="text-subtle opacity-50" size={12} />
+                          {/snippet}
+                        </GitHubAvatar>
+                      {:else}
+                        <Fa
+                          icon={repo.type === 'github' ? faGithub : faFolder}
+                          class="text-subtle opacity-50"
+                          size={12}
+                        />
                       {/if}
-                      {label.primary}
-                      {#if label.suffix}
-                        <span class="text-subtle ml-1">({label.suffix})</span>
-                      {/if}
-                    </span>
-                  </button>
+                    {/snippet}
+                    {#snippet title()}
+                      <span class="block truncate">
+                        {#if label.ownerPrefix}
+                          <span class="text-subtle mr-1">{label.ownerPrefix} /</span>
+                        {/if}
+                        {label.primary}
+                        {#if label.suffix}
+                          <span class="text-subtle ml-1">({label.suffix})</span>
+                        {/if}
+                      </span>
+                    {/snippet}
+                  </ActionRow>
                 {/snippet}
                 {#if tooltip}
                   <Tooltip content={tooltip} delayDuration={300} side="bottom" class="flex w-full">

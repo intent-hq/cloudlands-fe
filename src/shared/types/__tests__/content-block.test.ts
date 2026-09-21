@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isContentBlock,
+  isPlanContentBlock,
   normalizeContentBlock,
   normalizeContentBlocks,
   type ContentBlock,
@@ -22,6 +23,7 @@ import {
   isErrorBlock,
   isToolBlock,
   isMediaBlock,
+  isFileBlock,
 } from '../content-block.guards';
 import {
   migrateFromLegacy,
@@ -44,6 +46,38 @@ describe('ContentBlock Type', () => {
         input: {},
       };
       expect(isContentBlock(block)).toBe(true);
+    });
+
+    it('should identify only bounded plan snapshots', () => {
+      const block: ContentBlock = {
+        type: 'plan',
+        entries: [
+          {
+            content: 'Run focused tests',
+            priority: 'high',
+            status: 'in_progress',
+          },
+        ],
+      };
+      expect(isContentBlock(block)).toBe(true);
+      expect(isPlanContentBlock(block)).toBe(true);
+      expect(isContentBlock({ type: 'plan', entries: [] })).toBe(true);
+      expect(
+        isContentBlock({
+          type: 'plan',
+          entries: [{ content: 'Run tests', priority: 'urgent', status: 'pending' }],
+        }),
+      ).toBe(false);
+      expect(
+        isContentBlock({
+          type: 'plan',
+          entries: [{ content: 'Run tests', priority: 'high', status: 'cancelled' }],
+        }),
+      ).toBe(false);
+      expect(isContentBlock({ type: 'plan' })).toBe(false);
+      const entry = { content: 'Run tests', priority: 'high', status: 'pending' };
+      expect(isPlanContentBlock({ type: 'plan', entries: Array(256).fill(entry) })).toBe(true);
+      expect(isPlanContentBlock({ type: 'plan', entries: Array(257).fill(entry) })).toBe(false);
     });
 
     it('should reject invalid blocks', () => {
@@ -308,10 +342,52 @@ describe('Type Guards', () => {
     expect(isMediaBlock({ type: 'image', data: 'base64', mimeType: 'image/png' })).toBe(true);
     expect(isMediaBlock({ type: 'audio', data: 'base64', mimeType: 'audio/mp3' })).toBe(true);
     expect(isMediaBlock({ type: 'image' })).toBe(false);
+    expect(isMediaBlock({ type: 'file', attachmentId: 'att-1', fileName: 'a.pdf' })).toBe(true);
+    // Inline file bytes are no longer a protocol file block: not a media block.
+    expect(isMediaBlock({ type: 'file', data: 'base64', mimeType: 'text/plain' })).toBe(false);
+  });
+
+  it('isFileBlock accepts only attachment-reference file blocks', () => {
+    expect(isFileBlock({ type: 'file', attachmentId: 'att-1', fileName: 'a.pdf' })).toBe(true);
+    expect(
+      isFileBlock({ type: 'file', attachmentId: 'att-1', fileName: 'a.pdf', mimeType: 'x/y' }),
+    ).toBe(true);
+    expect(isFileBlock({ type: 'file', attachmentId: '', fileName: 'a.pdf' })).toBe(false);
+    expect(isFileBlock({ type: 'file', attachmentId: 'att-1' })).toBe(false);
+    expect(isFileBlock({ type: 'file', attachmentId: 'att-1', fileName: '' })).toBe(false);
+    expect(
+      isFileBlock({ type: 'file', data: 'base64', mimeType: 'text/plain', fileName: 'a.txt' }),
+    ).toBe(false);
+    expect(isFileBlock({ type: 'image', attachmentId: 'att-1', fileName: 'a.png' })).toBe(false);
   });
 });
 
 describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
+  describe('image attachment references (PROTOCOL §5.5)', () => {
+    const reference = { type: 'image', id: 'user:1', attachmentId: 'att-image' };
+
+    it.each([{}, { mimeType: 'image/png' }])(
+      'preserves a reference with optional MIME metadata %j',
+      (metadata) => {
+        const block = { ...reference, ...metadata };
+        expect(migrateFromLegacy(block)).toEqual(block);
+        expect(block).not.toHaveProperty('data');
+      },
+    );
+
+    it.each([
+      ...[undefined, null, '', ' ', 7].map((attachmentId) => ({ attachmentId })),
+      ...[undefined, null, '', 'AAAA'].map((data) => ({ data })),
+      { dataTruncated: true, dataBytes: 8192 },
+      { dataIsThumbnail: true },
+      { dataBytes: 0 },
+      { mimeType: 7 },
+      { mimeType: 'application/octet-stream' },
+    ])('rejects malformed or mixed reference arms %j', (fields) => {
+      expect(() => migrateFromLegacy({ ...reference, mimeType: 'image/png', ...fields })).toThrow();
+    });
+  });
+
   it('migrateFromLegacy passes canonical PROTOCOL §7 text blocks through unchanged', () => {
     const canonical = { type: 'text', text: 'hello' };
     const migrated = migrateFromLegacy(canonical);
@@ -351,6 +427,28 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
     expect(converted.text).toBe('hello');
   });
 
+  it('convertFromACP strips provider metadata from plan entries', () => {
+    expect(
+      convertFromACP({
+        type: 'plan',
+        id: 'plan-1',
+        entries: [
+          {
+            content: 'Run focused tests',
+            priority: 'high',
+            status: 'in_progress',
+            _meta: { source: 'provider' },
+            providerExtension: true,
+          },
+        ],
+      }),
+    ).toEqual({
+      type: 'plan',
+      id: 'plan-1',
+      entries: [{ content: 'Run focused tests', priority: 'high', status: 'in_progress' }],
+    });
+  });
+
   it('convertFromACP throws when the ACP `type` discriminator is missing', () => {
     expect(() => convertFromACP({ text: 'hello' })).toThrow(/type/);
   });
@@ -378,6 +476,78 @@ describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
     const acp = convertToACP(block);
     expect(acp.type).toBe('text');
     expect(acp.text).toBe('hello');
+  });
+
+  it('convertToACP preserves only canonical plan entry fields', () => {
+    const block = {
+      type: 'plan',
+      id: 'plan-1',
+      entries: [
+        {
+          content: 'Run focused tests',
+          priority: 'high',
+          status: 'in_progress',
+          _meta: { source: 'provider' },
+        },
+      ],
+    } as unknown as ContentBlock;
+
+    expect(convertToACP(block)).toEqual({
+      type: 'plan',
+      id: 'plan-1',
+      entries: [{ content: 'Run focused tests', priority: 'high', status: 'in_progress' }],
+    });
+  });
+
+  describe('file blocks are attachment references, never bytes (PROTOCOL §5.5)', () => {
+    const reference = {
+      type: 'file',
+      attachmentId: 'att-1',
+      fileName: 'a.txt',
+      mimeType: 'text/plain',
+      size: 5,
+    };
+    const legacyInline = {
+      type: 'file',
+      data: 'aGVsbG8=',
+      mimeType: 'text/plain',
+      fileName: 'a.txt',
+    };
+
+    it('migrateFromLegacy accepts a reference file block', () => {
+      expect(migrateFromLegacy(reference)).toEqual(reference);
+    });
+
+    it('migrateFromLegacy rejects a file block without an attachmentId or fileName', () => {
+      expect(() => migrateFromLegacy(legacyInline)).toThrow(/attachmentId/);
+      expect(() =>
+        migrateFromLegacy({ type: 'file', attachmentId: '', fileName: 'a.txt' }),
+      ).toThrow(/attachmentId/);
+      expect(() =>
+        migrateFromLegacy({ type: 'file', attachmentId: 'att-1', fileName: '' }),
+      ).toThrow(/fileName/);
+    });
+
+    it('convertFromACP carries the reference and never reads data off a file block', () => {
+      expect(convertFromACP(reference)).toEqual(reference);
+      const converted = convertFromACP({ ...reference, data: 'aGVsbG8=' });
+      expect(converted).not.toHaveProperty('data');
+      expect(converted.attachmentId).toBe('att-1');
+      // Non-file media still carries bytes.
+      expect(convertFromACP({ type: 'image', data: 'aW1n', mimeType: 'image/png' }).data).toBe(
+        'aW1n',
+      );
+    });
+
+    it('convertToACP emits the reference and never puts file bytes on the wire', () => {
+      expect(convertToACP(reference as ContentBlock)).toEqual(reference);
+      const acp = convertToACP({ ...reference, data: 'aGVsbG8=' } as ContentBlock);
+      expect(acp).not.toHaveProperty('data');
+      expect(JSON.stringify(acp)).not.toContain('aGVsbG8=');
+      expect(convertToACP({ type: 'image', data: 'aW1n', mimeType: 'image/png' }).data).toBe(
+        'aW1n',
+      );
+    });
   });
 
   it('migrateContentBlocks passes canonical PROTOCOL §7 blocks through unchanged', () => {

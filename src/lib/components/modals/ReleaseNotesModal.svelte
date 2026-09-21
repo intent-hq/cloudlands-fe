@@ -19,12 +19,19 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
     releaseNotes: ReleaseNotes | null;
     loading?: boolean;
     onClose?: () => void;
   }
 
-  let { open = $bindable(false), releaseNotes, loading = false, onClose }: Props = $props();
+  let {
+    open = $bindable(false),
+    static: staticPosition = false,
+    releaseNotes,
+    loading = false,
+    onClose,
+  }: Props = $props();
 
   const title = $derived(
     releaseNotes
@@ -62,7 +69,7 @@
   }
 </script>
 
-<Dialog.Root bind:open onOpenChange={handleOpenChange}>
+<Dialog.Root bind:open {staticPosition} onOpenChange={handleOpenChange}>
   <Dialog.Content
     class="release-notes-dialog flex max-w-2xl flex-col gap-0 overflow-hidden rounded-lg p-0"
   >
@@ -125,15 +132,13 @@
     border-top: none;
   }
 
-  /* h3 (Features / Bug Fixes / …) → small uppercase eyebrow labels */
+  /* h3 (Features / Bug Fixes / …) → small sentence-case eyebrow labels */
   .release-notes-body :global(.markdown-viewer h3) {
     margin-top: 1.25rem;
     margin-bottom: 0.375rem;
     font-size: 0.6875rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
     line-height: 1.4;
-    text-transform: uppercase;
     color: hsl(var(--muted-foreground));
   }
 

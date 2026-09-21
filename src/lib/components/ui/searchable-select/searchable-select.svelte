@@ -17,6 +17,8 @@
     onSearch?: (query: string) => Promise<Option[]>;
     onChange?: (value: string) => void;
     class?: string;
+    open?: boolean;
+    staticPosition?: boolean;
   }
 
   let {
@@ -30,6 +32,8 @@
     onSearch,
     onChange,
     class: className = '',
+    open = $bindable(false),
+    staticPosition = false,
   }: Props = $props();
 
   function handleChange(nextValue: string | string[]) {
@@ -39,6 +43,7 @@
 
 <Combobox
   bind:value
+  bind:open
   {options}
   {placeholder}
   {searchPlaceholder}
@@ -49,5 +54,6 @@
   class={className}
   ariaLabel={placeholder}
   portal={false}
+  {staticPosition}
   onchange={handleChange}
 />

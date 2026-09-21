@@ -7,8 +7,7 @@
    * for the workspace creation flow (/workspace/new).
    */
 
-  import { fly } from 'svelte/transition';
-  import { cubicOut } from 'svelte/easing';
+  import { fly } from '$lib/motion';
   import { onDestroy, onMount } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
@@ -31,14 +30,13 @@
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { goto } from '$app/navigation';
   import { v4 as uuidv4 } from 'uuid';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
 
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
   import {
     selectOnboardingStep,
     selectOnboardingState,
-    selectOnboardingFullFlowRequested,
   } from '$store/renderer/slices/onboarding/onboarding-selectors';
   import {
     goToStep,
@@ -65,6 +63,7 @@
   } from '$lib/components/modals/PullConflictDialog.svelte';
 
   import AgentGrid from '$features/onboarding/messages/AgentGrid.svelte';
+  import ClaudeLoginButton from '$features/onboarding/messages/ClaudeLoginButton.svelte';
 
   import OnboardingPromptStep from '$features/onboarding/steps/OnboardingPromptStep.svelte';
   import OnboardingGitHubStep from '$features/onboarding/steps/OnboardingGitHubStep.svelte';
@@ -74,30 +73,18 @@
     selectHostRequirementsHasCheckedOnce,
   } from '$store/renderer/slices/host-requirements/host-requirements-selectors';
   import {
-    selectProviderStatusMap,
-    selectHasCheckedOnce as selectProvidersCheckedOnce,
-  } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
-  import {
     checkSingleProviderRequested,
     ensureProvidersChecked,
   } from '$store/renderer/slices/agent-availability/agent-availability-slice';
-  import { hasReadyProvider } from '$store/renderer/slices/setup-prompt/setup-prompt-utils';
-  import { selectHasCompletedProviderSetup } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { hasAvailableWorkspace } from '$features/workspace/utils/empty-window-destination';
-  import {
-    determineOnboardingInitialStep,
-    resolveFastPathSettlement,
-  } from '$features/onboarding/utils/determine-onboarding-initial-step';
+  import { determineOnboardingInitialStep } from '$features/onboarding/utils/determine-onboarding-initial-step';
 
   import { Button } from '$lib/components/ui/button';
-  import { Checkbox } from '$lib/components/ui/checkbox';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { runProviderTestPrompt } from '$features/providers/provider-test-prompt.client';
   import {
     mapTestPromptFailure,
-    providerSupportsTestPrompt,
+    shouldRunOnboardingTestPrompt,
     type TestPromptFailureGuidance,
   } from '$features/onboarding/utils/onboarding-test-prompt';
   import type { ProjectSelection } from '$features/onboarding/messages/ProjectPickerMessage.svelte';
@@ -123,7 +110,9 @@
   import { hasBlockingAttachments, type ContextItem } from '$lib/components/chat/input/context-api';
   import {
     hasStagedFileItems,
+    heldImageBlocks,
     redeemStagedAttachments,
+    retainImagePlacementIdentity,
     sendHeldFirstMessage,
   } from '$lib/components/workspace/initializer/staged-attachments';
   import {
@@ -199,9 +188,6 @@
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const allRequirementsMet$ = selectAllRequirementsMet();
   const requirementsCheckedOnce$ = selectHostRequirementsHasCheckedOnce();
-  const providerStatusMap$ = selectProviderStatusMap();
-  const providersCheckedOnce$ = selectProvidersCheckedOnce();
-  const workspaceItems$ = selectWorkspaceItems();
   const providerCatalogEntries$ = selectProviderCatalogEntries();
 
   let projectSelection = $state<ProjectSelection | null>(null);
@@ -676,33 +662,28 @@
   let agentGridRef: AgentGrid | null = $state(null);
   let onboardingSkipIsolation = $state(false);
 
-  // "Send a test prompt" opt-out: one live end-to-end prompt against the
-  // selected provider before advancing (host.providerTestPrompt, §5.14).
-  // Checked by default; hidden when the provider's catalog row does not
-  // support the test (supportsTestPrompt false/absent — e.g. unsloth).
-  let onboardingSendTestPrompt = $state(true);
   let onboardingTestPromptRunning = $state(false);
   let onboardingTestPromptFailure = $state<TestPromptFailureGuidance | null>(null);
   let onboardingGridSelectedProviderId = $state<string | undefined>(undefined);
   const onboardingSelectedCatalogEntry = $derived(
     $providerCatalogEntries$.find((entry) => entry.id === onboardingGridSelectedProviderId),
   );
-  const onboardingTestPromptSupported = $derived(
-    providerSupportsTestPrompt(onboardingSelectedCatalogEntry),
+  const shouldTestOnboardingProvider = $derived(
+    shouldRunOnboardingTestPrompt(onboardingSelectedCatalogEntry),
   );
 
   /** Advance from the welcome step, first committing the grid's resolved
    *  provider selection so a no-click advance still enables/activates the
    *  visually-selected provider (D1(B): commit only on explicit advance).
-   *  With the test-prompt box checked (and the provider supporting it), one
-   *  live test prompt runs first: success advances, a structured failure
+   *  For allowlisted providers that support it, one live test prompt runs first:
+   *  success advances, a structured failure
    *  keeps the user on the step with actionable guidance. */
   async function advanceFromWelcomeStep() {
     if (onboardingTestPromptRunning) return;
     const committed = agentGridRef?.commitSelection();
     const providerId = committed ?? onboardingGridSelectedProviderId;
     if (!providerId) return;
-    if (onboardingSendTestPrompt && onboardingTestPromptSupported && providerId) {
+    if (shouldTestOnboardingProvider) {
       onboardingTestPromptFailure = null;
       onboardingTestPromptRunning = true;
       try {
@@ -735,7 +716,7 @@
           message: m.onboarding_testPrompt_generic_error({
             message: rawMessage.split('\n', 1)[0],
           }),
-          showClaudeDesktopNote: false,
+          showClaudeLoginButton: false,
           isAuthRequired: false,
         };
         return;
@@ -800,64 +781,19 @@
     // (resetOnboarding preserves a pending fullFlowRequested — see the slice.)
     if (isOnboarding) {
       appStore.dispatch(resetOnboarding());
-      // Kick the bulk provider check so the initial-step decision (and the
-      // fast-path settlement below) has real availability data to settle on
-      // even when the welcome step's AgentGrid never mounts.
       appStore.dispatch(ensureProvidersChecked());
     }
   });
 
-  // True while 'project' was entered on the persisted local flag alone; the
-  // settlement effect below corrects back to 'welcome' if the provider check
-  // settles with no ready provider and no workspaces.
-  let onboardingFastPathPending = $state(false);
-
-  // Requirements gate: advance only once the check group has settled with
-  // every requirement met; otherwise stay blocked on the requirements step
-  // (OnboardingRequirementsStep renders the setup guidance and re-checks on
-  // focus/visibility until the tools appear). Once green, jump to the step
-  // the provider-setup state warrants: 'project' when setup is already done
-  // (ready provider / existing workspaces / persisted local flag), 'welcome'
-  // for the full flow otherwise. An explicit full-flow request (Command
-  // Palette "Show onboarding") always gets the full flow and is consumed here.
   $effect(() => {
-    if (
-      isOnboarding &&
-      $onboardingStep$ === 'requirements' &&
-      $requirementsCheckedOnce$ &&
-      $allRequirementsMet$
-    ) {
-      const fullFlowRequested = selectOnboardingFullFlowRequested.select(appStore.state);
-      const decision = determineOnboardingInitialStep({
-        fullFlowRequested,
-        hasReadyProvider: hasReadyProvider($providerStatusMap$),
-        hasCompletedProviderSetup: selectHasCompletedProviderSetup.select(appStore.state),
-        hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
-        providersCheckedOnce: $providersCheckedOnce$,
-      });
-      if (fullFlowRequested) {
-        appStore.dispatch(setOnboardingFullFlowRequested(false));
-      }
-      onboardingFastPathPending = decision.viaLocalFastPath;
-      appStore.dispatch(goToStep(decision.step));
-    }
-  });
-
-  // Local fast-path settlement: the persisted flag skipped ahead while the
-  // bulk provider check was still pending; once it settles with no ready
-  // provider (and no workspaces exist), route back into provider setup.
-  $effect(() => {
-    if (!isOnboarding || !onboardingFastPathPending) return;
-    const settlement = resolveFastPathSettlement({
-      hasReadyProvider: hasReadyProvider($providerStatusMap$),
-      providersCheckedOnce: $providersCheckedOnce$,
-      hasWorkspaces: hasAvailableWorkspace($workspaceItems$),
+    if (!isOnboarding || $onboardingStep$ !== 'requirements') return;
+    const step = determineOnboardingInitialStep({
+      requirementsCheckedOnce: $requirementsCheckedOnce$,
+      allRequirementsMet: $allRequirementsMet$,
     });
-    if (settlement === 'pending') return;
-    onboardingFastPathPending = false;
-    if (settlement === 'correct' && $onboardingStep$ === 'project') {
-      appStore.dispatch(goToStep('welcome'));
-    }
+    if (step === 'requirements') return;
+    appStore.dispatch(setOnboardingFullFlowRequested(false));
+    appStore.dispatch(goToStep(step));
   });
 
   // ============================================================================
@@ -1057,10 +993,10 @@
       const result = await enhancePrompt(onboardingInputValue);
       onboardingInputValue = result.enhanced;
       await getOnboardingRichTextarea()?.setContent(result.enhanced);
-      toast.success(m.onboarding_page_promptEnhanced_label());
+      notify.success(m.onboarding_page_promptEnhanced_label());
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
-      toast.error(
+      notify.error(
         error instanceof EnhancePromptUnavailableError
           ? m.onboarding_page_enhanceUnavailable_error()
           : error instanceof Error && error.message
@@ -1133,15 +1069,10 @@
       const snapshot = $state.snapshot(pending);
       // Rebuild imageBlocks from the CURRENT thumbnail row, not the pending
       // snapshot: the thumbnails stay editable while the failed send is
-      // resumable, so a removed image must not ride the retry.
-      const imageBlocks = $state
-        .snapshot(onboardingImageItems)
-        .filter((item) => item.imageData && item.imageMimeType)
-        .map((item) => ({
-          type: 'image' as const,
-          data: item.imageData as string,
-          mimeType: item.imageMimeType as string,
-        }));
+      // resumable, so a removed image must not ride the retry. The items
+      // carry the placement identity retained from the failed attempt, so
+      // the retry replays committed placements instead of re-placing them.
+      const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
       const sendResult = await sendHeldFirstMessage(
         {
           workspaceId: snapshot.workspaceId,
@@ -1153,6 +1084,10 @@
         redemption.fileBlocks,
       );
       if (!sendResult.sent) {
+        onboardingImageItems = retainImagePlacementIdentity(
+          onboardingImageItems,
+          sendResult.imageBlocks,
+        );
         // Framed like the compact initializer: the workspace already exists,
         // Create resumes this flow — with the daemon's detail when available.
         throw new Error(
@@ -1203,14 +1138,14 @@
         ? selectedPRBranch
         : currentBranch;
     if (!treatAsNewRepo && !effectiveBranch.trim()) {
-      toast.error(m.onboarding_page_branchRequired_toast());
+      notify.error(m.onboarding_page_branchRequired_toast());
       return;
     }
 
     if (hasBlockingAttachments(onboardingStagedItems)) {
       // The error banner's Retry also lands here — surface why nothing
       // happened instead of a silent no-op (pills must be retried/removed).
-      toast.error(m.onboarding_page_blockingAttachments_toast());
+      notify.error(m.onboarding_page_blockingAttachments_toast());
       return;
     }
 
@@ -1228,14 +1163,7 @@
     // Images live in the context-item list (bound to the prompt step's
     // thumbnail row), not the editor — snapshot to plain JSON so the $state
     // Proxy tree never reaches Electron's structured clone (monorepo#2576).
-    const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = $state
-      .snapshot(onboardingImageItems)
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData as string,
-        mimeType: item.imageMimeType as string,
-      }));
+    const imageBlocks = heldImageBlocks($state.snapshot(onboardingImageItems));
 
     isOnboardingCreating = true;
     onboardingCreationError = null;
@@ -1527,6 +1455,12 @@
         );
         if (!sendResult.sent) {
           onboardingCreationErrorCode = null;
+          // Retain the failed attempt's image placement identity on the
+          // thumbnail items so the resumed send replays, not re-places.
+          onboardingImageItems = retainImagePlacementIdentity(
+            onboardingImageItems,
+            sendResult.imageBlocks,
+          );
           // Framed like the compact initializer: the workspace already
           // exists, submit resumes — with the daemon's detail when available.
           throw new Error(
@@ -1654,7 +1588,7 @@
         <!-- Replace the form with the summary card while creating -->
         <div
           class="flex-1 flex flex-col items-center justify-center"
-          in:fly={{ y: 20, duration: 400, easing: cubicOut }}
+          in:fly={{ tier: 'slow', distance: 20 }}
         >
           <div class="w-full max-w-lg">
             <!-- Key on the progressId: the card binds its progress selector at
@@ -1711,7 +1645,8 @@
                         {/if}
 
                         {#if !isRequirementsStep && onboardingVisibleStep > 1}
-                          <button
+                          <Button
+                            variant="ghost"
                             type="button"
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>
@@ -1722,14 +1657,14 @@
                           >
                             <Fa icon={faArrowLeft} size="xs" />
                             <span>{m.onboarding_page_back_label()}</span>
-                          </button>
+                          </Button>
                         {/if}
                       </div>
                     </div>
 
                     <div class="flex flex-col">
                       {#if isRequirementsStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 1">
                           <div class="space-y-3">
                             {#if !$requirementsCheckedOnce$}
                               <h1 class="text-5xl font-semibold tracking-tight leading-tight">
@@ -1746,7 +1681,7 @@
                           </div>
                         </div>
                       {:else if isWelcomeStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 1">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 1">
                           <div class="space-y-3">
                             <h1 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_welcome_title()}
@@ -1759,7 +1694,7 @@
                           </div>
                         </div>
                       {:else if isGitHubStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 2">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 2">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_connectGithub_title()}
@@ -1772,7 +1707,7 @@
                           </div>
                         </div>
                       {:else if isProjectStep}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 3">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 3">
                           <div class="space-y-3">
                             <h2 class="text-5xl font-semibold tracking-tight leading-tight">
                               {m.onboarding_page_whatProject_title()}
@@ -1783,7 +1718,7 @@
                           </div>
                         </div>
                       {:else}
-                        <div in:fly={{ y: 10, duration: 250, easing: cubicOut }} style="order: 4">
+                        <div in:fly={{ tier: 'slow', distance: 10 }} style="order: 4">
                           <div class="space-y-6">
                             <h2 class="text-5xl font-semibold tracking-tighter">
                               {m.onboarding_page_whatToBuild_title()}
@@ -1798,7 +1733,7 @@
                 <!-- Interactive widgets -->
                 <div class="w-full min-w-0">
                   {#key $onboardingStep$}
-                    <div class="py-8 space-y-6" in:fly={{ y: 15, duration: 300, easing: cubicOut }}>
+                    <div class="py-8 space-y-6" in:fly={{ tier: 'slow', distance: 15 }}>
                       {#if isRequirementsStep}
                         <div class="max-w-5xl mx-auto" data-testid="onboarding-requirements-step">
                           <OnboardingRequirementsStep />
@@ -1825,27 +1760,10 @@
                           </div>
                         </div>
                         <div class="max-w-5xl mx-auto flex flex-col items-start gap-2 mt-9">
-                          {#if hasConnectedProvider && onboardingTestPromptSupported}
-                            <div class="flex flex-col gap-1 mb-2">
-                              <label
-                                class="flex items-center gap-2 text-sm cursor-pointer"
-                                data-testid="onboarding-test-prompt-checkbox"
-                              >
-                                <Checkbox
-                                  bind:checked={onboardingSendTestPrompt}
-                                  disabled={onboardingTestPromptRunning}
-                                />
-                                {m.onboarding_testPrompt_checkbox_label()}
-                              </label>
-                              <p class="text-xs text-muted-foreground pl-6">
-                                {m.onboarding_testPrompt_finePrint_label()}
-                              </p>
-                            </div>
-                          {/if}
                           <Button
                             class="group/button"
                             size="xl"
-                            variant={!hasConnectedProvider ? 'outline' : 'default'}
+                            variant={!hasConnectedProvider ? 'outline' : 'primary'}
                             disabled={!hasConnectedProvider}
                             loading={onboardingTestPromptRunning}
                             onclick={advanceFromWelcomeStep}
@@ -1870,7 +1788,11 @@
                               class="mt-2 max-w-xl rounded-md border border-danger/40 bg-danger-background/5 p-3 text-sm"
                             >
                               <p>{onboardingTestPromptFailure.message}</p>
-                              {#if onboardingTestPromptFailure.loginCommandHint}
+                              {#if onboardingTestPromptFailure.showClaudeLoginButton}
+                                <div class="mt-2">
+                                  <ClaudeLoginButton />
+                                </div>
+                              {:else if onboardingTestPromptFailure.loginCommandHint}
                                 <div class="mt-2 text-xs">
                                   <span class="opacity-70"
                                     >{m.onboarding_testPrompt_runToLogIn_label()}</span
@@ -1887,20 +1809,17 @@
                                   </div>
                                 </div>
                               {/if}
-                              {#if onboardingTestPromptFailure.showClaudeDesktopNote}
-                                <p class="mt-2 text-xs opacity-70">
-                                  {m.onboarding_testPrompt_claudeDesktopNote_label()}
-                                </p>
-                              {/if}
                               {#if onboardingTestPromptFailure.loginDocsUrl}
                                 {@const docsUrl = onboardingTestPromptFailure.loginDocsUrl}
-                                <button
+                                <Button
                                   type="button"
-                                  class="mt-2 text-xs underline hover:no-underline"
+                                  variant="link"
+                                  size="xs"
+                                  class="mt-2 h-auto px-0 text-xs underline hover:no-underline"
                                   onclick={() => shell.open(docsUrl)}
                                 >
                                   {m.chat_modelPicker_setupDocs_label()}
-                                </button>
+                                </Button>
                               {/if}
                             </div>
                           {/if}
@@ -1927,7 +1846,7 @@
                             <Button
                               class="group/button"
                               size="xl"
-                              variant={!projectSelection?.isValid ? 'outline' : 'default'}
+                              variant={!projectSelection?.isValid ? 'outline' : 'primary'}
                               disabled={!projectSelection?.isValid}
                               onclick={() => appStore.dispatch(goToStep('configuring'))}
                             >

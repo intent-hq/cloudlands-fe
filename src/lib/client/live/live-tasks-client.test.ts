@@ -116,7 +116,7 @@ describe('LiveTasksClient mutations (fake transport)', () => {
     });
   });
 
-  it('markAsTask forwards dependsOn/conflictsWith relation seeds when provided (v6.8)', async () => {
+  it('markAsTask forwards dependsOn/conflictsWith relation seeds when provided (task relations)', async () => {
     mockedRequest.mockResolvedValue({ ok: true });
     const client = new LiveTasksClient();
 
@@ -311,9 +311,9 @@ describe('LiveTasksClient mutations (fake transport)', () => {
     expect(tasks[0].rev).toBeUndefined();
   });
 
-  // ---- v6.8: relation fields (dependsOn / conflictsWith / unmetDependsOn) ---
+  // ---- task relation fields (dependsOn / conflictsWith / unmetDependsOn) ----
 
-  it('list carries dependsOn/conflictsWith/unmetDependsOn from the wire row (v6.8)', async () => {
+  it('list carries dependsOn/conflictsWith/unmetDependsOn from the wire row (task relations)', async () => {
     mockedRequest.mockResolvedValueOnce({
       tasks: [
         {

@@ -19,6 +19,7 @@ import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-s
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import type { AgentSession, Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 import HudLeftColumn from './HudLeftColumn.svelte';
 
@@ -179,7 +180,7 @@ describe('HudLeftColumn WORKSPACES-BY-STATE waiting row', () => {
     });
 
     const row = waitingRow();
-    expect(row.textContent).toContain('WAITING');
+    expect(row.textContent).toContain('Waiting');
     // Waiting is informational, never a call to action — no blink at any count.
     expect(blinks(row)).toBe(false);
   });
@@ -193,6 +194,24 @@ describe('HudLeftColumn WORKSPACES-BY-STATE waiting row', () => {
     flushSync();
 
     expect(waitingRow().textContent).toContain('0');
+  });
+});
+
+describe('HudLeftColumn SYSTEM panel header', () => {
+  it('renders no meta text next to the title, even for a failed fleet', async () => {
+    render(HudLeftColumn, { props: { nowMs: NOW_MS } });
+
+    appStore.dispatch(
+      setWorkspaceEntity(workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'error' }], 'failed')),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(blinks(failedRow())).toBe(true);
+    });
+
+    const title = m.hud_system_title();
+    const header = screen.getByText(title).closest('header') as HTMLElement;
+    expect(header.textContent?.trim()).toBe(title);
   });
 });
 
@@ -211,13 +230,13 @@ describe('HudLeftColumn AGENTS-BY-STATE rows', () => {
     );
     flushSync();
 
-    const agentPanel = screen.getByText('AGENTS BY STATE').closest('.hud-panel') as HTMLElement;
+    const agentPanel = screen.getByText('Agents by state').closest('.hud-panel') as HTMLElement;
     const labels = Array.from(agentPanel.querySelectorAll('.hud-state-bar-label')).map((el) =>
       el.textContent?.trim(),
     );
-    expect(labels).toEqual(['RUNNING', 'FAILED', 'IDLE']);
-    expect(labels).not.toContain('NEEDS ATTENTION');
-    expect(labels).not.toContain('DONE');
+    expect(labels).toEqual(['Running', 'Failed', 'Idle']);
+    expect(labels).not.toContain('Needs attention');
+    expect(labels).not.toContain('Done');
     expect(screen.queryByTestId('hud-agent-bar-needs-attention')).toBeNull();
   });
 });

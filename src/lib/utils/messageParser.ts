@@ -23,6 +23,10 @@ import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
 import type { VideoSource } from '$shared/types/content-block';
 import { splitWorkspaceVideoMarkdown } from './workspace-file-video';
+import {
+  promptVisibleText,
+  splitPromptMarkdownLinks,
+} from '$lib/components/chat/suggested-prompt-markdown-links';
 
 const logger = new Logger('MessageParser');
 
@@ -1664,7 +1668,11 @@ const FENCE_LINE_REGEX = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 /** At most this many prompts surface as chips; extra lines are dropped. */
 const MAX_SUGGESTED_PROMPTS = 4;
 
-/** Prompts longer than this are treated as captured body text and dropped. */
+/**
+ * Prompts whose visible text (markdown link labels in place of their
+ * `[label](url)` syntax) is longer than this are treated as captured body
+ * text and dropped.
+ */
 const MAX_SUGGESTED_PROMPT_LENGTH = 200;
 
 /**
@@ -1710,20 +1718,41 @@ interface SuggestedPromptsParseResult {
   cleanedContent: string;
 }
 
+function isValidSuggestedPromptText(text: string): boolean {
+  if (text.length === 0) return false;
+  return promptVisibleText(text).length <= MAX_SUGGESTED_PROMPT_LENGTH;
+}
+
+/**
+ * Index of the legacy `Label|` delimiter: the first `|` outside any inline
+ * markdown link, so pipes in a link label or destination never split the line.
+ */
+function legacyLabelPipeIndex(line: string): number {
+  let offset = 0;
+  for (const part of splitPromptMarkdownLinks(line)) {
+    if (part.type === 'text') {
+      const pipe = part.content.indexOf('|');
+      if (pipe !== -1) return offset + pipe;
+      offset += part.content.length;
+    } else {
+      offset += part.label.length + part.url.length + '[]()'.length;
+    }
+  }
+  return -1;
+}
+
 function parseSuggestedPromptLine(line: string): SuggestedPrompt | null {
   const fullDelayMatch = line.match(DELAY_PREFIX_REGEX);
   if (fullDelayMatch) {
     const text = fullDelayMatch[2].trim();
-    return text.length > 0 && text.length <= MAX_SUGGESTED_PROMPT_LENGTH ? text : null;
+    return isValidSuggestedPromptText(text) ? text : null;
   }
 
-  const pipeIndex = line.indexOf('|');
+  const pipeIndex = legacyLabelPipeIndex(line);
   let promptPart = pipeIndex === -1 ? line : line.slice(pipeIndex + 1).trim();
   const delayMatch = promptPart.match(DELAY_PREFIX_REGEX);
   if (delayMatch) promptPart = delayMatch[2].trim();
-  return promptPart.length > 0 && promptPart.length <= MAX_SUGGESTED_PROMPT_LENGTH
-    ? promptPart
-    : null;
+  return isValidSuggestedPromptText(promptPart) ? promptPart : null;
 }
 
 /**

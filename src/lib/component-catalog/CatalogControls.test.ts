@@ -10,7 +10,7 @@ describe('CatalogControls', () => {
   it('renders color themes in a dropdown and appearance modes as separate choices', async () => {
     render(CatalogControls, { props: { theme: 'system' } });
 
-    const trigger = screen.getByRole('button', { name: 'Color theme' });
+    const trigger = screen.getByRole('combobox', { name: 'Color theme' });
     expect(trigger.textContent).toContain('Default');
     expect(screen.getByText('System theme selected, currently light')).not.toBeNull();
     await fireEvent.keyDown(trigger, { key: 'Enter' });

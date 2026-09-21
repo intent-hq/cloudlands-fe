@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import { page } from '$app/state';
   import {
     faArrowUpRightFromSquare,
@@ -79,6 +80,7 @@
     workspace?: Workspace;
     phase?: WorkspacePhaseInfo;
     stats?: WorkspacePhaseStats;
+    showTime?: boolean;
     variant?: 'compact' | 'expanded' | 'header' | 'row';
     /** @deprecated Status visuals resolve from the workspace status contract. */
     isRunning?: boolean;
@@ -132,6 +134,7 @@
     phase,
     stats,
     variant = 'compact',
+    showTime = true,
     isRunning: _isRunning = false,
     isUnread = false,
     isWaiting: _isWaiting,
@@ -187,6 +190,13 @@
   let hoverCardId = $derived(workspace ? `workspace-hover-card-${workspace.id}` : undefined);
   let hoverCardVisible = $state(false);
   let rowElement: HTMLDivElement | null = $state(null);
+  let phaseRowButtonRef: HTMLButtonElement | null = $state(null);
+
+  $effect(() => {
+    if (!phaseRowButtonRef) return;
+    const action = highlightTarget(phaseRowButtonRef, { id: highlightId });
+    return () => action.destroy();
+  });
   let titleElement: HTMLSpanElement | null = $state(null);
   let titleTextElement: HTMLSpanElement | null = $state(null);
   let actionsElement: HTMLDivElement | null = $state(null);
@@ -237,6 +247,17 @@
   let hoverCardDismissalActive = $state(false);
   let hoverCardFocusOpenSuppressed = false;
   let hoverCardFocusSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
+  // The card is portaled beside the row with a small gap, and it carries
+  // controls (Share, Remove). Crossing that gap fires the row's mouseleave, so
+  // closing is deferred by a short grace period the card's own pointerenter
+  // cancels; pointer or focus inside the card keeps it open like the row does.
+  const HOVER_CARD_LEAVE_GRACE_MS = 150;
+  let hoverCardEl: HTMLElement | null = $state(null);
+  let pointerWithinCard = false;
+  let focusWithinCard = false;
+  let hoverCardCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  let undeferHoverCardClose: (() => void) | null = null;
+  let hoverCardFocusRelocationTimer: ReturnType<typeof setTimeout> | undefined;
 
   function clearHoverCardOpenTimer() {
     if (hoverCardOpenTimer !== null) {
@@ -245,7 +266,17 @@
     }
   }
 
+  function clearHoverCardCloseTimer() {
+    if (hoverCardCloseTimer !== null) {
+      clearTimeout(hoverCardCloseTimer);
+      hoverCardCloseTimer = null;
+    }
+    undeferHoverCardClose?.();
+    undeferHoverCardClose = null;
+  }
+
   function openHoverCardFromPointer() {
+    clearHoverCardCloseTimer();
     hoverCardDismissalActive = true;
     hoverCardVisible = true;
     if (hoverCardOpenedFromPointer) return;
@@ -254,11 +285,73 @@
   }
 
   function closeHoverCard() {
+    clearHoverCardCloseTimer();
+    clearTimeout(hoverCardFocusRelocationTimer);
     hoverCardDismissalActive = false;
     hoverCardVisible = false;
+    pointerWithinCard = false;
+    focusWithinCard = false;
     if (!hoverCardOpenedFromPointer) return;
     hoverCardOpenedFromPointer = false;
     workspaceHoverCardIntentSession.notifyClosed();
+  }
+
+  function hoverCardEngaged() {
+    return pointerWithinRow || pointerWithinCard || focusWithinRow || focusWithinCard;
+  }
+
+  function closeHoverCardUnlessEngaged() {
+    if (!hoverCardVisible) {
+      closeHoverCard();
+      return;
+    }
+    clearHoverCardCloseTimer();
+    hoverCardCloseTimer = setTimeout(() => {
+      hoverCardCloseTimer = null;
+      if (!hoverCardEngaged()) closeHoverCard();
+    }, HOVER_CARD_LEAVE_GRACE_MS);
+    undeferHoverCardClose = workspaceHoverCardIntentSession.deferClose(closeHoverCard);
+  }
+
+  function handleHoverCardPointerEnter() {
+    pointerWithinCard = true;
+    clearHoverCardCloseTimer();
+  }
+
+  function handleHoverCardPointerLeave() {
+    pointerWithinCard = false;
+    if (!focusWithinRow && !focusWithinCard) closeHoverCardUnlessEngaged();
+  }
+
+  function handleHoverCardFocusIn() {
+    focusWithinCard = true;
+    clearTimeout(hoverCardFocusRelocationTimer);
+    clearHoverCardCloseTimer();
+  }
+
+  // Focus flags describe where focus actually is: a cross-surface move clears
+  // the departing surface's flag, so a later close cannot mistake stale row
+  // focus for engagement (or suppress the pointer reopening the card).
+  function handleHoverCardFocusOut(event: FocusEvent) {
+    const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (related && hoverCardEl?.contains(related)) return;
+    focusWithinCard = false;
+    if (related && rowElement?.contains(related)) return;
+    if (related) {
+      if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+      return;
+    }
+    // A null relatedTarget is also what unmounting the focused control
+    // (Remove → confirm / cancel) reports; the card re-homes focus after the
+    // DOM settles, so judge that loss then. Genuine departures still close.
+    const departed = event.target;
+    clearTimeout(hoverCardFocusRelocationTimer);
+    hoverCardFocusRelocationTimer = setTimeout(() => {
+      const active = document.activeElement;
+      const inside = hoverCardEl?.contains(active) || rowElement?.contains(active);
+      if (active && active !== departed && inside) return;
+      if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
+    }, 0);
   }
 
   function suppressHoverCardFocusOpenForPointerSequence() {
@@ -278,6 +371,14 @@
       rowElement &&
       event.target instanceof Node &&
       !event.target.contains(rowElement)
+    ) {
+      return;
+    }
+    // Interacting with the card's own controls is not an outside dismissal.
+    if (
+      event.type === 'pointerdown' &&
+      event.target instanceof Node &&
+      hoverCardEl?.contains(event.target)
     ) {
       return;
     }
@@ -346,6 +447,8 @@
 
   function handleMouseEnter() {
     pointerWithinRow = true;
+    clearHoverCardCloseTimer();
+    workspaceHoverCardIntentSession.settleDeferredCloses();
     measureTitleOverflow();
     onHover?.();
     if (workspace && !suppressHover && !focusWithinRow) {
@@ -361,7 +464,7 @@
   function handleMouseLeave() {
     pointerWithinRow = false;
     clearHoverCardOpenTimer();
-    if (!focusWithinRow) closeHoverCard();
+    if (!focusWithinRow && !focusWithinCard) closeHoverCardUnlessEngaged();
   }
 
   function handleFocusIn() {
@@ -375,9 +478,11 @@
   }
 
   function handleFocusOut(event: FocusEvent) {
-    if (event.relatedTarget instanceof Node && rowElement?.contains(event.relatedTarget)) return;
+    const related = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (related && rowElement?.contains(related)) return;
     focusWithinRow = false;
-    if (!pointerWithinRow) closeHoverCard();
+    if (related && hoverCardEl?.contains(related)) return;
+    if (!pointerWithinRow && !pointerWithinCard) closeHoverCard();
   }
 
   $effect(() => {
@@ -418,6 +523,7 @@
 
   onDestroy(() => {
     clearHoverCardOpenTimer();
+    clearHoverCardCloseTimer();
     if (hoverCardFocusSuppressionTimer !== null) {
       clearTimeout(hoverCardFocusSuppressionTimer);
       hoverCardFocusSuppressionTimer = null;
@@ -628,8 +734,12 @@
     ></Button>
 
     <div class="relative z-10 flex shrink-0 items-center gap-1.5">
-      {#if $microConnected$ && $workspaceKeySlot$ !== null}
-        <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+      {#if $microConnected$}
+        <span class="flex size-4 shrink-0 items-center justify-center">
+          {#if $workspaceKeySlot$ !== null}
+            <MicroKeySlotBadge workspaceId={workspace.id} slot={$workspaceKeySlot$} />
+          {/if}
+        </span>
       {/if}
       <Tooltip content={workspaceStatusPresentation.tooltip} side="bottom" sideOffset={4}>
         <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
@@ -706,7 +816,9 @@
             {#if pr.url}
               <Button
                 variant="plain"
-                class="size-5 shrink-0 rounded-sm !p-0 {pr.foregroundClass}"
+                size="icon-compact"
+                iconOnly
+                class="size-5 shrink-0 rounded-sm {pr.foregroundClass}"
                 aria-label={getWorkspacePrLabel(pr)}
                 data-workspace-card-pr-item
                 data-pr-identity={pr.identity}
@@ -736,26 +848,28 @@
         </span>
       {/if}
 
-      <span
-        class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
-          ? highlighted
-            ? 'opacity-0'
-            : suppressHover
-              ? ''
-              : isolateHoverReveal
-                ? 'group-hover/wc:opacity-0 group-hover/message:opacity-0'
-                : 'group-hover:opacity-0 group-hover/message:opacity-0'
-          : ''}"
-        data-workspace-card-time
-      >
-        {#if getWorkspaceActivityDisplayTime(workspace) > 0}
-          <RelativeTime
-            date={getWorkspaceActivityDisplayTime(workspace)}
-            class="type-caption whitespace-nowrap tabular-nums text-muted-foreground"
-            compact
-          />
-        {/if}
-      </span>
+      {#if showTime}
+        <span
+          class="wc-secondary shrink-0 {actions || onTogglePin || (isUnread && onMarkAsRead)
+            ? highlighted
+              ? 'opacity-0'
+              : suppressHover
+                ? ''
+                : isolateHoverReveal
+                  ? 'group-hover/wc:opacity-0 group-hover/message:opacity-0'
+                  : 'group-hover:opacity-0 group-hover/message:opacity-0'
+            : ''}"
+          data-workspace-card-time
+        >
+          {#if getWorkspaceActivityDisplayTime(workspace) > 0}
+            <RelativeTime
+              date={getWorkspaceActivityDisplayTime(workspace)}
+              class="type-caption whitespace-nowrap tabular-nums text-muted-foreground"
+              compact
+            />
+          {/if}
+        </span>
+      {/if}
     </div>
 
     {#if actions || onOpenInNewWindow || onTogglePin || (isUnread && onMarkAsRead)}
@@ -779,7 +893,7 @@
             size="icon-xs"
             iconOnly
             class="transition-all hover:bg-muted/50 hover:text-foreground focus-visible:border-transparent focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-0
-              {isPinned ? 'text-primary' : 'text-muted-foreground'}"
+              {isPinned ? 'text-primary-ink' : 'text-muted-foreground'}"
             onclick={(event) => {
               event.stopPropagation();
               onTogglePin?.(event);
@@ -829,7 +943,17 @@
       anchorElement={rowElement}
       class="w-auto overflow-visible! rounded-lg border-0! bg-background! shadow-none!"
     >
-      <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        bind:this={hoverCardEl}
+        data-workspace-card-hover-surface
+        onpointerenter={handleHoverCardPointerEnter}
+        onpointerleave={handleHoverCardPointerLeave}
+        onfocusin={handleHoverCardFocusIn}
+        onfocusout={handleHoverCardFocusOut}
+      >
+        <WorkspaceHoverCard {workspace} activeAgentIds={streamingAgentIds} />
+      </div>
     </HoverCard>
   {/if}
 
@@ -842,10 +966,9 @@
     />
   {/if}
 {:else if phase && stats && variant === 'row'}
-  <button
-    type="button"
+  <div
     class={cn(
-      'flex items-center gap-2 w-full min-w-0 text-left text-sm py-1',
+      'relative flex items-center gap-2 w-full min-w-0 text-left text-sm py-1',
       onClick && 'cursor-pointer transition-colors rounded',
       !onClick && 'cursor-default',
       highlighted && 'bg-sidebar',
@@ -853,10 +976,20 @@
       className,
     )}
     data-highlight-id={highlightId}
-    use:highlightTarget={{ id: highlightId }}
-    onclick={onClick}
-    disabled={!onClick}
   >
+    {#if onClick}
+      <Button
+        bind:ref={phaseRowButtonRef}
+        variant="plain"
+        type="button"
+        class="absolute inset-0 z-0 h-auto w-auto rounded focus-visible:bg-sidebar"
+        aria-label={_title || phase.label}
+        onclick={(event) => {
+          event.stopPropagation();
+          onClick?.(event);
+        }}
+      ></Button>
+    {/if}
     <WorkspacePhaseIndicator
       phase={phase.phase}
       progress={statusBuildProgress}
@@ -866,8 +999,12 @@
     <span class="font-medium truncate">{phase.label}</span>
     <span class="shrink-0 text-muted-foreground">·</span>
     <span class="truncate text-xs text-muted-foreground">{statusSubtitle}</span>
-    {@render actions?.()}
-  </button>
+    {#if actions}
+      <div class="relative z-10 flex shrink-0 items-center">
+        {@render actions()}
+      </div>
+    {/if}
+  </div>
 {:else if phase && stats && variant === 'header'}
   <div
     class={cn(
@@ -907,22 +1044,31 @@
     {@render actions?.()}
   </div>
 {:else if phase && stats}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'rounded-lg border border-border bg-sidebar text-left w-full',
+      'relative rounded-lg border border-border bg-sidebar text-left w-full',
       onClick && 'cursor-pointer hover:bg-sidebar/80 transition-colors',
-      highlighted && 'ring-1 ring-primary/40',
+      highlighted && 'ring-1 ring-primary-ink/40',
       selected && 'bg-primary/5 ring-1 ring-primary/30',
       className,
     )}
     data-highlight-id={highlightId}
     use:highlightTarget={{ id: highlightId }}
-    onclick={onClick}
-    onkeydown={handleKeydown}
-    role="button"
-    tabindex={onClick ? 0 : undefined}
+    role="group"
   >
+    {#if onClick}
+      <Button
+        variant="plain"
+        type="button"
+        class="absolute inset-0 z-0 h-auto w-auto rounded-lg focus-visible:bg-sidebar/80"
+        aria-label={_title || phase.label}
+        data-workspace-phase-card-trigger
+        onclick={(event) => {
+          event.stopPropagation();
+          onClick?.(event);
+        }}
+      ></Button>
+    {/if}
     <div class="flex items-start gap-2.5 px-3 pt-3 pb-2">
       <WorkspacePhaseIndicator
         phase={phase.phase}
@@ -980,11 +1126,11 @@
     {/if}
 
     {#if actions}
-      <div class="flex items-center gap-1.5 px-2 pb-2">
+      <div class="relative z-10 flex items-center gap-1.5 px-2 pb-2">
         {@render actions()}
       </div>
     {:else if onAction}
-      <div class="flex items-center gap-1.5 px-2 pb-2">
+      <div class="relative z-10 flex items-center gap-1.5 px-2 pb-2">
         <Button
           class="flex-1 h-7 text-xs"
           variant="outline"
@@ -1046,7 +1192,7 @@
     transition-timing-function: linear;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .wc-title-text {
       transform: none !important;
       transition: none;

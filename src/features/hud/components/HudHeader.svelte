@@ -24,6 +24,8 @@
    * hides the traffic lights, so the strip hides too (isFullScreen prop).
    */
   import type { Snippet } from 'svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Slider } from '$lib/components/ui/slider';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
@@ -109,16 +111,21 @@
    * revealed on focus-within so keyboard users can Tab from the button onto
    * the slider. The value is the shared persisted master volume (default
    * 0.3) every cue play multiplies with its per-cue pack volume.
+   *
+   * The whole sound group is `app-no-drag`, not just its button and input:
+   * the header is a frameless-window drag region, and the global app.css
+   * rule only exempts interactive elements, so the group's own box (the flex
+   * gap and the slider wrapper) would stay draggable. Electron treats the
+   * pointer entering a draggable region as leaving the web contents, so
+   * `mouseleave` fired the moment the pointer left the button and the
+   * `{#if volumeVisible}` block unmounted the slider before it could be
+   * reached.
    */
   let volumeVisible = $state(false);
 
   function hideVolumeOnFocusLeave(event: FocusEvent) {
     const group = event.currentTarget as HTMLElement;
     if (!group.contains(event.relatedTarget as Node | null)) volumeVisible = false;
-  }
-
-  function onVolumeInput(event: Event) {
-    setHudSoundVolume(Number((event.currentTarget as HTMLInputElement).value));
   }
 </script>
 
@@ -139,7 +146,7 @@
   <div class="hud-header-clock">{clockText}</div>
   <div class="hud-header-side hud-header-side-right">
     <div
-      class="hud-header-sound-group"
+      class="hud-header-sound-group app-no-drag"
       data-testid="hud-header-sound-group"
       role="group"
       aria-label={m.hud_header_soundControls_ariaLabel()}
@@ -149,19 +156,21 @@
       onfocusout={hideVolumeOnFocusLeave}
     >
       {#if volumeVisible}
-        <input
-          class="hud-header-volume-slider"
-          data-testid="hud-header-volume-slider"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={$hudSoundVolume}
-          aria-label={m.hud_header_soundVolume_ariaLabel()}
-          oninput={onVolumeInput}
-        />
+        <div class="hud-header-volume-control">
+          <Slider
+            class="hud-header-volume-slider"
+            data-testid="hud-header-volume-slider"
+            min={0}
+            max={1}
+            step={0.05}
+            value={$hudSoundVolume}
+            aria-label={m.hud_header_soundVolume_ariaLabel()}
+            onValueChange={setHudSoundVolume}
+          />
+        </div>
       {/if}
-      <button
+      <Button
+        variant="plain"
         class="hud-header-sound-btn"
         data-testid="hud-header-sound-btn"
         aria-label={m.hud_header_soundToggle_ariaLabel()}
@@ -169,11 +178,16 @@
         onclick={toggleSound}
       >
         {soundLabel}
-      </button>
+      </Button>
     </div>
-    <button class="hud-header-theme-btn" data-testid="hud-header-theme-btn" onclick={cycleTheme}>
+    <Button
+      variant="plain"
+      class="hud-header-theme-btn"
+      data-testid="hud-header-theme-btn"
+      onclick={cycleTheme}
+    >
       {themeLabel}
-    </button>
+    </Button>
     {#if controls}{@render controls()}{/if}
   </div>
 </header>
@@ -236,21 +250,21 @@
     letter-spacing: 0.08em;
     white-space: nowrap;
   }
-  .hud-header-theme-btn,
-  .hud-header-sound-btn {
+  :global(.hud-header-theme-btn),
+  :global(.hud-header-sound-btn) {
     cursor: pointer;
     border: 1px solid hsl(var(--border));
     background: transparent;
-    padding: 7px 14px;
+    height: auto;
+    padding: 7px 14px !important;
+    border-radius: 0;
     font:
       600 10px 'JetBrains Mono',
       monospace;
-    letter-spacing: 0.15em;
     color: hsl(var(--muted-foreground));
-    text-transform: uppercase;
   }
-  .hud-header-theme-btn:hover,
-  .hud-header-sound-btn:hover {
+  :global(.hud-header-theme-btn:hover),
+  :global(.hud-header-sound-btn:hover) {
     background: hsl(var(--muted) / 0.5);
   }
   .hud-header-sound-group {
@@ -262,7 +276,10 @@
      pseudo-elements are sufficient): a hairline border-colored track with a
      small square thumb, matching the bordered JetBrains Mono button look and
      tracking the HUD theme via the same CSS variables. */
-  .hud-header-volume-slider {
+  .hud-header-volume-control {
+    width: 88px;
+  }
+  :global(.hud-header-volume-slider) {
     -webkit-appearance: none;
     appearance: none;
     width: 88px;
@@ -272,11 +289,11 @@
     background: transparent;
     cursor: pointer;
   }
-  .hud-header-volume-slider::-webkit-slider-runnable-track {
+  :global(.hud-header-volume-slider::-webkit-slider-runnable-track) {
     height: 2px;
     background: hsl(var(--border));
   }
-  .hud-header-volume-slider::-webkit-slider-thumb {
+  :global(.hud-header-volume-slider::-webkit-slider-thumb) {
     -webkit-appearance: none;
     appearance: none;
     width: 10px;
@@ -285,7 +302,7 @@
     background: hsl(var(--muted-foreground));
     border: 1px solid hsl(var(--border));
   }
-  .hud-header-volume-slider:focus-visible {
+  :global(.hud-header-volume-slider:focus-visible) {
     outline: 1px solid hsl(var(--muted-foreground));
     outline-offset: 2px;
   }

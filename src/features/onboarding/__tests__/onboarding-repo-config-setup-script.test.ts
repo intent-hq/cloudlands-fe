@@ -88,9 +88,6 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/onboarding/onboarding-selectors', () => ({
   selectOnboardingStep: () => mocks.readable(() => 'configuring'),
   selectOnboardingState: () => mocks.readable(() => ({ step: 'configuring' })),
-  selectOnboardingFullFlowRequested: Object.assign(() => mocks.readable(() => false), {
-    select: () => false,
-  }),
 }));
 
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-selectors', () => ({
@@ -137,8 +134,8 @@ vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
   isEnhancePromptAvailable: vi.fn(() => true),
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: vi.fn(), error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: mocks.toastError },
 }));
 
 vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({

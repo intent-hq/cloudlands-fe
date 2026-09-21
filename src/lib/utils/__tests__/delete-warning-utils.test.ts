@@ -125,7 +125,7 @@ describe('getActiveHookNames', () => {
         makeHook('hook-3', 'dispatched'),
         makeHook('hook-4', 'evicted'),
         makeHook('hook-5', 'cancelled'),
-        // Terminal v3.1 state not yet in the BackgroundHook union
+        // Terminal hook-TTL `expired` state not yet in the BackgroundHook union
         // (pre-existing gap); inactive either way.
         makeHook('hook-6', 'expired' as BackgroundHook['state']),
       ],
@@ -408,5 +408,64 @@ describe('getActiveWorkNames', () => {
     const result = await getActiveWorkNames(WS, { includeLocalChanges: true });
 
     expect(result).toEqual({ agentNames: [], hookNames: [], openPrs: [], localChanges: null });
+  });
+
+  const workspaceGetRequests = () => backend.requests.filter((r) => r.method === 'workspace.get');
+
+  it('counts open PRs from the full pool when the list row is capped (pullRequestsTotal)', async () => {
+    const capped = [1, 2, 3, 4, 5].map((n) => makePr(n));
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: WS,
+        status: 'Active',
+        pullRequests: capped,
+        pullRequestsTotal: 7,
+      } as unknown as Workspace),
+    );
+    backend.onRequest('workspace.get', () => ({
+      workspace: {
+        id: WS,
+        title: WS,
+        status: 'Active',
+        pullRequests: [...capped, makePr(6), makePr(7, { status: PullRequestStatus.Merged })],
+      },
+    }));
+
+    const result = await getActiveWorkNames(WS);
+
+    expect(workspaceGetRequests()).toEqual([
+      { method: 'workspace.get', params: { workspaceId: WS } },
+    ]);
+    expect(result.openPrs.map((pr) => pr.number)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('issues no workspace.get when the stored pool is already complete', async () => {
+    seedWorkspace([makePr(1)]);
+
+    const result = await getActiveWorkNames(WS);
+
+    expect(workspaceGetRequests()).toHaveLength(0);
+    expect(result.openPrs.map((pr) => pr.number)).toEqual([1]);
+  });
+
+  it('fails open to the capped pool when workspace.get rejects', async () => {
+    const capped = [1, 2, 3, 4, 5].map((n) => makePr(n));
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS,
+        title: WS,
+        status: 'Active',
+        pullRequests: capped,
+        pullRequestsTotal: 6,
+      } as unknown as Workspace),
+    );
+    backend.onRequest('workspace.get', () => {
+      throw new Error('boom');
+    });
+
+    const result = await getActiveWorkNames(WS);
+
+    expect(result.openPrs.map((pr) => pr.number)).toEqual([1, 2, 3, 4, 5]);
   });
 });

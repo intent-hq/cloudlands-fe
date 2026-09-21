@@ -108,7 +108,6 @@ describe('ModelSwitchConfirmDialog', () => {
     const confirm = screen.getByRole('button', { name: 'Switch model' });
 
     await waitFor(() => expect(document.activeElement).toBe(confirm));
-    expect(confirm.className).toContain('ring-[3px]');
     expect(dialogEl().querySelector('.svelte-fa')).toBeNull();
   });
 

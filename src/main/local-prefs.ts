@@ -14,8 +14,9 @@
  * file. Existing users start from defaults on first launch.
  *
  * The read/write API is async because all callers already sit on async
- * paths; concurrent writes are serialized behind a promise chain so a
- * mid-write reader sees either the old or new value, not a torn file.
+ * paths; concurrent writes are serialized behind a promise chain, and each
+ * write lands via a same-directory temp file + `rename` so a mid-write
+ * reader sees either the old or new complete document, never a torn file.
  */
 
 import { promises as fs } from 'fs';
@@ -56,8 +57,22 @@ async function readAll(): Promise<Record<string, unknown>> {
 
 async function writeAll(next: Record<string, unknown>): Promise<void> {
   const target = filePath();
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, JSON.stringify(next, null, 2), 'utf8');
+  const dir = path.dirname(target);
+  await fs.mkdir(dir, { recursive: true });
+  const temp = path.join(dir, `.${FILE_NAME}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    const handle = await fs.open(temp, 'w');
+    try {
+      await handle.writeFile(JSON.stringify(next, null, 2), 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(temp, target);
+  } catch (error) {
+    await fs.rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 /** Read a single FE-local preference; `undefined` when absent. */

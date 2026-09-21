@@ -103,7 +103,7 @@ describe('FeedPanel two-line rows', () => {
       flushSync();
       expect(row().querySelector('.hud-feed-name')?.textContent).toBe('Sidecar update');
     });
-    expect(row().querySelector('.hud-feed-text')?.textContent).toBe('IN PROGRESS');
+    expect(row().querySelector('.hud-feed-text')?.textContent).toBe('In progress');
   });
 
   it('omits line 2 when there is no detail beyond the name', async () => {
@@ -217,11 +217,11 @@ describe('FeedPanel agent-status chip wording', () => {
   }
 
   it('names the specific transition instead of a generic AGENT STATUS chip', async () => {
-    expect(await chipFor('active')).toBe('AGENT RUNNING');
-    expect(await chipFor('waiting')).toBe('AGENT WAITING');
-    expect(await chipFor('idle')).toBe('AGENT IDLE');
-    expect(await chipFor('completed')).toBe('AGENT DONE');
-    expect(await chipFor('error')).toBe('AGENT FAILED');
+    expect(await chipFor('active')).toBe('Agent running');
+    expect(await chipFor('waiting')).toBe('Agent waiting');
+    expect(await chipFor('idle')).toBe('Agent idle');
+    expect(await chipFor('completed')).toBe('Agent done');
+    expect(await chipFor('error')).toBe('Agent failed');
   });
 
   it('renders the synthetic first-start kind as an AGENT DELEGATED chip', async () => {
@@ -238,7 +238,7 @@ describe('FeedPanel agent-status chip wording', () => {
     );
     await waitFor(() => {
       flushSync();
-      expect(row().querySelector('.hud-feed-tag')?.textContent).toBe('AGENT DELEGATED');
+      expect(row().querySelector('.hud-feed-tag')?.textContent).toBe('Agent delegated');
     });
     expect(row().querySelector('.hud-feed-name')?.textContent).toBe('Implementor');
   });
@@ -257,7 +257,7 @@ describe('FeedPanel agent-status chip wording', () => {
     );
     await waitFor(() => {
       flushSync();
-      expect(row().querySelector('.hud-feed-tag')?.textContent).toBe('AGENT IDLE');
+      expect(row().querySelector('.hud-feed-tag')?.textContent).toBe('Agent idle');
     });
     // Detail carries the workspace title only — no raw status word appended.
     expect(row().querySelector('.hud-feed-text')?.textContent).toBe('Sidecar update');
@@ -290,7 +290,7 @@ describe('FeedPanel WORKSPACE STATUS rows', () => {
 
   it('renders the WORKSPACE STATUS chip label (not WS STATUS)', async () => {
     expect((await statusRow('in_progress')).querySelector('.hud-feed-tag')?.textContent).toBe(
-      'WORKSPACE STATUS',
+      'Workspace status',
     );
   });
 
@@ -298,15 +298,15 @@ describe('FeedPanel WORKSPACE STATUS rows', () => {
     // Same labels the card banner renders (cardStateLabel); `needs_attention`
     // folds to NEEDS ATTENTION exactly like cardStateKey. No snake_case leaks.
     const expected: Array<[string, string]> = [
-      ['in_progress', 'IN PROGRESS'],
-      ['needs_attention', 'NEEDS ATTENTION'],
-      ['idle', 'IDLE'],
-      ['not_started', 'NOT STARTED'],
-      ['complete', 'COMPLETE'],
-      ['pr_ready', 'PR MERGEABLE'],
+      ['in_progress', 'In progress'],
+      ['needs_attention', 'Needs attention'],
+      ['idle', 'Idle'],
+      ['not_started', 'Not started'],
+      ['complete', 'Complete'],
+      ['pr_ready', 'PR mergeable'],
       ['pr_queued', m.hud_card_statePrQueued_label()],
-      ['pr_open', 'PR OPEN'],
-      ['pr_merged', 'PR MERGED'],
+      ['pr_open', 'PR open'],
+      ['pr_merged', 'PR merged'],
     ];
     for (const [wire, label] of expected) {
       const text = (await statusRow(wire)).querySelector('.hud-feed-text')?.textContent ?? '';

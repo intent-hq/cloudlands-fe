@@ -1,0 +1,251 @@
+// @vitest-environment jsdom
+// Intentionally update after reviewed fixture/contract changes with:
+// NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run src/lib/component-catalog/catalog-contract.test.ts --maxWorkers=1 -u
+// Always review the generated snapshot diff before staging it; unrelated churn is not acceptable.
+import { cleanup, render, waitFor } from '@testing-library/svelte';
+import axe from 'axe-core';
+import { tick } from 'svelte';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { canonicalPatternManifest } from '$lib/components/patterns/manifest';
+import type { UiComponentFixture } from '$lib/components/ui/component-metadata';
+import { canonicalComponentManifest } from '$lib/components/ui/manifest';
+import CatalogFixtureList from './CatalogFixtureList.svelte';
+import PatternCatalogPreview from './renderers/PatternCatalogPreview.svelte';
+import { getCatalogEntry } from './catalog';
+import type { CatalogRendererId } from './catalog-renderers';
+import { waitForCaptureStability } from './capture-stability';
+import '../../app.css';
+
+// Pin only this suite's absolute timestamps, independent of host TZ and formatter caches (#5200).
+vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
+  const actual = await importOriginal();
+  const { getActiveLocale } = await import('$lib/i18n/locale');
+  return {
+    ...actual,
+    formatDateTime(input: Parameters<typeof actual.formatDateTime>[0]) {
+      const date = input instanceof Date ? input : new Date(input);
+      if (Number.isNaN(date.getTime())) return '';
+      return new Intl.DateTimeFormat(getActiveLocale(), {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC',
+      }).format(date);
+    },
+  };
+});
+
+type ContractCase = {
+  key: string;
+  kind: 'pattern' | 'primitive' | 'product';
+  id: string;
+  fixture: UiComponentFixture;
+};
+
+const cases: ContractCase[] = [
+  ...canonicalComponentManifest
+    .filter(({ category, id }) => category === 'primitive' || id === 'toast' || id === 'list')
+    .flatMap(({ id, fixtures }) =>
+      fixtures.map((fixture) => ({
+        key: `primitive:${id}:${fixture.id}`,
+        kind: 'primitive' as const,
+        id,
+        fixture,
+      })),
+    ),
+  ...canonicalComponentManifest
+    .filter(({ id }) => id === 'combobox' || id === 'sidebar')
+    .flatMap(({ id, fixtures }) =>
+      fixtures
+        .filter(({ states }) => states.includes('keyboard-focus'))
+        .map((fixture) => ({
+          key: `primitive:${id}:${fixture.id}`,
+          kind: 'primitive' as const,
+          id,
+          fixture,
+        })),
+    ),
+  ...canonicalPatternManifest.flatMap(({ id, fixtures }) =>
+    fixtures.map((fixture) => ({
+      key: `pattern:${id}:${fixture.id}`,
+      kind: 'pattern' as const,
+      id,
+      fixture,
+    })),
+  ),
+  ...(getCatalogEntry('modals')?.fixtures.map((fixture) => ({
+    key: `product:modals:${fixture.id}`,
+    kind: 'product' as const,
+    id: 'modals',
+    fixture,
+  })) ?? []),
+  ...(getCatalogEntry('popovers')?.fixtures.map((fixture) => ({
+    key: `product:popovers:${fixture.id}`,
+    kind: 'product' as const,
+    id: 'popovers',
+    fixture,
+  })) ?? []),
+  ...(getCatalogEntry('rows')?.fixtures.map((fixture) => ({
+    key: `product:rows:${fixture.id}`,
+    kind: 'product' as const,
+    id: 'rows',
+    fixture,
+  })) ?? []),
+  ...(getCatalogEntry('fields')?.fixtures.map((fixture) => ({
+    key: `product:fields:${fixture.id}`,
+    kind: 'product' as const,
+    id: 'fields',
+    fixture,
+  })) ?? []),
+  ...(getCatalogEntry('screen-states')?.fixtures.map((fixture) => ({
+    key: `product:screen-states:${fixture.id}`,
+    kind: 'product' as const,
+    id: 'screen-states',
+    fixture,
+  })) ?? []),
+].sort((left, right) => left.key.localeCompare(right.key));
+const slowCases = cases.filter(({ key }) => key === 'product:fields:field-state-matrix');
+const standardCases = cases.filter(({ key }) => key !== 'product:fields:field-state-matrix');
+
+const intentionalAxeAllowlist: Record<string, ReadonlyArray<{ rule: string; reason: string }>> = {
+  'pattern:collection:collection-states': [
+    {
+      rule: 'nested-interactive',
+      reason:
+        'The fixture intentionally embeds a row action in a selectable row to cover that supported composition.',
+    },
+  ],
+  'pattern:settings:schema-controls': [
+    {
+      rule: 'landmark-unique',
+      reason:
+        'The state matrix intentionally renders repeated copies of the same settings navigation landmark.',
+    },
+  ],
+};
+const axeRules = {
+  // jsdom cannot calculate visual contrast for isolated fixtures.
+  'color-contrast': { enabled: false },
+};
+const stableAttributes =
+  /^(?:aria-|data-)|^(?:class|disabled|for|href|id|open|role|tabindex|type)$/;
+
+function normalizeValue(value: string): string {
+  return value
+    .replace(/\bsvelte-[a-z0-9]+\b/g, 'svelte-<scope>')
+    .replace(/\bbits-[a-z0-9-]+/g, 'bits-<id>')
+    .replace(/\bc[0-9]+(?=-)/g, 'c<id>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenReferences(element: Element): string[] {
+  const references = new Set<string>();
+  const styles = getComputedStyle(element);
+  for (let index = 0; index < styles.length; index += 1) {
+    const property = styles.item(index);
+    const value = styles.getPropertyValue(property);
+    for (const match of value.matchAll(/var\((--[a-z0-9-]+)/gi)) references.add(match[1]);
+  }
+  return [...references].sort();
+}
+
+function stableDom(root: Element): string {
+  const lines: string[] = [];
+  const visit = (node: Node, depth: number) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = normalizeValue(node.textContent ?? '');
+      if (text) lines.push(`${'  '.repeat(depth)}${JSON.stringify(text)}`);
+      return;
+    }
+    if (!(node instanceof Element)) return;
+    const attributes = [...node.attributes]
+      .filter(({ name }) => stableAttributes.test(name))
+      .map(({ name, value }) => {
+        const normalized =
+          name === 'class'
+            ? normalizeValue(value).split(' ').filter(Boolean).sort().join(' ')
+            : normalizeValue(value);
+        return `${name}=${JSON.stringify(normalized)}`;
+      })
+      .sort();
+    const tokens = tokenReferences(node);
+    const suffix = [...attributes, ...(tokens.length ? [`tokens=${JSON.stringify(tokens)}`] : [])];
+    lines.push(
+      `${'  '.repeat(depth)}<${node.tagName.toLowerCase()}${suffix.length ? ` ${suffix.join(' ')}` : ''}>`,
+    );
+    node.childNodes.forEach((child) => visit(child, depth + 1));
+  };
+  visit(root, 0);
+  return lines.join('\n');
+}
+
+function renderCase(testCase: ContractCase) {
+  if (testCase.kind === 'pattern') {
+    return render(PatternCatalogPreview, {
+      props: { componentId: testCase.id as CatalogRendererId, fixture: testCase.fixture },
+    });
+  }
+  const entry = getCatalogEntry(testCase.id);
+  expect(entry, `${testCase.id} must have a catalog entry`).toBeDefined();
+  return render(CatalogFixtureList, {
+    props: { entry: { ...entry!, fixtures: [testCase.fixture] } },
+  });
+}
+
+const originalResizeObserver = globalThis.ResizeObserver;
+const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+  globalThis.ResizeObserver = class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
+
+afterAll(() => {
+  Element.prototype.scrollIntoView = originalScrollIntoView;
+  globalThis.ResizeObserver = originalResizeObserver;
+});
+
+afterEach(() => {
+  cleanup();
+  document.body.replaceChildren();
+});
+
+async function verifyCatalogContract(testCase: ContractCase) {
+  const rendered = renderCase(testCase);
+  // Lazy renderer imports can outlast a tick and an otherwise stable empty preview.
+  await waitFor(
+    () => {
+      expect(
+        rendered.container.querySelector(
+          `[data-catalog-renderer-fixture="${testCase.fixture.id}"], ` +
+            `[data-catalog-fixture-id="${testCase.fixture.id}"] [data-catalog-rendered-state]`,
+        ),
+      ).not.toBeNull();
+    },
+    { timeout: 30_000 },
+  );
+  await tick();
+  await waitForCaptureStability(document.body, { timeoutMs: 2_000 });
+
+  expect({
+    declaredStates: testCase.fixture.states,
+    dom: stableDom(document.body),
+  }).toMatchSnapshot();
+
+  rendered.container.setAttribute('role', 'main');
+  const result = await axe.run(document.body, { rules: axeRules });
+  const allowed = intentionalAxeAllowlist[testCase.key] ?? [];
+  expect(allowed.every(({ reason }) => reason.trim().length > 0)).toBe(true);
+  expect(result.violations.map(({ id }) => id).sort()).toEqual(
+    allowed.map(({ rule }) => rule).sort(),
+  );
+}
+
+describe.sequential('catalog DOM, token, and accessibility contracts', () => {
+  it.each(standardCases)('$key', verifyCatalogContract);
+  it.each(slowCases)('$key', verifyCatalogContract, 90_000);
+});

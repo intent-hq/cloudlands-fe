@@ -1,7 +1,6 @@
 <script lang="ts">
-  import Button from '$lib/components/ui/button/button.svelte';
+  import { Button, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
-  import { Textarea } from '$lib/components/ui/textarea';
 
   interface Props {
     onImport: (json: string) => Promise<void>;
@@ -63,23 +62,23 @@
 
 <div class="space-y-4">
   <div>
-    <span class="block text-sm font-medium mb-1.5">{m.settings_mcp_import_title()}</span>
+    <span class="block type-body font-medium mb-1.5">{m.settings_mcp_import_title()}</span>
     <Textarea
       bind:value={jsonContent}
       onkeydown={handleKeydown}
       placeholder={/* i18n-ignore (JSON config example) */ `{"my-server": {"command": "npx", "args": ["-y", "@some/mcp-server"]}}`}
       rows={12}
-      class="w-full px-3 py-2 text-sm font-mono rounded-md border border-border
-             bg-background focus:outline-none focus:ring-2 focus:ring-primary/30
-             focus:border-primary resize-none"
+      class="w-full px-3 py-2 type-body font-mono rounded-md border border-border
+             bg-background focus:outline-none focus:ring-2 focus:ring-primary-ink/30
+             focus:border-primary-ink resize-none"
     />
-    <p class="text-xs text-subtle mt-1">
+    <p class="type-body text-subtle mt-1">
       {m.settings_mcp_import_formatHint()}
     </p>
   </div>
 
   {#if error}
-    <div class="text-sm text-danger">{error}</div>
+    <div class="type-body text-danger">{error}</div>
   {/if}
 
   <div class="flex gap-2">

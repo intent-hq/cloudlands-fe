@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Button from '../components/ui/button/button.svelte';
-import { preview as buttonPreview } from '../components/ui/button/button.preview';
+import { preview as buttonPreview } from '../components/ui/button/button.preview.svelte';
 import CatalogScene from './CatalogScene.svelte';
 
 const mocks = vi.hoisted(() => ({
@@ -37,7 +37,11 @@ describe('CatalogScene', () => {
     mocks.loadPreview.mockImplementation(async (slug: string) =>
       slug === 'button' ? loadedButton : undefined,
     );
-    mocks.waitForCaptureStability.mockResolvedValue({ imageCount: 0, reducedMotion: true });
+    mocks.waitForCaptureStability.mockResolvedValue({
+      imageCount: 0,
+      deferredImageCount: 0,
+      reducedMotion: true,
+    });
   });
 
   afterEach(() => cleanup());
@@ -189,7 +193,11 @@ describe('CatalogScene', () => {
   });
 
   it('does not publish DOM or API readiness before capture stability resolves', async () => {
-    const stability = deferred<{ imageCount: number; reducedMotion: boolean }>();
+    const stability = deferred<{
+      imageCount: number;
+      deferredImageCount: number;
+      reducedMotion: boolean;
+    }>();
     mocks.waitForCaptureStability.mockReturnValueOnce(stability.promise);
     render(CatalogScene, {
       props: { slug: 'button', requestedState: 'loading', requestedWidth: 420 },
@@ -204,7 +212,7 @@ describe('CatalogScene', () => {
       expect.objectContaining({ status: 'ready' }),
     );
 
-    stability.resolve({ imageCount: 0, reducedMotion: true });
+    stability.resolve({ imageCount: 0, deferredImageCount: 0, reducedMotion: true });
     await waitFor(() =>
       expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
     );
@@ -217,12 +225,21 @@ describe('CatalogScene', () => {
     });
   });
 
-  it('keeps an invalid state visible and does not emit a false ready marker', async () => {
-    render(CatalogScene, { props: { slug: 'button', requestedState: 'missing' } });
+  it('falls back to the interactive fixture for an unavailable named state', async () => {
+    const { container } = render(CatalogScene, {
+      props: { slug: 'button', requestedState: 'missing' },
+    });
 
-    expect((await screen.findByRole('alert')).textContent).toContain('Unknown state “missing”.');
-    expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('false');
-    expect(screen.getByText(/Available states:/).textContent).toContain('loading');
+    expect(await screen.findByText(/No named state “missing” for this component/)).not.toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId('catalog-scene').dataset.previewReady).toBe('true'),
+    );
+    expect(screen.getByTestId('catalog-scene').dataset.previewState).toBe('missing');
+    await waitFor(
+      () => expect(container.querySelector('[data-catalog-renderer-fixture]')).not.toBeNull(),
+      { timeout: 10_000 },
+    );
+    expect(screen.getByRole('button', { name: '1. Primary' })).not.toBeNull();
   });
 
   it('shows a terminal error when the preview import rejects', async () => {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import { formatShortcut } from '$lib/utils/shortcuts';
 import PanelRightmostColumnSelectorHarness from './mocks/PanelRightmostColumnSelectorHarness.svelte';
@@ -56,6 +56,21 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
   expect(await addButtonOwners(component)).toEqual(idsAtThree);
   for (const panelId of idsAtThree) {
     const panel = component.locator(`[data-panel-id="${panelId}"]`);
+    // Measure relative to the panel shell: clicking scrolls an off-screen column into
+    // view, and only focus-driven child geometry shifts are under test here.
+    const childBounds = () =>
+      panel.locator('[data-panel-header], .panel-content').evaluateAll(async (nodes) => {
+        await new Promise<number>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        );
+        return nodes.map((node) => {
+          const shell = node.closest('[data-panel-id]')!.getBoundingClientRect();
+          const { x, y, width, height } = node.getBoundingClientRect();
+          return { x: x - shell.x, y: y - shell.y, width, height };
+        });
+      });
+    const childrenBeforeFocus = await childBounds();
+    expect(childrenBeforeFocus).toHaveLength(2);
     const geometryBeforeFocus = await panel.boundingBox();
     await panel.click({ position: { x: 12, y: 90 } });
     await expect(layoutState).toHaveAttribute('data-focused-panel-id', panelId);
@@ -74,6 +89,7 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
     const geometryAfterFocus = await panel.boundingBox();
     expect(geometryAfterFocus!.width).toBeCloseTo(geometryBeforeFocus!.width, 0);
     expect(geometryAfterFocus!.height).toBeCloseTo(geometryBeforeFocus!.height, 0);
+    expect(await childBounds()).toEqual(childrenBeforeFocus);
     await expect
       .poll(() => focusedHeader.evaluate((node) => getComputedStyle(node).boxShadow))
       .toBe('none');
@@ -84,11 +100,11 @@ test('keeps Add column in every populated and empty panel header', async ({ moun
         width: getComputedStyle(node).borderTopWidth,
       })),
     );
-    expect(panelBorders.every(({ width }) => width === '1px')).toBe(true);
     expect(
-      panelBorders
-        .filter(({ focused }) => focused === 'false')
-        .every(({ color }) => color === 'rgba(0, 0, 0, 0)'),
+      panelBorders.every(({ color, focused, width }) => {
+        if (focused === 'true') return width === '1px' && color !== 'rgba(0, 0, 0, 0)';
+        return width === '1px' && color === 'rgba(0, 0, 0, 0)';
+      }),
     ).toBe(true);
     await expect(component.locator('[data-column-focused]')).toHaveCount(1);
   }

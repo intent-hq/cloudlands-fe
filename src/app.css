@@ -3,10 +3,41 @@
    else before them makes the later imports invalid and Vite drops them from
    the production bundle (intent-hq/monorepo#1909). Keep these imports first. */
 @import '$lib/styles/tokens.css';
+@import '$lib/styles/overlay-surface.css';
 @import '$lib/styles/tiptap-editor.css';
 @import '$lib/styles/chat-messages.css';
 @import '$lib/styles/comments.css';
 @import '$lib/styles/resize-handles.css';
+
+/* Tailwind v4 auto-detects sources by scanning the whole package, so class-name
+   strings that only live in tests, scripts, and docs would otherwise reach the
+   production stylesheet. Exclude test code, tooling, and docs (including the
+   Markdown nested under src/); keep `.svelte`/`.html` fixtures (test/fixtures,
+   __tests__/*.svelte, playwright/) because the CT and Playwright harnesses
+   import this file and need their utilities. */
+@source not '**/*.test.ts';
+@source not '**/*.spec.ts';
+@source not '**/*.md';
+@source not '**/*-snapshots/**';
+@source not '**/__tests__/**/*.ts';
+@source not 'test/**/*.ts';
+@source not '../test/**/*.ts';
+@source not '../test/**/*.mts';
+@source not '../test/**/*.mjs';
+@source not '../tests';
+@source not '../e2e';
+@source not '../scripts';
+@source not '../docs';
+@source not '../resources';
+@source not '../cdp-mcp-server';
+@source not '../eslint-rules';
+@source not '../patches';
+@source not '../.agents';
+@source not '../.github';
+@source not '../*.md';
+@source not '../*.config.ts';
+@source not '../*.config.js';
+@source not '../*.config.mjs';
 
 /* Tailwind v4 ignores the legacy tailwind.config.js, so the typography plugin
    must be loaded here for the `prose` classes (markdown rendering) to exist. */
@@ -15,6 +46,11 @@
    `.dark`/`.light` on the root element (src/lib/utils/theme.ts), so `dark:`
    variants must key off the class, not the OS `prefers-color-scheme` query. */
 @custom-variant dark (&:where(.dark, .dark *));
+/* The built-in `motion-reduce:` variant compiles to the raw OS media query, which
+   battery saver (`:root[data-reduce-motion]`) cannot reach. Route it through the
+   `--motion-reduced` token from tokens.css so every `motion-reduce:*` utility
+   follows the same single source of truth as the hand-written component CSS. */
+@custom-variant motion-reduce (@container style(--motion-reduced: 1));
 
 :root {
   /* Canonical navigation-row geometry. Product rows select compact or regular density. */
@@ -35,6 +71,16 @@
   /* Named product row: emphasized agent avatars require the 40px virtualization contract. */
   --workspace-agent-row-height: 2.5rem;
   --workspace-agent-delegation-indent: 1.625rem;
+}
+
+/* Inter: bundle only the Latin weight axis used by application UI. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+    format('woff2-variations');
 }
 
 /* Source Serif 4: bundle only the Latin normal and italic variable faces used by notes. */
@@ -71,7 +117,7 @@
 .ui-highlight-pulse-ring {
   animation: ui-highlight-pulse-ring 700ms ease-out 3;
   border-radius: 0.5rem;
-  outline: 1px solid hsl(var(--primary) / 0.55);
+  outline: 1px solid hsl(var(--primary-ink) / 0.55);
   outline-offset: 2px;
 }
 
@@ -118,8 +164,13 @@ kbd {
   }
 
   :focus-visible {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1px solid hsl(var(--focus-ring));
     outline-offset: 2px;
+    border-radius: var(--shape-input-radius, 8px);
+  }
+
+  a:focus-visible {
+    border-radius: 2px;
   }
 }
 
@@ -131,36 +182,39 @@ body {
 }
 
 /* Canonical type roles. Prefer these over physical Tailwind size utilities in new product UI. */
-.type-caption {
-  font-size: var(--text-caption-size);
-  line-height: var(--text-caption-line-height);
-  font-weight: var(--text-caption-weight);
-  letter-spacing: var(--text-caption-tracking);
-}
-.type-body {
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line-height);
-  font-weight: var(--text-body-weight);
-  letter-spacing: var(--text-body-tracking);
-}
-.type-title {
-  font-size: var(--text-title-size);
-  line-height: var(--text-title-line-height);
-  font-weight: var(--text-title-weight);
-  letter-spacing: var(--text-title-tracking);
-}
-.type-display {
-  font-size: var(--text-display-size);
-  line-height: var(--text-display-line-height);
-  font-weight: var(--text-display-weight);
-  letter-spacing: var(--text-display-tracking);
-}
-.type-code {
-  font-family: var(--font-code);
-  font-size: var(--text-code-size);
-  line-height: var(--text-code-line-height);
-  font-weight: var(--text-code-weight);
-  letter-spacing: var(--text-code-tracking);
+/* Components precede Tailwind utilities so explicit weight overrides win. */
+@layer components {
+  .type-caption {
+    font-size: var(--text-caption-size);
+    line-height: var(--text-caption-line-height);
+    font-weight: var(--text-caption-weight);
+    letter-spacing: var(--text-caption-tracking);
+  }
+  .type-body {
+    font-size: var(--text-body-size);
+    line-height: var(--text-body-line-height);
+    font-weight: var(--text-body-weight);
+    letter-spacing: var(--text-body-tracking);
+  }
+  .type-title {
+    font-size: var(--text-title-size);
+    line-height: var(--text-title-line-height);
+    font-weight: var(--text-title-weight);
+    letter-spacing: var(--text-title-tracking);
+  }
+  .type-display {
+    font-size: var(--text-display-size);
+    line-height: var(--text-display-line-height);
+    font-weight: var(--text-display-weight);
+    letter-spacing: var(--text-display-tracking);
+  }
+  .type-code {
+    font-family: var(--font-code);
+    font-size: var(--text-code-size);
+    line-height: var(--text-code-line-height);
+    font-weight: var(--text-code-weight);
+    letter-spacing: var(--text-code-tracking);
+  }
 }
 
 /* Compatibility utilities resolve to the canonical caption/body roles. */
@@ -202,24 +256,127 @@ textarea::placeholder {
 /* Hover color changes should appear instantly for better UX */
 /* Layout transitions (panel resizing, accordion, etc.) are handled per-component */
 
-/* Scrollbar styles */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Canonical scrollbar styling. Terminals and editors opt out by placing
+     `native-scrollbars` on their host so their platform-owned behavior wins. */
+@media (pointer: fine) {
+  :where(:not(.native-scrollbars, .native-scrollbars *)) {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--overlay) / 0.08) transparent;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-track,
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-color: hsl(var(--overlay) / 0.08);
+    background-clip: content-box;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb:vertical {
+    border-right-width: 5px;
+    border-left-width: 1px;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb:horizontal {
+    border-top-width: 1px;
+    border-bottom-width: 5px;
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--overlay) / 0.12);
+  }
+
+  :where(:not(.native-scrollbars, .native-scrollbars *))::-webkit-scrollbar-thumb:active {
+    background-color: hsl(var(--overlay) / 0.16);
+  }
 }
 
-::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
-  border-radius: 4px;
+[data-slot='scroll-area-scrollbar'] {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  touch-action: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity var(--spring-fast-exit) var(--spring-exit-ease);
 }
 
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 4px;
+[data-slot='scroll-area-scrollbar'][data-state='visible'] {
+  opacity: 1;
+  transition-duration: var(--spring-fast);
+  transition-timing-function: var(--spring-fast-ease);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical'] {
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal'] {
+  bottom: 0;
+  left: 0;
+  flex-direction: column;
+  width: 100%;
+  height: 10px;
+}
+
+[data-slot='scroll-area-thumb'] {
+  position: relative;
+  margin: auto;
+  border-radius: 9999px;
+  background: hsl(var(--overlay) / 0.08);
+  transition:
+    width var(--spring-fast) var(--spring-fast-ease),
+    height var(--spring-fast) var(--spring-fast-ease),
+    background-color var(--spring-fast) var(--spring-fast-ease);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical'] [data-slot='scroll-area-thumb'] {
+  width: 4px;
+  height: var(--bits-scroll-area-thumb-height);
+  transform: translateX(-2px);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal'] [data-slot='scroll-area-thumb'] {
+  width: var(--bits-scroll-area-thumb-width);
+  height: 4px;
+  transform: translateY(-2px);
+}
+
+[data-slot='scroll-area-scrollbar']:hover [data-slot='scroll-area-thumb'] {
+  background: hsl(var(--overlay) / 0.12);
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='vertical']:hover
+  [data-slot='scroll-area-thumb'] {
+  width: 6px;
+}
+
+[data-slot='scroll-area-scrollbar'][data-orientation='horizontal']:hover
+  [data-slot='scroll-area-thumb'] {
+  height: 6px;
+}
+
+[data-slot='scroll-area-thumb']:active {
+  background: hsl(var(--overlay) / 0.16);
+}
+
+@container style(--motion-reduced: 1) {
+  [data-slot='scroll-area-scrollbar'],
+  [data-slot='scroll-area-thumb'] {
+    transition: none;
+  }
 }
 
 /* Loading skeleton animation */
@@ -292,7 +449,7 @@ textarea::placeholder {
 }
 
 .animate-word {
-  animation: word-appear 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: word-appear var(--spring-moderate) var(--ease-spring-moderate);
 }
 
 /* Tool call animations */
@@ -313,13 +470,6 @@ textarea::placeholder {
   animation: tool-pulse 1.5s infinite;
 }
 
-/* Pause animations when page is hidden (controlled via JS class on body) */
-.animations-paused .animate-tool-pulse,
-.animations-paused .streaming-cursor,
-.animations-paused .animate-shimmer {
-  animation-play-state: paused !important;
-}
-
 /* Message container animations */
 @keyframes message-slide-up {
   from {
@@ -334,7 +484,7 @@ textarea::placeholder {
 }
 
 .animate-message-in {
-  animation: message-slide-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: message-slide-up var(--spring-slow) var(--ease-spring-slow);
 }
 
 /* Streaming cursor */
@@ -577,29 +727,6 @@ textarea::placeholder {
   display: none;
 }
 
-/* Custom scrollbar styles */
-.overflow-y-auto {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border)) transparent;
-}
-
-.overflow-y-auto::-webkit-scrollbar {
-  width: 6px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.overflow-y-auto::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--border));
-  border-radius: 3px;
-}
-
-.overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--muted-foreground));
-}
-
 /* Panel resizing - disable pointer events on iframes during drag */
 /* This prevents iframes (like browser panels) from capturing mouse events */
 body.panel-resizing iframe,
@@ -628,14 +755,18 @@ body.panel-resizing webview {
 }
 
 /* ===== Reduced motion support ===== */
-/* Respects user's motion preferences for accessibility */
-html[data-window-blurred] *,
-html[data-window-blurred] *::before,
-html[data-window-blurred] *::after {
+/* Follows `--motion-reduced` (OS preference or battery saver), see tokens.css */
+/* The window lifecycle marks the targets of looping CSS animations only; finite
+   entrances and flashes run to completion while blurred instead of freezing at
+   frame 0 and replaying on focus. An html descendant blanket would invalidate
+   the entire transcript on every focus change. */
+[data-window-animation-paused],
+[data-window-animation-paused]::before,
+[data-window-animation-paused]::after {
   animation-play-state: paused !important;
 }
 
-@media (prefers-reduced-motion: reduce) {
+@container style(--motion-reduced: 1) {
   /* Disable infinite animations */
   .animate-tool-pulse,
   .streaming-cursor,

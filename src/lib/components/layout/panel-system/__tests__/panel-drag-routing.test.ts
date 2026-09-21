@@ -82,6 +82,9 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentAttentionRequest: () => readable(null),
   selectAgentSession: () => readable(null),
 }));
+vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
+  selectAgentQueueMessages: Object.assign(() => readable([]), { select: () => [] }),
+}));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => readable(0),
   selectPermissionRequests: () => readable([]),
@@ -89,8 +92,8 @@ vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
 vi.mock('$store/renderer/slices/hud/hud-selectors', () => ({
   selectHudAgentHasPendingQuestion: () => readable(false),
 }));
-vi.mock('$lib/components/ui/toast', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
   default: (await import('$lib/components/workspace/__tests__/mocks/MockAgentAvatar.svelte'))
@@ -886,14 +889,7 @@ describe('panel context menu routing', () => {
     expect(onMoveActivePane).toHaveBeenCalledWith('panel-1', 'next');
   });
 
-  it('uses a high-visibility kebab icon for panel actions', () => {
-    const { container } = renderTabBar();
-    const icon = container.querySelector<SVGElement>('[data-testid="panel-actions-trigger"] svg');
-
-    expect(icon?.getAttribute('viewBox')).toBe('0 0 16 16');
-    expect(icon?.getAttribute('class')).toContain('size-3');
-    expect(icon?.querySelector('path')?.getAttribute('d')).toContain('M8 2a1.5');
-  });
+  // Kebab ink, target geometry, focus, and action coverage live in agent-header-icons.ct.spec.ts.
 
   it('opens the shared panel actions menu from the tabless header without tab actions', async () => {
     const onMoveRight = vi.fn();
@@ -907,6 +903,7 @@ describe('panel context menu routing', () => {
     const moveRight = screen.getByRole('menuitem', { name: 'Move right' });
     expect(moveLeft.getAttribute('aria-disabled')).toBe('true');
     expect(moveRight.getAttribute('aria-disabled')).toBe('false');
+    expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
     expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: /Close tabs to the right/ })).toBeNull();
     await fireEvent.click(moveRight);

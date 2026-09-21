@@ -1,4 +1,6 @@
 <script lang="ts">
+  import SidebarGroupHeader from './SidebarGroupHeader.svelte';
+  import { Button } from '$lib/components/ui/button';
   /**
    * McpServersSection - Displays user-defined MCP servers with toggles
    *
@@ -18,11 +20,10 @@
     selectMcpErrorMessages,
     selectWorkspaceDisabledMcpServerNamesByWorkspaceId,
   } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import Switch from '$lib/components/ui/switch/switch.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import {
-    faChevronDown,
     faExclamationTriangle,
     faGear,
     faPlug,
@@ -125,34 +126,22 @@
 
 {#if serverRows.length > 0}
   <div class="mt-3 {className ?? ''}">
-    <!-- Section Header -->
-    <button
-      type="button"
-      class="w-full flex items-center gap-2 px-1.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+    <SidebarGroupHeader
+      title={m.workspace_mcpServers_title()}
+      meta={m.workspace_mcpServers_enabledCount_label({ count: formatInteger(enabledServerCount) })}
+      expanded={isExpanded}
+      collapsedChevronClass="rotate-90"
       onclick={() => (isExpanded = !isExpanded)}
-    >
-      <Fa
-        icon={faChevronDown}
-        size="xs"
-        class="opacity-50 transition-transform duration-200 {isExpanded ? '' : 'rotate-90'}"
-      />
-      <!-- <Fa icon={faPlug} size="xs" class="opacity-70" /> -->
-      <span>{m.workspace_mcpServers_title()}</span>
-      <span class="ml-auto text-ui opacity-60"
-        >{m.workspace_mcpServers_enabledCount_label({
-          count: formatInteger(enabledServerCount),
-        })}</span
-      >
-    </button>
+    />
 
     {#if isExpanded}
-      <div class="space-y-0.5 mt-1 pl-4" transition:slide={{ axis: 'y', duration: 200 }}>
+      <div class="space-y-0.5 mt-1" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         {#each serverRows as { server, enabled, error } (server.name)}
           {@const isEnabled = enabled}
           {@const serverError = error}
           {@const faviconUrl = getFaviconUrl(server)}
           {@const showFallback = !faviconUrl || faviconErrors[server.name]}
-          <div class="flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors group">
+          <div class="flex h-7 items-center gap-1.5 px-2 rounded-md transition-colors group">
             <!-- Server Icon - Favicon for HTTP/SSE, terminal icon for command -->
             <div
               class="size-3.5 rounded flex items-center justify-center shrink-0 {isEnabled
@@ -163,7 +152,7 @@
                 <Fa
                   icon={server.type === 'stdio' ? faTerminal : faPlug}
                   size="xs"
-                  class={isEnabled ? 'text-primary' : 'text-muted-foreground'}
+                  class={isEnabled ? 'text-primary-ink' : 'text-muted-foreground'}
                 />
               {:else if faviconUrl}
                 <img
@@ -178,7 +167,11 @@
             <!-- Server Name & Type -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span class="text-sm truncate {isEnabled ? 'text-foreground' : 'text-subtle'}">
+                <span
+                  class="type-body font-normal truncate {isEnabled
+                    ? 'text-foreground'
+                    : 'text-subtle'}"
+                >
                   {server.name}
                 </span>
                 {#if serverError && isEnabled}
@@ -213,14 +206,16 @@
         {/each}
 
         <!-- Manage Servers Button -->
-        <button
+        <Button
+          variant="ghost"
           type="button"
-          class="w-full flex items-center gap-1.5 px-2 py-1.5 mt-1 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
+          size="compact"
+          class="h-7 w-full flex items-center justify-start gap-1.5 px-2 mt-1 text-sm text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer"
           onclick={() => navigateToSettings({ hash: 'mcp-servers' })}
         >
           <Fa icon={faGear} size={13} class="opacity-50 mx-[2px]" />
           <span>{m.workspace_mcpServers_manageServers_label()}</span>
-        </button>
+        </Button>
       </div>
     {/if}
   </div>

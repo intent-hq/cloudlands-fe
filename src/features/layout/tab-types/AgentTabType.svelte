@@ -20,8 +20,13 @@
   import { navigateToNote } from '$lib/utils/workspace-navigation';
   import ChatPanel from '$lib/components/chat/ChatPanel.svelte';
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
+  import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import type { ChatNavigationState } from '$lib/components/chat/chat-message-navigation';
+  import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
+  import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
   import * as Menu from '$lib/components/ui/menu';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import Fa from 'svelte-fa';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
   import { selectSelectedModel } from '$store/renderer/slices/model/model-selectors';
@@ -30,6 +35,8 @@
     selectSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
+    faBell,
+    faBellSlash,
     faCheck,
     faCircleInfo,
     faCopy,
@@ -44,7 +51,10 @@
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
-  import { deleteAgentWithUndoRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    deleteAgentWithUndoRequested,
+    setAgentNotificationsMutedRequested,
+  } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('AgentTabType');
@@ -78,6 +88,11 @@
   // Get agent model from session, falling back to $workspace default
   const agent$ = useAgentSession(() => tab.agentId);
   const agentModel = $derived($agent$?.model || $defaultModel);
+
+  // Daemon-owned per-agent notification mute (AgentLite `notificationsMuted`,
+  // converged through agent:updated). Drives the header indicator and the
+  // actions-menu toggle label.
+  const isNotificationsMuted = $derived($agent$?.notificationsMuted === true);
 
   // Subscribe to agent session updates
   let agentSession = $state<AgentSession | undefined>(undefined);
@@ -168,6 +183,7 @@
     userMessages: [],
     isLoadingUserMessageIndex: false,
   });
+  let taskProgressItems = $state<TaskProgressItem[]>([]);
 
   onDestroy(() => {
     if (agentCopyTimeoutId) {
@@ -198,6 +214,19 @@
     } catch (error) {
       logger.error('Failed to copy conversation', error);
     }
+  }
+
+  async function handleToggleNotificationsMuted() {
+    if (!tab.agentId) return;
+    const action = setAgentNotificationsMutedRequested(
+      workspaceId,
+      tab.agentId,
+      !isNotificationsMuted,
+    );
+    appStore.dispatch(action);
+    // The saga surfaces the failure toast and rolls back; swallow here so a
+    // daemon rejection never becomes an unhandled rejection.
+    await action.promise.catch(() => {});
   }
 
   async function handleDeleteAgent() {
@@ -237,14 +266,32 @@
 </script>
 
 {#snippet agentPrimaryActions()}
-  <ChatMessageNavigator
-    messages={chatNavigationState.userMessages}
-    isAtBottom={chatNavigationState.isAtBottom}
-    isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
-    onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
-    onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
-    onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
-  />
+  <div class="flex min-w-0 items-center gap-1.5">
+    {#if isNotificationsMuted}
+      <Tooltip content={m.chat_agentCard_notificationsMuted_tooltip()} side="bottom">
+        <span
+          class="inline-flex shrink-0 items-center text-subtle"
+          role="img"
+          aria-label={m.chat_agentCard_notificationsMuted_tooltip()}
+          data-testid="agent-tab-muted-indicator"
+        >
+          <Fa icon={faBellSlash} class="h-3! w-3!" />
+        </span>
+      </Tooltip>
+    {/if}
+    <TaskProgressControl tasks={taskProgressItems} presentation="checklist" />
+    {#if tab.agentId}
+      <BrowserTabsMenu {workspaceId} agentId={tab.agentId} />
+    {/if}
+    <ChatMessageNavigator
+      messages={chatNavigationState.userMessages}
+      isAtBottom={chatNavigationState.isAtBottom}
+      isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
+      onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
+      onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
+      onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
+    />
+  </div>
 {/snippet}
 
 {#snippet agentDisplayActions()}
@@ -255,25 +302,39 @@
   {#if agentTaskNoteId}
     <Menu.CommandItem
       icon={faNote}
+      iconWeight="regular"
       label={m.layout_agentTab_goToTaskNote_tooltip()}
       onclick={(event) => handleGoToTaskNote(event)}
     />
   {/if}
   <Menu.CommandItem
     icon={agentCopyFeedback ? faCheck : faCopy}
+    iconWeight="regular"
     label={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
     onclick={handleCopyAgentConversation}
     disabled={agentMessages.length === 0}
   />
+  {#if $agent$}
+    <Menu.CommandItem
+      icon={isNotificationsMuted ? faBell : faBellSlash}
+      iconWeight="regular"
+      label={isNotificationsMuted
+        ? m.chat_agentCard_menu_unmuteNotifications_label()
+        : m.chat_agentCard_menu_muteNotifications_label()}
+      onclick={handleToggleNotificationsMuted}
+    />
+  {/if}
   {#if canReplaceAgent}
     <Menu.CommandItem
       icon={faRightLeft}
+      iconWeight="regular"
       label={m.layout_agentTab_replaceAgent_tooltip()}
       onclick={() => (replaceAgentModalOpen = true)}
     />
   {/if}
   <Menu.CommandItem
     icon={faTrash}
+    iconWeight="regular"
     label={m.layout_agentTab_deleteAgent_tooltip()}
     onclick={handleDeleteAgent}
     disabled={isAgentDeleting}
@@ -284,6 +345,7 @@
     {#if agentSpecialistName}
       <Menu.CommandItem
         icon={faUserTie}
+        iconWeight="regular"
         label={m.chat_agentCard_menu_specialist_label({ name: agentSpecialistName })}
         disabled
       />
@@ -291,6 +353,7 @@
     {#if harnessVersion}
       <Menu.CommandItem
         icon={faCircleInfo}
+        iconWeight="regular"
         label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
         onclick={() => (harnessModalOpen = true)}
       />
@@ -328,6 +391,7 @@
           {isPanelFocused}
           {isInitialWorkspaceAgent}
           onNavigationStateChange={(state) => (chatNavigationState = state)}
+          onTaskProgressChange={(tasks) => (taskProgressItems = tasks)}
         />
       </div>
     {/key}

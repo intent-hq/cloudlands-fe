@@ -352,12 +352,53 @@ describe('DevicesSettings', () => {
       pinnedVersion: '0.9.1',
     });
 
-    it('marks a device whose captured daemon version is behind the pin, even while disconnected', () => {
+    it('describes the displayed version when the captured daemon version is behind the pin', async () => {
       mocks.pinnedVersion = '0.9.1';
-      mocks.connections = [local, { ...remote, daemonVersion: 'v0.9.0' }];
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: 'v0.9.0', intentdVersion: '6.8.0', status: 'connected' },
+      ];
       render(DevicesSettings);
 
-      expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
+      const version = screen.getByRole('button', { name: '6.8.0' });
+      version.focus();
+      const tooltip = await screen.findByRole('tooltip');
+      expect(tooltip.textContent?.trim()).toBe(behindLabel);
+      expect(version.getAttribute('aria-describedby')).toBe(tooltip.id);
+      expect(screen.queryByRole('img', { name: behindLabel })).toBeNull();
+    });
+
+    it.each(['disconnected', 'missing'] as const)(
+      'does not invent a displayed version for a %s behind device',
+      (state) => {
+        mocks.pinnedVersion = '0.9.1';
+        mocks.connections = [
+          local,
+          {
+            ...remote,
+            daemonVersion: '0.9.0',
+            intentdVersion: state === 'disconnected' ? '6.8.0' : undefined,
+            status: state === 'disconnected' ? 'not-open' : 'connected',
+          },
+        ];
+        render(DevicesSettings);
+
+        expect(screen.queryByText('6.8.0')).toBeNull();
+        expect(screen.queryByText('0.9.0')).toBeNull();
+        expect(screen.queryByRole('img', { name: behindLabel })).toBeNull();
+      },
+    );
+
+    it('leaves a current displayed version without a warning trigger', () => {
+      mocks.pinnedVersion = '0.9.1';
+      mocks.connections = [
+        local,
+        { ...remote, daemonVersion: '0.9.1', intentdVersion: '6.8.0', status: 'connected' },
+      ];
+      render(DevicesSettings);
+
+      expect(screen.getByText('6.8.0')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '6.8.0' })).toBeNull();
     });
 
     it('shows no indicator for up-to-date or unknown versions', () => {
@@ -417,19 +458,26 @@ describe('DevicesSettings', () => {
       mocks.connectedIds = ['remote-1', 'remote-2'];
       mocks.connections = [
         local,
-        { ...remote, daemonVersion: '0.9.0', updateSupported: false, status: 'connected' },
+        {
+          ...remote,
+          daemonVersion: '0.9.0',
+          intentdVersion: '0.9.0',
+          updateSupported: false,
+          status: 'connected',
+        },
         {
           ...remote,
           id: 'remote-2',
           label: 'Other Mac',
           daemonVersion: '0.9.0',
+          intentdVersion: '0.9.0',
           status: 'connected',
         },
       ];
       render(DevicesSettings);
 
-      // The behind-pin badge stays informational even without update support.
-      expect(screen.getAllByRole('img', { name: behindLabel })).toHaveLength(2);
+      // Version warnings stay informational even without update support.
+      expect(screen.getAllByRole('button', { name: '0.9.0' })).toHaveLength(2);
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Studio Mac' }));
       await screen.findByRole('menuitem', { name: 'Edit' });
@@ -474,7 +522,7 @@ describe('DevicesSettings', () => {
       expect(screen.queryByRole('button', { name: `Actions for ${localLabel}` })).toBeNull();
     });
 
-    it('offers the badge and Update when the shared predicates deem the local row eligible', async () => {
+    it('offers the version warning and Update when the shared predicates deem the local row eligible', async () => {
       const actual = await vi.importActual<typeof import('$lib/utils/device-update-eligibility')>(
         '$lib/utils/device-update-eligibility',
       );
@@ -487,10 +535,15 @@ describe('DevicesSettings', () => {
         actual.canRequestDeviceUpdate({ ...conn, isLocal: false }, ids, pinned);
       mocks.pinnedVersion = '0.9.1';
       mocks.connectedIds = ['local'];
-      mocks.connections = [{ ...local, daemonVersion: '0.9.0', updateSupported: true }, remote];
+      mocks.connections = [
+        { ...local, daemonVersion: '0.9.0', intentdVersion: '0.9.0', updateSupported: true },
+        remote,
+      ];
       render(DevicesSettings);
 
-      expect(screen.getByRole('img', { name: behindLabel })).toBeTruthy();
+      const version = screen.getByRole('button', { name: '0.9.0' });
+      version.focus();
+      expect((await screen.findByRole('tooltip')).textContent?.trim()).toBe(behindLabel);
 
       await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
       expect(await screen.findByRole('menuitem', { name: 'Update' })).toBeTruthy();

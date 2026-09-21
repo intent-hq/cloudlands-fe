@@ -452,6 +452,48 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     client.dispose();
   });
 
+  it('keeps request bursts on the scheduled backoff after a failed startup dial', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    sockets[0].emit('error', new Error('connect ENOENT intentd.sock'));
+
+    const requests = Array.from({ length: 20 }, () => client.request('workspace.list', {}));
+    const outcomes = Promise.allSettled(requests);
+    client.start();
+    expect(sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sockets).toHaveLength(2);
+    expect(client.getReconnectAttempts()).toBe(1);
+    client.dispose();
+    expect((await outcomes).every((result) => result.status === 'rejected')).toBe(true);
+  });
+
+  it('replays failed startup work on the first successful connection', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    const recovered = vi.fn(() => client.request('workspace.list', {}));
+    client.on('reconnected', recovered);
+    const failed = client.request('workspace.list', {}).catch((error: Error) => error.message);
+    sockets[0].emit('error', new Error('connect ENOENT intentd.sock'));
+    expect(await failed).toContain('ENOENT');
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].open();
+
+    expect(recovered).toHaveBeenCalledOnce();
+    expect(JSON.parse(sockets[1].writes[0])).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'workspace.list',
+      params: {},
+    });
+    sockets[1].receive('{"jsonrpc":"2.0","id":1,"result":{"workspaces":[]}}\n');
+    await expect(recovered.mock.results[0].value).resolves.toEqual({ workspaces: [] });
+    client.dispose();
+  });
+
   // #439: a stopped daemon must be re-probed at least every 5s while
   // disconnected, indefinitely — the daemon-loss modal relies on the main
   // process noticing a returning daemon promptly and never giving up.

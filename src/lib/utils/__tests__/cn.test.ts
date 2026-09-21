@@ -24,6 +24,12 @@ describe('cn', () => {
     expect(cn('text-red-500', 'text-blue-500')).toBe('text-blue-500');
   });
 
+  it('lets the last canonical typography role replace earlier font-size utilities', () => {
+    expect(cn('type-caption type-body')).toBe('type-body');
+    expect(cn('text-xs type-title')).toBe('type-title');
+    expect(cn('type-code text-ui-sm')).toBe('text-ui-sm');
+  });
+
   it('should handle arrays', () => {
     expect(cn(['px-4', 'py-2'])).toBe('px-4 py-2');
   });

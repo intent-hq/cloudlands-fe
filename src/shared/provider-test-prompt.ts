@@ -1,6 +1,6 @@
 /**
  * Typed contract for the daemon's `host.providerTestPrompt` RPC (PROTOCOL
- * §5.14, v9.3): one live ephemeral test prompt ("say hello") driven through
+ * §5.14): one live ephemeral test prompt ("say hello") driven through
  * the provider's real ACP adapter — the only conclusive end-to-end auth/setup
  * check (some providers serve local probes uncredentialed and only fail at
  * `session/prompt`).

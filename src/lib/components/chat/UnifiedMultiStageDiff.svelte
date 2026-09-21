@@ -93,7 +93,7 @@
 </script>
 
 {#if mergedHunks.length === 0}
-  <div class="flex items-center justify-center py-8 text-subtle text-sm">
+  <div class="flex items-center justify-start py-8 text-left text-sm text-subtle">
     {m.chat_unifiedMultiStageDiff_noChanges_label()}
   </div>
 {:else if workspaceId}
@@ -112,7 +112,7 @@
     />
   </div>
 {:else}
-  <div class="flex items-center justify-center h-24 text-subtle">
+  <div class="flex h-24 items-center justify-start text-left text-subtle">
     {m.chat_unifiedMultiStageDiff_noWorkspace_label()}
   </div>
 {/if}

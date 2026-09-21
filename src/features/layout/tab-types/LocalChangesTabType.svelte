@@ -19,7 +19,7 @@
     stageFiles as stageFilesViaSeam,
     unstageFiles as unstageFilesViaSeam,
   } from '$features/git/git-write-service';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
@@ -209,7 +209,7 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch
     const result = await stageFilesViaSeam(workspaceId, paths.map(toRepoRelative));
     if (!result.success) {
-      toast.error(m.workspace_fileChanges_stageFailed_error(), {
+      notify.error(m.workspace_fileChanges_stageFailed_error(), {
         description: result.error || m.ui_workspaceActions_unknown_error(),
       });
     }
@@ -219,7 +219,7 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch
     const result = await unstageFilesViaSeam(workspaceId, paths.map(toRepoRelative));
     if (!result.success) {
-      toast.error(m.workspace_fileChanges_unstageFailed_error(), {
+      notify.error(m.workspace_fileChanges_unstageFailed_error(), {
         description: result.error || m.ui_workspaceActions_unknown_error(),
       });
     }
@@ -229,7 +229,7 @@
     // eslint-disable-next-line intent/no-component-async-data-fetch
     const result = await discardFilesViaSeam(workspaceId, paths.map(toRepoRelative));
     if (!result.success) {
-      toast.error(m.workspace_fileChanges_revertFailed_error(), {
+      notify.error(m.workspace_fileChanges_revertFailed_error(), {
         description: result.error || m.ui_workspaceActions_unknown_error(),
       });
     }

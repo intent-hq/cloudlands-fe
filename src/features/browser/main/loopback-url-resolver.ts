@@ -11,6 +11,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
+import { TunnelForbiddenError } from '../../backend/main/tunnel-manager';
 import {
   classifyLoopbackHost,
   rewriteLoopbackUrl,
@@ -70,6 +71,8 @@ export interface RemoteTargetResolution {
   tunneled: boolean;
   /** Explanatory agent-facing error when unreachable and not tunnelable. */
   error?: string;
+  /** The daemon refused the forward as owner-only (multiplayer w3); `error` is set too. */
+  forbidden?: true;
 }
 
 /**
@@ -279,6 +282,17 @@ export async function resolveRewrittenRemoteTarget(
         remotePort: Number(port),
         error: tunnelError instanceof Error ? tunnelError.message : String(tunnelError),
       });
+      // Owner-only refusal (multiplayer w3): a collaborator credential can
+      // never forward, so the reachability lecture below does not apply.
+      if (tunnelError instanceof TunnelForbiddenError) {
+        return {
+          rewrite,
+          tunneled: false,
+          forbidden: true,
+          // i18n-ignore (agent-facing protocol error; the renderer shows a localized message off `forbidden`)
+          error: `${tunnelError.message}: ${rewrite.requestedUrl} lives on the daemon machine's loopback and port ${port} cannot be forwarded for this connection.`,
+        };
+      }
     }
   }
 
@@ -319,6 +333,8 @@ export interface ResolvedBrowserUrl {
   warning?: string;
   /** Explanatory error when the remote target is unreachable and not tunnelable. */
   error?: string;
+  /** The forward was refused as owner-only (multiplayer w3): render a localized message, not `error`. */
+  forbidden?: true;
 }
 
 /** Options for {@link resolveBrowserUrl}. */
@@ -356,5 +372,6 @@ export async function resolveBrowserUrl(
     ...(resolution.tunneled ? { tunneled: true } : {}),
     ...(finalRewrite.warning !== undefined ? { warning: finalRewrite.warning } : {}),
     ...(resolution.error !== undefined ? { error: resolution.error } : {}),
+    ...(resolution.forbidden ? { forbidden: true } : {}),
   };
 }

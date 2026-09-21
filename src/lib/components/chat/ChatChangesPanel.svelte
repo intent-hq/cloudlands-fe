@@ -211,9 +211,6 @@
     faPlus,
     faMinus,
     faRotateLeft,
-    faSpinner,
-    faCopy,
-    faCheck,
     faLock,
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
@@ -221,10 +218,14 @@
   import InlineDiffItem from './InlineDiffItem.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { safeSlide } from '$lib/utils/animations';
+  import { Checkbox } from '$lib/components/ui/checkbox';
+  import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import { safeDisclosureTransition } from './disclosure-motion';
   import { onDestroy, tick, untrack } from 'svelte';
   import { Virtualizer } from '@pierre/diffs';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import {
     selectFoldUnchanged,
@@ -243,7 +244,7 @@
     dedupedGitNumstat,
     dedupedShowFile,
   } from '$features/file-tracking/components/diff/diff-ipc-batcher';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { type WorkspaceId } from '$shared/types/branded-ids';
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import CombinedInlineDiffItem from './CombinedInlineDiffItem.svelte';
@@ -343,7 +344,7 @@
     branchBaseCommitSha?: string | null;
     /**
      * Secondary git root scoping the committed-content fetches (multi git
-     * root tracking, v6.15). Absent → primary-root behavior, byte-identical.
+     * root tracking, §5.6). Absent → primary-root behavior, byte-identical.
      */
     gitRootId?: string;
     /**
@@ -924,7 +925,7 @@
         plan.map((item) => {
           if (item.kind === 'fetch-committed') {
             // `currentGitRootId` scopes the reads to a registered secondary
-            // root (v6.15); normalize absolute UI paths against that root
+            // root (§5.6 git roots); normalize absolute UI paths against that root
             // before sending the root-relative Git path.
             const showOpts = currentGitRootId ? { gitRootId: currentGitRootId } : undefined;
             const rootRelativePath = toGitRootRelativePath(
@@ -1807,7 +1808,7 @@
   async function handleStageHunk(filePath: string, hunkPatch: string) {
     const workspaceId = routeWorkspaceId;
     if (!workspaceId) {
-      toast.error(m.chat_changesPanel_noSpaceAvailable_error());
+      notify.error(m.chat_changesPanel_noSpaceAvailable_error());
       return;
     }
 
@@ -1815,7 +1816,7 @@
     const validationError = validatePatch(hunkPatch);
     if (validationError) {
       logger.warn('Invalid patch for staging', { filePath, error: validationError });
-      toast.error(m.chat_changesPanel_stageInvalidPatch_error());
+      notify.error(m.chat_changesPanel_stageInvalidPatch_error());
       return;
     }
 
@@ -1824,7 +1825,7 @@
 
     const result = await gitClient.stageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
     if (result.ok) {
-      toast.success(m.chat_changesPanel_hunkStaged_toast());
+      notify.success(m.chat_changesPanel_hunkStaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Performant update: only refresh the affected file's diff
@@ -1836,14 +1837,14 @@
         }
       });
     } else {
-      toast.error(result.error || m.chat_changesPanel_stageHunkFailed_error());
+      notify.error(result.error || m.chat_changesPanel_stageHunkFailed_error());
     }
   }
 
   async function handleUnstageHunk(filePath: string, hunkPatch: string) {
     const workspaceId = routeWorkspaceId;
     if (!workspaceId) {
-      toast.error(m.chat_changesPanel_noSpaceAvailable_error());
+      notify.error(m.chat_changesPanel_noSpaceAvailable_error());
       return;
     }
 
@@ -1851,7 +1852,7 @@
     const validationError = validatePatch(hunkPatch);
     if (validationError) {
       logger.warn('Invalid patch for unstaging', { filePath, error: validationError });
-      toast.error(m.chat_changesPanel_unstageInvalidPatch_error());
+      notify.error(m.chat_changesPanel_unstageInvalidPatch_error());
       return;
     }
 
@@ -1860,7 +1861,7 @@
 
     const result = await gitClient.unstageHunk(workspaceId as WorkspaceId, filePath, hunkPatch);
     if (result.ok) {
-      toast.success(m.chat_changesPanel_hunkUnstaged_toast());
+      notify.success(m.chat_changesPanel_hunkUnstaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Performant update: only refresh the affected file's diff
@@ -1872,7 +1873,7 @@
         }
       });
     } else {
-      toast.error(result.error || m.chat_changesPanel_unstageHunkFailed_error());
+      notify.error(result.error || m.chat_changesPanel_unstageHunkFailed_error());
     }
   }
 
@@ -2479,19 +2480,6 @@
     });
   });
 
-  // State for copy SHA functionality
-  let copiedSha = $state(false);
-
-  function copyCommitSha() {
-    if (commitInfo?.hash) {
-      navigator.clipboard.writeText(commitInfo.hash);
-      copiedSha = true;
-      setTimeout(() => {
-        copiedSha = false;
-      }, 2000);
-    }
-  }
-
   // Handle opening agent from commit info
   function handleOpenAgentFromCommit(event?: MouseEvent) {
     const agentIdToOpen = commitInfo?.agentId || agentId;
@@ -2532,13 +2520,6 @@
     // GitHub noreply: {id}+{username}@users.noreply.github.com or {username}@users.noreply.github.com
     const noreplyMatch = email.match(/(?:\d+\+)?([^@]+)@users\.noreply\.github\.com/);
     if (noreplyMatch) return noreplyMatch[1];
-    return null;
-  }
-
-  // Get GitHub avatar URL — try username from email, fall back to null
-  function getGitHubAvatarUrl(email?: string, size: number = 28): string | null {
-    const username = getGitHubUsername(email);
-    if (username) return `https://github.com/${username}.png?size=${size * 2}`;
     return null;
   }
 
@@ -2612,7 +2593,7 @@
           {/each}
         </div>
       {:else if mergedChanges.length === 0}
-        <div class="flex items-center justify-center h-full text-subtle py-6">
+        <div class="flex h-full items-center justify-start py-6 text-left text-subtle">
           {m.chat_changesPanel_noChanges_label()}
         </div>
       {:else}
@@ -2620,7 +2601,7 @@
         <div class="sticky top-0 z-20 -mx-5 px-5">
           <div class="flex items-center justify-between py-2 bg-background border-b border-border">
             <div
-              class="flex items-center gap-1.5 text-xs font-medium text-subtle whitespace-nowrap"
+              class="flex items-center justify-start gap-1.5 whitespace-nowrap text-left text-xs font-medium text-subtle"
             >
               <span
                 >{totalFileCount === 1
@@ -2658,24 +2639,26 @@
                 <div
                   class="flex items-center gap-0.5 rounded-md border border-border bg-muted/50 p-0.5 -my-1"
                 >
-                  <button
+                  <Button
                     type="button"
+                    variant="plain"
                     class="px-2 py-0.5 text-xs rounded cursor-pointer transition-colors {!groupByCommit
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'}"
                     onclick={() => (groupByCommit = false)}
                   >
                     {m.chat_changesPanel_combined_label()}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="plain"
                     class="px-2 py-0.5 text-xs rounded cursor-pointer transition-colors {groupByCommit
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'}"
                     onclick={() => (groupByCommit = true)}
                   >
                     {m.chat_changesPanel_byCommit_label()}
-                  </button>
+                  </Button>
                 </div>
               {/if}
             </div>
@@ -2686,12 +2669,14 @@
             <!-- Group-by-commit mode: render changes grouped under commit headers -->
             {#each commitGroups as group, i (group.hash || 'working-' + i)}
               {#if group.hash}
+                {@const groupAuthorLogin = getGitHubUsername(group.authorEmail)}
                 <!-- Commit group with sticky collapsible header -->
                 <div class="mb-2">
                   <div class="sticky top-[31.5px] z-[11] bg-background rounded-md">
                     <div class="flex items-center gap-2 w-full px-3 py-2 rounded-md bg-muted/30">
-                      <button
+                      <Button
                         type="button"
+                        variant="plain"
                         class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                         onclick={() => toggleCommitGroup(group.hash)}
                       >
@@ -2704,20 +2689,17 @@
                           class="shrink-0 w-5 h-5 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
                           title={group.author || ''}
                         >
-                          {#if getGitHubAvatarUrl(group.authorEmail, 20)}
-                            <img
-                              src={getGitHubAvatarUrl(group.authorEmail, 20) ?? ''}
+                          {#if groupAuthorLogin}
+                            <GitHubAvatar
+                              identity={groupAuthorLogin}
                               alt={group.author || ''}
+                              size={20}
                               class="w-full h-full object-cover"
-                              loading="lazy"
-                              onerror={(e) => {
-                                (e.currentTarget as HTMLImageElement).style.display = 'none';
-                                const sibling = (e.currentTarget as HTMLImageElement)
-                                  .nextElementSibling;
-                                if (sibling) (sibling as HTMLElement).classList.remove('hidden');
-                              }}
-                            />
-                            <span class="hidden">{getAuthorInitials(group.author)}</span>
+                            >
+                              {#snippet fallback()}
+                                {getAuthorInitials(group.author)}
+                              {/snippet}
+                            </GitHubAvatar>
                           {:else}
                             {getAuthorInitials(group.author)}
                           {/if}
@@ -2725,7 +2707,7 @@
                         <span class="text-sm font-medium text-foreground truncate flex-1 min-w-0">
                           {group.message.split('\n')[0]}
                         </span>
-                      </button>
+                      </Button>
                       <span class="text-ui text-subtle shrink-0 flex items-center gap-1.5">
                         {#if group.date}
                           <span>{formatRelativeTime(group.date)}</span>
@@ -2741,20 +2723,23 @@
                               })}</span
                         >
                       </span>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost-light"
+                        size="icon-xs"
+                        iconOnly
                         class="text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer shrink-0"
                         onclick={() => handleOpenCommit(group.hash)}
                         title={m.chat_changesPanel_openCommit_title()}
                       >
                         <Fa icon={faArrowUpRightFromSquare} class="w-2.5 h-2.5" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                   {#if expandedCommits.has(group.hash)}
                     <div
                       class="flex flex-col gap-2 mt-2 mx-2"
-                      transition:safeSlide={{ duration: 150 }}
+                      transition:safeDisclosureTransition={{ tier: 'fast' }}
                     >
                       {#each group.changes as change (getExpandKey(change))}
                         {@render fileCard(change, true)}
@@ -2783,43 +2768,22 @@
 </div>
 
 {#snippet commitDetailsSection()}
-  <div class="mb-3 px-1">
-    <div class="flex items-start gap-2.5 py-2">
-      <!-- Author avatar (GitHub image with initials fallback) -->
-      <div
-        class="shrink-0 mt-0.5 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
-        title={commitInfo?.author || ''}
-      >
-        {#if getGitHubAvatarUrl(commitInfo?.authorEmail)}
-          <img
-            src={getGitHubAvatarUrl(commitInfo?.authorEmail) ?? ''}
-            alt={commitInfo?.author || ''}
-            class="w-full h-full object-cover"
-            loading="lazy"
-            onerror={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = 'none';
-              const sibling = (e.currentTarget as HTMLImageElement).nextElementSibling;
-              if (sibling) (sibling as HTMLElement).classList.remove('hidden');
-            }}
-          />
-          <span class="hidden">{getAuthorInitials(commitInfo?.author)}</span>
-        {:else}
-          {getAuthorInitials(commitInfo?.author)}
-        {/if}
-      </div>
-
+  {@const commitAuthorLogin = getGitHubUsername(commitInfo?.authorEmail)}
+  <div class="mb-3">
+    <div class="flex items-center gap-2.5 py-2">
       <div class="flex-1 min-w-0 space-y-1">
         <!-- Commit title — clickable if GitHub URL available -->
         {#if hasCommitUrl()}
-          <button
+          <Button
             type="button"
-            class="text-sm font-medium text-foreground hover:text-accent-foreground hover:underline underline-offset-2 text-left cursor-pointer transition-colors leading-snug"
+            variant="link"
+            class="h-auto justify-start px-0 text-sm font-medium text-foreground hover:text-accent-foreground hover:underline underline-offset-2 text-left cursor-pointer transition-colors leading-snug"
             onclick={openCommitInBrowser}
             title={m.chat_changesPanel_openOnGitHub_title()}
           >
             {commitInfo?.message?.split('\n')[0] || m.chat_changesPanel_untitledCommit_fallback()}
             <Fa icon={faArrowUpRightFromSquare} class="inline-block w-2.5 h-2.5 ml-1 opacity-40" />
-          </button>
+          </Button>
         {:else}
           <p class="text-sm font-medium text-foreground leading-snug">
             {commitInfo?.message?.split('\n')[0] || m.chat_changesPanel_untitledCommit_fallback()}
@@ -2837,17 +2801,14 @@
           {/if}
           {#if commitInfo?.hash}
             <span class="text-ghost">·</span>
-            <button
-              type="button"
-              class="inline-flex items-center gap-0.5 font-mono hover:text-foreground transition-colors"
-              onclick={copyCommitSha}
-              title={copiedSha
-                ? m.chat_changesPanel_copied_title()
-                : m.chat_changesPanel_copyFullSha_title()}
-            >
+            <span class="inline-flex items-center gap-0.5 font-mono">
               {commitInfo.hash.substring(0, 7)}
-              <Fa icon={copiedSha ? faCheck : faCopy} class="w-2 h-2 opacity-50" />
-            </button>
+              <CopyButton
+                text={commitInfo.hash}
+                label={m.chat_changesPanel_copyFullSha_title()}
+                class="size-5 text-muted-foreground"
+              />
+            </span>
           {/if}
         </div>
 
@@ -2876,8 +2837,9 @@
                 agentSession?.name && agentSession.name !== 'New Workspace Agent'
                   ? agentSession.name
                   : m.chat_shared_agentName_fallback()}
-              <button
+              <Button
                 type="button"
+                variant="plain"
                 class="flex items-center gap-1 text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer min-w-0"
                 onclick={(e) => handleOpenAgentFromCommit(e)}
                 title={m.chat_changesPanel_openAgent_title()}
@@ -2886,7 +2848,7 @@
                   <AgentAvatar agentId={displayAgentId ?? undefined} size={14} />
                 </span>
                 <span class="truncate">{agentName}</span>
-              </button>
+              </Button>
             {/if}
             {#if commitInfo?.linkedNoteId && onOpenNote}
               {@const linkedNote = selectNoteById.select(
@@ -2895,17 +2857,38 @@
                 commitInfo.linkedNoteId,
               )}
               {@const noteName = linkedNote?.title || m.chat_changesPanel_note_fallback()}
-              <button
+              <Button
                 type="button"
+                variant="plain"
                 class="flex items-center gap-1 text-ui text-muted-foreground hover:text-foreground transition-colors cursor-pointer min-w-0"
                 onclick={(e) => onOpenNote?.(commitInfo?.linkedNoteId!, e)}
                 title={m.chat_changesPanel_openLinkedNote_title()}
               >
                 <Fa icon={faNote} class="w-2.5 h-2.5 shrink-0" />
                 <span class="truncate">{noteName}</span>
-              </button>
+              </Button>
             {/if}
           </div>
+        {/if}
+      </div>
+      <!-- Author avatar (GitHub image with initials fallback) -->
+      <div
+        class="shrink-0 w-7 h-7 rounded-full bg-muted-foreground/15 flex items-center justify-center text-ui font-medium text-subtle select-none overflow-hidden"
+        title={commitInfo?.author || ''}
+      >
+        {#if commitAuthorLogin}
+          <GitHubAvatar
+            identity={commitAuthorLogin}
+            alt={commitInfo?.author || ''}
+            size={28}
+            class="w-full h-full object-cover"
+          >
+            {#snippet fallback()}
+              {getAuthorInitials(commitInfo?.author)}
+            {/snippet}
+          </GitHubAvatar>
+        {:else}
+          {getAuthorInitials(commitInfo?.author)}
         {/if}
       </div>
     </div>
@@ -2919,7 +2902,7 @@
   {@const locked = isFileLocked(change.filePath)}
   {@const stickyTop = inCommitGroup ? '64px' : '31.5px'}
   <div
-    class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-300 {isViewed
+    class="mb-4 bg-sidebar border border-border rounded-lg overflow-clip transition-all duration-spring-slow ease-spring-slow motion-reduce:transition-none {isViewed
       ? 'opacity-50'
       : ''}"
     style="overflow-anchor: none;"
@@ -2927,10 +2910,10 @@
   >
     <!-- File Header (sticky within scroll container) -->
     <div
-      class="flex items-center gap-2 px-4 py-1.5 group relative sticky z-10 bg-sidebar {allChangesSearchHeaderMatchKeys.has(
+      class="flex items-center gap-2 px-0 py-1.5 group relative sticky z-10 bg-sidebar {allChangesSearchHeaderMatchKeys.has(
         expandKey,
       )
-        ? 'ring-1 ring-yellow-400/60 bg-yellow-400/10'
+        ? 'ring-1 ring-warning/30 bg-warning/10'
         : ''} {allChangesSearchCurrentHeaderKey === expandKey
         ? 'ring-2 ring-blue-400/70 bg-blue-500/10'
         : ''}"
@@ -2941,31 +2924,30 @@
       data-change-sticky-top={stickyTop}
       data-change-search-text={displayPath}
     >
-      <button
+      <Button
+        variant="plain"
         onclick={() => toggleFile(expandKey)}
-        class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer shrink"
+        class="flex min-w-0 flex-1 shrink cursor-pointer items-center justify-start gap-2 text-left"
       >
-        <Fa
-          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronLeft}
-          class="text-subtle w-2.5! h-2.5! shrink-0"
-        />
-
         <span class="text-sm truncate shrink-0 max-w-full" title={displayPath}>
           {#each getAllChangesHighlightedTextSegments(getFileName(displayPath)) as segment, i (i)}
             {#if segment.isMatch}
-              <mark class="rounded-sm bg-yellow-400/40 px-0.5 text-foreground">{segment.text}</mark>
+              <mark class="rounded-sm bg-warning/10 px-0.5 text-foreground">{segment.text}</mark>
             {:else}
               {segment.text}
             {/if}
           {/each}
         </span>
+        <Fa
+          icon={expandedFiles.has(expandKey) ? faChevronDown : faChevronLeft}
+          class="text-subtle w-2.5! h-2.5! shrink-0"
+        />
+
         {#if getDirectoryPath(displayPath)}
           <span class="text-xs text-subtle truncate hidden sm:inline shrink-6">
             {#each getAllChangesHighlightedTextSegments(getDirectoryPath(displayPath)) as segment, i (i)}
               {#if segment.isMatch}
-                <mark class="rounded-sm bg-yellow-400/40 px-0.5 text-foreground"
-                  >{segment.text}</mark
-                >
+                <mark class="rounded-sm bg-warning/10 px-0.5 text-foreground">{segment.text}</mark>
               {:else}
                 {segment.text}
               {/if}
@@ -2981,9 +2963,9 @@
         {/if}
         <!-- Loading indicator when file is being refreshed -->
         {#if refreshingFiles.has(change.filePath)}
-          <Fa icon={faSpinner} class="w-3 h-3 text-ghost animate-spin shrink-0" />
+          <IntentMarkLoader size={12} class="text-ghost shrink-0" />
         {/if}
-      </button>
+      </Button>
 
       <!-- Action buttons -->
       <div class="absolute right-2 flex items-center gap-px">
@@ -3100,20 +3082,14 @@
             : m.chat_changesPanel_markViewed_title()}
           onclick={(e: MouseEvent) => e.stopPropagation()}
         >
-          <input
-            type="checkbox"
+          <Checkbox
             checked={isViewed}
-            onchange={() => toggleViewed(change.filePath, expandKey)}
-            class="sr-only peer"
+            onCheckedChange={() => toggleViewed(change.filePath, expandKey)}
+            size="sm"
+            ariaLabel={isViewed
+              ? m.chat_changesPanel_markNotViewed_title()
+              : m.chat_changesPanel_markViewed_title()}
           />
-          <span
-            class="w-3.5 h-3.5 rounded border border-muted-foreground/30 flex items-center justify-center
-              peer-checked:bg-primary peer-checked:border-primary transition-colors"
-          >
-            {#if isViewed}
-              <Fa icon={faCheck} class="w-2! h-2! text-primary-foreground" />
-            {/if}
-          </span>
           <span class="text-xs text-subtle">{m.chat_changesPanel_viewed_label()}</span>
         </label>
       </div>
@@ -3123,7 +3099,7 @@
     {#if expandedFiles.has(expandKey)}
       <div
         class="border-t border-border"
-        transition:safeSlide={{ axis: 'y', duration: 200 }}
+        transition:safeDisclosureTransition={{ tier: 'moderate' }}
         use:observeVisibility={expandKey}
       >
         {#if visibleFiles.has(expandKey)}
@@ -3164,8 +3140,8 @@
           {/if}
         {:else}
           <!-- Placeholder while waiting for visibility -->
-          <div class="flex items-center justify-center h-[300px] text-subtle">
-            <Fa icon={faSpinner} class="animate-spin mr-2" />
+          <div class="flex h-[300px] items-center justify-start text-left text-subtle">
+            <IntentMarkLoader size={16} class="mr-2" />
             {m.chat_changesPanel_loadingDiff_label()}
           </div>
         {/if}

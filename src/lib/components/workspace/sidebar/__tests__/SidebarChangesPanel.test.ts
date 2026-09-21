@@ -202,11 +202,8 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
     (workspaceId: string) => createSelectorReadable(workspaceId, () => mockPostMergeState),
     { select: () => mockPostMergeState },
   ),
-  selectGitOperationFlags: Object.assign(
-    (workspaceId: string) => createSelectorReadable(workspaceId, () => mockGitOperationFlags),
-    { select: () => mockGitOperationFlags },
-  ),
-  selectSecondaryRootGitRoots: () => createReadable({}),
+  selectGitOperationFlags: createMockFtSelector(() => mockGitOperationFlags),
+  selectSecondaryRootGitRoots: createMockFtSelector(() => mockSecondaryRoots),
 }));
 
 vi.mock('$store/renderer/slices/git/git-slice', async (importOriginal) => ({
@@ -325,6 +322,8 @@ const mockGitOperationFlags = {
   isRefreshingGitStatus: false,
   isResettingToTrunk: false,
 };
+
+let mockSecondaryRoots: Record<string, any> = {};
 
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({}));
 
@@ -649,6 +648,8 @@ async function resetMocks() {
   mockGitState.ahead = 0;
   mockGitState.behind = 0;
   mockGitState.status = null;
+  mockGitOperationFlags.isRefreshingGitStatus = false;
+  mockSecondaryRoots = {};
   mockWorkspaceStore.findById.mockReturnValue(undefined);
   mockSidebarChangesState.commitWhenReady = false;
   mockSidebarChangesState.createPRWhenReady = false;
@@ -699,6 +700,7 @@ async function renderPanel(props: Record<string, any> = {}) {
 // (intent-hq/monorepo#1406, intent-hq/monorepo#1464). After this,
 // renderPanel()'s import is a cache hit.
 warmImport(() => import('../SidebarChangesPanel.svelte'));
+warmImport(() => import('./mocks/ChangesHeaderHost.svelte'));
 
 describe('SidebarChangesPanel', () => {
   beforeEach(async () => {
@@ -752,6 +754,70 @@ describe('SidebarChangesPanel', () => {
         { type: 'git/loadStatus', payload: ['ws-1', true] },
         { type: 'changes/refreshRequested', payload: ['ws-1'] },
       ]);
+    });
+
+    it('routes header refresh through the original primary flow and clears the busy flag', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      const Host = (await import('./mocks/ChangesHeaderHost.svelte')).default;
+      const { getByTestId, container } = render(Host);
+      const header = getByTestId('changes-test-header');
+      const button = await waitFor(() => {
+        const action = header.querySelector<HTMLButtonElement>('button');
+        expect(action).toBeTruthy();
+        return action!;
+      });
+      expect(
+        container.querySelector('.sidebar-changes-container [data-changes-refresh]'),
+      ).toBeNull();
+      mockDispatch.mockClear();
+      await fireEvent.click(button);
+      expect(mockDispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: 'git/setGitOperationFlag', payload: ['ws-1', 'isRefreshingGitStatus', true] },
+        { type: 'git/loadStatus', payload: ['ws-1', true] },
+        { type: 'changes/refreshRequested', payload: ['ws-1'] },
+        { type: 'changes/refreshAcceptChangesStatus', payload: ['ws-1'] },
+      ]);
+      const { gitCache } = await import('$features/git/git-cache');
+      expect(gitCache.invalidate).toHaveBeenCalledWith('git-status-ws-1');
+      await waitFor(() =>
+        expect(mockDispatch).toHaveBeenLastCalledWith({
+          type: 'git/setGitOperationFlag',
+          payload: ['ws-1', 'isRefreshingGitStatus', false],
+        }),
+      );
+      mockGitOperationFlags.isRefreshingGitStatus = true;
+      flushFtSelectors();
+      await waitFor(() => expect(button.disabled).toBe(true));
+      mockDispatch.mockClear();
+      await fireEvent.click(button);
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+
+    it('keeps count-row activation separate from the header refresh flow', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      mockFileTrackingStore.unstagedChanges = [makeChange({ relativePath: 'src/sidebar.ts' })];
+      const Host = (await import('./mocks/ChangesHeaderHost.svelte')).default;
+      const { container } = render(Host);
+      const count = await waitFor(() => {
+        const button = container.querySelector<HTMLButtonElement>(
+          '[data-changes-summary-count] button',
+        );
+        expect(button).toBeTruthy();
+        return button!;
+      });
+      mockDispatch.mockClear();
+      const branch = container.querySelector<HTMLButtonElement>(
+        '[data-branch-field="working"] button',
+      )!;
+      expect(await fireEvent.keyDown(branch, { key: 'Enter' })).toBe(true);
+      expect(await fireEvent.keyDown(count, { key: 'Enter' })).toBe(true);
+      expect(await fireEvent.keyDown(count, { key: ' ' })).toBe(true);
+      expect(mockDispatch).not.toHaveBeenCalled();
+      await fireEvent.click(count);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'workspaceNavigation/openWorkspaceLocalChanges',
+        payload: ['ws-1'],
+      });
     });
 
     it('shows skeleton loading state when store has not loaded', async () => {
@@ -2186,6 +2252,63 @@ describe('SidebarChangesPanel', () => {
         ...overrides,
       };
     }
+
+    it('moves the selected secondary refresh into the header and restores primary on return', async () => {
+      mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());
+      await seedGitRoots([makeGitRoot({ registeredCommitSha: 'root-base' })]);
+      const Host = (await import('./mocks/ChangesHeaderHost.svelte')).default;
+      const { container, getByTestId } = render(Host);
+      const trigger = await waitFor(() => {
+        const button = container.querySelector<HTMLButtonElement>(
+          '[data-testid="git-root-selector"] button',
+        );
+        expect(button).toBeTruthy();
+        return button!;
+      });
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() =>
+        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeTruthy(),
+      );
+      const header = getByTestId('changes-test-header');
+      const refresh = await waitFor(() => {
+        const button = header.querySelector<HTMLButtonElement>('button');
+        expect(button).toBeTruthy();
+        return button!;
+      });
+      mockDispatch.mockClear();
+      await fireEvent.click(refresh);
+      expect(mockDispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'git/loadSecondaryRoot',
+        payload: ['ws-1', 'root-1', 'root-base', 30],
+      });
+      mockSecondaryRoots = {
+        'root-1': { loading: true, status: null, commits: [], commitFiles: {}, error: null },
+      };
+      flushFtSelectors();
+      await waitFor(() => expect(refresh.disabled).toBe(true));
+      mockDispatch.mockClear();
+      await fireEvent.click(refresh);
+      expect(mockDispatch).not.toHaveBeenCalled();
+      trigger.focus();
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+      await fireEvent.keyDown(trigger, { key: 'Enter' });
+      await waitFor(() =>
+        expect(container.querySelector('[data-testid="secondary-root-changes-view"]')).toBeNull(),
+      );
+      const primaryRefresh = header.querySelector<HTMLButtonElement>('button')!;
+      await fireEvent.click(primaryRefresh);
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: 'git/loadStatus',
+        payload: ['ws-1', true],
+      });
+      expect(
+        mockDispatch.mock.calls.some(([action]) => action.type === 'git/loadSecondaryRoot'),
+      ).toBe(false);
+    });
 
     it('renders no dropdown when the workspace has no secondary roots', async () => {
       mockWorkspaceStore.findById.mockReturnValue(makeWorkspace());

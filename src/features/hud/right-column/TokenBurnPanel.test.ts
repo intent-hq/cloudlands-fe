@@ -1,7 +1,7 @@
 /**
  * TokenBurnPanel tests — the 24h total sums EVERY §5.36 counter (input,
  * output, thoughts, cache read + creation), sits on its own line above a
- * label/rate row (so "TOK · 24H" never wraps), the "…/min" readout is the
+ * label/rate row (so "Tok · 24h" never wraps), the "…/min" readout is the
  * last-5-minute average from the hud slice, and the trend arrow renders ▲ for
  * up / ▼ for down / nothing (neutral) on the first load and when flat.
  */
@@ -76,7 +76,7 @@ describe('TokenBurnPanel', () => {
     appStore.dispatch(hudUsageLoaded(usage({ inputTokens: 12345 })));
     flushSync();
     const key = panel().querySelector('.hud-burn-key') as HTMLElement;
-    expect(key.textContent).toBe('TOK · 24H');
+    expect(key.textContent).toBe('Tok · 24h');
     expect(panel().textContent).not.toContain('SESSION');
   });
 

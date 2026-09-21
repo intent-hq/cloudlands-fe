@@ -65,7 +65,9 @@ vi.mock('$store/renderer/store', () => ({
 }));
 
 const toastError = vi.fn();
-vi.mock('svelte-sonner', () => ({ toast: { error: toastError, info: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: toastError, info: vi.fn() },
+}));
 
 const transcribeWithOsMock = vi.fn();
 vi.mock('$features/voice/os-transcription-service', async (importOriginal) => {
@@ -609,7 +611,7 @@ describe('handleFinishedRecording', () => {
     expect(dispatched.some((action) => action.type === voiceTranscriptionFinished.type)).toBe(true);
   });
 
-  it('surfaces the structured no-API-key error (data.code, PROTOCOL §5.41 v4.4+) as a Settings hint toast', async () => {
+  it('surfaces the structured no-API-key error (data.code, PROTOCOL §5.41) as a Settings hint toast', async () => {
     const transcribe = vi.fn().mockRejectedValue(
       Object.assign(new Error('Internal error'), {
         data: {

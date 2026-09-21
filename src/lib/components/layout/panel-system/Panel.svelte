@@ -24,6 +24,7 @@
   import {
     arePanelTabCachesEqual,
     getNextPanelTabCacheExpiryDelay,
+    initializePanelTabCache,
     MAX_CACHED_INACTIVE_TABS,
     PANEL_TAB_CACHE_TTL_MS,
     updatePanelTabCache,
@@ -199,8 +200,13 @@
     maxInactiveTabs: MAX_CACHED_INACTIVE_TABS,
   };
 
-  // Track which tabs should remain mounted (active + recently visited)
-  let cachedTabIds = $state<Map<string, number>>(new Map()); // tabId -> timestamp when last active
+  // Track which tabs should remain mounted (active + recently visited). Seed an
+  // initially active panel before its first render; later changes stay effect-driven.
+  let cachedTabIds = $state<Map<string, number>>(
+    untrack(() =>
+      initializePanelTabCache(active, panel.tabs, panel.activeTabId, Date.now(), tabCacheOptions),
+    ),
+  ); // tabId -> timestamp when last active
 
   function applyTabCacheUpdate(
     tabs = panel.tabs,
@@ -443,13 +449,14 @@
     class={cn(
       'panel group/panel relative flex flex-col h-full overflow-hidden rounded-(--panel-shell-radius) text-foreground',
     )}
-    class:bg-sidebar={panel.pristine === true && panel.tabs.length === 0}
-    class:bg-background={panel.pristine !== true || panel.tabs.length > 0}
+    class:bg-sidebar={panel.tabs.length === 0}
+    class:bg-background={panel.tabs.length > 0}
     class:contained
     data-panel-id={panelId}
     data-layout-id={layoutId}
     data-focused={isFocused}
     data-focus-border-visible={isFocused && showFocusBorder}
+    data-empty-panel-shell={panel.tabs.length === 0 ? 'true' : undefined}
     data-zoomed={isZoomed}
     data-pristine={panel.pristine === true}
     data-empty-panel-surface={panel.pristine === true && panel.tabs.length === 0
@@ -531,7 +538,8 @@
           {@const isActive = active && tab.id === panel.activeTabId}
           <div
             class="tab-content-wrapper h-full w-full"
-            class:hidden={!isActive}
+            class:hidden={!isActive && tab.type !== 'browser'}
+            class:browser-background={!isActive && tab.type === 'browser'}
             data-tab-id={tab.id}
             aria-hidden={!isActive}
             inert={!isActive}
@@ -604,6 +612,10 @@
     }
   }
 
+  .panel[data-empty-panel-shell='true'] {
+    box-shadow: none;
+  }
+
   .panel-content {
     position: relative;
   }
@@ -648,5 +660,14 @@
 
   .tab-content-wrapper.hidden {
     display: none;
+  }
+
+  /* Keep the original browser guest paintable without changing its viewport
+     or reparenting it. Nonbrowser editors retain display:none above. */
+  .tab-content-wrapper.browser-background {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 </style>

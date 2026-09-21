@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'svelte-sonner';
 import Toast from './Toast.svelte';
 import AgentFailureToast from './AgentFailureToast.svelte';
+import ErrorToast from './ErrorToast.svelte';
+import ToastUndoAction from './ToastUndoAction.svelte';
 
 vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
   selectIsDarkTheme: () => ({
@@ -32,6 +34,37 @@ describe('Toast', () => {
     expect(await screen.findByText('Saved successfully')).toBeTruthy();
   });
 
+  it('renders the filled semantic glyph for every standard status variant', async () => {
+    render(Toast);
+    toast.success('Saved', { id: 'glyph-success', duration: Number.POSITIVE_INFINITY });
+    toast.error('Failed', { id: 'glyph-error', duration: Number.POSITIVE_INFINITY });
+    toast.warning('Warning', { id: 'glyph-warning', duration: Number.POSITIVE_INFINITY });
+    toast.info('Information', { id: 'glyph-info', duration: Number.POSITIVE_INFINITY });
+    toast.loading('Loading', { id: 'glyph-loading', duration: Number.POSITIVE_INFINITY });
+
+    await screen.findByText('Loading');
+    for (const variant of ['success', 'error', 'warning', 'info', 'loading']) {
+      const glyph = document.querySelector(`[data-toast-glyph="${variant}"]`);
+      expect(glyph?.querySelector('svg')).toBeTruthy();
+    }
+  });
+
+  it('runs and dismisses a standard toast action through the shared action control', async () => {
+    const onAction = vi.fn();
+    render(Toast);
+    toast.success('Workspace archived', {
+      duration: Number.POSITIVE_INFINITY,
+      action: { label: 'Undo', onClick: onAction },
+    });
+
+    const action = await screen.findByRole('button', { name: 'Undo' });
+    action.focus();
+    expect(document.activeElement).toBe(action);
+    await fireEvent.click(action);
+    expect(onAction).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByText('Workspace archived')).toBeNull());
+  });
+
   it('shows Clear all only for a stack and exposes count-aware live-region semantics', async () => {
     render(Toast);
     toast.success('First notification', { id: 'first', duration: Number.POSITIVE_INFINITY });
@@ -46,9 +79,13 @@ describe('Toast', () => {
     expect(clearAll.getAttribute('aria-controls')).toBe('app-toast-region');
     expect(clearAll.getAttribute('type')).toBe('button');
     expect(screen.getByLabelText(/Notifications/)).toBeTruthy();
+
+    toast.info('Third notification', { id: 'third', duration: Number.POSITIVE_INFINITY });
+    expect(await screen.findByRole('button', { name: 'Dismiss all 3 notifications' })).toBeTruthy();
+    expect(screen.queryByText(/^\d+ more$/)).toBeNull();
   });
 
-  it('renders stacked toasts expanded so a behind toast never collapses into a blank slab', async () => {
+  it('keeps stacked toasts collapsed until the stack is hovered', async () => {
     render(Toast);
     toast.success('Short front toast', { id: 'short', duration: Number.POSITIVE_INFINITY });
     toast.warning(
@@ -61,8 +98,43 @@ describe('Toast', () => {
     const toastElements = Array.from(document.querySelectorAll<HTMLElement>('[data-sonner-toast]'));
     expect(toastElements).toHaveLength(2);
     await waitFor(() =>
+      expect(toastElements.every((el) => el.getAttribute('data-expanded') === 'false')).toBe(true),
+    );
+    await fireEvent.mouseEnter(document.querySelector('[data-sonner-toaster]')!);
+    await waitFor(() =>
       expect(toastElements.every((el) => el.getAttribute('data-expanded') === 'true')).toBe(true),
     );
+  });
+
+  it('orders application-error actions from recovery to low emphasis', () => {
+    render(ErrorToast, {
+      props: {
+        error: {
+          id: 'application-error',
+          type: 'error',
+          title: 'Workspace error',
+          message: 'The workspace could not be opened.',
+          timestamp: new Date('2026-09-07T00:00:00Z'),
+          recoverable: true,
+        },
+        onRetry: vi.fn(),
+        onDebug: vi.fn(),
+        onCopy: vi.fn(),
+      },
+    });
+
+    expect(screen.getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
+      'Retry',
+      'Debug with AI',
+      'Copy',
+      '',
+    ]);
+  });
+
+  it('renders the undo keyboard shortcut as a kbd chip', () => {
+    const { container } = render(ToastUndoAction);
+
+    expect(container.querySelector('kbd[data-toast-shortcut]')?.textContent).toBe('⌘Z');
   });
 
   it('uses the same responsive width contract for standard and custom toasts', async () => {
@@ -88,7 +160,7 @@ describe('Toast', () => {
     expect(toaster).toBeTruthy();
     expect(toastElements).toHaveLength(2);
     expect(toaster!.style.getPropertyValue('--app-toast-width').trim()).toBe(
-      'min(26rem, calc(100vw - clamp(2rem, 8vw, 4rem)))',
+      'min(22rem, calc(100vw - clamp(2rem, 8vw, 4rem)))',
     );
     expect(new Set(toastElements.map((element) => getComputedStyle(element).width)).size).toBe(1);
     expect(toastElements.every((element) => element.classList.contains('w-full'))).toBe(true);
@@ -121,8 +193,8 @@ describe('Toast', () => {
     expect(document.activeElement).toBe(clearAll);
     await fireEvent.click(clearAll);
     await waitFor(() => expect(screen.queryByText('Clear all')).toBeNull());
+    await waitFor(() => expect(document.querySelectorAll('[data-sonner-toast]')).toHaveLength(0));
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
     showFailure('Newer failure');
     expect(await screen.findByText('Newer failure')).toBeTruthy();
     expect(screen.queryByText('Clear all')).toBeNull();

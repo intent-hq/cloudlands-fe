@@ -12,7 +12,8 @@
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
-  import { faSpinner, faSearch } from '@fortawesome/free-solid-svg-icons';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { faSearch } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
@@ -118,19 +119,19 @@
 </script>
 
 {#if !isAuthenticated}
-  <div class="p-8 flex flex-col items-center gap-4">
+  <div class="flex flex-col items-start gap-4 p-8 text-left">
     <LinearIcon size={48} class="text-subtle" />
-    <p class="text-sm text-subtle text-center">{m.workspace_linearPicker_connectPrompt_label()}</p>
+    <p class="text-left text-sm text-subtle">{m.workspace_linearPicker_connectPrompt_label()}</p>
     <Button onclick={handleConnect} disabled={isConnecting}>
       {#if isConnecting}
-        <Fa icon={faSpinner} class="animate-spin mr-2" />
+        <IntentMarkLoader size={16} class="mr-2" />
       {/if}
       {m.workspace_linearPicker_connect_label()}
     </Button>
   </div>
 {:else if isLoading}
   <div class="p-8 flex justify-center">
-    <Fa icon={faSpinner} class="animate-spin text-subtle" size="lg" />
+    <IntentMarkLoader size={20} class="text-subtle" />
   </div>
 {:else}
   <!-- Search -->
@@ -149,12 +150,13 @@
   <!-- Issues list -->
   <div class="max-h-80 overflow-y-auto">
     {#if filteredIssues.length === 0}
-      <div class="p-8 text-center text-subtle text-sm">
+      <div class="p-8 text-left text-sm text-subtle">
         {searchQuery ? 'No matching issues found' : 'No issues found'}
       </div>
     {:else}
       {#each filteredIssues as issue (issue.id)}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="w-full text-left px-4 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer flex items-start gap-3 border-b border-border last:border-0"
           onclick={() => handleSelect(issue)}
@@ -171,7 +173,7 @@
             </div>
             <p class="text-sm truncate mt-0.5">{issue.title}</p>
           </div>
-        </button>
+        </Button>
       {/each}
     {/if}
   </div>

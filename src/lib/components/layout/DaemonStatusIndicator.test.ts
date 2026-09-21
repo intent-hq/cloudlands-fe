@@ -37,6 +37,18 @@ const DEFAULT_CONNECTIONS = {
   certWarnings: {},
 };
 
+// Default guest-sessions slice (no joined hosts), merged the same way so the
+// dropdown's guest-sessions selectors resolve for tests that never set it.
+const DEFAULT_GUEST_SESSIONS = {
+  sessions: createCollection('id'),
+  openIds: [],
+  connectedIds: [],
+  hasReceivedList: true,
+  leavingIds: [],
+  hostedRosters: {},
+  removingMemberKeys: [],
+};
+
 // Mock svelte-fa
 vi.mock('svelte-fa', () => ({
   default: () => null,
@@ -64,7 +76,11 @@ vi.mock('$store/renderer/store', async () => {
   return {
     get store() {
       return createAppStoreMock({
-        state: () => ({ connections: { ...DEFAULT_CONNECTIONS }, ...mockStoreState }),
+        state: () => ({
+          connections: { ...DEFAULT_CONNECTIONS },
+          guestSessions: { ...DEFAULT_GUEST_SESSIONS },
+          ...mockStoreState,
+        }),
         dispatch: mockDispatch,
       });
     },
@@ -99,12 +115,12 @@ describe('DaemonStatusIndicator', () => {
     it('maps health states to correct colors', () => {
       const healthColors = {
         healthy: 'bg-green-500',
-        degraded: 'bg-yellow-500',
+        degraded: 'bg-warning',
         down: 'bg-red-500',
       };
 
       expect(healthColors.healthy).toBe('bg-green-500');
-      expect(healthColors.degraded).toBe('bg-yellow-500');
+      expect(healthColors.degraded).toBe('bg-warning');
       expect(healthColors.down).toBe('bg-red-500');
     });
 
@@ -176,7 +192,7 @@ describe('DaemonStatusIndicator', () => {
 
       await fireEvent.click(trigger);
       expect(screen.getByRole('menuitem', { name: 'Status - Healthy' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Connect another device' })).toBeTruthy();
+      expect(screen.getByRole('menuitem', { name: 'Connect another device' })).toBeTruthy();
     });
 
     it('dispatches pollSystemStatus when dropdown opens ($effect at line 72)', async () => {
@@ -704,6 +720,234 @@ describe('DaemonStatusIndicator', () => {
     });
   });
 
+  describe('agent memory row and breakdown', () => {
+    const baseStats = {
+      clients: 1,
+      agents: 2,
+      listenMode: 'uds' as const,
+      port: null,
+      os: 'macos',
+      arch: 'aarch64',
+      memoryBytes: 52428800,
+    };
+
+    const usage = {
+      sampledAt: '2026-09-20T06:00:00.000Z',
+      totalBytes: 3221225472,
+      agents: [
+        {
+          agentId: 'agent-1',
+          agentName: 'Implement dark mode',
+          workspaceId: 'ws-dark-mode',
+          provider: 'claude',
+          model: 'claude-sonnet-4',
+          rootPid: 48213,
+          processCount: 2,
+          memoryBytes: 2147483648,
+          processes: [
+            {
+              pid: 48213,
+              parentPid: 4120,
+              name: 'claude-code-acp',
+              cmdline: '/usr/local/lib/node_modules/claude-code-acp/dist/index.js --stdio',
+              memoryBytes: 1610612736,
+            },
+            {
+              pid: 48250,
+              parentPid: 48213,
+              name: 'node',
+              cmdline: 'node server.js --workspace ws-dark-mode',
+              memoryBytes: 536870912,
+            },
+          ],
+        },
+        {
+          agentId: 'agent-2',
+          agentName: 'Fix flaky CT spec',
+          workspaceId: 'ws-flaky-ct',
+          provider: 'codex',
+          rootPid: 48902,
+          processCount: 1,
+          memoryBytes: 1073741824,
+          processes: [
+            {
+              pid: 48902,
+              parentPid: 4120,
+              name: 'codex',
+              cmdline: '/usr/local/bin/codex --acp',
+              memoryBytes: 1073741824,
+            },
+          ],
+        },
+      ],
+    };
+
+    function withAgentMemory(
+      agentMemoryBytes: number | null | undefined,
+      extra: Record<string, unknown> = {},
+    ) {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: { ...baseStats, agentMemoryBytes },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+          agentMemoryUsage: null,
+          agentMemoryUsageFetching: false,
+          agentMemoryUsageError: false,
+          ...extra,
+        },
+      };
+    }
+
+    async function openStatusMenu() {
+      render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+    }
+
+    const breakdownActions = (type: string) =>
+      mockDispatch.mock.calls.filter(([action]) => action?.type === type).length;
+
+    it('renders the agent memory row as a button once the daemon has sampled it', async () => {
+      withAgentMemory(3221225472);
+      await openStatusMenu();
+
+      const row = screen.getByRole('button', { name: /^Agent memory 3\.00 GB/ });
+      expect(row).toBeTruthy();
+      expect(within(row).getByText('3.00 GB')).toBeTruthy();
+      // The daemon's own Memory row is unaffected.
+      expect(screen.getByText('50.0 MB')).toBeTruthy();
+    });
+
+    it('hides the row when the field is null (not yet sampled) or absent (older daemon)', async () => {
+      withAgentMemory(null);
+      const first = render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+      expect(screen.queryByText('Agent memory')).toBeNull();
+      expect(screen.getByText('Memory')).toBeTruthy();
+      first.unmount();
+
+      withAgentMemory(undefined);
+      await openStatusMenu();
+      expect(screen.queryByText('Agent memory')).toBeNull();
+    });
+
+    it('opens the breakdown dialog, closes the menu, and starts the usage fetch', async () => {
+      withAgentMemory(3221225472);
+      await openStatusMenu();
+
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownOpened')).toBe(0);
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toBeTruthy();
+      expect(dialog.parentElement).toBe(document.body);
+      expect(screen.queryByText('WSS clients')).toBeNull();
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownOpened')).toBe(1);
+      // Loading state until the saga stores a usage sample.
+      expect(within(dialog).getByText(/Loading agent memory usage/)).toBeTruthy();
+    });
+
+    it('lists every agent memory-descending with an expandable process list', async () => {
+      withAgentMemory(3221225472, { agentMemoryUsage: usage });
+      await openStatusMenu();
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText('Implement dark mode')).toBeTruthy();
+      expect(within(dialog).getByText('Fix flaky CT spec')).toBeTruthy();
+      expect(within(dialog).getByText('2.00 GB')).toBeTruthy();
+      expect(within(dialog).getAllByText('1.00 GB').length).toBeGreaterThan(0);
+      expect(within(dialog).getByText('2 processes')).toBeTruthy();
+      expect(within(dialog).getByText('1 process')).toBeTruthy();
+      expect(within(dialog).getByText(/Workspace ws-dark-mode/)).toBeTruthy();
+
+      // Rows render in wire order (the daemon sorts memory-descending).
+      const triggers = within(dialog).getAllByRole('button', { expanded: false });
+      const names = triggers.map((t) => t.textContent ?? '');
+      expect(names.findIndex((n) => n.includes('Implement dark mode'))).toBeLessThan(
+        names.findIndex((n) => n.includes('Fix flaky CT spec')),
+      );
+
+      // Processes stay collapsed (inert, hidden from AT) until the agent row
+      // is expanded.
+      const trigger = within(dialog).getByRole('button', { name: /Implement dark mode/ });
+      const collapsedList = within(dialog).getByRole('list', {
+        name: 'Processes of Implement dark mode',
+        hidden: true,
+      });
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(collapsedList.closest('[data-accordion-content]')?.getAttribute('data-state')).toBe(
+        'closed',
+      );
+      await fireEvent.click(trigger);
+      await tick();
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      const list = within(dialog).getByRole('list', { name: 'Processes of Implement dark mode' });
+      expect(list.closest('[data-accordion-content]')?.getAttribute('data-state')).toBe('open');
+      expect(within(list).getByText('PID 48213')).toBeTruthy();
+      expect(within(list).getByText('PID 48250')).toBeTruthy();
+      expect(within(list).getByText('claude-code-acp')).toBeTruthy();
+      expect(within(list).getByText('1.50 GB')).toBeTruthy();
+      expect(within(list).getByText('512.0 MB')).toBeTruthy();
+      expect(within(list).getAllByText(/--stdio/).length).toBeGreaterThan(0);
+    });
+
+    it('shows the empty and error states', async () => {
+      withAgentMemory(0, { agentMemoryUsage: { ...usage, agents: [], totalBytes: 0 } });
+      const first = render(DaemonStatusIndicatorPreloaded);
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      expect(
+        within(screen.getByRole('dialog')).getByText(/No agent processes have been sampled/),
+      ).toBeTruthy();
+      first.unmount();
+
+      withAgentMemory(3221225472, { agentMemoryUsageError: true });
+      await openStatusMenu();
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      expect(within(screen.getByRole('dialog')).getByText(/could not be loaded/)).toBeTruthy();
+    });
+
+    it('keeps the last sample visible and flags a failed refresh alongside it', async () => {
+      withAgentMemory(3221225472, { agentMemoryUsage: usage, agentMemoryUsageError: true });
+      await openStatusMenu();
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText('Implement dark mode')).toBeTruthy();
+      expect(within(dialog).getByRole('status').textContent).toMatch(/last sample/);
+      expect(within(dialog).queryByText(/could not be loaded/)).toBeNull();
+    });
+
+    it('dispatches agentMemoryBreakdownClosed on Close and on Escape', async () => {
+      withAgentMemory(3221225472, { agentMemoryUsage: usage });
+      await openStatusMenu();
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownClosed')).toBe(0);
+
+      await fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }),
+      );
+      await tick();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownClosed')).toBe(1);
+
+      // Reopen and dismiss with Escape.
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+      await fireEvent.click(screen.getByText(/^Status - /));
+      await fireEvent.click(screen.getByRole('button', { name: /^Agent memory/ }));
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownOpened')).toBe(2);
+      await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+      await tick();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(breakdownActions('daemonHealth/agentMemoryBreakdownClosed')).toBe(2);
+    });
+  });
+
   describe('workspace disk rendering', () => {
     function withDisk(opts: {
       health?: 'healthy' | 'degraded' | 'down';
@@ -814,7 +1058,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(true);
       expect(iconOf(trigger).classList.contains('text-subtle')).toBe(false);
 
       await fireEvent.click(trigger);
@@ -823,9 +1067,9 @@ describe('DaemonStatusIndicator', () => {
       const icon = screen.getByLabelText('Less than 10% of the workspaces volume is free');
       // role="img" so the aria-label on the plain span is reliably exposed.
       expect(icon.getAttribute('role')).toBe('img');
-      // In-menu status text renders yellow, not green.
+      // In-menu status text renders with warning emphasis, not green.
       const statusValue = screen.getByText('Healthy');
-      expect(statusValue.classList.contains('text-yellow-500')).toBe(true);
+      expect(statusValue.classList.contains('text-warning-ink')).toBe(true);
       expect(statusValue.classList.contains('text-green-500')).toBe(false);
     });
 
@@ -847,7 +1091,7 @@ describe('DaemonStatusIndicator', () => {
 
       const trigger = screen.getByRole('button', { name: 'intentd: not running' });
       expect(iconOf(trigger).classList.contains('text-red-500')).toBe(true);
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(false);
     });
   });
 
@@ -966,7 +1210,7 @@ describe('DaemonStatusIndicator', () => {
       const trigger = screen.getByRole('button', {
         name: 'intentd: healthy (version mismatch)',
       });
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(true);
       expect(iconOf(trigger).classList.contains('text-subtle')).toBe(false);
     });
 
@@ -1059,7 +1303,7 @@ describe('DaemonStatusIndicator', () => {
       render(DaemonStatusIndicator);
 
       const trigger = screen.getByRole('button', { name: 'intentd: degraded' });
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(true);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(true);
     });
 
     it('keeps the red dot and down label when the daemon is down despite a mismatch', async () => {
@@ -1074,7 +1318,7 @@ describe('DaemonStatusIndicator', () => {
 
       const trigger = screen.getByRole('button', { name: 'intentd: not running' });
       expect(iconOf(trigger).classList.contains('text-red-500')).toBe(true);
-      expect(iconOf(trigger).classList.contains('text-yellow-500')).toBe(false);
+      expect(iconOf(trigger).classList.contains('text-warning')).toBe(false);
     });
   });
 
@@ -1657,7 +1901,7 @@ describe('DaemonStatusIndicator', () => {
       const menu = screen.getByText('Manage devices').closest('[role="menu"]')!;
       expect(
         within(menu as HTMLElement)
-          .getAllByRole('button')
+          .getAllByRole('menuitem')
           .at(-1)?.textContent,
       ).toContain('Manage devices');
     });
@@ -1744,6 +1988,23 @@ describe('DaemonStatusIndicator', () => {
       expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
     });
 
+    it('activates the final devices menu item with Enter and closes the menu', async () => {
+      mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+      render(DaemonStatusIndicatorPreloaded);
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      await fireEvent.click(trigger);
+      const manage = screen.getByRole('menuitem', { name: 'Manage devices' });
+      manage.focus();
+      await fireEvent.keyDown(manage, { key: 'Enter' });
+      await vi.waitFor(() =>
+        expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' }),
+      );
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(
+        mockDispatch.mock.calls.some(([action]) => action.type === 'connections/openRequested'),
+      ).toBe(false);
+    });
+
     it('offers to connect another device when no remote is saved', async () => {
       mockStoreState = {
         daemonHealth: { ...healthy },
@@ -1756,6 +2017,152 @@ describe('DaemonStatusIndicator', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
       await fireEvent.click(screen.getByText('Connect another device'));
       expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
+    });
+
+    describe('guest sessions block', () => {
+      const guestRecord = {
+        id: 'guest-1',
+        label: 'studio.local',
+        host: '10.0.0.9',
+        hosts: ['10.0.0.9'],
+        port: 4180,
+        fingerprint: 'CC:DD',
+        tcAddress: null,
+        hostname: 'studio.local',
+        principalId: 'p-1',
+        login: 'octocat',
+        joinedAt: '2026-09-01T00:00:00.000Z',
+      };
+
+      function withGuestSessions(connectedIds: string[], openIds: string[] = ['guest-1']) {
+        return {
+          ...DEFAULT_GUEST_SESSIONS,
+          sessions: createCollection('id', [guestRecord]),
+          openIds,
+          connectedIds,
+        };
+      }
+
+      it('hides the block when no host has been joined', async () => {
+        mockStoreState = { daemonHealth: { ...healthy }, connections: withConnections('local') };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        expect(screen.queryByTestId('daemon-status-guest-sessions')).toBeNull();
+      });
+
+      it('lists a joined host with its pooled connection state', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions([]),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        const row = within(block).getByText('studio.local').closest('[role="menuitem"]')!;
+        expect(
+          row.querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
+        ).toBe('false');
+      });
+
+      it('shows no connection status for a joined host with no window open', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          // A stale pooled-connection id must not be mistaken for an open window.
+          guestSessions: withGuestSessions(['guest-1'], []),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        const row = within(block).getByText('studio.local').closest('[role="menuitem"]')!;
+        expect(row.querySelector('[data-guest-connected]')).toBeNull();
+      });
+
+      it('marks the row connected once main reports the pooled client live', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions(['guest-1']),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        const row = within(block).getByText('studio.local').closest('[role="menuitem"]')!;
+        expect(
+          row.querySelector('[data-guest-connected]')?.getAttribute('data-guest-connected'),
+        ).toBe('true');
+      });
+
+      it('opens the guest host as a window through connections/openRequested', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions(['guest-1']),
+        };
+        mockDispatch.mockImplementation(
+          (action: { type: string; success?: (r: unknown) => void }) => {
+            if (action.type === 'connections/openRequested') {
+              action.success?.({ status: 'opened', id: 'guest-1' });
+            }
+            return action;
+          },
+        );
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        await fireEvent.click(
+          within(block).getByText('studio.local').closest('[role="menuitem"]')!,
+        );
+
+        await vi.waitFor(() =>
+          expect(mockDispatch).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'connections/openRequested', payload: ['guest-1'] }),
+          ),
+        );
+      });
+
+      it('surfaces a secret-unavailable guest open with the host label and routes to Guest Sessions settings', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions([]),
+        };
+        mockDispatch.mockImplementation(
+          (action: { type: string; success?: (r: unknown) => void }) => {
+            if (action.type === 'connections/openRequested') {
+              action.success?.({ status: 'secret-unavailable' });
+            }
+            return action;
+          },
+        );
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        const block = screen.getByTestId('daemon-status-guest-sessions');
+        await fireEvent.click(
+          within(block).getByText('studio.local').closest('[role="menuitem"]')!,
+        );
+
+        await vi.waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+        expect(String(mockToastError.mock.calls[0][0])).toContain('studio.local');
+        expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'guest-sessions' });
+        expect(mockNavigateToSettings).not.toHaveBeenCalledWith({ tab: 'devices' });
+      });
+
+      it('routes the block CTA to the Guest Sessions settings tab', async () => {
+        mockStoreState = {
+          daemonHealth: { ...healthy },
+          connections: withConnections('local'),
+          guestSessions: withGuestSessions([]),
+        };
+        render(DaemonStatusIndicatorPreloaded);
+        await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+        await fireEvent.click(screen.getByText('Manage guest sessions'));
+        expect(mockNavigateToSettings).toHaveBeenCalledWith({ tab: 'guest-sessions' });
+      });
     });
   });
 
@@ -1934,8 +2341,8 @@ describe('DaemonStatusIndicator', () => {
 
       const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
       expect(trigger.textContent?.trim()).toBe('');
-      // Dot-only trigger keeps the original fixed width.
-      expect(trigger.classList.contains('w-6')).toBe(true);
+      await fireEvent.click(trigger);
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
     });
 
     it('shows no label when connections have not loaded yet', async () => {

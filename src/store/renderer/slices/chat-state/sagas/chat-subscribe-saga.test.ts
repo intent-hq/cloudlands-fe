@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
-import type { AgentMessage, AgentSession } from '$shared/types';
+import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { ChatLiveStreamPhase, ChatTranscript } from '$lib/client/app-client';
 
 // FAKE seam: chat.subscribe is stubbed so no daemon call happens; each call
@@ -53,6 +53,12 @@ vi.mock('$features/events/daemon-events-bridge.client', async (importOriginal) =
   return { ...actual, seedStreamFromSnapshot: vi.fn() };
 });
 
+// Spy seam for the stream-lifecycle diagnostics the snapshot guards emit.
+vi.mock('$lib/utils/stream-lifecycle-telemetry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/utils/stream-lifecycle-telemetry')>()),
+  reportStreamLifecycle: vi.fn(),
+}));
+
 import * as clientModule from '$lib/client';
 import { appClient } from '$lib/client';
 import { takeEvery } from 'typed-redux-saga';
@@ -61,6 +67,7 @@ import {
   chatSendStarted,
   chatTranscriptSnapshotRerequested,
   initializeChatRequested,
+  retainedChatTranscriptsSet,
   refreshChatTranscriptRequested,
   transcriptHydrationFailed,
   transcriptHydrationSettled,
@@ -91,6 +98,8 @@ import {
   markAgentAsViewed,
 } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
 import { chatSubscribeSaga, SWITCH_BACK_REVEAL_WAIT_MS } from './chat-subscribe-saga';
+import { agentStreamSaga } from '$store/renderer/slices/agent-session/sagas/agent-stream-saga';
+import { agentStreamUpdateReceived } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
 import {
   clearPendingAgentDeletions,
   removePendingAgentDeletion,
@@ -106,7 +115,13 @@ import {
   hasReplayableChatSnapshot,
   hasStandingChatSubscription,
 } from '$features/agent/utils/chat-subscription-registry';
-import { seedStreamFromSnapshot } from '$features/events/daemon-events-bridge.client';
+import {
+  routeDaemonEventsNotification,
+  seedStreamFromSnapshot,
+} from '$features/events/daemon-events-bridge.client';
+import { deriveAgentHasPendingQuestion } from '$lib/components/chat/questions/wizard-gate';
+import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import { reportStreamLifecycle } from '$lib/utils/stream-lifecycle-telemetry';
 import { selectTranscriptSnapshotMeta } from '$store/renderer/slices/chat-state/chat-state-selectors';
 import { shouldShowStoppedIndicator } from '$lib/components/chat/message-display-utils';
 
@@ -432,6 +447,181 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     expect(messages[1].contentBlocks?.[0]).toMatchObject({
       text: 'Let me check the logs first.',
     });
+  });
+
+  it('retains an AgentLite child transcript through snapshot hydration and live plan updates', async () => {
+    const agentId = 'agent-sub-retained-plan';
+    seedSession(agentId, { messages: [] });
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-a', WS, [agentId]));
+    await vi.waitFor(() => {
+      expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    });
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    const planMessage = (status: 'pending' | 'in_progress' | 'completed') =>
+      makeMessage('retained-plan', 'Plan', {
+        contentBlocks: [
+          {
+            type: 'plan',
+            id: 'retained-plan:block',
+            entries: [{ content: 'Hydrated child task', priority: 'high', status }],
+          },
+        ],
+      });
+
+    sub.handler({ ...transcript([planMessage('in_progress')]), fromSnapshot: true });
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject(
+      {
+        type: 'plan',
+        entries: [{ content: 'Hydrated child task', status: 'in_progress' }],
+      },
+    );
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-b', WS, [agentId]));
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-a', WS, []));
+    expect(chatApi.subscribe.mock.calls.filter(([id]) => id === agentId)).toHaveLength(1);
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    appStore.dispatch(markAgentAsViewed('agent-unrelated-view'));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    sub.handler(transcript([planMessage('completed')]));
+    expect(selectAgentMessages.select(appStore.state, agentId)[0].contentBlocks?.[0]).toMatchObject(
+      {
+        type: 'plan',
+        entries: [{ content: 'Hydrated child task', status: 'completed' }],
+      },
+    );
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-b', WS, []));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+  });
+
+  it('defers a retained-transcript close until its last chat-interest lease releases', async () => {
+    const agentId = 'agent-sub-retained-deferred';
+    seedSession(agentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-deferred', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-deferred');
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-deferred', WS, []));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    sub.onPhase?.('delayed');
+    sub.onPhase?.('connecting');
+    releaseChatInterestLease(agentId, 'panel-retained-deferred');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('cancels a deferred retained close when another owner retains the transcript', async () => {
+    const agentId = 'agent-sub-retained-reretained';
+    seedSession(agentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-old', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-reretained');
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-old', WS, []));
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-new', WS, [agentId]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseChatInterestLease(agentId, 'panel-retained-reretained');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-new', WS, []));
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-new', WS, []));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+  });
+
+  it('keeps a viewed agent after a deferred retained close, then closes it on the next view swap', async () => {
+    const agentId = 'agent-sub-retained-viewed-race';
+    const nextAgentId = 'agent-sub-retained-viewed-next';
+    seedSession(agentId);
+    seedSession(nextAgentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-viewed', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-viewed');
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-viewed', WS, []));
+    appStore.dispatch(markAgentAsViewed(agentId));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseChatInterestLease(agentId, 'panel-retained-viewed');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+
+    appStore.dispatch(markAgentAsViewed(nextAgentId));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+  });
+
+  it('retires a deferred retained close on workspace teardown without a duplicate lease-release close', async () => {
+    const agentId = 'agent-sub-retained-workspace-teardown';
+    seedSession(agentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-workspace', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-workspace');
+
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-workspace', WS, []));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    appStore.dispatch(removeWorkspaceSessions(WS));
+    await vi.waitFor(() => expect(sub.unsubscribe).toHaveBeenCalledOnce());
+
+    releaseChatInterestLease(agentId, 'panel-retained-workspace');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('tears down a deferred retained close exactly once when the root saga is cancelled', async () => {
+    const agentId = 'agent-sub-retained-root-cancel';
+    seedSession(agentId);
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-root-cancel', WS, [agentId]));
+    await vi.waitFor(() =>
+      expect(chatApi.subscribe).toHaveBeenCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    const sub = fakeSubscriptions.find((candidate) => candidate.agentId === agentId)!;
+    acquireChatInterestLease(agentId, 'panel-retained-root-cancel');
+    appStore.dispatch(retainedChatTranscriptsSet('subscription-list-root-cancel', WS, []));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    stopSaga?.();
+    stopSaga = undefined;
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+
+    releaseChatInterestLease(agentId, 'panel-retained-root-cancel');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.unsubscribe).toHaveBeenCalledOnce();
+    stopSaga = appStore.runSaga(chatSubscribeSaga);
   });
 
   it('records snapshot metadata on fromSnapshot emits (single-transfer hydration signal)', () => {
@@ -1383,6 +1573,699 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
     });
   });
 
+  // Covered chat, terminal `complete` racing ahead of the §7.1 reconcile: the
+  // stream saga adds an EMPTY-content placeholder for the new assistant id
+  // (`streamingComplete: true`) so finish metadata surfaces until the
+  // `chat.subscribe` delta replaces it by id. A close landing before that
+  // delta must not capture the placeholder as the resume anchor — reopening
+  // with `sinceMessageId` equal to it would skip that message's daemon
+  // contents. The anchor is the previous persisted row, or absent.
+  describe('an unreconciled empty placeholder is never the resume anchor', () => {
+    const PLACEHOLDER_ID = 'm-terminal-placeholder';
+    let stopStreamSaga: (() => void) | undefined;
+
+    beforeAll(() => {
+      stopStreamSaga = appStore.runSaga(agentStreamSaga);
+    });
+    afterAll(() => stopStreamSaga?.());
+
+    function hydrate(sub: FakeSubscription, rows: AgentMessage[]): void {
+      appStore.dispatch(transcriptHydrationStarted(sub.agentId));
+      sub.handler({ ...transcript(rows), fromSnapshot: true });
+      appStore.dispatch(transcriptHydrationSettled(sub.agentId));
+    }
+
+    function completeNewAssistantTurn(agentId: string): void {
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          agentId,
+          workspaceId: WS,
+          handlerSessionId: agentId,
+          source: 'sendMessage',
+          eventType: 'complete',
+          assistantMessageId: PLACEHOLDER_ID,
+        }),
+      );
+    }
+
+    function closeThenReopen(agentA: string, agentB: string, sub: FakeSubscription) {
+      appStore.dispatch(markAgentAsViewed(agentB));
+      expect(sub.unsubscribe).toHaveBeenCalledOnce();
+      appStore.dispatch(markAgentAsViewed(agentA));
+      const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+      if (!reopened || reopened === sub)
+        throw new Error(`no reopened chat.subscribe for ${agentA}`);
+      return reopened;
+    }
+
+    it('anchors on the previous persisted row when the placeholder is the newest row at close', () => {
+      const agentA = 'agent-sub-placeholder-a';
+      const agentB = 'agent-sub-placeholder-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrate(sub, [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-1', 'reading it now'),
+      ]);
+      expect(hasStandingChatSubscription(agentA)).toBe(true);
+
+      completeNewAssistantTurn(agentA);
+      const rows = selectAgentMessages.select(appStore.state, agentA);
+      expect(rows.map((m) => m.id)).toEqual(['u-1', 'm-1', PLACEHOLDER_ID]);
+      expect(rows[2]).toMatchObject({ contentBlocks: [], streamingComplete: true });
+
+      const reopened = closeThenReopen(agentA, agentB, sub);
+      expect(chatApi.subscribe).toHaveBeenLastCalledWith(
+        agentA,
+        expect.any(Function),
+        expect.any(Function),
+        { sinceMessageId: 'm-1' },
+      );
+      expect(reopened.options).toEqual({ sinceMessageId: 'm-1' });
+    });
+
+    it('requests the full snapshot when the placeholder is the only row at close', () => {
+      const agentA = 'agent-sub-placeholder-only-a';
+      const agentB = 'agent-sub-placeholder-only-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrate(sub, []);
+
+      completeNewAssistantTurn(agentA);
+      expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toEqual([
+        PLACEHOLDER_ID,
+      ]);
+
+      const reopened = closeThenReopen(agentA, agentB, sub);
+      expect(reopened.options).toBeUndefined();
+    });
+
+    // The anchor scan keys on the row's `provisional` flag, not on empty
+    // content: a firehose `complete` settling a row that already streamed
+    // text keeps that text but is still renderer-settled, so the reopen must
+    // still anchor one row earlier.
+    it('skips a renderer-settled row that carries content when it is the newest row at close', () => {
+      const agentA = 'agent-sub-provisional-content-a';
+      const agentB = 'agent-sub-provisional-content-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrate(sub, [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-1', 'reading it now'),
+        makeMessage(PLACEHOLDER_ID, 'streamed so far', { isStreaming: true }),
+      ]);
+
+      completeNewAssistantTurn(agentA);
+      const rows = selectAgentMessages.select(appStore.state, agentA);
+      expect(rows.map((m) => m.id)).toEqual(['u-1', 'm-1', PLACEHOLDER_ID]);
+      expect(rows[2]).toMatchObject({
+        contentBlocks: [{ type: 'text', id: `${PLACEHOLDER_ID}:0`, text: 'streamed so far' }],
+        isStreaming: false,
+        streamingComplete: true,
+        provisional: true,
+      });
+
+      const reopened = closeThenReopen(agentA, agentB, sub);
+      expect(reopened.options).toEqual({ sinceMessageId: 'm-1' });
+    });
+
+    // Conversely, a daemon-delivered assistant row with no content blocks is
+    // canonical (never flagged), so it IS a valid anchor.
+    it('anchors on an unflagged empty-content assistant row delivered by the transcript', () => {
+      const agentA = 'agent-sub-canonical-empty-a';
+      const agentB = 'agent-sub-canonical-empty-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrate(sub, [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-empty', '', { contentBlocks: [] }),
+      ]);
+      const rows = selectAgentMessages.select(appStore.state, agentA);
+      expect(rows.map((m) => m.id)).toEqual(['u-1', 'm-empty']);
+      expect(rows[1].provisional).toBeUndefined();
+
+      const reopened = closeThenReopen(agentA, agentB, sub);
+      expect(reopened.options).toEqual({ sinceMessageId: 'm-empty' });
+    });
+  });
+
+  // Out-of-view chat, in-flight turn: the legacy `agent:*` firehose keeps
+  // dispatching `agentStreamUpdateReceived` for the agent (tool blocks for a
+  // new assistantMessageId, then `complete`). If the agent-stream saga wrote
+  // those into `agentSession.messages`, an incomplete row the daemon never
+  // reconciled would sit at the tail and the §7.1 `sinceMessageId` fallback
+  // scan could anchor on it — the resumed delta would then skip that turn's
+  // text and every message the firehose did not carry. Only `chat.subscribe`
+  // (and `agents.getConversation` hydration) may write rows once the
+  // standing registration is gone.
+  describe('firehose events after close do not move the resume anchor', () => {
+    const FIREHOSE_MESSAGE_ID = 'm-firehose-tool-turn';
+    let stopStreamSaga: (() => void) | undefined;
+
+    beforeAll(() => {
+      stopStreamSaga = appStore.runSaga(agentStreamSaga);
+    });
+    afterAll(() => stopStreamSaga?.());
+
+    function canonicalRows(): AgentMessage[] {
+      return [
+        makeMessage('u-1', 'read the file', { role: 'user' }),
+        makeMessage('m-1', 'reading it now'),
+      ];
+    }
+
+    // What the bridge ships for an agent it does not consider covered:
+    // tool blocks only (never assistant text, never user rows).
+    function feedFirehoseToolTurn(agentId: string): void {
+      const toolBlocks: ContentBlock[] = [
+        {
+          type: 'tool_use',
+          id: 'tool-fh-1',
+          name: 'read',
+          input: { path: 'a.ts' },
+          toolCallId: 'call-fh-1',
+        },
+        { type: 'tool_result', tool_use_id: 'tool-fh-1', output: 'contents' },
+      ];
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          agentId,
+          workspaceId: WS,
+          handlerSessionId: agentId,
+          source: 'sendMessage',
+          eventType: 'content-blocks',
+          assistantMessageId: FIREHOSE_MESSAGE_ID,
+          contentBlocks: toolBlocks,
+        }),
+      );
+      appStore.dispatch(
+        agentStreamUpdateReceived({
+          agentId,
+          workspaceId: WS,
+          handlerSessionId: agentId,
+          source: 'sendMessage',
+          eventType: 'complete',
+          assistantMessageId: FIREHOSE_MESSAGE_ID,
+          contentBlocks: toolBlocks,
+        }),
+      );
+    }
+
+    function hydrateFromSnapshot(sub: FakeSubscription, rows: AgentMessage[]): void {
+      appStore.dispatch(transcriptHydrationStarted(sub.agentId));
+      sub.handler({ ...transcript(rows), fromSnapshot: true });
+      appStore.dispatch(transcriptHydrationSettled(sub.agentId));
+    }
+
+    it('adds no rows after close and reopens with the close-time anchor', () => {
+      const agentA = 'agent-sub-firehose-a';
+      const agentB = 'agent-sub-firehose-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      hydrateFromSnapshot(sub, canonicalRows());
+      expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toEqual([
+        'u-1',
+        'm-1',
+      ]);
+
+      // Chat goes out of view: A's standing registration closes.
+      appStore.dispatch(markAgentAsViewed(agentB));
+      expect(sub.unsubscribe).toHaveBeenCalledOnce();
+      expect(hasStandingChatSubscription(agentA)).toBe(false);
+
+      feedFirehoseToolTurn(agentA);
+
+      expect(selectAgentMessages.select(appStore.state, agentA).map((m) => m.id)).toEqual([
+        'u-1',
+        'm-1',
+      ]);
+
+      // Back in view: chat.subscribe resumes from the close-time anchor
+      // (PROTOCOL §7.1 request params: agentId + sinceMessageId).
+      appStore.dispatch(markAgentAsViewed(agentA));
+      const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+      expect(reopened).toBeDefined();
+      expect(reopened).not.toBe(sub);
+      expect(chatApi.subscribe).toHaveBeenLastCalledWith(
+        agentA,
+        expect.any(Function),
+        expect.any(Function),
+        { sinceMessageId: 'm-1' },
+      );
+      expect(reopened!.options).toEqual({ sinceMessageId: 'm-1' });
+    });
+
+    it('never resolves the fallback anchor to a firehose-created row when no close-time anchor was captured', () => {
+      const agentId = 'agent-sub-firehose-fallback';
+      seedSession(agentId);
+      const first = openChat(agentId);
+      hydrateFromSnapshot(first, canonicalRows());
+
+      // A session removal closes the registration AND drops the captured
+      // anchor, so the next open scans the rows for the newest persisted id.
+      appStore.dispatch(removeSession(agentId));
+      expect(first.unsubscribe).toHaveBeenCalledOnce();
+      expect(hasStandingChatSubscription(agentId)).toBe(false);
+
+      // Rehydrated from the daemon with the same canonical rows, still no
+      // standing subscription; the firehose keeps flowing for the agent.
+      seedSession(agentId, { messages: canonicalRows() });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+      feedFirehoseToolTurn(agentId);
+
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        'u-1',
+        'm-1',
+      ]);
+
+      appStore.dispatch(initializeChatRequested(agentId, { wsId: WS }));
+      const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentId);
+      expect(reopened).toBeDefined();
+      expect(reopened).not.toBe(first);
+      expect(chatApi.subscribe).toHaveBeenLastCalledWith(
+        agentId,
+        expect.any(Function),
+        expect.any(Function),
+        { sinceMessageId: 'm-1' },
+      );
+      expect(reopened!.options).not.toEqual({ sinceMessageId: FIREHOSE_MESSAGE_ID });
+    });
+  });
+
+  // Chat A is open while its assistant row Q streams text; the user switches
+  // to B before the asking turn ends, so A's standing registration closes and
+  // `closeSubscription` keeps Q's partial content (only its streaming flags
+  // settle). The daemon then ends the turn with the trailing question
+  // resource for Q and marks `pendingQuestionsMessageId = Q`. The uncovered
+  // firehose must write nothing (the terminal resource never lands until A is
+  // reopened) — yet the card/avatar/sidebar indicator must light from the
+  // marker: a locally cached marked row that lacks its question content must
+  // not suppress the authoritative marker.
+  describe('a frozen partial marked row does not suppress the pending-question indicator', () => {
+    const QUESTION_ROW = 'm-question-turn';
+    const STREAM_ID = 'stream-question-turn';
+    let stopStreamSaga: (() => void) | undefined;
+
+    beforeAll(() => {
+      stopStreamSaga = appStore.runSaga(agentStreamSaga);
+    });
+    afterAll(() => stopStreamSaga?.());
+
+    function eventsNotification(type: string, data: Record<string, unknown>): void {
+      routeDaemonEventsNotification('events.event', {
+        event: {
+          id: `evt-${type}-${QUESTION_ROW}`,
+          workspaceId: WS,
+          timestamp: '2026-01-01T00:00:05.000Z',
+          type,
+          actor: { type: 'agent', id: data.agentId },
+          data,
+        },
+      });
+    }
+
+    it('lights the indicator from the marker while the cached marked row lacks its question resource', () => {
+      const agentA = 'agent-sub-frozen-question-a';
+      const agentB = 'agent-sub-frozen-question-b';
+      seedSession(agentA);
+      seedSession(agentB);
+      const sub = openChat(agentA);
+      appStore.dispatch(markAgentAsViewed(agentA));
+      appStore.dispatch(transcriptHydrationStarted(agentA));
+      sub.handler({
+        ...transcript(
+          [
+            makeMessage('u-1', 'which database?', { role: 'user' }),
+            makeMessage(QUESTION_ROW, 'Before I continue, ', { isStreaming: true }),
+          ],
+          true,
+        ),
+        fromSnapshot: true,
+      });
+      appStore.dispatch(transcriptHydrationSettled(agentA));
+      expect(deriveAgentHasPendingQuestion(appStore.state, agentA, [])).toBe(false);
+
+      // Switch away mid-turn: A's registration closes, Q's flags settle.
+      appStore.dispatch(markAgentAsViewed(agentB));
+      expect(sub.unsubscribe).toHaveBeenCalledOnce();
+      expect(hasStandingChatSubscription(agentA)).toBe(false);
+      const rowsAfterClose = selectAgentMessages.select(appStore.state, agentA);
+      expect(rowsAfterClose.map((m) => m.id)).toEqual(['u-1', QUESTION_ROW]);
+      expect(rowsAfterClose[1].isStreaming ?? false).toBe(false);
+
+      // The asking turn ends on the firehose with the trailing question
+      // resource, then the daemon marks the row (§6.5 pending-question
+      // `agent:updated` payload).
+      eventsNotification('agent:stream:end', {
+        agentId: agentA,
+        streamId: STREAM_ID,
+        messageId: QUESTION_ROW,
+        trailingBlocks: [
+          {
+            type: 'resource',
+            resource: {
+              mimeType: QUESTION_RESOURCE_MIME_TYPE,
+              text: JSON.stringify({
+                questions: [{ id: 'q1', text: 'Which database should it target?', type: 'text' }],
+              }),
+            },
+          },
+        ],
+      });
+      eventsNotification('agent:updated', {
+        agentId: agentA,
+        pendingQuestionsMessageId: QUESTION_ROW,
+      });
+
+      // No-row-write invariant: the uncovered firehose left the transcript
+      // exactly as the close left it — no question resource on Q.
+      const rows = selectAgentMessages.select(appStore.state, agentA);
+      expect(rows).toEqual(rowsAfterClose);
+      expect(selectAgentSession.select(appStore.state, agentA)?.metadata).toMatchObject({
+        pendingQuestionsMessageId: QUESTION_ROW,
+      });
+
+      expect(deriveAgentHasPendingQuestion(appStore.state, agentA, [])).toBe(true);
+      expect(deriveAgentHasPendingQuestion(appStore.state, agentA, rows)).toBe(true);
+    });
+  });
+
+  // A hydrated panel whose newest row is a partial assistant turn frozen
+  // mid-stream (the incident: turn 2186 stuck at block 152 with
+  // `isStreaming: true`) sitting after a fully-persisted row, so the newest
+  // fully-persisted id — the §7.1 resume anchor — is the row BEFORE it. Every
+  // reopen trigger must leave the store reflecting the daemon's newest turn,
+  // with the frozen row no longer presented as in flight.
+  describe('a (re)subscribe snapshot displaces a stale in-flight turn (§7.1)', () => {
+    const PRIOR = 'm-turn-2185';
+    const STALE = 'm-turn-2186';
+    const NEXT_USER = 'm-turn-2187-user';
+    const NEWEST = 'm-turn-2187';
+
+    function seedFrozenPartial(agentId: string): void {
+      seedSession(agentId, {
+        messages: [
+          makeMessage(PRIOR, 'turn 2185 answer'),
+          makeMessage(STALE, 'frozen at block 152', { isStreaming: true }),
+        ],
+      });
+      appStore.dispatch(transcriptHydrationStarted(agentId));
+      appStore.dispatch(transcriptHydrationSettled(agentId));
+    }
+
+    function newestInFlight(): AgentMessage {
+      return makeMessage(NEWEST, 'turn 2187 streaming', {
+        isStreaming: true,
+        timestamp: '2026-01-01T00:00:09.000Z',
+      });
+    }
+
+    function completedStale(): AgentMessage {
+      return makeMessage(STALE, 'turn 2186 complete answer');
+    }
+
+    function nextUser(): AgentMessage {
+      return makeMessage(NEXT_USER, 'and 2187?', {
+        role: 'user',
+        timestamp: '2026-01-01T00:00:08.000Z',
+      });
+    }
+
+    /** (a) `resumed: true` page: the completed row plus the later turns. */
+    function resumedCompletedPage(): ChatTranscript {
+      return {
+        ...transcript([completedStale(), nextUser(), newestInFlight()], true),
+        totalMessages: 5,
+        fromSnapshot: true,
+        resumed: true,
+      };
+    }
+
+    /**
+     * (b) `resumed: true` page trimmed to the newest window — the stale row is
+     * absent. The daemon re-mints `truncated` after the live-turn merge's
+     * slim-page-budget eviction (`rebudget_merged_page`), so a resumed page
+     * can still declare an interior gap toward the anchor.
+     */
+    function resumedTruncatedPage(): ChatTranscript {
+      return {
+        ...transcript([newestInFlight()], true),
+        truncated: true,
+        totalMessages: 5,
+        fromSnapshot: true,
+        resumed: true,
+      };
+    }
+
+    /** (c) `resumed: false`: the standard newest page, full rehydration. */
+    function fallbackFullPage(): ChatTranscript {
+      return {
+        ...transcript(
+          [makeMessage(PRIOR, 'turn 2185 answer'), completedStale(), nextUser(), newestInFlight()],
+          true,
+        ),
+        totalMessages: 5,
+        fromSnapshot: true,
+        resumed: false,
+      };
+    }
+
+    /** The standard page an internal re-registration takes (no resume). */
+    function standardWindow(messages: AgentMessage[], truncated: boolean): ChatTranscript {
+      return {
+        ...transcript(messages, true),
+        truncated,
+        totalMessages: 5,
+        fromSnapshot: true,
+      };
+    }
+
+    function expectNewestTurnLive(agentId: string): void {
+      const messages = selectAgentMessages.select(appStore.state, agentId);
+      const newest = messages.find((message) => message.id === NEWEST);
+      expect(newest?.contentBlocks?.[0]).toMatchObject({ text: 'turn 2187 streaming' });
+      // Exactly one live row: the daemon's newest turn.
+      expect(
+        messages.filter((message) => message.isStreaming === true).map((message) => message.id),
+      ).toEqual([NEWEST]);
+      const stale = messages.find((message) => message.id === STALE);
+      if (stale) {
+        expect(stale.isStreaming ?? false).toBe(false);
+        expect(stale.streamingComplete ?? true).toBe(true);
+      }
+      expect(selectAgentSession.select(appStore.state, agentId)?.isStreaming).toBe(true);
+      // The stream accumulator is seeded from the newest in-flight row, not
+      // the frozen one.
+      expect(seedStreamFromSnapshot).toHaveBeenLastCalledWith(
+        agentId,
+        expect.objectContaining({ id: NEWEST }),
+        WS,
+      );
+    }
+
+    /** Agent re-select (sidebar switch-back): the reopen carries the anchor. */
+    function switchBack(agentId: string): FakeSubscription {
+      const other = `${agentId}-other`;
+      seedSession(other);
+      appStore.dispatch(markAgentAsViewed(other));
+      appStore.dispatch(markAgentAsViewed(agentId));
+      const reopened = [...fakeSubscriptions].reverse().find((sub) => sub.agentId === agentId);
+      if (!reopened) throw new Error(`no reopened chat.subscribe recorded for ${agentId}`);
+      expect(reopened.options).toEqual({ sinceMessageId: PRIOR });
+      return reopened;
+    }
+
+    it('displaces the frozen row on a switch-back resumed: true page carrying the completed turn', () => {
+      const agentId = 'agent-stale-switchback-a';
+      seedFrozenPartial(agentId);
+      openChat(agentId);
+
+      switchBack(agentId).handler(resumedCompletedPage());
+
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        PRIOR,
+        STALE,
+        NEXT_USER,
+        NEWEST,
+      ]);
+      const stale = selectAgentMessages
+        .select(appStore.state, agentId)
+        .find((message) => message.id === STALE);
+      expect(stale?.contentBlocks?.[0]).toMatchObject({ text: 'turn 2186 complete answer' });
+      expectNewestTurnLive(agentId);
+    });
+
+    it('displaces the frozen row on a switch-back resumed: true page trimmed to the newest window', () => {
+      const agentId = 'agent-stale-switchback-b';
+      seedFrozenPartial(agentId);
+      openChat(agentId);
+
+      switchBack(agentId).handler(resumedTruncatedPage());
+
+      expectNewestTurnLive(agentId);
+    });
+
+    it('displaces the frozen row on a switch-back resumed: false full snapshot', () => {
+      const agentId = 'agent-stale-switchback-c';
+      seedFrozenPartial(agentId);
+      openChat(agentId);
+
+      switchBack(agentId).handler(fallbackFullPage());
+
+      expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+        PRIOR,
+        STALE,
+        NEXT_USER,
+        NEWEST,
+      ]);
+      expectNewestTurnLive(agentId);
+    });
+
+    // The snapshot-timeout self-heal, the gap resnapshot, and a `Lagged`
+    // recovery all re-register INSIDE LiveChatClient — the resume anchor rides
+    // only until the first snapshot lands, so their recovery snapshot is the
+    // standard newest page (no `resumed` key) delivered on the standing
+    // registration, with no teardown to normalize the frozen row first.
+    it('displaces the frozen row on a recovery snapshot whose window carries the completed turn', () => {
+      const agentId = 'agent-stale-recovery-covered';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+
+      sub.handler(standardWindow([completedStale(), nextUser(), newestInFlight()], true));
+
+      expectNewestTurnLive(agentId);
+    });
+
+    it('displaces the frozen row on a recovery snapshot whose window excludes it', () => {
+      const agentId = 'agent-stale-recovery-evicted';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+
+      // The frozen 152-block turn was evicted by the slim page budget, so the
+      // recovery page carries only the newest turn. The retained row is older
+      // history the page does not cover — but the snapshot is authoritative
+      // for liveness (§7.1 merges the in-flight turn into the page), so the
+      // retained row cannot still be streaming.
+      sub.handler(standardWindow([nextUser(), newestInFlight()], true));
+
+      expectNewestTurnLive(agentId);
+    });
+
+    it('keeps a snapshot that races a locally-started turn from settling retained rows', () => {
+      // The one exemption the session-level flag reconcile already makes: a
+      // snapshot pending since before the local send may predate the turn the
+      // renderer just started, so it is not authoritative about liveness.
+      const agentId = 'agent-stale-local-start';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+      appStore.dispatch(chatSendStarted(agentId, WS));
+
+      sub.handler(standardWindow([makeMessage(PRIOR, 'turn 2185 answer')], true));
+
+      const stale = selectAgentMessages
+        .select(appStore.state, agentId)
+        .find((message) => message.id === STALE);
+      expect(stale?.isStreaming).toBe(true);
+    });
+
+    it('settles the retained row on the next snapshot after the raced one consumed the marker', () => {
+      // Pins the trade-off of the exemption above: sparing the optimistic row
+      // spares the frozen one too, but only until the following snapshot —
+      // the raced `isStreaming: true` page consumes the local-start marker, so
+      // the next page is authoritative about liveness again.
+      const agentId = 'agent-stale-local-start-then-next';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+      appStore.dispatch(chatSendStarted(agentId, WS));
+
+      sub.handler(standardWindow([makeMessage(PRIOR, 'turn 2185 answer')], true));
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).find((message) => message.id === STALE)
+          ?.isStreaming,
+      ).toBe(true);
+
+      sub.handler(standardWindow([makeMessage(PRIOR, 'turn 2185 answer')], true));
+
+      const stale = selectAgentMessages
+        .select(appStore.state, agentId)
+        .find((message) => message.id === STALE);
+      expect(stale?.isStreaming).toBe(false);
+      expect(stale?.streamingComplete).toBe(true);
+      // Settled by the renderer, not by a §7.1 delivery of the row itself.
+      expect(stale?.provisional).toBe(true);
+      // Flags only — the frozen content is never rewritten.
+      expect(stale?.contentBlocks?.[0]).toMatchObject({ text: 'frozen at block 152' });
+      // The canonical page rows never carry the marker.
+      expect(
+        selectAgentMessages.select(appStore.state, agentId).find((message) => message.id === PRIOR),
+      ).not.toHaveProperty('provisional');
+    });
+
+    // A dropped or held snapshot is the failure mode behind a panel stuck on a
+    // stale in-flight turn, so every guard leaves a breadcrumb instead of
+    // returning silently.
+    it('reports a stream-lifecycle diagnostic when a guard drops or holds a snapshot', () => {
+      const agentId = 'agent-stale-guard-diagnostics';
+      seedFrozenPartial(agentId);
+      const sub = openChat(agentId);
+
+      // Pre-session hold: the snapshot arrives before the session shell.
+      const preSessionAgent = 'agent-stale-guard-presession';
+      const preSessionSub = openChat(preSessionAgent);
+      preSessionSub.handler(standardWindow([newestInFlight()], false));
+      expect(reportStreamLifecycle).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          stage: 'subscription',
+          event: 'snapshot-held-pre-session',
+          pushKind: 'snapshot',
+          callbackResult: 'buffered',
+          blockCount: 1,
+        }),
+      );
+
+      // Soft-hidden deletion pending: the snapshot is dropped.
+      vi.mocked(reportStreamLifecycle).mockClear();
+      setPendingAgentDeletion({ wsId: WS, agentId, snapshot: makeSession(agentId), timer: null });
+      try {
+        sub.handler(standardWindow([newestInFlight()], false));
+      } finally {
+        removePendingAgentDeletion(agentId);
+      }
+      expect(reportStreamLifecycle).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          stage: 'subscription',
+          event: 'snapshot-dropped-deletion-pending',
+          callbackResult: 'ignored',
+        }),
+      );
+
+      // Token-dropped registration: the snapshot lands after the close. The
+      // wire callback outliving its registration names itself `-emit`, apart
+      // from the `-queued` drain-time drop.
+      vi.mocked(reportStreamLifecycle).mockClear();
+      appStore.dispatch(clearCurrentlyViewedAgent());
+      sub.handler(standardWindow([newestInFlight()], false));
+      expect(reportStreamLifecycle).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          stage: 'subscription',
+          event: 'snapshot-dropped-stale-registration-emit',
+          callbackResult: 'ignored',
+        }),
+      );
+      // The guard cannot read the store's stream state, so it reports none
+      // rather than passing the transcript's own liveness off as it.
+      expect(vi.mocked(reportStreamLifecycle).mock.lastCall?.[0]).not.toHaveProperty(
+        'storeStreamState',
+      );
+    });
+  });
+
   it('clears stale message-level streaming flags when a mid-turn subscription closes (navigate-away)', () => {
     // Viewed mid-turn then navigated away: the delta stream grew a message
     // with isStreaming: true, and nothing else rewrites it after the
@@ -1413,8 +2296,28 @@ describe('chatSubscribeSaga (fake seam, real store)', () => {
       .find((m) => m.id === 'partial-a');
     expect(partial?.isStreaming).toBe(false);
     expect(partial?.streamingComplete).toBe(true);
+    // The renderer settled the row, not a §7.1 terminal delivery.
+    expect(partial?.provisional).toBe(true);
     // Content untouched — only the flags normalize.
     expect(partial?.contentBlocks?.[0]).toMatchObject({ text: 'streamed so far' });
+
+    // Re-view A: the reopened subscription's §7.1 snapshot covers the same
+    // id, so the canonical row replaces the provisional one outright.
+    appStore.dispatch(markAgentAsViewed(agentA));
+    const reopened = [...fakeSubscriptions].reverse().find((s) => s.agentId === agentA);
+    expect(reopened).toBeDefined();
+    reopened!.handler({
+      ...transcript([makeMessage('partial-a', 'streamed so far, then finished')]),
+      fromSnapshot: true,
+    });
+
+    const canonical = selectAgentMessages
+      .select(appStore.state, agentA)
+      .find((m) => m.id === 'partial-a');
+    expect(canonical?.contentBlocks?.[0]).toMatchObject({
+      text: 'streamed so far, then finished',
+    });
+    expect(canonical).not.toHaveProperty('provisional');
   });
 
   it('tears down all subscriptions when the chat closes (clearCurrentlyViewedAgent)', () => {

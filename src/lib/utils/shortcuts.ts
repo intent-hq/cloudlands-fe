@@ -187,9 +187,33 @@ export const SHORTCUTS = {
   // Dock / Agent Navigation
   // ============================================================================
   NEW_AGENT: {
-    key: 'mod+t',
+    key: 'mod+alt+a',
     get label() {
       return m.ui_shortcuts_newAgent_label();
+    },
+  },
+  NEW_NOTE: {
+    key: 'mod+alt+n',
+    get label() {
+      return m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_note_label(),
+      });
+    },
+  },
+  NEW_TERMINAL: {
+    key: 'mod+alt+t',
+    get label() {
+      return m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_terminal_label(),
+      });
+    },
+  },
+  NEW_BROWSER: {
+    key: 'mod+alt+b',
+    get label() {
+      return m.layout_panelEmptyState_newItem_tooltip({
+        label: m.layout_panelEmptyState_browser_label(),
+      });
     },
   },
 
@@ -499,14 +523,6 @@ export const SHORTCUTS = {
   },
 } as const;
 
-/**
- * Get the display string for a shortcut
- */
-export function getShortcutDisplay(shortcutKey: keyof typeof SHORTCUTS): string {
-  const shortcut = SHORTCUTS[shortcutKey];
-  return formatShortcut(shortcut.key);
-}
-
 export function getShortcutChord(
   shortcutKey: keyof typeof SHORTCUTS,
   mac = isMac,
@@ -558,6 +574,10 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'navigation.reopen-tab',
     'navigation.move-space-tab-left',
     'navigation.move-space-tab-right',
+    'workspace.new-agent',
+    'workspace.new-note',
+    'workspace.new-terminal',
+    'workspace.new-browser',
   ],
   chat: [
     'chat.send',
@@ -726,6 +746,10 @@ export const SHORTCUT_CATEGORIES: Record<
       },
       { ...SHORTCUTS.MOVE_SPACE_TAB_LEFT, contexts: ['global'] },
       { ...SHORTCUTS.MOVE_SPACE_TAB_RIGHT, contexts: ['global'] },
+      { ...SHORTCUTS.NEW_AGENT, contexts: ['global'] },
+      { ...SHORTCUTS.NEW_NOTE, contexts: ['global'] },
+      { ...SHORTCUTS.NEW_TERMINAL, contexts: ['global'] },
+      { ...SHORTCUTS.NEW_BROWSER, contexts: ['global'] },
     ],
   },
   chat: {

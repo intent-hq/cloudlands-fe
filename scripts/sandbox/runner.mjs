@@ -1,12 +1,145 @@
+// Environment knobs (all optional):
+// - SANDBOX_DEBUG=1 prints runner diagnostics to stderr.
+// - SANDBOX_GOMAXPROCS=<n> exports GOMAXPROCS to the esbuild service the
+//   in-process Vite server spawns, bounding its Go runtime threads. This is a
+//   diagnostic knob for the dependency-scan crashes tracked in
+//   intent-hq/intent#4617, not a fix; leave it unset for normal runs.
+import { viteHarnessCacheDir } from '../../test/vite-harness-cache.mjs';
+
 const DEFAULT_SANDBOX_WIDTH = 720;
 const DEFAULT_SANDBOX_TIMEOUT_MS = 30_000;
+const SANDBOX_HARNESS_NAME = 'sandbox';
 
 const THEMES = new Set(['light', 'dark', 'system']);
 const MOTIONS = new Set(['reduced', 'full']);
 const SCALES = new Set([1, 2]);
 
+const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
+const OUTDATED_OPTIMIZE_DEP_STATUS = 'Outdated Optimize Dep';
+const OPTIMIZE_DEPS_PROCESSING_ERROR_STATUS = 'Optimize Deps Processing Error';
+const SERVER_LOG_FAILURES = [
+  { kind: 'dependency-scan-failed', pattern: /Failed to scan for dependencies/ },
+  { kind: 'dependency-optimize-failed', pattern: /error while updating dependencies/ },
+  {
+    kind: 'esbuild-crashed',
+    pattern: /\bpanic:|The service (?:was stopped|is no longer running)|SIGSEGV|ENOSPC/,
+  },
+];
+
 function debug(message) {
   if (process.env.SANDBOX_DEBUG) console.error(`sandbox: ${message}`);
+}
+
+export function sandboxProcessEnvironment(env = process.env) {
+  const overrides = {};
+  const goMaxProcs = env.SANDBOX_GOMAXPROCS;
+  if (goMaxProcs !== undefined && goMaxProcs !== '') {
+    if (!/^[1-9][0-9]*$/.test(goMaxProcs)) {
+      throw new Error('SANDBOX_GOMAXPROCS must be a positive integer.');
+    }
+    overrides.GOMAXPROCS = goMaxProcs;
+  }
+  return overrides;
+}
+
+export function classifyModuleResponse({ url, status, statusText }) {
+  if (status !== 504) return null;
+  if (statusText === OUTDATED_OPTIMIZE_DEP_STATUS) return { kind: 'outdated-optimize-dep', url };
+  if (statusText === OPTIMIZE_DEPS_PROCESSING_ERROR_STATUS) {
+    return { kind: 'optimize-deps-processing-error', url };
+  }
+  return null;
+}
+
+export function classifyServerLog(message) {
+  const text = String(message ?? '')
+    .replace(ANSI_PATTERN, '')
+    .trim();
+  for (const { kind, pattern } of SERVER_LOG_FAILURES) {
+    if (pattern.test(text)) return { kind, message: text };
+  }
+  return null;
+}
+
+export function describeReadinessFailure(failure) {
+  switch (failure.kind) {
+    case 'outdated-optimize-dep':
+      return `Vite answered 504 ${OUTDATED_OPTIMIZE_DEP_STATUS} for ${failure.url}: its optimized dependency cache was invalidated while the page loaded (another Vite instance re-optimized the same cacheDir).`;
+    case 'optimize-deps-processing-error':
+      return `Vite answered 504 ${OPTIMIZE_DEPS_PROCESSING_ERROR_STATUS} for ${failure.url}: dependency pre-bundling failed; see the dev-server log.`;
+    case 'dependency-scan-failed':
+      return `Vite's esbuild dependency scan failed:\n${failure.message}`;
+    case 'dependency-optimize-failed':
+      return `Vite's dependency optimizer failed:\n${failure.message}`;
+    case 'esbuild-crashed':
+      return `esbuild crashed while optimizing dependencies:\n${failure.message}`;
+    default:
+      return `Unknown readiness failure ${JSON.stringify(failure)}.`;
+  }
+}
+
+export function createReadinessWatch() {
+  const failures = [];
+  let reject;
+  const failed = new Promise((_, rejectWith) => {
+    reject = rejectWith;
+  });
+  failed.catch(() => {});
+  const error = () => {
+    const [failure] = failures;
+    return failure
+      ? new Error(`Sandbox readiness failed: ${describeReadinessFailure(failure)}`)
+      : undefined;
+  };
+  return {
+    failures,
+    record(failure) {
+      if (!failure) return;
+      failures.push(failure);
+      debug(`readiness failure: ${failure.kind}`);
+      reject(error());
+    },
+    async race(promise) {
+      // A recorded failure wins even against already-settled waits: Promise.race
+      // would otherwise favour whichever settled input comes first in the list.
+      // The abandoned wait is still observed so its own rejection stays handled.
+      if (failures.length > 0) {
+        Promise.resolve(promise).catch(() => {});
+        throw error();
+      }
+      const value = await Promise.race([promise, failed]);
+      if (failures.length > 0) throw error();
+      return value;
+    },
+    error,
+  };
+}
+
+// Overrides applied to process.env while in-process sandbox servers run. The
+// baseline is captured once, when the first server acquires it, and restored
+// when the last server releases it, so overlapping servers closing in any
+// order never leak an override or restore a sibling's temporary value.
+const environmentBaseline = new Map();
+let environmentHolders = 0;
+
+export function acquireSandboxEnvironment(environment, env = process.env) {
+  for (const [name, value] of Object.entries(environment)) {
+    if (!environmentBaseline.has(name)) environmentBaseline.set(name, env[name]);
+    env[name] = value;
+  }
+  environmentHolders += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    environmentHolders -= 1;
+    if (environmentHolders > 0) return;
+    for (const [name, value] of environmentBaseline) {
+      if (value === undefined) delete env[name];
+      else env[name] = value;
+    }
+    environmentBaseline.clear();
+  };
 }
 
 function optionValue(argv, index, flag) {
@@ -119,28 +252,29 @@ export function buildSandboxUrl(baseUrl, options) {
   return url.href;
 }
 
-export async function startSandboxServer() {
-  const previousEnvironment = {
-    INTENT_UI_PREVIEW: process.env.INTENT_UI_PREVIEW,
-    INTENT_BUILD_TARGET: process.env.INTENT_BUILD_TARGET,
+export async function startSandboxServer({ onReadinessFailure } = {}) {
+  const environment = {
+    INTENT_UI_PREVIEW: '1',
+    INTENT_BUILD_TARGET: 'web',
+    ...sandboxProcessEnvironment(),
   };
-  process.env.INTENT_UI_PREVIEW = '1';
-  process.env.INTENT_BUILD_TARGET = 'web';
+  const restoreEnvironment = acquireSandboxEnvironment(environment);
   let server;
-
-  const restoreEnvironment = () => {
-    for (const [name, value] of Object.entries(previousEnvironment)) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-  };
 
   try {
     debug('loading Vite');
-    const { createServer } = await import('vite');
-    debug('creating Vite server');
+    const { createLogger, createServer } = await import('vite');
+    const logger = createLogger('error');
+    const logError = logger.error.bind(logger);
+    logger.error = (message, options) => {
+      onReadinessFailure?.(classifyServerLog(message));
+      logError(message, options);
+    };
+    const cacheDir = viteHarnessCacheDir(SANDBOX_HARNESS_NAME);
+    debug(`creating Vite server (cacheDir ${cacheDir})`);
     server = await createServer({
-      logLevel: 'error',
+      customLogger: logger,
+      cacheDir,
       server: { host: '127.0.0.1', strictPort: false, watch: { ignored: ['**/*'] } },
     });
     debug('starting Vite server');
@@ -150,6 +284,7 @@ export async function startSandboxServer() {
     let closed = false;
     return {
       baseUrl,
+      cacheDir,
       close: async () => {
         if (closed) return;
         closed = true;
@@ -167,14 +302,18 @@ export async function startSandboxServer() {
   }
 }
 
-async function waitForSandboxPage(page, options, url, consoleErrors) {
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: options.timeout });
-  await page.waitForFunction(() => Boolean(window.__INTENT_PREVIEW__), undefined, {
-    timeout: options.timeout,
-  });
-  const availableStates = await page.evaluate(
-    async (scene) => (await window.__INTENT_PREVIEW__?.states(scene)) ?? [],
-    options.scene,
+async function waitForSandboxPage(page, options, url, consoleErrors, readiness) {
+  await readiness.race(page.goto(url, { waitUntil: 'domcontentloaded', timeout: options.timeout }));
+  await readiness.race(
+    page.waitForFunction(() => Boolean(window.__INTENT_PREVIEW__), undefined, {
+      timeout: options.timeout,
+    }),
+  );
+  const availableStates = await readiness.race(
+    page.evaluate(
+      async (scene) => (await window.__INTENT_PREVIEW__?.states(scene)) ?? [],
+      options.scene,
+    ),
   );
   if (!availableStates.includes(options.state)) {
     const available = availableStates.length > 0 ? availableStates.join(', ') : '(none)';
@@ -184,31 +323,41 @@ async function waitForSandboxPage(page, options, url, consoleErrors) {
   }
 
   try {
-    await page.locator('[data-preview-ready="true"]').waitFor({ timeout: options.timeout });
+    await readiness.race(
+      page.locator('[data-preview-ready="true"]').waitFor({ timeout: options.timeout }),
+    );
   } catch {
-    throw new Error(
-      `Timed out after ${options.timeout}ms waiting for scene “${options.scene}” state “${options.state}” to become ready.`,
+    throw (
+      readiness.error() ??
+      new Error(
+        `Timed out after ${options.timeout}ms waiting for scene “${options.scene}” state “${options.state}” to become ready.`,
+      )
     );
   }
-  await waitForSandboxStability(page, options);
+  await waitForSandboxStability(page, options, readiness);
 
   if (!options.allowConsoleErrors && consoleErrors.length > 0) {
     throw new Error(`Page reported console errors:\n${consoleErrors.join('\n')}`);
   }
 }
 
-async function waitForSandboxStability(page, options) {
+async function waitForSandboxStability(page, options, readiness) {
   try {
-    await page.locator('[data-preview-stable="true"]').waitFor({ timeout: options.timeout });
+    await readiness.race(
+      page.locator('[data-preview-stable="true"]').waitFor({ timeout: options.timeout }),
+    );
   } catch {
-    throw new Error(
-      `Timed out after ${options.timeout}ms waiting for scene “${options.scene}” state “${options.state}” to become stable.`,
+    throw (
+      readiness.error() ??
+      new Error(
+        `Timed out after ${options.timeout}ms waiting for scene “${options.scene}” state “${options.state}” to become stable.`,
+      )
     );
   }
 }
 
-async function waitForResponsiveLayout(page, options) {
-  await waitForSandboxStability(page, options);
+async function waitForResponsiveLayout(page, options, readiness) {
+  await waitForSandboxStability(page, options, readiness);
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
@@ -228,8 +377,11 @@ export async function runSandbox(options, action) {
   };
   process.once('SIGINT', handleInterrupt);
 
+  const readiness = createReadinessWatch();
   try {
-    server = options.baseUrl ? undefined : await startSandboxServer();
+    server = options.baseUrl
+      ? undefined
+      : await startSandboxServer({ onReadinessFailure: readiness.record });
     const baseUrl = options.baseUrl ?? server.baseUrl;
     const url = buildSandboxUrl(baseUrl, options);
     debug(`opening ${url}`);
@@ -246,13 +398,22 @@ export async function runSandbox(options, action) {
       if (message.type() === 'error') consoleErrors.push(`console: ${message.text()}`);
     });
     page.on('pageerror', (error) => consoleErrors.push(`page: ${error.message}`));
-    await waitForSandboxPage(page, options, url, consoleErrors);
+    page.on('response', (response) => {
+      readiness.record(
+        classifyModuleResponse({
+          url: response.url(),
+          status: response.status(),
+          statusText: response.statusText(),
+        }),
+      );
+    });
+    await waitForSandboxPage(page, options, url, consoleErrors, readiness);
     debug('preview ready');
     const result = await action({
       page,
       url,
       consoleErrors,
-      waitForStability: () => waitForResponsiveLayout(page, options),
+      waitForStability: () => waitForResponsiveLayout(page, options, readiness),
     });
     await page.waitForTimeout(0);
     if (!options.allowConsoleErrors && consoleErrors.length > 0) {

@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { goto } from '$app/navigation';
-  import { faArrowRight, faLayerGroup, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { flushSync, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
@@ -8,6 +9,7 @@
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
+  import { watchReducedMotion } from '$lib/utils/reduced-motion.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import WorkspaceStatusIcon from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import {
@@ -52,7 +54,7 @@
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
-  import { getWorkspaceTabBulkCloseIds } from './workspace-tab-context-actions';
+  import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
     WORKSPACE_TAB_CORNER_RADIUS_PX,
@@ -67,7 +69,6 @@
     type WorkspaceTabBorderMaskBounds,
     workspaceTabMotionEasing,
   } from './titlebar-geometry';
-
   interface Props {
     onActiveTabBoundsChange?: (bounds: WorkspaceTabBorderMaskBounds | null) => void;
     onActiveTabTrackingChange?: (tracking: boolean) => void;
@@ -76,7 +77,6 @@
     leadingInsetPx?: number;
     scrollerMarginLeftPx?: number;
   }
-
   let {
     onActiveTabBoundsChange,
     onActiveTabTrackingChange,
@@ -85,7 +85,6 @@
     leadingInsetPx = 28,
     scrollerMarginLeftPx = WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
   }: Props = $props();
-
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceItems$ = selectWorkspaceItems();
@@ -99,12 +98,10 @@
   let pendingRemovalResetQueued = false;
   let overflowRefreshFrame: number | null = null;
   let queuedOutroOverflow: boolean | null | undefined;
-
   const workspaceById = $derived(
     new Map($workspaceItems$.map((workspace) => [String(workspace.id), workspace])),
   );
   const visibleTabIds = $derived($workspaceTabOrder$);
-
   interface WorkspaceTabDragSession {
     originalOrder: string[];
     pointerOffsetX: number;
@@ -112,7 +109,6 @@
     slots: WorkspaceTabSlot[];
     startScrollLeft: number;
   }
-
   interface WorkspaceTabPointerGrab {
     workspaceId: string;
     pointerId: number;
@@ -122,14 +118,13 @@
     surface: HTMLElement;
     captureTarget: HTMLElement | null;
   }
-
   let draggedWorkspaceId = $state<string | null>(null);
   let dragSession = $state<WorkspaceTabDragSession | null>(null);
   let pendingDragPointer: WorkspaceTabPointerGrab | null = null;
   let dragClientX = $state(0);
   let proposedTabOrder = $state<string[] | null>(null);
   let lifecycleMotionReady = $state(false);
-  let prefersReducedMotion = $state(false);
+  const reducedMotion = watchReducedMotion();
   let suppressClickWorkspaceId: string | null = null;
   const renderedTabOrder = $derived(proposedTabOrder ?? $workspaceTabOrder$);
   const selectedWorkspaceId = $derived(
@@ -137,7 +132,7 @@
   );
   const visualActiveWorkspaceId = $derived(selectedWorkspaceId);
   const workspaceTabMotionDuration = $derived(
-    prefersReducedMotion ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
+    reducedMotion.current ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
   );
   let refreshOverflow = () => {};
   let reorderAnnouncement = $state('');
@@ -157,12 +152,13 @@
       : 'black 100%';
     return `linear-gradient(to right, ${leftStops}, ${rightStops})`;
   });
-  const tabButtons = new Map<string, HTMLButtonElement>();
+  const ownedTabIds = $derived(renderedTabOrder.map((id) => `workspace-tab-${id}`).join(' '));
+  let tabButtons = $state<Record<string, HTMLButtonElement | null>>({});
   const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
   const POINTER_DRAG_THRESHOLD = 4;
   const activeTabBoundsPollers = new Set<() => void>();
-  const activeTabBoundsReporters = new Set<() => void>();
+  const activeTabBoundsReporters = new Set<(sync?: boolean) => void>();
   const activeTabBoundsControllers = new Map<string, (active: boolean) => void>();
   let autoScrollFrame: number | null = null;
   let layoutTracking = false;
@@ -172,40 +168,18 @@
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     if (!tabContextMenu) return [];
     const { workspaceId } = tabContextMenu;
-    const closeOthers = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'others');
-    const closeRight = getWorkspaceTabBulkCloseIds($workspaceTabOrder$, workspaceId, 'right');
-    return [
-      {
-        id: 'close',
-        label: m.layout_panelTabBar_close_label(),
-        icon: faXmark,
-        onClick: () => closeWorkspace(workspaceId),
-      },
-      { type: 'separator' },
-      {
-        id: 'close-others',
-        label: m.layout_panelTabBar_closeAllOthers_label(),
-        icon: faLayerGroup,
-        disabled: closeOthers.length === 0,
-        onClick: () => closeWorkspaceTabs(closeOthers, workspaceId),
-      },
-      {
-        id: 'close-right',
-        label: m.layout_panelTabBar_closeTabsToRight_label(),
-        icon: faArrowRight,
-        disabled: closeRight.length === 0,
-        onClick: () => closeWorkspaceTabs(closeRight),
-      },
-    ];
+    return buildWorkspaceTabContextMenu({
+      order: $workspaceTabOrder$,
+      workspaceId,
+      onClose: () => closeWorkspace(workspaceId),
+      onCloseTabs: closeWorkspaceTabs,
+    });
   });
-
-  // Teardown paths pass sync=false: flushSync there throws effect_in_teardown.
   const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
   const reportActiveTabTracking = ({ sync = true } = {}) =>
     run(sync, () => onActiveTabTrackingChange?.(layoutTracking || dragTracking || scrollTracking));
   const emitActiveTabBounds = (bounds: WorkspaceTabBorderMaskBounds | null, { sync = true } = {}) =>
     run(sync, () => onActiveTabBoundsChange?.(bounds));
-
   function scheduleOverflowRefresh(overflow?: boolean | null) {
     if (overflow !== undefined) queuedOutroOverflow = overflow;
     if (overflowRefreshFrame !== null) return;
@@ -218,7 +192,6 @@
       refreshOverflow();
     });
   }
-
   onMount(() => {
     activeStreamsTracker.startPolling();
     const unsubscribe = activeStreamsTracker.subscribe(() => activeStreamsVersion++);
@@ -251,16 +224,13 @@
     const unsubscribeHoverCardIntent = workspaceHoverCardIntentSession.subscribe(
       (delay) => (workspaceHoverCardOpenDelay = delay),
     );
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotionPreference = () => (prefersReducedMotion = motionQuery.matches);
-    updateMotionPreference();
-    motionQuery.addEventListener('change', updateMotionPreference);
     const lifecycleFrame = requestAnimationFrame(() => {
       lifecycleMotionReady = true;
     });
     const handleMoved = (event: Event) =>
       handleGlobalWorkspaceTabMoved(event as CustomEvent<WorkspaceTabMovedEventDetail>);
     window.addEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
+    window.addEventListener('keydown', handleDragKeydown);
     return () => {
       unsubscribe();
       unsubscribeTabState();
@@ -270,11 +240,11 @@
       pointerOpenEligibleWorkspaceHoverCardIds.clear();
       cancelAnimationFrame(lifecycleFrame);
       if (overflowRefreshFrame !== null) cancelAnimationFrame(overflowRefreshFrame);
-      motionQuery.removeEventListener('change', updateMotionPreference);
+      reducedMotion.cleanup();
       window.removeEventListener(WORKSPACE_TAB_MOVED_EVENT, handleMoved);
+      window.removeEventListener('keydown', handleDragKeydown);
     };
   });
-
   function handleWorkspaceHoverCardOpenChange(workspaceId: string, open: boolean) {
     if (
       open &&
@@ -287,17 +257,11 @@
       workspaceHoverCardIntentSession.notifyClosed();
     }
   }
-
-  // Overflow detection drives the strip's right margin: while tabs are
-  // clipped, the clipped tab edge (not the pr-3 padding) sits at the strip's
-  // right border, so the -mr-2.5 pull toward the "+" launcher must be
-  // replaced with positive spacing. ResizeObserver catches strip resizes;
-  // re-running on visibleTabIds catches tab count changes at constant width.
   $effect(() => {
     const strip = stripElement;
     if (!strip) return;
     void renderedTabOrder;
-    const updateOverflow = () => {
+    const updateOverflow = (sync = true) => {
       isOverflowing = pendingOutroOverflow ?? strip.scrollWidth > strip.clientWidth;
       const fadeState = getWorkspaceTabScrollFadeState(
         strip.scrollLeft,
@@ -306,27 +270,29 @@
       );
       hasHiddenTabsLeft = fadeState.left;
       hasHiddenTabsRight = fadeState.right;
-      activeTabBoundsReporters.forEach((report) => report());
+      activeTabBoundsReporters.forEach((report) => report(sync));
     };
-    refreshOverflow = updateOverflow;
-    updateOverflow();
-    const observer = new ResizeObserver(updateOverflow);
+    const updateOverflowSync = () => updateOverflow();
+    refreshOverflow = updateOverflowSync;
+    // Effect bodies must not flush synchronously; event/rAF callers stay sync.
+    updateOverflow(false);
+    const observer = new ResizeObserver(updateOverflowSync);
     observer.observe(strip);
-    strip.addEventListener('scroll', updateOverflow);
+    strip.addEventListener('scroll', updateOverflowSync);
     return () => {
       observer.disconnect();
-      strip.removeEventListener('scroll', updateOverflow);
-      if (refreshOverflow === updateOverflow) refreshOverflow = () => {};
+      strip.removeEventListener('scroll', updateOverflowSync);
+      if (refreshOverflow === updateOverflowSync) refreshOverflow = () => {};
     };
   });
-
   $effect(() => {
     void renderedTabOrder;
     void horizontalPositionTrackingKey;
     const trackingDuration = workspaceTabMotionDuration;
     if (activeTabBoundsPollers.size === 0) return;
     layoutTracking = true;
-    reportActiveTabTracking();
+    // Effect bodies must not flushSync: a nested flush nulls the outer batch.
+    reportActiveTabTracking({ sync: false });
     let startedAt: number | null = null;
     let frame: number | null = null;
     let cancelled = false;
@@ -351,16 +317,14 @@
       reportActiveTabTracking({ sync: false });
     };
   });
-
   $effect(() => {
     dragTracking = draggedWorkspaceId !== null;
-    reportActiveTabTracking();
+    reportActiveTabTracking({ sync: false });
     return () => {
       dragTracking = false;
       reportActiveTabTracking({ sync: false });
     };
   });
-
   $effect(() => {
     if (!draggedWorkspaceId) return;
     void dragClientX;
@@ -369,12 +333,10 @@
     });
     return () => cancelAnimationFrame(frame);
   });
-
   function getRunningAgentIds(workspaceId: string) {
     void activeStreamsVersion;
     return activeStreamsTracker.getStreamingAgentIdsForWorkspace(workspaceId);
   }
-
   function tabAccessibleLabel(
     title: string,
     workspaceState: WorkspaceStatusPresentationState,
@@ -398,14 +360,18 @@
     let scrollTrackingTimeout: ReturnType<typeof setTimeout> | null = null;
     const strip = node.closest('[data-workspace-tab-strip]');
 
-    const runFrame = (allowClamp = true) => {
+    const runFrame = (allowClamp = true, sync = true) => {
       readPending = false;
       const shouldClamp = clampQueued;
       clampQueued = false;
       if (!active) return;
-
       const tabRect = node.getBoundingClientRect();
-      const titlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect() ?? null;
+      const titlebar = node.closest<HTMLElement>('.window-title-bar');
+      const titlebarRect = titlebar?.getBoundingClientRect() ?? null;
+      const titlebarScale =
+        titlebar?.offsetWidth && titlebarRect?.width
+          ? titlebarRect.width / titlebar.offsetWidth
+          : 1;
       const stripRect = strip?.getBoundingClientRect() ?? null;
       let scrollDelta = 0;
       let scrollTarget: number | null = null;
@@ -428,7 +394,6 @@
       const fadeEdges = strip
         ? getWorkspaceTabScrollFadeState(strip.scrollLeft, strip.scrollWidth, strip.clientWidth)
         : undefined;
-
       if (writePending) cancelWrite?.();
       const writeBounds = () => {
         writePending = false;
@@ -438,24 +403,27 @@
         if (scrollTarget === null) {
           emitActiveTabBounds(
             getClippedWorkspaceTabBorderMaskBounds(
-              tabRect,
-              stripRect,
-              titlebarRect.left,
+              { left: tabRect.left / titlebarScale, right: tabRect.right / titlebarScale },
+              { left: stripRect.left / titlebarScale, right: stripRect.right / titlebarScale },
+              titlebarRect.left / titlebarScale,
               fadeEdges,
             ),
+            { sync },
           );
           return;
         }
-        // A clamp moved the strip, so re-measure the boundary-clamped position.
         const movedTabRect = node.getBoundingClientRect();
         const movedTitlebarRect = node.closest('.window-title-bar')?.getBoundingClientRect();
         const movedStripRect = strip?.getBoundingClientRect();
         if (!movedTitlebarRect || !movedStripRect) return;
         emitActiveTabBounds(
           getClippedWorkspaceTabBorderMaskBounds(
-            movedTabRect,
-            movedStripRect,
-            movedTitlebarRect.left,
+            { left: movedTabRect.left / titlebarScale, right: movedTabRect.right / titlebarScale },
+            {
+              left: movedStripRect.left / titlebarScale,
+              right: movedStripRect.right / titlebarScale,
+            },
+            movedTitlebarRect.left / titlebarScale,
             strip
               ? getWorkspaceTabScrollFadeState(
                   strip.scrollLeft,
@@ -464,16 +432,16 @@
                 )
               : undefined,
           ),
+          { sync },
         );
       };
       if (!allowClamp) return writeBounds();
       writePending = true;
       cancelWrite = scheduleLayoutWrite(writeBounds);
     };
-
-    const reportVisibleActiveBounds = () => {
+    const reportVisibleActiveBounds = (sync = true) => {
       clampQueued = false;
-      runFrame(false);
+      runFrame(false, sync);
     };
 
     const schedule = () => {
@@ -507,21 +475,22 @@
     activeTabBoundsPollers.add(scheduleClampAndReport);
     activeTabBoundsReporters.add(reportVisibleActiveBounds);
     scheduleClampAndReport();
-
-    const setActive = (nextIsActive: boolean) => {
+    const setActive = (nextIsActive: boolean, immediate = true) => {
+      if (!immediate && active === nextIsActive) return;
       const wasActive = active;
       active = nextIsActive;
       node.dataset.active = String(nextIsActive);
+      // Avoid nested render flushes from action updates; frame reports stay sync.
       if (active) {
-        reportVisibleActiveBounds();
+        // Only close/handoff controllers bypass the batched geometry pass.
+        if (immediate) reportVisibleActiveBounds(false);
         scheduleClampAndReport();
-      } else if (wasActive) emitActiveTabBounds(null);
+      } else if (wasActive) emitActiveTabBounds(null, { sync: false });
     };
     const workspaceId = node.dataset.workspaceTab;
     if (workspaceId) activeTabBoundsControllers.set(workspaceId, setActive);
-
     return {
-      update: setActive,
+      update: (nextIsActive: boolean) => setActive(nextIsActive, false),
       destroy() {
         if (scrollTrackingTimeout !== null) clearTimeout(scrollTrackingTimeout);
         if (active && scrollTracking) {
@@ -543,15 +512,6 @@
     };
   }
 
-  function registerTabButton(node: HTMLButtonElement, workspaceId: string) {
-    tabButtons.set(workspaceId, node);
-    return {
-      destroy() {
-        tabButtons.delete(workspaceId);
-      },
-    };
-  }
-
   function registerTabSurface(node: HTMLElement, workspaceId: string) {
     tabSurfaces.set(workspaceId, node);
     return {
@@ -564,7 +524,7 @@
   async function openWorkspace(workspaceId: string, restoreFocus = false) {
     appStore.dispatch(openWorkspaceTab(workspaceId));
     await goto(`/workspace/${workspaceId}`);
-    if (restoreFocus) requestAnimationFrame(() => tabButtons.get(workspaceId)?.focus());
+    if (restoreFocus) requestAnimationFrame(() => tabButtons[workspaceId]?.focus());
   }
 
   function closeWorkspace(workspaceId: string, event?: Event) {
@@ -625,7 +585,7 @@
       name: workspaceById.get(workspaceId)?.title || m.layout_workspaceTabStrip_untitled_label(),
       position: targetIndex + 1,
     });
-    requestAnimationFrame(() => tabButtons.get(workspaceId)?.focus());
+    requestAnimationFrame(() => tabButtons[workspaceId]?.focus());
   }
 
   function handleGlobalWorkspaceTabMoved(event: CustomEvent<WorkspaceTabMovedEventDetail>) {
@@ -636,7 +596,7 @@
       position,
     });
     requestAnimationFrame(() => {
-      const tab = tabButtons.get(workspaceId);
+      const tab = tabButtons[workspaceId];
       if (!tab) return;
       tab.focus();
       tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -670,7 +630,7 @@
     if (!targetId) return;
 
     event.preventDefault();
-    tabButtons.get(targetId)?.focus();
+    tabButtons[targetId]?.focus();
     void openWorkspace(targetId, true);
   }
 
@@ -904,19 +864,16 @@
   }
 </script>
 
-<svelte:window onkeydown={handleDragKeydown} />
-
 {#if $workspaceTabOrder$.length > 0}
-  <!-- The open scroller starts 12px after the panel curve. A 16px transparent lead-in
-       moves the active left fade past it without moving the first tab.
-       The closed scroller moves left so the visible logo-to-flare gap
-       matches the tab gap floor. Its 6px padding keeps the leading flare fully
-       inside the scrollport, so the clip and fade still move with the first tab.
-       The right margin is conditional: -mr-2.5 keeps the "+" launcher tight
-       against the last tab's pr-3 padding when everything fits, but during
-       overflow the clipped tab edge is flush with the strip border, so mr-1
-       (plus the parent's gap-1) keeps 8px of clearance before the "+".
-       Scrolled-out tabs must not carve no-drag holes (intent-hq/monorepo#2400). -->
+  <div
+    class="sr-only"
+    aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
+    aria-owns={ownedTabIds}
+    role="tablist"
+    data-workspace-tab-list
+  ></div>
+  <!-- Clipped tabs must not carve titlebar no-drag holes. The lead-in keeps
+       the flare visible; the right margin reserves the launcher gap on overflow. -->
   <div
     bind:this={stripElement}
     data-workspace-tab-scroller
@@ -925,8 +882,7 @@
       isOverflowing ? 'mr-1' : '-mr-2.5',
       draggedWorkspaceId && 'cursor-grabbing',
     )}
-    aria-label={m.layout_workspaceTabStrip_openSpaces_ariaLabel()}
-    role="tablist"
+    role="presentation"
     tabindex="-1"
     style:margin-left={`${scrollerMarginLeftPx}px`}
     style:padding-left={`${getWorkspaceTabScrollerPaddingLeftPx(leadingInsetPx)}px`}
@@ -952,7 +908,7 @@
         class="w-40 max-w-[40vw] min-w-0 shrink-0"
         data-workspace-tab-motion={workspaceId}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
-        style:height={isDragged ? `${dragSession?.origin.height ?? 32}px` : undefined}
+        style:height={isDragged ? `${dragSession?.origin.height ?? 36}px` : undefined}
         animate:flip={{
           duration: isDragged ? 0 : workspaceTabMotionDuration,
           easing: workspaceTabMotionEasing,
@@ -974,6 +930,7 @@
       >
         {#if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
+          {@const canManageSharing = workspace.myRole === 'owner'}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
           {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
           {@const isArchived = workspace.status === WorkspaceStatus.Archived}
@@ -988,7 +945,7 @@
           {/if}
           <div
             class={cn(
-              'group/workspace-tab flex h-8 w-full min-w-0 shrink-0 items-center border transition-[background-color,border-color] motion-reduce:transition-none',
+              'group/workspace-tab flex h-(--control-height-medium) w-full min-w-0 shrink-0 items-center border transition-[background-color,border-color] motion-reduce:transition-none',
               isCurrent
                 ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground hover:bg-sidebar/50 hover:text-foreground',
@@ -1003,7 +960,7 @@
             style:left={isDragged && dragSession
               ? `${dragClientX - dragSession.pointerOffsetX}px`
               : undefined}
-            style:top={isDragged && dragSession ? `${dragSession.origin.top - 2}px` : undefined}
+            style:top={isDragged && dragSession ? `${dragSession.origin.top}px` : undefined}
             style:width={isDragged && dragSession ? `${dragSession.origin.width}px` : undefined}
             style:height={isDragged && dragSession ? `${dragSession.origin.height}px` : undefined}
             style:border-radius={isCurrent
@@ -1029,61 +986,75 @@
               visible={isCurrent}
               durationMs={isDragged ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS}
             />
-            <TooltipRich
-              side="bottom"
-              align="start"
-              delayDuration={workspaceHoverCardOpenDelay}
-              onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
-              disableHoverableContent={true}
-              disabled={draggedWorkspaceId !== null}
-              showArrow={false}
-              maxWidth="none"
-              class="absolute -inset-px rounded-[inherit]"
-              contentClass="border-0 bg-transparent p-0 shadow-none"
-              contentContainerClass="space-y-0! p-0!"
-            >
-              {#snippet content()}
-                <div data-workspace-tab-hover-content={workspaceId}>
-                  <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
-                </div>
-              {/snippet}
-              <button
-                type="button"
-                use:registerTabButton={workspaceId}
-                class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium outline-none! focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
-                onclick={(event) => handleTabClick(event, workspaceId)}
-                onkeydown={(event) => handleTabKeydown(event, workspaceId)}
-                onfocusin={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
-                role="tab"
-                aria-selected={isCurrent}
-                aria-current={isCurrent ? 'page' : undefined}
-                aria-label={tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus)}
-                tabindex={isCurrent ? 0 : -1}
-                data-workspace-tab-hover-trigger
+            {#key isCurrent && pointerOpenEligibleWorkspaceHoverCardIds.has(workspaceId)}
+              <!-- The hover card offers member Remove only to the
+                   workspace's owner, so the card stays hoverable (see
+                   `disableHoverableContent`) when this window owns the workspace;
+                   otherwise it is a read-only preview that closes on leave. -->
+              <TooltipRich
+                side="bottom"
+                align="start"
+                delayDuration={workspaceHoverCardOpenDelay}
+                onOpenChange={(open) => handleWorkspaceHoverCardOpenChange(workspaceId, open)}
+                disableHoverableContent={!canManageSharing}
+                disabled={isCurrent || draggedWorkspaceId !== null}
+                showArrow={false}
+                maxWidth="none"
+                class="absolute -inset-px rounded-[inherit]"
+                contentClass="border-0 bg-transparent p-0 shadow-none"
+                contentContainerClass="space-y-0! p-0!"
               >
-                <span
-                  class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
-                  data-workspace-tab-title>{workspaceTitle}</span
-                >
-                <span
-                  class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
-                  data-workspace-tab-controls
+                {#snippet content()}
+                  <div data-workspace-tab-hover-content={workspaceId}>
+                    <WorkspaceHoverCard {workspace} activeAgentIds={runningAgentIds} />
+                  </div>
+                {/snippet}
+                <Button
+                  variant="plain"
+                  type="button"
+                  bind:ref={tabButtons[workspaceId]}
+                  class="flex h-full w-full min-w-0 touch-none cursor-pointer select-none items-center gap-1 truncate rounded-[inherit] pl-3 pr-1 text-left text-xs font-medium focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+                  onclick={(event) => handleTabClick(event, workspaceId)}
+                  onkeydown={(event) => handleTabKeydown(event, workspaceId)}
+                  onfocusin={() => pointerOpenEligibleWorkspaceHoverCardIds.delete(workspaceId)}
+                  role="tab"
+                  aria-selected={isCurrent}
+                  aria-current={isCurrent ? 'page' : undefined}
+                  aria-label={tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus)}
+                  tabindex={isCurrent ? 0 : -1}
+                  id={`workspace-tab-${workspaceId}`}
+                  data-workspace-tab-hover-trigger
                 >
                   <span
-                    class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
-                    data-workspace-tab-status-cluster
+                    class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
+                    data-workspace-tab-title>{workspaceTitle}</span
                   >
-                    <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                  <span
+                    class="pointer-events-none ml-auto flex shrink-0 items-center gap-1"
+                    data-workspace-tab-controls
+                  >
+                    <span
+                      class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
+                      data-workspace-tab-status-cluster
+                    >
+                      <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                    </span>
+                    <span
+                      class="size-(--control-height-compact) shrink-0"
+                      data-workspace-tab-close-space
+                      aria-hidden="true"
+                    ></span>
                   </span>
-                  <span class="size-5 shrink-0" data-workspace-tab-close-space aria-hidden="true"
-                  ></span>
-                </span>
-              </button>
-            </TooltipRich>
-            <button
+                </Button>
+              </TooltipRich>
+            {/key}
+            <Button
+              variant="plain"
+              size="icon-compact"
+              iconOnly
               type="button"
               class={cn(
-                'absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
+                'absolute right-1 z-10 shrink-0 cursor-pointer rounded text-subtle outline-none! transition-opacity hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground focus-visible:opacity-100 forced-colors:focus-visible:text-[HighlightText]',
                 isCurrent ? 'opacity-70' : 'opacity-0 group-hover/workspace-tab:opacity-100',
               )}
               onclick={(event) => closeWorkspace(workspaceId, event)}
@@ -1092,13 +1063,13 @@
               })}
               data-workspace-tab-close
             >
-              <Fa icon={faXmark} size="xs" />
-            </button>
+              <Fa icon={faXmark} class="size-3.5!" />
+            </Button>
           </div>
         {:else}
           <div
             class={cn(
-              'group/workspace-tab relative flex h-8 w-full min-w-0 shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
+              'group/workspace-tab relative flex h-(--control-height-medium) w-full min-w-0 shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
               isCurrent
                 ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
                 : 'rounded-md border-transparent text-muted-foreground',
@@ -1127,10 +1098,10 @@
               visible={isCurrent}
               durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
             />
-            <button
+            <Button
+              variant="plain"
               type="button"
-              use:registerTabButton={workspaceId}
-              class="absolute -inset-px flex min-w-0 cursor-pointer items-center rounded-[inherit] px-3 pr-8 text-left outline-none! forced-colors:focus-visible:text-[HighlightText]"
+              class="absolute -inset-x-px inset-y-0 flex h-auto w-auto min-w-0 cursor-pointer items-center rounded-[inherit] border-0 px-3 pr-10 !px-3 !pr-10 text-left forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
               onkeydown={(event) => handleTabKeydown(event, workspaceId)}
               role="tab"
@@ -1138,6 +1109,8 @@
               aria-selected={isCurrent}
               aria-current={isCurrent ? 'page' : undefined}
               tabindex={isCurrent ? 0 : -1}
+              bind:ref={tabButtons[workspaceId]}
+              id={`workspace-tab-${workspaceId}`}
               data-workspace-tab-loading-target
             >
               <span
@@ -1145,22 +1118,25 @@
                 aria-hidden="true"
                 data-workspace-tab-loading-indicator
               ></span>
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="plain"
+              size="icon-compact"
+              iconOnly
               type="button"
-              class="absolute right-1 z-10 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
+              class="absolute right-1 z-10 flex size-(--control-height-compact) shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
               onclick={(event) => closeWorkspace(workspaceId, event)}
               aria-label={m.layout_workspaceTabStrip_close_ariaLabel({ name: workspaceId })}
               data-workspace-tab-close
             >
-              <Fa icon={faXmark} size="xs" />
-            </button>
+              <Fa icon={faXmark} class="size-3.5!" />
+            </Button>
           </div>
         {/if}
       </div>
     {/each}
-    <span class="sr-only" aria-live="polite">{reorderAnnouncement}</span>
   </div>
+  <span class="sr-only" aria-live="polite">{reorderAnnouncement}</span>
 {/if}
 
 {#if tabContextMenu}
@@ -1178,22 +1154,24 @@
     box-shadow: none;
   }
 
-  button[data-workspace-tab-hover-trigger] {
+  :global(button[data-workspace-tab-hover-trigger]) {
     cursor: pointer;
   }
 
-  button[data-workspace-tab-hover-trigger]:focus-visible [data-workspace-tab-title] {
+  :global(button[data-workspace-tab-hover-trigger]:focus-visible [data-workspace-tab-title]) {
     text-decoration-line: underline;
     text-decoration-thickness: 2px;
     text-underline-offset: 2px;
   }
 
-  button[data-workspace-tab-loading-target]:focus-visible [data-workspace-tab-loading-indicator] {
+  :global(
+    button[data-workspace-tab-loading-target]:focus-visible [data-workspace-tab-loading-indicator]
+  ) {
     background-color: currentColor;
     opacity: 0.45;
   }
 
-  button[data-workspace-tab-close]:focus-visible :global(svg) {
+  :global(button[data-workspace-tab-close]:focus-visible svg) {
     transform: scale(1.15);
   }
 </style>

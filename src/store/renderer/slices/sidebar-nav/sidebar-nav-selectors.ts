@@ -110,8 +110,6 @@ export const selectShowCreateModal = store.createSelector(
   (state) => state.sidebarNav.showCreateModal,
 );
 
-export const selectDraftPrompt = store.createSelector((state) => state.sidebarNav.draftPrompt);
-
 export const selectAllSpacesViewMode = store.createSelector(
   (state) => state.sidebarNav.allSpacesViewMode,
 );
@@ -122,6 +120,10 @@ export const selectShowArchivedWorkspaces = store.createSelector(
 
 export const selectCollapsedStatusGroupIds = store.createSelector(
   (state) => state.sidebarNav.collapsedStatusGroupIds,
+);
+
+export const selectCollapsedRepoGroupKeys = store.createSelector(
+  (state) => state.sidebarNav.collapsedRepoGroupKeys,
 );
 
 export const selectIsChiefCollapsed = store.createSelector(

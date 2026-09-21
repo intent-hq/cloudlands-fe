@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Tooltip as TooltipPrimitive } from 'bits-ui';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { cn } from '$lib/utils.js';
   import {
     faXmark,
@@ -12,6 +13,7 @@
   import type { Snippet } from 'svelte';
   import TooltipTriggerWrapper from './tooltip-trigger-wrapper.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import './tooltip-motion.css';
 
   interface Props {
     title?: string;
@@ -110,10 +112,10 @@
     },
     warning: {
       bg: 'bg-warning/10',
-      text: 'text-warning',
+      text: 'text-warning-ink',
       border: 'border border-warning/40',
       icon: faTriangleExclamation,
-      iconColor: 'text-warning',
+      iconColor: 'text-warning-ink',
     },
     error: {
       bg: 'bg-danger',
@@ -138,16 +140,8 @@
   // Combined content classes - use $derived to react to prop changes
   const contentClasses = $derived(
     cn(
-      'z-(--layer-tooltip) rounded-md border border-border shadow-(--elevation-overlay)',
-      'motion-reduce:animate-none motion-reduce:transition-none',
-      !disableAnimation && [
-        'animate-in fade-in-0 zoom-in-95',
-        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
-        'data-[side=bottom]:slide-in-from-top-2',
-        'data-[side=left]:slide-in-from-right-2',
-        'data-[side=right]:slide-in-from-left-2',
-        'data-[side=top]:slide-in-from-bottom-2',
-      ],
+      'overlay-surface z-(--layer-tooltip)',
+      !disableAnimation && 'tooltip-motion',
       config.bg,
       config.text,
       config.border,
@@ -192,9 +186,7 @@
           {/if}
         </TooltipTriggerWrapper>
       {/snippet}
-    </TooltipPrimitive.Trigger>
-
-    {#if !disabled && (title || description || content)}
+    </TooltipPrimitive.Trigger>{#if !disabled && (title || description || content)}
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
           role="tooltip"
@@ -204,17 +196,20 @@
           {alignOffset}
           class={contentClasses}
           data-tooltip-content
+          data-overlay-surface
           onFocusOutside={() => {}}
         >
           <div class="relative" style="max-width: {maxWidth};">
             {#if showClose}
-              <button
+              <Button
+                variant="ghost"
+                size="icon-compact"
                 onclick={handleClose}
-                class="absolute -right-1 -top-1 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                class="absolute -right-1 -top-1 size-5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground motion-reduce:transition-none"
                 aria-label={m.ui_tooltipRich_close_ariaLabel()}
               >
                 <Fa icon={faXmark} size="xs" class="w-3 h-3" />
-              </button>
+              </Button>
             {/if}
 
             <div class="px-3 py-2 space-y-1 {contentContainerClass}">

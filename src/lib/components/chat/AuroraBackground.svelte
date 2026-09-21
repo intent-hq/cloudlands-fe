@@ -10,11 +10,19 @@
    * - Renders the backing buffer at half the CSS resolution
    * - Pauses when tab is hidden (Page Visibility API)
    * - Simplified shader with fewer blobs (5 instead of 10)
-   * - Respects prefers-reduced-motion
+   * - Respects reduced motion (OS preference or battery saver)
    */
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
-  import { scheduleLayoutRead, type CancelLayoutTask } from '$lib/utils/layout-phases';
+  import {
+    scheduleLayoutRead,
+    scheduleLayoutWrite,
+    type CancelLayoutTask,
+  } from '$lib/utils/layout-phases';
+  import {
+    onReducedMotionChange,
+    prefersReducedMotion as isReducedMotionPreferred,
+  } from '$lib/utils/reduced-motion';
 
   interface Props {
     agentId?: string;
@@ -96,6 +104,22 @@
   let cachedCanvasWidth: number | null = null;
   let cachedCanvasHeight: number | null = null;
   let canvasResizeObserver: ResizeObserver | null = null;
+  let sizeReadPending = false;
+  let cancelSizeRead: CancelLayoutTask | null = null;
+  let cancelSizeWrite: CancelLayoutTask | null = null;
+
+  function scheduleCanvasSizeUpdate() {
+    if (sizeReadPending || destroyed) return;
+    sizeReadPending = true;
+    cancelSizeRead = scheduleLayoutRead(() => {
+      sizeReadPending = false;
+      if (!canvas || destroyed) return;
+      cachedCanvasWidth ??= canvas.clientWidth;
+      cachedCanvasHeight ??= canvas.clientHeight;
+      cancelSizeWrite?.();
+      cancelSizeWrite = scheduleLayoutWrite(() => updateCanvasSize());
+    });
+  }
 
   function getSemanticAuroraColor(): [number, number, number] | null {
     if (!canvas) return null;
@@ -382,14 +406,14 @@
     gl.uniform1fv(uniformLocations.phases, phaseOffsets);
     scheduleSemanticColorSync();
 
-    updateCanvasSize();
+    scheduleCanvasSizeUpdate();
 
     startTime = performance.now();
     render();
   }
 
   function updateCanvasSize(width?: number, height?: number) {
-    if (!canvas) return;
+    if (!canvas || destroyed) return;
 
     const cssWidth = width ?? cachedCanvasWidth ?? canvas.clientWidth;
     const cssHeight = height ?? cachedCanvasHeight ?? canvas.clientHeight;
@@ -416,7 +440,6 @@
       }
     });
     canvasResizeObserver.observe(canvas);
-    updateCanvasSize();
   }
 
   function scheduleRender() {
@@ -492,6 +515,11 @@
     cancelColorRead?.();
     cancelColorRead = null;
     colorReadPending = false;
+    cancelSizeRead?.();
+    cancelSizeWrite?.();
+    cancelSizeRead = null;
+    cancelSizeWrite = null;
+    sizeReadPending = false;
     canvasResizeObserver?.disconnect();
     canvasResizeObserver = null;
     if (gl) {
@@ -534,8 +562,8 @@
   }
 
   // Handle reduced motion preference changes
-  function handleMotionPreference(e: MediaQueryListEvent) {
-    prefersReducedMotion = e.matches;
+  function handleMotionPreference(reduced: boolean) {
+    prefersReducedMotion = reduced;
     if (prefersReducedMotion) cancelScheduledRender();
     else scheduleRender();
   }
@@ -551,7 +579,7 @@
     const dprQuery = window.matchMedia(`(resolution: ${dpr}dppx)`);
     const handler = () => {
       cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
-      updateCanvasSize();
+      scheduleCanvasSizeUpdate();
       // Remove old listener and set up a new one with the updated DPR
       dprQuery.removeEventListener('change', handler);
       setupDprListener();
@@ -564,7 +592,7 @@
     // Check initial states
     isPageVisible = !document.hidden;
     isWindowFocused = !document.documentElement.hasAttribute('data-window-blurred');
-    prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    prefersReducedMotion = isReducedMotionPreferred();
     cachedDpr = Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
 
     // Listen for visibility changes
@@ -576,14 +604,13 @@
     });
 
     // Listen for motion preference changes
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    motionQuery.addEventListener('change', handleMotionPreference);
+    const stopWatchingMotion = onReducedMotionChange(handleMotionPreference);
 
     // Listen for DPR changes (e.g., moving between retina/non-retina displays)
     setupDprListener();
     setupCanvasResizeObserver();
 
-    const handleSemanticColorChange = () => syncSemanticAuroraColor();
+    const handleSemanticColorChange = () => scheduleSemanticColorSync();
     const themeObserver = new MutationObserver(handleSemanticColorChange);
     themeObserver.observe(document.documentElement, {
       attributes: true,
@@ -596,7 +623,7 @@
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       windowFocusObserver.disconnect();
-      motionQuery.removeEventListener('change', handleMotionPreference);
+      stopWatchingMotion();
       window.removeEventListener('theme-changed', handleSemanticColorChange);
       themeObserver.disconnect();
       dprCleanup?.();

@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   // Fixed card size for consistent layout - exported for use in parent components
   export const CARD_WIDTH = 180;
   export const CARD_HEIGHT = 180; // Square cards
@@ -17,7 +18,7 @@
     getAvatarState,
     getAvatarStateForSession,
   } from '$features/agent/components/agent-avatar/avatar-state';
-  import { Spinner } from '$lib/components/ui/indicators';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { classifyTool } from '$lib/utils/tool-classifier';
   import {
     selectAgentAttentionRequest,
@@ -103,12 +104,13 @@
   {/if}
 
   <!-- Main agent card -->
-  <button
+  <Button
+    variant="ghost"
     type="button"
     class="agent-card flex flex-col items-center px-2.5 py-4 bg-card border border-border
-      hover:shadow transition-all cursor-pointer"
-    class:border-primary={$agentIsWaiting$}
-    class:border-2={$agentIsWaiting$}
+      hover:shadow transition-all cursor-pointer {$agentIsWaiting$
+      ? 'border-primary-ink border-2'
+      : ''}"
     style="width: {CARD_WIDTH}px; height: {CARD_HEIGHT}px; anchor-name: --agent-hierarchy-{agent.agentId};"
     {onclick}
     {onmouseenter}
@@ -138,7 +140,7 @@
         <div
           class="text-sm flex flex-col items-center gap-0.5 {$attentionRequest$.kind === 'blocker'
             ? 'text-red-500'
-            : 'text-amber-500'}"
+            : 'text-warning-ink'}"
         >
           <div class="flex items-center justify-center gap-1">
             <Fa
@@ -162,7 +164,7 @@
         </div>
       {:else if $agentIsWaitingForOtherAgents$}
         <!-- Waiting for other agents -->
-        <div class="text-sm text-primary flex items-center justify-center gap-1">
+        <div class="text-sm text-primary-ink flex items-center justify-center gap-1">
           <Fa icon={faHourglass} size="xs" class="animate-pulse" />
           <span class="truncate"
             >{m.agentOverview_hierarchyCard_waitingFor_label({
@@ -171,14 +173,14 @@
           >
         </div>
       {:else if $agentIsResponding$ || $agentIsThinking$}
-        <!-- Active: always show spinner + descriptive label -->
+        <!-- Active: always show the loading mark + descriptive label -->
         {@const classified = agent.activeToolName
           ? classifyTool(agent.activeToolName, agent.activeToolInput || {})
           : null}
         {@const toolDisplay = classified && !classified.hidden ? classified : null}
         <div class="flex flex-col items-center gap-1">
           <div class="flex items-center justify-center gap-1.5">
-            <Spinner seed={agent.agentId} size={4} />
+            <IntentMarkLoader size={14} />
             {#if $agentIsThinking$}
               <span class="text-xs text-subtle"
                 >{m.agentOverview_hierarchyCard_thinking_label()}</span
@@ -211,7 +213,7 @@
         </div>
       {/if}
     </div>
-  </button>
+  </Button>
 
   <!-- Right activity pill (note) -->
   {#if activeNote && $agentIsResponding$}

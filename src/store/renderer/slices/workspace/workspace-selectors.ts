@@ -16,6 +16,10 @@ import {
 import { selectGitStatus } from '../git/git-selectors';
 import { selectIsDaemonLocal } from '../daemon-health/daemon-health-selectors';
 import { selectActivePrMonitors } from '../pr-monitor/pr-monitor-selectors';
+import {
+  selectIsGuestWindow,
+  selectWindowIdentitySettled,
+} from '../guest-sessions/guest-sessions-selectors';
 import type {
   WorkflowStage,
   WorkspaceActivePrStatus,
@@ -95,6 +99,27 @@ export const selectWorkspaceById = store.createSelector<[wsId: string], Workspac
   },
 );
 
+/**
+ * Whether the stored row has been hydrated from `workspace.get` (slim
+ * `workspace.list` rows omit the detail-only fields — see
+ * `WorkspaceState.detailHydrated`).
+ */
+export const selectWorkspaceDetailHydrated = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => state.workspace.detailHydrated[wsId] === true,
+);
+
+/**
+ * Whether the stored `pullRequests` pool is the capped `workspace.list`
+ * projection (PROTOCOL §5.1 `pullRequestsTotal`); readers needing every PR
+ * hydrate the full pool via `workspace.get`.
+ */
+export function isWorkspacePullRequestPoolTruncated(workspace: Workspace | undefined): boolean {
+  return (
+    workspace?.pullRequestsTotal !== undefined &&
+    workspace.pullRequestsTotal > (workspace.pullRequests?.length ?? 0)
+  );
+}
+
 export const selectWorkspaceEnvironmentConfig = store.createSelector<
   [wsId: string],
   EnvironmentConfig | undefined
@@ -136,6 +161,41 @@ export const selectIsWorkspaceHostLocal = store.createSelector<[wsId: string], b
 export const selectWorkspaceIsWaiting = store.createSelector<[wsId: string], boolean>(
   (state, wsId) => selectWorkspaceById.select(state, wsId)?.waiting === true,
 );
+
+/**
+ * True when the daemon reports the caller as a `collaborator` in the workspace
+ * (`workspace.myRole`, PROTOCOL §5.1 — multiplayer w3). Collaborator
+ * connections are refused (-32003) on every owner-only method (terminals,
+ * browser tabs, port forwarding, host exec), so the workspace UI hides those
+ * surfaces up front. Absent (older daemon, non-member, unknown workspace)
+ * reads as owner-equivalent.
+ */
+export const selectIsWorkspaceCollaborator = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => selectWorkspaceById.select(state, wsId)?.myRole === 'collaborator',
+);
+
+/**
+ * True when the connected principal is a collaborator everywhere: the list
+ * has loaded and every workspace it can see reports `myRole: 'collaborator'`.
+ * Gates app-wide administrator-only surfaces (workspace creation / repo
+ * picker, provider + connection settings, voice dictation) that are not tied
+ * to a single workspace. An empty list reads as owner: an owner with no
+ * workspaces must still be able to create one — except in a window bound to
+ * a host joined as a guest (multiplayer w4), whose principal is a
+ * non-administrator by construction: it is a collaborator-only client from
+ * boot, before the list loads and with zero shared workspaces. Until the
+ * window's guest/owner identity has settled it therefore reads as
+ * collaborator-only (the safe default: a guest window must never expose the
+ * administrator surfaces while its identity is still the boot-time default);
+ * only the workspace list itself stays optimistic while unloaded.
+ */
+export const selectIsCollaboratorOnlyClient = store.createSelector((state) => {
+  if (selectIsGuestWindow.select(state)) return true;
+  if (!selectWindowIdentitySettled.select(state)) return true;
+  if (!state.workspace.hasLoaded) return false;
+  const workspaces = getItems(state.workspace.workspaces);
+  return workspaces.length > 0 && workspaces.every((ws) => ws.myRole === 'collaborator');
+});
 
 export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state) => {
   return getItems(state.workspace.workspaces).filter(

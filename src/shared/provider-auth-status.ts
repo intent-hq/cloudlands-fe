@@ -19,9 +19,9 @@ export interface ProviderAuthStatusParams {
 }
 
 /**
- * Additive identity metadata a logged-in probe captured (protocol 9.4,
- * intent-hq/intentd#1685). Present only when at least one field survived the
- * daemon's trimming; pre-9.4 daemons never send it.
+ * Additive identity metadata a logged-in probe captured
+ * (intent-hq/intentd#1685). Present only when at least one field survived the
+ * daemon's trimming; daemons that predate the `identity` object never send it.
  */
 export interface ProviderAuthIdentity {
   email?: string;
@@ -105,7 +105,7 @@ export function formatProviderIdentity(
  * ("unknown") to `undefined` so `ProviderStatus.authenticated` renders no
  * indicator for unknowns. The optional wire `identity` is rendered via
  * {@link formatProviderIdentity} into `authDetails`; entries without it (or
- * from pre-9.4 daemons) carry no `authDetails` key.
+ * from daemons that do not serve `identity`) carry no `authDetails` key.
  */
 export function toAuthVerdictMap(
   response: ProviderAuthStatusResponse | null | undefined,

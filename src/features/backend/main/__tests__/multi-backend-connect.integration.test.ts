@@ -18,7 +18,7 @@
  * terminal output/exit, script state, `agent:idle`, and `settings:changed`
  * still drive the app on the current client.
  *
- * FE-only: no daemon/protocol involvement. See PROTOCOL.md §1.1–2.3 for the
+ * FE-only: no daemon/protocol involvement. See PROTOCOL.md §1.1–§2.3 for the
  * daemon-side wire contract this rides on (WSS + self-signed-cert fingerprint +
  * bearer token), and the monorepo's docs/fe/MULTI_BACKEND_CONNECT.md for the FE
  * architecture.

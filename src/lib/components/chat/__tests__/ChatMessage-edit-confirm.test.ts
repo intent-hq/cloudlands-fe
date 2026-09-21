@@ -101,7 +101,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     );
     // Confirming closes both the dialog and edit mode (the edit input exits
     // via a slide transition, so wait for its removal).
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(screen.queryByTestId('mock-rich-input')).toBeNull());
   });
 
@@ -153,7 +153,7 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     const onEditSubmit = vi.fn();
     await renderAndSave(onEditSubmit);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onEditSubmit).not.toHaveBeenCalled();
@@ -204,6 +204,47 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
         ],
       }),
     );
+  });
+
+  it('confirm from a message with a legacy inline file block sends only text + reference blocks, with no data key', async () => {
+    // Persisted before the daemon's `degrade_inline_file_blocks` pass existed:
+    // a file block carrying inline bytes and no
+    // attachmentId. It is text now — the edit forwards the attachment
+    // reference only, and no `data` key may appear anywhere in the payload.
+    const message: AgentMessage = {
+      id: 'msg-legacy',
+      role: 'user',
+      contentBlocks: [
+        { type: 'text', text: 'original text' },
+        { type: 'file', data: 'aGVsbG8=', mimeType: 'text/plain', fileName: 'legacy.txt' },
+        { type: 'file', attachmentId: 'att-uuid-9', fileName: 'report.pdf', size: 4096 },
+      ],
+      timestamp: new Date('2026-01-01T12:00:00Z'),
+    } as AgentMessage;
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, { props: { message, onEditSubmit } });
+
+    // Rendered as text, never as a chip: only the reference chip exists.
+    expect(screen.getByText(/Attached file: legacy\.txt/)).toBeTruthy();
+    expect(screen.getAllByTestId('chat-message-file-chip')).toHaveLength(1);
+
+    await fireEvent.click(screen.getByText(/original text/));
+    await waitFor(() => expect(screen.getByTestId('mock-rich-input')).toBeTruthy());
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+    await fireEvent.click(screen.getByRole('button', { name: 'Edit & regenerate' }));
+
+    await waitFor(() => expect(onEditSubmit).toHaveBeenCalledTimes(1));
+    const [text, model, blocks] = onEditSubmit.mock.calls[0];
+    expect(text).toBe('original textAttached file: legacy.txt');
+    expect(model).toBeUndefined();
+    expect(blocks).toEqual({
+      fileBlocks: [
+        { type: 'file', attachmentId: 'att-uuid-9', fileName: 'report.pdf', size: 4096 },
+      ],
+    });
+    expect(JSON.stringify(blocks)).not.toContain('"data"');
+    expect(JSON.stringify(blocks)).not.toContain('aGVsbG8=');
   });
 
   it('confirm passes no blocks argument for a plain text message', async () => {

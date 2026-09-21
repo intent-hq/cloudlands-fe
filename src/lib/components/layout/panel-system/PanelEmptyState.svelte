@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import { EmptyState } from '$lib/components/patterns/screen';
   /**
    * PanelEmptyState - Empty state for panels without tabs
    *
@@ -9,21 +11,10 @@
   import { getContext } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { writable } from 'svelte/store';
-  import {
-    faArrowRotateLeft,
-    faFile,
-    faGlobe,
-    faRobot,
-    faTerminal,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faFile, faGlobe, faRobot, faTerminal } from '@fortawesome/free-solid-svg-icons';
   import type { IconDefinition } from '@fortawesome/fontawesome-common-types';
   import type { PanelLayoutManager, PanelTab } from '$features/layout/panel-layout-adapter';
-  import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
-  import {
-    getResourceIconKind,
-    RESOURCE_ICON_BY_KIND,
-    type ResourceIconKind,
-  } from '$lib/components/shared/resource-icon';
+  import { getResourceIconKind, RESOURCE_ICON_BY_KIND } from '$lib/components/shared/resource-icon';
 
   import { openCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { formatShortcut } from '$lib/utils/shortcuts';
@@ -104,6 +95,9 @@
 
   // Get icon for tab type
   function getTabIcon(type: PanelTab['type']) {
+    const resourceKind = getResourceIconKind(type);
+    if (resourceKind) return RESOURCE_ICON_BY_KIND[resourceKind];
+
     switch (type) {
       case 'agent':
         return faRobot;
@@ -121,20 +115,8 @@
     }
   }
 
-  // Format timestamp
-  function formatTime(timestamp: number): string {
-    const now = Date.now();
-    const diff = now - timestamp;
-    if (diff < 60000) return m.layout_panelEmptyState_justNow_label();
-    if (diff < 3600000)
-      return m.layout_panelEmptyState_minutesAgo_label({ minutes: Math.floor(diff / 60000) });
-    if (diff < 86400000)
-      return m.layout_panelEmptyState_hoursAgo_label({ hours: Math.floor(diff / 3600000) });
-    return m.layout_panelEmptyState_daysAgo_label({ days: Math.floor(diff / 86400000) });
-  }
-
   function handleReopenLatest() {
-    layoutManager?.reopenClosedTab();
+    layoutManager?.reopenLastClosed();
   }
 
   function handleReopenItem(closedTabId: string) {
@@ -160,51 +142,86 @@
     id: string;
     label: string;
     icon: IconDefinition;
-    resourceKind?: ResourceIconKind;
+    key: string;
     action: () => void;
   };
 
-  // Browser is capability-gated by PanelLayout, so its card only appears when
-  // the host provides a working handler.
+  const newAgentShortcut$ = effectiveShortcutReadable('workspace.new-agent');
+  const newNoteShortcut$ = effectiveShortcutReadable('workspace.new-note');
+  const newTerminalShortcut$ = effectiveShortcutReadable('workspace.new-terminal');
+  const newBrowserShortcut$ = effectiveShortcutReadable('workspace.new-browser');
+
+  // Terminal and browser are capability/role-gated by PanelLayout, so their
+  // cards only appear when the host provides a working handler.
   const creationActions = $derived<CreationAction[]>([
     {
       id: 'agent',
       label: m.layout_panelEmptyState_agent_label(),
       icon: faRobot,
+      key: $newAgentShortcut$,
       action: handleCreateAgent,
     },
     {
       id: 'note',
       label: m.layout_panelEmptyState_note_label(),
       icon: RESOURCE_ICON_BY_KIND.note,
-      resourceKind: 'note',
+      key: $newNoteShortcut$,
       action: () => onCreateNote?.(panelId),
     },
-    {
-      id: 'terminal',
-      label: m.layout_panelEmptyState_terminal_label(),
-      icon: faTerminal,
-      action: () => onCreateTerminal?.(panelId),
-    },
+    ...(onCreateTerminal
+      ? [
+          {
+            id: 'terminal',
+            label: m.layout_panelEmptyState_terminal_label(),
+            icon: faTerminal,
+            key: $newTerminalShortcut$,
+            action: () => onCreateTerminal?.(panelId),
+          },
+        ]
+      : []),
     ...(onOpenBrowser
       ? [
           {
             id: 'browser',
             label: m.layout_panelEmptyState_browser_label(),
             icon: faGlobe,
+            key: $newBrowserShortcut$,
             action: () => onOpenBrowser?.(panelId),
           },
         ]
       : []),
   ]);
-  const newTabShortcut$ = effectiveShortcutReadable('navigation.new-tab');
+  const newPanelShortcut$ = effectiveShortcutReadable('navigation.new-tab');
   const commandPaletteShortcut$ = effectiveShortcutReadable('global.command-palette-alt');
   const reopenTabShortcut$ = effectiveShortcutReadable('navigation.reopen-tab');
   const toggleSidebarShortcut$ = effectiveShortcutReadable('panel.toggle-sidebar');
   const keyboardShortcutsShortcut$ = effectiveShortcutReadable('global.keyboard-shortcuts');
+  const recentRows = $derived([
+    {
+      id: 'reopen-latest',
+      label: m.layout_panelEmptyState_reopenLastClosed_label(),
+      shortcut: $reopenTabShortcut$,
+      icon: undefined,
+      onSelect: handleReopenLatest,
+      title: m.layout_panelEmptyState_reopenLastClosed_label(),
+      isUtility: true,
+    },
+    ...recentItems.map((item) => {
+      const label = getTabTitle(item.tab);
+      return {
+        id: `${item.tab.id}-${item.closedAt}`,
+        label,
+        shortcut: undefined,
+        icon: getTabIcon(item.tab.type),
+        onSelect: () => handleReopenItem(item.tab.id),
+        title: m.layout_panelEmptyState_reopen_tooltip({ title: label }),
+        isUtility: false,
+      };
+    }),
+  ]);
   const utilityActions = $derived([
     {
-      key: $newTabShortcut$,
+      key: $newPanelShortcut$,
       label: m.layout_panelEmptyState_newPanel_label(),
       action: handleCreatePanel,
     },
@@ -231,114 +248,113 @@
   ]);
 </script>
 
-<div
-  class="empty-state flex h-full items-center justify-center overflow-y-auto bg-sidebar px-6 py-10 text-foreground"
+<EmptyState
+  class="empty-state h-full overflow-y-auto bg-sidebar px-6 py-8 text-foreground text-left"
+  contentClass="w-full max-w-xs"
+  aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
   data-panel-empty-state
 >
   <section
-    class="empty-state-content w-full max-w-[36rem]"
+    class="empty-state-content type-caption min-w-0 w-full max-w-xs"
     aria-label={m.layout_panelEmptyState_createInEmptyPanel_ariaLabel()}
   >
-    <div class="creation-grid grid gap-1.5">
+    <div class="creation-list flex flex-col gap-0.5">
       {#each creationActions as action (action.id)}
-        <button
-          class="creation-card type-body flex min-h-16 cursor-pointer items-center gap-2.5 rounded-md border border-transparent bg-muted/30 px-3 py-2.5 text-left text-foreground transition-transform duration-150 focus-visible:outline-none motion-reduce:transition-none"
+        <Button
+          wrapContent={false}
+          variant="ghost"
+          size="sm"
+          class="creation-action empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-medium text-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-muted-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
           title={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
           aria-label={m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
         >
-          {#if action.resourceKind}
-            <ResourceIconTile kind={action.resourceKind} variant="emphasized" />
-          {:else}
-            <span
-              class="flex size-6 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground"
-              data-panel-empty-leading-surface
-            >
-              <Fa icon={action.icon} class="size-4" />
+          <span class="relative flex min-w-0 items-center gap-x-2">
+            <span class="flex shrink-0 items-center" aria-hidden="true">
+              <Fa icon={action.icon} class="size-[1em]" />
             </span>
-          {/if}
-          <span class="min-w-0 truncate font-medium">
-            {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+            <span class="min-w-0 truncate font-medium">
+              {m.layout_panelEmptyState_newItem_tooltip({ label: action.label })}
+            </span>
           </span>
-        </button>
+          <kbd
+            class="shortcut-key relative shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+          >
+            {formatShortcut(action.key)}
+          </kbd>
+        </Button>
       {/each}
     </div>
 
     {#if recentItems.length > 0}
-      <div class="mt-4 pt-3">
-        <div class="type-caption mb-1 flex items-center gap-1.5 px-1 text-muted-foreground">
-          <Fa icon={faArrowRotateLeft} class="size-3" />
-          <span>{m.layout_panelEmptyState_recentlyClosed_label()}</span>
-        </div>
-        {#each recentItems as item (item.tab.id + '-' + item.closedAt)}
-          {@const resourceKind = getResourceIconKind(item.tab.type)}
-          {@const tabTitle = getTabTitle(item.tab)}
-          <button
-            class="recent-item type-caption flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none motion-reduce:transition-none"
-            onclick={() => handleReopenItem(item.tab.id)}
-            title={m.layout_panelEmptyState_reopen_tooltip({ title: tabTitle })}
+      <div class="recent-list mt-5 flex flex-col gap-0.5">
+        {#each recentRows as row (row.id)}
+          <Button
+            wrapContent={false}
+            variant="ghost"
+            size="sm"
+            class="{row.isUtility
+              ? 'reopen-hint'
+              : 'recent-item'} empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
+            onclick={row.onSelect}
+            title={row.title}
           >
-            {#if resourceKind}
-              <ResourceIconTile kind={resourceKind} />
+            {#if row.icon}
+              <span class="relative flex min-w-0 items-center gap-x-2">
+                <span class="flex shrink-0 items-center opacity-70" aria-hidden="true">
+                  <Fa icon={row.icon} class="size-[1em]" />
+                </span>
+                <span class="relative min-w-0 truncate">{row.label}</span>
+              </span>
             {:else}
-              <Fa icon={getTabIcon(item.tab.type)} class="size-3 shrink-0 opacity-70" />
+              <span class="relative min-w-0 truncate">{row.label}</span>
             {/if}
-            <span class="flex-1 truncate">{tabTitle}</span>
-            <span class="shrink-0 opacity-70">{formatTime(item.closedAt)}</span>
-          </button>
+            {#if row.shortcut}
+              <kbd
+                class="shortcut-key relative shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+              >
+                {formatShortcut(row.shortcut)}
+              </kbd>
+            {/if}
+          </Button>
         {/each}
       </div>
     {/if}
 
-    <div class="shortcut-grid mt-5 grid gap-x-5 gap-y-0.5 pt-3">
-      {#each utilityActions as action (action.key)}
-        <button
-          class="shortcut-item type-caption flex cursor-pointer items-center justify-between gap-3 rounded-md px-1 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none motion-reduce:transition-none"
+    <div class="shortcut-list mt-5 flex flex-col gap-0.5">
+      {#each utilityActions as action (action.label)}
+        <Button
+          wrapContent={false}
+          variant="ghost"
+          size="sm"
+          class="shortcut-item empty-state-row grid min-h-7 min-w-0 w-full max-w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1 text-left font-normal text-muted-foreground transition-colors duration-spring-fast ease-spring-fast hover:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-ring motion-reduce:transition-none"
           onclick={action.action}
           title={action.label}
+          aria-label={action.label}
         >
-          <span>{action.label}</span>
-          <kbd class="shortcut-key shrink-0 text-muted-foreground">
+          <span class="relative min-w-0 truncate">{action.label}</span>
+          <kbd
+            class="shortcut-key relative shrink-0 justify-self-end whitespace-nowrap text-right text-muted-foreground"
+          >
             {formatShortcut(action.key)}
           </kbd>
-        </button>
+        </Button>
       {/each}
     </div>
   </section>
-</div>
+</EmptyState>
 
 <style>
-  .empty-state-content {
-    container-type: inline-size;
+  :global(.empty-state .creation-action) {
+    color: hsl(var(--foreground));
   }
 
-  .creation-grid,
-  .shortcut-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  @container (min-width: 32rem) {
-    .creation-grid {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-
-    .shortcut-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
+  :global(.empty-state .creation-action:hover) {
+    color: hsl(var(--muted-foreground));
   }
 
   .shortcut-key {
-    font-size: 0.6875rem;
+    color: hsl(var(--muted-foreground));
     font-weight: 500;
-    line-height: 1rem;
-  }
-
-  .creation-card:active,
-  .shortcut-item:active {
-    transform: scale(0.98);
-  }
-
-  .recent-item:active {
-    transform: scale(0.99);
   }
 </style>

@@ -28,15 +28,26 @@
  * USAGE:
  * ------
  *   node scripts/generate-build-config.cjs
+ *   node scripts/generate-build-config.cjs --if-missing
  *
  * This is automatically run by:
  *   - pnpm run build (production builds)
  *   - pnpm run dev (development builds)
+ *   - pnpm run verify:changed, with --if-missing, before the main-process
+ *     type check: the generated module is the only input tsc needs, so a
+ *     cold checkout gets a file and an existing one is left untouched
+ *     (every run embeds a fresh timestamp, so there is no content hash to gate on).
  */
 
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+
+const outputPath = path.join(__dirname, '..', 'src', 'main', 'build-config.generated.ts');
+
+if (process.argv.includes('--if-missing') && fs.existsSync(outputPath)) {
+  process.exit(0);
+}
 
 // Load .env file manually
 const envPath = path.join(__dirname, '..', '.env');
@@ -78,7 +89,6 @@ const CONFIG = {
 };
 
 // Generate the TypeScript file
-const outputPath = path.join(__dirname, '..', 'src', 'main', 'build-config.generated.ts');
 const content = `/**
  * BUILD-TIME GENERATED CONFIGURATION
  * ===================================

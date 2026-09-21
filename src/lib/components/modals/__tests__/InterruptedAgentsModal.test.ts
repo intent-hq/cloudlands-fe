@@ -49,6 +49,75 @@ describe('InterruptedAgentsModal', () => {
     expect(screen.getByText('Remote Agent')).toBeTruthy();
   });
 
+  it('renders through the takeover shell with status badges and select-all state', async () => {
+    const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
+    render(InterruptedAgentsModal, { props: { open: true, agents: AGENTS } });
+
+    expect(document.querySelector('[data-slot="takeover-screen"]')).toBeTruthy();
+    expect(document.querySelectorAll('[data-slot="badge"]')).toHaveLength(AGENTS.length);
+    expect(screen.getByRole('checkbox', { name: 'Select All' }).getAttribute('data-state')).toBe(
+      'checked',
+    );
+  });
+
+  it('resumes checked agents and abandons unchecked agents', async () => {
+    const onResumeSelected = vi.fn();
+    const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
+    render(InterruptedAgentsModal, { props: { open: true, agents: AGENTS, onResumeSelected } });
+
+    await fireEvent.click(screen.getByRole('option', { name: /Remote Agent/ }));
+    await fireEvent.click(screen.getByRole('button', { name: /Resume selected/ }));
+
+    expect(onResumeSelected).toHaveBeenCalledWith(['a1'], ['a2']);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it.each([' ', 'Enter'])('toggles the single row option with %s', async (key) => {
+    const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
+    render(InterruptedAgentsModal, { props: { open: true, agents: AGENTS } });
+
+    const option = screen.getByRole('option', { name: /Local Agent/ });
+    expect(screen.getAllByRole('option')).toHaveLength(AGENTS.length);
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    option.focus();
+    await fireEvent.keyDown(option, { key });
+    expect(option.getAttribute('aria-selected')).toBe('false');
+    expect(document.activeElement).toBe(option);
+    await fireEvent.keyDown(option, { key });
+    expect(option.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('supports select all, dismissal, and the resume keyboard shortcut', async () => {
+    const onResumeSelected = vi.fn();
+    const onClose = vi.fn();
+    const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
+    const { rerender } = render(InterruptedAgentsModal, {
+      props: { open: true, agents: AGENTS, onResumeSelected, onClose },
+    });
+
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Select All' }));
+    expect(screen.getByRole('option', { name: /Local Agent/ }).getAttribute('aria-selected')).toBe(
+      'false',
+    );
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Select All' }));
+    await fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Enter', ctrlKey: true });
+    expect(onResumeSelected).toHaveBeenCalledWith(['a1', 'a2'], []);
+
+    await rerender({ open: true, agents: AGENTS, onResumeSelected, onClose });
+    await fireEvent.click(screen.getByRole('button', { name: /Dismiss/ }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('preserves the explicit abandon-all action contract', async () => {
+    const onAbandonAll = vi.fn();
+    const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;
+    render(InterruptedAgentsModal, { props: { open: true, agents: AGENTS, onAbandonAll } });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Abandon all' }));
+
+    expect(onAbandonAll).toHaveBeenCalledWith(['a1', 'a2']);
+  });
+
   it('focuses the dialog on open so Escape works without clicking inside', async () => {
     const onClose = vi.fn();
     const InterruptedAgentsModal = (await import('../InterruptedAgentsModal.svelte')).default;

@@ -58,6 +58,8 @@ interface GithubPullWire {
   baseRef: string;
   merged: boolean;
   draft: boolean;
+  /** GitHub REST `mergeable_state`; `"queued"` while the PR sits in the merge queue. */
+  mergeableState?: string;
 }
 
 /** Daemon `GithubIssue` (§5.27 DTO schemas — subset the preview consumes). */
@@ -72,13 +74,15 @@ interface GithubIssueWire {
 }
 
 /**
- * Collapse the wire's `state` + `merged` + `draft` into the FE's single state.
- * GitHub keeps `draft: true` on a closed draft PR, so `closed` wins over `draft`.
+ * Collapse the wire's `state` + `merged` + `draft` + `mergeableState` into the
+ * FE's single state. GitHub keeps `draft: true` on a closed draft PR, so
+ * `closed` wins over `draft`; `queued` applies only to an open, non-draft PR.
  */
 function pullRequestState(pull: GithubPullWire): GitHubPullRequestState {
   if (pull.merged === true) return 'merged';
   if (pull.state === 'closed') return 'closed';
   if (pull.draft === true) return 'draft';
+  if (pull.mergeableState === 'queued') return 'queued';
   return 'open';
 }
 
@@ -173,7 +177,7 @@ export class LiveIntegrationsClient implements IntegrationsClient {
   }
 
   /**
-   * `github.repoConfig.get` (§5.27 v2.4) — the repo's committed
+   * `github.repoConfig.get` (§5.27) — the repo's committed
    * `.intent/config.json` read via the contents API, no clone. `ref` is only
    * sent when provided (daemon defaults to the repo's default branch).
    * Failures PROPAGATE; the setup-script probe folds them to "no script".

@@ -1,8 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
-test.describe.configure({ mode: 'serial' });
+// Each test mounts a fresh host; report every contract failure independently.
+test.describe.configure({ mode: 'default' });
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -10,6 +12,7 @@ let baseUrl: string;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('question-wizard-geometry'),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
@@ -56,7 +59,25 @@ async function mountWizard(
       document.body.append(target);
       mount(Host, { target, props: hostProps });
       await tick();
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await document.fonts.ready;
+      // ResizeObserver retargets the card height after layout, even with reduced motion.
+      // Wait for stable frames so zoom/font layout has propagated into the wrapper.
+      let previous = '';
+      let stableFrames = 0;
+      const deadline = performance.now() + 5_000;
+      while (stableFrames < 3) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const geometry = JSON.stringify(
+          [
+            ...target.querySelectorAll(
+              '[data-question-wizard], [data-testid="question-wizard-card"], [data-animated-height-target]',
+            ),
+          ].map((node) => node.getBoundingClientRect().toJSON()),
+        );
+        stableFrames = geometry === previous ? stableFrames + 1 : 0;
+        previous = geometry;
+        if (performance.now() > deadline) throw new Error('Wizard layout did not settle');
+      }
     },
     { props, theme: options.theme ?? 'light', zoom },
   );
@@ -68,22 +89,29 @@ async function readGeometry(page: Page) {
       document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
     const boundary = rect('[data-testid="conversation-composer-boundary"]');
     const wrapper = rect('[data-testid="question-wizard-slot"]');
-    const card = rect('[data-testid="question-wizard-card"]');
+    // Wave 11 rebuild (d7663537) delegates the expanded surface to AskUserQuestions; the
+    // collapsed pill owns its own bordered surface since #2531 (898107a1).
+    const expanded = document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]');
+    const cardNode =
+      expanded ?? document.querySelector<HTMLElement>('[data-question-state="collapsed"]')!;
+    const card = cardNode.getBoundingClientRect();
     const safeArea = rect('[data-testid="platform-safe-area"]');
-    const footerNode = document.querySelector<HTMLElement>(
-      '[data-testid="question-wizard-footer"]',
+    const skipButton = [...cardNode.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'Skip',
     );
+    const footerNode = skipButton
+      ? (cardNode.querySelector<HTMLElement>('[data-animated-height-target]')
+          ?.lastElementChild as HTMLElement)
+      : null;
     const footer = footerNode?.getBoundingClientRect();
     const buttons = footerNode
       ? [...footerNode.querySelectorAll<HTMLElement>('button')].map((button) =>
           button.getBoundingClientRect(),
         )
       : [];
-    const cardStyle = getComputedStyle(
-      document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]')!,
-    );
+    const cardStyle = getComputedStyle(cardNode);
     const inputBoundary = document.querySelector<HTMLElement>(
-      '[data-testid="question-wizard-card"] input',
+      '[data-testid="question-wizard-card"] textarea',
     )?.parentElement;
     const indicator = document.querySelector<HTMLElement>('[data-option-indicator]');
     const borderWidths = (node: HTMLElement | null | undefined) => {
@@ -99,20 +127,27 @@ async function readGeometry(page: Page) {
     const boundaryStyle = getComputedStyle(
       document.querySelector<HTMLElement>('[data-testid="conversation-composer-boundary"]')!,
     );
-    const headerNode = document.querySelector<HTMLElement>('[data-question-wizard-header]');
-    const titleNode = document.querySelector<HTMLElement>('[data-question-header-title]');
-    const counterNode = document.querySelector<HTMLElement>('[data-question-step-counter]');
-    const actionsNode = document.querySelector<HTMLElement>('[data-question-header-actions]');
-    const skipNode = [...(footerNode?.querySelectorAll<HTMLElement>('button') ?? [])].find(
-      (button) => button.textContent?.trim() === 'Skip',
+    const metadataNode = cardNode.querySelector<HTMLElement>(
+      '[data-slot="ask-user-questions-metadata"]',
     );
-    const submitNode = footerNode?.querySelector<HTMLElement>('[data-slot="button"]');
+    const titleNode = cardNode.querySelector<HTMLElement>('h3');
+    const counterNode = metadataNode?.firstElementChild as HTMLElement | null;
+    const footerButtons = [...(footerNode?.querySelectorAll<HTMLElement>('button') ?? [])];
+    const footerButton = (label: RegExp) =>
+      footerButtons.find((button) => label.test(button.textContent?.trim() ?? ''));
+    const skipNode = footerButton(/^Skip$/);
+    const submitNode = footerButton(/Continue|Finish/);
+    // #2530/#2531 (41c3428a, 898107a1) moved Hide/Dismiss from the metadata row into the footer.
+    const hideNode = footerButton(/^Hide$/);
+    const dismissNode = footerButton(/^Dismiss$/);
     const compactRect = (node: HTMLElement | null | undefined) => {
       if (!node) return null;
       const nodeRect = node.getBoundingClientRect();
       return {
         left: nodeRect.left,
         right: nodeRect.right,
+        top: nodeRect.top,
+        bottom: nodeRect.bottom,
         centerY: nodeRect.top + nodeRect.height / 2,
       };
     };
@@ -129,21 +164,18 @@ async function readGeometry(page: Page) {
         : null,
       safeArea: safeArea.height,
       boxShadow: cardStyle.boxShadow,
-      cardBorderWidths: borderWidths(
-        document.querySelector<HTMLElement>('[data-testid="question-wizard-card"]'),
-      ),
+      cardBorderWidths: borderWidths(cardNode),
       inputBorderWidths: borderWidths(inputBoundary),
       indicatorBorderWidths: borderWidths(indicator),
       boundaryOverflow: `${boundaryStyle.overflowX}/${boundaryStyle.overflowY}`,
-      header: headerNode
-        ? {
-            rect: compactRect(headerNode),
-            title: compactRect(titleNode),
-            counter: compactRect(counterNode),
-            actions: compactRect(actionsNode),
-            titleTruncated: titleNode ? titleNode.scrollWidth > titleNode.clientWidth : false,
-          }
+      title: compactRect(titleNode),
+      metadata: metadataNode
+        ? { rect: compactRect(metadataNode), counter: compactRect(counterNode) }
         : null,
+      footerActions:
+        footer && hideNode && dismissNode
+          ? { hide: compactRect(hideNode)!, dismiss: compactRect(dismissNode)! }
+          : null,
       footerTypography:
         skipNode && submitNode
           ? {
@@ -163,12 +195,13 @@ function expectFlushGeometry(geometry: Awaited<ReturnType<typeof readGeometry>>,
   expect(geometry.safeArea).toBeCloseTo(safeArea, 1);
   expect(geometry.card.left).toBeGreaterThanOrEqual(geometry.boundary.left - 1);
   expect(geometry.card.right).toBeLessThanOrEqual(geometry.boundary.right + 1);
+  // #2531 (898107a1) flattens both question surfaces: no elevation shadow, 1px border.
   expect(geometry.boxShadow).toBe('none');
-  expect(geometry.cardBorderWidths).toEqual(['0px', '0px', '0px', '0px']);
+  expect(geometry.cardBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
   expect(geometry.boundaryOverflow).toBe('visible/visible');
 }
 
-test('expanded card is flush with a compact symmetric footer across rendered geometries', async ({
+test('expanded card is flush with the shared question footer across rendered geometries', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -191,17 +224,18 @@ test('expanded card is flush with a compact symmetric footer across rendered geo
     const geometry = await readGeometry(page);
     expectFlushGeometry(geometry, scenario.props.safeArea ?? 0);
     expect(geometry.footer).not.toBeNull();
-    expect(geometry.card.bottom - geometry.footer!.bottom).toBeLessThanOrEqual(2);
-    expect(geometry.footer!.topInset).toBeCloseTo(geometry.footer!.bottomInset, 1);
-    expect(geometry.footer!.topInset).toBeGreaterThanOrEqual(8);
-    expect(geometry.inputBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
-    if ((scenario.props.optionCount ?? 3) > 1) {
-      expect(geometry.indicatorBorderWidths).toEqual(['1px', '1px', '1px', '1px']);
-    }
+    // Compact primitive footer (#2531, 898107a1): 4px above, 6px below; 4px content
+    // padding + 1px border.
+    const scale = 'zoom' in scenario ? scenario.zoom! : 1;
+    expect(geometry.card.bottom - geometry.footer!.bottom).toBeCloseTo(5 * scale, 1);
+    expect(geometry.footer!.topInset).toBeCloseTo(4 * scale, 1);
+    expect(geometry.footer!.bottomInset).toBeCloseTo(6 * scale, 1);
   }
 });
 
-test('compact header stays on one row and footer actions share typography', async ({ page }) => {
+test('metadata sits above the question and footer actions share one row and typography', async ({
+  page,
+}) => {
   const cases: Array<{
     viewport: { width: number; height: number };
     props: HostProps;
@@ -224,16 +258,29 @@ test('compact header stays on one row and footer actions share typography', asyn
   for (const scenario of cases) {
     await mountWizard(page, scenario.viewport, scenario.props, scenario);
     const geometry = await readGeometry(page);
-    expect(geometry.header).not.toBeNull();
-    expect(geometry.header!.title!.right).toBeLessThanOrEqual(geometry.header!.actions!.left);
-    expect(geometry.header!.title!.centerY).toBeCloseTo(geometry.header!.actions!.centerY, 1);
+    // #2530 (41c3428a): the metadata row only renders the step counter, and only for
+    // multi-step wizards; Hide/Dismiss moved into the footer alongside Skip/Continue.
     if (scenario.props.questionCount === 1) {
-      expect(geometry.header!.counter).toBeNull();
+      expect(geometry.metadata).toBeNull();
     } else {
-      expect(geometry.header!.counter!.right).toBeLessThanOrEqual(geometry.header!.title!.left);
-      expect(geometry.header!.counter!.centerY).toBeCloseTo(geometry.header!.title!.centerY, 1);
+      expect(geometry.metadata).not.toBeNull();
+      expect(geometry.metadata!.counter).not.toBeNull();
+      expect(geometry.title!.top).toBeGreaterThanOrEqual(geometry.metadata!.rect!.bottom);
+      expect(geometry.metadata!.counter!.top).toBeGreaterThanOrEqual(geometry.metadata!.rect!.top);
+      expect(geometry.metadata!.counter!.bottom).toBeLessThanOrEqual(
+        geometry.metadata!.rect!.bottom,
+      );
     }
-    if (scenario.props.longHeader) expect(geometry.header!.titleTruncated).toBe(true);
+    expect(geometry.footerActions).not.toBeNull();
+    const { hide, dismiss } = geometry.footerActions!;
+    expect(hide.top).toBeGreaterThanOrEqual(geometry.title!.bottom);
+    expect(Math.max(hide.bottom, dismiss.bottom)).toBeLessThanOrEqual(geometry.footer!.bottom);
+    // The footer wraps at narrow widths (the zoomed case lays out at ~240 CSS px); at
+    // phone width and above Hide and Dismiss share one row.
+    if (!scenario.zoom) {
+      expect(hide.right).toBeLessThanOrEqual(dismiss.left);
+      expect(hide.centerY).toBeCloseTo(dismiss.centerY, 1);
+    }
     expect(geometry.footerTypography!.skipFontSize).toBe(geometry.footerTypography!.submitFontSize);
     expect(geometry.footerTypography!.skipLineHeight).toBe(
       geometry.footerTypography!.submitLineHeight,
@@ -241,7 +288,7 @@ test('compact header stays on one row and footer actions share typography', asyn
   }
 });
 
-test('single-select rows use native full-row keyboard submission without radio indicators', async ({
+test('single-select radio rows submit through the keyboard and lock completed answers', async ({
   page,
 }) => {
   await mountWizard(
@@ -251,26 +298,21 @@ test('single-select rows use native full-row keyboard submission without radio i
     { theme: 'dark' },
   );
 
-  const options = page.locator('[data-question-option]');
+  // Wave 11 rebuild (d7663537) exposes single choices through the radio role.
+  const options = page.getByRole('radio');
   await expect(options).toHaveCount(2);
-  await expect(page.locator('[data-option-indicator]')).toHaveCount(0);
+  const restingShadow = (await readGeometry(page)).boxShadow;
 
   await options.nth(0).focus();
-  await expect
-    .poll(() => options.nth(0).evaluate((node) => getComputedStyle(node).boxShadow))
-    .not.toBe('none');
-  await expect
-    .poll(() =>
-      page.getByTestId('question-wizard-card').evaluate((node) => getComputedStyle(node).boxShadow),
-    )
-    .toBe('none');
+  await expect(options.nth(0)).toBeFocused();
+  expect((await readGeometry(page)).boxShadow).toBe(restingShadow);
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '1');
   await expect(page.getByTestId('panel-boundary')).toHaveAttribute(
     'data-completed-labels',
     'Option 1',
   );
-  await expect(options.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(options.nth(0)).toHaveAttribute('aria-checked', 'true');
   await expect(options.nth(0)).toBeDisabled();
   await expect(options.nth(1)).toBeDisabled();
 
@@ -287,12 +329,90 @@ test('single-select rows use native full-row keyboard submission without radio i
     'data-completed-labels',
     'Option 2',
   );
-  await expect(options.nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(options.nth(1)).toHaveAttribute('aria-checked', 'true');
 
   const widths = await options.evaluateAll((nodes) =>
     nodes.map((node) => (node as HTMLElement).getBoundingClientRect().width),
   );
   expect(widths.every((width) => width > 300)).toBe(true);
+});
+
+test('free-text field grows with its content to a six-line cap and keeps a manual resize', async ({
+  page,
+}) => {
+  await mountWizard(page, { width: 720, height: 640 }, { optionCount: 2, questionCount: 2 });
+  await page.evaluate(() => document.fonts.ready);
+
+  const field = page.locator('[data-testid="question-wizard-card"] textarea');
+  const settle = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+  const metrics = () =>
+    field.evaluate((node) => ({
+      height: node.getBoundingClientRect().height,
+      lineHeight: parseFloat(getComputedStyle(node).lineHeight),
+      scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      value: (node as HTMLTextAreaElement).value,
+    }));
+
+  const empty = await metrics();
+  expect(empty.lineHeight).toBeGreaterThan(0);
+  expect(empty.height).toBeCloseTo(empty.lineHeight, 1);
+
+  await field.click();
+  await page.keyboard.type(
+    'This answer is intentionally long so that it wraps onto a second line inside the wizard field, which starts out one line tall and should grow.',
+  );
+  await settle();
+  const wrapped = await metrics();
+  expect(wrapped.height).toBeCloseTo(2 * empty.lineHeight, 1);
+  expect(wrapped.scrollHeight).toBe(wrapped.clientHeight);
+
+  for (let line = 3; line <= 10; line += 1) {
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.type(`line ${line}`);
+  }
+  await settle();
+  const capped = await metrics();
+  expect(capped.value.split('\n')).toHaveLength(9);
+  expect(capped.height).toBeCloseTo(6 * empty.lineHeight, 1);
+  expect(capped.scrollHeight).toBeGreaterThan(capped.clientHeight);
+
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('short');
+  await settle();
+  expect((await metrics()).height).toBeCloseTo(empty.lineHeight, 1);
+
+  const box = (await field.boundingBox())!;
+  await page.mouse.move(box.x + box.width - 4, box.y + box.height - 4);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 4, box.y + box.height + 60, { steps: 8 });
+  await page.mouse.up();
+  await settle();
+  const dragged = await metrics();
+  expect(dragged.height).toBeGreaterThanOrEqual(empty.lineHeight + 40);
+
+  await page.keyboard.type(' plus more typing after the drag');
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('and a second line');
+  await settle();
+  const afterTyping = await metrics();
+  expect(afterTyping.value).toBe('short plus more typing after the drag\nand a second line');
+  expect(afterTyping.height).toBeCloseTo(dragged.height, 1);
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '0');
+
+  await page.keyboard.press('Enter');
+  await expect(field).toHaveValue('');
+  await settle();
+  const nextStep = await metrics();
+  expect(nextStep.height).toBeCloseTo(empty.lineHeight, 1);
+  await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '0');
 });
 
 test('collapsed and scrolling states keep the slot flush without clipping or scroll jumps', async ({
@@ -341,10 +461,11 @@ test('collapsed and scrolling states keep the slot flush without clipping or scr
   expectFlushGeometry(await readGeometry(page), 12);
 });
 
-test('dismiss confirmation dialog keeps overlay elevation while the card stays flat', async ({
+test('dismiss confirmation dialog preserves the resting question surface elevation', async ({
   page,
 }) => {
   await mountWizard(page, { width: 960, height: 720 }, { questionCount: 1 });
+  const restingShadow = (await readGeometry(page)).boxShadow;
   await page.getByRole('button', { name: 'Dismiss' }).click();
 
   const dialog = page.getByRole('dialog');
@@ -356,5 +477,5 @@ test('dismiss confirmation dialog keeps overlay elevation while the card stays f
     .poll(() =>
       page.getByTestId('question-wizard-card').evaluate((node) => getComputedStyle(node).boxShadow),
     )
-    .toBe('none');
+    .toBe(restingShadow);
 });

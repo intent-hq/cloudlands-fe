@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { createProximityHover, proximityItem, type ProximityHover } from '$lib/interaction';
+  import { onMount, untrack } from 'svelte';
+  import type { Action } from 'svelte/action';
   import Fa from 'svelte-fa';
   import { faCheck, faChevronRight } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -8,7 +10,10 @@
     type SidebarMenuItem,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { cn } from '$lib/utils';
+  import { menuItem } from '$lib/components/ui/menu';
 
   interface Props {
     x: number;
@@ -20,6 +25,52 @@
   let { x, y, items, onClickOutside }: Props = $props();
 
   let menuElement: HTMLElement | null = $state(null);
+  let submenuElement: HTMLElement | null = $state(null);
+  let menuHover: ProximityHover | null = $state.raw(null);
+  let submenuHover: ProximityHover | null = $state.raw(null);
+
+  function registerProximityItem(
+    getHover: () => ProximityHover | null,
+  ): Action<HTMLElement, number> {
+    return (node, index) => {
+      const dispose = $effect.root(() => {
+        $effect(() => {
+          const hover = getHover();
+          if (!hover) return;
+          // Registration depends on the helper identity, not the geometry it measures.
+          const registration = untrack(() => proximityItem(node, { hover, index }));
+          return () => registration?.destroy?.();
+        });
+      });
+      return { destroy: dispose };
+    };
+  }
+
+  const topLevelProximityItem = registerProximityItem(() => menuHover);
+  const submenuProximityItem = registerProximityItem(() => submenuHover);
+
+  $effect(() => {
+    if (!menuElement) return;
+    const instance = createProximityHover(menuElement);
+    menuHover = instance;
+    return () => {
+      instance.destroy();
+      if (menuHover === instance) menuHover = null;
+    };
+  });
+
+  $effect(() => {
+    if (!submenuElement) {
+      submenuHover = null;
+      return;
+    }
+    const instance = createProximityHover(submenuElement);
+    submenuHover = instance;
+    return () => {
+      instance.destroy();
+      if (submenuHover === instance) submenuHover = null;
+    };
+  });
 
   // Adjust position if menu would go off screen. Initial capture is safe:
   // the menu is unmounted/remounted per open (outside mousedown/contextmenu
@@ -119,15 +170,28 @@
       {#if isSeparator(entry)}
         <div class="h-px bg-border my-0.5"></div>
       {:else}
-        <div class="relative" onmouseenter={() => handleItemMouseEnter(entry)} role="presentation">
-          <button
+        <div
+          class="relative"
+          onmouseenter={() => handleItemMouseEnter(entry)}
+          role="presentation"
+          use:topLevelProximityItem={i}
+        >
+          <Button
+            variant="plain"
             type="button"
-            class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent
-              {entry.disabled
-              ? 'text-muted-foreground cursor-not-allowed'
-              : 'text-foreground hover:bg-accent cursor-pointer'}
-              {entry.destructive && !entry.disabled ? 'text-danger hover:text-danger' : ''}"
+            data-proximity-active={menuHover?.activeIndex === i}
+            class={cn(
+              menuItem(),
+              'px-3 text-sm',
+              entry.disabled
+                ? 'text-muted-foreground cursor-not-allowed'
+                : 'text-foreground cursor-pointer',
+              menuHover?.activeIndex === i && 'bg-hover',
+              entry.destructive && !entry.disabled && 'text-danger',
+            )}
             onclick={() => handleItemClick(entry)}
+            onfocus={() => menuHover?.setActiveIndex(i)}
+            onblur={() => menuHover?.setActiveIndex(null)}
             disabled={entry.disabled}
             role="menuitem"
             aria-haspopup={entry.submenu ? 'menu' : undefined}
@@ -140,28 +204,39 @@
             {#if entry.submenu}
               <Fa icon={faChevronRight} class="w-2 h-2 opacity-60" />
             {/if}
-          </button>
+          </Button>
           {#if entry.submenu && openSubmenuId === entry.id}
             <div
+              bind:this={submenuElement}
               class="absolute left-full top-0 -mt-0.5 bg-popover border border-border shadow-lg py-0.5 min-w-32"
               role="menu"
             >
-              {#each entry.submenu as subitem (subitem.id)}
-                <button
-                  type="button"
-                  class="w-full px-3 py-1 text-sm text-left transition-colors flex items-center gap-2 outline-none focus-visible:bg-accent
-                    {subitem.disabled
-                    ? 'text-muted-foreground cursor-not-allowed'
-                    : 'text-foreground hover:bg-accent cursor-pointer'}"
-                  onclick={() => handleSubmenuItemClick(subitem)}
-                  disabled={subitem.disabled}
-                  role="menuitem"
-                >
-                  <span class="flex-1">{subitem.label}</span>
-                  {#if subitem.checked}
-                    <Fa icon={faCheck} class="w-2.5 h-2.5 opacity-60" />
-                  {/if}
-                </button>
+              {#each entry.submenu as subitem, subindex (subitem.id)}
+                <div use:submenuProximityItem={subindex} role="presentation">
+                  <Button
+                    variant="plain"
+                    type="button"
+                    data-proximity-active={submenuHover?.activeIndex === subindex}
+                    class={cn(
+                      menuItem(),
+                      'px-3 text-sm',
+                      subitem.disabled
+                        ? 'text-muted-foreground cursor-not-allowed'
+                        : 'text-foreground cursor-pointer',
+                      submenuHover?.activeIndex === subindex && 'bg-hover',
+                    )}
+                    onclick={() => handleSubmenuItemClick(subitem)}
+                    onfocus={() => submenuHover?.setActiveIndex(subindex)}
+                    onblur={() => submenuHover?.setActiveIndex(null)}
+                    disabled={subitem.disabled}
+                    role="menuitem"
+                  >
+                    <span class="flex-1">{subitem.label}</span>
+                    {#if subitem.checked}
+                      <Fa icon={faCheck} class="w-2.5 h-2.5 opacity-60" />
+                    {/if}
+                  </Button>
+                </div>
               {/each}
             </div>
           {/if}

@@ -59,6 +59,16 @@ export interface SystemStatusWirePayload {
   workspacesDiskAvailableBytes?: number;
   /** Total bytes on the volume holding the workspaces root. May be missing on older daemons. */
   workspacesDiskTotalBytes?: number;
+  /** Process count in the daemon's descendant tree; null until the first sample. May be missing on older daemons. */
+  childProcesses?: number | null;
+  /** Aggregate RSS of the daemon's descendant tree in bytes; null until the first sample. May be missing on older daemons. */
+  childMemoryBytes?: number | null;
+  /** High-water mark of the sampled descendant-tree memory since daemon start; null until the first sample. May be missing on older daemons. */
+  childMemoryPeakBytes?: number | null;
+  /** Memory attributable to spawned agent adapters (sum of the per-agent buckets) in bytes; null until the first sample. May be missing on older daemons. */
+  agentMemoryBytes?: number | null;
+  /** Spawned agents with a live root pid; null until the first sample. May be missing on older daemons. */
+  agentProcessCount?: number | null;
   fingerprint?: string | null;
   /** Local OS hostname (additive routing field, §5.7). May be missing on older daemons. */
   hostname?: string;
@@ -71,8 +81,47 @@ export interface SystemStatusWirePayload {
   };
 }
 
+/** One OS process in an agent's sampled process tree (`agent.memoryUsage`). */
+interface AgentMemoryProcessWirePayload {
+  pid: number;
+  parentPid: number;
+  name: string;
+  /** Full command line as sampled. */
+  cmdline: string;
+  /** Resident memory (RSS) in bytes. */
+  memoryBytes: number;
+}
+
+/** One spawned agent adapter and its process tree (`agent.memoryUsage`). */
+interface AgentMemoryUsageAgentWirePayload {
+  agentId: string;
+  agentName: string;
+  workspaceId: string;
+  provider: string;
+  model?: string;
+  rootPid: number;
+  processCount: number;
+  /** Resident memory summed across the agent's process tree, in bytes. */
+  memoryBytes: number;
+  processes: AgentMemoryProcessWirePayload[];
+}
+
 /**
- * unsloth.status wire payload (protocol 2.5, intentd traits.rs / PROTOCOL §5.37):
+ * agent.memoryUsage wire payload (daemon-wide, no params). `agents` is
+ * sorted by `memoryBytes` descending by the daemon; `sampledAt` and
+ * `totalBytes` are null (and `agents` empty) before the first sample or when
+ * no process-tree probe is installed.
+ */
+export interface AgentMemoryUsageWirePayload {
+  /** ISO 8601 time of the sample, or null before the first sample. */
+  sampledAt: string | null;
+  /** Sum of every agent's `memoryBytes`, or null before the first sample. */
+  totalBytes: number | null;
+  agents: AgentMemoryUsageAgentWirePayload[];
+}
+
+/**
+ * unsloth.status wire payload (intentd traits.rs / PROTOCOL §5.37):
  * `{ running, repoId?, port?, pid?, uptimeSecs?, phase?, cpuPercent?,
  * memoryBytes?, attachedAgentCount? }`. `running: false` means no managed
  * server is up and every per-server field is omitted. `attachedAgentCount`
@@ -166,6 +215,16 @@ export interface DaemonHealthStats {
   workspacesDiskTotalBytes?: number;
   /** Daemon-reported local OS hostname (§5.7). Optional for older daemons. */
   hostname?: string;
+  /** Process count in the daemon's descendant tree; null until the first sample. Optional for older daemons. */
+  childProcesses?: number | null;
+  /** Aggregate RSS of the daemon's descendant tree in bytes; null until the first sample. Optional for older daemons. */
+  childMemoryBytes?: number | null;
+  /** High-water mark of the sampled descendant-tree memory since daemon start; null until the first sample. Optional for older daemons. */
+  childMemoryPeakBytes?: number | null;
+  /** Memory attributable to spawned agent adapters in bytes; null until the first sample. Optional for older daemons. */
+  agentMemoryBytes?: number | null;
+  /** Spawned agents with a live root pid; null until the first sample. Optional for older daemons. */
+  agentProcessCount?: number | null;
   os: string;
   arch: string;
   /** FE connection mode (sidecar UDS vs external WebSocket). Optional for backward compatibility. */
@@ -277,6 +336,16 @@ export interface DaemonHealthState {
   unslothStopping: boolean;
   /** Error string when the last unsloth.stop request failed. */
   unslothStopError: string | null;
+  /**
+   * Last agent.memoryUsage result, or null before the first fetch / after the
+   * breakdown closes. Fetched only while the agent memory breakdown is open
+   * (refreshed on a fixed cadence there), never in the background.
+   */
+  agentMemoryUsage: AgentMemoryUsageWirePayload | null;
+  /** True while an agent.memoryUsage fetch is in flight. */
+  agentMemoryUsageFetching: boolean;
+  /** True when the last agent.memoryUsage fetch failed; cleared by the next success or close. */
+  agentMemoryUsageError: boolean;
 }
 
 /**

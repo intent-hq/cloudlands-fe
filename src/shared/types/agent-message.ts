@@ -17,7 +17,8 @@ import type { AgentId } from './branded-ids';
 /**
  * Message role type
  */
-export type MessageRole = 'user' | 'assistant' | 'system' | 'error';
+export const MESSAGE_ROLES = ['user', 'assistant', 'tool', 'system', 'error'] as const;
+export type MessageRole = (typeof MESSAGE_ROLES)[number];
 
 /**
  * Tool call information
@@ -118,10 +119,13 @@ export interface MessageMetadata {
   // single-message deliveries and on rows from older daemons. Batch entries
   // whose wait fell below the 5-second annotation threshold carry ONLY
   // `batchId` (no `queuedAt`/`waitedMs`), so the wait fields are optional.
+  // `queuedMessageId` names the queue entry (`QueuedMessage.id`) the row was
+  // drained from; absent on rows from older daemons.
   queueInfo?: {
     queuedAt?: string;
     waitedMs?: number;
     batchId?: string;
+    queuedMessageId?: string;
   };
 
   // Allow additional properties
@@ -165,6 +169,15 @@ export interface AgentMessage {
   // Streaming state
   isStreaming?: boolean;
   streamingComplete?: boolean;
+  // Renderer-local, never on the wire: the renderer wrote this row's terminal
+  // state without the §7.1 stream delivering it — the firehose placeholder on
+  // a covered agent (created on any firehose event with no in-flight row, so
+  // it may still be `isStreaming`), a firehose terminal on an existing row, or
+  // the close-time / retained-row `settleStreaming` normalize. Absent means
+  // daemon-canonical (or still streaming under the §7.1 stream). Cleared by
+  // construction when a §7.1 snapshot/delta replaces the row by id (transcript
+  // rows never carry it) and by dedup when a canonical row merges into it.
+  provisional?: true;
 
   // Metadata
   metadata?: MessageMetadata;

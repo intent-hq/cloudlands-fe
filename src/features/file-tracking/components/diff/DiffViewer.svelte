@@ -44,6 +44,7 @@
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
+  import { Button } from '$lib/components/ui/button';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
   import { hashContent } from './diff-content-hash.js';
   import { m } from '$shared/paraglide/messages.js';
@@ -179,6 +180,8 @@
   let currentSearchIndex = $state(0);
   let searchInputRef: HTMLInputElement | null = $state(null);
   let wrapperRef: HTMLDivElement | undefined = $state();
+  let viewerWidth = $state(0);
+  const effectiveViewMode = $derived(viewerWidth < 640 ? 'unified' : viewMode);
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let searchRefreshQueued = false;
 
@@ -422,7 +425,7 @@
   // structure so folded labels live outside the line-number gutter sizing path.
   function buildFileDiffOptions(): any {
     return {
-      diffStyle: viewMode,
+      diffStyle: effectiveViewMode,
       diffIndicators,
       disableLineNumbers: !showLineNumbers,
       overflow,
@@ -960,7 +963,7 @@
   // themselves drive a rerender.
   function getStructuralSignature(): string {
     return [
-      viewMode,
+      effectiveViewMode,
       diffIndicators,
       showLineNumbers,
       overflow,
@@ -981,7 +984,7 @@
   // triggers a full rerender if the structural signature has changed.
   $effect(() => {
     const _deps = [
-      viewMode,
+      effectiveViewMode,
       diffIndicators,
       showLineNumbers,
       overflow,
@@ -1045,9 +1048,10 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   bind:this={wrapperRef}
+  bind:clientWidth={viewerWidth}
   class="pure-diff {className}"
   style="{maxHeight ? `max-height: ${maxHeight};` : ''} {style}"
-  data-view-mode={viewMode}
+  data-view-mode={effectiveViewMode}
   data-collapsed={collapsed}
   tabindex="-1"
   onkeydown={handleKeydown}
@@ -1105,7 +1109,12 @@
   {:else if collapsible && previewLines > 0}
     <!-- Preview when collapsed -->
     <div class="pure-diff-preview">
-      <button type="button" class="pure-diff-preview-button" onclick={toggleCollapse}>
+      <Button
+        variant="ghost-light"
+        size="compact"
+        class="pure-diff-preview-button h-auto!"
+        onclick={toggleCollapse}
+      >
         {m.ui_diffViewer_expand_label({
           additions:
             stats.additions === 1
@@ -1116,7 +1125,7 @@
               ? m.ui_diffViewer_deletions_one()
               : m.ui_diffViewer_deletions_many({ count: formatInteger(stats.deletions) }),
         })}
-      </button>
+      </Button>
     </div>
   {/if}
 </div>
@@ -1207,7 +1216,7 @@
 
   .pure-diff-container :global(.diff-search-highlight.diff-search-current) {
     background: hsl(30 100% 50% / 0.6);
-    outline: 2px solid hsl(30 100% 50%);
+    outline: 1px solid hsl(30 100% 50%);
   }
 
   /* === Sticky line numbers and gutter for horizontal scrolling === */

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /* eslint-disable max-lines */
   /**
    * SidebarChangesPanel - Timeline-based changes panel
@@ -55,16 +56,14 @@
   import { openWorkspaceLocalChanges } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
 
   import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
-  import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
   import {
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
@@ -79,6 +78,7 @@
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
+  import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
   import MergePanel from './MergePanel.svelte';
@@ -102,6 +102,8 @@
     onOpenCodeReview?: () => void;
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
+    /** Mount the selected root's existing refresh control in the sidebar header. */
+    onRefreshActionChange?: (action: Snippet | undefined) => void;
   }
 
   let {
@@ -116,7 +118,14 @@
     onOpenCodeReview,
     openPanelTabs = [],
     activePanelTab,
+    onRefreshActionChange,
   }: Props = $props();
+
+  let secondaryRefreshAction = $state<Snippet>();
+  $effect(() => {
+    onRefreshActionChange?.(refreshAction);
+    return () => onRefreshActionChange?.(undefined);
+  });
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -704,6 +713,14 @@
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
       return;
     }
+    // Summary controls own their native button and picker keyboard interactions.
+    if (
+      target.closest(
+        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"]',
+      )
+    ) {
+      return;
+    }
 
     const fileCount = allFilesFlat.length;
     if (fileCount === 0) return;
@@ -931,10 +948,10 @@
         commitDrawerOpen = false;
         // Toast is handled by git:op-completed event in +layout.svelte
       } else {
-        toast.error(result.error || m.workspace_sidebarChanges_commitFailed_error());
+        notify.error(result.error || m.workspace_sidebarChanges_commitFailed_error());
       }
     } catch {
-      toast.error(m.workspace_sidebarChanges_commitFailed_error());
+      notify.error(m.workspace_sidebarChanges_commitFailed_error());
     } finally {
       isCommitting = false;
     }
@@ -949,7 +966,7 @@
 
     const worktreePath = $workspace?.worktreePath || $workspace?.repositoryPath;
     if (!worktreePath) {
-      toast.error(m.workspace_commitsTimeline_noSpacePath_error());
+      notify.error(m.workspace_commitsTimeline_noSpacePath_error());
       return;
     }
 
@@ -973,15 +990,15 @@
         appStore.dispatch(addTerminal(workspaceId, result.terminalId, terminalTitle));
         appStore.dispatch(openTerminalOverlay(workspaceId, result.terminalId));
 
-        toast.success(m.workspace_sidebarChanges_rebaseStarted_label(), {
+        notify.success(m.workspace_sidebarChanges_rebaseStarted_label(), {
           description: m.workspace_sidebarChanges_rebaseStarted_description(),
         });
       } else {
-        toast.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
+        notify.error(result.error || m.workspace_commitsTimeline_openTerminalFailed_error());
       }
     } catch (error) {
       logger.error('Failed to open rebase terminal', error as Error);
-      toast.error(m.workspace_commitsTimeline_openTerminalFailed_error());
+      notify.error(m.workspace_commitsTimeline_openTerminalFailed_error());
     }
   }
 
@@ -1023,6 +1040,14 @@
   });
 </script>
 
+{#snippet refreshAction()}
+  {#if isBrowsingSecondaryRoot}
+    {@render secondaryRefreshAction?.()}
+  {:else if hasLoadedForWorkspace}
+    <ChangesRefreshAction disabled={isRefreshingGitStatus} onclick={handleRefreshGitStatus} />
+  {/if}
+{/snippet}
+
 <div class="flex flex-col h-full flex-1 min-h-0 max-h-full">
   <div class="flex-1 flex flex-col min-h-0">
     {#if !hasLoadedForWorkspace}
@@ -1058,6 +1083,9 @@
         <GitRootBrowser
           {workspaceId}
           onSelectedRootChange={(entry) => (selectedSecondaryRoot = entry)}
+          onRefreshActionChange={onRefreshActionChange
+            ? (action) => (secondaryRefreshAction = action)
+            : undefined}
         />
 
         {#if isBrowsingSecondaryRoot}
@@ -1080,39 +1108,23 @@
         {/if}
 
         {#if !isBrowsingSecondaryRoot}
-          <div class="branch-labels w-full flex justify-between mb-1 mt-1">
-            <p class="text-subtle leading-snug text-ui">
-              {m.workspace_sidebarChanges_codeLivesIn_label()}
-            </p>
-            <p class="text-subtle leading-snug text-ui">
-              {m.workspace_sidebarChanges_mergedInto_label()}
-            </p>
-          </div>
-
           <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
 
-          <div class="flex items-center mb-4 -ml-1 gap-1.25 h-7">
-            <button
-              type="button"
-              class="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
-              onclick={handleRefreshGitStatus}
-              disabled={isRefreshingGitStatus}
-              title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-            >
-              <Fa
-                icon={faArrowsRotate}
-                class="text-subtle {isRefreshingGitStatus ? 'animate-spin' : ''}"
-                size={10}
-              />
-            </button>
+          <div class="relative flex items-center mb-2 h-7" data-changes-summary-count>
+            {#if !onRefreshActionChange}
+              {@render refreshAction()}
+            {/if}
 
             <!-- View All Changes Button -->
             {#if hasAnyChanges}
               {@const isActive = isAllChangesViewActive}
-              <button
+              <Button
+                variant="ghost"
                 onclick={handleOpenAllChanges}
-                class="flex flex-1 items-center border gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
-                  ? 'bg-background text-foreground border-transparent pl-2'
+                size="compact"
+                wrapContent={false}
+                class="flex flex-1 justify-start items-center gap-2 px-0 py-0 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0 {isActive
+                  ? 'bg-background text-foreground border-transparent'
                   : 'border-transparent'}
                 "
               >
@@ -1127,10 +1139,10 @@
                   </span>
                   <!-- <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" /> -->
                 </div>
-              </button>
+              </Button>
             {:else}
               <div
-                class="flex flex-1 items-center gap-2 pr-2 py-1.5 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
+                class="flex flex-1 items-center gap-2 px-0 py-0 h-7 text-subtle rounded-sm transition-colors group cursor-pointer min-w-0"
               >
                 <span class="text-ui truncate min-w-0 text-left flex-1"
                   >{m.workspace_sidebarChanges_noChangesYet_label()}</span
@@ -1142,7 +1154,7 @@
           <!-- Truncation warning banner -->
           {#if changesTruncated}
             <div
-              class="mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-md text-xs text-amber-600 dark:text-amber-400"
+              class="mb-2 px-3 py-2 bg-warning/10 border border-warning/30 rounded-md text-xs text-warning-ink"
             >
               <span class="font-medium"
                 >{m.workspace_sidebarChanges_showingChanges_label({
@@ -1164,7 +1176,7 @@
 
           <div class="relative flex-1 flex flex-col pb-2 w-full">
             <!-- Vertical timeline line -->
-            <div class="absolute left-1 top-2 bottom-0 w-px bg-border dark:bg-border"></div>
+            <div class="absolute left-[5.5px] top-2 bottom-0 w-px bg-border dark:bg-border"></div>
 
             <FileChangesSection
               {workspaceId}
@@ -1255,11 +1267,5 @@
 <style>
   .sidebar-changes-container {
     container-type: inline-size;
-  }
-
-  @container (max-width: 250px) {
-    .branch-labels {
-      display: none;
-    }
   }
 </style>

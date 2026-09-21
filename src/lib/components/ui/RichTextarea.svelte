@@ -7,6 +7,7 @@
   import type { Workspace } from '$shared/types';
 
   interface Props {
+    ariaLabel: string;
     value?: string;
     placeholder?: string;
     disabled?: boolean;
@@ -24,6 +25,7 @@
   }
 
   let {
+    ariaLabel,
     value = $bindable(''),
     placeholder = '',
     disabled = false,
@@ -141,12 +143,14 @@
   onfocusout={handleBlur}
   {onkeydown}
   role="textbox"
+  aria-label={ariaLabel}
   tabindex="-1"
 >
   <TipTapEditor
     bind:this={tiptapEditor}
     {value}
     {placeholder}
+    {ariaLabel}
     {disabled}
     workspace={workspace ?? undefined}
     {repoPath}
@@ -170,7 +174,7 @@
     border: none;
   }
 
-  :global(.rich-textarea .rich-textarea-editor) {
+  .rich-textarea :global(.tiptap-container .rich-textarea-editor) {
     padding: 0.75rem 1rem;
   }
 

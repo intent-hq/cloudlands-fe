@@ -3,7 +3,27 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import AgentAttentionToast from '../AgentAttentionToast.svelte';
 
 describe('AgentAttentionToast', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('keeps compact elapsed time live and exposes the full timestamp', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-13T12:00:18Z'));
+    render(AgentAttentionToast, {
+      title: 'Coordinator requests a discussion',
+      reason: 'Choose the next step',
+      kind: 'discussion',
+      timestamp: '2026-09-13T12:00:00Z',
+      onSwitchTo: vi.fn(),
+      onClose: vi.fn(),
+    });
+    const time = screen.getByText('18s');
+    expect(time.getAttribute('title')).toMatch(/2026/);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(screen.getByText('2m')).toBeTruthy();
+  });
 
   it('fills the shared toast width and preserves Switch To and close actions', async () => {
     const onSwitchTo = vi.fn();

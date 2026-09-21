@@ -71,6 +71,18 @@
   max-width: 100%;
 }
 
+/* Failed renders have no diagram to show: keep the error card (and its
+   expanded source details) aligned with the prose column instead of the
+   wide lane. The wrapper reports the render state, see MermaidBlockNodeView. */
+.tiptap-editor.ProseMirror
+  > .node-mermaidBlock:has(> [data-node-view-wrapper][data-render-state='error']) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
 /* Monospace mode: code blocks don't need breakout since they're already
    styled differently (transparent bg, triple backtick fences) */
 .note-font-monospace .tiptap-editor.ProseMirror > pre {
@@ -234,13 +246,18 @@
   font-size: 0.82em;
 }
 
-/* Linked-task cards are UI chrome, not prose — keep them in the UI font
-   (and slightly smaller) instead of inheriting the serif body font. */
-.note-font-serif .tiptap-editor li[data-type='taskItem'] button[contenteditable='false'],
-.note-font-serif .tiptap-editor li[data-type='taskItem'] div[role='group'] {
-  font-family: var(--font-ui);
-  font-size: 0.9375rem;
-  letter-spacing: normal;
+/* Task titles remain prose in every note font; controls keep their own sizing. */
+.tiptap-editor [data-task-item-row],
+.tiptap-editor [data-task-row-title] {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: normal;
+  line-height: inherit;
+}
+
+.note-font-serif .tiptap-editor [data-task-item-row] {
+  font-size: 1rem;
+  line-height: 1.48;
 }
 
 .note-font-monospace .tiptap-editor {
@@ -380,7 +397,7 @@
 }
 
 .mention-chip:focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -400,7 +417,7 @@
 }
 
 .skill-command-chip.ProseMirror-selectednode {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -563,11 +580,11 @@ div.tiptap-editor ol {
 
 .tiptap-editor ul.task-list li.task-item input[type='checkbox']:checked {
   background: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary-ink));
 }
 
 .tiptap-editor ul.task-list li.task-item input[type='checkbox']:hover {
-  border-color: hsl(var(--primary));
+  border-color: hsl(var(--primary-ink));
 }
 
 .tiptap-editor ul.task-list li.task-item[data-checked='true'] > div > p,
@@ -712,7 +729,7 @@ code:has(.is-file-path):hover {
 
 .tiptap-editor code:has(.is-file-path):focus,
 code:has(.is-file-path):focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -744,7 +761,7 @@ code.is-file-path:hover {
 
 .tiptap-editor code.is-file-path:focus,
 code.is-file-path:focus {
-  outline: 2px solid hsl(var(--ring));
+  outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;
 }
 
@@ -806,7 +823,7 @@ code.is-file-path:focus {
 }
 
 .tiptap-editor pre .code-block-copy-btn.copied {
-  color: hsl(var(--primary));
+  color: hsl(var(--primary-ink));
 }
 
 /* Syntax highlighting for code blocks */
@@ -1277,4 +1294,52 @@ code.is-file-path:focus {
 
 .suggestion-tooltip-actions button.reject:hover {
   background: rgba(239, 68, 68, 0.2);
+}
+
+/* Remote cursors (multiplayer): caret widget + selection highlight */
+.remote-cursor {
+  position: relative;
+  display: inline;
+  pointer-events: none;
+  user-select: none;
+}
+
+.remote-cursor__bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  height: 1.2em;
+  background: var(--remote-cursor-color);
+}
+
+.remote-cursor__tag {
+  position: absolute;
+  left: -1px;
+  bottom: 1.2em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.3rem;
+  height: 1.1rem;
+  border-radius: 0.25rem 0.25rem 0.25rem 0;
+  background: var(--remote-cursor-color);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+.remote-cursor__avatar {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 9999px;
+  object-fit: cover;
+}
+
+.remote-selection {
+  background: color-mix(in srgb, var(--remote-cursor-color) 25%, transparent);
 }

@@ -1,29 +1,29 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import NeutralBorderContractHost from './NeutralBorderContractHost.svelte';
 
 type Edge = 'top' | 'right';
 
 const probes = [
-  ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
   ['launcher', '[data-sidebar-launcher="browser"]', 'top'],
   ['popover', '[data-slot="menu-content"]', 'top'],
-  ['dialog', '[data-slot="dialog-content"]', 'top'],
   ['form', '[data-slot="input"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
-const transparentBorderProbes = [['panel', '.panel', 'top']] as const satisfies ReadonlyArray<
-  readonly [string, string, Edge]
->;
-
+// Subscription surfaces and chat prompts have no border.
 const borderlessProbes = [
+  ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
   ['chat', '[data-testid="pinned-user-prompt"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
+// Panel shells reserve a focus-invariant 1px border that stays transparent while unfocused
+// (see panel-shell-corners.ct.spec.ts).
+const panelShellSelector = '.panel';
+
 const sampledSelectors = [
   ...probes.map(([, selector]) => selector),
-  ...transparentBorderProbes.map(([, selector]) => selector),
   ...borderlessProbes.map(([, selector]) => selector),
+  panelShellSelector,
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:first-child',
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:last-child',
   '[data-testid="event-subscriptions-outer-header"]',
@@ -73,12 +73,14 @@ async function seam(page: Page, owner: string, adjacent: string, axis: 'x' | 'y'
   );
 }
 
-test('production neutral borders share color and single-edge geometry', async ({ mount, page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(NeutralBorderContractHost);
-
-  for (const theme of ['light', 'dark'] as const) {
-    for (const zoom of [1, 2]) {
+for (const theme of ['light', 'dark'] as const) {
+  for (const zoom of [1, 2]) {
+    test(`production neutral borders share color and single-edge geometry in ${theme} at ${zoom * 100}% zoom`, async ({
+      mount,
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const component = await mount(NeutralBorderContractHost, { props: { theme, zoom } });
       await component.update({ props: { theme, zoom } });
       await settleBorderStyles(page);
       const styles = await Promise.all(
@@ -94,19 +96,6 @@ test('production neutral borders share color and single-edge geometry', async ({
         true,
       );
 
-      const transparentBorderStyles = await Promise.all(
-        transparentBorderProbes.map(async ([name, selector, edge]) => ({
-          name,
-          ...(await border(page.locator(selector), edge)),
-        })),
-      );
-      expect(
-        transparentBorderStyles.every(
-          ({ color, width, ownerCount }) =>
-            color === 'rgba(0, 0, 0, 0)' && width === '1px' && ownerCount === 1,
-        ),
-      ).toBe(true);
-
       const borderlessStyles = await Promise.all(
         borderlessProbes.map(async ([name, selector, edge]) => ({
           name,
@@ -116,6 +105,17 @@ test('production neutral borders share color and single-edge geometry', async ({
       expect(
         borderlessStyles.every(({ width, ownerCount }) => width === '0px' && ownerCount === 0),
       ).toBe(true);
+
+      const panelBorder = await border(page.locator(panelShellSelector), 'top');
+      expect(panelBorder.width).toBe('1px');
+      expect(panelBorder.color).toBe('rgba(0, 0, 0, 0)');
+
+      // The shared overlay recipe (85641bef) uses a dark-only structural border.
+      const dialogBorder = await border(page.locator('[data-slot="dialog-content"]'), 'top');
+      expect(dialogBorder.width).toBe(theme === 'dark' ? '1px' : '0px');
+      expect(dialogBorder.ownerCount).toBe(theme === 'dark' ? 1 : 0);
+      if (theme === 'dark') expect(dialogBorder.color).toBe(styles[0].color);
+      else expect(dialogBorder.color).toBe('rgba(0, 0, 0, 0)');
 
       const seams = await Promise.all([
         seam(
@@ -132,6 +132,6 @@ test('production neutral borders share color and single-edge geometry', async ({
         ),
       ]);
       expect(seams.every(({ gap, owners }) => Math.abs(gap) < 0.1 && owners === 1)).toBe(true);
-    }
+    });
   }
-});
+}

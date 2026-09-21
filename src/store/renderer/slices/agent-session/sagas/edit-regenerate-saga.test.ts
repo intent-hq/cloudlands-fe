@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$lib/client', () => ({
   appClient: { agents: { editAndRegenerate: mocks.editAndRegenerate } },
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 vi.mock('$lib/components/chat/input/image-attachment-placement', () => ({
   toImageReferenceBlocks: mocks.toImageReferenceBlocks,
 }));

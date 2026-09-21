@@ -253,7 +253,9 @@ vi.mock('$shared/types/agent-session', () => ({
 }));
 
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToSettings: vi.fn() }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), info: vi.fn(), warning: vi.fn() },
+}));
 
 import { store as appStore } from '$store/renderer/store';
 import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -396,6 +398,52 @@ describe('ModelPicker trigger label regressions', () => {
     expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
       'claude-code',
     );
+  });
+
+  it.each([
+    { showDefaultOption: true, expected: 'Default (Balanced)' },
+    { showDefaultOption: false, expected: 'Balanced' },
+  ])(
+    'signals inheritance only when the default option is shown: $showDefaultOption',
+    ({ showDefaultOption, expected }) => {
+      availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced' }]);
+      render(ModelPicker, {
+        props: {
+          selectedModel: undefined,
+          defaultModelId: 'auggie:balanced',
+          showDefaultOption,
+          isLocked: true,
+        },
+      });
+      expect(screen.getByRole('button').textContent?.trim()).toBe(expected);
+    },
+  );
+
+  it('lets the caller format the resolved inherited model', () => {
+    availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced' }]);
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        defaultModelId: 'auggie:balanced',
+        showDefaultOption: true,
+        formatDefaultModelLabel: (model) => `Inherited: ${model}`,
+        isLocked: true,
+      },
+    });
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Inherited: Balanced');
+  });
+
+  it('wraps the resolved catalog default when inheritance is selected', () => {
+    availableModels$.set([{ value: 'auggie:balanced', label: 'Balanced', isDefault: true }]);
+    render(ModelPicker, {
+      props: {
+        selectedModel: undefined,
+        fallbackToCatalogDefault: true,
+        showDefaultOption: true,
+        isLocked: true,
+      },
+    });
+    expect(screen.getByRole('button').textContent?.trim()).toBe('Default (Balanced)');
   });
 
   it('still renders the default-model fallback label for the bare "default" sentinel', () => {

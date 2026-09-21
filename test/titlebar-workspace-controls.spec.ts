@@ -1,7 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { createServer, type ViteDevServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 let server: ViteDevServer;
 let baseUrl = '';
@@ -12,6 +13,7 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
+    cacheDir: viteHarnessCacheDir('titlebar-workspace-controls'),
     optimizeDeps: { include: ['bits-ui', 'svelte', 'flatstr', 'redux-saga', 'typed-redux-saga'] },
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
@@ -120,6 +122,7 @@ test('keeps the Mac sidebar hit target clear of traffic lights through live zoom
     await expect.poll(async () => (await toggle.boundingBox())!.x).toBeCloseTo(initialLeft, 0);
     await expect.poll(async () => (await wrapper.boundingBox())!.height).toBeCloseTo(35, 0);
     const box = (await toggle.boundingBox())!;
+    // #2441 settles the default icon control on --control-height-medium (32px).
     expect(box.width).toBeCloseTo(32, 0);
     expect(box.height).toBeCloseTo(32, 0);
     await toggle.click();
@@ -214,12 +217,15 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
           page.locator('[data-titlebar-spaces-control]'),
           page.locator('[data-workspace-repo-launcher] button'),
         ];
+        // Both resolve to 32px: the sidebar control via --control-height-medium (#2441),
+        // the repo launcher via its explicit size-8.
+        const size = 32;
         for (const control of controls) {
           // Startup zoom arrives asynchronously over IPC, then selector readables
           // schedule the titlebar's inverse-zoom layout update.
-          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(32, 0);
+          await expect.poll(async () => (await control.boundingBox())?.width).toBeCloseTo(size, 0);
           const box = await control.boundingBox();
-          expect(box?.height).toBeCloseTo(32, 0);
+          expect(box?.height).toBeCloseTo(size, 0);
           await expect(control).not.toHaveAttribute('title', /.+/);
         }
         const sidebarControl = controls[0];
@@ -227,14 +233,15 @@ test('mounts accepted control geometry and shortcut tooltips', async ({ page }, 
         await expect(sidebarControl).not.toHaveAttribute('aria-haspopup');
         await expect(sidebarControl).not.toHaveAttribute('aria-expanded');
         await expect(sidebarControl).not.toHaveAttribute('aria-controls');
-        const glyphs = [
-          page.locator('[data-titlebar-spaces-control] svg'),
-          page.locator('[data-workspace-repo-launcher] svg'),
+        // #2441 reduces the launcher plus glyph to 14px; the sidebar glyph stays 16px.
+        const glyphs: Array<[Locator, number]> = [
+          [page.locator('[data-titlebar-spaces-control] svg'), 16],
+          [page.locator('[data-workspace-repo-launcher] svg'), 14],
         ];
-        for (const glyph of glyphs) {
+        for (const [glyph, glyphSize] of glyphs) {
           const box = await glyph.boundingBox();
-          expect(box?.width).toBeCloseTo(16, 0);
-          expect(box?.height).toBeCloseTo(16, 0);
+          expect(box?.width).toBeCloseTo(glyphSize, 0);
+          expect(box?.height).toBeCloseTo(glyphSize, 0);
           expect(await glyph.evaluate((node) => getComputedStyle(node).opacity)).toBe('1');
         }
         await sidebarControl.hover();

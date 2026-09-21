@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     error: null | { kind: 'not_found' | 'error'; message: string };
   },
   workspace: null as null | { id: string; title: string },
+  guestSession: null as null | { id: string; label: string },
   dispatch: vi.fn(),
   usePanelShortcuts: vi.fn(),
 }));
@@ -70,6 +71,7 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => {
     selectActiveWorkspaceId: { select: () => null },
     selectWorkspaceIsEmpty: { select: () => false },
     selectIsNewWorkspaceSession: () => readable(false),
+    selectIsWorkspaceCollaborator: () => readable(false),
   };
 });
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
@@ -98,7 +100,7 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToFirstWorkspace: vi.fn() }));
 vi.mock('$shared/types/branded-ids', () => ({ WorkspaceId: (id: string) => id }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
 
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: action('workspace/loadWorkspacesRequested'),
@@ -136,6 +138,10 @@ vi.mock('$lib/components/workspace/WorkspaceModals.svelte', mockPart('modals'));
 vi.mock('$lib/components/modals/InputDialog.svelte', mockPart('input-dialog'));
 vi.mock('$lib/components/terminal/QuakeTerminalOverlay.svelte', mockPart('quake-terminal'));
 vi.mock('$features/onboarding/OnboardingPage.svelte', mockPart('onboarding'));
+vi.mock('$features/guest-sessions/GuestEmptyState.svelte', mockPart('guest-empty-state'));
+vi.mock('$store/renderer/slices/guest-sessions/guest-sessions-selectors', () => ({
+  selectWindowGuestSession: () => readable(mocks.guestSession),
+}));
 vi.mock('$lib/components/layout/panel-system', async () => {
   const component = (await import('./__tests__/mocks/MockWorkspaceSurfacePart.svelte')).default;
   const renderPart = component as unknown as (anchor: Node, props: Record<string, unknown>) => void;
@@ -162,8 +168,38 @@ afterEach(cleanup);
 beforeEach(() => {
   mocks.loadState = { status: 'idle', error: null };
   mocks.workspace = null;
+  mocks.guestSession = null;
   mocks.dispatch.mockClear();
   mocks.usePanelShortcuts.mockClear();
+});
+
+describe('WorkspaceSurface zero-workspace route (/workspace/new)', () => {
+  it('shows the workspace onboarding in an owner window and hides the nav', () => {
+    const { container } = renderHost('new');
+    expect(container.querySelector('[data-workspace-surface-part="onboarding"]')).toBeTruthy();
+    expect(container.querySelector('[data-workspace-surface-part="guest-empty-state"]')).toBeNull();
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/setOnboardingActive',
+      payload: [true],
+    });
+  });
+
+  it('shows the guest empty state instead of onboarding in a guest window and keeps the nav (multiplayer w4)', () => {
+    mocks.guestSession = { id: 'guest-1', label: 'studio.local' };
+    const { container } = renderHost('new');
+    expect(
+      container.querySelector('[data-workspace-surface-part="guest-empty-state"]'),
+    ).toBeTruthy();
+    expect(container.querySelector('[data-workspace-surface-part="onboarding"]')).toBeNull();
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/setOnboardingActive',
+      payload: [false],
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalledWith({
+      type: 'sidebarNav/setOnboardingActive',
+      payload: [true],
+    });
+  });
 });
 
 describe('WorkspaceSurface terminal shell boundary', () => {

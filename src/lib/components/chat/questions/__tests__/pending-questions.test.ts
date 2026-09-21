@@ -5,11 +5,22 @@
  * and only a question-bearing assistant row at the non-system tail pends.
  */
 import { describe, expect, it } from 'vitest';
-import { classifyPendingQuestionMarker, derivePendingQuestions } from '../pending-questions';
+import {
+  classifyPendingQuestionMarker,
+  derivePendingQuestions,
+  isQuestionSetAnsweredInQueue,
+  sessionHasPendingQuestion,
+  sessionPendingQuestions,
+} from '../pending-questions';
 import { buildAnswerMessageMetadata, getAnsweredQuestionsMessageId } from '../answer-message';
-import { deriveMarkedQuestionRecoveryState, deriveWizardPendingQuestions } from '../wizard-gate';
+import {
+  deriveAgentHasPendingQuestion,
+  deriveMarkedQuestionRecoveryState,
+  deriveWizardPendingQuestions,
+} from '../wizard-gate';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
-import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import type { AgentMessage, AgentSession, ContentBlock, QueuedMessage } from '$shared/types';
+import { createCollection, addItem } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import { selectAgentIsRunning } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
@@ -77,6 +88,20 @@ function answerMessage(answeredQuestionsMessageId: string, id = 'msg-answer-1'):
     timestamp: new Date().toISOString(),
     metadata: buildAnswerMessageMetadata(answeredQuestionsMessageId),
   } as unknown as AgentMessage;
+}
+
+/** A daemon queue entry as echoed by agent.queueMessage / agent.getQueue. */
+function queuedMessage(
+  messageMetadata: Record<string, unknown> | undefined,
+  id = 'qm-1',
+): QueuedMessage {
+  return {
+    id,
+    content: 'Q: Auth method\nA: OAuth',
+    queuedAt: new Date().toISOString(),
+    position: 0,
+    ...(messageMetadata !== undefined ? { messageMetadata } : {}),
+  };
 }
 
 describe('classifyPendingQuestionMarker', () => {
@@ -184,6 +209,55 @@ describe('derivePendingQuestions', () => {
     expect(derivePendingQuestions(otherAnswer, false, false, 'msg-a1')).toMatchObject({
       messageId: 'msg-a1',
     });
+  });
+
+  it('a queued tagged answer hides a marked set while the agent is still mid-turn', () => {
+    // The wizard's answer was sent while the agent was responding: it rides
+    // the daemon queue with its messageMetadata and is not in the transcript
+    // yet. The set counts as answered from the moment it is queued.
+    const msg = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    const queued = [queuedMessage(buildAnswerMessageMetadata('msg-a1'))];
+    expect(derivePendingQuestions([msg], true, false, 'msg-a1', queued)).toBeNull();
+    expect(derivePendingQuestions([msg], false, false, 'msg-a1', queued)).toBeNull();
+    // A queued answer for a different set, or an untagged queued message,
+    // does not resolve this one.
+    expect(
+      derivePendingQuestions([msg], false, false, 'msg-a1', [
+        queuedMessage(buildAnswerMessageMetadata('msg-other')),
+      ]),
+    ).toMatchObject({ messageId: 'msg-a1' });
+    expect(
+      derivePendingQuestions([msg], false, false, 'msg-a1', [queuedMessage(undefined)]),
+    ).toMatchObject({ messageId: 'msg-a1' });
+    // Drain transition (daemon order: tagged row first, shrunk queue later):
+    // the overlap state — row present AND entry still listed — and the
+    // post-drain state — row present, queue empty, marker still set — both
+    // stay hidden.
+    const drained = [msg, answerMessage('msg-a1')];
+    expect(derivePendingQuestions(drained, true, false, 'msg-a1', queued)).toBeNull();
+    expect(derivePendingQuestions(drained, true, false, 'msg-a1', [])).toBeNull();
+    expect(derivePendingQuestions(drained, false, false, 'msg-a1', [])).toBeNull();
+  });
+
+  it('a queued tagged answer hides the legacy (marker-less) tail set too', () => {
+    // No daemon marker (legacy daemon): the transcript-tail fallback applies.
+    // A tagged answer sitting in the queue for that tail row still counts
+    // as answered; a mismatched or untagged entry does not.
+    const msg = assistantMessage([questionBlock()], { id: 'msg-a1' });
+    const queued = [queuedMessage(buildAnswerMessageMetadata('msg-a1'))];
+    expect(derivePendingQuestions([msg], false, false, undefined, queued)).toBeNull();
+    // The entry leaving the queue with no tagged transcript row re-surfaces it.
+    expect(derivePendingQuestions([msg], false, false, undefined, [])).toMatchObject({
+      messageId: 'msg-a1',
+    });
+    expect(
+      derivePendingQuestions([msg], false, false, undefined, [
+        queuedMessage(buildAnswerMessageMetadata('msg-other')),
+      ]),
+    ).toMatchObject({ messageId: 'msg-a1' });
+    expect(
+      derivePendingQuestions([msg], false, false, undefined, [queuedMessage(undefined)]),
+    ).toMatchObject({ messageId: 'msg-a1' });
   });
 
   it('ends the legacy fallback at a later user row', () => {
@@ -299,6 +373,269 @@ describe('derivePendingQuestions', () => {
 });
 
 // ============================================================================
+// Shared session predicate — marker × dismissal × in-tail/off-tail matrix
+// ============================================================================
+
+describe('sessionPendingQuestions / sessionHasPendingQuestion', () => {
+  const questionTail: AgentMessage[] = [
+    userMessage('msg-u0'),
+    assistantMessage([{ type: 'text', text: 'One question:' }, questionBlock()], { id: 'msg-a1' }),
+  ];
+  // The marked row was paged out of the loaded tail; only later rows remain.
+  const offTail: AgentMessage[] = [
+    userMessage('msg-u5'),
+    assistantMessage([{ type: 'text', text: 'Later reply.' }], { id: 'msg-a6' }),
+  ];
+  const idle = { isResponding: false, isStreaming: false, isProcessing: false };
+
+  describe('marker absent (legacy fallback)', () => {
+    it('pends the tail question while the agent is idle', () => {
+      const session = makeStoredSession({ ...idle, messages: questionTail, metadata: {} });
+      expect(sessionPendingQuestions(session)).toMatchObject({ messageId: 'msg-a1' });
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('is null while the own turn is active (isAgentRunningState)', () => {
+      for (const flag of ['isResponding', 'isStreaming', 'isProcessing'] as const) {
+        const session = makeStoredSession({ ...idle, [flag]: true, messages: questionTail });
+        expect(sessionPendingQuestions(session)).toBeNull();
+        expect(sessionHasPendingQuestion(session)).toBe(false);
+      }
+    });
+
+    it('still pends while merely waiting on other agents (blocked wait is not running)', () => {
+      const session = makeStoredSession({
+        ...idle,
+        isWaitingForOtherAgents: true,
+        messages: questionTail,
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('is false when the tail question was dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false when the tail has no question row', () => {
+      const session = makeStoredSession({ ...idle, messages: offTail });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false when the question row is off-tail and dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: offTail,
+        metadata: { dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+  });
+
+  describe("marker cleared ('')", () => {
+    it('is false even when the tail still has a question row', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { pendingQuestionsMessageId: '' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false regardless of dismissal or tail contents', () => {
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            ...idle,
+            messages: questionTail,
+            metadata: { pendingQuestionsMessageId: '', dismissedQuestionsMessageId: 'msg-a1' },
+          }),
+        ),
+      ).toBe(false);
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            ...idle,
+            messages: offTail,
+            metadata: { pendingQuestionsMessageId: '' },
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it('is false when the question row is off-tail and dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: offTail,
+        metadata: { pendingQuestionsMessageId: '', dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+  });
+
+  describe('marker set, marked message in tail', () => {
+    it('pends when not dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toMatchObject({ messageId: 'msg-a1' });
+      expect(sessionPendingQuestions(session)!.questions[0].header).toBe('Auth method');
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('stays pending while a later turn runs (marker is sticky)', () => {
+      const session = makeStoredSession({
+        isResponding: true,
+        isStreaming: true,
+        messages: [
+          ...questionTail,
+          userMessage('msg-wake'),
+          assistantMessage([{ type: 'text', text: 'Handling…' }], {
+            id: 'msg-a2',
+            isStreaming: true,
+          }),
+        ],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('is false when dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1', dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('a dismissal for a different message does not suppress', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: questionTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1', dismissedQuestionsMessageId: 'msg-old' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('is false once a tagged answer row names the set', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: [...questionTail, answerMessage('msg-a1')],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false while the marked row is still streaming', () => {
+      const session = makeStoredSession({
+        isResponding: true,
+        messages: [
+          userMessage('msg-u0'),
+          assistantMessage([questionBlock()], { id: 'msg-a1', isStreaming: true }),
+        ],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+  });
+
+  describe('marker set, marked message off-tail (fail-closed)', () => {
+    it('sessionPendingQuestions is null (no questions to render) but the predicate is true', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: offTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionPendingQuestions(session)).toBeNull();
+      expect(sessionHasPendingQuestion(session)).toBe(true);
+    });
+
+    it('stays true while a later turn runs and with an empty loaded tail', () => {
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            isResponding: true,
+            messages: offTail,
+            metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            ...idle,
+            messages: [],
+            metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('is false when dismissed', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: offTail,
+        metadata: { pendingQuestionsMessageId: 'msg-a1', dismissedQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+
+    it('is false once a tagged answer row in the tail names the set', () => {
+      const session = makeStoredSession({
+        ...idle,
+        messages: [...offTail, answerMessage('msg-a1')],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+      // An answer for another set does not resolve this one.
+      expect(
+        sessionHasPendingQuestion(
+          makeStoredSession({
+            ...idle,
+            messages: [...offTail, answerMessage('msg-other')],
+            metadata: { pendingQuestionsMessageId: 'msg-a1' },
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('a marked row in the tail that is not an assistant question is not fail-closed pending', () => {
+      // The marker names a row that IS loaded but carries no question — the
+      // strict derivation owns that case and the off-tail rule must not
+      // override it.
+      const session = makeStoredSession({
+        ...idle,
+        messages: [userMessage('msg-u0'), userMessage('msg-a1')],
+        metadata: { pendingQuestionsMessageId: 'msg-a1' },
+      });
+      expect(sessionHasPendingQuestion(session)).toBe(false);
+    });
+  });
+
+  it('tolerates a session without a loaded transcript (AgentLite)', () => {
+    const lite = makeStoredSession({ ...idle, metadata: { pendingQuestionsMessageId: 'msg-a1' } });
+    delete (lite as Partial<AgentSession>).messages;
+    expect(sessionPendingQuestions(lite)).toBeNull();
+    expect(sessionHasPendingQuestion(lite)).toBe(true);
+    delete (lite as Partial<AgentSession>).metadata;
+    expect(sessionHasPendingQuestion(lite)).toBe(false);
+  });
+});
+
+// ============================================================================
 // Wizard gate — waiting on delegated agents (regression)
 // ============================================================================
 
@@ -316,11 +653,43 @@ function makeStoredSession(overrides: Partial<AgentSession> = {}): AgentSession 
   };
 }
 
-function stateWith(session: AgentSession): StoreState {
-  return {
+function stateWith(session: AgentSession, queued: QueuedMessage[] = []): StoreState {
+  const state = {
     agentSessions: { byAgentId: { [session.id]: session }, agentIdsByWorkspace: {} },
   } as unknown as StoreState;
+  if (queued.length > 0) {
+    state.agentQueue = {
+      byAgentId: {
+        [session.id]: {
+          messages: queued.reduce(
+            (collection, entry) => addItem(collection, entry),
+            createCollection<QueuedMessage, 'id'>('id'),
+          ),
+          recentlyRemovedMessageIds: [],
+          isHydrating: false,
+          error: null,
+        },
+      },
+    } as StoreState['agentQueue'];
+  }
+  return state;
 }
+
+describe('isQuestionSetAnsweredInQueue', () => {
+  it('matches only a queued entry tagged for the given question set', () => {
+    const tagged = queuedMessage(buildAnswerMessageMetadata('msg-a1'));
+    expect(isQuestionSetAnsweredInQueue([tagged], 'msg-a1')).toBe(true);
+    expect(isQuestionSetAnsweredInQueue([tagged], 'msg-other')).toBe(false);
+    expect(isQuestionSetAnsweredInQueue([queuedMessage(undefined)], 'msg-a1')).toBe(false);
+    expect(
+      isQuestionSetAnsweredInQueue(
+        [queuedMessage({ type: 'agent_message', fromAgentId: 'agent-x' })],
+        'msg-a1',
+      ),
+    ).toBe(false);
+    expect(isQuestionSetAnsweredInQueue([], 'msg-a1')).toBe(false);
+  });
+});
 
 // The suite exercises the REAL production gate — deriveWizardPendingQuestions
 // from ../wizard-gate, the same function ChatPanel.svelte calls — so reverting
@@ -418,6 +787,41 @@ describe('wizard gate while waiting on delegated agents', () => {
     );
     const answered = [...transcript, answerMessage('msg-a1')];
     expect(deriveWizardPendingQuestions(state, AGENT_ID, answered)).toBeNull();
+  });
+
+  it('STICKY: a tagged answer still in the daemon queue hides the wizard while the agent is mid-turn', () => {
+    // The answer was sent while the agent was responding, so it went through
+    // agent.queueMessage (with its messageMetadata) instead of the transcript.
+    // The marker is still set; the wizard must not stay up until drain.
+    const running = makeStoredSession({
+      isResponding: true,
+      isStreaming: true,
+      metadata: { pendingQuestionsMessageId: 'msg-a1' },
+    });
+    const queued = [queuedMessage(buildAnswerMessageMetadata('msg-a1'))];
+    expect(
+      deriveWizardPendingQuestions(stateWith(running, queued), AGENT_ID, transcript),
+    ).toBeNull();
+    // The entry leaving the queue with no tagged transcript row (e.g. the
+    // user removed it before drain) re-surfaces the set.
+    expect(deriveWizardPendingQuestions(stateWith(running), AGENT_ID, transcript)).toMatchObject({
+      messageId: 'msg-a1',
+    });
+    // Once drained, the tagged transcript row keeps it hidden.
+    expect(
+      deriveWizardPendingQuestions(stateWith(running), AGENT_ID, [
+        ...transcript,
+        answerMessage('msg-a1'),
+      ]),
+    ).toBeNull();
+    // A queued answer for another set leaves this one pending.
+    expect(
+      deriveWizardPendingQuestions(
+        stateWith(running, [queuedMessage(buildAnswerMessageMetadata('msg-other'))]),
+        AGENT_ID,
+        transcript,
+      ),
+    ).toMatchObject({ messageId: 'msg-a1' });
   });
 
   it('a trailing user message (e.g. delegated-agent wake report) no longer supersedes', () => {
@@ -652,6 +1056,28 @@ describe('wizard gate honors the authoritative pending marker', () => {
     ).toBeNull();
   });
 
+  it('a queued tagged answer resolves a recovered marked set too', () => {
+    const state = stateWith(
+      makeStoredSession({
+        isResponding: true,
+        metadata: { pendingQuestionsMessageId: 'msg-recovered' },
+      }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-recovered'))],
+    );
+    state.chatState = {
+      byAgentId: {
+        [AGENT_ID]: {
+          pendingQuestionRecovery: {
+            messageId: 'msg-recovered',
+            status: 'found',
+            questions: [QUESTION],
+          },
+        },
+      },
+    } as StoreState['chatState'];
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, transcript)).toBeNull();
+  });
+
   it('keeps an authoritative marker fail-closed when recovery settles as not found', () => {
     const state = stateWith(
       makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-stale' } }),
@@ -709,5 +1135,268 @@ describe('wizard gate honors the authoritative pending marker', () => {
 
     delete state.agentSessions.byAgentId[AGENT_ID];
     expect(deriveMarkedQuestionRecoveryState(state, AGENT_ID)).toBeNull();
+  });
+});
+
+// The indicator surfaces (AgentCard / PanelHeaderAgentAvatar / the sidebar)
+// call deriveAgentHasPendingQuestion. Once the firehose no longer writes rows
+// for agents without a standing chat subscription, an out-of-view agent's
+// question row never reaches the local store — the daemon marker alone must
+// light the badge.
+describe('indicator predicate stays marker-driven for out-of-view agents', () => {
+  const AGENT_ID = 'agent-coordinator';
+  const marked = assistantMessage([questionBlock()], { id: 'msg-marked' });
+
+  function recoveryState(
+    state: StoreState,
+    recovery: { messageId: string; status: string; questions?: (typeof QUESTION)[] },
+  ): StoreState {
+    state.chatState = {
+      byAgentId: { [AGENT_ID]: { pendingQuestionRecovery: recovery } },
+    } as StoreState['chatState'];
+    return state;
+  }
+
+  it('pends on the marker alone when no transcript rows are stored', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(deriveWizardPendingQuestions(state, AGENT_ID, [])).toBeNull();
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(true);
+  });
+
+  it('keeps pending while the marked message is not-found / exhausted (fail-closed)', () => {
+    for (const status of ['not-found', 'error', 'loading']) {
+      const state = recoveryState(
+        stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } })),
+        { messageId: 'msg-marked', status },
+      );
+      expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(true);
+    }
+  });
+
+  it('does not pend once the marker is dismissed', () => {
+    const state = stateWith(
+      makeStoredSession({
+        metadata: {
+          pendingQuestionsMessageId: 'msg-marked',
+          dismissedQuestionsMessageId: 'msg-marked',
+        },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(false);
+  });
+
+  it('does not pend once a tagged answer for the marker sits in the queue', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-marked'))],
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(false);
+    const otherAnswer = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-other'))],
+    );
+    expect(deriveAgentHasPendingQuestion(otherAnswer, AGENT_ID, [])).toBe(true);
+  });
+
+  it('does not pend once a tagged answer row for the marker is in the tail', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [answerMessage('msg-marked')])).toBe(
+      false,
+    );
+  });
+
+  it('defers to the wizard gate when the marked message is present', () => {
+    const state = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [marked])).toBe(true);
+    expect(
+      deriveAgentHasPendingQuestion(state, AGENT_ID, [marked, answerMessage('msg-marked')]),
+    ).toBe(false);
+    // Marked message held in the paged history segment: still the gate's call.
+    const segmented = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    segmented.agentSessions = {
+      ...segmented.agentSessions,
+      historySegmentsByAgentId: { [AGENT_ID]: { messages: [marked] } },
+    } as unknown as StoreState['agentSessions'];
+    expect(deriveAgentHasPendingQuestion(segmented, AGENT_ID, [userMessage('msg-u1')])).toBe(true);
+    expect(deriveAgentHasPendingQuestion(segmented, AGENT_ID, [answerMessage('msg-marked')])).toBe(
+      false,
+    );
+  });
+
+  // The standing subscription closes mid-turn (chat went out of view while
+  // the asking turn streamed text): `closeSubscription` keeps the row's
+  // partial content and only settles its streaming flags, and the terminal
+  // question resource never lands because the firehose writes no rows for an
+  // uncovered agent. The daemon marker then names a row that IS cached
+  // locally but lacks its question content — the marker must still light
+  // the badge.
+  it('pends on the marker when the cached marked row is a frozen partial without a question resource', () => {
+    const frozenPartial = assistantMessage([{ type: 'text', text: 'Before I continue, ' }], {
+      id: 'msg-marked',
+      isStreaming: false,
+      streamingComplete: true,
+    });
+    const state = stateWith(
+      makeStoredSession({
+        messages: [userMessage('msg-u1'), frozenPartial],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(
+      deriveWizardPendingQuestions(
+        state,
+        AGENT_ID,
+        state.agentSessions.byAgentId[AGENT_ID].messages,
+      ),
+    ).toBeNull();
+    expect(
+      deriveAgentHasPendingQuestion(
+        state,
+        AGENT_ID,
+        state.agentSessions.byAgentId[AGENT_ID].messages,
+      ),
+    ).toBe(true);
+    // The same row reached only through the stored session (indicator called
+    // with an empty tail) is still just a frozen partial.
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [])).toBe(true);
+    // An empty terminal placeholder (a covered question-only turn finalized
+    // before its §7.1 resource delta arrived) is no more authoritative.
+    const placeholder = stateWith(
+      makeStoredSession({
+        messages: [assistantMessage([], { id: 'msg-marked', streamingComplete: true })],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(placeholder, AGENT_ID, [])).toBe(true);
+  });
+
+  // A row the renderer settled itself is flagged `provisional`; the flag, not
+  // the shape of its content, says it cannot speak for the marker. A flagged
+  // marked row that does carry a question resource therefore still pends on
+  // the marker, while the same row without the flag is the daemon-canonical
+  // terminal row and resolves the marker into an actual question set.
+  it('pends on the marker for a provisional marked row even when it carries a question resource', () => {
+    const provisionalMarked = assistantMessage([questionBlock()], {
+      id: 'msg-marked',
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const provisional = stateWith(
+      makeStoredSession({
+        messages: [userMessage('msg-u1'), provisionalMarked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(
+      deriveAgentHasPendingQuestion(
+        provisional,
+        AGENT_ID,
+        provisional.agentSessions.byAgentId[AGENT_ID].messages,
+      ),
+    ).toBe(true);
+    expect(deriveAgentHasPendingQuestion(provisional, AGENT_ID, [])).toBe(true);
+
+    const { provisional: _flag, ...canonicalMarked } = provisionalMarked;
+    const canonical = stateWith(
+      makeStoredSession({
+        messages: [userMessage('msg-u1'), canonicalMarked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    const canonicalMessages = canonical.agentSessions.byAgentId[AGENT_ID].messages;
+    expect(deriveWizardPendingQuestions(canonical, AGENT_ID, canonicalMessages)).toEqual({
+      messageId: 'msg-marked',
+      questions: [QUESTION],
+    });
+    expect(deriveAgentHasPendingQuestion(canonical, AGENT_ID, canonicalMessages)).toBe(true);
+  });
+
+  it('keeps the dismissal / answer suppression for a frozen partial marked row', () => {
+    const frozenPartial = assistantMessage([{ type: 'text', text: 'Before I continue, ' }], {
+      id: 'msg-marked',
+    });
+    const dismissed = stateWith(
+      makeStoredSession({
+        messages: [frozenPartial],
+        metadata: {
+          pendingQuestionsMessageId: 'msg-marked',
+          dismissedQuestionsMessageId: 'msg-marked',
+        },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(dismissed, AGENT_ID, [frozenPartial])).toBe(false);
+    const answeredInTail = stateWith(
+      makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }),
+    );
+    expect(
+      deriveAgentHasPendingQuestion(answeredInTail, AGENT_ID, [
+        frozenPartial,
+        answerMessage('msg-marked'),
+      ]),
+    ).toBe(false);
+    const answeredInQueue = stateWith(
+      makeStoredSession({
+        messages: [frozenPartial],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-marked'))],
+    );
+    expect(deriveAgentHasPendingQuestion(answeredInQueue, AGENT_ID, [frozenPartial])).toBe(false);
+  });
+
+  it('pends when the marked row is present with unanswered questions and not when all are answered', () => {
+    const state = stateWith(
+      makeStoredSession({
+        messages: [marked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+    );
+    expect(deriveAgentHasPendingQuestion(state, AGENT_ID, [marked])).toBe(true);
+    expect(
+      deriveAgentHasPendingQuestion(state, AGENT_ID, [marked, answerMessage('msg-marked')]),
+    ).toBe(false);
+    const answeredInQueue = stateWith(
+      makeStoredSession({
+        messages: [marked],
+        metadata: { pendingQuestionsMessageId: 'msg-marked' },
+      }),
+      [queuedMessage(buildAnswerMessageMetadata('msg-marked'))],
+    );
+    expect(deriveAgentHasPendingQuestion(answeredInQueue, AGENT_ID, [marked])).toBe(false);
+  });
+
+  it('defers to the wizard gate when the marked set was recovered', () => {
+    const pendingRecovered = recoveryState(
+      stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } })),
+      { messageId: 'msg-marked', status: 'found', questions: [QUESTION] },
+    );
+    expect(deriveAgentHasPendingQuestion(pendingRecovered, AGENT_ID, [])).toBe(true);
+    const answeredRecovered = recoveryState(
+      stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: 'msg-marked' } }), [
+        queuedMessage(buildAnswerMessageMetadata('msg-marked')),
+      ]),
+      { messageId: 'msg-marked', status: 'found', questions: [QUESTION] },
+    );
+    expect(deriveAgentHasPendingQuestion(answeredRecovered, AGENT_ID, [])).toBe(false);
+  });
+
+  it('does not pend when the marker is cleared or absent', () => {
+    const cleared = stateWith(makeStoredSession({ metadata: { pendingQuestionsMessageId: '' } }));
+    expect(deriveAgentHasPendingQuestion(cleared, AGENT_ID, [])).toBe(false);
+    expect(deriveAgentHasPendingQuestion(cleared, AGENT_ID, [marked])).toBe(false);
+    const absent = stateWith(makeStoredSession());
+    expect(deriveAgentHasPendingQuestion(absent, AGENT_ID, [])).toBe(false);
+    expect(deriveAgentHasPendingQuestion(absent, AGENT_ID, [marked])).toBe(true);
+    delete absent.agentSessions.byAgentId[AGENT_ID];
+    expect(deriveAgentHasPendingQuestion(absent, AGENT_ID, [])).toBe(false);
   });
 });

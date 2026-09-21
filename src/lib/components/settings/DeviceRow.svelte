@@ -1,13 +1,21 @@
 <script lang="ts">
+  import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { untrack } from 'svelte';
-  import { Button } from '$lib/components/ui/button';
+  import {
+    Button,
+    Input,
+    Label,
+    Switch,
+    Tooltip,
+  } from '$lib/components/patterns/settings/custom-controls';
+  import {
+    ListRow,
+    ListView,
+    RowActions,
+    type ActionDefinition,
+  } from '$lib/components/patterns/collection';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DeviceIconPicker from '$lib/components/DeviceIconPicker.svelte';
-  import { Input } from '$lib/components/ui/input';
-  import { Label } from '$lib/components/ui/label';
-  import * as Menu from '$lib/components/ui/menu';
-  import { Switch } from '$lib/components/ui/switch';
-  import { Tooltip } from '$lib/components/ui/tooltip';
   import { cn } from '$lib/utils';
   import {
     CONNECTION_ACCENT_CLASSES,
@@ -43,7 +51,6 @@
   import {
     faArrowsRotate,
     faCopy,
-    faEllipsisVertical,
     faPen,
     faPlug,
     faTrash,
@@ -80,6 +87,7 @@
   let cloudRemovalPending = $state(false);
   let cloudRemovalConfirmed = $state(false);
   let busy = $state<'update' | 'test' | null>(null);
+  let daemonUpdating = $state(false);
   let feedbackOperation = $state<'update' | 'test' | null>(null);
   let feedback = $state<{ kind: 'success' | 'error' | 'progress'; message: string } | null>(null);
   let connectionError = $state(false);
@@ -90,7 +98,6 @@
   } | null>(null);
   let initializedPanel = $state<string | null>(null);
   let actionsButton: HTMLButtonElement | null = $state(null);
-  let actionsMenuOpen = $state(false);
   let firstEditInput: HTMLInputElement | null = $state(null);
   let secretInput: HTMLInputElement | null = $state(null);
   let focusSecretOnEdit = $state(false);
@@ -137,8 +144,8 @@
       detectHosts !== savedDetectHosts ||
       pushToCloud !== savedPushToCloud,
   );
-  // Behind-pin marker: reflects the last captured daemonVersion, so it shows
-  // even while disconnected. The i18n message prepends "v" — strip any
+  // Warning eligibility reflects the last captured daemonVersion; the view
+  // attaches it only to a displayed connected version. The message prepends "v" — strip any
   // daemon-reported prefix so a valid v-prefixed version never renders "vv".
   const daemonBehindTooltip = $derived.by(() => {
     const pinnedVersion = $pinnedVersion$;
@@ -150,6 +157,34 @@
     });
   });
   const canUpdateDaemon = $derived(canRequestDeviceUpdate(device, $connectedIds$, $pinnedVersion$));
+  const rowActions = $derived.by((): ActionDefinition[] => [
+    ...(!device.isLocal
+      ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
+      : []),
+    ...(canUpdateDaemon
+      ? [
+          {
+            id: 'update',
+            label: daemonUpdating
+              ? m.settings_devices_updating_label()
+              : m.layout_daemonStatus_update_action(),
+            icon: faArrowsRotate,
+            disabled: daemonUpdating,
+          },
+        ]
+      : []),
+    ...(!device.isLocal
+      ? [
+          { id: 'edit', label: m.settings_devices_edit_label(), icon: faPen },
+          {
+            id: 'remove',
+            label: m.settings_devices_remove_label(),
+            icon: faTrash,
+            destructive: true,
+          },
+        ]
+      : []),
+  ]);
 
   function resetPanel() {
     name = device.label;
@@ -218,6 +253,8 @@
   }
 
   async function requestDaemonUpdate() {
+    if (daemonUpdating) return;
+    daemonUpdating = true;
     try {
       const action = updateBackendRequested(device.id);
       appStore.dispatch(action);
@@ -225,6 +262,25 @@
     } catch {
       // Outcomes (success and every failure mode) surface as saga-owned
       // toasts; nothing more to do here.
+    } finally {
+      daemonUpdating = false;
+    }
+  }
+
+  function handleRowAction(id: string) {
+    switch (id) {
+      case 'connect':
+        void connectDevice();
+        break;
+      case 'update':
+        void requestDaemonUpdate();
+        break;
+      case 'edit':
+        onOpenPanel('edit');
+        break;
+      case 'remove':
+        onRequestRemove(device);
+        break;
     }
   }
 
@@ -257,7 +313,7 @@
     return status === 'connected'
       ? 'bg-green-500'
       : status === 'connecting'
-        ? 'bg-yellow-500'
+        ? 'bg-warning'
         : 'bg-muted-foreground/50';
   }
 
@@ -455,132 +511,70 @@
     if (!device.tcAddress) return;
     try {
       await navigator.clipboard.writeText(device.tcAddress);
-      const { toast } = await import('$lib/components/ui/toast');
-      toast.success(m.settings_devices_tcAddress_copied());
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.success(m.settings_devices_tcAddress_copied());
     } catch {
-      const { toast } = await import('$lib/components/ui/toast');
-      toast.error(m.settings_devices_tcAddress_copyError());
+      const { notify } = await import('$lib/components/patterns/notify');
+      notify.error(m.settings_devices_tcAddress_copyError());
     }
   }
 </script>
 
-<article aria-labelledby={`device-${device.id}-name`} aria-busy={busy !== null}>
-  <div class="flex min-w-0 items-center gap-3 px-4 py-3 sm:px-5">
-    <span
-      class={cn(
-        'size-2.5 shrink-0 rounded-full ring-2 ring-background outline outline-1 outline-border',
-        statusClass(openStatus),
-      )}
-      role="status"
-      aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
-    ></span>
-    <DeviceIcon record={device} size={20} class="text-foreground" />
-    <div class="min-w-0 flex-1">
-      <div class="flex min-w-0 items-baseline gap-2">
-        <p
-          id={`device-${device.id}-name`}
-          class="min-w-0 truncate text-sm font-medium text-foreground"
-        >
-          {displayName}
-        </p>
-        {#if openStatus === 'connected' && device.intentdVersion}
-          <p class="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-            {device.intentdVersion}
-          </p>
-        {/if}
+<article
+  class="group/collection-row"
+  aria-labelledby={`device-${device.id}-name`}
+  aria-busy={busy !== null}
+>
+  <ListRow class="px-4 sm:px-5">
+    {#snippet leading()}
+      <span class="flex items-center gap-3">
+        <span
+          class={cn(
+            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+            statusClass(openStatus),
+          )}
+          role="status"
+          aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
+        ></span>
+        <DeviceIcon record={device} size={20} class="text-foreground" />
+      </span>
+    {/snippet}
+    {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
+    {#snippet meta()}
+      {#if openStatus === 'connected' && device.intentdVersion}
         {#if daemonBehindTooltip}
-          <!-- The Tooltip trigger wrapper gives this non-interactive dot a tab
-               stop, so the explanation is reachable by keyboard focus too. -->
-          <Tooltip content={daemonBehindTooltip} class="shrink-0 self-center">
-            <span
-              class="block size-2 rounded-full bg-yellow-500"
-              role="img"
-              aria-label={daemonBehindTooltip}
-            ></span>
+          <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
+            <span>{device.intentdVersion}</span>
           </Tooltip>
+        {:else}
+          <span>{device.intentdVersion}</span>
         {/if}
-      </div>
-    </div>
-    {#if device.isLocal}
-      <DeviceIconPicker
-        record={device}
-        bind:value={localDeviceIcon}
-        disabled={busy !== null}
-        portal={true}
-        class="w-48 shrink-0"
-        onchange={(value) => void updateLocalDeviceIcon(value)}
-      />
-    {/if}
-    <!-- The local row has no remote-only actions (Connect/Edit/Remove), so its
-         menu only exists while the Update action is offered. -->
-    {#if !device.isLocal || canUpdateDaemon}
-      <Menu.Root bind:open={actionsMenuOpen}>
-        <Menu.Trigger>
-          {#snippet child({ props })}
-            <Button
-              {...props}
-              bind:ref={actionsButton}
-              variant="ghost-light"
-              size="icon-xs"
-              aria-label={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
-            >
-              <Fa icon={faEllipsisVertical} />
-            </Button>
-          {/snippet}
-        </Menu.Trigger>
-        <Menu.Content align="end" class="p-0!">
-          <div class="w-44 py-1">
-            {#if !device.isLocal}
-              <Menu.Item
-                onclick={() => {
-                  actionsMenuOpen = false;
-                  void connectDevice();
-                }}
-              >
-                <Fa icon={faPlug} class="size-3.5 text-muted-foreground" />
-                {m.settings_devices_connect_label()}
-              </Menu.Item>
-            {/if}
-            {#if canUpdateDaemon}
-              <Menu.Item
-                onclick={() => {
-                  actionsMenuOpen = false;
-                  void requestDaemonUpdate();
-                }}
-              >
-                <Fa icon={faArrowsRotate} class="size-3.5 text-muted-foreground" />
-                {m.layout_daemonStatus_update_action()}
-              </Menu.Item>
-            {/if}
-            {#if !device.isLocal}
-              <Menu.Item
-                onclick={() => {
-                  actionsMenuOpen = false;
-                  onOpenPanel('edit');
-                }}
-              >
-                <Fa icon={faPen} class="size-3.5 text-muted-foreground" />
-                {m.settings_devices_edit_label()}
-              </Menu.Item>
-              <Menu.Item
-                destructive
-                onclick={() => {
-                  actionsMenuOpen = false;
-                  onRequestRemove(device);
-                }}
-              >
-                <Fa icon={faTrash} class="size-3.5 text-muted-foreground" />
-                {m.settings_devices_remove_label()}
-              </Menu.Item>
-            {/if}
-          </div>
-        </Menu.Content>
-      </Menu.Root>
-    {/if}
-  </div>
+      {/if}
+    {/snippet}
+    {#snippet trailing()}
+      {#if device.isLocal}
+        <DeviceIconPicker
+          record={device}
+          bind:value={localDeviceIcon}
+          disabled={busy !== null}
+          portal={true}
+          onchange={(value) => void updateLocalDeviceIcon(value)}
+        />
+      {/if}
+      {#if !device.isLocal || canUpdateDaemon}
+        <RowActions
+          actions={rowActions}
+          onAction={handleRowAction}
+          visibleCount={0}
+          overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+          bind:overflowTriggerRef={actionsButton}
+        />
+      {/if}
+    {/snippet}
+  </ListRow>
 
   {#if connectionError}
-    <p class="px-4 pb-3 text-sm text-danger sm:px-5" role="alert">
+    <p class="px-4 pb-3 type-body text-danger sm:px-5" role="alert">
       {m.settings_devices_connectFailed_error()}
     </p>
   {/if}
@@ -605,7 +599,7 @@
               disabled={busy !== null}
               aria-invalid={nameInvalid || undefined}
             />
-            {#if nameInvalid}<p class="text-xs text-danger">
+            {#if nameInvalid}<p class="type-body text-danger">
                 {m.settings_devices_nameRequired_error()}
               </p>{/if}
           </div>
@@ -618,7 +612,7 @@
                 disabled={busy !== null}
                 aria-invalid={hostInvalid || undefined}
               />
-              {#if hostInvalid}<p class="text-xs text-danger">
+              {#if hostInvalid}<p class="type-body text-danger">
                   {m.settings_devices_hostRequired_error()}
                 </p>{/if}
             </div>
@@ -632,7 +626,7 @@
                 disabled={busy !== null}
                 aria-invalid={portInvalid || undefined}
               />
-              {#if portInvalid}<p class="text-xs text-danger">
+              {#if portInvalid}<p class="type-body text-danger">
                   {m.settings_devices_portInvalid_error()}
                 </p>{/if}
             </div>
@@ -654,7 +648,7 @@
         </div>
         <div class="space-y-4">
           <fieldset class="space-y-1" disabled={busy !== null}>
-            <legend class="text-sm font-medium text-foreground"
+            <legend class="type-body font-medium text-foreground"
               >{m.settings_devices_accent_label()}</legend
             >
             <div class="flex flex-wrap gap-1">
@@ -701,7 +695,6 @@
             bind:value={deviceIcon}
             disabled={busy !== null}
             portal={true}
-            class="w-full"
           />
         </div>
       </div>
@@ -710,20 +703,25 @@
         <!-- Read-only network facts: the candidate hosts the connect race
              tries (refreshed from server.pairingInfo) and the tailcat tunnel
              address when the daemon reports one. -->
-        <dl class="space-y-3 text-xs">
+        <dl class="space-y-3 type-caption">
           <div class="space-y-1">
             <dt class="text-muted-foreground">
               {m.settings_devices_detectedAddresses_label()}
             </dt>
             <dd>
-              <ul
-                class="space-y-0.5 font-mono text-foreground"
-                aria-label={m.settings_devices_detectedAddresses_label()}
-              >
-                {#each detectedHosts as candidate (candidate)}
-                  <li class="break-all">{candidate}</li>
-                {/each}
-              </ul>
+              {#if detectedHosts.length > 0}
+                <ListView
+                  items={detectedHosts}
+                  getKey={(candidate) => candidate}
+                  getText={(candidate) => candidate}
+                  class="space-y-0.5 overflow-visible font-mono text-foreground"
+                  ariaLabel={m.settings_devices_detectedAddresses_label()}
+                >
+                  {#snippet row({ item: candidate })}
+                    <span class="block break-all">{candidate}</span>
+                  {/snippet}
+                </ListView>
+              {/if}
             </dd>
           </div>
           {#if device.tcAddress}
@@ -731,55 +729,51 @@
               <dt class="text-muted-foreground">{m.settings_devices_tunnelAddress_label()}</dt>
               <dd class="flex items-center gap-1">
                 <code class="min-w-0 break-all font-mono text-foreground">{device.tcAddress}</code>
-                <button
+                <Button
                   type="button"
+                  variant="ghost-light"
+                  size="icon-xs"
                   onclick={() => void copyTcAddress()}
-                  class="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
+                  class="size-5 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
                   aria-label={m.settings_devices_tcAddress_copy()}
                 >
                   <Fa icon={faCopy} class="size-3" />
-                </button>
+                </Button>
               </dd>
             </div>
           {/if}
         </dl>
         <div class="space-y-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p id={`device-${device.id}-detect-hosts-label`} class="text-sm text-foreground">
-                {m.modals_connect_detectHosts_label()}
-              </p>
-              <p class="text-xs text-muted-foreground">
-                {m.modals_connect_detectHosts_description()}
-              </p>
-            </div>
+          <SettingsFieldRow
+            id={`device-${device.id}-detect-hosts-field`}
+            compact
+            label={m.modals_connect_detectHosts_label()}
+            description={m.modals_connect_detectHosts_description()}
+          >
             <Switch
               id={`device-${device.id}-detect-hosts`}
               size="sm"
               bind:checked={detectHosts}
               disabled={busy !== null}
-              ariaLabelledby={`device-${device.id}-detect-hosts-label`}
+              ariaLabelledby={`device-${device.id}-detect-hosts-field-label`}
             />
-          </div>
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p id={`device-${device.id}-push-to-cloud-label`} class="text-sm text-foreground">
-                {m.settings_devices_pushToCloud_label()}
-              </p>
-              <p class="text-xs text-muted-foreground">
-                {syncSupported
-                  ? m.settings_devices_pushToCloud_description()
-                  : m.settings_backendSync_unsupported_description()}
-              </p>
-            </div>
+          </SettingsFieldRow>
+          <SettingsFieldRow
+            id={`device-${device.id}-push-to-cloud-field`}
+            compact
+            label={m.settings_devices_pushToCloud_label()}
+            description={syncSupported
+              ? m.settings_devices_pushToCloud_description()
+              : m.settings_backendSync_unsupported_description()}
+          >
             <Switch
               id={`device-${device.id}-push-to-cloud`}
               size="sm"
               bind:checked={() => pushToCloud, setPushToCloud}
               disabled={busy !== null || !syncSupported}
-              ariaLabelledby={`device-${device.id}-push-to-cloud-label`}
+              ariaLabelledby={`device-${device.id}-push-to-cloud-field-label`}
             />
-          </div>
+          </SettingsFieldRow>
         </div>
       </div>
 
@@ -788,10 +782,10 @@
           class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
           role="alert"
         >
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_devices_removeFromCloud_title()}
           </p>
-          <p class="text-xs text-muted-foreground">
+          <p class="type-body text-muted-foreground">
             {m.settings_devices_removeFromCloud_description()}
           </p>
           <div class="flex justify-end gap-2">
@@ -808,13 +802,13 @@
           class="space-y-2 rounded-md border border-warning-foreground/30 bg-warning/10 p-3"
           role="alert"
         >
-          <p class="text-sm font-medium text-foreground">
+          <p class="type-body font-medium text-foreground">
             {m.settings_devices_confirmFingerprint_title()}
           </p>
-          <p class="text-xs text-muted-foreground">
+          <p class="type-body text-muted-foreground">
             {m.settings_devices_confirmFingerprint_description()}
           </p>
-          <dl class="grid gap-2 text-xs sm:grid-cols-2">
+          <dl class="grid gap-2 type-caption sm:grid-cols-2">
             <div>
               <dt class="text-muted-foreground">
                 {m.settings_devices_expectedFingerprint_label()}
@@ -838,10 +832,10 @@
       {:else if feedback && feedbackOperation === 'update'}
         <p
           class={feedback.kind === 'error'
-            ? 'text-sm text-danger'
+            ? 'type-body text-danger'
             : feedback.kind === 'success'
-              ? 'text-sm text-success-foreground'
-              : 'text-sm text-muted-foreground'}
+              ? 'type-body text-success-foreground'
+              : 'type-body text-muted-foreground'}
           role={feedback.kind === 'error' ? 'alert' : 'status'}
         >
           {feedback.message}
@@ -860,10 +854,10 @@
           {#if feedback && feedbackOperation === 'test'}
             <p
               class={feedback.kind === 'error'
-                ? 'text-right text-sm text-danger'
+                ? 'text-right type-body text-danger'
                 : feedback.kind === 'success'
-                  ? 'text-right text-sm text-success'
-                  : 'text-right text-sm text-muted-foreground'}
+                  ? 'text-right type-body text-success'
+                  : 'text-right type-body text-muted-foreground'}
               role={feedback.kind === 'error' ? 'alert' : 'status'}
               aria-atomic="true"
             >

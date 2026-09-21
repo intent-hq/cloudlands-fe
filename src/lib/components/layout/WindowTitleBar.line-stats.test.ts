@@ -2,6 +2,7 @@
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const mocks = vi.hoisted(() => ({
   getLineStats: vi.fn(),
@@ -55,7 +56,7 @@ vi.mock('./sidebar-nav/SidebarNav.svelte', () => ({ default: () => null }));
 
 import WindowTitleBar from './WindowTitleBar.svelte';
 
-describe('WindowTitleBar line stats', () => {
+describe('WindowTitleBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal(
@@ -75,5 +76,24 @@ describe('WindowTitleBar line stats', () => {
     await tick();
 
     expect(mocks.getLineStats).not.toHaveBeenCalled();
+  });
+
+  it('keeps the native window title current when the workspace changes', async () => {
+    const view = render(WindowTitleBar, { workspaceId: 'ws-1' });
+    await tick();
+
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.WINDOW.SET_TITLE, { title: 'One' });
+
+    await view.rerender({ workspaceId: 'ws-2' });
+    await tick();
+
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.WINDOW.SET_TITLE, { title: 'Two' });
+
+    await view.rerender({ workspaceId: undefined });
+    await tick();
+
+    expect(mocks.invoke).toHaveBeenLastCalledWith(IPC_CHANNELS.WINDOW.SET_TITLE, {
+      title: 'Intent',
+    });
   });
 });

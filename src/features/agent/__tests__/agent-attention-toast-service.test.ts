@@ -1,7 +1,7 @@
 /**
  * Agent-attention toast service tests.
  *
- * The toast seam is faked via `vi.mock('svelte-sonner')` (existing pattern);
+ * The toast seam is faked via `vi.mock('$lib/components/patterns/notify')` (existing pattern);
  * these tests lock in the stickiness contract (duration: Infinity, stable
  * per-agent id, only close/Switch To dismiss) and the "Switch To" wiring
  * (workspace activation + cross-workspace goto + agent-tab dispatch).
@@ -33,8 +33,8 @@ const {
   storeStateMock: { value: {} as Record<string, unknown> },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     custom: toastCustomMock,
     info: toastInfoMock,
     dismiss: toastDismissMock,
@@ -49,8 +49,13 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: { select: workspaceByIdSelectMock },
 }));
 
-vi.mock('$lib/components/ui/toast/AgentAttentionToast.svelte', () => ({
-  default: 'AgentAttentionToast',
+// Mock the `$lib/components/ui/toast` barrel — the boundary the service
+// lazily imports (`getToastComponent`). Mocking only the leaf
+// `AgentAttentionToast.svelte` left the barrel's other exports (Toast,
+// ErrorToast, UpdateToast, …) compiling for real inside the first test's
+// timer, which timed out cold under `--maxWorkers=1` (intent-hq/intent#4963).
+vi.mock('$lib/components/ui/toast', () => ({
+  AgentAttentionToast: 'AgentAttentionToast',
 }));
 
 vi.mock('$lib/utils/navigation.client', () => ({
@@ -92,7 +97,6 @@ function lastCustomCall(): {
   id: string;
   componentProps: Record<string, any>;
   duration: number;
-  class?: string;
 } {
   const call = toastCustomMock.mock.calls[toastCustomMock.mock.calls.length - 1];
   expect(call).toBeDefined();
@@ -129,10 +133,9 @@ describe('agent-attention-toast-service', () => {
     expect(call.componentProps.title).toBe('Implementor requests a discussion');
     expect(call.componentProps.reason).toBe('Need a decision on the API shape');
     expect(call.componentProps.kind).toBe('discussion');
-    expect(call.class).toBe('!border-primary/50');
   });
 
-  it('flavors blocker toasts with the destructive tint and blocker title', async () => {
+  it('flavors blocker toasts with the blocker title and kind', async () => {
     await showAgentAttentionToast({
       workspaceId: WS,
       agentId: AGENT,
@@ -144,7 +147,6 @@ describe('agent-attention-toast-service', () => {
     const call = lastCustomCall();
     expect(call.componentProps.title).toBe('Verifier reports a blocker');
     expect(call.componentProps.kind).toBe('blocker');
-    expect(call.class).toBe('!border-danger/50');
   });
 
   describe('micro key-slot badge', () => {
@@ -196,6 +198,48 @@ describe('agent-attention-toast-service', () => {
       const call = lastCustomCall();
       expect(call.componentProps.title).toBe('Implementor requests a discussion');
       expect(call.componentProps.keySlot).toBeNull();
+    });
+  });
+
+  describe('muted-agent suppression', () => {
+    const request = {
+      workspaceId: WS,
+      agentId: AGENT,
+      agentName: 'Implementor',
+      kind: 'discussion' as const,
+      reason: 'Need a decision',
+    };
+
+    it('suppresses the toast when the payload carries notificationsMuted: true', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+
+      await showAgentAttentionToast({ ...request, notificationsMuted: true });
+
+      expect(toastCustomMock).not.toHaveBeenCalled();
+      expect(toastDismissMock).not.toHaveBeenCalled();
+    });
+
+    it('suppresses the toast when the tracked session is muted (payload without the stamp)', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      storeStateMock.value = {
+        agentSessions: { byAgentId: { [AGENT]: { id: AGENT, notificationsMuted: true } } },
+      };
+
+      await showAgentAttentionToast(request);
+
+      expect(toastCustomMock).not.toHaveBeenCalled();
+    });
+
+    it('shows the toast for an unmuted session and for unknown agents', async () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      storeStateMock.value = {
+        agentSessions: { byAgentId: { [AGENT]: { id: AGENT, notificationsMuted: false } } },
+      };
+
+      await showAgentAttentionToast(request);
+      await showAgentAttentionToast({ ...request, agentId: 'agent-unknown' });
+
+      expect(toastCustomMock).toHaveBeenCalledTimes(2);
     });
   });
 

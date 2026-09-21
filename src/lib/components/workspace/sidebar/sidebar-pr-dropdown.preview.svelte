@@ -23,6 +23,7 @@
     scenarios: SidebarPrDropdownScenario[];
     /** Render a single scenario inside a launcher-like footer with the live dropdown. */
     live?: boolean;
+    onOpenExternal?: (payload: unknown) => void;
   }
 
   function pr(number: number, overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
@@ -187,6 +188,37 @@
       }),
     ),
     scenario(
+      'monitor-threads-unknown',
+      'Monitor-only PR (thread state unreadable)',
+      'Snapshot omits threads.unresolved while resolution is required; the tooltip reports the count as unknown instead of 0.',
+      rows({
+        monitors: [
+          monitor(WORKSPACE_REPO, 142, {
+            title: 'Review threads unreadable',
+            lastSnapshot: {
+              state: 'open',
+              isDraft: false,
+              hasConflicts: false,
+              isBehind: false,
+              mergeable: true,
+              checks: {
+                total: 6,
+                passed: 6,
+                failed: 0,
+                pending: 0,
+                failingRequired: 0,
+                pendingRequired: 0,
+                requiredKnown: true,
+              },
+              approvals: { decision: 'APPROVED', have: 1, needed: 1, changesRequested: 0 },
+              threads: { resolutionRequired: true },
+              rulesKnown: true,
+            },
+          }),
+        ],
+      }),
+    ),
+    scenario(
       'monitor-no-title',
       'Monitor without title or snapshot',
       'Falls back to repo#number as the title; no detail line beyond state.',
@@ -282,6 +314,9 @@
       'live-many': {
         props: { scenarios: scenarios.filter((item) => item.key === 'many'), live: true },
       },
+      'live-long': {
+        props: { scenarios: scenarios.filter((item) => item.key === 'long-title'), live: true },
+      },
     },
   });
 </script>
@@ -291,8 +326,17 @@
   import { faCodePullRequest } from '@fortawesome/free-solid-svg-icons';
   import SidebarPrDropdown from './SidebarPrDropdown.svelte';
   import SidebarPrList from './SidebarPrList.svelte';
+  import { onDestroy } from 'svelte';
+  import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
 
-  let { scenarios: items, live = false }: SidebarPrDropdownPreviewProps = $props();
+  let { scenarios: items, live = false, onOpenExternal }: SidebarPrDropdownPreviewProps = $props();
+  onDestroy(
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock registration, not a domain fetch; intercepts external navigation and restores on teardown.
+    overrideMockIpcHandler('shell:openExternal', (payload) => {
+      onOpenExternal?.(payload);
+      return { success: true };
+    }),
+  );
 </script>
 
 <section class="grid gap-5" data-sidebar-pr-dropdown-preview>

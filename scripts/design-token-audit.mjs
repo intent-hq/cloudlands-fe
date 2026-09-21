@@ -18,6 +18,7 @@ const approved = [
   'popover',
   'popover-foreground',
   'primary',
+  'primary-ink',
   'primary-foreground',
   'secondary',
   'secondary-foreground',
@@ -41,6 +42,27 @@ const approved = [
   'sidebar-accent',
   'sidebar-accent-foreground',
   'sidebar-border',
+  'hover',
+  'active',
+  'selected',
+  'overlay',
+  'focus-ring',
+  'surface-1',
+  'surface-2',
+  'surface-3',
+  'surface-4',
+  'surface-5',
+  'surface-6',
+  'surface-7',
+  'surface-8',
+  'shadow-surface-1',
+  'shadow-surface-2',
+  'shadow-surface-3',
+  'shadow-surface-4',
+  'shadow-surface-5',
+  'shadow-surface-6',
+  'shadow-surface-7',
+  'shadow-surface-8',
 ];
 const extensions = new Set(['.css', '.svelte', '.ts']);
 const files = [];
@@ -71,12 +93,44 @@ function withoutNegativeAssertions(source) {
   );
 }
 
+// Svelte style directives (`style:--token={expr}` / `style:--token="value"`) define the
+// custom property at runtime on the element. Only real directive attributes count, so
+// the component is parsed and `StyleDirective` nodes are collected; comments, text,
+// script bodies, and other attributes' values never contribute definitions.
+function styleDirectiveDefinitions(source, parse) {
+  const names = [];
+  let ast;
+  try {
+    ast = parse(source, { modern: true });
+  } catch {
+    return names;
+  }
+  const stack = [ast.fragment];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== 'object') continue;
+    if (node.type === 'StyleDirective' && node.name.startsWith('--')) names.push(node.name);
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) stack.push(...value);
+      else if (value && typeof value === 'object' && typeof value.type === 'string') {
+        stack.push(value);
+      }
+    }
+  }
+  return names;
+}
+
+const styleDirectiveCandidates = [];
+
 for (const file of files) {
   const relative = path.relative(root, file);
   const source = fs.readFileSync(file, 'utf8');
   for (const match of source.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) definitions.add(match[1]);
   for (const match of source.matchAll(/\.setProperty\(\s*(['"])(--[A-Za-z0-9_-]+)\1\s*,/g)) {
     definitions.add(match[2]);
+  }
+  if (path.extname(file) === '.svelte' && source.includes('style:--')) {
+    styleDirectiveCandidates.push(source);
   }
   for (const match of withoutNegativeAssertions(source).matchAll(/var\((--[A-Za-z0-9_-]+)/g)) {
     if (!usages.has(match[1])) usages.set(match[1], new Set());
@@ -95,7 +149,16 @@ for (const file of files) {
   }
 }
 
+if (styleDirectiveCandidates.length > 0) {
+  const { parse } = await import('svelte/compiler');
+  for (const source of styleDirectiveCandidates) {
+    for (const name of styleDirectiveDefinitions(source, parse)) definitions.add(name);
+  }
+}
+
 const runtimePatterns = [
+  // Set by svelte-sonner on Toaster from the measured front toast height.
+  /^--front-toast-height$/,
   /^--color-(?:white|black)$/,
   /^--color-[a-z]+-[0-9]{2,3}$/,
   /^--radix-/,
@@ -104,7 +167,11 @@ const runtimePatterns = [
   /^--bits-select-content-available-height$/,
   // Set by bits-ui at runtime on menu content (dropdown-menu content and the shared
   // menu primitive used by SubContent); externally owned, not design tokens.
-  /^--bits-(?:dropdown-)?menu-content-available-height$/,
+  /^--bits-(?:dropdown-)?menu-content-available-(?:height|width)$/,
+  // Set by Bits UI from measured ScrollArea thumb geometry.
+  /^--bits-scroll-area-thumb-(?:height|width)$/,
+  // Set by Bits UI's floating-positioning layer for Tooltip content.
+  /^--bits-tooltip-content-transform-origin$/,
 ];
 const exceptionFiles = new Map(
   allowlist.undefined.map((entry) => [entry.token, new Set(entry.allowedFiles ?? [])]),
@@ -123,6 +190,16 @@ const totals = [...rawByFile.values()].reduce(
     palette: sum.palette + value.palette,
     arbitrary: sum.arbitrary + value.arbitrary,
   }),
+  { palette: 0, arbitrary: 0 },
+);
+const ratchetTotals = [...rawByFile].reduce(
+  (sum, [file, value]) => {
+    if (allowlist.canonicalRaw[file]) return sum;
+    return {
+      palette: sum.palette + value.palette,
+      arbitrary: sum.arbitrary + value.arbitrary,
+    };
+  },
   { palette: 0, arbitrary: 0 },
 );
 const mode = process.argv[2] ?? 'check';
@@ -186,19 +263,19 @@ if (mode === 'approved') {
       failures.push(`${file}: physical palette utility; use an approved semantic color family`);
     }
   }
-  if (totals.palette > allowlist.ratchets.palette) {
+  if (ratchetTotals.palette > allowlist.ratchets.palette) {
     for (const [file, counts] of rawByFile) {
       if (!counts.palette) continue;
       failures.push(
-        `${file}: physical palette utilities ${counts.paletteUtilities.join(', ')}; use an approved semantic color family (global total ${totals.palette} > ${allowlist.ratchets.palette})`,
+        `${file}: physical palette utilities ${counts.paletteUtilities.join(', ')}; use an approved semantic color family (global total ${ratchetTotals.palette} > ${allowlist.ratchets.palette})`,
       );
     }
   }
-  if (totals.arbitrary > allowlist.ratchets.arbitrary) {
+  if (ratchetTotals.arbitrary > allowlist.ratchets.arbitrary) {
     for (const [file, counts] of rawByFile) {
       if (!counts.arbitrary) continue;
       failures.push(
-        `${file}: arbitrary utilities ${counts.arbitraryUtilities.join(', ')}; use approved semantic roles and Tailwind spacing (global total ${totals.arbitrary} > ${allowlist.ratchets.arbitrary})`,
+        `${file}: arbitrary utilities ${counts.arbitraryUtilities.join(', ')}; use approved semantic roles and Tailwind spacing (global total ${ratchetTotals.arbitrary} > ${allowlist.ratchets.arbitrary})`,
       );
     }
   }

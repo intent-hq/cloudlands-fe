@@ -1,10 +1,8 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
-import { recordCdpLifecycle } from '../../../../test/ct-cdp-lifecycle-recorder';
 import ChatPanelOperationalGeometryHost from './ChatPanelOperationalGeometryHost.svelte';
 
 test.setTimeout(120_000);
-recordCdpLifecycle(test);
 
 /**
  * Explicit settle gate before a geometry read: web fonts applied, every finite
@@ -46,7 +44,7 @@ const eventPairs = [
 
 for (const theme of ['light', 'dark'] as const) {
   for (const zoom of [1, 2]) {
-    test(`keeps 16px above the detached live Thinking row in ${theme} at ${zoom * 100}%`, async ({
+    test(`keeps 20px above the detached live Thinking row in ${theme} at ${zoom * 100}%`, async ({
       mount,
     }) => {
       const component = await mount(ChatPanelOperationalGeometryHost, {
@@ -71,8 +69,8 @@ for (const theme of ['light', 'dark'] as const) {
         };
       });
 
-      expect(geometry.topGap).toBeCloseTo(16 * zoom, 1);
-      expect(geometry.rowMarginTop).toBe('8px');
+      expect(geometry.topGap).toBeCloseTo(20 * zoom, 1);
+      expect(geometry.rowMarginTop).toBe('12px');
       expect(geometry.wrapperPaddingTop).toBe('4px');
       expect(geometry.wrapperPaddingBottom).toBe('0px');
       expect(geometry.wrapperMarginBottom).toBe('64px');
@@ -108,7 +106,7 @@ for (const theme of ['light', 'dark'] as const) {
               thinkingWrapper.getBoundingClientRect().top - element.getBoundingClientRect().bottom
             );
           }, assistantId);
-          expect(gap, `${eventId}>Thinking`).toBeCloseTo(32 * zoom, 1);
+          expect(gap, `${eventId}>Thinking`).toBeCloseTo(24 * zoom, 1);
         }
 
         const eventBoundary = await component
@@ -122,8 +120,8 @@ for (const theme of ['light', 'dark'] as const) {
               bottom: thinking.getBoundingClientRect().top - event.getBoundingClientRect().bottom,
             };
           });
-        expect(eventBoundary.top).toBeCloseTo(32 * zoom, 1);
-        expect(eventBoundary.bottom).toBeCloseTo(32 * zoom, 1);
+        expect(eventBoundary.top).toBeCloseTo(24 * zoom, 1);
+        expect(eventBoundary.bottom).toBeCloseTo(24 * zoom, 1);
         expect(eventBoundary.top).toBeCloseTo(eventBoundary.bottom, 1);
 
         for (const [messageId, topLevelTypes, topLevelGaps] of [

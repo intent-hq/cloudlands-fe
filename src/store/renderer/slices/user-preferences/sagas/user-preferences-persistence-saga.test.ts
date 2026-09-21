@@ -40,6 +40,7 @@ import {
   setHasCompletedProviderSetup,
   setLanguagePreference,
   setNoteFontStyle,
+  setReduceMotionOnBattery,
   setShowArchived,
   setShowReasoningBlocks,
   setShellTransparencyEnabled,
@@ -49,6 +50,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
   toggleShellTransparency,
@@ -172,6 +174,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'chat:showReasoningBlocks': true,
       'chat:auroraEnabled': false,
       'appearance:shellTransparencyEnabled': false,
+      'appearance:reduceMotionOnBattery': false,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -195,6 +198,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [setShowReasoningBlocks(true)],
       [setChatAuroraEnabled(false)],
       [setShellTransparencyEnabled(false)],
+      [setReduceMotionOnBattery(false)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -204,6 +208,24 @@ describe('userPreferencesPersistenceSaga', () => {
     ]);
     expect(mocks.applyLanguagePreference.mock.calls).toEqual([]);
   });
+
+  it.each([true, false])(
+    'hydrates a persisted appearance:reduceMotionOnBattery = %s over the default',
+    async (stored) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'appearance:reduceMotionOnBattery' ? stored : undefined,
+      );
+      const dispatch = vi.fn();
+      await runSaga({ dispatch, getState: () => ({}) }, hydrateUserPreferencesWorker).toPromise();
+
+      expect(dispatch.mock.calls).toEqual([[setReduceMotionOnBattery(stored)]]);
+      const hydrated = dispatch.mock.calls.reduce(
+        (state, [action]) => userPreferencesReducer(state, action),
+        initialState,
+      );
+      expect(hydrated.reduceMotionOnBattery).toBe(stored);
+    },
+  );
 
   it('persists an agent font action and restores it in a fresh store', async () => {
     const stored: Record<string, unknown> = {};
@@ -322,6 +344,7 @@ describe('userPreferencesPersistenceSaga', () => {
         showReasoningBlocks: true,
         chatAuroraEnabled: false,
         shellTransparencyEnabled: false,
+        reduceMotionOnBattery: false,
         agentFontStyle: 'monospace',
         noteFontStyle: 'sans',
         codeFontFamily: 'Monaco',
@@ -354,6 +377,8 @@ describe('userPreferencesPersistenceSaga', () => {
       toggleChatAurora(),
       setShellTransparencyEnabled(false),
       toggleShellTransparency(),
+      setReduceMotionOnBattery(false),
+      toggleReduceMotionOnBattery(),
       setAgentFontStyle('monospace'),
       setNoteFontStyle('sans'),
       cycleNoteFontStyle(),
@@ -383,6 +408,8 @@ describe('userPreferencesPersistenceSaga', () => {
       ['chat:auroraEnabled', false],
       ['appearance:shellTransparencyEnabled', false],
       ['appearance:shellTransparencyEnabled', false],
+      ['appearance:reduceMotionOnBattery', false],
+      ['appearance:reduceMotionOnBattery', false],
       ['agent-font-settings', { fontStyle: 'monospace' }],
       ['note-font-settings', { fontStyle: 'sans' }],
       ['note-font-settings', { fontStyle: 'sans' }],

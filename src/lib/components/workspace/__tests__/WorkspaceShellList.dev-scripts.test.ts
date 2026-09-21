@@ -131,55 +131,41 @@ describe('WorkspaceShellList development script controls', () => {
     return within(row).getByRole('button', { name });
   }
 
-  describe('last placement', () => {
-    it('reopens a terminal in the overlay by default', async () => {
-      mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
-      render(WorkspaceShellList, { props: { workspaceId: WS } });
+  async function chooseSurface(row: HTMLElement, name: string) {
+    await fireEvent.click(within(row).getByRole('button', { name: 'Open in...' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name }));
+  }
 
-      await fireEvent.click(defaultClickTarget(terminalRow('terminal-1'), 'Build shell'));
-
-      expect(mocks.dispatch).toHaveBeenCalledWith({
-        type: 'terminals/open',
-        payload: [WS, 'terminal-1'],
-      });
-      expect(mocks.openUserTab).not.toHaveBeenCalled();
-    });
-
-    it('reopens a terminal last shown in a panel through the panel path', async () => {
-      mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
-      mocks.placements[WS] = { 'terminal-1': 'panel' };
-      render(WorkspaceShellList, { props: { workspaceId: WS } });
-
-      await fireEvent.click(defaultClickTarget(terminalRow('terminal-1'), 'Build shell'));
-
-      expect(mocks.openUserTab).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'terminal', terminalId: 'terminal-1', workspaceId: WS }),
-      );
-      expect(mocks.dispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'terminals/open' }),
-      );
-    });
-
-    it('keeps the placement per workspace', async () => {
-      mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
-      mocks.placements['ws-b'] = { 'terminal-1': 'panel' };
-      render(WorkspaceShellList, { props: { workspaceId: WS } });
-
-      await fireEvent.click(defaultClickTarget(terminalRow('terminal-1'), 'Build shell'));
-
-      expect(mocks.openUserTab).not.toHaveBeenCalled();
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'terminals/open' }),
-      );
-    });
+  describe('panel default', () => {
+    it.each([undefined, 'overlay', 'panel'] as const)(
+      'opens a terminal in a panel regardless of saved placement %s',
+      async (placement) => {
+        mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
+        if (placement) mocks.placements[WS] = { 'terminal-1': placement };
+        render(WorkspaceShellList, { props: { workspaceId: WS } });
+        await fireEvent.click(defaultClickTarget(terminalRow('terminal-1'), 'Build shell'));
+        expect(mocks.openUserTab).toHaveBeenCalledExactlyOnceWith({
+          type: 'terminal',
+          title: 'Build shell',
+          terminalId: 'terminal-1',
+          workspaceId: WS,
+          closable: true,
+        });
+        expect(mocks.dispatch).toHaveBeenCalledWith({
+          type: 'terminals/setPlacement',
+          payload: [WS, 'terminal-1', 'panel'],
+        });
+        expect(mocks.dispatch).not.toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'terminals/open' }),
+        );
+      },
+    );
 
     it('records the panel placement when a terminal is shown in a panel', async () => {
       mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
       render(WorkspaceShellList, { props: { workspaceId: WS } });
 
-      await fireEvent.click(
-        within(terminalRow('terminal-1')).getByRole('button', { name: 'Show in a panel' }),
-      );
+      await chooseSurface(terminalRow('terminal-1'), 'Show in a panel');
 
       expect(mocks.dispatch).toHaveBeenCalledWith({
         type: 'terminals/setPlacement',
@@ -192,9 +178,7 @@ describe('WorkspaceShellList development script controls', () => {
       mocks.placements[WS] = { 'terminal-1': 'panel' };
       render(WorkspaceShellList, { props: { workspaceId: WS } });
 
-      await fireEvent.click(
-        within(terminalRow('terminal-1')).getByRole('button', { name: 'Show in bottom bar' }),
-      );
+      await chooseSurface(terminalRow('terminal-1'), 'Show in bottom bar');
 
       expect(mocks.openUserTab).not.toHaveBeenCalled();
       expect(mocks.dispatch).toHaveBeenCalledWith({
@@ -203,12 +187,38 @@ describe('WorkspaceShellList development script controls', () => {
       });
     });
 
-    it('reopens a script in the overlay by default', async () => {
-      mocks.scripts[WS] = [script('script-1', 'Dev server', 'running')];
+    it.each(['idle', 'running', 'exited', 'restarting'] as const)(
+      'opens a %s script in a panel even after an overlay placement',
+      async (status) => {
+        mocks.scripts[WS] = [script('script-1', 'Dev server', status)];
+        mocks.placements[WS] = { 'script-1': 'overlay' };
+        render(WorkspaceShellList, { props: { workspaceId: WS } });
+        await fireEvent.click(
+          within(scriptRow('script-1')).getByRole('button', {
+            name: /^(Running|Idle|Exited|Restarting) Dev server$/,
+          }),
+        );
+        expect(mocks.openUserTab).toHaveBeenCalledExactlyOnceWith({
+          type: 'terminal',
+          title: 'Dev server',
+          scriptId: 'script-1',
+          workspaceId: WS,
+          closable: true,
+        });
+        expect(mocks.dispatch).toHaveBeenCalledWith({
+          type: 'terminals/setPlacement',
+          payload: [WS, 'script-1', 'panel'],
+        });
+        expect(mocks.dispatch).not.toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'terminals/open' }),
+        );
+      },
+    );
+
+    it('keeps the explicit script bottom-bar action available', async () => {
+      mocks.scripts[WS] = [script('script-1', 'Dev server', 'idle')];
       render(WorkspaceShellList, { props: { workspaceId: WS } });
-
-      await fireEvent.click(defaultClickTarget(scriptRow('script-1'), 'Dev server Running'));
-
+      await chooseSurface(scriptRow('script-1'), 'Show in bottom bar');
       expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual([
         { type: 'terminals/selectScript', payload: [WS, 'script-1'] },
         { type: 'terminals/open', payload: [WS] },
@@ -216,37 +226,26 @@ describe('WorkspaceShellList development script controls', () => {
       expect(mocks.openUserTab).not.toHaveBeenCalled();
     });
 
-    it('reopens a script last shown in a panel through the panel path', async () => {
-      mocks.scripts[WS] = [script('script-1', 'Dev server', 'running')];
-      mocks.placements[WS] = { 'script-1': 'panel' };
-      render(WorkspaceShellList, { props: { workspaceId: WS } });
-
-      await fireEvent.click(defaultClickTarget(scriptRow('script-1'), 'Dev server Running'));
-
-      expect(mocks.openUserTab).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'terminal', scriptId: 'script-1', workspaceId: WS }),
-      );
-      expect(mocks.dispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'terminals/open' }),
-      );
-      expect(mocks.dispatch).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'terminals/selectScript' }),
-      );
-    });
-
     it('records the panel placement when a script is shown in a panel', async () => {
       mocks.scripts[WS] = [script('script-1', 'Dev server', 'running')];
       render(WorkspaceShellList, { props: { workspaceId: WS } });
 
-      await fireEvent.click(
-        within(scriptRow('script-1')).getByRole('button', { name: 'Show in a panel' }),
-      );
+      await chooseSurface(scriptRow('script-1'), 'Show in a panel');
 
       expect(mocks.dispatch).toHaveBeenCalledWith({
         type: 'terminals/setPlacement',
         payload: [WS, 'script-1', 'panel'],
       });
     });
+  });
+
+  it('renders truthful empty shell states', () => {
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+
+    expect(screen.getByText('No terminals open')).toBeTruthy();
+    expect(
+      screen.getByText('No scripts found. Add one manually or use AI detection.'),
+    ).toBeTruthy();
   });
 
   it('opens the selected terminal in a panel and closes its bottom overlay', async () => {
@@ -259,7 +258,7 @@ describe('WorkspaceShellList development script controls', () => {
     render(WorkspaceShellList, { props: { workspaceId: WS } });
 
     const row = document.querySelector('[data-sidebar-shell-terminal="terminal-1"]') as HTMLElement;
-    await fireEvent.click(within(row).getByRole('button', { name: 'Show in a panel' }));
+    await chooseSurface(row, 'Show in a panel');
 
     expect(mocks.getPanelLayoutManager).toHaveBeenCalledWith(WS);
     expect(mocks.openUserTab).toHaveBeenCalledWith({
@@ -285,7 +284,7 @@ describe('WorkspaceShellList development script controls', () => {
     render(WorkspaceShellList, { props: { workspaceId: WS } });
 
     const row = document.querySelector('[data-sidebar-shell-terminal="terminal-1"]') as HTMLElement;
-    await fireEvent.click(within(row).getByRole('button', { name: 'Show in a panel' }));
+    await chooseSurface(row, 'Show in a panel');
 
     expect(mocks.openUserTab).toHaveBeenCalledWith(
       expect.objectContaining({ terminalId: 'terminal-1' }),
@@ -305,7 +304,7 @@ describe('WorkspaceShellList development script controls', () => {
     render(WorkspaceShellList, { props: { workspaceId: WS } });
 
     const row = document.querySelector('[data-sidebar-shell-script="script-1"]') as HTMLElement;
-    await fireEvent.click(within(row).getByRole('button', { name: 'Show in a panel' }));
+    await chooseSurface(row, 'Show in a panel');
 
     expect(mocks.getPanelLayoutManager).toHaveBeenCalledWith(WS);
     expect(mocks.openUserTab).toHaveBeenCalledWith({
@@ -331,7 +330,7 @@ describe('WorkspaceShellList development script controls', () => {
     render(WorkspaceShellList, { props: { workspaceId: WS } });
 
     const row = document.querySelector('[data-sidebar-shell-script="script-1"]') as HTMLElement;
-    await fireEvent.click(within(row).getByRole('button', { name: 'Show in a panel' }));
+    await chooseSurface(row, 'Show in a panel');
 
     expect(mocks.openUserTab).toHaveBeenCalledWith(
       expect.objectContaining({ scriptId: 'script-1' }),
@@ -341,54 +340,58 @@ describe('WorkspaceShellList development script controls', () => {
     );
   });
 
-  it('keeps compact one-line rows and maps runtime state to icon controls', () => {
-    const longName = 'A very long script name that must truncate before the action controls';
+  it('orders live scripts first and exposes controls for each runtime state', () => {
     mocks.scripts[WS] = [
-      script('idle', longName, 'idle'),
+      script('idle', 'Compile', 'idle'),
       script('running', 'Dev server', 'running'),
       script('exited', 'Build', 'exited'),
       script('restarting', 'Worker', 'restarting'),
     ];
     render(WorkspaceShellList, { props: { workspaceId: WS } });
-
-    const rows = Array.from(document.querySelectorAll('[data-sidebar-shell-script]'));
-    expect(rows).toHaveLength(4);
-    expect(rows[0].getAttribute('data-sidebar-shell-script')).toBe('running');
-    expect(rows[1].getAttribute('data-sidebar-shell-script')).toBe('restarting');
-    expect(screen.queryByText('pnpm idle')).toBeNull();
-
-    const idleRow = document.querySelector('[data-sidebar-shell-script="idle"]') as HTMLElement;
-    const runningRow = document.querySelector(
-      '[data-sidebar-shell-script="running"]',
-    ) as HTMLElement;
-    expect(within(idleRow).getByText(longName).className).toContain('truncate');
-    expect(within(idleRow).getByText('Idle')).toBeTruthy();
-    expect(within(idleRow).getByRole('button', { name: `Start ${longName}` })).toBeTruthy();
-    expect(within(runningRow).getByText('Running')).toBeTruthy();
-    expect(within(runningRow).getByRole('button', { name: 'Stop' })).toBeTruthy();
-    expect(within(runningRow).getByRole('button', { name: 'Restart Dev server' })).toBeTruthy();
-    expect(runningRow.className).toContain('h-8');
-    expect(runningRow.className).toContain('px-0');
-    expect(runningRow.parentElement?.className).toContain('gap-0');
-    expect(runningRow.querySelector('[data-script-status-indicator]')).toBeTruthy();
-    const actionStrip = runningRow.querySelector('[data-script-actions]') as HTMLElement;
-    expect(actionStrip.className).toContain('rounded-md');
-    expect(actionStrip.className).toContain('bg-secondary/80');
-    expect(actionStrip.className).toContain('px-1');
-    const actionButtons = Array.from(actionStrip.querySelectorAll('[data-slot="button"]'));
-    expect(actionButtons).toHaveLength(2);
-    for (const button of actionButtons) {
-      expect(button.className).toContain('size-7');
-      expect(button.className).toContain('bg-transparent');
-      expect(button.className).toContain('focus-visible:ring-2');
-      expect(button.className).toContain('active:bg-accent/80');
-    }
-    expect(within(runningRow).getByRole('button', { name: 'Stop' }).className).toContain(
-      'text-danger',
-    );
     expect(
-      within(runningRow).getByRole('button', { name: 'Dev server Running' }).className,
-    ).toContain('items-center');
+      Array.from(document.querySelectorAll('[data-sidebar-shell-script]'), (row) =>
+        row.getAttribute('data-sidebar-shell-script'),
+      ),
+    ).toEqual(['running', 'restarting', 'exited', 'idle']);
+    for (const [id, name] of [
+      ['running', 'Dev server'],
+      ['restarting', 'Worker'],
+    ]) {
+      expect(within(scriptRow(id)).getByRole('button', { name: 'Stop' })).toBeTruthy();
+      expect(within(scriptRow(id)).getByRole('button', { name: `Restart ${name}` })).toBeTruthy();
+      expect(within(scriptRow(id)).queryByRole('button', { name: `Start ${name}` })).toBeNull();
+    }
+    for (const [id, name] of [
+      ['idle', 'Compile'],
+      ['exited', 'Build'],
+    ]) {
+      expect(within(scriptRow(id)).getByRole('button', { name: `Start ${name}` })).toBeTruthy();
+      expect(within(scriptRow(id)).queryByRole('button', { name: 'Stop' })).toBeNull();
+    }
+  });
+
+  it('collapses each group independently and restores its row actions', async () => {
+    mocks.terminals[WS] = [{ id: 'terminal-1', name: 'Build shell', workspaceId: WS }];
+    mocks.scripts[WS] = [script('idle', 'Build', 'idle')];
+    render(WorkspaceShellList, { props: { workspaceId: WS } });
+    const terminals = screen.getByRole('button', { name: 'Terminals' });
+    const scripts = screen.getByRole('button', { name: 'Development scripts' });
+    await fireEvent.click(terminals);
+    expect(terminals.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Build shell' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Start Build' }));
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'scripts/startScriptRequested',
+      payload: [WS, 'idle'],
+    });
+    await fireEvent.click(scripts);
+    expect(scripts.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Start Build' })).toBeNull();
+    await fireEvent.click(terminals);
+    await fireEvent.click(screen.getByRole('button', { name: 'Build shell' }));
+    expect(mocks.openUserTab).toHaveBeenCalledWith(
+      expect.objectContaining({ terminalId: 'terminal-1' }),
+    );
   });
 
   it('dispatches start, stop, and restart without opening the script overlay', async () => {
@@ -440,9 +443,7 @@ describe('WorkspaceShellList development script controls', () => {
     expect(stop.getAttribute('aria-busy')).toBeNull();
     expect(restart.disabled).toBe(true);
     expect(restart.getAttribute('aria-busy')).toBe('true');
-    expect(start.className).toContain('size-7');
-    expect(restart.className).toContain('size-7');
-    expect(start.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('spinner');
-    expect(restart.querySelector('.fa-icon')?.getAttribute('data-icon')).toBe('spinner');
+    expect(within(start).getByRole('status')).toBeTruthy();
+    expect(within(restart).getByRole('status')).toBeTruthy();
   });
 });

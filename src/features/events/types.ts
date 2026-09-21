@@ -59,7 +59,7 @@ export interface CanonicalAgentStatusFields {
    */
   sessionCorrupted?: boolean;
   /**
-   * Idle-visibility for hook-owning agents (PROTOCOL §3.1, within v3.1,
+   * Idle-visibility for hook-owning agents (PROTOCOL §6.5 `agent:idle`,
    * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
    * background hooks (§5.40) — omitted when empty (absent, never `[]`) — so
    * a parent or client can tell a hook-waiting idle agent from a stalled
@@ -450,6 +450,8 @@ export interface AgentIdleEvent extends WorkspaceEventBase {
     workspaceArchived?: boolean;
     /** Whether the agent is awaiting delegated sub-agents (pending completion watches); absent on older daemons */
     isWaitingForOtherAgents?: boolean;
+    /** Per-agent notification mute (§5.5 `notificationsMuted`); stamped only when true, absent on older daemons */
+    notificationsMuted?: boolean;
     /** Explicit completion report set by the agent via report_to_parent tool */
     completionReport?: string;
     /** ID of the parent agent that created this agent (for delegation) */

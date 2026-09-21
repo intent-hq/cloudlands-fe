@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import PanelWorkspaceColumnClipHarness from './mocks/PanelWorkspaceColumnClipHarness.svelte';
 import {
@@ -9,13 +9,12 @@ import {
 const GUTTER_WIDTH = 8;
 const UNCONTAINED_INLINE_CHROME = 20;
 const ROOT_HANDLE_SELECTOR =
-  '.panel-split-container.horizontal > .panel-split-handle-wrapper > button[data-resize-axis="x"]';
+  '.panel-split-container.horizontal > .panel-split-handle-wrapper button[data-resize-axis="x"]';
 
 type Geometry = {
   canvasWidth: number;
   canvasVisualWidth: number;
   canvasRight: number;
-  outerHandleCenter: number;
   panelWidths: number[];
   panelVisualWidths: number[];
   panelLefts: number[];
@@ -64,26 +63,22 @@ async function installGeometryReader(page: Page) {
         }
       },
       read: () => {
-        const canvas = document.querySelector('.panel-canvas-resize-handle')
-          ?.parentElement as HTMLElement;
-        const outerHandle = document.querySelector('.panel-canvas-resize-handle') as HTMLElement;
+        const canvas = document.querySelector('.panel-canvas-frame') as HTMLElement;
         const root = document.querySelector('.panel-split-container.horizontal') as HTMLElement;
         const panels = Array.from(
           root.querySelectorAll<HTMLElement>(':scope > .panel-split-child'),
         );
         const dividers = Array.from(
           root.querySelectorAll<HTMLElement>(
-            ':scope > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+            ':scope > .panel-split-handle-wrapper button[data-resize-axis="x"]',
           ),
         );
         const canvasRect = canvas.getBoundingClientRect();
-        const outerHandleRect = outerHandle.getBoundingClientRect();
         const panelRects = panels.map((panel) => panel.getBoundingClientRect());
         return {
           canvasWidth: canvas.offsetWidth,
           canvasVisualWidth: canvasRect.width,
           canvasRight: canvasRect.right,
-          outerHandleCenter: outerHandleRect.left + outerHandleRect.width / 2,
           panelWidths: panels.map((panel) => panel.offsetWidth),
           panelVisualWidths: panelRects.map((rect) => rect.width),
           panelLefts: panelRects.map((rect) => rect.left),
@@ -259,7 +254,7 @@ async function dragDividerBeforeNextFrame(
       const geometry = (window as GeometryWindow).__panelGeometry;
       if (!geometry) throw new Error('Geometry reader not installed');
       const handle = document.querySelectorAll<HTMLElement>(
-        '.panel-split-container.horizontal > .panel-split-handle-wrapper > button[data-resize-axis="x"]',
+        '.panel-split-container.horizontal > .panel-split-handle-wrapper button[data-resize-axis="x"]',
       )[dividerIndex];
       const rect = handle.getBoundingClientRect();
       const startX = rect.left + rect.width / 2;
@@ -304,14 +299,12 @@ function expectGeometry(actual: Geometry, widths: number[], zoomFactor: number) 
 function expectStableGeometry(preview: Geometry, committed: Geometry) {
   const previewEdges = [
     preview.canvasRight,
-    preview.outerHandleCenter,
     ...preview.panelLefts,
     ...preview.panelRights,
     ...preview.dividerCenters,
   ];
   const committedEdges = [
     committed.canvasRight,
-    committed.outerHandleCenter,
     ...committed.panelLefts,
     ...committed.panelRights,
     ...committed.dividerCenters,

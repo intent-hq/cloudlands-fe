@@ -305,6 +305,28 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('queue forwards messageMetadata on agent.queueMessage params when supplied (§5.5)', async () => {
+    // The Q&A wizard's answer tag must survive queue-on-send so the daemon
+    // resolves the pending set when the queued entry drains.
+    const messageMetadata = { type: 'question_answers', answeredQuestionsMessageId: 'msg-q1' };
+    const queuedMessage = {
+      id: 'qm-meta-1',
+      content: 'Q: Auth method\nA: OAuth',
+      queuedAt: '2026-06-29T00:00:00.000Z',
+      position: 0,
+      messageMetadata,
+    };
+    backend.onRequest('agent.queueMessage', () => ({ success: true, queuedMessage }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.queue('agent-1', 'Q: Auth method\nA: OAuth', { messageMetadata });
+    expect(result).toEqual({ success: true, queuedMessage });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.queueMessage',
+      params: { agentId: 'agent-1', content: 'Q: Auth method\nA: OAuth', messageMetadata },
+    });
+  });
+
   it('queue omits the imageBlocks key entirely when no images are supplied', async () => {
     backend.onRequest('agent.queueMessage', () => ({ success: true }));
     const client = new LiveAgentsClient();
@@ -315,6 +337,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       params: { agentId: 'agent-1', content: 'no images' },
     });
     expect('imageBlocks' in (backend.requests[0]?.params as object)).toBe(false);
+    expect('messageMetadata' in (backend.requests[0]?.params as object)).toBe(false);
   });
 
   it('removeQueued forwards agent.removeQueuedMessage with PROTOCOL §5.5 params and folds the idempotent BE body into success', async () => {
@@ -457,7 +480,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       workspaceId: 'ws-1',
       messageId: 'qm-9',
     });
-    expect(result).toEqual({ success: true, turnId: 'turn-preserved' });
+    expect(result).toEqual({ success: true, queued: false, turnId: 'turn-preserved' });
   });
 
   it('sendQueuedNow folds the -32602 missing-entry rejection into {success:false,error} (no throw)', async () => {
@@ -502,7 +525,49 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
       workspaceId: 'ws-1',
       messageId: 'qm-9',
     });
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({
+      success: true,
+      queued: true,
+      queuedMessage: {
+        id: 'qm-9',
+        content: 'held',
+        queuedAt: '2026-01-01T00:00:00.000Z',
+        position: 0,
+        turnId: 'turn-restored',
+      },
+    });
+  });
+
+  it('preserves quarantined send-now outcomes and the stored attachments without promoting a turn', async () => {
+    const queuedMessage = {
+      id: 'qm-9',
+      content: 'review',
+      position: 0,
+      queuedAt: '2026-01-01T00:00:00.000Z',
+      turnId: 'turn-restored',
+      imageBlocks: [{ type: 'image', attachmentId: 'synthetic-image' }],
+      fileBlocks: [{ type: 'file', attachmentId: 'synthetic-file', fileName: 'fixture.txt' }],
+    };
+    backend.onRequest('agent.sendQueuedMessageNow', () => ({
+      success: true,
+      queued: true,
+      quarantined: true,
+      queuedMessage,
+    }));
+    const client = new LiveAgentsClient();
+    expect(
+      await client.sendQueuedNow({ agentId: 'agent-1', workspaceId: 'ws-1', messageId: 'qm-9' }),
+    ).toEqual({ success: true, queued: true, quarantined: true, queuedMessage });
+    expect(backend.requests).toEqual([
+      {
+        method: 'agent.sendQueuedMessageNow',
+        params: {
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          messageId: 'qm-9',
+        },
+      },
+    ]);
   });
 
   it('sendQueuedNow folds JSON-RPC "Internal error" + data.detail into the error like runMutation', async () => {
@@ -938,6 +1003,55 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
+  it('setNotificationsMuted forwards agent.update with the boolean notificationsMuted change (§5.5)', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    const muted = await client.setNotificationsMuted({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      notificationsMuted: true,
+    });
+    expect(muted).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.update',
+      params: {
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        changes: { notificationsMuted: true },
+      },
+    });
+
+    const unmuted = await client.setNotificationsMuted({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      notificationsMuted: false,
+    });
+    expect(unmuted).toEqual({ success: true });
+    expect(backend.requests[1]?.params).toEqual({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      changes: { notificationsMuted: false },
+    });
+  });
+
+  it('setNotificationsMuted folds a daemon rejection into {success:false,error} (no throw)', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'not found: agent session', { rpcCode: -32004 }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.setNotificationsMuted({
+      agentId: 'agent-missing',
+      workspaceId: 'ws-1',
+      notificationsMuted: true,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found: agent session');
+  });
+
   it('setReasoningEffort folds a daemon rejection into {success:false,error} (no throw)', async () => {
     backend.onRequest('agent.update', () => {
       throw new BackendError(
@@ -1098,7 +1212,7 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     });
   });
 
-  it('delete keeps the pre-6.7 wire shape byte-identical when undoDelayMs is 0', async () => {
+  it('delete keeps the pre-grace-window wire shape byte-identical when undoDelayMs is 0', async () => {
     backend.onRequest('agent.delete', () => ({ success: true }));
     const client = new LiveAgentsClient();
 
@@ -1207,7 +1321,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
-  it('list sends retiredOnly only when true — omitted when unset or false (§5.5, v8.2)', async () => {
+  it('list sends retiredOnly only when true — omitted when unset or false (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
     const client = new LiveAgentsClient();
 
@@ -1233,7 +1347,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
-  it('listWithMeta surfaces retiredCount and defaults it to 0 when absent (§5.5, v8.2)', async () => {
+  it('listWithMeta surfaces retiredCount and defaults it to 0 when absent (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({
       agents: [{ id: 'agent-active', workspaceId: 'ws-1', name: 'Active', status: 'active' }],
       retiredCount: 3,
@@ -1254,6 +1368,54 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(fallback.retiredCount).toBe(0);
   });
 
+  it('list sends scope only when it names a bin — "all" and absent stay off the wire (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const client = new LiveAgentsClient();
+
+    await client.list('ws-1', { scope: 'topLevel' });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.list',
+      params: { workspaceId: 'ws-1', scope: 'topLevel' },
+    });
+
+    await client.list('ws-1', { scope: 'delegated' });
+    expect(backend.requests[1].params).toEqual({ workspaceId: 'ws-1', scope: 'delegated' });
+
+    await client.list('ws-1', { scope: 'background' });
+    expect(backend.requests[2].params).toEqual({ workspaceId: 'ws-1', scope: 'background' });
+
+    // `all` IS the default read, so it carries no flag.
+    await client.list('ws-1', { scope: 'all' });
+    expect(backend.requests[3].params).toEqual({ workspaceId: 'ws-1' });
+  });
+
+  it('listWithMeta surfaces scopeCounts verbatim and leaves it absent for an older daemon (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: 5, background: 1 },
+    }));
+    const client = new LiveAgentsClient();
+
+    const served = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect(served.scopeCounts).toEqual({ topLevel: 2, delegated: 5, background: 1 });
+
+    // Old daemon: no `scopeCounts` key at all — the field must be ABSENT (not
+    // zeroed) so the hydration saga can tell the two daemons apart.
+    backend.onRequest('agent.list', () => ({ agents: [], retiredCount: 0 }));
+    const legacy = await client.listWithMeta('ws-1', { scope: 'topLevel' });
+    expect('scopeCounts' in legacy).toBe(false);
+
+    // A malformed triple is not healed into zeros either.
+    backend.onRequest('agent.list', () => ({
+      agents: [],
+      retiredCount: 0,
+      scopeCounts: { topLevel: 2, delegated: '5' },
+    }));
+    const malformed = await client.listWithMeta('ws-1');
+    expect(malformed.scopeCounts).toBeUndefined();
+  });
+
   it('list carries retiredAt verbatim on the retired-only read (§5.5 soft retire)', async () => {
     backend.onRequest('agent.list', () => ({
       agents: [
@@ -1271,6 +1433,27 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     const agents = await client.list('ws-1', { retiredOnly: true });
     expect(agents[0]).toMatchObject({ id: 'agent-retired', retiredAt: '2026-08-20T00:00:00.000Z' });
+  });
+
+  it('list carries the wire parentAgentId on delegated rows and leaves it absent on top-level ones (§5.5 row scope)', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'agent-child',
+          workspaceId: 'ws-1',
+          name: 'Child',
+          status: 'idle',
+          parentAgentId: 'agent-parent',
+        },
+        { id: 'agent-parent', workspaceId: 'ws-1', name: 'Parent', status: 'idle' },
+      ],
+      retiredCount: 0,
+    }));
+    const client = new LiveAgentsClient();
+
+    const agents = await client.list('ws-1', { scope: 'delegated' });
+    expect(agents[0]).toMatchObject({ id: 'agent-child', parentAgentId: 'agent-parent' });
+    expect(agents[1].parentAgentId).toBeUndefined();
   });
 
   it('restore forwards agent.restore and folds success/error into a MutationResult (§5.5)', async () => {
@@ -1464,6 +1647,28 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
 
     const agent = await client.get('agent-child');
     expect(agent?.hasUnread).toBe(false);
+  });
+
+  it('carries notificationsMuted verbatim and derives hasUnread: false for a muted agent', async () => {
+    // §5.5 AgentLite serves `notificationsMuted` always (like `isBackground`);
+    // the mute suppresses the per-agent unread dot even with an unseen
+    // assistant message.
+    backend.onRequest('agent.get', () => ({
+      agent: {
+        id: 'agent-muted',
+        workspaceId: 'ws-1',
+        name: 'Muted',
+        status: 'idle',
+        notificationsMuted: true,
+        lastMessageRole: 'assistant',
+        lastMessageId: 'm-9',
+        metadata: { lastSeenMessageId: 'm-5' },
+      },
+    }));
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get('agent-muted');
+    expect(agent).toMatchObject({ notificationsMuted: true, hasUnread: false });
   });
 
   it('derives hasUnread: false when the daemon omits lastMessageId (older daemon)', async () => {
@@ -1700,10 +1905,10 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     expect(backend.requests.map((request) => request.params.limit)).toEqual([4, 2, 1]);
   });
 
-  // ---- §5.5 agent.getMessageBlock (v7.2 slim-hydration counterpart) ------
+  // ---- §5.5 agent.getMessageBlock (slim-projection hydration counterpart) --
 
   it('getMessageBlock forwards agentId/messageId/blockId and returns the full block', async () => {
-    // PROTOCOL §5.5 v7.2: { block } — the full, unprojected body (no
+    // PROTOCOL §5.5 `agent.getMessageBlock`: { block } — the full, unprojected body (no
     // *Truncated/*Bytes flags on the returned block).
     backend.onRequest('agent.getMessageBlock', () => ({
       block: {
@@ -1759,7 +1964,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
   });
 
   describe('listUserMessages', () => {
-    // PROTOCOL §5.5 (v7.3): `agent.listUserMessages` returns every user-role
+    // PROTOCOL §5.5: `agent.listUserMessages` returns every user-role
     // message as lightweight index items, oldest→newest, unpaged —
     // `{ agentId, items: [{ id, preview, createdAt, metadata? }], total }`.
     it('forwards agent.listUserMessages with agentId only and returns the typed index', async () => {
@@ -1822,7 +2027,7 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
 
     it('marks an old daemon lacking the method as unsupported (no throw)', async () => {
-      // -32601 = Method not found: the daemon predates protocol v7.3. The
+      // -32601 = Method not found: the daemon lacks `agent.listUserMessages`. The
       // typed failure lets the navigator degrade to tail-only items.
       backend.onRequest('agent.listUserMessages', () => {
         throw new BackendError(

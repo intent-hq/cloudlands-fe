@@ -41,6 +41,108 @@ describe('message-dedup utility', () => {
     ]);
   });
 
+  it("does not carry a settled local row's provisional marker onto the canonical row it merges into", () => {
+    const local = makeAssistant('local-id', 'final', {
+      appMessageId: 'app_msg_prov',
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const backend = makeAssistant('msg_backend', 'final', { appMessageId: 'app_msg_prov' });
+
+    const [merged] = deduplicateAgentMessages([local, backend]);
+    expect(merged.id).toBe('msg_backend');
+    expect(merged).not.toHaveProperty('provisional');
+  });
+
+  it('drops the provisional marker when a canonical row merges into a provisional row that keeps identity', () => {
+    const settledLocally = makeAssistant('msg_firehose', 'final', {
+      turnNumber: 3,
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const canonical = makeAssistant('msg_transcript', 'final', { turnNumber: 3 });
+
+    const [merged] = deduplicateAgentMessages([settledLocally, canonical]);
+    expect(merged.id).toBe('msg_firehose');
+    expect(merged).not.toHaveProperty('provisional');
+  });
+
+  it('keeps the provisional marker when a settled provisional row merges with a streaming row', () => {
+    const streaming = makeAssistant('msg_stream', 'final', { turnNumber: 3, isStreaming: true });
+    const settledLocally = makeAssistant('msg_settled', 'final', {
+      turnNumber: 3,
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+
+    const [merged] = deduplicateAgentMessages([streaming, settledLocally]);
+    expect(merged.id).toBe('msg_settled');
+    expect(merged.provisional).toBe(true);
+  });
+
+  it('keeps the provisional marker when the losing row is still live via streamingComplete:false', () => {
+    const settledLocally = makeAssistant('msg_local', 'final', {
+      appMessageId: 'app_msg_live',
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const liveAlias = makeAssistant('live-alias', 'final', {
+      appMessageId: 'app_msg_live',
+      streamingComplete: false,
+    });
+
+    const [merged] = deduplicateAgentMessages([settledLocally, liveAlias]);
+    expect(merged.id).toBe('msg_local');
+    expect(merged.provisional).toBe(true);
+  });
+
+  it('keeps the provisional marker when a near-duplicate merge retains the provisional row content', () => {
+    const partial = 'a'.repeat(220);
+    const settledLocally = makeAssistant('msg_firehose', partial, {
+      turnNumber: 3,
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const canonical = makeAssistant('msg_transcript', `${partial} the end.`, { turnNumber: 3 });
+
+    const [merged] = deduplicateAgentMessages([settledLocally, canonical]);
+    expect(merged.id).toBe('msg_firehose');
+    expect(computeMessageContentHash(merged)).not.toBe(computeMessageContentHash(canonical));
+    expect(merged.provisional).toBe(true);
+  });
+
+  it('keeps the provisional marker when fingerprints match but the retained blocks differ', () => {
+    const toolResult = (isError: boolean) => ({
+      type: 'tool_result' as const,
+      id: 'tool-result-1',
+      tool_use_id: 'call-1',
+      output: 'done',
+      is_error: isError,
+    });
+    const settledLocally = makeAssistant('msg_firehose', '', {
+      turnNumber: 3,
+      contentBlocks: [toolResult(false)],
+      isStreaming: false,
+      streamingComplete: true,
+      provisional: true,
+    });
+    const canonical = makeAssistant('msg_transcript', '', {
+      turnNumber: 3,
+      contentBlocks: [toolResult(true)],
+    });
+
+    const [merged] = deduplicateAgentMessages([settledLocally, canonical]);
+    expect(merged.id).toBe('msg_firehose');
+    expect(computeMessageContentHash(merged)).toBe(computeMessageContentHash(canonical));
+    expect(merged.contentBlocks).toEqual([toolResult(false)]);
+    expect(merged.provisional).toBe(true);
+  });
+
   it('merges an optimistic user message into the canonical one without duplicating', () => {
     const optimistic: AgentMessage = {
       id: 'optimistic_abc',

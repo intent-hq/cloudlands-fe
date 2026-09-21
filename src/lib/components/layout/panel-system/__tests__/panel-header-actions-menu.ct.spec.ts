@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
-import type { Locator } from '@playwright/test';
+import { expect, test } from '../../../../../test/ct-test';
+import type { Locator, Page } from '@playwright/test';
 import type { PanelTabType } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { SHORTCUTS, formatShortcut } from '$lib/utils/shortcuts';
 import PanelHeaderActionsHost from './mocks/PanelHeaderActionsHost.svelte';
@@ -16,11 +16,109 @@ async function waitForMenuFocusReady(menu: Locator) {
   });
 }
 
+async function openAgentPanelMenu(component: Locator, page: Page) {
+  const trigger = component.locator(
+    '[data-panel-tabless-header] [data-testid="panel-actions-trigger"]',
+  );
+  await trigger.click();
+  const menu = page.locator('[data-slot="menu-content"]');
+  await expect(menu).toBeVisible();
+  await waitForMenuFocusReady(menu);
+  const subtrigger = menu.getByRole('menuitem', { name: /Open in/ });
+  await expect(subtrigger).toBeVisible();
+  return { trigger, menu, subtrigger };
+}
+
+test.describe('Open in submenu', () => {
+  test('opens and exposes the copy path action', async ({ mount, page }) => {
+    const component = await mount(PanelHeaderActionsHost, {
+      props: { panelType: 'agent', width: 560, zoom: 1 },
+    });
+    const { subtrigger } = await openAgentPanelMenu(component, page);
+
+    await subtrigger.hover();
+    const submenu = page.locator('[data-slot="menu-sub-content"]');
+    await expect(subtrigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(submenu).toBeVisible();
+    await expect(submenu.getByRole('menuitem', { name: 'Copy Absolute Path' })).toBeVisible();
+  });
+
+  test('supports arrow-key navigation into and out of the submenu', async ({ mount, page }) => {
+    const component = await mount(PanelHeaderActionsHost, {
+      props: { panelType: 'agent', width: 560, zoom: 1 },
+    });
+    const { subtrigger } = await openAgentPanelMenu(component, page);
+
+    await subtrigger.focus();
+    await page.keyboard.press('ArrowRight');
+    const submenu = page.locator('[data-slot="menu-sub-content"]');
+    await expect(submenu).toBeVisible();
+    await waitForMenuFocusReady(submenu);
+    await expect(submenu.getByRole('menuitem').first()).toBeFocused();
+
+    await page.keyboard.press('ArrowLeft');
+    await expect(submenu).toBeHidden();
+    await expect(subtrigger).toBeFocused();
+    await expect(subtrigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('copies the resolved absolute path and closes the menu', async ({ mount, page }) => {
+    const resolvedPath = '.';
+    await page.evaluate(() => {
+      const testWindow = window as typeof window & { copiedPanelPath?: string };
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: async (value: string) => {
+            testWindow.copiedPanelPath = value;
+          },
+        },
+      });
+    });
+    const component = await mount(PanelHeaderActionsHost, {
+      props: { panelType: 'agent', width: 560, zoom: 1 },
+    });
+    const { trigger, menu, subtrigger } = await openAgentPanelMenu(component, page);
+
+    await subtrigger.press('ArrowRight');
+    const copy = page.getByRole('menuitem', { name: 'Copy Absolute Path' });
+    await expect(copy).toBeVisible();
+    await copy.click();
+
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as typeof window & { copiedPanelPath?: string }).copiedPanelPath,
+        ),
+      )
+      .toBe(resolvedPath);
+    await expect(menu).toBeHidden();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('restores focus to the panel actions trigger after dismissal', async ({ mount, page }) => {
+    const component = await mount(PanelHeaderActionsHost, {
+      props: { panelType: 'agent', width: 560, zoom: 1 },
+    });
+    const { trigger, menu, subtrigger } = await openAgentPanelMenu(component, page);
+
+    await subtrigger.focus();
+    await page.keyboard.press('ArrowRight');
+    const submenu = page.locator('[data-slot="menu-sub-content"]');
+    await expect(submenu).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await expect(submenu).toBeHidden();
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+});
+
 for (const [index, panelType] of panelTypes.entries()) {
   test(`keeps the ${panelType} panel menu portalled and operable at narrow 200% zoom`, async ({
     mount,
     page,
-  }) => {
+  }, testInfo) => {
     const stackCount = stackCounts[index % 3];
     const component = await mount(PanelHeaderActionsHost, {
       props: { panelType, width: 240, zoom: 2, stackCount },
@@ -50,7 +148,7 @@ for (const [index, panelType] of panelTypes.entries()) {
     expect(actionGeometry.borderBottomWidth).toBe('0px');
     expect(actionGeometry.trigger).toEqual(['28px', '28px']);
     expect(actionGeometry.close).toEqual(['28px', '28px']);
-    expect(actionGeometry.closeGlyph).toEqual(['14px', '14px']);
+    expect(actionGeometry.closeGlyph).toEqual(['16px', '16px']);
     await expect(contentActions.locator('[data-panel-content-actions-divider]')).toHaveCount(0);
     await expect(panelControls.locator('[data-panel-controls-divider]')).toHaveCount(1);
     expect(
@@ -76,14 +174,42 @@ for (const [index, panelType] of panelTypes.entries()) {
       await expect(agentAvatar).toHaveAttribute('data-avatar-variant', 'emphasized');
     }
 
-    const identity = header.locator(
-      panelType === 'agent' ? '[data-panel-agent-header-identity]' : '[data-panel-header-identity]',
-    );
-    const identityBox = await identity.boundingBox();
-    const panelControlsBox = await panelControls.boundingBox();
-    expect(identityBox).not.toBeNull();
-    expect(panelControlsBox).not.toBeNull();
-    expect(identityBox!.x + identityBox!.width).toBeLessThanOrEqual(panelControlsBox!.x + 0.5);
+    const layout = await header.evaluate((node) => {
+      const header = node.getBoundingClientRect();
+      const identity = node
+        .querySelector('[data-panel-agent-header-identity], [data-panel-header-identity]')!
+        .getBoundingClientRect();
+      const controls = node.querySelector('[data-panel-header-actions]')!.getBoundingClientRect();
+      return {
+        header: header.toJSON(),
+        identity: identity.toJSON(),
+        controls: controls.toJSON(),
+        // Agent actions may occupy a second row at the editing-width minimum.
+        noCollision:
+          identity.right <= controls.left ||
+          controls.right <= identity.left ||
+          identity.bottom <= controls.top ||
+          controls.bottom <= identity.top,
+        contained: [identity, controls].every(
+          (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left >= header.left &&
+            rect.right <= header.right &&
+            rect.top >= header.top &&
+            rect.bottom <= header.bottom,
+        ),
+      };
+    });
+    await testInfo.attach('narrow-header-geometry', {
+      body: JSON.stringify(layout),
+      contentType: 'application/json',
+    });
+    await testInfo.attach('narrow-header', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    expect(layout).toMatchObject({ noCollision: true, contained: true });
     if (panelType === 'agent') {
       await expect(header.locator('[data-pane-stack]')).toHaveCount(0);
       await expect(component.locator('[data-pane-stack-layer]')).toHaveCount(0);
@@ -201,7 +327,7 @@ for (const scenario of [
 
     const geometry = await menu.evaluate((node) => {
       const item = node.querySelector<HTMLElement>('[data-slot="menu-command-item"]')!;
-      const label = item.querySelector<HTMLElement>(':scope > span')!;
+      const label = item.querySelector<HTMLElement>(':scope > span.truncate')!;
       const shortcut = item.querySelector<HTMLElement>('kbd')!;
       const box = node.getBoundingClientRect();
       return {
@@ -243,7 +369,7 @@ test('keeps the agent actions menu compact at desktop width', async ({ mount, pa
   await trigger.click();
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button', { name: 'Copy Absolute Path' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: /Open in/ })).toBeVisible();
 
   const geometry = await menu.evaluate((node) => {
     const box = node.getBoundingClientRect();
@@ -373,6 +499,12 @@ test('keeps the header flat and the complete selector operable at wide width', a
   const menu = page.getByRole('menu', { name: 'Panes in this stack' });
   const above = menu.getByRole('menuitem', { name: 'Open panel above' });
   const below = menu.getByRole('menuitem', { name: 'Open panel below' });
+  const labelOrigins = await menu
+    .locator('[data-slot="menu-item-leading"] + span')
+    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().left));
+  expect(Math.max(...labelOrigins) - Math.min(...labelOrigins)).toBeLessThanOrEqual(1);
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
   await expect(above).toHaveAttribute('aria-disabled', 'true');
   await expect(below).not.toHaveAttribute('aria-disabled', 'true');
   await expect(above).toContainText(formatShortcut(SHORTCUTS.PREVIOUS_PANE.key));

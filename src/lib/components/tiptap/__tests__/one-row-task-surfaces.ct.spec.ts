@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import OneRowTaskSurfaceHarness from './OneRowTaskSurfaceHarness.svelte';
 
 for (const zoom of [1, 2]) {
@@ -122,7 +122,7 @@ for (const zoom of [1, 2]) {
       expect(selectedRowStyle.boxShadow).toBe('none');
 
       const longRow = rows.filter({ hasText: 'A very long assigned task title' });
-      const longTitle = longRow.locator('[data-task-row-title]');
+      const longTitle = longRow.locator('[data-task-row-title] [data-slot="button-label"]');
       const agentControl = longRow.locator('[data-task-agent-indicator]');
       await expect(longTitle).toHaveCSS('text-overflow', 'ellipsis');
       expect(await longTitle.evaluate((node) => node.scrollWidth > node.clientWidth)).toBeTruthy();

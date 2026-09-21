@@ -115,8 +115,8 @@ vi.mock('svelte/easing', () => ({
 }));
 
 // Mock sonner toast
-vi.mock('svelte-sonner', () => ({
-  toast: {
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: {
     error: vi.fn(),
     success: vi.fn(),
   },
@@ -137,7 +137,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 
 import SetupScriptBanner from '../SetupScriptBanner.svelte';
 import type { WorkspaceSetupScript } from '$lib/client/app-client';
-import { toast } from 'svelte-sonner';
+import { notify } from '$lib/components/patterns/notify';
 
 describe('SetupScriptBanner wire contract', () => {
   beforeEach(() => {
@@ -270,8 +270,8 @@ describe('SetupScriptBanner wire contract', () => {
         expect.objectContaining({ content: expect.stringContaining('pnpm install') }),
       );
     });
-    expect(toast.success).toHaveBeenCalled();
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(notify.success).toHaveBeenCalled();
+    expect(notify.error).not.toHaveBeenCalled();
   });
 
   it('shows an error and does not claim success when the workspace has no repo path', async () => {
@@ -283,9 +283,9 @@ describe('SetupScriptBanner wire contract', () => {
     await expandAndSave(result);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalled();
+      expect(notify.error).toHaveBeenCalled();
     });
     expect(recordLastUsedMock).not.toHaveBeenCalled();
-    expect(toast.success).not.toHaveBeenCalled();
+    expect(notify.success).not.toHaveBeenCalled();
   });
 });

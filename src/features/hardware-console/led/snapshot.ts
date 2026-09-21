@@ -13,9 +13,8 @@
 
 import { AgentStatus, type Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
-import { AgentActivationState } from '$shared/types/agent-session';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
-import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
+import { sessionHasPendingQuestion } from '$lib/components/chat/questions/pending-questions';
 import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
@@ -49,49 +48,6 @@ export interface LedSnapshotState {
   daemonHealth?: { health: DaemonHealth };
 }
 
-/**
- * Mirror of the canonical `isActiveAgentThread` gate in
- * agent-session-selectors.ts (kept local so this middleware-reachable module
- * imports no selectors). Gates the pending-question derivation exactly like
- * the wizard: a question only pends once the agent's own turn ended.
- */
-function isAgentTurnActive(session: StoredAgentSession): boolean {
-  const status = session.status as AgentStatus;
-  if (
-    status === AgentStatus.Completed ||
-    status === AgentStatus.Error ||
-    status === AgentStatus.Deleted
-  ) {
-    return false;
-  }
-  return (
-    session.isProcessing === true ||
-    session.isStreaming === true ||
-    session.isResponding === true ||
-    session.isWaitingOnTool === true ||
-    session.activationState === AgentActivationState.ACTIVATING ||
-    status === AgentStatus.Active ||
-    status === AgentStatus.Processing ||
-    status === AgentStatus.Waiting
-  );
-}
-
-/** Whether a session has a pending Q&A wizard question (dismissal-gated). */
-function hasPendingQuestion(session: StoredAgentSession): boolean {
-  // This hardware path sees only the session tail, not panel history or its
-  // recovery projection. An off-page marker can return false here while the
-  // panel stays fail-closed; workspace hardware state still uses displayStatus.
-  const pending = derivePendingQuestions(
-    session.messages ?? [],
-    isAgentTurnActive(session),
-    false,
-    session.metadata?.pendingQuestionsMessageId,
-  );
-  if (!pending) return false;
-  const dismissedId = session.metadata?.dismissedQuestionsMessageId;
-  return !(typeof dismissedId === 'string' && dismissedId === pending.messageId);
-}
-
 /** Blocked = a pending `blocker` attention request (spec orange palette row). */
 function isBlocked(session: StoredAgentSession): boolean {
   return getAgentAttentionRequest(session)?.kind === 'blocker';
@@ -99,7 +55,9 @@ function isBlocked(session: StoredAgentSession): boolean {
 
 /** Attention = pending question or discussion request (spec yellow palette row). */
 function needsAttention(session: StoredAgentSession): boolean {
-  return getAgentAttentionRequest(session)?.kind === 'discussion' || hasPendingQuestion(session);
+  return (
+    getAgentAttentionRequest(session)?.kind === 'discussion' || sessionHasPendingQuestion(session)
+  );
 }
 
 function hasFailed(session: StoredAgentSession): boolean {

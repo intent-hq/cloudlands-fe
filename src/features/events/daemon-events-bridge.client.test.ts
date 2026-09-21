@@ -86,6 +86,7 @@ const { ensureAgentSessionSpy, refreshAgentSessionAfterEventSpy } = vi.hoisted((
 vi.mock('$features/agent/agent-read-service', () => ({
   ensureAgentSession: ensureAgentSessionSpy,
   refreshAgentSessionAfterEvent: refreshAgentSessionAfterEventSpy,
+  notePendingQuestionMarkerProjection: vi.fn(),
   createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
@@ -206,8 +207,17 @@ import { lifecycleReadSaga } from '$store/renderer/slices/workspace-lifecycle/sa
 import {
   bulkUpsertSessions,
   clearAllSessions,
+  replaceMessages,
+  setProcessQueueHint,
+  updateSession,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import type { AgentStreamUpdatePayload } from '$store/renderer/slices/workspace-agents/workspace-agents-stream-slice';
+import {
+  clearAllStandingChatSubscriptions,
+  markStandingChatSubscription,
+} from '$features/agent/utils/chat-subscription-registry';
+import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { selectEnabledProviderIds } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import {
@@ -267,8 +277,12 @@ import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/sl
 import {
   setAgents,
   setRetiredCount,
+  setScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { selectRetiredCount } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import {
+  selectRetiredCount,
+  selectScopeCounts,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -315,9 +329,9 @@ function notificationWithSub(
   };
 }
 
-function readSession(): AgentSession | undefined {
+function readSession(): StoredAgentSession | undefined {
   const state = appStore.state as {
-    agentSessions?: { byAgentId: Record<string, AgentSession> };
+    agentSessions?: { byAgentId: Record<string, StoredAgentSession> };
   };
   return state.agentSessions?.byAgentId[AGENT];
 }
@@ -328,6 +342,8 @@ function readAssistantMessages(): AgentMessage[] {
 
 const WS = 'ws-bridge-1';
 const AGENT = 'agent-bridge-1';
+/** The hydration read's wire params (§5.5 row scope: the top-level bin). */
+const TOP_LEVEL_LIST = { workspaceId: WS, scope: 'topLevel' };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const stopRouterDependencies: Array<() => void> = [];
 
@@ -339,6 +355,54 @@ function inheritedPropertyDescriptor(target: object, key: PropertyKey): Property
     prototype = Object.getPrototypeOf(prototype);
   }
   throw new Error(`Missing inherited property descriptor for ${String(key)}`);
+}
+
+/**
+ * Capture every `agentStreamUpdateReceived` the bridge dispatches. The
+ * firehose is BOOKKEEPING-ONLY (transcript content comes from the standing
+ * chat.subscribe stream), so no captured payload may carry `contentBlocks`.
+ * Call `restoreDispatch()` in `afterEach` so the override never leaks.
+ */
+const capturedStreamUpdates: AgentStreamUpdatePayload[] = [];
+function captureStreamUpdates(): void {
+  capturedStreamUpdates.length = 0;
+  const realDispatch = inheritedPropertyDescriptor(appStore, 'dispatch').get!.call(appStore);
+  Object.defineProperty(appStore, 'dispatch', {
+    get() {
+      return (action: { type?: string; payload?: unknown[] }) => {
+        if (action?.type === 'workspaceAgents/agentStreamUpdateReceived') {
+          capturedStreamUpdates.push(action.payload![0] as AgentStreamUpdatePayload);
+        }
+        return realDispatch(action);
+      };
+    },
+    configurable: true,
+  });
+}
+function restoreDispatch(): void {
+  Object.defineProperty(appStore, 'dispatch', inheritedPropertyDescriptor(appStore, 'dispatch'));
+}
+function expectNoContentOnStreamDispatches(): void {
+  expect(capturedStreamUpdates.length).toBeGreaterThan(0);
+  for (const payload of capturedStreamUpdates) {
+    expect(payload).not.toHaveProperty('contentBlocks');
+  }
+}
+
+/** Seed the assistant row exactly as the standing chat.subscribe stream leaves it (§7.1). */
+function seedSubscriptionOwnedAssistant(messageId: string, contentBlocks: unknown[]): void {
+  appStore.dispatch(
+    replaceMessages(AGENT, [
+      {
+        id: messageId,
+        role: 'assistant',
+        timestamp: '2026-01-02T00:00:00.000Z',
+        isStreaming: true,
+        streamingComplete: false,
+        contentBlocks,
+      } as unknown as AgentMessage,
+    ]),
+  );
 }
 
 beforeAll(() => {
@@ -572,10 +636,15 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
       isStreaming: true,
       isProcessing: true,
       isResponding: true,
-      liveTurnOpen: true,
-      liveTurnOpenedAt: '2026-01-01T12:00:00.000Z',
-      processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
-    } as Partial<AgentSession>);
+    });
+    // FE-owned fields never ride the wire snapshot; set them the way
+    // production does (reducer actions), not via the upsert fixture.
+    appStore.dispatch(
+      updateSession(AGENT, { liveTurnOpen: true, liveTurnOpenedAt: '2026-01-01T12:00:00.000Z' }),
+    );
+    appStore.dispatch(setProcessQueueHint(AGENT, 3, 3, 'slots'));
+    expect(readSession()?.liveTurnOpen).toBe(true);
+    expect(readSession()?.processQueueHint?.waiting).toBe(true);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -604,6 +673,103 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(session?.status).toBe(AgentStatus.RuntimeIdle);
     // The canonical Thinking driver is genuinely resolved.
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  // Prompt turns: the daemon's turn-start budget re-check queues the agent
+  // AFTER the send path already flipped isStreaming (chatSendStarted), and a
+  // prompt turn never emits agent:stream:start — so if agent:process:resumed
+  // is lost, only stream evidence can retire the hint.
+  describe('a queue hint set after chatSendStarted (prompt turn) is retired by stream evidence', () => {
+    const queueAfterSend = () => {
+      seedSession({ status: AgentStatus.Active });
+      appStore.dispatch(chatSendStarted(AGENT, WS));
+      expect(readSession()?.isStreaming).toBe(true);
+      appStore.dispatch(setProcessQueueHint(AGENT, 2, 8, 'memory-budget'));
+      expect(readSession()?.processQueueHint).toEqual({
+        waiting: true,
+        used: 2,
+        cap: 8,
+        reason: 'memory-budget',
+      });
+    };
+
+    it('agent:tool:call clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:tool:call', {
+          agentId: AGENT,
+          toolName: 'Read',
+          toolKind: 'file',
+          toolCallId: 't1',
+          input: { path: 'src/lib.rs' },
+          status: 'started',
+          messageId: MESSAGE_ID,
+          blockIndex: 1,
+          blockId: `${MESSAGE_ID}:1`,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+      expect(readSession()?.isStreaming).toBe(true);
+    });
+
+    it('agent:stream:chunk clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:stream:chunk', {
+          agentId: AGENT,
+          messageId: MESSAGE_ID,
+          blockIndex: 0,
+          blockId: `${MESSAGE_ID}:0`,
+          blockType: 'text',
+          content: 'Hello',
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+    });
+
+    it('agent:stream:status clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:stream:status', {
+          agentId: AGENT,
+          workspaceId: WS,
+          phase: 'prompt',
+          message: 'Sent prompt…',
+          level: 'info',
+          timestamp: 1_700_000_000_000,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+    });
+
+    it('a canonical agent:status-changed tick carrying isResponding alone keeps the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:status-changed', {
+          agentId: AGENT,
+          status: 'responding',
+          isActive: true,
+          isResponding: true,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint?.waiting).toBe(true);
+    });
   });
 
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {
@@ -733,16 +899,25 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    // The chat panel holds the standing chat.subscribe registration (§7.1):
+    // the subscription owns the row's CONTENT, the firehose only bookkeeping.
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
-  it('accumulates agent:stream:chunk into a live assistant message and finalizes on stream:end + idle', async () => {
+  it('agent:stream:chunk never writes text — the subscription-owned row is untouched and stream:end + idle finalize it', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Hello' },
+    ]);
 
-    // Two consecutive text chunks at the same blockIndex must coalesce into a
-    // single text block, mirroring the BE's Transcript.push_text behaviour.
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -754,16 +929,6 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
         streamId: STREAM_ID,
       }),
     );
-
-    let assistantMessages = readAssistantMessages();
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
-    expect(assistantMessages[0].isStreaming).toBe(true);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Hello ',
-    });
-
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -776,12 +941,16 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
 
-    assistantMessages = readAssistantMessages();
+    // Bookkeeping-only: no chunk dispatch carries blocks, so the row keeps
+    // exactly the text the §7.1 stream last wrote (no firehose-built "Hello world").
+    expectNoContentOnStreamDispatches();
+    let assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Hello world',
-    });
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].isStreaming).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Hello' },
+    ]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
     handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
@@ -806,6 +975,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Hello' },
+    ]);
 
     handler(
       notification('agent:idle', {
@@ -818,23 +990,16 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     );
 
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expectNoContentOnStreamDispatches();
   });
 
-  it('renders agent:tool:call as tool_use + tool_result blocks after the tool completes', async () => {
+  it('agent:tool:call ticks never write tool_use / tool_result blocks — only the status hint and the terminal flags land', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Looking' },
+    ]);
 
-    handler(
-      notification('agent:stream:chunk', {
-        agentId: AGENT,
-        content: 'Looking',
-        messageId: MESSAGE_ID,
-        blockIndex: 0,
-        blockId: `${MESSAGE_ID}:0`,
-        blockType: 'text',
-        streamId: STREAM_ID,
-      }),
-    );
     handler(
       notification('agent:tool:call', {
         agentId: AGENT,
@@ -848,15 +1013,6 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
         blockId: `${MESSAGE_ID}:1`,
       }),
     );
-
-    let blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(['text', 'tool_use']);
-    expect(blocks[1]).toMatchObject({
-      type: 'tool_use',
-      toolCallId: 't1',
-      name: 'Read',
-    });
-
     handler(
       notification('agent:tool:call', {
         agentId: AGENT,
@@ -872,9 +1028,13 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
 
-    blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(['text', 'tool_use', 'tool_result']);
-    expect(blocks[2]).toMatchObject({ type: 'tool_result', tool_use_id: 't1', output: 'ok' });
+    // The §7.1 stream delivers tool_use/tool_result; the firehose tick must
+    // not synthesize either onto the row.
+    expectNoContentOnStreamDispatches();
+    expect(readAssistantMessages()[0]?.contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Looking' },
+    ]);
+    expect(readStatusEvents().map((e) => e.phase)).toEqual(['tool-call', 'tool-waiting']);
 
     handler(notification('agent:stream:end', { agentId: AGENT, streamId: STREAM_ID }));
     handler(
@@ -970,13 +1130,14 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
   // fields default to empty (`toolName: ""`, `toolKind: "other"`, `input: null`)
   // — only `status` (and sometimes `output`) is authoritative on updates.
   // Mirroring the daemon-side `record_tool` (crates/intent-services/agent_session.rs),
-  // which only patches `metadata.status` on repeated `toolCallId`s, the FE
-  // bridge must preserve the initial name/input/toolKind so the classifier
-  // keeps rendering a rich label instead of falling through to the generic
-  // "Run" row (bug 19).
-  it('preserves the initial name/input/toolKind when a tool_call_update event omits them', async () => {
+  // which only patches `metadata.status` on repeated `toolCallId`s, the bridge
+  // recognises the progress-only ticks as the SAME tool: the status hint
+  // opens once on `started` and closes once on `completed` — no duplicate
+  // "Calling tool" entries and no content written to the row (bug 19).
+  it('recognises progress-only tool_call_update ticks as the same tool — one status-hint open/close, no row writes', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, []);
 
     handler(
       notification('agent:tool:call', {
@@ -1025,20 +1186,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
 
-    const blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(['tool_use', 'tool_result']);
-    expect(blocks[0]).toMatchObject({
-      type: 'tool_use',
-      toolCallId: 't1',
-      name: 'Read',
-      input: { path: 'src/lib.rs' },
-      metadata: { toolKind: 'file', status: 'completed' },
-    });
-    expect(blocks[1]).toMatchObject({
-      type: 'tool_result',
-      tool_use_id: 't1',
-      output: 'ok',
-    });
+    expectNoContentOnStreamDispatches();
+    expect(readAssistantMessages()[0]?.contentBlocks).toEqual([]);
+    expect(readStatusEvents().map((e) => e.phase)).toEqual(['tool-call', 'tool-waiting']);
   });
 
   it('does not duplicate the assistant message when getConversation hydration follows the live stream', async () => {
@@ -1094,6 +1244,9 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
   it('agent:failed finalizes the in-flight stream and clears the spinner', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Working' },
+    ]);
 
     handler(
       notification('agent:stream:chunk', {
@@ -1119,7 +1272,11 @@ describe('daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(assistant).toBeDefined();
     expect(assistant.isStreaming).toBe(false);
     expect(assistant.streamingComplete).toBe(true);
+    expect(assistant.contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Working' },
+    ]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+    expectNoContentOnStreamDispatches();
   });
 
   it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next chunk → cleared on stream:end/idle", async () => {
@@ -1750,9 +1907,16 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     capturedHandlers.length = 0;
     // A wake turn starts from a fully idle session — no send set any flags.
     seedSession({ status: AgentStatus.Idle, isStreaming: false, isProcessing: false });
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
   function streamStart(handler: (n: { method: string; params?: unknown }) => void): void {
     handler(
@@ -1782,18 +1946,24 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     const userMessages = (session?.messages ?? []).filter((m) => m.role === 'user');
     expect(userMessages).toHaveLength(0);
 
-    // The in-flight assistant placeholder exists under the wake messageId.
+    // The in-flight assistant placeholder exists under the wake messageId —
+    // EMPTY content: the §7.1 stream fills it and replaces it by id.
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
     expect(assistantMessages[0].isStreaming).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
+    expectNoContentOnStreamDispatches();
   });
 
-  it('grows the wake turn live on subsequent chunks and finalizes on stream:end + idle', async () => {
+  it('chunks after the wake start never write content — the subscription fills the wake row; stream:end + idle finalize it', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     streamStart(handler);
+    seedSubscriptionOwnedAssistant(WAKE_MESSAGE_ID, [
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking up: child finished.' },
+    ]);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -1817,13 +1987,13 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
       }),
     );
 
+    expectNoContentOnStreamDispatches();
     let assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Waking up: child finished.',
-    });
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking up: child finished.' },
+    ]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
     handler(
@@ -1850,6 +2020,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking up: child finished.' },
+    ]);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
@@ -1858,6 +2031,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     const handler = capturedHandlers[0]!;
 
     streamStart(handler);
+    seedSubscriptionOwnedAssistant(WAKE_MESSAGE_ID, [
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Partial wake…' },
+    ]);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -1880,10 +2056,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
 
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Partial wake…',
-    });
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Partial wake…' },
+    ]);
     expect(assistantMessages[0].metadata).toMatchObject({
       interrupted: true,
       stopReason: 'interrupted',
@@ -1891,13 +2066,15 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
       true,
     );
+    expectNoContentOnStreamDispatches();
   });
 
   it('finalizes a stale prior-turn accumulator (old message stops streaming) and primes a fresh slot under the wake messageId', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // A previous turn left chunks in the accumulator (no stream:end arrived).
+    // A previous turn left chunks in the accumulator (no stream:end arrived);
+    // the §7.1 stream had written that turn's row.
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -1909,6 +2086,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
         streamId: STREAM_ID,
       }),
     );
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'old turn' },
+    ]);
 
     streamStart(handler);
     handler(
@@ -1923,9 +2103,12 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
       }),
     );
 
+    // The fresh slot is an empty placeholder under the wake messageId; the
+    // chunk that followed wrote no content into it.
     const wakeMessage = readAssistantMessages().find((m) => m.id === WAKE_MESSAGE_ID);
     expect(wakeMessage).toBeDefined();
-    expect(wakeMessage!.contentBlocks?.[0]).toMatchObject({ type: 'text', text: 'fresh wake' });
+    expect(wakeMessage!.isStreaming).toBe(true);
+    expect(wakeMessage!.contentBlocks).toEqual([]);
 
     // The stale prior-turn message is finalized as-is (mirrors stream:end's
     // different-turn path) instead of staying isStreaming until reconcile.
@@ -1933,7 +2116,10 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     expect(oldMessage).toBeDefined();
     expect(oldMessage!.isStreaming).toBe(false);
     expect(oldMessage!.streamingComplete).toBe(true);
-    expect(oldMessage!.contentBlocks?.[0]).toMatchObject({ type: 'text', text: 'old turn' });
+    expect(oldMessage!.contentBlocks).toEqual([
+      { type: 'text', id: `${MESSAGE_ID}:0`, text: 'old turn' },
+    ]);
+    expectNoContentOnStreamDispatches();
   });
 
   it('a duplicate agent:stream:start for the same messageId is a no-op (no mid-turn statusEvents/timer reset)', async () => {
@@ -1949,6 +2135,9 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
         timestamp: 1000,
       }),
     );
+    seedSubscriptionOwnedAssistant(WAKE_MESSAGE_ID, [
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking…' },
+    ]);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -1966,17 +2155,16 @@ describe('daemonEventsBridge (spontaneous streams — agent:stream:start opens t
     // At-least-once delivery (e.g. across a reconnect) replays the start event.
     streamStart(handler);
 
-    // Busy state stays open, streamed content survives, and the mid-turn
-    // status/timer state is NOT wiped by a second chatSendStarted.
+    // Busy state stays open, the subscription-written content survives, and
+    // the mid-turn status/timer state is NOT wiped by a second chatSendStarted.
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
     expect(readStatusEvents()).toEqual(statusEventsBefore);
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(WAKE_MESSAGE_ID);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Waking…',
-    });
+    expect(assistantMessages[0].contentBlocks).toEqual([
+      { type: 'text', id: `${WAKE_MESSAGE_ID}:0`, text: 'Waking…' },
+    ]);
   });
 
   it('ignores malformed agent:stream:start payloads (missing agentId or missing/empty messageId)', async () => {
@@ -2401,12 +2589,40 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
-  /** Stream two text chunks + a completed tool call into the bridge. */
+  /** The in-flight row exactly as the §7.1 stream wrote it for the partial turn. */
+  const PARTIAL_TURN_BLOCKS = [
+    { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial ' },
+    {
+      type: 'tool_use',
+      id: `${MESSAGE_ID}:1`,
+      name: 'Read',
+      toolCallId: 't-int',
+      input: { path: 'src/lib.rs' },
+      metadata: { toolKind: 'file', status: 'completed' },
+    },
+    { type: 'tool_result', id: `${MESSAGE_ID}:2`, tool_use_id: 't-int', output: 'ok' },
+    { type: 'text', id: `${MESSAGE_ID}:3`, text: 'answer' },
+  ];
+
+  /**
+   * Stream two text chunks + a completed tool call into the bridge while the
+   * standing subscription writes the same partial turn into the row. The
+   * firehose ticks are bookkeeping-only; the seeded blocks are the content
+   * whose survival the interrupt paths below are asserted on.
+   */
   function streamPartialTurn(handler: (n: { method: string; params?: unknown }) => void): void {
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, PARTIAL_TURN_BLOCKS);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -2447,10 +2663,8 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
 
   const expectPartialBlocksIntact = (message: AgentMessage | undefined): void => {
     expect(message).toBeDefined();
-    const blocks = message!.contentBlocks ?? [];
-    expect(blocks.map((b) => b.type)).toEqual(['text', 'tool_use', 'tool_result', 'text']);
-    expect(blocks[0]).toMatchObject({ type: 'text', text: 'Partial ' });
-    expect(blocks[3]).toMatchObject({ type: 'text', text: 'answer' });
+    expect(message!.contentBlocks).toEqual(PARTIAL_TURN_BLOCKS);
+    expectNoContentOnStreamDispatches();
   };
 
   it('user stop mid-stream: terminal stream:end + idle(reason=interrupted) finalize in place — streamed deltas stay visible', async () => {
@@ -2554,6 +2768,42 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     });
   });
 
+  it('startup-window preemption (§7.2 interrupt stream:end WITHOUT messageId): the un-named accumulator finalizes clean — no Stopped indicator on a turn the daemon never marked (intent-hq/intent#5380)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // The accumulator holds the previous turn's blocks under MESSAGE_ID.
+    streamPartialTurn(handler);
+    expectPartialBlocksIntact(readAssistantMessages()[0]);
+
+    // An interrupt-priority send lands while the daemon has NO live-turn slot
+    // to flush (turn startup after a process eviction, §7.2 "pre-first-token
+    // stop"): the emit carries `stopReason` + `interruptReason` but no
+    // `messageId`, because no interrupted row was persisted. Nothing in the
+    // daemon's transcript names MESSAGE_ID as interrupted. Documented §7.2
+    // payload only — the daemon never emits `streamId`.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].metadata?.interrupted).toBeUndefined();
+    expect(assistantMessages[0].metadata?.stopReason).toBeUndefined();
+    expect(assistantMessages[0].metadata?.interruptReason).toBeUndefined();
+    expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
+      false,
+    );
+  });
+
   it('agent preemption mid-stream (§7.2 interruptedBy agent): the reason-specific label resolves LIVE without a reload', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -2648,7 +2898,9 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // Only a thinking block streamed before the stop.
+    // Only a thinking block streamed before the stop (the §7.1 stream wrote it).
+    const thinkingBlocks = [{ type: 'thinking', id: `${MESSAGE_ID}:0`, thinking: 'planning…' }];
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, thinkingBlocks);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -2671,7 +2923,8 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
 
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['thinking']);
+    expect(assistantMessages[0].contentBlocks).toEqual(thinkingBlocks);
+    expectNoContentOnStreamDispatches();
     expect(assistantMessages[0].metadata).toMatchObject({
       interrupted: true,
       stopReason: 'interrupted',
@@ -2876,15 +3129,14 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
       }),
     );
 
+    // Turn 2 opens as an EMPTY streaming placeholder the §7.1 stream fills by
+    // id; the interrupted partial under the old id is untouched.
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages.map((m) => m.id)).toEqual([MESSAGE_ID, nextMessageId]);
     expectPartialBlocksIntact(assistantMessages[0]);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[1].isStreaming).toBe(true);
-    expect(assistantMessages[1].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'New turn',
-    });
+    expect(assistantMessages[1].contentBlocks).toEqual([]);
   });
 });
 
@@ -2908,11 +3160,22 @@ describe('daemonEventsBridge (abnormal finishReason on agent:stream:end)', () =>
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
+  const PARTIAL_ANSWER_BLOCKS = [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Partial answer' }];
+
+  /** A text chunk on the firehose while the §7.1 stream writes the same text into the row. */
   function streamTextChunk(handler: (n: { method: string; params?: unknown }) => void): void {
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, PARTIAL_ANSWER_BLOCKS);
     handler(
       notification('agent:stream:chunk', {
         agentId: AGENT,
@@ -2944,10 +3207,8 @@ describe('daemonEventsBridge (abnormal finishReason on agent:stream:end)', () =>
 
       const assistantMessages = readAssistantMessages();
       expect(assistantMessages).toHaveLength(1);
-      expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-        type: 'text',
-        text: 'Partial answer',
-      });
+      expect(assistantMessages[0].contentBlocks).toEqual(PARTIAL_ANSWER_BLOCKS);
+      expectNoContentOnStreamDispatches();
       expect(assistantMessages[0].isStreaming).toBe(false);
       expect(assistantMessages[0].streamingComplete).toBe(true);
       expect(assistantMessages[0].metadata).toMatchObject({ finishReason });
@@ -3066,13 +3327,26 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    // The chat panel holds the standing chat.subscribe registration (§7.1).
+    markStandingChatSubscription(AGENT);
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    clearAllStandingChatSubscriptions();
+    vi.clearAllMocks();
+  });
 
-  it('appends trailingBlocks to the streamed turn on stream:end and the wizard derivation goes live (no refetch)', async () => {
+  // Delivery of the drained question block itself is the §7.1 reconciler's
+  // job and is covered in live-chat-client.test.ts ("renders
+  // daemon-synthesized standalone resource blocks verbatim"); these tests
+  // only pin what the bridge leaves behind for that reconcile to replace.
+  it('trailingBlocks on stream:end never ride the bridge — the row finalizes with exactly the subscription-owned text', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const streamedText = { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Before I proceed:' };
+    seedSubscriptionOwnedAssistant(MESSAGE_ID, [streamedText]);
 
     handler(
       notification('agent:stream:chunk', {
@@ -3094,26 +3368,27 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
 
+    // Bookkeeping-only: the row finalizes with exactly the subscription's
+    // text — no firehose-appended resource block, and nothing pends yet.
+    expectNoContentOnStreamDispatches();
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].isStreaming).toBe(false);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['text', 'resource']);
-
-    // The wizard derivation reads the finalized transcript directly — the
-    // questions pend LIVE off the stream:end delivery, no reconcile needed.
-    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
-    expect(pending).not.toBeNull();
-    expect(pending!.messageId).toBe(MESSAGE_ID);
-    expect(pending!.questions.map((q) => q.header)).toEqual(['Auth method']);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].contentBlocks).toEqual([streamedText]);
+    expect(derivePendingQuestions(readSession()?.messages ?? [], false)).toBeNull();
   });
 
-  it('pre-first-token question turn: trailingBlocks with NO local stream state finalize a question-only placeholder', async () => {
+  it('pre-first-token question turn: trailingBlocks with NO local stream state finalize an EMPTY placeholder under the turn id', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     // A turn whose ONLY content is questions: no chunk/tool events ever fire,
-    // so the accumulator is empty when the terminal stream:end lands.
+    // so the accumulator is empty when the terminal stream:end lands. The
+    // transcript-bearing terminal must NOT early-return: it finalizes a
+    // placeholder under the turn's messageId (no content — that is the
+    // reconcile's job).
     handler(
       notification('agent:stream:end', {
         agentId: AGENT,
@@ -3123,19 +3398,17 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
 
+    expectNoContentOnStreamDispatches();
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
     expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].isStreaming).toBe(false);
     expect(assistantMessages[0].streamingComplete).toBe(true);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['resource']);
-
-    const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
-    expect(pending).not.toBeNull();
-    expect(pending!.questions).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
+    expect(derivePendingQuestions(readSession()?.messages ?? [], false)).toBeNull();
   });
 
-  it('is idempotent against a later reconcile delivering the same canonical blocks (no duplicates)', async () => {
+  it('the hydration merge collapses the empty placeholder into the same-id canonical row (no duplicates)', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -3159,36 +3432,40 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
 
-    // Simulate the chat-read-service hydration reconcile: the persisted row
-    // carries the SAME canonical trailing block under the SAME message id.
-    // The live-finalized assistant row is KEPT in the incoming list so this
-    // exercises the upsert-path dedupe (same-id collapse), not a constructed
-    // end state.
+    // The live path left an EMPTY finalized placeholder under the turn's id.
     const session = readSession()!;
+    const placeholder = readAssistantMessages();
+    expect(placeholder).toHaveLength(1);
+    expect(placeholder[0].id).toBe(MESSAGE_ID);
+    expect(placeholder[0].contentBlocks).toEqual([]);
+
+    // Model the chat-read-service hydration merge (its STALE-HYDRATION MERGE
+    // GUARD): the fetched canonical rows come FIRST and the store rows the
+    // live stream appended during the read follow — so the bridge's
+    // placeholder rides INTO the upsert payload under the SAME id, and the
+    // store's dedup on ingest must collapse the pair with the fetched copy
+    // winning. Two rows, or a row with the placeholder's empty content,
+    // means the same-id collapse regressed.
+    const canonicalRow = {
+      id: MESSAGE_ID,
+      role: 'assistant',
+      timestamp: '2026-01-02T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', id: `${MESSAGE_ID}:0`, text: 'Question:' }, questionBlock()],
+    } as unknown as AgentMessage;
     appStore.dispatch(
       bulkUpsertSessions([
         {
           ...session,
           isStreaming: false,
           status: AgentStatus.Idle,
-          messages: [
-            ...(session.messages ?? []),
-            {
-              id: MESSAGE_ID,
-              role: 'assistant',
-              timestamp: '2026-01-02T00:00:01.000Z',
-              contentBlocks: [
-                { type: 'text', id: `${MESSAGE_ID}:0`, text: 'Question:' },
-                questionBlock(),
-              ],
-            } as unknown as AgentMessage,
-          ],
+          messages: [canonicalRow, ...(session.messages ?? [])],
         },
       ]),
     );
 
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
     expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['text', 'resource']);
 
     const pending = derivePendingQuestions(readSession()?.messages ?? [], false);
@@ -3198,7 +3475,7 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
     expect(pending!.questions).toHaveLength(1);
   });
 
-  it('duplicate trailingBlocks entries for the same canonical nonce collapse to one block', async () => {
+  it('trailingBlocks are never dispatched as content — duplicate entries have nothing to collapse on the bridge side', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -3211,9 +3488,16 @@ describe('daemonEventsBridge (Agent Q&A live delivery — trailingBlocks on agen
       }),
     );
 
+    expect(capturedStreamUpdates).toHaveLength(1);
+    expect(capturedStreamUpdates[0]).toMatchObject({
+      agentId: AGENT,
+      eventType: 'complete',
+      assistantMessageId: MESSAGE_ID,
+    });
+    expectNoContentOnStreamDispatches();
     const assistantMessages = readAssistantMessages();
     expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.map((b) => b.type)).toEqual(['resource']);
+    expect(assistantMessages[0].contentBlocks).toEqual([]);
   });
 
   it('messageId-mismatch stream:end: the stale accumulated turn finalizes WITHOUT the stopReason — only the event messageId gets the interrupted metadata', async () => {
@@ -3610,7 +3894,13 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
       expect.objectContaining({
-        payload: [AGENT, 'boom', 'turn-failed-1', { turnIdCorrelation: '12c09885d6571b4e' }],
+        payload: [
+          AGENT,
+          'boom',
+          'turn-failed-1',
+          { turnIdCorrelation: '12c09885d6571b4e' },
+          undefined,
+        ],
       }),
     ]);
   });
@@ -3624,7 +3914,7 @@ describe('daemonEventsBridge (queue drain-start — agent:queue:processing → c
 
     const failedCalls = dispatchCalls.filter((a) => a.type === 'chatState/sendFailed');
     expect(failedCalls).toEqual([
-      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined] }),
+      expect.objectContaining({ payload: [AGENT, 'boom', undefined, undefined, undefined] }),
     ]);
   });
 });
@@ -3642,9 +3932,13 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
     seedSession({ isStreaming: true, status: AgentStatus.Active });
+    captureStreamUpdates();
   });
 
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    restoreDispatch();
+    vi.clearAllMocks();
+  });
 
   it('applies a chunk exactly once when the daemon fans the same chunk out across N subscriptions on the socket', async () => {
     // Mock backendRequest resolves events.subscribe with `{ subscriptionId: "sub-1" }`
@@ -3655,8 +3949,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     // to an overlapping `agent:*` filter, the chunk is delivered three times to
     // the socket-level notification handler — once tagged "sub-1" (ours), once
     // "sub-foreign-a", once "sub-foreign-b". Without the scope gate the bridge
-    // would `priorText + content` three times and echo as "TodayTodayToday" —
-    // the symptom this fix targets.
+    // would process (and dispatch bookkeeping for) the chunk three times.
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -3674,11 +3967,11 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     handler(notificationWithSub('agent:stream:chunk', data, 'sub-foreign-a'));
     handler(notificationWithSub('agent:stream:chunk', data, 'sub-foreign-b'));
 
-    const assistantMessages = readAssistantMessages();
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Today',
+    expect(capturedStreamUpdates).toHaveLength(1);
+    expect(capturedStreamUpdates[0]).toMatchObject({
+      agentId: AGENT,
+      eventType: 'chunk',
+      assistantMessageId: MESSAGE_ID,
     });
   });
 
@@ -3704,6 +3997,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
       ),
     );
 
+    expect(capturedStreamUpdates).toHaveLength(0);
     expect(readAssistantMessages()).toHaveLength(0);
   });
 
@@ -3725,11 +4019,11 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
       }),
     );
 
-    const assistantMessages = readAssistantMessages();
-    expect(assistantMessages).toHaveLength(1);
-    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
-      type: 'text',
-      text: 'Legacy ok',
+    expect(capturedStreamUpdates).toHaveLength(1);
+    expect(capturedStreamUpdates[0]).toMatchObject({
+      agentId: AGENT,
+      eventType: 'chunk',
+      assistantMessageId: MESSAGE_ID,
     });
   });
 
@@ -4747,6 +5041,28 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     );
   });
 
+  it('forwards the §5.5 notificationsMuted stamp verbatim (present only when true)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Sandbox is broken',
+        notificationsMuted: true,
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationsMuted: true }),
+    );
+  });
+
   it('falls back to the envelope workspaceId/timestamp when the payload omits them', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -4932,6 +5248,28 @@ describe('daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
 
     expect(readStatus('github')).toBe('error');
     expect(appStore.state.mcpSettings.errorMessages.github).toBe('connect ECONNREFUSED');
+  });
+
+  it("auth_required → preserves the daemon's recovery message", async () => {
+    seedMcpServer('srv-figma', 'figma');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({
+        serverId: 'srv-figma',
+        status: {
+          serverId: 'srv-figma',
+          state: 'auth_required',
+          lastError: 'authenticate or check configured credentials',
+        },
+      }),
+    );
+
+    expect(readStatus('figma')).toBe('auth_required');
+    expect(appStore.state.mcpSettings.errorMessages.figma).toBe(
+      'authenticate or check configured credentials',
+    );
   });
 
   it('starting/stopped map to configured/stopped respectively', async () => {
@@ -5389,7 +5727,7 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(notifyInterruptedAgentUpdatedSpy).not.toHaveBeenCalled();
   });
 });
-describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 v8.2)', () => {
+describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bin count, §5.5 retiredCount)', () => {
   beforeAll(() => {
     appStore.init();
   });
@@ -5454,9 +5792,9 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     handler(notification('agent:deleted', { agentId: 'agent-unknown-retired' }));
     await flush();
 
-    // The re-baseline rides the canonical default read (`agent.list`, which
-    // serves `retiredCount` on every read) — not a local guess.
-    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: WS });
+    // The re-baseline rides the canonical hydration read (`agent.list`, which
+    // serves `retiredCount` + `scopeCounts` on every read) — not a local guess.
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
   });
 
   it('agent:deleted on a known NON-retired row leaves the retired count alone without a refetch', async () => {
@@ -5469,7 +5807,268 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     await flush();
 
     expect(retiredCountOf(WS)).toBe(2);
-    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', { workspaceId: WS });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+});
+
+describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 scopeCounts)', () => {
+  const COUNTS = { topLevel: 2, delegated: 3, background: 1 };
+  const PARENT = 'agent-bridge-parent';
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    refreshAgentSessionAfterEventSpy.mockReset();
+    refreshAgentSessionAfterEventSpy.mockImplementation(() => Promise.resolve());
+    ensureAgentSessionSpy.mockReset();
+    ensureAgentSessionSpy.mockImplementation(() => Promise.resolve());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    await primeBridge();
+    appStore.dispatch(setScopeCounts(WS, COUNTS));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  const scopeCountsOf = () => selectScopeCounts.select(appStore.state, WS);
+
+  it('agent:created nudges the fetched row into its bin — delegated for a parented row, background for an unparented background one', async () => {
+    const handler = capturedHandlers[0]!;
+    // The event payload carries only the id; the bin is read off the row the
+    // read-service seam hydrates (simulate the successful `agent.get`).
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({ id: 'agent-child' as never, metadata: { createdByAgentId: PARENT } as never });
+    });
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({ id: 'agent-bg' as never, isBackground: true });
+    });
+    handler(notification('agent:created', { agentId: 'agent-bg' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4, background: 2 });
+
+    // A background CHILD is delegated, not background (§5.5 partition).
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({
+        id: 'agent-bg-child' as never,
+        isBackground: true,
+        metadata: { createdByAgentId: PARENT } as never,
+      });
+    });
+    handler(notification('agent:created', { agentId: 'agent-bg-child' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ topLevel: 2, delegated: 5, background: 2 });
+  });
+
+  it('agent:created counts an id this client already holds exactly once (own create upserts the row before the event; duplicates are neutral)', async () => {
+    // The `agent.create` response upserted the row before the event landed:
+    // the row is uncounted in the daemon-served baseline, so the first event
+    // still nudges its bin; the re-delivery does not.
+    seedSession({ isBackground: true });
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:created', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 2 });
+
+    handler(notification('agent:created', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 2 });
+  });
+
+  it('two agent:created deliveries in flight at once for the same id nudge the bin once', async () => {
+    const handler = capturedHandlers[0]!;
+    // Both deliveries share the read-service's single-flight fetch, which
+    // settles only after both handlers have run.
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementation(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(2);
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+  });
+
+  it('agent:created does not nudge a bin an authoritative agent.list baseline re-counted while the detail read was in flight', async () => {
+    const handler = capturedHandlers[0]!;
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementationOnce(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    // A hydration read settles meanwhile and already counts the new child.
+    appStore.dispatch(setScopeCounts(WS, { ...COUNTS, delegated: 4 }));
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+
+    // A later create with no intervening baseline still nudges.
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({
+        id: 'agent-child-2' as never,
+        metadata: { createdByAgentId: PARENT } as never,
+      });
+    });
+    handler(notification('agent:created', { agentId: 'agent-child-2' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 5 });
+  });
+
+  it('agent:created does not nudge a bin when an equal-valued authoritative baseline landed while the detail read was in flight', async () => {
+    const handler = capturedHandlers[0]!;
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementationOnce(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    // A hydration read settles meanwhile with the delegated bin numerically
+    // unchanged (the new child replaced a retired row in the same bin). It is
+    // still the fresh baseline that already counts the row.
+    appStore.dispatch(setScopeCounts(WS, { ...COUNTS }));
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:created whose fetch yields no row (deleted meanwhile) leaves the counts alone', async () => {
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:created', { agentId: 'agent-vanished' }));
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-vanished');
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:deleted on a known non-retired row nudges its bin down in lockstep with its removal', async () => {
+    seedSession({ metadata: { createdByAgentId: PARENT } as never });
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('agent:deleted on a known retired row leaves the bin counts alone (retired rows are their own bin)', async () => {
+    seedSession({ retiredAt: '2026-01-01T12:00:00.000Z' });
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+    await flush();
+
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:retired moves a known row out of its bin and agent:restored moves it back', async () => {
+    seedSession({ isBackground: true });
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+
+    // The bin does not depend on `retiredAt`, so the restored row re-enters
+    // the same bin it left.
+    seedSession({ isBackground: true, retiredAt: '2026-01-01T12:00:00.000Z' });
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual(COUNTS);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('a re-delivered agent:retired / agent:restored is count-neutral for both bins; the next real transition still applies', async () => {
+    seedSession({ isBackground: true });
+    appStore.dispatch(setRetiredCount(WS, 0));
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+    // The metadata refresh still runs for every delivery.
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(2);
+
+    // A restore this client issued clears `retiredAt` locally before the
+    // event lands (agent-mutation saga); the counts still owe the transition.
+    seedSession({ isBackground: true });
+    handler(notification('agent:restored', { agentId: AGENT }));
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual(COUNTS);
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(0);
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+  });
+
+  it('agent:retired / agent:restored for an id with no local session re-baselines via a hydrate (collapsed-bin row)', async () => {
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: 'agent-never-loaded' }));
+    await flush();
+
+    // No local guess at the bin — the counts re-baseline from the daemon read.
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('never refetches for an unknown retire on a workspace holding no scopeCounts (older daemon)', async () => {
+    appStore.dispatch(setScopeCounts(WS, null));
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: 'agent-never-loaded' }));
+    await flush();
+
+    expect(scopeCountsOf()).toBeNull();
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+    // The retired-count nudge is unchanged on that path.
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
   });
 });
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {
@@ -5849,29 +6448,82 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
 
   afterEach(() => vi.clearAllMocks());
 
-  it('fires navigateAwayIfViewing for the deleted workspace (#766 live-mode navigation path)', async () => {
+  async function resetTabStrip(): Promise<void> {
+    const { loadWorkspaceTabsState } =
+      await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
+  }
+
+  function readTabStrip(): { openTabs: Record<string, boolean>; currentTabId: string | null } {
+    return (
+      appStore.state as {
+        tabState: { openTabs: Record<string, boolean>; currentTabId: string | null };
+      }
+    ).tabState;
+  }
+
+  function deletedNotification(workspaceId: string): { method: string; params?: unknown } {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-workspace-deleted-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId },
+        },
+      },
+    };
+  }
+
+  it('closes the deleted workspace tab while it is the current tab (#766 live-mode navigation path)', async () => {
     // Unlike the workspace-list snapshot diff (legacy-mode only — the
     // delta-subscription layer suppresses legacy refetches under live-state,
     // monorepo#775), this events.event route fires in BOTH modes, so it is the
     // path that actually covers "deleted by another client" in production.
+    await resetTabStrip();
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(WS));
+    expect(readTabStrip().currentTabId).toBe(WS);
     await primeBridge();
-    const handler = capturedHandlers[0]!;
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-workspace-deleted-nav',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'workspace:deleted',
-          actor: { type: 'user', id: 'u1' },
-          data: { workspaceId: WS },
-        },
-      },
-    });
+    capturedHandlers[0]!(deletedNotification(WS));
+    await flush();
 
-    expect(navigateAwayIfViewingSpy).toHaveBeenCalledWith(WS);
+    expect(readTabStrip().openTabs[WS]).toBeUndefined();
+    expect(readTabStrip().currentTabId).not.toBe(WS);
+  });
+
+  it('closes the deleted workspace tab while it sits in the background behind another tab', async () => {
+    // A guest's last shared workspace deleted by its owner while the guest is
+    // looking at another tab: the closure must not depend on the route being
+    // the deleted workspace (the on-screen-only helper would leave it open).
+    await resetTabStrip();
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(WS));
+    appStore.dispatch(openWorkspaceTab(OTHER_WS));
+    expect(readTabStrip().currentTabId).toBe(OTHER_WS);
+    expect(readTabStrip().openTabs[WS]).toBe(true);
+    await primeBridge();
+
+    capturedHandlers[0]!(deletedNotification(WS));
+    await flush();
+
+    expect(readTabStrip().openTabs[WS]).toBeUndefined();
+    expect(readTabStrip().openTabs[OTHER_WS]).toBe(true);
+    expect(readTabStrip().currentTabId).toBe(OTHER_WS);
+    expect(navigateAwayIfViewingSpy).not.toHaveBeenCalled();
   });
 
   it('purges agent-session, workspace-agents, and chat-state for the deleted workspace', async () => {
@@ -6114,9 +6766,11 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     expect(after.agentSessions.agentIdsByWorkspace[RECYCLED_WS]).toBeUndefined();
     expect(after.chatState.byAgentId[STALE_AGENT]).toBeUndefined();
     expect(after.workspaceAgents.byWorkspaceId[RECYCLED_WS]?.agentIds ?? []).toEqual([]);
-    // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5).
+    // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5);
+    // default hydration reads the top-level scope.
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: RECYCLED_WS,
+      scope: 'topLevel',
     });
   });
 
@@ -6141,9 +6795,10 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     });
     await flush();
 
-    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', {
-      workspaceId: FRESH_WS,
-    });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith(
+      'agent.list',
+      expect.objectContaining({ workspaceId: FRESH_WS }),
+    );
   });
 
   // intent-hq/monorepo#3558: a workspace created/imported by ANOTHER client on
@@ -6727,7 +7382,89 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     // Reconcile refetch also runs — covers a window that never held a snapshot.
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
+      scope: 'topLevel',
     });
+  });
+
+  it('agent:delete-scheduled → agent:delete-cancelled round-trips every FE-owned field', async () => {
+    const { FE_OWNED_FIELD_POLICY, MAX_MESSAGES_PER_AGENT, addMessage } =
+      await import('$store/renderer/slices/agent-session/agent-session-slice');
+    const policyKeys = Object.keys(FE_OWNED_FIELD_POLICY) as Array<keyof StoredAgentSession>;
+    const OPENED_AT = '2026-01-02T00:00:00.000Z';
+    const message = (i: number): AgentMessage =>
+      ({
+        id: `msg-${i}`,
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: `m${i}` }],
+        timestamp: new Date(Date.parse('2026-01-01T00:00:00.000Z') + i * 1000).toISOString(),
+      }) as AgentMessage;
+    const liveSession: AgentSession = {
+      id: PENDING_AGENT,
+      backendSessionId: 'backend-pending',
+      workspaceId: PENDING_WS,
+      name: 'Live',
+      status: AgentStatus.Active,
+      isActive: true,
+      isResponding: true,
+      messages: Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => message(i)),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AgentSession;
+    appStore.dispatch(bulkUpsertSessions([liveSession]));
+    // FE-owned fields never ride the wire snapshot; seed each one through its
+    // production writer (cap overflow latch, event fold, agent:process:queued).
+    appStore.dispatch(addMessage(PENDING_AGENT, message(MAX_MESSAGES_PER_AGENT + 1)));
+    appStore.dispatch(
+      updateSession(PENDING_AGENT, { liveTurnOpen: true, liveTurnOpenedAt: OPENED_AT }),
+    );
+    appStore.dispatch(setProcessQueueHint(PENDING_AGENT, 3, 3, 'slots'));
+    const readSession = () =>
+      (appStore.state as { agentSessions: { byAgentId: Record<string, StoredAgentSession> } })
+        .agentSessions.byAgentId[PENDING_AGENT];
+    const seeded = readSession();
+    for (const key of policyKeys) expect(seeded[key], key).toBeDefined();
+    const expected = Object.fromEntries(policyKeys.map((key) => [key, seeded[key]]));
+
+    backendRequestSpy.mockImplementation((method: string) => {
+      if (method === 'agent.list') return Promise.resolve({ agents: [] });
+      return Promise.resolve({ subscriptionId: 'sub-1' });
+    });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-scheduled-roundtrip',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:delete-scheduled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS, deleteAt: DELETE_AT },
+        },
+      },
+    });
+    expect(readSession()).toBeUndefined();
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-agent-del-cancelled-roundtrip',
+          workspaceId: PENDING_WS,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'agent:delete-cancelled',
+          actor: { type: 'user', id: 'u1' },
+          data: { agentId: PENDING_AGENT, workspaceId: PENDING_WS },
+        },
+      },
+    });
+    await flush();
+
+    const restored = readSession();
+    expect(restored?.name).toBe('Live');
+    for (const key of policyKeys) {
+      expect(restored?.[key], key).toEqual(expected[key]);
+    }
   });
 
   it('agent:delete-cancelled without a local snapshot still refetches the canonical list', async () => {
@@ -6751,6 +7488,7 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
 
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
+      scope: 'topLevel',
     });
   });
 
@@ -7744,6 +8482,22 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     const ws = await readWorkspace();
     // The wire null must drop the stale asset reference rather than retain it.
     expect(ws.statusImageAssetId).toBeUndefined();
+  });
+
+  it('merges the memberCount carried by a membership-changing delta (multiplayer w4)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §5.1: invite redeem / member remove publish `workspace:updated`
+    // with `{ members: true, memberCount }` — the non-column flags are dropped,
+    // the post-change count lands on the entity.
+    handler(updatedNotification({ members: true, addedPrincipalId: 'p-bob', memberCount: 2 }));
+
+    const ws = await readWorkspace();
+    expect(ws.memberCount).toBe(2);
+    expect(ws.branch).toBe('main');
+    expect((ws as Record<string, unknown>).members).toBeUndefined();
   });
 });
 
@@ -9241,6 +9995,50 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(false);
   });
 
+  it('keeps hasUnread=false for a muted foreground agent (notificationsMuted, PROTOCOL §5.5) on an assistant echo', async () => {
+    seedSession({ notificationsMuted: true, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'muted work done',
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.hasUnread).toBe(false);
+    // The preview projections still apply — only the unread dot is suppressed.
+    expect(session.lastAgentResponse).toBe('muted work done');
+    expect(session.lastMessageId).toBe('msg-a6');
+  });
+
+  it('derives hasUnread=true for the same assistant echo when the agent is not muted (control)', async () => {
+    seedSession({ notificationsMuted: false, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'unmuted work done',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(true);
+  });
+
   it('keeps hasUnread=false for a delegated child agent on an assistant echo', async () => {
     seedSession({
       metadata: { createdByAgentId: 'agent-parent' },
@@ -9640,6 +10438,61 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
     // With no active workspace, the refresh path exits early — no chat load.
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression (fe#2440 verifier): invites/members changed while the
+  // connection was down never re-emit, so the open Share dialog and tracked
+  // hover rosters are invalidated on reconnect — once per workspace, and
+  // only for workspaces actually holding sharing state.
+  describe('sharing invalidation on reconnect (fe#2440)', () => {
+    // Runs first: tracked rosters outlive the dialog, so the seeded case below
+    // would otherwise leave sharing state behind for this one to find.
+    it('issues no sharing invalidation when nothing holds sharing state', async () => {
+      const { shareMembershipChanged } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(WS);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+      expect(
+        dispatchSpy.mock.calls.some(
+          ([action]) => (action as { type: string }).type === shareMembershipChanged.type,
+        ),
+      ).toBe(false);
+    });
+
+    it('invalidates the open Share dialog target and each tracked hover roster once', async () => {
+      const { openShareDialog, shareMembershipChanged, shareRosterRequested, closeShareDialog } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      appStore.dispatch(openShareDialog({ workspaceId: 'ws-share-dialog', workspaceTitle: 'D' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-hover' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-dialog' }));
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(null);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+
+      const invalidations = dispatchSpy.mock.calls
+        .map(([action]) => action as { type: string; payload: unknown })
+        .filter((action) => action.type === shareMembershipChanged.type)
+        .map((action) => action.payload);
+      expect(invalidations).toEqual(
+        expect.arrayContaining([
+          [{ workspaceId: 'ws-share-dialog' }],
+          [{ workspaceId: 'ws-share-hover' }],
+        ]),
+      );
+      expect(invalidations).toHaveLength(2);
+      appStore.dispatch(closeShareDialog());
+    });
   });
 
   describe('failure-registry reconciliation on reconnect (#2806)', () => {
@@ -10073,6 +10926,36 @@ describe('daemonEventsBridge (daemon-side redrive clears stale error banner — 
       notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
     );
     expect(readChatAgent()?.error).toBeNull();
+  });
+
+  it('quota-failed turn redriven remotely (error→pending→active, no stream:start) drops the quota offer with the banner (#4455)', async () => {
+    // A quota failure sets `quotaExceeded` alongside `error`. When another
+    // client's agent.retry redrives the turn, the status edge is the only
+    // clear that runs (user-message turns emit no agent:stream:start), so the
+    // provider offer must go with the error or StreamingStatus keeps showing
+    // the retry-with buttons over the live replacement turn.
+    seedSession({ status: AgentStatus.Error });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    appStore.dispatch(
+      chatSendFailed(AGENT, 'usage limit reached', 'turn-quota-1', undefined, {
+        providerId: 'claude-code',
+      }),
+    );
+    expect(readChatAgent()?.quotaExceeded).toEqual({ providerId: 'claude-code' });
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'pending', isActive: false }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.quotaExceeded).toBeNull();
+
+    handler(
+      notification('agent:status-changed', { agentId: AGENT, status: 'active', isActive: true }),
+    );
+    expect(readChatAgent()?.error).toBeNull();
+    expect(readChatAgent()?.quotaExceeded).toBeNull();
   });
 
   it('failure-toast agent.retry repro: agent:failed → error → pending → active → queue:processing clears the banner', async () => {
@@ -11889,14 +12772,20 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
     expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'client.list')).toEqual([]);
   });
 
-  it('browser:tab-opened / tab-updated / tab-closed patch the workspace tab mirror in place', async () => {
-    const { selectWorkspaceBrowserTabs } =
+  it('browser:tab-opened / tab-updated / tab-closed dispatch the tab event actions and advance tabsRevision', async () => {
+    const { browserTabClosed, browserTabUpserted } =
+      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
+    const { selectWorkspaceBrowserTabsRevision } =
       await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
     await primeBridge();
     const handler = capturedHandlers[0]!;
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
 
     handler(tabNotification('browser:tab-opened', { tab: TAB }));
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([TAB]);
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabUpserted(WS_BC, TAB as never));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(1);
 
     const moved = {
       ...TAB,
@@ -11904,104 +12793,26 @@ describe('daemonEventsBridge (REV-2 §5.17 — client:* / browser:tab-* / browse
       updatedAt: '2026-09-07T00:00:02.000Z',
     };
     handler(tabNotification('browser:tab-updated', { tab: moved, changes: { url: moved.url } }));
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([moved]);
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabUpserted(WS_BC, moved as never));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(2);
 
     handler(tabNotification('browser:tab-closed', { tab: moved }));
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([]);
+    expect(dispatchSpy).toHaveBeenCalledWith(browserTabClosed(WS_BC, TAB.tabId));
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(3);
 
     // Self-sufficient payloads: no browser.listTabs refetch is issued.
     expect(backendRequestSpy.mock.calls.filter(([m]) => m === 'browser.listTabs')).toEqual([]);
-  });
-
-  it('browser:tab-updated replaces the listed row: cleared optionals drop, presence decoration stays', async () => {
-    const { workspaceBrowserTabsReceived } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
-    const { selectWorkspaceBrowserTabs } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    const listed = {
-      ...TAB,
-      title: 'Example',
-      requestedUrl: 'https://example.com/',
-      ownerAgentId: 'agent-1',
-      ownerAgentName: 'Agent',
-      emulatedSize: { width: 1280, height: 800 },
-      hostConnected: true,
-      hostName: 'Intent Desktop',
-    };
-    appStore.dispatch(workspaceBrowserTabsReceived(WS_BC, [listed as never], 0));
-
-    // The daemon released the owner, cleared the title, requestedUrl and
-    // emulation: the event row omits them.
-    const released = {
-      ...TAB,
-      url: 'https://example.com/next',
-      updatedAt: '2026-09-07T00:00:02.000Z',
-    };
-    handler(
-      tabNotification('browser:tab-updated', { tab: released, changes: { url: released.url } }),
-    );
-
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
-      { ...released, hostConnected: true, hostName: 'Intent Desktop' },
-    ]);
-  });
-
-  it('browser:tab-updated moving a tab to another host recomputes hostConnected / hostName from client.list', async () => {
-    const { liveClientsReceived, workspaceBrowserTabsReceived } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-slice');
-    const { selectWorkspaceBrowserTabs } =
-      await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
-    await primeBridge();
-    const handler = capturedHandlers[0]!;
-
-    const LAPTOP_ROW = { ...DESK_ROW, clientId: 'cli-laptop', name: 'Intent Laptop' };
-    appStore.dispatch(liveClientsReceived([DESK_ROW as never, LAPTOP_ROW as never]));
-    appStore.dispatch(
-      workspaceBrowserTabsReceived(
-        WS_BC,
-        [{ ...TAB, hostConnected: true, hostName: 'Intent Desktop' } as never],
-        0,
-      ),
-    );
-
-    const onLaptop = { ...TAB, hostClientId: 'cli-laptop', updatedAt: '2026-09-07T00:00:02.000Z' };
-    handler(
-      tabNotification('browser:tab-updated', {
-        tab: onLaptop,
-        changes: { hostClientId: onLaptop.hostClientId },
-      }),
-    );
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
-      { ...onLaptop, hostConnected: true, hostName: 'Intent Laptop' },
-    ]);
-
-    const onUnknown = {
-      ...onLaptop,
-      hostClientId: 'cli-gone',
-      updatedAt: '2026-09-07T00:00:03.000Z',
-    };
-    handler(
-      tabNotification('browser:tab-updated', {
-        tab: onUnknown,
-        changes: { hostClientId: onUnknown.hostClientId },
-      }),
-    );
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([
-      { ...onUnknown, hostConnected: false },
-    ]);
+    dispatchGetterSpy.mockRestore();
   });
 
   it('ignores a browser:tab-* event whose payload is not a registry row', async () => {
-    const { selectWorkspaceBrowserTabs } =
+    const { selectWorkspaceBrowserTabsRevision } =
       await import('$store/renderer/slices/browser-clients/browser-clients-selectors');
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(tabNotification('browser:tab-opened', { tab: { tabId: 'tab-x' } }));
-    expect(selectWorkspaceBrowserTabs.select(appStore.state, WS_BC)).toEqual([]);
+    expect(selectWorkspaceBrowserTabsRevision.select(appStore.state, WS_BC)).toBe(0);
   });
 
   it('workspace:updated browserClientId delta merges the pin and re-reads workspace.getBrowserClient', async () => {

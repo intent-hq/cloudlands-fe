@@ -1,10 +1,17 @@
-import type { AgentSession, AgentMessage, ContentBlock, AgentId } from '$shared/types';
+import type {
+  AgentSession,
+  AgentMessage,
+  ContentBlock,
+  AgentId,
+  AgentListBin,
+  AgentScopeCounts,
+} from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { omitKey } from '../../utils/utils';
-import { upsertSession } from '../agent-session/agent-session-slice';
+import { restoreStoredSessions, upsertSession } from '../agent-session/agent-session-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 export {
   agentStreamUpdateReceived,
@@ -39,7 +46,7 @@ export interface WorkspaceAgentState {
    */
   recentAgentCreatedEvents: Record<string, number>;
   /**
-   * Daemon-served retired-row count (§5.5 soft retire, v8.2). The default
+   * Daemon-served retired-row count (§5.5 soft retire). The default
    * hydration read excludes retired rows, so the sidebar's Retired bin renders
    * its collapsed toggle from this count and lazy-loads the rows on expand.
    */
@@ -48,7 +55,38 @@ export interface WorkspaceAgentState {
   retiredAgentsLoaded: boolean;
   /** True while the on-demand retired-only read is in flight. */
   isLoadingRetiredAgents: boolean;
+  /**
+   * Daemon-served per-bin counts (`scopeCounts`, §5.5 row scope). The default
+   * hydration read is `scope: "topLevel"`, so the sidebar's Delegated and
+   * Background bins render their collapsed toggles from these counts and
+   * lazy-load the rows on expand. `null` = the daemon served no counts
+   * (predates `scope`, answered the all-rows read): no bins, every row is in
+   * the list already.
+   */
+  scopeCounts: AgentScopeCounts | null;
+  /**
+   * Bumped each time `setScopeCounts` installs an authoritative baseline —
+   * including one numerically equal to the held counts (a created row may
+   * replace a retired one in the same bin, or the snapshot may correct an
+   * already-stale local count). Deferred event nudges (`agent:created`
+   * classifies the row only once its detail read lands) capture the generation
+   * when the event arrives and skip the nudge if a newer baseline — which
+   * already counts the row — was installed meanwhile. `adjustScopeCount`
+   * never advances it.
+   */
+  scopeCountsGeneration: number;
+  /** True once the `scope: "delegated"` read has hydrated the delegated rows. */
+  delegatedAgentsLoaded: boolean;
+  /** True while the on-demand delegated read is in flight. */
+  isLoadingDelegatedAgents: boolean;
+  /** True once the `scope: "background"` read has hydrated the background rows. */
+  backgroundAgentsLoaded: boolean;
+  /** True while the on-demand background read is in flight. */
+  isLoadingBackgroundAgents: boolean;
 }
+
+/** Lazily loaded `agent.list` bins (retired rows have their own flags). */
+export type LazyAgentListBin = Exclude<AgentListBin, 'topLevel'>;
 
 export interface WorkspaceAgentsState {
   byWorkspaceId: Record<string, WorkspaceAgentState>;
@@ -157,6 +195,26 @@ function isBackgroundAgent(agent: AgentSession): boolean {
   return agent.isBackground === true || agent.metadata?.isBackground === true;
 }
 
+/**
+ * The `agent.list` bin a non-retired session partitions into (§5.5 row scope):
+ * any parented row is `delegated` (a background CHILD is delegated, not
+ * background), an unparented background agent is `background`, everything
+ * else is `topLevel`. Parentage is the wire `parentAgentId` the daemon
+ * partitions by, with `metadata.createdByAgentId` (older rows) and the fork
+ * marker `parentSessionId` as fallbacks. Retired sessions are their own bin
+ * and never classify here — callers check `retiredAt` first.
+ */
+export function agentListBinOf(agent: AgentSession): AgentListBin {
+  if (
+    (typeof agent.parentAgentId === 'string' && agent.parentAgentId.length > 0) ||
+    agent.parentSessionId ||
+    typeof agent.metadata?.createdByAgentId === 'string'
+  ) {
+    return 'delegated';
+  }
+  return isBackgroundAgent(agent) ? 'background' : 'topLevel';
+}
+
 function mergeUniqueAgentIds(existing: AgentId[], additions: AgentId[]): AgentId[] {
   const existingIds = new Set(existing.map((id) => String(id)));
   const merged = [...existing];
@@ -199,6 +257,12 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   retiredCount: 0,
   retiredAgentsLoaded: false,
   isLoadingRetiredAgents: false,
+  scopeCounts: null,
+  scopeCountsGeneration: 0,
+  delegatedAgentsLoaded: false,
+  isLoadingDelegatedAgents: false,
+  backgroundAgentsLoaded: false,
+  isLoadingBackgroundAgents: false,
 };
 
 export const initialState: WorkspaceAgentsState = {
@@ -244,14 +308,14 @@ export const hydrateAgentsRequested = createAction<[wsId: string]>(
 );
 /**
  * Saga-only trigger (no reducer entry): load the workspace's retired rows on
- * demand via the retired-only read (`retiredOnly: true`, §5.5 v8.2) when the
+ * demand via the retired-only read (`retiredOnly: true`, §5.5) when the
  * sidebar's Retired bin is expanded or an active search needs them. The
  * handler lives in `lifecycle-read-saga` and no-ops once the rows are loaded.
  */
 export const fetchRetiredAgentsRequested = createAction<[wsId: string]>(
   'workspaceAgents/fetchRetiredAgentsRequested',
 );
-/** Store the daemon-served retired-row count (`retiredCount`, §5.5 v8.2). */
+/** Store the daemon-served retired-row count (`retiredCount`, §5.5 soft retire). */
 export const setRetiredCount = createAction<[wsId: string, count: number]>(
   'workspaceAgents/setRetiredCount',
 );
@@ -269,6 +333,40 @@ export const setRetiredAgentsLoaded = createAction<[wsId: string, loaded: boolea
 export const setIsLoadingRetiredAgents = createAction<[wsId: string, loading: boolean]>(
   'workspaceAgents/setIsLoadingRetiredAgents',
 );
+/**
+ * Saga-only triggers (no reducer entry): load one lazy bin's rows on demand
+ * via the scoped read (`scope: "delegated"` / `scope: "background"`, §5.5 row
+ * scope) when the sidebar's bin expands or an active search needs them. The
+ * handlers live in `lifecycle-read-saga` and no-op once the rows are loaded.
+ */
+export const fetchDelegatedAgentsRequested = createAction<[wsId: string]>(
+  'workspaceAgents/fetchDelegatedAgentsRequested',
+);
+export const fetchBackgroundAgentsRequested = createAction<[wsId: string]>(
+  'workspaceAgents/fetchBackgroundAgentsRequested',
+);
+/**
+ * Store the daemon-served per-bin counts (`scopeCounts`, §5.5 row scope);
+ * `null` records that the daemon served none (old daemon, all-rows read).
+ */
+export const setScopeCounts = createAction<[wsId: string, counts: AgentScopeCounts | null]>(
+  'workspaceAgents/setScopeCounts',
+);
+/**
+ * Nudge one bin's count on agent lifecycle events (`agent:created` +1,
+ * `agent:deleted` / `agent:retired` −1, `agent:restored` +1) so the collapsed
+ * bins stay consistent without a full refetch; hydration re-baselines from the
+ * daemon-served counts. A no-op while no counts are held (old daemon).
+ */
+export const adjustScopeCount = createAction<[wsId: string, bin: AgentListBin, delta: number]>(
+  'workspaceAgents/adjustScopeCount',
+);
+export const setLazyBinLoaded = createAction<
+  [wsId: string, bin: LazyAgentListBin, loaded: boolean]
+>('workspaceAgents/setLazyBinLoaded');
+export const setIsLoadingLazyBin = createAction<
+  [wsId: string, bin: LazyAgentListBin, loading: boolean]
+>('workspaceAgents/setIsLoadingLazyBin');
 export const createAgentRequested = createAction<
   [wsId: string, agentType?: string, options?: { panelLayoutId?: string; panelId?: string }]
 >('workspaceAgents/createAgentRequested');
@@ -354,6 +452,19 @@ export const renameAgentSessionRequested = createAsyncAction<
 export const stopAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/stopAgentSession',
   'workspaceAgents/stopAgentSessionRequested',
+);
+/**
+ * Set or clear the daemon-owned per-agent notification mute
+ * (`agent.update { changes: { notificationsMuted } }`, §5.5). The saga
+ * applies the flag optimistically (re-deriving `hasUnread`), reverts on a
+ * daemon failure, and lets the `agent:updated` push converge the session.
+ */
+export const setAgentNotificationsMutedRequested = createAsyncAction<
+  [wsId: string, agentId: string, notificationsMuted: boolean],
+  void
+>(
+  'workspaceAgents/setAgentNotificationsMuted',
+  'workspaceAgents/setAgentNotificationsMutedRequested',
 );
 export const deleteAgentSessionRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/deleteAgentSession',
@@ -543,6 +654,64 @@ workspaceAgentsReducer.with(setIsLoadingRetiredAgents, (state, { payload: [wsId,
   }
   return setWorkspaceState(state, wsId, { ...workspaceState, isLoadingRetiredAgents: loading });
 });
+workspaceAgentsReducer.with(setScopeCounts, (state, { payload: [wsId, counts] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const scopeCounts = counts
+    ? {
+        topLevel: Math.max(0, counts.topLevel),
+        delegated: Math.max(0, counts.delegated),
+        background: Math.max(0, counts.background),
+      }
+    : null;
+  const current = workspaceState.scopeCounts;
+  const unchanged =
+    current === scopeCounts ||
+    (current !== null &&
+      scopeCounts !== null &&
+      current.topLevel === scopeCounts.topLevel &&
+      current.delegated === scopeCounts.delegated &&
+      current.background === scopeCounts.background);
+  // An equal-valued snapshot is still a fresh baseline: the generation
+  // advances so deferred nudges captured before it are dropped, while the
+  // counts object keeps its reference.
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    scopeCounts: unchanged ? current : scopeCounts,
+    scopeCountsGeneration: workspaceState.scopeCountsGeneration + 1,
+  });
+});
+workspaceAgentsReducer.with(adjustScopeCount, (state, { payload: [wsId, bin, delta] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const current = workspaceState.scopeCounts;
+  if (!current) return state;
+  const next = Math.max(0, current[bin] + delta);
+  if (current[bin] === next) return state;
+  return setWorkspaceState(state, wsId, {
+    ...workspaceState,
+    scopeCounts: { ...current, [bin]: next },
+  });
+});
+const LAZY_BIN_LOADED_FIELD = {
+  delegated: 'delegatedAgentsLoaded',
+  background: 'backgroundAgentsLoaded',
+} as const satisfies Record<LazyAgentListBin, keyof WorkspaceAgentState>;
+const LAZY_BIN_LOADING_FIELD = {
+  delegated: 'isLoadingDelegatedAgents',
+  background: 'isLoadingBackgroundAgents',
+} as const satisfies Record<LazyAgentListBin, keyof WorkspaceAgentState>;
+workspaceAgentsReducer.with(setLazyBinLoaded, (state, { payload: [wsId, bin, loaded] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const field = LAZY_BIN_LOADED_FIELD[bin];
+  if (workspaceState[field] === loaded) return state;
+  return setWorkspaceState(state, wsId, { ...workspaceState, [field]: loaded });
+});
+workspaceAgentsReducer.with(setIsLoadingLazyBin, (state, { payload: [wsId, bin, loading] }) => {
+  const workspaceState = getWorkspaceState(state, wsId);
+  const field = LAZY_BIN_LOADING_FIELD[bin];
+  if (workspaceState[field] === loading) return state;
+  return setWorkspaceState(state, wsId, { ...workspaceState, [field]: loading });
+});
+
 workspaceAgentsReducer.with(
   setWaitingForFirstMessage,
   (state, { payload: [wsId, agentId, waiting] }) => {
@@ -571,8 +740,8 @@ workspaceAgentsReducer.with(setActiveAgentId, (state, { payload: [wsId, agentId]
   if (workspaceState.activeAgentId === agentId) return state;
   return setWorkspaceState(state, wsId, { ...workspaceState, activeAgentId: agentId });
 });
-workspaceAgentsReducer.with(upsertSession, (state, { payload: [session] }) => {
-  // Only track the agent ID — session data lives in agent-session slice
+// Only track the agent ID — session data lives in agent-session slice
+function syncSessionMembership(state: WorkspaceAgentsState, session: AgentSession) {
   const wsId = String(session.workspaceId);
   const workspaceState = getWorkspaceState(state, wsId);
   const agentId = String(session.id);
@@ -600,6 +769,18 @@ workspaceAgentsReducer.with(upsertSession, (state, { payload: [session] }) => {
     foregroundAgentIds,
     diskMessageCounts,
   });
+}
+workspaceAgentsReducer.with(upsertSession, (state, { payload: [session] }) =>
+  syncSessionMembership(state, session),
+);
+// A stored-snapshot restore (soft-hide undo / failed delete / delete-cancelled)
+// follows a `removeAgent`, so membership must be re-registered the same way.
+workspaceAgentsReducer.with(restoreStoredSessions, (state, { payload: [sessions] }) => {
+  let next = state;
+  for (const session of sessions) {
+    next = syncSessionMembership(next, session);
+  }
+  return next;
 });
 workspaceAgentsReducer.with(
   setInitialSpecWriteInProgress,

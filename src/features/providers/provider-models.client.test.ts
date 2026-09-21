@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   handle: vi.fn<(channel: string, handler: ModelHandler) => void>(),
   request: vi.fn(),
   getBackend: vi.fn(),
+  browserMockInvoke: vi.fn(),
 }));
 
 // Keep the renderer client, both IPC routes, and wire mapping real. Only the
@@ -38,85 +39,115 @@ beforeAll(async () => {
   await import('$store/renderer/seeders/model-catalog-bridge-seeder');
 });
 
-describe.each(['Electron', 'web'])('Antigravity provider model client via %s', (transport) => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-    mocks.getBackend.mockReturnValue({ client: { request: mocks.request } });
-    setupAntigravityIPC();
-    vi.stubGlobal(
-      'window',
-      transport === 'web'
-        ? {}
-        : {
-            electronAPI: {
-              invoke: async (channel: string, params?: { forceRefresh?: boolean }) => {
-                const registration = mocks.handle.mock.calls.find(([name]) => name === channel);
-                if (!registration) throw new Error(`No Electron handler: ${channel}`);
-                return registration[1](event, params);
-              },
-            },
-          },
+/**
+ * Three renderer transports: real Electron (preload bridge → main-process
+ * handler), bridge-less web (mock router → daemon bridge seeder), and the dev
+ * web build with `$lib/browser-mock` installed — a fake `window.electronAPI`
+ * carrying the mock's sentinel electron version whose `invoke` answers every
+ * `*:get-models` channel with an empty catalog (intent-hq/intent#5297).
+ */
+type Transport = 'Electron' | 'web' | 'web with browser mock';
+
+function windowFor(transport: Transport): object {
+  if (transport === 'web') return {};
+  if (transport === 'web with browser mock') {
+    mocks.browserMockInvoke.mockResolvedValue({ success: true, data: [] });
+    return {
+      electronAPI: {
+        invoke: mocks.browserMockInvoke,
+        versions: { node: '20.0.0', chrome: '120.0.0', electron: '0.0.0-browser' },
+      },
+    };
+  }
+  return {
+    electronAPI: {
+      invoke: async (channel: string, params?: { forceRefresh?: boolean }) => {
+        const registration = mocks.handle.mock.calls.find(([name]) => name === channel);
+        if (!registration) throw new Error(`No Electron handler: ${channel}`);
+        return registration[1](event, params);
+      },
+      versions: { node: '20.0.0', chrome: '120.0.0', electron: '30.0.0' },
+    },
+  };
+}
+
+describe.each<Transport>(['Electron', 'web', 'web with browser mock'])(
+  'Antigravity provider model client via %s',
+  (transport) => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+      mocks.getBackend.mockReturnValue({ client: { request: mocks.request } });
+      setupAntigravityIPC();
+      vi.stubGlobal('window', windowFor(transport));
+    });
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it.each([false, true])(
+      'loads Antigravity models with forceRefresh=%s',
+      async (forceRefresh) => {
+        mocks.request.mockResolvedValue({ providerId: 'antigravity', models: [wireModel] });
+
+        await expect(getProviderModels('antigravity', { forceRefresh })).resolves.toEqual({
+          models: [model],
+        });
+        expect(mocks.request).toHaveBeenCalledExactlyOnceWith('models.list', {
+          providerId: 'antigravity',
+          ...(forceRefresh ? { forceRefresh: true } : {}),
+        });
+        if (transport === 'Electron') expect(mocks.getBackend).toHaveBeenCalledWith(event);
+        if (transport === 'web with browser mock') {
+          expect(mocks.browserMockInvoke).not.toHaveBeenCalled();
+        }
+      },
     );
-  });
 
-  afterEach(() => vi.unstubAllGlobals());
-
-  it.each([false, true])('loads Antigravity models with forceRefresh=%s', async (forceRefresh) => {
-    mocks.request.mockResolvedValue({ providerId: 'antigravity', models: [wireModel] });
-
-    await expect(getProviderModels('antigravity', { forceRefresh })).resolves.toEqual({
-      models: [model],
-    });
-    expect(mocks.request).toHaveBeenCalledExactlyOnceWith('models.list', {
-      providerId: 'antigravity',
-      ...(forceRefresh ? { forceRefresh: true } : {}),
-    });
-    if (transport === 'Electron') expect(mocks.getBackend).toHaveBeenCalledWith(event);
-  });
-
-  it('preserves a stale catalog and its warning', async () => {
-    mocks.request.mockResolvedValue({
-      models: [wireModel],
-      warning: 'Using the saved catalog',
-      stale: true,
-    });
-    await expect(getProviderModels('antigravity')).resolves.toEqual({
-      models: [model],
-      warning: 'Using the saved catalog',
-      stale: true,
-    });
-  });
-
-  it('preserves an empty catalog warning without inventing models', async () => {
-    mocks.request.mockResolvedValue({ models: [], warning: 'Sign in required' });
-    await expect(getProviderModels('antigravity')).resolves.toEqual({
-      models: [],
-      warning: 'Sign in required',
-    });
-  });
-
-  it('reports daemon transport failure with the provider name', async () => {
-    mocks.request.mockRejectedValue(new Error('catalog unavailable'));
-    await expect(getProviderModels('antigravity')).rejects.toThrow(
-      'Google Antigravity: catalog unavailable',
-    );
-  });
-
-  it('rejects unknown providers without invoking a transport', async () => {
-    await expect(getProviderModels('not-a-provider')).rejects.toThrow(
-      'not-a-provider: Unsupported model provider: not-a-provider',
-    );
-    expect(mocks.request).not.toHaveBeenCalled();
-  });
-
-  if (transport === 'Electron') {
-    it('fails closed when the invoking window has no live backend', async () => {
-      mocks.getBackend.mockImplementation(() => {
-        throw new Error('window backend unavailable');
+    it('preserves a stale catalog and its warning', async () => {
+      mocks.request.mockResolvedValue({
+        models: [wireModel],
+        warning: 'Using the saved catalog',
+        stale: true,
       });
-      await expect(getProviderModels('antigravity')).rejects.toThrow('window backend unavailable');
-      expect(mocks.getBackend).toHaveBeenCalledWith(event);
+      await expect(getProviderModels('antigravity')).resolves.toEqual({
+        models: [model],
+        warning: 'Using the saved catalog',
+        stale: true,
+      });
+    });
+
+    it('preserves an empty catalog warning without inventing models', async () => {
+      mocks.request.mockResolvedValue({ models: [], warning: 'Sign in required' });
+      await expect(getProviderModels('antigravity')).resolves.toEqual({
+        models: [],
+        warning: 'Sign in required',
+      });
+    });
+
+    it('reports daemon transport failure with the provider name', async () => {
+      mocks.request.mockRejectedValue(new Error('catalog unavailable'));
+      await expect(getProviderModels('antigravity')).rejects.toThrow(
+        'Google Antigravity: catalog unavailable',
+      );
+    });
+
+    it('rejects unknown providers without invoking a transport', async () => {
+      await expect(getProviderModels('not-a-provider')).rejects.toThrow(
+        'not-a-provider: Unsupported model provider: not-a-provider',
+      );
       expect(mocks.request).not.toHaveBeenCalled();
     });
-  }
-});
+
+    if (transport === 'Electron') {
+      it('fails closed when the invoking window has no live backend', async () => {
+        mocks.getBackend.mockImplementation(() => {
+          throw new Error('window backend unavailable');
+        });
+        await expect(getProviderModels('antigravity')).rejects.toThrow(
+          'window backend unavailable',
+        );
+        expect(mocks.getBackend).toHaveBeenCalledWith(event);
+        expect(mocks.request).not.toHaveBeenCalled();
+      });
+    }
+  },
+);

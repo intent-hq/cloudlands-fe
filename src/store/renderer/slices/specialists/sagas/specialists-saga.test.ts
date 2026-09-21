@@ -40,8 +40,7 @@ vi.mock('$lib/constants/specialists', () => ({
     },
   ],
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: mocks.toastError } }));
-vi.mock('$lib/components/ui/toast', () => ({ toast: { error: mocks.toastError } }));
+vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: mocks.toastError } }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ error: mocks.loggerError, warn: mocks.loggerWarn }),
 }));

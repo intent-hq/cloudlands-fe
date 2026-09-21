@@ -320,6 +320,12 @@ describe('browser-mock backend:* transport envelope', () => {
     const settings = await api.invoke('backend:request', { method: 'settings.list' });
     expect(settings.ok).toBe(true);
     expect(Array.isArray(settings.result?.settings)).toBe(true);
+    expect(settings.result.revision).toBe(0);
+    expect(settings.result.settings.map(({ path }: { path: string }) => path)).toEqual([
+      'workspaceInitializer.state',
+      'hardwareConsole.state',
+      'rtk.enabled',
+    ]);
 
     const repos = await api.invoke('backend:request', { method: 'repo.list' });
     expect(repos.ok).toBe(true);
@@ -334,6 +340,57 @@ describe('browser-mock backend:* transport envelope', () => {
     const sub = await api.invoke('backend:request', { method: 'events.subscribe' });
     expect(sub.ok).toBe(true);
     expect(typeof sub.result?.subscriptionId).toBe('string');
+  });
+
+  it('serves protocol-shaped settings bags and unavailable host capabilities for product hydration', async () => {
+    const initializer = await api.invoke('backend:request', {
+      method: 'settings.get',
+      params: { path: 'workspaceInitializer.state' },
+    });
+    expect(initializer).toEqual({
+      ok: true,
+      result: {
+        path: 'workspaceInitializer.state',
+        value: { hydrated: true },
+        definition: {
+          path: 'workspaceInitializer.state',
+          label: 'Workspace initializer state',
+          description: 'Browser-preview workspace initializer state.',
+          category: 'workspace',
+          type: 'object',
+          defaultValue: {},
+        },
+        revision: 0,
+      },
+    });
+
+    const hardware = await api.invoke('backend:request', {
+      method: 'settings.get',
+      params: { path: 'hardwareConsole.state' },
+    });
+    expect(hardware.ok).toBe(true);
+    expect(hardware.result.value).toEqual({});
+    expect(hardware.result.definition.type).toBe('object');
+
+    const availability = await api.invoke('backend:request', {
+      method: 'host.toolAvailability',
+      params: { tools: ['claude', 'codex'] },
+    });
+    expect(availability).toEqual({
+      ok: true,
+      result: {
+        tools: { claude: { available: false }, codex: { available: false } },
+      },
+    });
+    await expect(
+      api.invoke('backend:request', { method: 'host.checkAuggie', params: {} }),
+    ).resolves.toEqual({ ok: true, result: { available: false } });
+    await expect(
+      api.invoke('backend:request', { method: 'host.providerAuthStatus', params: {} }),
+    ).resolves.toEqual({ ok: true, result: { providers: [] } });
+    await expect(
+      api.invoke('backend:request', { method: 'host.providerDiscovery', params: {} }),
+    ).resolves.toEqual({ ok: true, result: { providers: [] } });
   });
 
   it('backend:request workspace.get resolves the workspace by id as { ok: true, result: { workspace } } (monorepo#2605)', async () => {
@@ -399,7 +456,7 @@ describe('browser-mock backend:* transport envelope', () => {
     expect(scripts.ok).toBe(true);
     expect(Array.isArray(scripts.result?.scripts)).toBe(true);
 
-    // v4.0 envelope: { terminals, daemonBootId } — never the bare array.
+    // `terminal.list` envelope: { terminals, daemonBootId } — never the bare array.
     const terminals = await api.invoke('backend:request', {
       method: 'terminal.list',
       params: { workspaceId: 'mock-ws-1' },
@@ -451,6 +508,40 @@ describe('browser-mock backend:* transport envelope', () => {
     });
     expect(commits.ok).toBe(true);
     expect(commits.result).toEqual({ commits: [], boundarySha: null, nextToken: null });
+  });
+
+  it('serves the protocol-shaped terminal happy path through the live client', async () => {
+    const invokeSpy = vi.spyOn(api, 'invoke');
+    const { LiveAppClient } = await import('./client');
+    const terminals = new LiveAppClient().terminals;
+
+    const created = await terminals.create({ workspaceId: 'mock-ws-1', cols: 80, rows: 24 });
+    expect(created).toEqual({ success: true, id: 'browser-mock-terminal-1' });
+    const terminalId = created.id!;
+
+    await expect(terminals.write(terminalId, 'ls\n')).resolves.toEqual({ success: true });
+    await expect(terminals.resize(terminalId, 100, 30)).resolves.toEqual({ success: true });
+    await expect(terminals.getBuffer(terminalId)).resolves.toBe('');
+    await expect(terminals.output('mock-ws-1', terminalId)).resolves.toBe('');
+    await expect(terminals.kill(terminalId)).resolves.toEqual({ success: true });
+
+    expect(invokeSpy.mock.calls).toEqual([
+      [
+        'backend:request',
+        { method: 'terminal.create', params: { workspaceId: 'mock-ws-1', cols: 80, rows: 24 } },
+      ],
+      ['backend:request', { method: 'terminal.write', params: { terminalId, data: 'bHMK' } }],
+      [
+        'backend:request',
+        { method: 'terminal.resize', params: { terminalId, cols: 100, rows: 30 } },
+      ],
+      ['backend:request', { method: 'terminal.getBuffer', params: { terminalId } }],
+      [
+        'backend:request',
+        { method: 'terminal.readOutput', params: { workspaceId: 'mock-ws-1', terminalId } },
+      ],
+      ['backend:request', { method: 'terminal.kill', params: { terminalId } }],
+    ]);
   });
 
   it('resolves workspaces.get through the live client (workspace open path)', async () => {

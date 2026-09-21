@@ -84,14 +84,66 @@ describe('config-daemon-sync ↔ daemon settings.* (PROTOCOL.md §5.12)', () => 
     expect(requestMock).not.toHaveBeenCalled();
   });
 
-  it('pushAllDaemonKeys batches every non-secret daemon key into one settings.update call', async () => {
-    const { pushAllDaemonKeys, NON_SECRET_DAEMON_KEYS } = await import('../config-daemon-sync');
+  it('pushAllDaemonKeys batches every hydrated daemon key into one settings.update call', async () => {
+    requestMock.mockImplementation(async (_method: string, params: { path: string }) => ({
+      path: params.path,
+      value: `hydrated:${params.path}`,
+    }));
+    const { hydrateFromDaemon, pushAllDaemonKeys, NON_SECRET_DAEMON_KEYS } =
+      await import('../config-daemon-sync');
     const cm = makeConfigManagerStub();
+    await hydrateFromDaemon(cm);
+    requestMock.mockClear();
     await pushAllDaemonKeys(cm);
     expect(requestMock).toHaveBeenCalledTimes(1);
     const [, body] = requestMock.mock.calls[0];
     const payload = body as { changes: Array<{ path: string; value: unknown }> };
     expect(payload.changes.map((c) => c.path).sort()).toEqual([...NON_SECRET_DAEMON_KEYS].sort());
+  });
+
+  it('pushAllDaemonKeys pushes nothing while no daemon key is hydrated or locally written', async () => {
+    const { pushAllDaemonKeys } = await import('../config-daemon-sync');
+    await pushAllDaemonKeys(makeConfigManagerStub());
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('pushAllDaemonKeys pushes only the locally written keys while hydration is pending', async () => {
+    const { applyLocalDaemonKeyWrite, pushAllDaemonKeys } = await import('../config-daemon-sync');
+    const cm = makeConfigManagerStub();
+    const userRules = { enabled: false, rules: [] };
+    applyLocalDaemonKeyWrite(cm, 'userRules', userRules);
+    await pushAllDaemonKeys(cm);
+    expect(cm.__state['userRules']).toEqual(userRules);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock).toHaveBeenCalledWith('settings.update', {
+      changes: [{ path: 'userRules', value: userRules }],
+    });
+  });
+
+  it('hydrateFromDaemon discards a result for a key written locally while its fetch was in flight', async () => {
+    const pending: Array<() => void> = [];
+    requestMock.mockImplementation(
+      (_method: string, params: { path: string }) =>
+        new Promise((resolve) => {
+          pending.push(() => resolve({ path: params.path, value: `stale:${params.path}` }));
+        }) as Promise<never>,
+    );
+    const { applyLocalDaemonKeyWrite, hydrateFromDaemon } = await import('../config-daemon-sync');
+    const cm = makeConfigManagerStub();
+    const hydration = hydrateFromDaemon(cm);
+    // The client resolves through a dynamic import, so the reads are issued
+    // a few ticks later.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(pending).toHaveLength(3);
+
+    const written = [{ pattern: 'git push', action: 'ask' }];
+    applyLocalDaemonKeyWrite(cm, 'permissions.rules', written);
+    pending.splice(0).forEach((answer) => answer());
+    await hydration;
+
+    expect(cm.__state['permissions.rules']).toEqual(written);
+    expect(cm.__state['userRules']).toBe('stale:userRules');
+    expect(cm.__state['workspaceRules']).toBe('stale:workspaceRules');
   });
 
   it('isDaemonOwnedKey identifies the routed sub-keys', async () => {

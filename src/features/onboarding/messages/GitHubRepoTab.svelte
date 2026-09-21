@@ -23,7 +23,11 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { shell } from '$lib/electron-bridge';
   import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
+  import { menuItem } from '$lib/components/ui/menu';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
 
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -44,7 +48,7 @@
     selectGithubRepoSearchResults,
   } from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
-  import { faArrowUpRightFromSquare, faSpinner } from '@fortawesome/free-solid-svg-icons';
+  import { faArrowRotateRight, faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
@@ -139,11 +143,6 @@
     option?.scrollIntoView({ block: 'nearest' });
     focusedViaKeyboard = false;
   });
-
-  /** GitHub avatar URL helper — matches LocalRepoTab. */
-  function getGitHubAvatarUrl(owner: string, size: number = 32): string {
-    return `https://github.com/${owner}.png?size=${size}`;
-  }
 
   /** Arrow-key navigation and Enter-to-select over the combined list. */
   function handleKeydown(e: KeyboardEvent) {
@@ -314,14 +313,15 @@
       class="rounded-lg border border-danger/30 bg-danger-background/5 px-3 py-2.5 text-xs text-danger space-y-2"
     >
       <p>{m.onboarding_githubRepoTab_loadFailed_error({ error: $reposError$ })}</p>
-      <button
+      <Button
+        variant="ghost"
         type="button"
         class="inline-flex items-center gap-1.5 text-xs underline underline-offset-2 cursor-pointer hover:no-underline"
         onclick={refreshRepos}
       >
-        <Fa icon={faSpinner} size="xs" />
+        <Fa icon={faArrowRotateRight} size="xs" />
         <span>{m.onboarding_githubRepoTab_tryAgain_label()}</span>
-      </button>
+      </Button>
     </div>
   {:else}
     <div
@@ -336,27 +336,30 @@
           {#each combinedRepos as repo, index (repo.id)}
             {@const isFocused = index === focusedIndex}
             {@const isCommitted = githubUrl === `https://github.com/${repo.owner}/${repo.name}`}
-            <button
+            <Button
+              variant="ghost"
               type="button"
               id="github-repo-option-{index}"
               role="option"
               aria-selected={isCommitted}
-              class="group/row w-full flex items-center gap-3 py-2.5 px-3 text-left rounded-lg transition-colors cursor-pointer
-                {isCommitted ? 'bg-foreground text-background pl-2.5' : ''}
-                {isFocused && !isCommitted ? 'bg-muted/40' : ''}
-                {!isFocused && !isCommitted ? 'hover:bg-muted/30' : ''}"
+              class={cn(
+                menuItem(),
+                'group/row gap-3 px-3 py-2.5 cursor-pointer',
+                isCommitted && 'bg-foreground text-background pl-2.5',
+                isFocused && !isCommitted && 'bg-muted/40',
+                !isFocused && !isCommitted && 'hover:bg-muted/30',
+              )}
               onclick={() => {
                 handleSelectRepo(repo);
                 githubInputRef?.focus();
               }}
               onmousemove={() => (focusedIndex = index)}
             >
-              <img
-                src={getGitHubAvatarUrl(repo.owner, 32)}
+              <GitHubAvatar
+                identity={repo.owner}
                 alt={repo.owner}
+                size={24}
                 class="w-6 h-6 rounded-full shrink-0"
-                loading="lazy"
-                onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
               />
               <div class="flex-1 min-w-0">
                 <div
@@ -394,17 +397,17 @@
               >
                 <Fa icon={faArrowUpRightFromSquare} size="xs" />
               </span>
-            </button>
+            </Button>
           {/each}
         </div>
       {:else if $reposLoading$ && !$reposLoaded$}
         <div class="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.onboarding_githubRepoTab_loadingRepos_label()}</span>
         </div>
       {:else if githubInput.trim() && $searchLoading$}
         <div class="py-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
+          <IntentMarkLoader size={12} />
           <span>{m.onboarding_githubRepoTab_searching_label({ query: githubInput.trim() })}</span>
         </div>
       {:else if githubInput.trim()}

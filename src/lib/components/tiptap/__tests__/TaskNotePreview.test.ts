@@ -1,6 +1,10 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readable } from 'svelte/store';
+import type { NoteId } from '$shared/types';
 
 const mockProcessMarkdownToHTML = vi.hoisted(() => vi.fn(async () => '<p>preview</p>'));
 
@@ -22,7 +26,7 @@ afterEach(() => {
 describe('TaskNotePreview', () => {
   it('passes its workspace to markdown conversion', async () => {
     render(TaskNotePreview, {
-      props: { workspaceId: 'workspace-1', noteId: 'note-1' as any },
+      props: { workspaceId: 'workspace-1', noteId: 'note-1' as NoteId },
     });
 
     await waitFor(() =>
@@ -36,5 +40,15 @@ describe('TaskNotePreview', () => {
         },
       ),
     );
+  });
+
+  it('renders as a content-only semantic tooltip without creating a nested trigger', () => {
+    const { getByRole } = render(TaskNotePreview, {
+      props: { workspaceId: 'workspace-1', noteId: 'note-1' as NoteId },
+    });
+
+    const tooltip = getByRole('tooltip');
+    expect(tooltip.hidden).toBe(false);
+    expect(tooltip.querySelector('[data-tooltip-trigger], button, input')).toBeNull();
   });
 });

@@ -13,11 +13,62 @@
  * Pre-fix, `src/preload/index.ts` was missing these channels while
  * `src/preload/index.template.ts` had them, causing silent failures
  * only in production builds (which use index.ts, not the template).
+ *
+ * `src/preload/index.ts` is untracked, so this suite never reads it from the
+ * repo: it runs scripts/inline-ipc-channels.ts into a temp fixture and inspects
+ * that output, which keeps the suite green whether or not the file exists
+ * locally.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+
+const repoRoot = path.resolve(__dirname, '../..');
+const generatorPath = path.join(repoRoot, 'scripts/inline-ipc-channels.ts');
+
+let fixtureRoot: string | undefined;
+
+function removeFixture(): void {
+  if (fixtureRoot) fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  fixtureRoot = undefined;
+}
+
+afterAll(removeFixture);
+
+/**
+ * Generate the preload from the real template into a throwaway project root
+ * and return the output. The generator still imports the real
+ * src/shared/ipc-registry (its import is relative to the script, not to the
+ * root argument), so this is the same rendering path `pnpm run
+ * generate:ipc-channels` takes, without touching the repo. Called from
+ * beforeAll (not at collection time) so a name-filtered run that skips every
+ * test allocates nothing, and the fixture is removed if generation fails.
+ */
+function generatePreload(templateContent: string): string {
+  fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'preload-parity-'));
+  try {
+    fs.mkdirSync(path.join(fixtureRoot, 'src/preload'), { recursive: true });
+    fs.writeFileSync(path.join(fixtureRoot, 'src/preload/index.template.ts'), templateContent);
+    // node --import tsx rather than the node_modules/.bin/tsx shim, which
+    // spawnSync cannot execute without a shell on Windows.
+    const result = spawnSync(process.execPath, ['--import', 'tsx', generatorPath, fixtureRoot], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (result.status !== 0) {
+      throw new Error(
+        `preload generation failed (status ${result.status}):\n${result.stdout ?? ''}${result.stderr ?? ''}`,
+      );
+    }
+    return fs.readFileSync(path.join(fixtureRoot, 'src/preload/index.ts'), 'utf-8');
+  } catch (error) {
+    removeFixture();
+    throw error;
+  }
+}
 
 // Channels that AgentSubscriptions.svelte relies on for correct behavior.
 // If any of these are missing from either preload allowlist, the renderer
@@ -61,19 +112,29 @@ function getAgentChannels(channels: string[]): string[] {
 }
 
 describe('Preload IPC Allowlist Parity', () => {
-  const preloadIndexPath = path.resolve(__dirname, '../../src/preload/index.ts');
-  const preloadTemplatePath = path.resolve(__dirname, '../../src/preload/index.template.ts');
+  const preloadTemplatePath = path.join(repoRoot, 'src/preload/index.template.ts');
 
-  // Read files once
-  const indexContent = fs.readFileSync(preloadIndexPath, 'utf-8');
-  const templateContent = fs.readFileSync(preloadTemplatePath, 'utf-8');
+  // Read the template once and generate the preload from it once, inside a
+  // hook so collection (and a fully name-filtered run) allocates no fixture.
+  let indexContent: string;
+  let indexAllowed: string[];
+  let templateAllowed: string[];
+  let indexEvents: string[];
+  let templateEvents: string[];
+  let indexDynamic: string[];
+  let templateDynamic: string[];
 
-  const indexAllowed = extractArrayEntries(indexContent, 'ALLOWED_CHANNELS');
-  const templateAllowed = extractArrayEntries(templateContent, 'ALLOWED_CHANNELS');
-  const indexEvents = extractArrayEntries(indexContent, 'EVENT_CHANNELS');
-  const templateEvents = extractArrayEntries(templateContent, 'EVENT_CHANNELS');
-  const indexDynamic = extractArrayEntries(indexContent, 'DYNAMIC_CHANNEL_PATTERNS');
-  const templateDynamic = extractArrayEntries(templateContent, 'DYNAMIC_CHANNEL_PATTERNS');
+  beforeAll(() => {
+    const templateContent = fs.readFileSync(preloadTemplatePath, 'utf-8');
+    indexContent = generatePreload(templateContent);
+
+    indexAllowed = extractArrayEntries(indexContent, 'ALLOWED_CHANNELS');
+    templateAllowed = extractArrayEntries(templateContent, 'ALLOWED_CHANNELS');
+    indexEvents = extractArrayEntries(indexContent, 'EVENT_CHANNELS');
+    templateEvents = extractArrayEntries(templateContent, 'EVENT_CHANNELS');
+    indexDynamic = extractArrayEntries(indexContent, 'DYNAMIC_CHANNEL_PATTERNS');
+    templateDynamic = extractArrayEntries(templateContent, 'DYNAMIC_CHANNEL_PATTERNS');
+  });
 
   describe('Required subscription channels present in ALLOWED_CHANNELS', () => {
     for (const channel of REQUIRED_SUBSCRIPTION_CHANNELS) {

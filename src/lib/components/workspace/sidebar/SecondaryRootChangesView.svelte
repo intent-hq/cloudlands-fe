@@ -5,14 +5,16 @@
    *
    * Renders the working-tree file list and commit history of a registered
    * secondary git root via the `gitRootId`-scoped `git.status` / `git.commits`
-   * reads (PROTOCOL §5.6, v6.15). Secondary roots are read-only: no staging,
+   * reads (PROTOCOL §5.6). Secondary roots are read-only: no staging,
    * commit, push, or PR affordances.
    */
   import type { WorkspaceGitRootEntry } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import {
     openWorkspaceCommitChangeset,
+    openWorkspaceDiff,
     openWorkspaceLocalChanges,
   } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+  import { selectFocusedPanelId } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
     emptySecondaryRootState,
@@ -22,34 +24,44 @@
     loadSecondaryRootCommitFiles,
     loadSecondaryRootGit,
   } from '$store/renderer/slices/git/git-slice';
-  import type { CommitInfo } from '$shared/types';
+  import {
+    ChangeStage,
+    type FileChangeStatus,
+    type TrackedChange,
+  } from '$features/file-tracking/types';
+  import type { CommitInfo, FileStatus } from '$shared/types';
+  import { isCmdClickModifier } from '$shared/utils/link-helpers';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import FileRow from '$lib/components/file-tracking/accept-changes/FileRow.svelte';
   import type { UIFileChange } from '$lib/components/file-tracking/accept-changes/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import LineChangesBadge from '$lib/components/shared/LineChangesBadge.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { m } from '$shared/paraglide/messages.js';
   import { formatInteger } from '$lib/i18n/format';
-  import {
-    faArrowsRotate,
-    faChevronDown,
-    faCodeCommit,
-    faSpinner,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faCodeCommit } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
-  import { toast } from 'svelte-sonner';
+  import type { Snippet } from 'svelte';
+  import ChangesRefreshAction from './ChangesRefreshAction.svelte';
+  import { slide } from '$lib/motion';
+  import { notify } from '$lib/components/patterns/notify';
 
   interface Props {
     workspaceId: string;
     entry: WorkspaceGitRootEntry;
+    onRefreshActionChange?: (action: Snippet | undefined) => void;
   }
 
-  let { workspaceId, entry }: Props = $props();
+  let { workspaceId, entry, onRefreshActionChange }: Props = $props();
+
+  $effect(() => {
+    onRefreshActionChange?.(refreshAction);
+    return () => onRefreshActionChange?.(undefined);
+  });
 
   const gitRootId = $derived(entry.gitRoot?.id ?? '');
   // The root's HEAD when first tracked (registration or sweep backfill);
@@ -137,6 +149,63 @@
     appStore.dispatch(openWorkspaceLocalChanges(workspaceId, { gitRootId }));
   }
 
+  // Porcelain status char → TrackedChange status (GitFileStatus wire values)
+  function changeStatus(statusChar: string): FileChangeStatus {
+    switch (statusChar) {
+      case 'A':
+      case '?':
+        return 'added';
+      case 'D':
+        return 'deleted';
+      case 'R':
+        return 'renamed';
+      default:
+        return 'modified';
+    }
+  }
+
+  // Open a root-scoped diff tab for a working-tree file. `relativePath` stays
+  // root-relative for the gitRootId-scoped reads; `file` / `filePath` carry the
+  // root-absolute path so the tab identity cannot collide with a primary-root
+  // file at the same relative path.
+  function openFileDiff(file: FileStatus, event?: MouseEvent | KeyboardEvent) {
+    const rootPath = entry.path ?? '';
+    const filePath = rootPath ? `${rootPath}/${file.path}` : file.path;
+    const changeId = `root-${gitRootId}-${file.staged ? 'staged' : 'unstaged'}-${file.path}`;
+    const change: TrackedChange = {
+      id: changeId,
+      file: filePath,
+      relativePath: file.path,
+      status: changeStatus(file.status),
+      stage: file.staged ? ChangeStage.Staged : ChangeStage.Unstaged,
+      stats: { additions: 0, deletions: 0 },
+      attribution: { manual: true, timestamp: Date.now() },
+      // Submodule (gitlink) marking from git.status (mode 160000), mirroring
+      // git-status-reconciliation so a nested pin renders its pin diff instead
+      // of falling through to file reads against a directory.
+      ...(file.mode === '160000'
+        ? {
+            gitlink: {
+              mode: file.mode,
+              ...(file.oldSha !== undefined ? { oldSha: file.oldSha } : {}),
+              ...(file.newSha !== undefined ? { newSha: file.newSha } : {}),
+            },
+          }
+        : {}),
+    };
+    const sourcePanelId = selectFocusedPanelId.select(appStore.state, workspaceId) ?? undefined;
+    appStore.dispatch(
+      openWorkspaceDiff(workspaceId, change, {
+        gitRootId,
+        gitRootPath: rootPath || undefined,
+        filePath,
+        changeId,
+        openInAdjacentPanel: event ? isCmdClickModifier({ event }) : false,
+        sourcePanelId,
+      }),
+    );
+  }
+
   // Prefer the freshly loaded status over the cached git-root list entry so
   // a refresh after a branch checkout shows the new branch immediately.
   const branchName = $derived(status?.branch || entry.branch || '');
@@ -146,9 +215,9 @@
     if (!branchName) return;
     try {
       await writeTextToClipboard(branchName);
-      toast.success(m.workspace_sidebarChanges_branchCopied_label());
+      notify.success(m.workspace_sidebarChanges_branchCopied_label());
     } catch {
-      toast.error(m.workspace_sidebarChanges_copyBranchFailed_error());
+      notify.error(m.workspace_sidebarChanges_copyBranchFailed_error());
     }
   }
 
@@ -164,10 +233,14 @@
       case 'C':
         return 'text-blue-600 dark:text-blue-400';
       default:
-        return 'text-amber-600 dark:text-amber-400';
+        return 'text-warning-ink';
     }
   }
 </script>
+
+{#snippet refreshAction()}
+  <ChangesRefreshAction disabled={loading} onclick={load} />
+{/snippet}
 
 <div class="flex flex-col gap-3" data-testid="secondary-root-changes-view">
   <!-- Root branch line + refresh -->
@@ -186,15 +259,9 @@
     {:else}
       <span class="text-ui truncate min-w-0">{branchLabel}</span>
     {/if}
-    <button
-      type="button"
-      class="ml-auto p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer"
-      onclick={load}
-      disabled={loading}
-      title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-    >
-      <Fa icon={faArrowsRotate} class="text-subtle {loading ? 'animate-spin' : ''}" size={10} />
-    </button>
+    {#if !onRefreshActionChange}
+      <span class="ml-auto">{@render refreshAction()}</span>
+    {/if}
   </div>
 
   {#if loading && !status}
@@ -231,16 +298,30 @@
       {#if status && status.files.length > 0}
         <ul class="flex flex-col">
           {#each status.files as file (`${file.staged}:${file.path}`)}
-            <li class="flex items-center gap-1.5 py-0.5 min-w-0 text-xs">
-              <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
-                >{file.status}</span
+            <li class="min-w-0">
+              <Button
+                type="button"
+                variant="plain"
+                class="flex h-auto w-full min-w-0 cursor-pointer items-center justify-start gap-1.5 rounded !px-1 -mx-1 py-0.5 text-left text-xs font-inherit hover:bg-muted focus-visible:bg-muted"
+                title={file.path}
+                data-testid="secondary-root-file-open"
+                onclick={(event: MouseEvent) => openFileDiff(file, event)}
+                onkeydown={(event: KeyboardEvent) => {
+                  if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
+                  event.preventDefault();
+                  openFileDiff(file, event);
+                }}
               >
-              <span class="truncate min-w-0 text-foreground" title={file.path}>{file.path}</span>
-              {#if file.staged}
-                <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
-                  >{m.workspace_fileChanges_staged_label()}</span
+                <span class="shrink-0 w-3 text-center font-mono {statusColor(file.status)}"
+                  >{file.status}</span
                 >
-              {/if}
+                <span class="truncate min-w-0 text-foreground">{file.path}</span>
+                {#if file.staged}
+                  <span class="shrink-0 px-1 py-px rounded bg-muted text-muted-foreground text-xs"
+                    >{m.workspace_fileChanges_staged_label()}</span
+                  >
+                {/if}
+              </Button>
             </li>
           {/each}
         </ul>
@@ -272,11 +353,7 @@
             aria-label={m.workspace_sidebarChanges_rootShowOlder_ariaLabel()}
             onclick={() => (olderExpanded = !olderExpanded)}
           >
-            <div
-              class="relative flex items-center gap-2 pr-3 w-fit bg-sidebar mr-auto py-1.5 z-10 group-hover/boundary:opacity-100 {olderExpanded
-                ? 'opacity-100'
-                : 'opacity-60'}"
-            >
+            <div class="relative z-10 mr-auto flex w-fit items-center gap-2 bg-sidebar py-1.5 pr-3">
               <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
                 {m.workspace_sidebarChanges_rootRegistered_label()}
                 <Fa
@@ -291,10 +368,7 @@
 
           {#if olderExpanded}
             <!-- Older commits (dimmed, at/below the registration boundary) -->
-            <ul
-              class="flex flex-col opacity-60 hover:opacity-100 transition-opacity"
-              data-testid="secondary-root-older-commits"
-            >
+            <ul class="flex flex-col" data-testid="secondary-root-older-commits">
               {#each olderCommits as commit (commit.hash)}
                 {@render commitRow(commit)}
               {/each}
@@ -311,7 +385,7 @@
             onclick={load}
           >
             {#if loading}
-              <Fa icon={faSpinner} class="animate-spin mr-1" size="xs" />
+              <IntentMarkLoader size={12} class="mr-1" />
             {/if}
             {m.workspace_sidebarChanges_rootShowMoreCommits_label()}
           </Button>
@@ -391,7 +465,7 @@
 
     <!-- Expanded lazy file list (read-only; clicking a file opens the same changeset) -->
     {#if isExpanded}
-      <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ duration: 150 }}>
+      <div class="pl-5 pr-1.5 pb-0.5 pt-0.5 space-y-px" transition:slide={{ tier: 'moderate' }}>
         {#each files as file (file.path)}
           <FileRow {file} muted={true} onFileClick={() => openCommitChangeset(commit)} />
         {/each}

@@ -9,9 +9,9 @@
   "entry": [
     // Electron main process (tsconfig.main.json; package.json "main" points at its build output)
     "src/main/index.ts",
-    // Electron preload (tsconfig.preload.json)
-    "src/preload/index.ts",
-    // Template consumed as text by scripts/inline-ipc-channels.ts to generate src/preload/index.ts
+    // Electron preload (tsconfig.preload.json). The compiled entry, src/preload/index.ts, is
+    // gitignored output of `pnpm run generate:ipc-channels` (scripts/inline-ipc-channels.ts),
+    // so knip skips it; the template carries the same imports and stands in as the entry.
     "src/preload/index.template.ts",
     // MCP server bundled separately by scripts/build-cdp-mcp.js
     "cdp-mcp-server/server.ts",
@@ -25,10 +25,19 @@
     "e2e/global-teardown.ts",
     "e2e/mock-acp-agent.js",
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
-    // is not followed by knip); playwright/index.ts is a CT plugin default entry already
+    // is not followed by knip); playwright/index.ts is listed under "playwright-ct" below
     "playwright/app-stubs/*.ts",
     // Loaded via <script src> in operate-patterns.visual.html (visual test harness)
     "src/lib/components/ui/card/operate-patterns.visual.ts",
+    // Loaded via <script type="module"> in test/fixtures/browser-lifetime/index.html
+    // (test/electron-browser-lifetime.spec.ts); knip does not parse HTML
+    "test/fixtures/browser-lifetime/Harness.svelte",
+    // Substituted for production components through Vite alias/resolveId plugins inside
+    // the specs' createServer() config (electron-browser-lifetime.spec.ts,
+    // sidebar-shell-background.spec.ts); alias resolution is not followed by knip
+    "test/fixtures/browser-lifetime/BrowserContent.svelte",
+    "test/fixtures/browser-lifetime/Empty.svelte",
+    "test/fixtures/SidebarShellChiefStub.svelte",
     // Dynamically imported as import('$lib/dev-tools') in src/routes/(app)/+layout.svelte
     // (DEV-only); knip does not follow this aliased dynamic import inside .svelte
     "src/lib/dev-tools.ts",
@@ -38,10 +47,55 @@
     // Loaded at runtime by cdp-mcp-server/server.ts via a computed path and copied
     // into dist by scripts/build-cdp-mcp.js — not imported as a module
     "cdp-mcp-server/cdp-helpers.js",
+    // ESLint invokes this nested rule through designSystemRules; knip misses its callback-only helper usage.
+    "eslint-rules/design-system/no-arbitrary-motion-or-color.js",
+    // Public action-menu API from action-menu.meta.ts; consumers also import implementation modules directly.
+    "src/lib/components/patterns/action-menu/index.ts",
+    // Public collection metadata and row/action types; catalog and tests use the underlying modules.
+    "src/lib/components/patterns/collection/index.ts",
+    // Public confirm/prompt API and option types from confirm.meta.ts; internal consumers bypass this barrel.
+    "src/lib/components/patterns/confirm/index.ts",
+    // Public settings schema/types and useSettingsSearch API in settings.meta.ts and the generated cheatsheet.
+    "src/lib/components/patterns/settings/index.ts",
+    // Canonical ask-user-questions metadata and prop types; Gate C requires the public subpath.
+    "src/lib/components/ui/ask-user-questions/index.ts",
+    // Canonical badge variant recipe and prop types; Gate C requires the public subpath.
+    "src/lib/components/ui/badge/index.ts",
+    // Canonical button prop types, including catalog-documented ButtonSize; Gate C requires the subpath.
+    "src/lib/components/ui/button/index.ts",
+    // CheckboxGroupItem is a public alias recorded in checkbox-group.meta.ts, not a separate implementation.
+    "src/lib/components/ui/checkbox-group/index.ts",
+    // Canonical CopyInput metadata re-export; the catalog reads copy-input.meta.ts directly.
+    "src/lib/components/ui/copy-input/index.ts",
+    // Public grouped-combobox option types; compatibility harnesses import the underlying types directly.
+    "src/lib/components/ui/grouped-combobox/index.ts",
+    // Canonical InputGroup metadata re-export; the catalog reads input-group.meta.ts directly.
+    "src/lib/components/ui/input-group/index.ts",
+    // Canonical InputMessage metadata re-export; the catalog reads input-message.meta.ts directly.
+    "src/lib/components/ui/input-message/index.ts",
+    // Canonical message-composer metadata and prop types; direct metadata imports bypass the public barrel.
+    "src/lib/components/ui/message-composer/index.ts",
+    // Compatibility component/type API used through the legacy wrapper harness and root UI namespace.
+    "src/lib/components/ui/searchable-combobox/index.ts",
+    // Canonical slider prop/value types and metadata; catalog and component imports bypass this public barrel.
+    "src/lib/components/ui/slider/index.ts",
+    // Public proximity/merge-split helpers and option/result types; tests import implementation modules directly.
+    "src/lib/interaction/index.ts",
+    // Documented public motion API; transition/spring option types remain available without deep imports.
+    "src/lib/motion/index.ts",
     // Compile-time type-assertion file, checked by tsc (pnpm run check), never imported
     "src/store/renderer/utils/context-saga-effects.typecheck.ts",
+    "src/store/renderer/slices/agent-session/agent-session-slice.typecheck.ts",
   ],
   "ignore": [
+    // Accordion namespace members are used in NavigationPrimitivesCatalogPreview.svelte markup; knip misses them.
+    "src/lib/components/ui/accordion/index.ts",
+    // Popover namespace members are used in PopoversCatalogPreview.svelte markup; knip misses them.
+    "src/lib/components/ui/popover/index.ts",
+    // Table namespace members are used in ContentFieldCatalogPreview.svelte markup; knip misses them.
+    "src/lib/components/ui/table/index.ts",
+    // Tabs namespace members are used in NavigationPrimitivesCatalogPreview.svelte markup; knip misses them.
+    "src/lib/components/ui/tabs/index.ts",
     // Consumed via `import * as Card/Dialog/Menu/Sheet` namespace imports whose member
     // access happens in .svelte template markup — knip's svelte compiler does not track
     // that usage, so every export is falsely reported unused.
@@ -59,6 +113,9 @@
     // agent-subscription-contracts.test.ts — knip cannot trace importActual usage
     "src/lib/electron-bridge.ts",
     "src/main/browser-ipc-broadcast-adapter.ts",
+    // Orphaned fixture: no spec has loaded it since #1702 removed its harness. Surfaced by
+    // extending knip to test/**/*.svelte; deleting fixtures is a separate follow-up.
+    "test/fixtures/PanelPristineBackgroundHost.svelte",
   ],
   "project": [
     "src/**/*.{js,cjs,mjs,ts,svelte,css}",
@@ -70,6 +127,8 @@
     "!cdp-mcp-server/dist/**",
     "eslint-rules/**/*.js",
     "test/**/*.ts",
+    // Browser-loaded fixtures (import('/test/fixtures/<Name>.svelte') inside page.evaluate)
+    "test/**/*.svelte",
     "tests/**/*.ts",
     "e2e/**/*.{js,ts}",
     "playwright/**/*.ts",
@@ -98,9 +157,18 @@
       "e2e/**/*.e2e.ts",
     ],
   },
+  "playwright-ct": {
+    // Same known issue as "playwright": knip resolves the `playwright test --config=…`
+    // flags in package.json scripts and loads those @playwright/test configs first, after
+    // which loading playwright-ct.config.ts fails. Config loading is disabled and the CT
+    // plugin's default entries are replicated here.
+    "config": [],
+    "entry": ["playwright-ct.config.ts", "playwright/index.ts", "src/**/*.ct.spec.ts"],
+  },
   // System/external binaries, not npm packages: pkill/iconutil (macOS), duckdb, flatpak,
-  // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts)
-  "ignoreBinaries": ["pkill", "iconutil", "duckdb", "flatpak", "idea", "auggie"],
+  // idea (JetBrains launcher), auggie (Augment CLI, expected on dev/CI hosts), jq (the
+  // notify-fixed-issues.sh test stub applies the script's --jq projection with it)
+  "ignoreBinaries": ["pkill", "iconutil", "duckdb", "flatpak", "idea", "auggie", "jq"],
   "ignoreDependencies": [
     // Optional coverage provider: scripts/run-integration-coverage-if-available.ts probes it
     // with require.resolve and exits gracefully when absent — intentionally not declared
@@ -116,7 +184,15 @@
     // Loaded by the inlang CLI through project.inlang/settings.json "modules"
     "@inlang/plugin-message-format",
   ],
-  // Vite dev-server URL specifiers (/@id/..., /src/..., /test/fixtures/...) imported inside
-  // page.evaluate() in browser-based playwright specs — runtime URLs, not module specifiers
-  "ignoreUnresolved": ["^/(@id|src|test)/.+"],
+  // Vite dev-server URL specifiers (/src/..., /test/fixtures/...) imported inside
+  // page.evaluate() in browser-based playwright specs map back to source files so knip
+  // follows them into the fixtures (cloudlands-fe#2695: a fixture importing a deleted
+  // component passed every gate because knip never reached test/**/*.svelte)
+  "paths": {
+    "/src/*": ["./src/*"],
+    "/test/*": ["./test/*"],
+  },
+  // Vite dev-server /@id/<package> specifiers imported the same way — runtime URLs for
+  // bare packages, not module specifiers
+  "ignoreUnresolved": ["^/@id/.+"],
 }

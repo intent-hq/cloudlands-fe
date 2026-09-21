@@ -18,8 +18,8 @@
  * wire-shaped envelopes — and remain.
  */
 
-import type { ContentBlock } from './content-block';
-import { normalizeContentBlock } from './content-block';
+import type { ContentBlock, PlanContentBlock, PlanEntry } from './content-block';
+import { isPlanContentBlock, normalizeContentBlock } from './content-block';
 import { isProposalKind } from './proposal';
 import { getProposalFromResourceBlock } from './proposal-resource';
 
@@ -34,7 +34,85 @@ const CANONICAL_BLOCK_TYPES = new Set<ContentBlock['type']>([
   'file',
   'nav-link',
   'proposal',
+  'plan',
 ]);
+
+function canonicalPlanEntry(entry: PlanEntry): PlanEntry {
+  return { content: entry.content, priority: entry.priority, status: entry.status };
+}
+
+function canonicalPlanBlock(block: Record<string, any>): PlanContentBlock {
+  if (!isPlanContentBlock(block)) {
+    throw new Error(
+      `Invalid plan block: required bounded 'entries' snapshot missing (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+    );
+  }
+  return {
+    type: 'plan',
+    ...(typeof block.id === 'string' ? { id: block.id } : {}),
+    entries: block.entries.map(canonicalPlanEntry),
+  };
+}
+
+const IMAGE_MIME_PATTERN = /^image\/[a-z0-9][a-z0-9.+-]*$/i;
+
+function validateImageBlock(block: Record<string, any>): void {
+  const hasData = Object.prototype.hasOwnProperty.call(block, 'data');
+  const hasStringData = typeof block.data === 'string';
+  const hasTruncationFlag = block.dataTruncated !== undefined;
+  const hasThumbnailFlag = block.dataIsThumbnail !== undefined;
+  const hasByteCount = block.dataBytes !== undefined;
+
+  // PROTOCOL §5.5 image references retain attachmentId, never inline bytes or
+  // slim metadata. MIME is optional because the attachment registry supplies it.
+  if (Object.prototype.hasOwnProperty.call(block, 'attachmentId')) {
+    if (
+      typeof block.attachmentId !== 'string' ||
+      block.attachmentId.trim().length === 0 ||
+      hasData ||
+      hasTruncationFlag ||
+      hasThumbnailFlag ||
+      hasByteCount ||
+      (block.mimeType !== undefined &&
+        (typeof block.mimeType !== 'string' || !IMAGE_MIME_PATTERN.test(block.mimeType)))
+    ) {
+      throw new Error('Invalid image attachment reference (PROTOCOL §5.5)');
+    }
+    return;
+  }
+
+  if (typeof block.mimeType !== 'string' || !IMAGE_MIME_PATTERN.test(block.mimeType)) {
+    throw new Error(
+      `Invalid image block: required image 'mimeType'. Received: ${JSON.stringify(block)}`,
+    );
+  }
+
+  if (hasData && !hasStringData) {
+    throw new Error(
+      `Invalid image block: present 'data' must be a string. Received: ${JSON.stringify(block)}`,
+    );
+  }
+
+  if (!hasTruncationFlag) {
+    if (!hasStringData || hasThumbnailFlag || hasByteCount) {
+      throw new Error(
+        `Invalid image block: full images require 'data' without slim flags. Received: ${JSON.stringify(block)}`,
+      );
+    }
+    return;
+  }
+
+  if (
+    block.dataTruncated !== true ||
+    !Number.isSafeInteger(block.dataBytes) ||
+    block.dataBytes < 0 ||
+    (hasStringData ? block.dataIsThumbnail !== true : hasThumbnailFlag)
+  ) {
+    throw new Error(
+      `Invalid image block: malformed slim projection metadata. Received: ${JSON.stringify(block)}`,
+    );
+  }
+}
 
 /**
  * Strictly validate a ContentBlock-shaped payload against the canonical PROTOCOL.md §7
@@ -170,6 +248,8 @@ export function convertFromACP(acpBlock: any): ContentBlock {
     );
   }
 
+  if (acpBlock.type === 'plan') return canonicalPlanBlock(acpBlock);
+
   const block: ContentBlock = { type: acpBlock.type };
 
   // Text content
@@ -177,8 +257,19 @@ export function convertFromACP(acpBlock: any): ContentBlock {
     block.text = acpBlock.text;
   }
 
-  // Image/Audio media
-  if (acpBlock.data) {
+  // Image/Audio media. A file block is an attachment reference (PROTOCOL
+  // §5.5, 10.0): it never carries bytes, so `data` is not read off it.
+  if (acpBlock.type === 'file') {
+    if (typeof acpBlock.attachmentId === 'string') {
+      block.attachmentId = acpBlock.attachmentId;
+    }
+    if (typeof acpBlock.fileName === 'string') {
+      block.fileName = acpBlock.fileName;
+    }
+    if (typeof acpBlock.size === 'number') {
+      block.size = acpBlock.size;
+    }
+  } else if (acpBlock.data) {
     block.data = acpBlock.data;
   }
   if (acpBlock.mimeType) {
@@ -207,6 +298,8 @@ export function convertFromACP(acpBlock: any): ContentBlock {
 export function convertToACP(block: ContentBlock): any {
   const normalized = normalizeContentBlock(block);
 
+  if (normalized.type === 'plan') return canonicalPlanBlock(normalized);
+
   const acpBlock: any = {
     type: normalized.type,
   };
@@ -229,8 +322,18 @@ export function convertToACP(block: ContentBlock): any {
     acpBlock.applyToolCallId = normalized.applyToolCallId;
   }
 
-  // Media
-  if (normalized.data) {
+  // Media. File blocks go out as attachment references only — never bytes.
+  if (normalized.type === 'file') {
+    if (normalized.attachmentId) {
+      acpBlock.attachmentId = normalized.attachmentId;
+    }
+    if (normalized.fileName) {
+      acpBlock.fileName = normalized.fileName;
+    }
+    if (normalized.size !== undefined) {
+      acpBlock.size = normalized.size;
+    }
+  } else if (normalized.data) {
     acpBlock.data = normalized.data;
   }
   if (normalized.mimeType) {
@@ -292,6 +395,8 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
       }
       break;
     case 'image':
+      validateImageBlock(block);
+      break;
     case 'audio':
       if (typeof block.data !== 'string' || typeof block.mimeType !== 'string') {
         throw new Error(
@@ -300,13 +405,16 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
       }
       break;
     case 'file':
+      // Attachment reference (PROTOCOL §5.5): `attachmentId` + `fileName`,
+      // never inline bytes.
       if (
-        typeof block.data !== 'string' ||
-        typeof block.mimeType !== 'string' ||
-        typeof block.fileName !== 'string'
+        typeof block.attachmentId !== 'string' ||
+        block.attachmentId.length === 0 ||
+        typeof block.fileName !== 'string' ||
+        block.fileName.length === 0
       ) {
         throw new Error(
-          `Invalid file block: required 'data'/'mimeType'/'fileName' fields missing. Received: ${JSON.stringify(block)}`,
+          `Invalid file block: required 'attachmentId'/'fileName' fields missing (PROTOCOL §5.5). Received: ${JSON.stringify(block)}`,
         );
       }
       break;
@@ -315,6 +423,8 @@ function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
     case 'proposal':
       // Handled by dedicated branches above or carries no required text/tool fields.
       break;
+    case 'plan':
+      return canonicalPlanBlock(block);
   }
   return { ...block } as ContentBlock;
 }

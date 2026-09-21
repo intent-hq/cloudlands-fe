@@ -463,7 +463,7 @@
             data-icon={faceIcon.iconName}
             aria-hidden="true"
             class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70 a11y-ignore')}
+              (selectedSlot === key.slot ? 'text-primary-ink' : 'text-foreground/70 a11y-ignore')}
           />
         {:else if codex && key.slot === 6}
           <!-- Codex logo key: terminal inside a hexagon -->
@@ -481,7 +481,7 @@
             data-icon={faTerminal.iconName}
             aria-hidden="true"
             class={'pointer-events-none ' +
-              (selectedSlot === key.slot ? 'text-primary' : 'text-foreground/70 a11y-ignore')}
+              (selectedSlot === key.slot ? 'text-primary-ink' : 'text-foreground/70 a11y-ignore')}
           />
         {/if}
       </g>
@@ -498,7 +498,7 @@
         aria-hidden="true"
         class={'pointer-events-none ' +
           (selectedSlot === 4 || selectedSlot === 5
-            ? 'text-primary'
+            ? 'text-primary-ink'
             : 'text-foreground/70 a11y-ignore')}
       />
     {/if}
@@ -516,23 +516,23 @@
         ? 'left-2'
         : 'right-2'}"
     >
-      <p class="text-xs font-medium text-foreground">{explainerLabel}</p>
+      <p class="type-body font-medium text-foreground">{explainerLabel}</p>
       {#if openExplainer === 'knob'}
-        <p class="text-xs text-subtle mt-1.5">
+        <p class="type-body text-subtle mt-1.5">
           {m.settings_hardware_knobExplainer_rotate_description()}
         </p>
-        <p class="text-xs text-subtle mt-1.5">
+        <p class="type-body text-subtle mt-1.5">
           {m.settings_hardware_knobExplainer_click_description()}
         </p>
       {:else}
-        <p class="text-xs text-subtle mt-1.5">
+        <p class="type-body text-subtle mt-1.5">
           {m.settings_hardware_joystickExplainer_hold_description()}
         </p>
-        <p class="text-xs text-subtle mt-1.5">
+        <p class="type-body text-subtle mt-1.5">
           {m.settings_hardware_joystickExplainer_cancel_description()}
         </p>
       {/if}
-      <p class="text-xs text-subtle/70 mt-2 italic">
+      <p class="type-body text-subtle/70 mt-2 italic">
         {m.settings_hardware_explainer_fixed_description()}
       </p>
     </div>
@@ -550,9 +550,9 @@
       style={agentKeyPopoverStyle}
       class="absolute z-20 w-50 rounded-lg border border-border bg-popover p-3 shadow-lg"
     >
-      <p class="text-xs font-medium text-foreground truncate">{agentKeyPopoverName}</p>
+      <p class="type-body font-medium text-foreground truncate">{agentKeyPopoverName}</p>
       {#if agentKeyPopoverStatus}
-        <p class="text-xs text-subtle mt-1">{agentKeyPopoverStatus}</p>
+        <p class="type-body text-subtle mt-1">{agentKeyPopoverStatus}</p>
       {/if}
     </div>
   {/if}

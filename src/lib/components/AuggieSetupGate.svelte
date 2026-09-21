@@ -1,10 +1,11 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { invoke, shell } from '$lib/electron-bridge';
   import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from '$shared/ipc/channels';
@@ -195,7 +196,7 @@
       if (status?.installed && status?.authenticated) {
         auggieInstructions = null;
         auggieCommand = null;
-        toast.success(m.lib_auggieSetup_readyToGo_message());
+        notify.success(m.lib_auggieSetup_readyToGo_message());
         return;
       }
       const channel = status?.installed ? AUGGIE_CHANNELS.AUTHENTICATE : AUGGIE_CHANNELS.INSTALL;
@@ -295,9 +296,9 @@
   async function copyCommand(command: string) {
     try {
       await navigator.clipboard.writeText(command);
-      toast.success(m.lib_auggieSetup_copied_message());
+      notify.success(m.lib_auggieSetup_copied_message());
     } catch {
-      toast.error(m.lib_auggieSetup_copyFailed_error());
+      notify.error(m.lib_auggieSetup_copyFailed_error());
     }
   }
 </script>
@@ -323,7 +324,7 @@
     {#if loading}
       <section class="providers-section">
         <div class="loading-spinner">
-          <Fa icon={faCircleNotch} size="2x" class="animate-spin text-subtle" />
+          <IntentMarkLoader size={32} class="text-subtle" />
         </div>
         <p class="text-subtle text-center">{m.lib_auggieSetup_checkingProviders_label()}</p>
       </section>
@@ -376,9 +377,14 @@
 
               <div class="provider-actions">
                 {#if provider.id === 'auggie'}
-                  <Button onclick={installAuggie} disabled={actionInProgress} size="sm">
+                  <Button
+                    variant="primary"
+                    onclick={installAuggie}
+                    disabled={actionInProgress}
+                    size="sm"
+                  >
                     {#if actionInProgress}
-                      <Fa icon={faCircleNotch} class="animate-spin mr-2" />
+                      <IntentMarkLoader size={16} class="mr-2" />
                       {m.lib_auggieSetup_loading_label()}
                     {:else}
                       <Fa icon={faDownload} class="mr-2" /> {m.lib_auggieSetup_install_label()}
@@ -387,20 +393,25 @@
                 {:else}
                   {#if provider.installCommand}
                     {@const installCommand = provider.installCommand}
-                    <button
+                    <Button
+                      variant="ghost"
                       class="install-command-button"
                       onclick={() => copyCommand(installCommand)}
                       title={m.lib_auggieSetup_clickToCopy_tooltip()}
                     >
                       <code>{installCommand}</code>
                       <Fa icon={faPaste} class="copy-icon" size="sm" />
-                    </button>
+                    </Button>
                   {/if}
                 {/if}
-                <button class="docs-link" onclick={() => openProviderDocs(provider.docsUrl)}>
+                <Button
+                  variant="ghost"
+                  class="docs-link"
+                  onclick={() => openProviderDocs(provider.docsUrl)}
+                >
                   <Fa icon={faExternalLinkAlt} size="sm" class="mr-1" />
                   {m.lib_auggieSetup_docs_label()}
-                </button>
+                </Button>
               </div>
 
               {#if provider.requiresAuth && provider.id === 'auggie'}
@@ -446,9 +457,13 @@
         <section class="authenticate">
           <h2>{m.lib_auggieSetup_authenticate_title()}</h2>
           <div class="actions">
-            <Button onclick={() => startAuthentication()} disabled={actionInProgress}>
+            <Button
+              variant="primary"
+              onclick={() => startAuthentication()}
+              disabled={actionInProgress}
+            >
               {#if actionInProgress}
-                <Fa icon={faCircleNotch} class="animate-spin mr-2" />
+                <IntentMarkLoader size={16} class="mr-2" />
                 {m.lib_auggieSetup_loading_label()}
               {:else}
                 <Fa icon={faCircleCheck} class="mr-2" />
@@ -531,7 +546,7 @@
   }
 
   /* Install command button */
-  .install-command-button {
+  :global(.install-command-button) {
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -546,16 +561,16 @@
     transition: all 0.2s;
   }
 
-  .install-command-button:hover {
+  :global(.install-command-button:hover) {
     background: hsl(var(--muted) / 0.8);
   }
 
-  .install-command-button :global(.copy-icon) {
+  :global(.install-command-button .copy-icon) {
     opacity: 0;
     transition: opacity 0.2s;
   }
 
-  .install-command-button:hover :global(.copy-icon) {
+  :global(.install-command-button:hover .copy-icon) {
     opacity: 1;
   }
 
@@ -604,12 +619,12 @@
   }
 
   .provider-card.recommended {
-    border-color: hsl(var(--primary) / 0.5);
+    border-color: hsl(var(--primary-ink) / 0.5);
     background: hsl(var(--primary) / 0.05);
   }
 
   .provider-card.recommended:hover {
-    border-color: hsl(var(--primary) / 0.7);
+    border-color: hsl(var(--primary-ink) / 0.7);
     background: hsl(var(--primary) / 0.1);
   }
 
@@ -628,8 +643,6 @@
   .recommended-badge {
     font-size: 0.625rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     padding: 0.125rem 0.375rem;
     background: hsl(var(--primary));
     color: hsl(var(--primary-foreground));
@@ -655,7 +668,7 @@
     margin-top: 0.25rem;
   }
 
-  .docs-link {
+  :global(.docs-link) {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -668,7 +681,7 @@
     transition: color 0.2s;
   }
 
-  .docs-link:hover {
+  :global(.docs-link:hover) {
     color: hsl(var(--foreground));
   }
 

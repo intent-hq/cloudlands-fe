@@ -227,6 +227,44 @@ describe('LazyTurn lifecycle', () => {
     expect(heightCache.get('turn-unmount', 640)).toBeUndefined();
   });
 
+  it('suspends hidden row measurements and restores them on panel reactivation', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(240);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800);
+    const heightCache = createLazyTurnHeightCache('inactive-measurement');
+    const view = render(LazyTurn, {
+      props: { turnKey: 'turn-inactive', heightCache, isActive: true, children },
+    });
+    try {
+      const firstObserver = MockResizeObserver.instances[0];
+      expect(firstObserver).toBeDefined();
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+      await view.rerender({ turnKey: 'turn-inactive', heightCache, isActive: false, children });
+
+      expect(firstObserver.disconnect).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+      firstObserver.fire(400, 800);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(heightCache.get('turn-inactive', 800)).toBeUndefined();
+
+      await view.rerender({ turnKey: 'turn-inactive', heightCache, isActive: true, children });
+
+      const reactivatedObserver = MockResizeObserver.instances[1];
+      expect(reactivatedObserver).toBeDefined();
+      firstObserver.fire(400, 800);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(heightCache.get('turn-inactive', 800)).toBe(240);
+      reactivatedObserver.fire(320, 800);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(heightCache.get('turn-inactive', 800)).toBe(320);
+    } finally {
+      view.unmount();
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it('releases the shared observer and pending swap-out timer on unmount', async () => {
     vi.useFakeTimers();
     const heightCache = createLazyTurnHeightCache('cleanup');

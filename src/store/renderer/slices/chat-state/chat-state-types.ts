@@ -2,6 +2,8 @@
 // Per-Agent Chat State
 // ============================================================================
 
+export type QueuedMessageSendOutcome = 'delivered' | 'queued' | 'quarantined';
+
 export interface StatusEvent {
   phase: string;
   message: string;
@@ -50,6 +52,25 @@ export interface QueuedRetryRecord {
 export interface ModelUnavailableInfo {
   failedModel: string;
   nextAvailableModel: string;
+}
+
+/**
+ * A turn that failed because the provider's usage/quota limit was hit, as
+ * reported by the daemon's structured `errorCode: "quota-exceeded"` on
+ * `agent:failed`. Retrying the SAME provider cannot succeed (the daemon
+ * classifies quota rejections as terminal), so the recovery affordance is a
+ * switch to a different provider — hence `providerId`, the provider that ran
+ * out, which the banner excludes from the alternatives it offers.
+ *
+ * Structured rather than string-matched on purpose: the auth-failure banner
+ * matches prose against per-provider `authErrorPatterns`, which is fragile
+ * across provider CLI wording changes. `errorCode` is the daemon's own
+ * classification, so absent field means "not a quota failure" with no
+ * guessing.
+ */
+export interface QuotaExceededInfo {
+  /** Provider whose quota was exhausted; excluded from the retry options. */
+  providerId: string;
 }
 
 interface SendMessageOptions {
@@ -147,7 +168,7 @@ export interface TranscriptSnapshotMeta {
 export type LiveStreamPhase = 'connecting' | 'awaiting-snapshot' | 'live' | 'resyncing' | 'delayed';
 
 /**
- * One lazily hydrated content block (PROTOCOL §5.5 slim projection + v7.2
+ * One lazily hydrated content block (PROTOCOL §5.5 slim projection +
  * `agent.getMessageBlock`): the FULL body fetched on demand when the user
  * expands a truncated tool row or views a truncated image. Keyed in
  * `ChatAgentState.hydratedBlocks` by `{messageId}|{blockId}`. `seq` is a
@@ -191,6 +212,14 @@ export interface ChatAgentState {
    */
   queuedRetryRecords: Record<string, QueuedRetryRecord>;
   modelUnavailable: ModelUnavailableInfo | null;
+  /**
+   * Set when the last turn failed with the daemon's `quota-exceeded` code
+   * (null otherwise). Lives beside `modelUnavailable` because it drives the
+   * same kind of recovery banner, and follows the same lifecycle: preserved
+   * across the `agent:idle` reconcile so the affordance survives, cleared on
+   * the next send.
+   */
+  quotaExceeded: QuotaExceededInfo | null;
   statusEvents: StatusEvent[];
   /** Workspace ID last recorded by the rebind tracker (mirrors WorkspaceRebindTracker). */
   trackedWorkspaceId: string | null;
@@ -286,7 +315,7 @@ export interface ChatAgentState {
   awaitingSwitchBackSnapshot?: boolean;
   /**
    * Lazily hydrated full content blocks, keyed `{messageId}|{blockId}`
-   * (§5.5 slim projection → v7.2 `agent.getMessageBlock`). Read-through
+   * (§5.5 slim projection → `agent.getMessageBlock`). Read-through
    * cache of daemon responses: `loading` de-dupes concurrent expand clicks
    * (single-flight per block), `loaded` renders instead of the slim preview,
    * `error` re-enables the fetch on the next expand. Bounded at

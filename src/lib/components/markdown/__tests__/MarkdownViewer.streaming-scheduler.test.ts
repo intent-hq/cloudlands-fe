@@ -199,10 +199,14 @@ describe('MarkdownViewer streaming scheduler', () => {
   });
 
   it('queues final static content immediately behind an active streaming parse', async () => {
-    const operations: Array<{ text: string; result: Deferred<string> }> = [];
-    processMarkdownToHTML.mockImplementation((text: string) => {
+    const operations: Array<{
+      text: string;
+      options: Record<string, unknown>;
+      result: Deferred<string>;
+    }> = [];
+    processMarkdownToHTML.mockImplementation((text: string, options: Record<string, unknown>) => {
       const result = deferred<string>();
-      operations.push({ text, result });
+      operations.push({ text, options, result });
       return result.promise;
     });
     const view = render(MarkdownViewer, { props: { content: '**steady**' } });
@@ -210,19 +214,21 @@ describe('MarkdownViewer streaming scheduler', () => {
     operations[0].result.resolve('<p>steady result</p>');
     await flushAsync();
 
-    await view.rerender({ isStreaming: true });
+    await view.rerender({ content: '**partial**', isStreaming: true });
     expect(view.container.textContent).toContain('steady result');
-    expect(operations).toHaveLength(1);
-
-    await view.rerender({ content: '**partial**' });
-    await vi.advanceTimersByTimeAsync(150);
     expect(operations).toHaveLength(2);
-    await view.rerender({ content: '**final**', isStreaming: false });
+    expect(operations[1].options.renderMath).toBe(false);
+    await view.rerender({ isStreaming: false });
     expect(view.container.textContent).toContain('steady result');
 
     operations[1].result.resolve('<p>stale partial</p>');
     await flushAsync();
-    expect(operations.map(({ text }) => text)).toEqual(['**steady**', '**partial**', '**final**']);
+    expect(operations.map(({ text }) => text)).toEqual([
+      '**steady**',
+      '**partial**',
+      '**partial**',
+    ]);
+    expect(operations[2].options.renderMath).toBe(true);
     expect(view.container.textContent).toContain('steady result');
 
     operations[2].result.resolve('<p>final result</p>');
@@ -270,7 +276,6 @@ describe('MarkdownViewer streaming scheduler', () => {
     await view.rerender({ content: '', workspaceId: 'ws-new' });
     expect(view.container.textContent?.trim()).toBe('');
     await view.rerender({ content: '**visible**' });
-    await vi.advanceTimersByTimeAsync(150);
     await flushAsync();
     expect(processMarkdownToHTML).toHaveBeenCalledTimes(2);
     expect(view.container.textContent).toContain('**visible**');

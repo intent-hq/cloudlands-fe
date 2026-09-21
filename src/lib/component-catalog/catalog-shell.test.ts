@@ -1,6 +1,22 @@
+// @verify-changed-triggers: src/lib/component-catalog/**, src/hooks.client.ts, eslint.config.js,
+//   src/routes/+layout.svelte, src/routes/(app)/+layout.svelte,
+//   src/routes/sandbox/+layout.svelte, src/routes/sandbox/+page.svelte,
+//   src/routes/sandbox/[slug]/+page.svelte, src/routes/(app)/sandbox/**,
+//   src/routes/(app)/agent/[id]/+page.svelte, src/routes/(app)/settings/+page.svelte,
+//   src/routes/(app)/test-comments/+page.svelte, src/routes/(app)/test-error-boundary/+page.svelte,
+//   src/routes/(app)/test-input/+page.svelte, src/routes/(app)/test-mentions/+page.svelte,
+//   src/routes/(app)/test-mentions/compact/+page.svelte, src/routes/(app)/test-monaco/+page.svelte,
+//   src/routes/(app)/test-workspace-cards/+page.svelte,
+//   src/routes/(app)/test-workspace-hover-card/+page.svelte,
+//   src/routes/(app)/workspace/[id]/+page.svelte, src/routes/(app)/workspace/[id]/files/+page.svelte,
+//   src/routes/(app)/workspace/[id]/terminal-test/+page.svelte,
+//   src/routes/(app)/workspace/creating/+page.svelte
+
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import CatalogShell from './CatalogShell.svelte';
 
 const root = process.cwd();
 const routesRoot = path.join(root, 'src/routes');
@@ -31,10 +47,6 @@ const movedAsyncDataBaselinePaths = [
   ],
   ['src/routes/test-input/+page.svelte', 'src/routes/(app)/test-input/+page.svelte'],
   ['src/routes/test-mentions/+page.svelte', 'src/routes/(app)/test-mentions/+page.svelte'],
-  [
-    'src/routes/test-mentions/compact-initializer-test.svelte',
-    'src/routes/(app)/test-mentions/compact-initializer-test.svelte',
-  ],
   [
     'src/routes/test-mentions/compact/+page.svelte',
     'src/routes/(app)/test-mentions/compact/+page.svelte',
@@ -88,8 +100,8 @@ describe('catalog route shell', () => {
     expect(baselineSource).toBeDefined();
     const baselinePaths = [...baselineSource!.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 
-    expect(baselinePaths).toHaveLength(153);
-    expect(new Set(baselinePaths).size).toBe(153);
+    expect(baselinePaths).toHaveLength(141);
+    expect(new Set(baselinePaths).size).toBe(141);
     for (const [oldPath, newPath] of movedAsyncDataBaselinePaths) {
       expect(baselinePaths).not.toContain(oldPath);
       expect(baselinePaths).toContain(newPath);
@@ -107,6 +119,11 @@ describe('catalog route shell', () => {
       /from ['"](?:\$store\/|\$features\/|\$lib\/client|\$lib\/electron-bridge|electron)|import ['"]\$store\//;
     const violations = files.flatMap((file) => {
       const relativeFile = path.relative(root, file);
+      const isStoreSeededSubscriptionFixture =
+        relativeFile ===
+          'src/lib/component-catalog/renderers/SubscriptionRowsCatalogPreview.svelte' ||
+        relativeFile === 'src/lib/component-catalog/subscription-rows/subscription-row-fixtures.ts';
+      if (isStoreSeededSubscriptionFixture) return [];
       return readFileSync(file, 'utf8')
         .split('\n')
         .flatMap((line, index) => (forbidden.test(line) ? [`${relativeFile}:${index + 1}`] : []));
@@ -129,21 +146,136 @@ describe('catalog route shell', () => {
     expect(violations).toEqual([]);
   });
 
-  it('consumes the shared hatch without catalog-local recipes or physical workarounds', () => {
+  it('does not invent surface textures or physical background-image workarounds', () => {
     const sources = sourceFiles(path.join(root, 'src/lib/component-catalog'))
       .filter((file) => file.endsWith('.svelte'))
       .map((file) => readFileSync(file, 'utf8'));
     const combined = sources.join('\n');
 
-    expect(combined).not.toMatch(/--[\w-]*hatch[\w-]*\s*:/);
+    expect(combined).not.toMatch(/--[\w-]*hatch[\w-]*/);
     expect(combined).not.toContain('repeating-linear-gradient(');
-    expect(combined).not.toMatch(/background-image\s*:\s*color-mix\(/);
-    expect(combined.match(/background-image:\s*var\(--surface-hatch\)/g)).toHaveLength(3);
+    expect(combined).not.toMatch(/background-image\s*:/);
   });
 
   it('uses only public subpaths for the Settings catalog lane', () => {
     const file = 'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte';
     const source = readFileSync(path.join(root, file), 'utf8');
     expect(source).not.toMatch(/\$lib\/components\/ui\/[^'\"]+\/[^'\"]+\.svelte/);
+  });
+});
+
+describe('CatalogShell root inline style ownership', () => {
+  const fontToken = "'Inter Variable', Inter, system-ui, sans-serif";
+  const rootStyle = () => document.documentElement.style;
+
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+      storage.set(key, String(value));
+    });
+    window.history.replaceState(null, '', '/sandbox/button');
+    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('class');
+  });
+
+  afterEach(() => {
+    cleanup();
+    document.documentElement.removeAttribute('style');
+    document.documentElement.removeAttribute('class');
+  });
+
+  async function chooseTheme(name: 'Light' | 'Dark' | 'System') {
+    await fireEvent.click(screen.getByRole('radio', { name }));
+    await waitFor(() =>
+      expect(rootStyle().getPropertyValue('color-scheme')).toBe(name.toLowerCase()),
+    );
+  }
+
+  async function chooseColorTheme(name: string) {
+    const trigger = screen.getByRole('combobox', { name: 'Color theme' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    const options = screen.getAllByRole('option');
+    const highlighted = options.findIndex((option) => option.hasAttribute('data-highlighted'));
+    const target = options.indexOf(screen.getByRole('option', { name }));
+    expect(target).toBeGreaterThanOrEqual(0);
+    const key = target > highlighted ? 'ArrowDown' : 'ArrowUp';
+    for (let step = 0; step < Math.abs(target - Math.max(highlighted, 0)); step += 1) {
+      await fireEvent.keyDown(trigger, { key });
+    }
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() => expect(trigger.textContent).toContain(name));
+  }
+
+  // The sandbox route owns the font token and, as the shell's parent, may write it to the
+  // root after the shell has already mounted; the shell must never wipe it.
+  function declareSandboxFontToken() {
+    rootStyle().setProperty('--font-ui', fontToken);
+  }
+
+  it('keeps unowned root inline properties across theme and color theme changes', async () => {
+    render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('color-scheme')).not.toBe(''));
+    declareSandboxFontToken();
+
+    await chooseTheme('Dark');
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+    await chooseColorTheme('Dracula');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe(''));
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+
+    await chooseTheme('Light');
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+    expect(rootStyle().getPropertyValue('--background')).not.toBe('');
+
+    await chooseColorTheme('Default');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).toBe(''));
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('light');
+  });
+
+  it('restores prior root inline values on teardown and survives a remount', async () => {
+    rootStyle().setProperty('color-scheme', 'light');
+    const first = render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('color-scheme')).not.toBe(''));
+    declareSandboxFontToken();
+    await chooseTheme('Dark');
+    await chooseColorTheme('Nord');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe(''));
+
+    first.unmount();
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('light');
+    expect(rootStyle().getPropertyValue('--background')).toBe('');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+    render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe(''));
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('dark');
+    expect(rootStyle().getPropertyValue('--font-ui')).toBe(fontToken);
+  });
+
+  it('restores prior inline priority when a preset drops a property and on teardown', async () => {
+    rootStyle().setProperty('color-scheme', 'light', 'important');
+    rootStyle().setProperty('--background', 'red', 'important');
+    const shell = render(CatalogShell, { props: { activeSlug: 'button' } });
+    await waitFor(() => expect(rootStyle().getPropertyValue('color-scheme')).toBe('light'));
+    await chooseColorTheme('Dracula');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).not.toBe('red'));
+
+    await chooseColorTheme('Default');
+    await waitFor(() => expect(rootStyle().getPropertyValue('--background')).toBe('red'));
+    expect(rootStyle().getPropertyPriority('--background')).toBe('important');
+
+    await chooseTheme('Dark');
+    expect(rootStyle().getPropertyPriority('color-scheme')).toBe('');
+
+    shell.unmount();
+    expect(rootStyle().getPropertyValue('color-scheme')).toBe('light');
+    expect(rootStyle().getPropertyPriority('color-scheme')).toBe('important');
+    expect(rootStyle().getPropertyValue('--background')).toBe('red');
+    expect(rootStyle().getPropertyPriority('--background')).toBe('important');
   });
 });

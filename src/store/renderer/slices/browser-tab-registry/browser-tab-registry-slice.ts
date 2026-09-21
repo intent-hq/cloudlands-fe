@@ -60,6 +60,20 @@ export const registryTabForgotten = createAction<[wsId: string, tabId: string]>(
   'browserTabRegistry/tabForgotten',
 );
 
+/**
+ * Hosted tabs filled from their rows and queued for tunnel re-resolution;
+ * they stay `unresolved` until a resolution is established. Ignored for a
+ * stale generation.
+ */
+export const registryTabsUnresolved = createAction<
+  [wsId: string, generation: number, tabIds: string[]]
+>('browserTabRegistry/tabsUnresolved');
+
+/** The tab's tunnel re-resolution was established: its URL is live for this session. */
+export const registryTabResolved = createAction<[wsId: string, tabId: string]>(
+  'browserTabRegistry/tabResolved',
+);
+
 /** Tabs that left the layout: closed here, their removal still to be confirmed. */
 export const registryRemovalsPending = createAction<[wsId: string, tabIds: string[]]>(
   'browserTabRegistry/removalsPending',
@@ -94,30 +108,63 @@ export const registryReset = createAction('browserTabRegistry/reset');
 
 export const browserTabRegistryReducer = createReducer<BrowserTabRegistryState>(initialState);
 
+// `unresolved` follows `reported`: a tab forgotten, removed or torn down has
+// nothing left to re-resolve.
 function bump(
   state: BrowserTabRegistryState,
   wsId: string,
   phase: WorkspaceBrowserTabRegistryState['phase'],
-  reported: Record<string, BrowserTabInput>,
+  keep: boolean,
 ): BrowserTabRegistryState {
   const ws = getWorkspaceState(state, wsId);
-  return setWorkspaceState(state, wsId, { generation: ws.generation + 1, phase, reported });
+  return setWorkspaceState(state, wsId, {
+    generation: ws.generation + 1,
+    phase,
+    reported: keep ? ws.reported : {},
+    unresolved: keep ? ws.unresolved : {},
+  });
 }
 
 function forgetTab(state: BrowserTabRegistryState, wsId: string, tabId: string) {
   const ws = getWorkspaceState(state, wsId);
-  if (!(tabId in ws.reported)) return state;
-  return setWorkspaceState(state, wsId, { ...ws, reported: omitKey(ws.reported, tabId) });
+  if (!(tabId in ws.reported) && !(tabId in ws.unresolved)) return state;
+  return setWorkspaceState(state, wsId, {
+    ...ws,
+    reported: omitKey(ws.reported, tabId),
+    unresolved: omitKey(ws.unresolved, tabId),
+  });
 }
 
 browserTabRegistryReducer.with(registryLoading, (state, { payload: [wsId] }) =>
-  bump(state, wsId, 'loading', getWorkspaceState(state, wsId).reported),
+  bump(state, wsId, 'loading', true),
 );
 
 browserTabRegistryReducer.with(registryApplied, (state, { payload: [wsId, gen, reported] }) => {
   const ws = getWorkspaceState(state, wsId);
   if (ws.generation !== gen || ws.phase === 'unmounted') return state;
-  return setWorkspaceState(state, wsId, { ...ws, phase: 'applied', reported });
+  const unresolved = Object.fromEntries(
+    Object.keys(ws.unresolved)
+      .filter((tabId) => tabId in reported)
+      .map((tabId) => [tabId, true as const]),
+  );
+  return setWorkspaceState(state, wsId, { ...ws, phase: 'applied', reported, unresolved });
+});
+
+browserTabRegistryReducer.with(
+  registryTabsUnresolved,
+  (state, { payload: [wsId, gen, tabIds] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    if (ws.generation !== gen || ws.phase === 'unmounted' || tabIds.length === 0) return state;
+    const unresolved = { ...ws.unresolved };
+    for (const tabId of tabIds) unresolved[tabId] = true;
+    return setWorkspaceState(state, wsId, { ...ws, unresolved });
+  },
+);
+
+browserTabRegistryReducer.with(registryTabResolved, (state, { payload: [wsId, tabId] }) => {
+  const ws = getWorkspaceState(state, wsId);
+  if (!(tabId in ws.unresolved)) return state;
+  return setWorkspaceState(state, wsId, { ...ws, unresolved: omitKey(ws.unresolved, tabId) });
 });
 
 browserTabRegistryReducer.with(
@@ -141,12 +188,14 @@ browserTabRegistryReducer.with(registryRemovalsPending, (state, { payload: [wsId
   if (tabIds.length === 0) return state;
   const ws = getWorkspaceState(state, wsId);
   const reported = { ...ws.reported };
+  const unresolved = { ...ws.unresolved };
   const closing = { ...state.closing };
   for (const tabId of tabIds) {
     delete reported[tabId];
+    delete unresolved[tabId];
     closing[tabId] = 'pending';
   }
-  return setWorkspaceState({ ...state, closing }, wsId, { ...ws, reported });
+  return setWorkspaceState({ ...state, closing }, wsId, { ...ws, reported, unresolved });
 });
 
 // The echo may have landed before the reply: nothing is awaited then.
@@ -180,13 +229,13 @@ browserTabRegistryReducer.with(browserTabClosed, (state, { payload: [wsId, tabId
 // saga's removal diff, which runs after this reducer: closing the last panel
 // is a close. Pending removals survive all three — those were closes.
 browserTabRegistryReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
-  bump(state, wsId, 'unmounted', {}),
+  bump(state, wsId, 'unmounted', false),
 );
 browserTabRegistryReducer.with(workspaceDeleted, (state, { payload: [wsId] }) =>
-  bump(state, wsId, 'unmounted', {}),
+  bump(state, wsId, 'unmounted', false),
 );
 browserTabRegistryReducer.with(clearPanelLayout, (state, { payload: [wsId] }) =>
-  bump(state, wsId, 'unmounted', getWorkspaceState(state, wsId).reported),
+  bump(state, wsId, 'unmounted', true),
 );
 
 browserTabRegistryReducer.with(registryReset, (state) => ({

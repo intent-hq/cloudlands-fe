@@ -9,10 +9,10 @@
    * - Loading indicator
    * - Error handling
    */
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import type { BrowserTabViewport } from '$shared/ipc/workspace-command-payloads';
   import { BROWSER_PANEL_PARTITION, BROWSER_PROTOCOLS } from '../../../shared/constants';
   import { writeTextToClipboard } from '$lib/utils/clipboard';
@@ -27,6 +27,10 @@
   import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
   import { selectMostRecentAgentTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
+    acquireBrowserTabMount,
+    releaseBrowserTabMount,
+  } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import {
     createEmbeddedBrowserNavigationSyncState,
     navigateEmbeddedBrowserWebview,
     reconcileEmbeddedBrowserLoadCompletion,
@@ -38,8 +42,6 @@
     isValidBrowserUrl,
     normalizeBrowserAddressInput,
   } from './embedded-browser-url-validation';
-  import { navigateToAgent } from '$lib/utils/workspace-navigation';
-  import InlineAgentAvatar from '$lib/components/chat/InlineAgentAvatar.svelte';
   import Fa from 'svelte-fa';
   import {
     faArrowLeft,
@@ -47,11 +49,12 @@
     faRefresh,
     faLock,
     faExclamationTriangle,
-    faTimes,
   } from '@fortawesome/free-solid-svg-icons';
   import Input from '../ui/input/input.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { describeUrlForLog } from '$shared/utils/sanitize-credentials';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import { invoke } from '$lib/electron-bridge';
@@ -77,7 +80,6 @@
     /** Unique tab ID for CDP registration */
     tabId?: string;
     onNavigate?: (url: string) => void;
-    onClose?: () => void;
     onTitleChange?: (title: string) => void;
     onFaviconChange?: (faviconUrl: string) => void;
     onFocus?: () => void;
@@ -89,8 +91,6 @@
     isActive?: boolean;
     /** Agent owning this tab (monorepo#2857); absent for unowned (user) tabs. */
     ownerAgentId?: string;
-    /** Resolved display name of the owning agent for the toolbar chip. */
-    ownerAgentName?: string;
     /** Persisted viewport mode for this tab; legacy tabs default to fit. */
     viewport?: BrowserTabViewport;
     onViewportChange?: (viewport: BrowserTabViewport) => void;
@@ -101,7 +101,6 @@
     workspaceId: _workspaceId,
     tabId,
     onNavigate,
-    onClose,
     onTitleChange,
     onFaviconChange,
     onFocus,
@@ -109,7 +108,6 @@
     isFocused = false,
     isActive = true,
     ownerAgentId,
-    ownerAgentName,
     viewport = { mode: 'fit' },
     onViewportChange,
   }: Props = $props();
@@ -165,6 +163,20 @@
 
   // Electron webview types are unavailable in the renderer build.
   let webviewRef: EmbeddedBrowserWebview | null = $state(null);
+
+  // Lease the actual DOM mount, not the workspace or selected tab. Retained
+  // guests stay authoritative while inactive; tabs evicted by the panel cache
+  // relinquish ownership so the offscreen host can serve them instead.
+  $effect(() => {
+    if (!webviewRef || !tabId) return;
+    const mountedTabId = tabId;
+    const leaseId = crypto.randomUUID();
+    untrack(() => appStore.dispatch(acquireBrowserTabMount(mountedTabId, leaseId)));
+    return () => {
+      untrack(() => appStore.dispatch(releaseBrowserTabMount(mountedTabId, leaseId)));
+    };
+  });
+
   // displayUrl tracks the loaded URL and can differ from prop `url` after navigation.
   // Initialize from url prop so it's correct on first render (intentionally captures initial value)
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
@@ -190,6 +202,12 @@
 
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
+
+  // Set when the guest webContents was destroyed under a mounted <webview>
+  // (e.g. the page called window.close()). The dead element is unmounted and
+  // an error banner is shown until the user explicitly navigates or reloads;
+  // nothing reloads automatically so a self-closing page cannot loop.
+  let isGuestDestroyed = $state(false);
 
   // Track the current URL that the webview should load.
   // Initialize from url prop if valid, otherwise use about:blank. The browser
@@ -559,6 +577,26 @@
     webviewListeners.push({ event, handler });
   }
 
+  // Synchronous probe of the guest the element holds RIGHT NOW.
+  // getWebContentsId() only reads the cached guestInstanceId and throws
+  // while it is unset (WebViewImpl.reset() ran on disconnect): 'none'.
+  // getURL() additionally round-trips through invokeSync and throws when
+  // the main process no longer knows that guest: 'dead'. A result, even an
+  // empty string, means a 'live' guest.
+  function probeGuest(target: EmbeddedBrowserWebview): 'none' | 'live' | 'dead' {
+    try {
+      target.getWebContentsId();
+    } catch {
+      return 'none';
+    }
+    try {
+      target.getURL?.();
+      return 'live';
+    } catch {
+      return 'dead';
+    }
+  }
+
   function setupWebviewListeners() {
     if (!webviewRef) return;
 
@@ -573,6 +611,47 @@
       webviewReady = true;
       syncCompletedWebviewNavigation(displayUrl);
       updateNavigationState();
+    });
+
+    // The guest webContents is gone (window.close(), guest crash cleanup).
+    // Every later webview method call would throw, so drop the element and
+    // surface a recoverable error state instead of a dead blank frame.
+    //
+    // Reparenting (panel drag) also destroys the guest, and that `destroyed`
+    // DOES reach this element (Electron 44, lib/renderer/web-view/*):
+    // disconnectedCallback deregisters the IPC channel, detaches the guest
+    // and reset() clears guestInstanceId; connectedCallback re-registers the
+    // SAME viewInstanceId channel and creates a new guest. The old guest's
+    // `destroyed` is forwarded by lib/browser/guest-view-manager
+    // sendToEmbedder to that channel in a later IPC task, i.e. after the
+    // element is connected again — with no ordering guarantee relative to
+    // the new guest's attach or dom-ready. The event carries no guest id,
+    // so instead of comparing ids we probe the guest the element holds NOW:
+    // none yet (replacement still being created) or a live one (attached or
+    // already ready) means this `destroyed` is stale. A self-closed guest
+    // never runs reset(), so its element keeps the dead id — the only case
+    // that is a page close.
+    addWebviewListener('destroyed', () => {
+      const target = webviewRef;
+      const guest = target ? probeGuest(target) : 'none';
+      if (!target?.isConnected || guest !== 'dead') {
+        logger.debug('Ignoring destroyed event for a replaced guest', { tabId, guest });
+        return;
+      }
+      // Origin + path only: OAuth close pages carry codes/tokens in the URL.
+      logger.warn('Webview guest was destroyed', {
+        tabId,
+        url: describeUrlForLog(currentWebviewUrl),
+      });
+      cleanupWebviewListeners();
+      webviewReady = false;
+      isLoading = false;
+      isPickingElement = false;
+      canGoBack = false;
+      canGoForward = false;
+      lastRegisteredWebContentsId = undefined;
+      errorMessage = m.browser_embedded_pageClosed_error();
+      isGuestDestroyed = true;
     });
 
     // Navigation events - the webview reports the URL it actually loaded,
@@ -592,7 +671,9 @@
       updateNavigationState();
     });
 
-    addWebviewListener('did-navigate-in-page', (e: any) => {
+    addWebviewListener('did-navigate-in-page', (e: { url: string; isMainFrame: boolean }) => {
+      // Iframe history changes must not replace the tab URL or webview src (intent#4767).
+      if (!e.isMainFrame) return;
       currentWebviewUrl = e.url;
       displayUrl = e.url;
       isSecure = e.url?.startsWith('https://');
@@ -724,11 +805,20 @@
     }
   }
 
+  function safeWebviewUrl(): string | undefined {
+    try {
+      return webviewRef?.getURL?.();
+    } catch {
+      // Guest already destroyed
+      return undefined;
+    }
+  }
+
   function syncCompletedWebviewNavigation(requestedUrl: string) {
     const completedUrl = reconcileEmbeddedBrowserLoadCompletion(
       navigationSync,
       requestedUrl,
-      webviewRef?.getURL?.(),
+      safeWebviewUrl(),
     );
     if (!completedUrl) return;
     displayUrl = completedUrl;
@@ -795,6 +885,7 @@
         isRecreatingWebview = true;
         await tick(); // Wait for webview to be removed from DOM
         currentWebviewUrl = targetUrl;
+        isGuestDestroyed = false;
         isRecreatingWebview = false;
         webviewReady = false;
       }
@@ -827,6 +918,12 @@
   }
 
   function refresh() {
+    // A destroyed guest has no element to reload; mount a fresh one instead.
+    if (isGuestDestroyed) {
+      const targetUrl = currentWebviewUrl !== 'about:blank' ? currentWebviewUrl : displayUrl;
+      if (targetUrl) void loadUrl(targetUrl);
+      return;
+    }
     // Only reload if webview is ready (dom-ready has fired)
     // Otherwise we get: "The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called"
     if (!webviewReady || !webviewRef) return;
@@ -840,7 +937,7 @@
   }
 
   function currentLoadedUrl(): string {
-    const loadedUrl = webviewRef?.getURL?.();
+    const loadedUrl = safeWebviewUrl();
     if (loadedUrl && loadedUrl !== 'about:blank') return loadedUrl;
     return currentWebviewUrl !== 'about:blank' ? currentWebviewUrl : '';
   }
@@ -848,29 +945,29 @@
   async function copyCurrentUrl() {
     const urlToCopy = currentLoadedUrl();
     if (!urlToCopy) {
-      toast.error(m.browser_embedded_noUrlToCopy_error());
+      notify.error(m.browser_embedded_noUrlToCopy_error());
       return;
     }
     try {
       await writeTextToClipboard(urlToCopy);
-      toast.success(m.browser_embedded_urlCopied_label());
+      notify.success(m.browser_embedded_urlCopied_label());
     } catch (error) {
       logger.error('Failed to copy browser URL', error, { url: urlToCopy });
-      toast.error(m.browser_embedded_copyFailed_error());
+      notify.error(m.browser_embedded_copyFailed_error());
     }
   }
 
   async function openInExternalBrowser() {
     const targetUrl = currentLoadedUrl();
     if (!targetUrl) {
-      toast.error(m.browser_embedded_noUrlToOpen_error());
+      notify.error(m.browser_embedded_noUrlToOpen_error());
       return;
     }
     try {
       await invoke('shell:openExternal', { url: targetUrl });
     } catch (error) {
       logger.error('Failed to open browser URL externally', error, { url: targetUrl });
-      toast.error(m.browser_embedded_openExternalFailed_error());
+      notify.error(m.browser_embedded_openExternalFailed_error());
     }
   }
 
@@ -895,7 +992,7 @@
     const targetAgentId =
       selectMostRecentAgentTab.select(appStore.state, _workspaceId)?.agentId ?? ownerAgentId;
     if (!targetAgentId) {
-      toast.error(m.browser_embedded_noTargetAgent_error());
+      notify.error(m.browser_embedded_noTargetAgent_error());
       return;
     }
     appStore.dispatch(
@@ -922,7 +1019,7 @@
       dispatchBrowserCapture(parseCapturedImage(image.toDataURL()));
     } catch (error) {
       logger.error('Failed to capture browser screenshot', error);
-      toast.error(m.browser_embedded_screenshotFailed_error());
+      notify.error(m.browser_embedded_screenshotFailed_error());
     }
   }
 
@@ -941,7 +1038,7 @@
       dispatchBrowserCapture(parseCapturedImage(image.toDataURL()), element);
     } catch (error) {
       logger.error('Failed to capture selected browser element', error);
-      toast.error(m.browser_embedded_screenshotFailed_error());
+      notify.error(m.browser_embedded_screenshotFailed_error());
     }
   }
 
@@ -1042,11 +1139,15 @@
     Workaround for Electron bug #43314: Hide webview during URL switch.
     When isRecreatingWebview is true, the webview is removed from DOM.
     When it becomes false, a fresh webview is created with the new URL.
+    Read src only when mounting: reflecting did-navigate/in-page back into
+    Electron's src attribute issues a second navigation and reloads SPA pages.
+    Electron maintains its own live src attribute for guest recreation on reparenting.
+    Explicit navigation uses loadURL; a newly mounted guest reads the latest URL.
   -->
   <webview
     bind:this={webviewRef}
     class="w-full h-full border-none"
-    src={currentWebviewUrl}
+    src={untrack(() => currentWebviewUrl)}
     partition={BROWSER_PANEL_PARTITION}
     allowpopups
     use:reportTabBounds={tabId}
@@ -1098,29 +1199,28 @@
         tooltipSide="bottom"
         aria-label={m.browser_embedded_refresh_ariaLabel()}
       >
-        <Fa icon={faRefresh} size="xs" class={isLoading ? 'animate-spin' : ''} />
+        {#if isLoading}
+          <IntentMarkLoader size={12} />
+        {:else}
+          <Fa icon={faRefresh} size="xs" />
+        {/if}
       </Button>
     </div>
 
     <!-- Page identity / editable address -->
     <div class="flex min-w-0 flex-1 items-center gap-2">
-      {#if ownerAgentId}
-        <span data-browser-owner-chip={ownerAgentId} class="flex shrink-0">
-          <InlineAgentAvatar
-            agentId={ownerAgentId}
-            agentName={ownerAgentName}
-            onclick={() => void navigateToAgent(ownerAgentId)}
-          />
-        </span>
-      {:else if faviconUrl}
+      {#if faviconUrl}
         <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
       {/if}
 
-      <div class="relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2">
+      <div
+        class="relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-background"
+        data-browser-address-surface
+      >
         {#if isEditingUrl}
           <form
             onsubmit={handleFormSubmit}
-            class="relative z-10 flex h-full min-w-0 flex-1 items-center"
+            class="relative z-10 flex h-full min-w-0 flex-1 items-center px-2"
           >
             <Input
               bind:this={urlInputRef}
@@ -1133,12 +1233,16 @@
               placeholder={m.browser_embedded_url_placeholder()}
               aria-label={m.browser_embedded_addressInput_ariaLabel()}
             />
-            <button type="submit" class="sr-only">{m.browser_embedded_go_label()}</button>
+            <Button type="submit" variant="ghost" size="xs" class="sr-only">
+              {m.browser_embedded_go_label()}
+            </Button>
           </form>
         {:else}
-          <button
+          <Button
             type="button"
-            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring"
+            variant="plain"
+            size="sm"
+            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-md px-5 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring"
             onclick={() => void focusUrlInput()}
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
           >
@@ -1153,7 +1257,7 @@
                 >{pageHostname}</span
               >
             {/if}
-          </button>
+          </Button>
         {/if}
         <span
           aria-hidden="true"
@@ -1204,23 +1308,6 @@
         onReloadWithoutCache={reloadWithoutCache}
       />
     </div>
-
-    <!-- Actions -->
-    <div class="flex gap-0.5">
-      {#if onClose}
-        <Button
-          variant="ghost-light"
-          size="icon-xs"
-          onclick={onClose}
-          tooltip={m.browser_embedded_close_tooltip()}
-          tooltipShortcut="esc"
-          tooltipSide="bottom"
-          aria-label={m.browser_embedded_close_ariaLabel()}
-        >
-          <Fa icon={faTimes} size="xs" />
-        </Button>
-      {/if}
-    </div>
   </div>
 
   <!-- Error banner -->
@@ -1235,7 +1322,10 @@
 
   <!-- Browser content -->
   <div class="flex-1 relative overflow-hidden">
-    {#if isUrlValid && !isRecreatingWebview}
+    {#if isGuestDestroyed}
+      <!-- Guest destroyed: the banner above carries the message; the address bar and refresh recover -->
+      <div class="h-full bg-muted/30" data-browser-guest-destroyed></div>
+    {:else if isUrlValid && !isRecreatingWebview}
       <BrowserDeviceFrame
         {viewport}
         onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}
@@ -1255,7 +1345,7 @@
               {m.browser_embedded_selfLoadBlocked_description()}
             {/if}
           </p>
-          <p class="text-xs mt-2 opacity-50 max-w-md break-all">{url}</p>
+          <p class="text-xs mt-2 max-w-md break-all text-muted-foreground">{url}</p>
         </div>
       </div>
     {:else}

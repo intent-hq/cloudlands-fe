@@ -1,3 +1,5 @@
+// @verify-changed-triggers: ./workspace-slice.ts
+
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

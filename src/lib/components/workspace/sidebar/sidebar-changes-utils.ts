@@ -730,12 +730,18 @@ export function getPRStatusTooltip(pr: PRInfo): string {
         }),
       );
     }
-    if (snapshot.threads.unresolved > 0) {
-      lines.push(
-        m.workspace_prSection_statusUnresolvedThreads_tooltip({
-          count: formatInteger(snapshot.threads.unresolved),
-        }),
-      );
+    if (typeof snapshot.threads.unresolved === 'number') {
+      if (snapshot.threads.unresolved > 0) {
+        lines.push(
+          m.workspace_prSection_statusUnresolvedThreads_tooltip({
+            count: formatInteger(snapshot.threads.unresolved),
+          }),
+        );
+      }
+    } else if (snapshot.threads.resolutionRequired) {
+      // Absent count: resolution state was unreadable. Only a real
+      // requirement is worth a line — never fabricate a zero.
+      lines.push(m.workspace_prSection_statusUnresolvedThreadsUnknown_tooltip());
     }
     if (snapshot.mergeBlockedReason) {
       // i18n-ignore (BE-provided human-readable reason)

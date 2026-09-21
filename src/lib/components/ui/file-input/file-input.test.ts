@@ -90,7 +90,7 @@ describe('FileInput', () => {
     expect(getByRole('alert').className).toContain('text-danger');
   });
 
-  it('renders invalid text and control boundaries with AA semantic contrast', () => {
+  it('keeps invalid feedback in the message with AA semantic contrast', () => {
     const { container, getByRole } = render(FileInput, {
       props: {
         id: 'contrast-file',
@@ -100,8 +100,8 @@ describe('FileInput', () => {
       },
     });
     const surface = container.querySelector('[data-slot="file-input-surface"]');
-    expect(surface?.className.split(/\s+/)).toContain('border-danger');
-    expect(getByRole('button').className.split(/\s+/)).toContain('aria-invalid:border-danger');
+    expect(surface?.className.split(/\s+/)).not.toContain('ring-danger/25');
+    expect(getByRole('button').getAttribute('aria-invalid')).toBe('true');
     expect(getByRole('alert').className.split(/\s+/)).toContain('text-danger');
 
     const css = readFileSync(resolve(process.cwd(), 'src/lib/styles/tokens.css'), 'utf8');
@@ -160,18 +160,34 @@ describe('FileInput', () => {
     expect(button.getAttribute('aria-busy')).toBe('true');
   });
 
-  it('uses a lifted semantic picker surface with safe filename truncation', () => {
+  it('supports an externally triggered hidden picker host', () => {
+    const { component, container, queryByRole } = render(FileInput, {
+      props: { id: 'attachment-file', label: 'Attach files', hiddenHost: true, multiple: true },
+    });
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const open = vi.spyOn(input, 'click');
+
+    expect(queryByRole('button')).toBeNull();
+    expect(input.multiple).toBe(true);
+    component.openPicker();
+    expect(open).toHaveBeenCalledOnce();
+  });
+
+  it('uses the shared quiet-rest picker surface with safe filename truncation', () => {
     const { container, getByRole } = render(FileInput, {
       props: { id: 'long-file', label: 'Choose a file' },
     });
     const surface = container.querySelector('[data-slot="file-input-surface"]');
-    expect(surface?.className).toContain('border-border');
-    expect(surface?.className).toContain('bg-card');
-    expect(surface?.className).toContain('min-h-(--control-height-medium)');
+    expect(surface?.className).toContain('border-0');
+    expect(surface?.className).toContain('bg-hover');
+    expect(surface?.className).toContain('p-1');
+    expect(surface?.className).toContain('h-(--control-height-medium)');
     expect(surface?.className).toContain('rounded-(--radius-medium)');
-    expect(surface?.className).toContain('shadow-(--elevation-raised)');
-    expect(surface?.className).toContain('hover:border-input');
-    expect(getByRole('status').className).toContain('type-body');
+    expect(surface?.className).toContain('shadow-none');
+    expect(surface?.className).toContain('hover:bg-card');
+    expect(surface?.className).not.toContain('focus-within:bg-card');
+    expect(surface?.className).not.toContain('focus-within:shadow-[inset_0_0_0_1px_var(--ring)]');
+    expect(getByRole('status').className).toContain('type-caption');
     expect(getByRole('status').className).toContain('truncate');
   });
 
@@ -184,10 +200,11 @@ describe('FileInput', () => {
     expect(container.querySelector('[data-slot="file-input"]')?.getAttribute('data-variant')).toBe(
       'flat',
     );
-    expect(surface?.className).toContain('border-transparent');
-    expect(surface?.className).toContain('bg-muted/40');
+    expect(surface?.className).toContain('border-0');
+    expect(surface?.className).toContain('bg-transparent');
     expect(surface?.className).toContain('shadow-none');
-    expect(surface?.className).toContain('focus-within:border-ring');
+    expect(surface?.className).not.toContain('focus-within:bg-card');
+    expect(surface?.className).not.toContain('focus-within:shadow-[inset_0_0_0_1px_var(--ring)]');
     expect(surface?.className).toContain('focus-within:ring-0');
     expect(surface?.className).not.toContain('focus-within:ring-2');
     expect(surface?.className).not.toContain('focus-within:ring-ring/40');
@@ -212,6 +229,7 @@ describe('FileInput', () => {
         'multi-filename',
         'form-reset',
         'parent-reset',
+        'hidden-host',
         'zoom-200',
         'no-overflow',
       ]),

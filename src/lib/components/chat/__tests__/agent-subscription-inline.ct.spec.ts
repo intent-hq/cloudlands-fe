@@ -1,13 +1,285 @@
-import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
+
+const delegatedTaskSets = [
+  [{ id: 'pending', title: 'Pending row task', status: 'pending' }],
+  [{ id: 'running', title: 'Running row task', status: 'running' }],
+  [{ id: 'completed', title: 'Completed row task', status: 'completed' }],
+  [
+    { id: 'mixed-pending', title: 'Mixed pending task', status: 'pending' },
+    { id: 'mixed-running', title: 'Mixed running task', status: 'running' },
+    { id: 'mixed-completed', title: 'Mixed completed task', status: 'completed' },
+  ],
+  Array.from({ length: 7 }, (_, index) => ({
+    id: `overflow-${index}`,
+    title: `Overflow row task ${index + 1}`,
+    status: index === 6 ? ('completed' as const) : ('pending' as const),
+  })),
+] as const;
+const delegatedTaskLabels = [
+  'Task progress: 0 of 1 completed',
+  'Task progress: 0 of 1 completed',
+  'Task progress: 1 of 1 completed',
+  'Task progress: 1 of 3 completed',
+  'Task progress: 1 of 7 completed',
+] as const;
+
+test.beforeEach(async ({ page }) => {
+  // Load the bundled face before the avatar stack caches canvas text measurements.
+  const fontsLoaded = await page.evaluate(async () => {
+    const faces = await Promise.all(
+      ['400 15px "Inter Variable"', '500 12px "Inter Variable"'].map((font) =>
+        document.fonts.load(font),
+      ),
+    );
+    return faces.every(
+      (loaded) => loaded.length > 0 && loaded.every((face) => face.status === 'loaded'),
+    );
+  });
+  expect(fontsLoaded).toBe(true);
+});
 
 test.afterEach(async ({ page }) => {
   await page.locator('#root').evaluate(async (root) => {
     if (root.childElementCount > 0) await window.playwrightUnmount(root);
   });
 });
+
+test('keeps one 28px checklist control per delegated row across themes, narrow width, and motion settings', async ({
+  mount,
+  page,
+}) => {
+  const taskSets = delegatedTaskSets.map((tasks) => [...tasks]);
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { agentCount: taskSets.length, taskSets, width: 240 },
+  });
+
+  await expect.poll(() => page.evaluate(() => matchMedia('(hover: hover)').matches)).toBe(true);
+  for (const theme of ['light', 'dark'] as const) {
+    for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+      for (const zoom of [1, 2]) {
+        await page.emulateMedia({ reducedMotion });
+        await component.update({
+          props: { agentCount: taskSets.length, taskSets, width: 240, theme, zoom },
+        });
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.mouse.move(0, 0);
+        const triggers = component.getByTestId('task-progress-trigger');
+        await expect(triggers).toHaveCount(taskSets.length);
+        await expect(component.getByTestId('task-progress-checklist-icon')).toHaveCount(
+          taskSets.length,
+        );
+        await expect(component.getByTestId('task-progress-icon-stack')).toHaveCount(0);
+        await expect(component.getByTestId('task-progress-status-icon')).toHaveCount(0);
+        await expect(component.getByTestId('task-progress-overflow-indicator')).toHaveCount(0);
+        for (let index = 0; index < taskSets.length; index += 1) {
+          await expect(triggers.nth(index)).toHaveCSS('height', '28px');
+          await expect(triggers.nth(index)).toHaveCSS('width', '28px');
+          await expect(triggers.nth(index)).toHaveCSS('opacity', '0');
+          await expect(triggers.nth(index)).toHaveAccessibleName(delegatedTaskLabels[index]);
+          await expect(triggers.nth(index).locator('svg')).toHaveCount(1);
+          await expect(triggers.nth(index)).toHaveText('');
+        }
+        await expect(triggers.first()).toHaveCSS(
+          'transition-property',
+          reducedMotion === 'reduce' ? 'none' : /opacity/,
+        );
+        await expect(component.getByTestId('agent-list-item').first()).toHaveCSS(
+          'overflow',
+          'hidden',
+        );
+      }
+    }
+  }
+
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await component.update({
+    props: { agentCount: taskSets.length, taskSets, width: 240, theme: 'light', zoom: 1 },
+  });
+  const triggers = component.getByTestId('task-progress-trigger');
+  const firstGeometry = await triggers.first().boundingBox();
+  await component.getByTestId('agent-list-item').first().hover();
+  await expect(triggers.first()).toHaveCSS('opacity', '1');
+  for (let index = 1; index < taskSets.length; index += 1) {
+    await expect(triggers.nth(index)).toHaveCSS('opacity', '0');
+  }
+  expect(await triggers.first().boundingBox()).toEqual(firstGeometry);
+  await page.mouse.move(0, 0);
+  await expect(triggers.first()).toHaveCSS('opacity', '0');
+
+  const firstRowButton = component.getByTestId('agent-list-item').first().locator('button').first();
+  await firstRowButton.focus();
+  await page.keyboard.press('Tab');
+  await expect(triggers.first()).toBeFocused();
+  await expect(triggers.first()).toHaveCSS('opacity', '1');
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
+  await component.getByTestId('agent-list-item').first().hover();
+  await expect(page.getByRole('tooltip', { name: delegatedTaskLabels[0] })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
+
+  await triggers.first().click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
+  await expect(triggers.first()).toHaveAttribute('aria-expanded', 'true');
+  await page.mouse.move(0, 0);
+  await expect(triggers.first()).toHaveCSS('opacity', '1');
+  expect(await triggers.first().boundingBox()).toEqual(firstGeometry);
+  await expect(triggers.nth(1)).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('tooltip', { name: delegatedTaskLabels[0] })).toHaveCount(0);
+
+  await triggers.first().click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.mouse.move(0, 0);
+  await expect(triggers.first()).toHaveCSS('opacity', '0');
+  expect(await triggers.first().boundingBox()).toEqual(firstGeometry);
+
+  await triggers.nth(1).click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
+  await expect(triggers.first()).toHaveAttribute('aria-expanded', 'false');
+  await expect(triggers.nth(1)).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
+  await expect(triggers.nth(1)).toBeFocused();
+  await expect(triggers.nth(1)).toHaveCSS('opacity', '1');
+});
+
+test('keeps delegated checklist controls visible for non-hover primary input', async ({
+  mount,
+  page,
+}) => {
+  const client = await page.context().newCDPSession(page);
+  await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await expect
+    .poll(() => page.evaluate(() => matchMedia('(hover: none), (pointer: coarse)').matches))
+    .toBe(true);
+
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: { agentCount: 2, taskSets: delegatedTaskSets.slice(0, 2).map((tasks) => [...tasks]) },
+  });
+  await page.mouse.move(0, 0);
+  await expect(component.getByTestId('task-progress-trigger').first()).toHaveCSS('opacity', '1');
+  await client.detach();
+});
+
+test('isolates outside-dismissed task help between delegated row controls', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(AgentSubscriptionInlineHost, {
+    props: {
+      agentCount: 2,
+      taskSets: [delegatedTaskSets[0], delegatedTaskSets[2]].map((tasks) => [...tasks]),
+      showOutsideTarget: true,
+    },
+  });
+  const rows = component.getByTestId('agent-list-item');
+  const triggers = component.getByTestId('task-progress-trigger');
+  const firstTooltip = page.getByRole('tooltip', { name: delegatedTaskLabels[0] });
+  const secondTooltip = page.getByRole('tooltip', { name: delegatedTaskLabels[2] });
+
+  await rows.first().hover();
+  await triggers.first().hover();
+  await expect(firstTooltip).toBeVisible();
+  await triggers.first().click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
+  await component.getByTestId('outside-target').click();
+  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).not.toBeVisible();
+
+  await triggers.first().hover();
+  await page.waitForTimeout(350);
+  await expect(firstTooltip).not.toBeVisible();
+  await triggers.nth(1).focus();
+  await expect(secondTooltip).toBeVisible();
+
+  await page.mouse.move(0, 0);
+  await triggers.first().hover();
+  await expect(firstTooltip).toBeVisible();
+});
+
+async function expectSubscriptionScreenshot(component: Locator, name: string, ratio: number) {
+  try {
+    await expect(component).toHaveScreenshot(name, { maxDiffPixelRatio: ratio });
+  } finally {
+    const typography = await component.evaluate((root) => {
+      const selectors = {
+        summary: '[data-testid="one-shot-summary-title"]',
+        preview: '[data-testid="agent-card-preview"]',
+        overflow: '[data-agent-avatar-overflow]',
+        stack: '[data-agent-avatar-stack]',
+      };
+      return {
+        fontStatus: document.fonts.status,
+        fontUiToken: getComputedStyle(root).getPropertyValue('--font-ui'),
+        interBodyReady: document.fonts.check('400 15px "Inter Variable"'),
+        interOverflowReady: document.fonts.check('500 12px "Inter Variable"'),
+        samples: Object.fromEntries(
+          Object.entries(selectors).map(([key, selector]) => {
+            const element = root.querySelector(selector);
+            if (!element) return [key, null];
+            const style = getComputedStyle(element);
+            const { x, y, width, height } = element.getBoundingClientRect();
+            return [
+              key,
+              {
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                fontWeight: style.fontWeight,
+                lineHeight: style.lineHeight,
+                letterSpacing: style.letterSpacing,
+                box: { x, y, width, height },
+              },
+            ];
+          }),
+        ),
+      };
+    });
+    const renderedFonts: Record<
+      string,
+      { fonts: { familyName: string; isCustomFont: boolean }[] }
+    > = {};
+    const page = component.page();
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      await cdp.send('DOM.enable');
+      await cdp.send('CSS.enable');
+      const { root } = await cdp.send('DOM.getDocument');
+      for (const selector of [
+        '[data-testid="one-shot-summary-title"]',
+        '[data-testid="agent-card-preview"]',
+        '[data-agent-avatar-overflow]',
+      ]) {
+        const { nodeId } = await cdp.send('DOM.querySelector', {
+          nodeId: root.nodeId,
+          selector: `[data-testid="subscription-inline-host"] ${selector}`,
+        });
+        if (nodeId) {
+          renderedFonts[selector] = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+        }
+      }
+    } finally {
+      await cdp.detach();
+    }
+    await test.info().attach(`${name}-typography`, {
+      body: JSON.stringify({ ...typography, renderedFonts }, null, 2),
+      contentType: 'application/json',
+    });
+    await test.info().attach(`${name}-render`, {
+      body: await component.screenshot({ animations: 'disabled' }),
+      contentType: 'image/png',
+    });
+    const fonts = Object.values(renderedFonts).flatMap((entry) => entry.fonts);
+    expect(fonts.length).toBeGreaterThan(0);
+    for (const font of fonts) {
+      expect(font).toMatchObject({
+        familyName: expect.stringMatching(/^Inter(?: Variable)?$/),
+        isCustomFont: true,
+      });
+    }
+  }
+}
 
 async function measure(component: Locator, page: Page) {
   await expect(component.getByTestId('agent-card-preview')).toBeVisible();
@@ -112,7 +384,7 @@ test('keeps peek text and timestamp on the shared secondary primitive', async ({
           if (interaction === 'rest') expect(value.previewStyle).toEqual(value.timestampStyle);
           expect(value.peekIconCount).toBe(0);
           expect(value.peekAriaLabelCount).toBe(0);
-          expect(value.nameStyle.color).not.toBe(value.previewStyle.color);
+          expect(value.nameStyle.color).toBe(value.previewStyle.color);
         }
       }
     }
@@ -196,6 +468,12 @@ test('keeps the waiting icon at the compact gap and on the header text tone', as
         for (const current of cases) {
           await component.update({ props: { theme, width, zoom, ...current } });
           const summary = component.getByTestId('one-shot-summary-toggle');
+          if (current.agentCount === 1) {
+            await expect(component.getByTestId('agent-list-item')).toHaveCount(1);
+            await expect(summary).toHaveCount(0);
+            await expect(component.getByTestId('one-shot-header')).toHaveCount(0);
+            continue;
+          }
           if ((await summary.getAttribute('aria-expanded')) === 'false') await summary.click();
           await expect(component.getByTestId('agent-list-item')).toHaveCount(current.agentCount);
 
@@ -244,8 +522,8 @@ test('keeps the waiting icon at the compact gap and on the header text tone', as
 
           const deviceDelta = (left: number, right: number) =>
             Math.abs(left - right) * expanded.devicePixelRatio;
-          expect(expanded.slot.width).toBeCloseTo(14 * zoom, 1);
-          expect(expanded.slot.height).toBeCloseTo(14 * zoom, 1);
+          expect(expanded.slot.width).toBeCloseTo(20 * zoom, 1);
+          expect(expanded.slot.height).toBeCloseTo(20 * zoom, 1);
           expect(deviceDelta(expanded.slot.left, expanded.avatar.left)).toBeLessThanOrEqual(0.5);
           expect(deviceDelta(expanded.slot.centerX, expanded.icon.centerX)).toBeLessThanOrEqual(
             0.5,
@@ -262,13 +540,13 @@ test('keeps the waiting icon at the compact gap and on the header text tone', as
               expanded.avatar.centerY - expanded.agentRow.top,
             ),
           ).toBeLessThanOrEqual(0.5);
-          expect(expanded.title.left - expanded.icon.right).toBeCloseTo(6 * zoom, 1);
-          // The icon and summary title share one opaque muted secondary tone.
-          // The agent name remains the opaque primary tone.
+          expect(expanded.title.left - expanded.slot.right).toBeCloseTo(8 * zoom, 1);
+          expect(deviceDelta(expanded.title.left, expanded.name.left)).toBeLessThanOrEqual(0.5);
+          // All summary labels share one opaque muted tone; avatars retain semantic colors.
           expect(expanded.iconStyle.opacity).toBe('1');
           expect(expanded.iconStyle.color).toBe(expanded.titleStyle.color);
           expect(expanded.titleStyle.opacity).toBe('1');
-          expect(expanded.titleStyle.color).not.toBe(expanded.nameColor);
+          expect(expanded.titleStyle.color).toBe(expanded.nameColor);
 
           await summary.click();
           await expect(summary).toHaveAttribute('aria-expanded', 'false');
@@ -691,21 +969,17 @@ test('centers the finished summary and gives completed avatars a muted semantic 
   }
 });
 
-test('screenshots the finished summary and completed participant treatment', async ({
-  mount,
-  page,
-}) => {
-  /* The host fixture pins agent timestamps to 2026-08-15, but the compact
-     relative-time label ("2d", "2w", …) is computed from the real clock, so
-     the rendered text — and the screenshot — drifts as calendar time moves
-     past the fixture dates. Pin the clock 2 days after the fixture timestamps
-     to match the committed baselines. */
-  await page.clock.setFixedTime(new Date('2026-08-17T12:05:00.000Z'));
-  const component = await mount(AgentSubscriptionInlineHost, {
-    props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
-  });
-  for (const theme of ['light', 'dark'] as const) {
-    for (const zoom of [1, 2]) {
+for (const theme of ['light', 'dark'] as const) {
+  for (const zoom of [1, 2]) {
+    test(`screenshots the finished summary and completed participant treatment (${theme}, ${zoom * 100}%)`, async ({
+      mount,
+      page,
+    }) => {
+      // Pin relative-time labels two days after the fixture timestamps.
+      await page.clock.setFixedTime(new Date('2026-08-17T12:05:00.000Z'));
+      const component = await mount(AgentSubscriptionInlineHost, {
+        props: { mode: 'agents', agentCount: 7, finishedCount: 2, initiallyExpanded: true },
+      });
       await component.update({
         props: {
           mode: 'agents',
@@ -726,13 +1000,14 @@ test('screenshots the finished summary and completed participant treatment', asy
         await finishedSummary.click();
       }
       await expect(component.getByTestId('finished-agent-list')).toBeVisible();
-      await expect(component).toHaveScreenshot(
+      await expectSubscriptionScreenshot(
+        component,
         `finished-participants-${theme}-${zoom === 1 ? '100' : '200'}.png`,
-        { maxDiffPixelRatio: 0.02 },
+        0.02,
       );
-    }
+    });
   }
-});
+}
 
 test('renders exactly one promoted Waiting disclosure in agent-only mode', async ({ mount }) => {
   const component = await mount(AgentSubscriptionInlineHost, { props: { mode: 'agents' } });
@@ -741,6 +1016,25 @@ test('renders exactly one promoted Waiting disclosure in agent-only mode', async
   await expect(component.getByTestId('one-shot-summary-toggle')).toHaveCount(1);
   await expect(component.getByText('Waiting for 7 agents', { exact: true })).toHaveCount(1);
 });
+
+for (const snapshotStatus of ['loading', 'failed'] as const) {
+  test(`keeps the agent lane visible while its snapshot is ${snapshotStatus}`, async ({
+    mount,
+  }) => {
+    const component = await mount(AgentSubscriptionInlineHost, { props: { snapshotStatus } });
+
+    await expect(component.getByTestId('subscription-utility-area')).toBeVisible();
+    await expect(component.getByTestId('event-subscriptions-agents')).toBeVisible();
+    await expect(component.getByTestId('event-subscriptions-outer-header')).toHaveCount(0);
+    await expect(component.getByTestId('background-hooks-snapshot-status')).toHaveCount(0);
+    await expect(component.getByTestId('pr-monitors-snapshot-status')).toHaveCount(0);
+    await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toBeVisible();
+    await expect(component.getByTestId('agent-subscriptions-snapshot-status')).toHaveAttribute(
+      'data-snapshot-status',
+      snapshotStatus,
+    );
+  });
+}
 
 test('keeps the outer Subscribed header and a distinct cohort header in mixed mode', async ({
   mount,
@@ -777,6 +1071,7 @@ test('keeps the bell at the compact gap and on the outer-header text tone', asyn
             const iconBox = icon.getBoundingClientRect();
             return {
               slotWidth: slotBox.width,
+              slotRight: slotBox.right,
               slotCenterX: (slotBox.left + slotBox.right) / 2,
               slotCenterY: (slotBox.top + slotBox.bottom) / 2,
               iconWidth: iconBox.width,
@@ -789,11 +1084,11 @@ test('keeps the bell at the compact gap and on the outer-header text tone', asyn
               titleColor: getComputedStyle(title).color,
             };
           });
-          expect(geometry.slotWidth).toBeCloseTo(14 * zoom, 1);
+          expect(geometry.slotWidth).toBeCloseTo(20 * zoom, 1);
           expect(geometry.iconWidth).toBeCloseTo(14 * zoom, 1);
           expect(geometry.iconCenterX).toBeCloseTo(geometry.slotCenterX, 1);
           expect(geometry.iconCenterY).toBeCloseTo(geometry.slotCenterY, 1);
-          expect(geometry.titleLeft - geometry.iconRight).toBeCloseTo(6 * zoom, 1);
+          expect(geometry.titleLeft - geometry.slotRight).toBeCloseTo(8 * zoom, 1);
           expect(geometry.iconOpacity).toBe('1');
           expect(geometry.iconColor).toBe(geometry.titleColor);
           await expect(
@@ -817,6 +1112,12 @@ test('caps one through eight participants at three and computes overflow from re
     await component.update({
       props: { mode: 'agents', agentCount, width: 600, initiallyExpanded: false },
     });
+    if (agentCount === 1) {
+      await expect(component.getByTestId('agent-list-item')).toHaveCount(1);
+      await expect(summary).toHaveCount(0);
+      await expect(component.getByTestId('one-shot-header')).toHaveCount(0);
+      continue;
+    }
     if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
     const stack = component.getByTestId('one-shot-header').locator('[data-agent-avatar-stack]');
     const visibleCount = Math.min(agentCount, 3);
@@ -1039,6 +1340,13 @@ test('pins the participant stack before a fixed trailing chevron slot', async ({
           });
           const summary = component.getByTestId('one-shot-summary-toggle');
           const chevron = component.getByTestId('one-shot-collapse-toggle');
+          if (agentCount === 1) {
+            await expect(component.getByTestId('agent-list-item')).toHaveCount(1);
+            await expect(summary).toHaveCount(0);
+            await expect(component.getByTestId('one-shot-header')).toHaveCount(0);
+            await expect(chevron).toHaveCount(0);
+            continue;
+          }
           if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
           await expect(summary).toHaveAttribute('aria-expanded', 'false');
           await expect(chevron.locator('[data-icon="chevron-down"]')).toHaveClass(/rotate-90/);
@@ -1294,13 +1602,15 @@ for (const [agentStateScenario, expected] of canonicalAgentStateCases) {
   });
 }
 
-test('screenshots participant cutouts over varied parent backgrounds', async ({ mount }) => {
-  const component = await mount(AgentSubscriptionInlineHost, {
-    props: { mode: 'agents', agentCount: 6, width: 420, initiallyExpanded: false },
-  });
-  for (const theme of ['light', 'dark'] as const) {
-    for (const parentBackground of ['background', 'muted', 'accent'] as const) {
-      for (const zoom of [1, 2]) {
+for (const theme of ['light', 'dark'] as const) {
+  for (const parentBackground of ['background', 'muted', 'accent'] as const) {
+    for (const zoom of [1, 2]) {
+      test(`screenshots participant cutouts over varied parent backgrounds (${theme}, ${parentBackground}, ${zoom * 100}%)`, async ({
+        mount,
+      }) => {
+        const component = await mount(AgentSubscriptionInlineHost, {
+          props: { mode: 'agents', agentCount: 6, width: 420, initiallyExpanded: false },
+        });
         await component.update({
           props: {
             mode: 'agents',
@@ -1317,11 +1627,12 @@ test('screenshots participant cutouts over varied parent backgrounds', async ({ 
         if ((await summary.getAttribute('aria-expanded')) === 'true') await summary.click();
         await expect.poll(() => stack.locator('[data-agent-avatar-with-state]').count()).toBe(3);
         await expect(stack.locator('[data-agent-avatar-overflow]')).toHaveText('+3');
-        await expect(component).toHaveScreenshot(
+        await expectSubscriptionScreenshot(
+          component,
           `participant-stack-${theme}-${parentBackground}-${zoom === 1 ? '100' : '200'}.png`,
-          { maxDiffPixelRatio: 0.012 },
+          0.012,
         );
-      }
+      });
     }
   }
-});
+}

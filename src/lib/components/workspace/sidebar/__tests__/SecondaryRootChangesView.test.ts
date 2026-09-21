@@ -101,6 +101,14 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-slice'
     type: 'workspaceNavigation/openWorkspaceCommitChangeset',
     payload: args,
   })),
+  openWorkspaceDiff: vi.fn((...args: unknown[]) => ({
+    type: 'workspaceNavigation/openWorkspaceDiff',
+    payload: args,
+  })),
+}));
+
+vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
+  selectFocusedPanelId: { select: vi.fn(() => 'panel-focused') },
 }));
 
 vi.mock('$lib/utils/clipboard', () => ({
@@ -111,8 +119,8 @@ vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-vi.mock('svelte-sonner', () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError },
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/Fa.svelte')).default }));
@@ -143,11 +151,12 @@ function makeEntry(
   branch: string | undefined,
   rootId = 'root-1',
   registeredCommitSha?: string,
+  path = 'packages/sub',
 ): WorkspaceGitRootEntry {
   return {
     key: rootId,
     isPrimary: false,
-    path: 'packages/sub',
+    path,
     branch,
     gitRoot: { id: rootId, ...(registeredCommitSha ? { registeredCommitSha } : {}) },
   } as WorkspaceGitRootEntry;
@@ -440,6 +449,169 @@ describe('SecondaryRootChangesView', () => {
     );
   });
 
+  describe('changed-file rows', () => {
+    function diffActions() {
+      return mocks.dispatch.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type === 'workspaceNavigation/openWorkspaceDiff');
+    }
+
+    async function renderRows() {
+      const status = makeStatus('main');
+      status.files = [
+        { path: 'src/unstaged.ts', status: 'M', staged: false },
+        { path: 'src/staged.ts', status: 'A', staged: true },
+      ];
+      mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+      const view = await renderView(makeEntry('main', 'root-9', undefined, '/repo/packages/sub'));
+      const rows = await waitFor(() => {
+        const found = view.getAllByTestId('secondary-root-file-open');
+        expect(found).toHaveLength(2);
+        return found;
+      });
+      return { ...view, rows };
+    }
+
+    it('opens a root-scoped unstaged diff with the root-relative path and absolute file', async () => {
+      const { rows } = await renderRows();
+      expect(rows[0].tagName).toBe('BUTTON');
+
+      await fireEvent.click(rows[0]);
+
+      const [action] = diffActions();
+      expect(action.payload[0]).toBe('ws-1');
+      expect(action.payload[1]).toMatchObject({
+        id: 'root-root-9-unstaged-src/unstaged.ts',
+        file: '/repo/packages/sub/src/unstaged.ts',
+        relativePath: 'src/unstaged.ts',
+        stage: 'unstaged',
+        status: 'modified',
+        stats: { additions: 0, deletions: 0 },
+        attribution: { manual: true },
+      });
+      expect(action.payload[2]).toEqual({
+        gitRootId: 'root-9',
+        gitRootPath: '/repo/packages/sub',
+        filePath: '/repo/packages/sub/src/unstaged.ts',
+        changeId: 'root-root-9-unstaged-src/unstaged.ts',
+        openInAdjacentPanel: false,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('opens a staged file as a Staged change with the porcelain status mapped', async () => {
+      const { rows } = await renderRows();
+
+      await fireEvent.click(rows[1]);
+
+      const [action] = diffActions();
+      expect(action.payload[1]).toMatchObject({
+        relativePath: 'src/staged.ts',
+        stage: 'staged',
+        status: 'added',
+      });
+      expect(action.payload[2]).toMatchObject({
+        gitRootId: 'root-9',
+        gitRootPath: '/repo/packages/sub',
+        changeId: 'root-root-9-staged-src/staged.ts',
+      });
+    });
+
+    it('keeps the changeId stable across re-clicks so the existing tab is focused', async () => {
+      const { rows } = await renderRows();
+
+      await fireEvent.click(rows[0]);
+      await fireEvent.click(rows[0]);
+
+      const [first, second] = diffActions();
+      expect(second.payload[2].changeId).toBe(first.payload[2].changeId);
+      expect(second.payload[1].id).toBe(first.payload[1].id);
+    });
+
+    it('opens in the adjacent panel on a platform modifier click', async () => {
+      const { rows } = await renderRows();
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+
+      await fireEvent.click(rows[0], isMac ? { metaKey: true } : { ctrlKey: true });
+
+      const [action] = diffActions();
+      expect(action.payload[2]).toMatchObject({
+        openInAdjacentPanel: true,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('opens in the adjacent panel on a platform modifier Enter and prevents the default', async () => {
+      const { rows } = await renderRows();
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+
+      const notPrevented = await fireEvent.keyDown(
+        rows[0],
+        isMac ? { key: 'Enter', metaKey: true } : { key: 'Enter', ctrlKey: true },
+      );
+
+      expect(notPrevented).toBe(false);
+      const actions = diffActions();
+      expect(actions).toHaveLength(1);
+      expect(actions[0].payload[2]).toMatchObject({
+        gitRootId: 'root-9',
+        openInAdjacentPanel: true,
+        sourcePanelId: 'panel-focused',
+      });
+    });
+
+    it('carries git.status gitlink metadata for a nested submodule row only', async () => {
+      const status = makeStatus('main');
+      status.files = [
+        {
+          path: 'vendor/nested',
+          status: 'M',
+          staged: false,
+          mode: '160000',
+          oldSha: 'a'.repeat(40),
+          newSha: 'b'.repeat(40),
+        },
+        { path: 'src/exec.sh', status: 'M', staged: false, mode: '100755' },
+      ];
+      mocks.getStatus.mockResolvedValue({ ok: true, data: status });
+      const { getAllByTestId } = await renderView(makeEntry('main', 'root-9'));
+      const rows = await waitFor(() => {
+        const found = getAllByTestId('secondary-root-file-open');
+        expect(found).toHaveLength(2);
+        return found;
+      });
+
+      await fireEvent.click(rows[0]);
+      await fireEvent.click(rows[1]);
+
+      const [gitlinkAction, fileAction] = diffActions();
+      expect(gitlinkAction.payload[1].gitlink).toEqual({
+        mode: '160000',
+        oldSha: 'a'.repeat(40),
+        newSha: 'b'.repeat(40),
+      });
+      expect(fileAction.payload[1]).not.toHaveProperty('gitlink');
+    });
+
+    it('leaves a plain Enter keydown to the native button activation', async () => {
+      const { rows } = await renderRows();
+
+      const notPrevented = await fireEvent.keyDown(rows[0], { key: 'Enter' });
+
+      expect(notPrevented).toBe(true);
+      expect(diffActions()).toHaveLength(0);
+    });
+
+    it('renders no staging or revert affordances on the read-only rows', async () => {
+      const { queryByTestId, queryAllByRole } = await renderRows();
+
+      expect(queryByTestId('stage-btn')).toBeNull();
+      expect(queryByTestId('unstage-btn')).toBeNull();
+      expect(queryByTestId('revert-btn')).toBeNull();
+      expect(queryAllByRole('button', { name: /^(un)?stage\b|^revert\b/i })).toHaveLength(0);
+    });
+  });
+
   it('keeps an empty root in the no-changes state without a summary affordance', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
 
@@ -567,7 +739,7 @@ describe('SecondaryRootChangesView', () => {
     expect(container.textContent).not.toContain('stale-branch');
   });
 
-  it('splits the list at registeredCommitSha: divider + dimmed older commits behind the expander', async () => {
+  it('splits the list at registeredCommitSha with older commits behind the expander', async () => {
     mocks.getStatus.mockResolvedValue({ ok: true, data: makeStatus('main') });
     mocks.getHistory.mockResolvedValue({
       ok: true,
@@ -598,10 +770,9 @@ describe('SecondaryRootChangesView', () => {
     await fireEvent.click(toggle);
     await waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('true'));
     const older = getByTestId('secondary-root-older-commits');
-    // Boundary commit renders inside the dimmed older section (inclusive).
+    // Boundary commit renders inside the older section (inclusive).
     expect(older.textContent).toContain('chore: at registration');
     expect(older.textContent).toContain('feat: before registration');
-    expect(older.className).toContain('opacity-60');
 
     // Collapse again
     await fireEvent.click(toggle);

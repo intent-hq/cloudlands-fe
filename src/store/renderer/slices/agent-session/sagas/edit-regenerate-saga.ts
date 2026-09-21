@@ -26,8 +26,8 @@ function editError(error: unknown): Error {
 
 async function showEditError(message: string): Promise<void> {
   try {
-    const { toast } = await import('svelte-sonner');
-    toast.error(message);
+    const { notify } = await import('$lib/components/patterns/notify');
+    notify.error(message);
   } catch (error) {
     logger.error('Failed to surface edit-and-regenerate error', error);
   }

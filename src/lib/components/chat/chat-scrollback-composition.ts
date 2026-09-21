@@ -59,9 +59,13 @@ function withStableGroupKeys(
  * rehydration and a seq-0 snapshot replaces it wholesale, so a row paged
  * into history can later re-enter the tail. Without this render-time guard
  * each such row renders twice (duplicate sections after repeated
- * scroll-up/scroll-down cycles).
+ * scroll-up/scroll-down cycles). Exported so the regenerate saga resolves
+ * its source against the same composed list the transcript renders.
  */
-function dropTailResidentRows(history: AgentMessage[], tail: AgentMessage[]): AgentMessage[] {
+export function dropTailResidentRows(
+  history: AgentMessage[],
+  tail: AgentMessage[],
+): AgentMessage[] {
   if (history.length === 0 || tail.length === 0) return history;
   const tailIds = new Set(tail.map((message) => message.id));
   const tailAppMessageIds = new Set(
@@ -542,7 +546,7 @@ export interface RapidScrollParams {
  * relative to the viewport height — sum |delta| across consecutive samples
  * within `windowMs` of the newest sample and compare against
  * `viewportFactor` viewports. A wheel flick or scrollbar-thumb drag covers
- * more than one viewport inside one settle window (200ms), which a serial
+ * more than one viewport inside one settle window, which a serial
  * page walk cannot usefully chase — the caller defers paging to the settle
  * debounce. A gentle reading-pace scroll stays under the threshold and
  * keeps today's immediate edge-triggered serial fetch. Absolute deltas (not

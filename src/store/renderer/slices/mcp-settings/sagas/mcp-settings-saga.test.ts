@@ -6,8 +6,10 @@ const mocks = vi.hoisted(() => ({
   getMcpServers: vi.fn(),
   setMcpServers: vi.fn(),
   getMcpServerStatuses: vi.fn(),
+  restartMcpServer: vi.fn(),
   getWorkspaceDisabledMcpServerNames: vi.fn(),
   toggleWorkspaceMcpServer: vi.fn(),
+  invoke: vi.fn(),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -15,17 +17,20 @@ vi.mock('$lib/client', () => ({
       getMcpServers: mocks.getMcpServers,
       setMcpServers: mocks.setMcpServers,
       getMcpServerStatuses: mocks.getMcpServerStatuses,
+      restartMcpServer: mocks.restartMcpServer,
       getWorkspaceDisabledMcpServerNames: mocks.getWorkspaceDisabledMcpServerNames,
       toggleWorkspaceMcpServer: mocks.toggleWorkspaceMcpServer,
     },
   },
 }));
+vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ warn: vi.fn(), error: vi.fn() }),
 }));
 
 import {
   addServer,
+  authenticateServer,
   hydrateWorkspaceMcpDisabled,
   importFromJson,
   initialState,
@@ -71,6 +76,8 @@ describe('mcpSettingsSaga', () => {
     vi.clearAllMocks();
     mocks.getMcpServers.mockResolvedValue([]);
     mocks.getMcpServerStatuses.mockResolvedValue([]);
+    mocks.restartMcpServer.mockResolvedValue({ serverId: 'srv-default', state: 'running' });
+    mocks.invoke.mockResolvedValue({ success: true, data: { success: true } });
   });
   afterEach(() => vi.useRealTimers());
 
@@ -159,6 +166,7 @@ describe('mcpSettingsSaga', () => {
     mocks.getMcpServers.mockResolvedValue([
       { id: 'srv-up', name: 'up', type: 'http', url: 'https://up.test' },
       { id: 'srv-down', name: 'down', type: 'http', url: 'https://down.test' },
+      { id: 'srv-auth', name: 'auth', type: 'http', url: 'https://auth.test' },
       { id: 'srv-off', name: 'off', type: 'http', url: 'https://off.test', disabled: true },
       { name: 'no-id', type: 'stdio', command: 'node' },
     ]);
@@ -166,19 +174,24 @@ describe('mcpSettingsSaga', () => {
     mocks.getMcpServerStatuses.mockResolvedValue([
       { serverId: 'srv-up', state: 'running', toolCount: 7, startedAt: 1750000000000 },
       { serverId: 'srv-down', state: 'error', lastError: 'unreachable from daemon host' },
+      { serverId: 'srv-auth', state: 'auth_required', lastError: 'authentication required' },
     ]);
     const run = harness();
     run.channel.put(loadServers());
     await settle();
 
-    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-up', 'srv-down']]]);
+    expect(mocks.getMcpServerStatuses.mock.calls).toEqual([[['srv-up', 'srv-down', 'srv-auth']]]);
     expect(run.state().statusMap).toEqual({
       up: 'connected',
       down: 'error',
+      auth: 'auth_required',
       off: 'disabled',
       'no-id': 'configured',
     });
-    expect(run.state().errorMessages).toEqual({ down: 'unreachable from daemon host' });
+    expect(run.state().errorMessages).toEqual({
+      down: 'unreachable from daemon host',
+      auth: 'authentication required',
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -357,7 +370,7 @@ describe('mcpSettingsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('persists exact add/import requests and restarts only local status', async () => {
+  it('persists exact add/import requests', async () => {
     mocks.getMcpServers.mockResolvedValueOnce([]).mockResolvedValue([
       {
         name: 'local',
@@ -396,9 +409,6 @@ describe('mcpSettingsSaga', () => {
       ),
     );
     await settle();
-    run.channel.put(restartServer('remote'));
-    await settle();
-
     expect(mocks.setMcpServers.mock.calls).toEqual([
       [
         [
@@ -671,8 +681,18 @@ describe('mcpSettingsSaga', () => {
     await run.task.toPromise();
   });
 
-  it('updates restart status directly without an unsupported wire request', async () => {
-    const remote = { name: 'remote', type: 'http' as const, url: 'https://remote.test' };
+  it('restarts by daemon id and renders the daemon-confirmed status', async () => {
+    const remote = {
+      id: 'srv-remote',
+      name: 'remote',
+      type: 'http' as const,
+      url: 'https://remote.test',
+    };
+    mocks.restartMcpServer.mockResolvedValue({
+      serverId: 'srv-remote',
+      state: 'auth_required',
+      lastError: 'authentication required (HTTP 401)',
+    });
     const run = harness({
       ...initialState,
       servers: [remote],
@@ -681,11 +701,14 @@ describe('mcpSettingsSaga', () => {
     run.channel.put(restartServer('remote'));
     await settle();
 
-    expect(mocks.getMcpServers.mock.calls).toEqual([]);
-    expect(mocks.setMcpServers.mock.calls).toEqual([]);
+    expect(mocks.restartMcpServer).toHaveBeenCalledWith('srv-remote');
     expect(run.dispatched).toEqual([
       { type: 'mcpSettings/clearServerErrorMessage', payload: ['remote'] },
-      { type: 'mcpSettings/setServerStatus', payload: ['remote', 'configured'] },
+      { type: 'mcpSettings/setServerStatus', payload: ['remote', 'auth_required'] },
+      {
+        type: 'mcpSettings/setServerErrorMessage',
+        payload: ['remote', 'authentication required (HTTP 401)'],
+      },
     ]);
     run.task.cancel();
     await run.task.toPromise();
@@ -697,8 +720,76 @@ describe('mcpSettingsSaga', () => {
     await settle();
 
     expect(mocks.getMcpServers.mock.calls).toEqual([]);
-    expect(mocks.setMcpServers.mock.calls).toEqual([]);
+    expect(mocks.restartMcpServer.mock.calls).toEqual([]);
     expect(run.dispatched).toEqual([]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('authenticates a hosted server through IPC, then restarts it by daemon id', async () => {
+    const figma = {
+      id: 'srv-figma',
+      name: 'figma',
+      type: 'http' as const,
+      url: 'https://mcp.figma.com/mcp',
+      authType: 'oauth' as const,
+    };
+    mocks.restartMcpServer.mockResolvedValue({ serverId: 'srv-figma', state: 'running' });
+    const run = harness({ ...initialState, servers: [figma] });
+    run.channel.put(authenticateServer('figma'));
+    await settle();
+
+    expect(mocks.invoke).toHaveBeenCalledWith('user-mcp:authenticate', {
+      serverId: 'srv-figma',
+      url: 'https://mcp.figma.com/mcp',
+    });
+    expect(mocks.restartMcpServer).toHaveBeenCalledWith('srv-figma');
+    expect(run.state().statusMap.figma).toBe('connected');
+    expect(run.state().errorMessages).toEqual({});
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps auth-required state when interactive OAuth fails', async () => {
+    const figma = {
+      id: 'srv-figma',
+      name: 'figma',
+      type: 'http' as const,
+      url: 'https://mcp.figma.com/mcp',
+    };
+    mocks.invoke.mockResolvedValue({
+      success: true,
+      data: { success: false, error: 'Sign-in was denied' },
+    });
+    const run = harness({ ...initialState, servers: [figma] });
+    run.channel.put(authenticateServer('figma'));
+    await settle();
+
+    expect(mocks.restartMcpServer).not.toHaveBeenCalled();
+    expect(run.state().statusMap.figma).toBe('auth_required');
+    expect(run.state().errorMessages.figma).toBe('Sign-in was denied');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('surfaces the structured error when the daemon record rejects the OAuth request', async () => {
+    const figma = {
+      id: 'srv-figma',
+      name: 'figma',
+      type: 'http' as const,
+      url: 'https://mcp.figma.com/mcp',
+    };
+    mocks.invoke.mockResolvedValue({
+      success: false,
+      error: { code: 'MCP_SERVER_URL_MISMATCH', message: 'URL did not match the saved server' },
+    });
+    const run = harness({ ...initialState, servers: [figma] });
+    run.channel.put(authenticateServer('figma'));
+    await settle();
+
+    expect(mocks.restartMcpServer).not.toHaveBeenCalled();
+    expect(run.state().statusMap.figma).toBe('auth_required');
+    expect(run.state().errorMessages.figma).toBe('URL did not match the saved server');
     run.task.cancel();
     await run.task.toPromise();
   });

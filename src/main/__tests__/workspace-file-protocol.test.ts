@@ -1350,6 +1350,100 @@ describe('setupWorkspaceAssetProtocolHandler', () => {
     sizeKb: Math.ceil(data.length / 1024),
   });
 
+  it.each(['video/webm', 'video/mp4'])(
+    'serves seekable saved %s bytes without changing the asset RPC',
+    async (mimeType) => {
+      const bytes = Buffer.from('0123456789');
+      const remoteRequest = bindWorkspaceToBackend('ws-1', 'conn-video');
+      remoteRequest.mockResolvedValueOnce(asset(bytes, mimeType));
+
+      const res = await getAssetHandler()(
+        appRequest('workspace-asset://ws-1/movie.mp4?backend=conn-video'),
+      );
+
+      expect(remoteRequest).toHaveBeenCalledExactlyOnceWith('note.readAsset', {
+        workspaceId: 'ws-1',
+        asset: 'movie.mp4',
+      });
+      expect(mockRequest).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe(mimeType);
+      expect(res.headers.get('Accept-Ranges')).toBe('bytes');
+      expect(res.headers.get('Content-Length')).toBe('10');
+      expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+    },
+  );
+
+  it.each([
+    ['bytes=2-5', '2345', 'bytes 2-5/10'],
+    ['bytes=6-', '6789', 'bytes 6-9/10'],
+    ['bytes=-3', '789', 'bytes 7-9/10'],
+    ['bytes=8-99', '89', 'bytes 8-9/10'],
+    ['bytes=-99', '0123456789', 'bytes 0-9/10'],
+  ])('serves the requested saved-video range %s', async (range, expected, contentRange) => {
+    mockRequest.mockResolvedValueOnce(asset(Buffer.from('0123456789'), 'video/mp4'));
+    const res = await getAssetHandler()(
+      appRequest('workspace-asset://ws-1/movie.mp4', { Range: range }),
+    );
+    expect(res.status).toBe(206);
+    expect(res.headers.get('Content-Range')).toBe(contentRange);
+    expect(res.headers.get('Content-Length')).toBe(String(expected.length));
+    expect(await res.text()).toBe(expected);
+  });
+
+  it.each([
+    'bytes=10-',
+    'bytes=5-2',
+    'bytes=-0',
+    'bytes=0-1,3-4',
+    'bytes=9007199254740992-',
+    'items=0-1',
+  ])('rejects invalid or unsatisfiable saved-video ranges (%s)', async (range) => {
+    mockRequest.mockResolvedValueOnce(asset(Buffer.from('0123456789'), 'video/webm'));
+    const res = await getAssetHandler()(
+      appRequest('workspace-asset://ws-1/movie.webm', { Range: range }),
+    );
+    expect(res.status).toBe(416);
+    expect(res.headers.get('Content-Range')).toBe('bytes */10');
+  });
+
+  it('rejects a range into an empty saved video', async () => {
+    mockRequest.mockResolvedValueOnce(asset(Buffer.alloc(0), 'video/mp4'));
+    const res = await getAssetHandler()(
+      appRequest('workspace-asset://ws-1/movie.mp4', { Range: 'bytes=0-' }),
+    );
+    expect(res.status).toBe(416);
+    expect(res.headers.get('Content-Range')).toBe('bytes */0');
+  });
+
+  it('preserves full ordinary image responses even with a range header', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    mockRequest.mockResolvedValueOnce(asset(bytes));
+    const res = await getAssetHandler()(
+      appRequest('workspace-asset://ws-1/image.png', { Range: 'bytes=1-2' }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/png');
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('allows existing download actions to fetch asset bytes from the trusted renderer', async () => {
+    mockRequest.mockResolvedValueOnce(asset(Buffer.from('movie'), 'video/webm'));
+    const res = await getAssetHandler()(appRequest('workspace-asset://ws-1/movie.webm'));
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('app://workspaces');
+    expect(res.headers.get('Vary')).toBe('Origin');
+    expect(await res.text()).toBe('movie');
+  });
+
+  it('rejects an untrusted origin before reading any saved asset', async () => {
+    const res = await getAssetHandler()(
+      appRequest('workspace-asset://ws-1/movie.webm', { Origin: 'https://example.com' }),
+    );
+    expect(res.status).toBe(403);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
   it('serves an asset via note.readAsset on the primary client for an unpooled local backend', async () => {
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     mockRequest.mockResolvedValueOnce(asset(bytes));

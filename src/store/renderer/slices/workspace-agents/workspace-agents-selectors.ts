@@ -58,12 +58,12 @@ export const selectForegroundWorkspaceAgents = store.createSelector((state, wsId
   return result;
 });
 
-/** True when any foreground (top-level) agent session has unread messages. */
+/** True when any non-retired foreground (top-level) agent session has unread messages. */
 export const selectWorkspaceHasUnreadForegroundAgents = store.createSelector(
   (state, wsId: string): boolean => {
     return selectForegroundWorkspaceAgents
       .select(state, wsId)
-      .some((agent) => agent.hasUnread === true);
+      .some((agent) => !agent.retiredAt && agent.hasUnread === true);
   },
 );
 
@@ -75,7 +75,7 @@ export const selectIsLoadingAgents = store.createSelector((state, wsId: string) 
   return getWorkspaceAgentState(state, wsId).isLoadingAgents;
 });
 
-/** Daemon-served retired-row count (§5.5 soft retire, v8.2) for the Retired bin toggle. */
+/** Daemon-served retired-row count (§5.5 soft retire) for the Retired bin toggle. */
 export const selectRetiredCount = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).retiredCount;
 });
@@ -88,6 +88,35 @@ export const selectRetiredAgentsLoaded = store.createSelector((state, wsId: stri
 /** True while the on-demand retired-only read is in flight. */
 export const selectIsLoadingRetiredAgents = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).isLoadingRetiredAgents;
+});
+
+/**
+ * Daemon-served per-bin counts (`scopeCounts`, §5.5 row scope) for the
+ * Delegated / Background bin toggles; `null` when the daemon served none
+ * (old daemon — the all-rows read, no lazy bins).
+ */
+export const selectScopeCounts = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).scopeCounts;
+});
+
+/** True once the on-demand `scope: "delegated"` read has hydrated the delegated rows. */
+export const selectDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).delegatedAgentsLoaded;
+});
+
+/** True while the on-demand delegated read is in flight. */
+export const selectIsLoadingDelegatedAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingDelegatedAgents;
+});
+
+/** True once the on-demand `scope: "background"` read has hydrated the background rows. */
+export const selectBackgroundAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).backgroundAgentsLoaded;
+});
+
+/** True while the on-demand background read is in flight. */
+export const selectIsLoadingBackgroundAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingBackgroundAgents;
 });
 
 function byCreatedOrder(left: AgentSession, right: AgentSession): number {

@@ -1,3 +1,11 @@
+// @verify-changed-triggers: ../NotesPanel.svelte, ../ContextItemRow.svelte, ../ContextPanel.svelte,
+//   ../SidebarChangesPanel.svelte, ../FileChangesSection.svelte, ../FilesPanel.svelte,
+//   ../OpenPanelIndicator.svelte, ../../MultiSelectTabbedSidebar.svelte,
+//   ../../WorkspaceAgentsList.svelte, ../../../chat/AgentCard.svelte,
+//   ../../../file-tracking/accept-changes/FileRow.svelte,
+//   ../../../file-explorer/VirtualizedFileTree.svelte, ../../../file-explorer/file-tree-view.svelte,
+//   ../../../ui/list/ListItem.svelte
+
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -43,7 +51,6 @@ describe('sidebar open-panel marker removal contract', () => {
 
   it('retains the keyboard focus treatment on shared list rows', () => {
     const listItem = source('../../../ui/list/ListItem.svelte');
-    expect(listItem).toContain('focus-visible:border-ring');
-    expect(listItem).toContain('focus-visible:ring-2');
+    expect(listItem).toContain('focus-visible:-outline-offset-1');
   });
 });

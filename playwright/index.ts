@@ -11,6 +11,8 @@ import {
   type PreviewDefinition,
 } from '../src/lib/component-catalog/preview-definition';
 import { store } from '../src/store/renderer/configured-store';
+import { registerMockIpcHandler } from '../src/shared/ipc-mock-router';
+import { installMockElectronBridge } from '../src/test/ct-mock-electron-bridge';
 
 // CT-safe store bootstrap (intent-hq/monorepo#2224): components read Redux
 // selectors at mount, which throws before Store.init(). Initialize the real
@@ -34,12 +36,41 @@ for (const [path, loader] of Object.entries(previewDefinitionLoaders)) {
   if (scene) previewDefinitionLoadersByScene.set(scene, loader);
 }
 
+interface MockHooksConfig {
+  /**
+   * Static daemon answers by JSON-RPC method, served through a mock
+   * `window.electronAPI` (intent-hq/intent#5276). A fixture that mounts a code
+   * path which reads from the daemon on mount (e.g. `ChatPanel`'s
+   * `agent.getQueue` hydration) needs this, or it exercises its caught
+   * "Backend bridge unavailable" fallback under passing geometry assertions.
+   */
+  mockBackend?: Record<string, unknown>;
+  /** Static legacy renderer→main IPC answers by invoke channel. */
+  mockIpc?: Record<string, unknown>;
+}
+
 interface GeometryHooksConfig {
   geometrySnapshot?: {
     scene: string;
     state: string;
   };
 }
+
+// Registered before the geometry hook on purpose: ct-svelte keeps the LAST
+// before-mount hook's return value as the mounted component, so a hook that
+// returns nothing must not run after one that returns a component.
+beforeMount<MockHooksConfig>(async ({ hooksConfig }) => {
+  if (hooksConfig?.mockBackend) {
+    installMockElectronBridge(
+      Object.fromEntries(
+        Object.entries(hooksConfig.mockBackend).map(([method, result]) => [method, () => result]),
+      ),
+    );
+  }
+  for (const [channel, response] of Object.entries(hooksConfig?.mockIpc ?? {})) {
+    registerMockIpcHandler(channel, () => response);
+  }
+});
 
 beforeMount<GeometryHooksConfig>(async ({ hooksConfig, App }) => {
   const geometry = hooksConfig?.geometrySnapshot;

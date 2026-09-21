@@ -18,6 +18,7 @@ import {
   initialState,
   upsertSession as upsertSessionAction,
   removeSession,
+  restoreStoredSessions,
   addMessage,
   removeMessage,
   updateMessage,
@@ -31,6 +32,7 @@ import {
   clearProcessQueueHint,
   processEvicted,
   bulkUpsertSessions,
+  markAgentDetailHydrated,
   removeWorkspaceSessions,
   clearAllSessions,
   computeMessageContentHash,
@@ -44,15 +46,20 @@ import {
   setHistoryOldestReached,
   clearHistorySegment,
   MAX_MESSAGES_PER_AGENT,
+  FE_OWNED_FIELD_POLICY,
 } from './agent-session-slice';
+import type { FeOwnedSessionState } from './agent-session-types';
 import {
   chatSendFailed,
   chatSendStarted,
   chatInitialized,
   chatReset,
+  chatStreamingReconciled,
   chatTranscriptSnapshotApplied,
   streamCompleted,
+  streamStatusReceived,
 } from '../chat-state/chat-state-slice';
+import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-stream-slice';
 import {
   isConversationStartLoaded,
   shouldRequestOlderHistory,
@@ -64,6 +71,7 @@ import {
   workspaceDeleted,
 } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  selectAgentDetailHydrated,
   selectAgentSession,
   selectAgentSessionsByIds,
   selectAgentMessages,
@@ -171,12 +179,14 @@ function storeWith(
   agentSessions: {
     byAgentId: Record<string, AgentSession>;
     agentIdsByWorkspace?: Record<string, string[]>;
+    detailHydrated?: Record<string, true>;
   },
   workspaceAgentIds: Record<string, string[]> = {},
 ): StoreState {
   const converted: AgentSessionState = {
     byAgentId: agentSessions.byAgentId,
     agentIdsByWorkspace: agentSessions.agentIdsByWorkspace ?? workspaceAgentIds,
+    ...(agentSessions.detailHydrated ? { detailHydrated: agentSessions.detailHydrated } : {}),
   };
   return {
     agentSessions: converted,
@@ -471,6 +481,133 @@ describe('agent-session-slice reducer', () => {
       const next = agentSessionReducer(state, upsertSession(seed()));
 
       expect(next).toBe(state);
+    });
+
+    // §5.5 list projection (intent-hq/intent#5383): `agent.list` rows omit the
+    // detail-only fields regardless of the session's state, so a
+    // `listProjection` upsert keeps what an earlier `agent.get` stored; a
+    // detail-read upsert stays authoritative and its omissions clear.
+    describe('listProjection detail-field carry-forward', () => {
+      const detailed = () =>
+        makeSession('a1', 'ws-1', {
+          harnessVersion: '1.0',
+          messageCount: 4,
+          harnessFeatures: { peerAgents: true },
+          effortLevels: ['low', 'high'],
+          stats: { messageCount: 4, toolCallCount: 1 } as any,
+          contextReferences: [{ id: 'ctx-1' }] as any,
+          fileBlocks: [{ path: 'a.ts' }] as any,
+          metadata: {
+            pendingProposals: [{ proposalId: 'p1', messageId: 'm1' }],
+            proposalResolutions: { p0: 'applied' },
+            lastSeenMessageId: 'm0',
+          },
+        });
+      const slimRow = () =>
+        makeSession('a1', 'ws-1', {
+          harnessVersion: '1.0',
+          messageCount: 4,
+          metadata: { lastSeenMessageId: 'm0' },
+        });
+
+      it('keeps every detail-only field when a list-projection upsert omits it', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(
+          state,
+          bulkUpsertSessions([slimRow()], { listProjection: true }),
+        );
+
+        const stored = next.byAgentId['a1'];
+        expect(stored.harnessFeatures).toEqual({ peerAgents: true });
+        expect(stored.effortLevels).toEqual(['low', 'high']);
+        expect(stored.stats).toEqual({ messageCount: 4, toolCallCount: 1 });
+        expect((stored as any).contextReferences).toEqual([{ id: 'ctx-1' }]);
+        expect((stored as any).fileBlocks).toEqual([{ path: 'a.ts' }]);
+        expect(stored.metadata?.pendingProposals).toEqual([{ proposalId: 'p1', messageId: 'm1' }]);
+        expect(stored.metadata?.proposalResolutions).toEqual({ p0: 'applied' });
+        expect(stored.metadata?.lastSeenMessageId).toBe('m0');
+        expect(stored.messageCount).toBe(4);
+      });
+
+      it('returns the same state reference when a list-projection row changes nothing else', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(
+          state,
+          bulkUpsertSessions([slimRow()], { listProjection: true }),
+        );
+
+        expect(next).toBe(state);
+      });
+
+      it('lets a value present on a list-projection row win over the stored one', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(
+          state,
+          bulkUpsertSessions(
+            [
+              makeSession('a1', 'ws-1', {
+                harnessVersion: '1.0',
+                harnessFeatures: { peerAgents: false },
+                metadata: { proposalResolutions: { p0: 'dismissed' } },
+              }),
+            ],
+            { listProjection: true },
+          ),
+        );
+
+        expect(next.byAgentId['a1'].harnessFeatures).toEqual({ peerAgents: false });
+        expect(next.byAgentId['a1'].metadata?.proposalResolutions).toEqual({ p0: 'dismissed' });
+        expect(next.byAgentId['a1'].metadata?.pendingProposals).toEqual([
+          { proposalId: 'p1', messageId: 'm1' },
+        ]);
+      });
+
+      it('clears omitted detail fields on a non-projection (detail read) upsert', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(state, upsertSession(slimRow()));
+
+        const stored = next.byAgentId['a1'];
+        expect(stored.harnessFeatures).toBeUndefined();
+        expect(stored.effortLevels).toBeUndefined();
+        expect(stored.stats).toBeUndefined();
+        expect(stored.metadata?.pendingProposals).toBeUndefined();
+        expect(stored.metadata?.proposalResolutions).toBeUndefined();
+        expect(stored.metadata?.lastSeenMessageId).toBe('m0');
+      });
+
+      it('applies a detail read that only fills detail fields over a slim row (same updatedAt)', () => {
+        const state = agentSessionReducer(
+          initialState,
+          bulkUpsertSessions([slimRow()], { listProjection: true }),
+        );
+
+        const next = agentSessionReducer(state, upsertSession(detailed()));
+
+        expect(next).not.toBe(state);
+        expect(next.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
+        expect(next.byAgentId['a1'].metadata?.pendingProposals).toEqual([
+          { proposalId: 'p1', messageId: 'm1' },
+        ]);
+      });
+
+      it('carries detail fields forward for stale-runtime-flag-clear rows too', () => {
+        const state = agentSessionReducer(initialState, upsertSession(detailed()));
+
+        const next = agentSessionReducer(
+          state,
+          bulkUpsertSessions([slimRow()], {
+            listProjection: true,
+            staleRuntimeFlagClearAgentIds: ['a1'],
+          }),
+        );
+
+        expect(next.byAgentId['a1'].harnessFeatures).toEqual({ peerAgents: true });
+        expect(next.byAgentId['a1'].effortLevels).toEqual(['low', 'high']);
+      });
     });
 
     it('applies an upsert when only lastAgentResponse changes on an otherwise-equivalent session', () => {
@@ -865,6 +1002,49 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].name).toBe('New Name');
     });
 
+    it('is a no-op for an absent row instead of creating one', () => {
+      const state = agentSessionReducer(
+        initialState,
+        updateSession('missing', { activationState: AgentActivationState.ERROR }),
+      );
+      expect(state).toBe(initialState);
+    });
+
+    it('patches the current row and keeps FE-owned fields it does not name', () => {
+      // Activation bookkeeping patches the row as it stands now, so fields
+      // written by a live update meanwhile (FE-owned or wire) must survive.
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        restoreStoredSessions([
+          {
+            ...state.byAgentId['a1'],
+            liveTurnOpen: true,
+            liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+            tailCapPruned: true,
+            processQueueHint: { waiting: true, used: 1, cap: 1, reason: 'slots' },
+            isStreaming: true,
+            isProcessing: true,
+          },
+        ]),
+      );
+      state = agentSessionReducer(
+        state,
+        updateSession('a1', { activationState: AgentActivationState.ACTIVE }),
+      );
+      expect(state.byAgentId['a1']).toEqual(
+        expect.objectContaining({
+          activationState: 'active',
+          liveTurnOpen: true,
+          liveTurnOpenedAt: '2026-01-02T00:00:00.000Z',
+          tailCapPruned: true,
+          processQueueHint: { waiting: true, used: 1, cap: 1, reason: 'slots' },
+          isStreaming: true,
+          isProcessing: true,
+        }),
+      );
+    });
+
     it('handles messages in updates with normalization and logical dedup', () => {
       const msg = makeMessage('m1');
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
@@ -1023,6 +1203,68 @@ describe('agent-session-slice reducer', () => {
 
       expect(state.byAgentId['a1'].isWaitingForOtherAgents).toBe(true);
       expect(state.byAgentId['a1'].waitingForAgentIds).toEqual(['child-1']);
+    });
+
+    describe('agent:updated pending-question marker projection (§6.5)', () => {
+      const updated = (data: Record<string, unknown>) =>
+        eventReceived('ws-1', {
+          id: 'evt-updated',
+          type: 'agent:updated',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', ...data },
+        } as any);
+      const seeded = () =>
+        agentSessionReducer(
+          initialState,
+          upsertSession(
+            makeSession('a1', 'ws-1', {
+              metadata: { pendingQuestionsMessageId: 'msg-q1', specialist: 'implementor' },
+            }),
+          ),
+        );
+
+      it('applies a written empty-string clear synchronously and keeps unrelated metadata', () => {
+        const next = agentSessionReducer(seeded(), updated({ pendingQuestionsMessageId: '' }));
+
+        expect(next.byAgentId['a1'].metadata).toEqual({
+          pendingQuestionsMessageId: '',
+          specialist: 'implementor',
+        });
+      });
+
+      it('applies a marker set and the dismissal marker riding alongside it', () => {
+        const cleared = agentSessionReducer(seeded(), updated({ pendingQuestionsMessageId: '' }));
+        const set = agentSessionReducer(cleared, updated({ pendingQuestionsMessageId: 'msg-q2' }));
+        expect(set.byAgentId['a1'].metadata?.pendingQuestionsMessageId).toBe('msg-q2');
+
+        const dismissed = agentSessionReducer(
+          set,
+          updated({ dismissedQuestionsMessageId: 'msg-q2', pendingQuestionsMessageId: 'msg-q2' }),
+        );
+        expect(dismissed.byAgentId['a1'].metadata).toMatchObject({
+          dismissedQuestionsMessageId: 'msg-q2',
+          pendingQuestionsMessageId: 'msg-q2',
+        });
+      });
+
+      it('leaves the marker untouched when agent:updated omits it or carries a non-string', () => {
+        const state = seeded();
+
+        expect(agentSessionReducer(state, updated({ modelId: 'other' }))).toBe(state);
+        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: null }))).toBe(
+          state,
+        );
+        expect(agentSessionReducer(state, updated({ pendingQuestionsMessageId: 'msg-q1' }))).toBe(
+          state,
+        );
+      });
+
+      it('does not create a session for an unknown agent', () => {
+        expect(agentSessionReducer(initialState, updated({ pendingQuestionsMessageId: '' }))).toBe(
+          initialState,
+        );
+      });
     });
 
     it('folds the agent:idle isWaitingForOtherAgents flag onto the session', () => {
@@ -2180,6 +2422,297 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(state, clearProcessQueueHint('a1'));
       expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
     });
+
+    describe('canonical status events while queued', () => {
+      const queuedState = () => {
+        let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+        return agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      };
+      const statusEvent = (type: string, data: Record<string, unknown>) =>
+        eventReceived('ws-1', {
+          id: 'evt-1',
+          type,
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: { agentId: 'a1', ...data },
+        } as any);
+
+      it('survives a running status tick carrying isResponding/isActive true', () => {
+        // A queued agent IS responding (its turn is open, §6.5), so an
+        // ordinary running-status event must not wipe the hint.
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', {
+            status: 'responding',
+            isActive: true,
+            isResponding: true,
+          }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toEqual({
+          waiting: true,
+          used: 3,
+          cap: 3,
+          reason: 'slots',
+        });
+      });
+
+      it('clears when streaming starts (the process is genuinely running)', () => {
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', {
+            status: 'responding',
+            isActive: true,
+            isResponding: true,
+            isStreaming: true,
+          }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('clears on the idle transition (reconnect safety net for a missed resumed event)', () => {
+        let state = queuedState();
+        state = agentSessionReducer(
+          state,
+          statusEvent('agent:status-changed', { status: 'active', isResponding: false }),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('clears on a terminal status', () => {
+        let state = queuedState();
+        state = agentSessionReducer(state, statusEvent('agent:failed', { error: 'boom' }));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+    });
+
+    describe('session upserts while queued (FE-owned hint, never on the wire)', () => {
+      const HINT = { waiting: true, used: 3, cap: 3, reason: 'slots' as const };
+      const queuedResponding = () => {
+        const state = agentSessionReducer(
+          initialState,
+          upsertSession(
+            makeSession('a1', 'ws-1', {
+              status: 'responding' as any,
+              isActive: true,
+              isResponding: true,
+            }),
+          ),
+        );
+        return agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+      };
+      // Wire snapshots never carry processQueueHint.
+      const snapshot = (overrides: Partial<AgentSession>) =>
+        makeSession('a1', 'ws-1', {
+          status: 'responding' as any,
+          isActive: true,
+          isResponding: true,
+          ...overrides,
+        });
+
+      it('survives a bulkUpsertSessions refresh that changes an unrelated field while still responding', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ name: 'Renamed' })]));
+        expect(state.byAgentId['a1'].name).toBe('Renamed');
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+      });
+
+      it('survives the reviewer sequence: hint → responding tick → refresh with name changed', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          eventReceived('ws-1', {
+            id: 'evt-1',
+            type: 'agent:status-changed',
+            timestamp: '2024-01-01T00:00:01.000Z',
+            workspaceId: 'ws-1',
+            data: { agentId: 'a1', status: 'responding', isActive: true, isResponding: true },
+          } as any),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ name: 'Renamed' })]));
+        expect(state.byAgentId['a1'].name).toBe('Renamed');
+        expect(state.byAgentId['a1'].processQueueHint).toEqual(HINT);
+      });
+
+      it('is dropped when the snapshot shows streaming started', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ isStreaming: true })]));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot shows the session went idle (isResponding false)', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          bulkUpsertSessions([snapshot({ status: 'active' as any, isResponding: false })]),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot shows isActive false', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(state, bulkUpsertSessions([snapshot({ isActive: false })]));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('is dropped when the snapshot carries a terminal status', () => {
+        let state = queuedResponding();
+        state = agentSessionReducer(
+          state,
+          bulkUpsertSessions([snapshot({ status: 'error' as any, stopReason: 'boom' })]),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+    });
+
+    // Streaming means the process was admitted. These reducer paths set
+    // isStreaming=true without going through canonicalSessionUpdates, so if
+    // agent:process:resumed is missed they must still drop the hint or the
+    // slot-wait warning stays up while the agent streams.
+    describe('streaming reducer paths clear the hint (missed agent:process:resumed)', () => {
+      const queued = () =>
+        agentSessionReducer(
+          agentSessionReducer(
+            initialState,
+            upsertSession(
+              makeSession('a1', 'ws-1', {
+                status: 'responding' as any,
+                isActive: true,
+                isResponding: true,
+                isStreaming: false,
+              }),
+            ),
+          ),
+          setProcessQueueHint('a1', 3, 3, 'slots'),
+        );
+
+      it('chatSendStarted (agent:stream:start) clears the hint on an existing session', () => {
+        let state = queued();
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+        state = agentSessionReducer(state, chatSendStarted('a1', 'ws-1'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) clears the hint', () => {
+        let state = queued();
+        state = agentSessionReducer(state, setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) clears the hint even when isStreaming was already true', () => {
+        let state = agentSessionReducer(queued(), setAgentStreaming('a1', true));
+        state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        state = agentSessionReducer(state, setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(false) leaves the hint alone', () => {
+        let state = queued();
+        state = agentSessionReducer(state, setAgentStreaming('a1', false));
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+      });
+
+      it('chatStreamingReconciled clears the hint', () => {
+        let state = queued();
+        state = agentSessionReducer(state, chatStreamingReconciled('a1'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('setAgentStreaming(true) with no hint and isStreaming already true stays a no-op', () => {
+        const state = agentSessionReducer(queued(), setAgentStreaming('a1', true));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+        expect(agentSessionReducer(state, setAgentStreaming('a1', true))).toBe(state);
+      });
+
+      // Prompt turns: the hint lands AFTER chatSendStarted (turn-start budget
+      // re-check) and no agent:stream:start ever follows, so only stream
+      // evidence can clear it.
+      const streamingThenQueued = () => {
+        let state = agentSessionReducer(queued(), chatSendStarted('a1', 'ws-1'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+        state = agentSessionReducer(state, setProcessQueueHint('a1', 2, 8, 'memory-budget'));
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+        return state;
+      };
+      const streamUpdate = (eventType: 'started' | 'chunk' | 'content-blocks' | 'complete') =>
+        agentStreamUpdateReceived({
+          workspaceId: 'ws-1',
+          agentId: 'a1',
+          handlerSessionId: 'a1',
+          source: 'sendMessage',
+          eventType,
+          assistantMessageId: 'msg-1',
+        });
+
+      it('a tool call (content-blocks stream update) clears a hint set while isStreaming was already true', () => {
+        const state = agentSessionReducer(streamingThenQueued(), streamUpdate('content-blocks'));
+        expect(state.byAgentId['a1'].isStreaming).toBe(true);
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('a text chunk stream update clears a hint set while isStreaming was already true', () => {
+        const state = agentSessionReducer(streamingThenQueued(), streamUpdate('chunk'));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('an agent:stream:status hint clears a hint set while isStreaming was already true', () => {
+        const state = agentSessionReducer(
+          streamingThenQueued(),
+          streamStatusReceived(
+            'a1',
+            { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1 },
+            false,
+          ),
+        );
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+      });
+
+      it('stream updates that are not turn evidence (started / complete) leave the hint alone', () => {
+        const base = streamingThenQueued();
+        for (const eventType of ['started', 'complete'] as const) {
+          const state = agentSessionReducer(base, streamUpdate(eventType));
+          expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+        }
+      });
+
+      it('a canonical agent:status-changed tick with isResponding alone leaves the hint alone', () => {
+        const state = agentSessionReducer(
+          streamingThenQueued(),
+          eventReceived('ws-1', {
+            id: 'evt-1',
+            workspaceId: 'ws-1',
+            timestamp: '2026-01-01T00:00:00.000Z',
+            type: 'agent:status-changed',
+            actor: { type: 'agent', id: 'a1' },
+            data: { agentId: 'a1', status: 'responding', isActive: true, isResponding: true },
+          } as any),
+        );
+        expect(state.byAgentId['a1'].processQueueHint?.waiting).toBe(true);
+      });
+
+      it('stream evidence for an agent without a hint is a no-op', () => {
+        const state = agentSessionReducer(queued(), chatSendStarted('a1', 'ws-1'));
+        expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+        expect(agentSessionReducer(state, streamUpdate('content-blocks'))).toBe(state);
+        expect(
+          agentSessionReducer(
+            state,
+            streamStatusReceived(
+              'a1',
+              { phase: 'prompt', message: 'Sent prompt…', level: 'info', timestamp: 1 },
+              false,
+            ),
+          ),
+        ).toBe(state);
+      });
+    });
   });
 
   describe('processEvicted', () => {
@@ -2871,6 +3404,80 @@ describe('agent-session-slice reducer', () => {
       expect(state).toEqual(initialState);
     });
   });
+
+  // §5.5 list projection: the marker records that the detail read landed, so
+  // an absent detail-only field is "none" rather than "not loaded yet".
+  describe('markAgentDetailHydrated', () => {
+    it('is unset on initial state and set only for a stored session', () => {
+      expect(initialState.detailHydrated).toBeUndefined();
+
+      const missing = agentSessionReducer(initialState, markAgentDetailHydrated('a1'));
+      expect(missing).toBe(initialState);
+
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')], { listProjection: true }),
+      );
+      state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      expect(state.detailHydrated).toEqual({ a1: true });
+
+      const again = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      expect(again).toBe(state);
+    });
+
+    it('is never set by a list-projection upsert, even one carrying detail fields', () => {
+      const state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions(
+          [makeSession('a1', 'ws-1', { harnessFeatures: { structuredQuestions: true } })],
+          { listProjection: true },
+        ),
+      );
+      expect(state.byAgentId.a1).toBeDefined();
+      expect(state.detailHydrated).toBeUndefined();
+    });
+
+    it('survives later list-projection upserts of the same agent', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
+      state = agentSessionReducer(state, markAgentDetailHydrated('a1'));
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([makeSession('a1', 'ws-1', { name: 'renamed' })], {
+          listProjection: true,
+        }),
+      );
+      expect(state.detailHydrated).toEqual({ a1: true });
+    });
+
+    it('is dropped with the session (removeSession / removeWorkspaceSessions / workspaceDeleted)', () => {
+      const seeded = () => {
+        let state = agentSessionReducer(
+          initialState,
+          bulkUpsertSessions([
+            makeSession('a1', 'ws-1'),
+            makeSession('a2', 'ws-1'),
+            makeSession('a3', 'ws-2'),
+          ]),
+        );
+        for (const id of ['a1', 'a2', 'a3']) {
+          state = agentSessionReducer(state, markAgentDetailHydrated(id));
+        }
+        return state;
+      };
+
+      const afterRemove = agentSessionReducer(seeded(), removeSession('a1'));
+      expect(afterRemove.detailHydrated).toEqual({ a2: true, a3: true });
+
+      const afterWorkspace = agentSessionReducer(seeded(), removeWorkspaceSessions('ws-1'));
+      expect(afterWorkspace.detailHydrated).toEqual({ a3: true });
+
+      const afterDeleted = agentSessionReducer(seeded(), workspaceDeleted('ws-1', ['a1', 'a2']));
+      expect(afterDeleted.detailHydrated).toEqual({ a3: true });
+
+      const afterClear = agentSessionReducer(seeded(), clearAllSessions());
+      expect(afterClear.detailHydrated).toBeUndefined();
+    });
+  });
 });
 
 // ============================================================================
@@ -2885,6 +3492,17 @@ describe('agent-session selectors', () => {
     expect(selectAgentSession.select(state, 'unknown')).toBeUndefined();
     expect(selectAgentSession.select(state, '')).toBeUndefined();
     expect(selectAgentSession.select(state)).toBeUndefined();
+  });
+
+  it('selectAgentDetailHydrated reports the detail-read marker', () => {
+    const session = makeSession('a1');
+    const bare = storeWith({ byAgentId: { a1: session } });
+    expect(selectAgentDetailHydrated.select(bare, 'a1')).toBe(false);
+    expect(selectAgentDetailHydrated.select(bare)).toBe(false);
+
+    const marked = storeWith({ byAgentId: { a1: session }, detailHydrated: { a1: true } });
+    expect(selectAgentDetailHydrated.select(marked, 'a1')).toBe(true);
+    expect(selectAgentDetailHydrated.select(marked, 'a2')).toBe(false);
   });
 
   it('selectAgentSessionsByIds returns only requested sessions', () => {
@@ -3447,16 +4065,20 @@ describe('agent-session selectors', () => {
       expect(selectAgentAttentionRequest.select(state, 'unknown')).toBeNull();
     });
 
-    it('gates a pending request while the agent runs a live turn; surfaces it once idle', () => {
-      // Mid-turn rehydration can deliver the persisted fields while the agent
-      // is still streaming — the selector must defer until the turn ends.
+    it('surfaces a pending request while the agent runs a live turn and once idle', () => {
+      // Automatic deliveries restart the agent without clearing the request,
+      // so it is still pending mid-turn — attention trumps running.
       const live = makeSession('a1', 'ws-1', {
         attentionRequestKind: 'blocker',
         attentionRequestReason: 'sandbox broken',
         isResponding: true,
       });
       const liveState = storeWith({ byAgentId: { a1: live }, agentIdsByWorkspace: {} });
-      expect(selectAgentAttentionRequest.select(liveState, 'a1')).toBeNull();
+      expect(selectAgentAttentionRequest.select(liveState, 'a1')).toEqual({
+        kind: 'blocker',
+        reason: 'sandbox broken',
+        timestamp: undefined,
+      });
 
       const settled = makeSession('a1', 'ws-1', {
         attentionRequestKind: 'blocker',
@@ -4355,7 +4977,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     expect(computeMessageContentHash(msg)).not.toBeNull();
@@ -4403,7 +5025,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     const b: AgentMessage = {
@@ -4411,7 +5033,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:01.000Z',
       contentBlocks: [
-        { type: 'file', data: 'filedata', mimeType: 'text/plain', fileName: 'readme.txt' },
+        { type: 'file', attachmentId: 'att-1', mimeType: 'text/plain', fileName: 'readme.txt' },
       ],
     };
     expect(computeMessageContentHash(a)).toBe(computeMessageContentHash(b));
@@ -4484,13 +5106,13 @@ describe('computeMessageContentHash — media blocks', () => {
     expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
   });
 
-  it('produces different hashes for file blocks whose data differs in bytes but has the same length and name', () => {
+  it('produces different hashes for file blocks referencing different attachments with the same name', () => {
     const a: AgentMessage = {
       id: 'a1',
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'AAAA', mimeType: 'application/pdf', fileName: 'doc.pdf' },
+        { type: 'file', attachmentId: 'att-a', mimeType: 'application/pdf', fileName: 'doc.pdf' },
       ],
     };
     const b: AgentMessage = {
@@ -4498,7 +5120,7 @@ describe('computeMessageContentHash — media blocks', () => {
       role: 'user',
       timestamp: '2024-01-01T00:00:00.000Z',
       contentBlocks: [
-        { type: 'file', data: 'BBBB', mimeType: 'application/pdf', fileName: 'doc.pdf' },
+        { type: 'file', attachmentId: 'att-b', mimeType: 'application/pdf', fileName: 'doc.pdf' },
       ],
     };
     expect(computeMessageContentHash(a)).not.toBe(computeMessageContentHash(b));
@@ -6525,5 +7147,210 @@ describe('tailCapPruned latch (live tail growth past the client cap)', () => {
       }),
     );
     expect(afterFresh.byAgentId['a1'].tailCapPruned).toBe(false);
+  });
+});
+
+// ===========================================================================
+// FE-owned field carry-forward across session upserts (FE_OWNED_FIELD_POLICY)
+// ===========================================================================
+
+describe('FE-owned session fields survive an agent.get refetch (FE_OWNED_FIELD_POLICY)', () => {
+  const BASE_MS = Date.parse('2024-01-01T00:00:00.000Z');
+  const ts = (i: number) => new Date(BASE_MS + i * 1000).toISOString();
+  const liveMsg = (i: number) => makeUniqueMessage(`live-${i}`, 'user', ts(i));
+  const OPENED_AT = '2026-01-02T00:00:00.000Z';
+  const HINT = { waiting: true, used: 3, cap: 3, reason: 'slots' as const };
+
+  type FeOwnedKey = keyof FeOwnedSessionState;
+  type Expectation = {
+    /** Value the production writers put in the store (non-default). */
+    seeded: unknown;
+    /** Value after a running AgentLite refetch (no FE-owned keys on the wire). */
+    afterRunningRefetch: unknown;
+    /** Value after a terminal-status snapshot, per the field's policy. */
+    afterTerminalSnapshot: unknown;
+  };
+  // Typed over every FeOwnedSessionState key so a new field fails to compile
+  // here too; the runtime check below guards the reverse direction (a policy
+  // entry with no assertion).
+  const EXPECTATIONS: Record<FeOwnedKey, Expectation> = {
+    // Latch: only chatReset / a resumed:false snapshot clears it.
+    tailCapPruned: { seeded: true, afterRunningRefetch: true, afterTerminalSnapshot: true },
+    liveTurnOpen: { seeded: true, afterRunningRefetch: true, afterTerminalSnapshot: undefined },
+    liveTurnOpenedAt: {
+      seeded: OPENED_AT,
+      afterRunningRefetch: OPENED_AT,
+      afterTerminalSnapshot: undefined,
+    },
+    processQueueHint: { seeded: HINT, afterRunningRefetch: HINT, afterTerminalSnapshot: undefined },
+  };
+
+  const policyKeys = Object.keys(FE_OWNED_FIELD_POLICY) as FeOwnedKey[];
+
+  /** Every FE-owned field set to a non-default value through its production writer. */
+  const seededState = () => {
+    const tail = Array.from({ length: MAX_MESSAGES_PER_AGENT }, (_, i) => liveMsg(i));
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(
+        makeSession('a1', 'ws-1', {
+          status: 'active' as any,
+          isActive: true,
+          isResponding: true,
+          messages: tail,
+        }),
+      ),
+    );
+    // Live append past the cap latches tailCapPruned.
+    state = agentSessionReducer(state, addMessage('a1', liveMsg(MAX_MESSAGES_PER_AGENT + 1)));
+    // The event fold's running edge opens the sticky live-turn slot.
+    state = agentSessionReducer(
+      state,
+      updateSession('a1', { liveTurnOpen: true, liveTurnOpenedAt: OPENED_AT }),
+    );
+    // agent:process:queued parks the turn.
+    state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+    return state;
+  };
+
+  /** `agent.get`-shaped AgentLite: wire fields only, transcript merged in by the caller. */
+  const agentLite = (state: AgentSessionState, overrides: Partial<AgentSession>) =>
+    makeSession('a1', 'ws-1', {
+      status: 'active' as any,
+      isActive: true,
+      isResponding: true,
+      messages: state.byAgentId['a1'].messages,
+      ...overrides,
+    });
+
+  const readField = (state: AgentSessionState, key: FeOwnedKey) =>
+    (state.byAgentId['a1'] as FeOwnedSessionState)[key];
+
+  it('every policy key has an assertion (the test cannot go stale)', () => {
+    expect(policyKeys.length).toBeGreaterThan(0);
+    for (const key of policyKeys) {
+      if (!(key in EXPECTATIONS))
+        throw new Error(`no survival expectation for FE-owned field ${key}`);
+    }
+    expect(Object.keys(EXPECTATIONS).sort()).toEqual([...policyKeys].sort());
+  });
+
+  it('seeds every FE-owned field to a non-default value', () => {
+    const state = seededState();
+    for (const key of policyKeys) {
+      expect(readField(state, key), key).toEqual(EXPECTATIONS[key].seeded);
+    }
+  });
+
+  it('a running AgentLite refetch with no FE-owned keys keeps every field', () => {
+    let state = seededState();
+    // agent:updated → refreshAgentSessionAfterEvent → agent.get → bulkUpsertSessions:
+    // an unrelated field changed, running status, isStreaming absent.
+    state = agentSessionReducer(state, bulkUpsertSessions([agentLite(state, { name: 'Renamed' })]));
+    expect(state.byAgentId['a1'].name).toBe('Renamed');
+    for (const key of policyKeys) {
+      expect(readField(state, key), key).toEqual(EXPECTATIONS[key].afterRunningRefetch);
+    }
+  });
+
+  it('a terminal-status snapshot clears each field per its policy', () => {
+    let state = seededState();
+    state = agentSessionReducer(
+      state,
+      bulkUpsertSessions([
+        agentLite(state, {
+          status: 'error' as any,
+          isActive: false,
+          isResponding: false,
+          stopReason: 'boom',
+        }),
+      ]),
+    );
+    for (const key of policyKeys) {
+      expect(readField(state, key), key).toEqual(EXPECTATIONS[key].afterTerminalSnapshot);
+    }
+  });
+
+  it('ignores FE-owned keys planted on an incoming snapshot (the policy is the only writer)', () => {
+    const state = agentSessionReducer(
+      initialState,
+      upsertSession(
+        makeSession('a1', 'ws-1', {
+          liveTurnOpen: true,
+          liveTurnOpenedAt: OPENED_AT,
+          processQueueHint: HINT,
+          tailCapPruned: true,
+        } as any),
+      ),
+    );
+    for (const key of policyKeys) {
+      expect(readField(state, key), key).toBeUndefined();
+    }
+  });
+
+  it('a refetch whose only effect is dropping an FE-owned field is not swallowed as a no-op', () => {
+    // Hint set on an idle-shaped session, then a snapshot identical to the
+    // stored wire fields: isResponding:false ends the wait, so the stored
+    // object must change even though no wire field did.
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(makeSession('a1', 'ws-1', { status: 'idle' as any, isResponding: false })),
+    );
+    state = agentSessionReducer(state, setProcessQueueHint('a1', 3, 3, 'slots'));
+    const before = state;
+    state = agentSessionReducer(
+      state,
+      bulkUpsertSessions([
+        makeSession('a1', 'ws-1', { status: 'idle' as any, isResponding: false }),
+      ]),
+    );
+    expect(state).not.toBe(before);
+    expect(state.byAgentId['a1'].processQueueHint).toBeUndefined();
+  });
+
+  describe('stored-snapshot round trip (soft-hide undo / delete-cancelled restore)', () => {
+    it('restoreStoredSessions reinstates every FE-owned field after removeSession', () => {
+      let state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      state = agentSessionReducer(state, removeSession('a1'));
+      expect(state.byAgentId['a1']).toBeUndefined();
+      state = agentSessionReducer(state, restoreStoredSessions([snapshot]));
+      expect(state.agentIdsByWorkspace['ws-1']).toContain('a1');
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toEqual(EXPECTATIONS[key].seeded);
+      }
+      expect(state.byAgentId['a1'].messages).toEqual(snapshot.messages);
+    });
+
+    it('restoreStoredSessions is a no-op when the same snapshot is already stored', () => {
+      const state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      expect(agentSessionReducer(state, restoreStoredSessions([snapshot]))).toBe(state);
+    });
+
+    it('restoreStoredSessions round-trips FE-owned fields left unset (no policy re-derivation)', () => {
+      const seeded = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { status: 'idle' as any, isResponding: false })),
+      );
+      const snapshot = seeded.byAgentId['a1'];
+      let state = agentSessionReducer(seeded, removeSession('a1'));
+      state = agentSessionReducer(state, restoreStoredSessions([snapshot]));
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toBeUndefined();
+      }
+    });
+
+    it('a wire upsert of the same snapshot is not a restore (policy seeds from a missing existing)', () => {
+      // Documents why the restore paths must not route through bulkUpsertSessions:
+      // with no existing row the policy has nothing to carry forward.
+      let state = seededState();
+      const snapshot = state.byAgentId['a1'];
+      state = agentSessionReducer(state, removeSession('a1'));
+      state = agentSessionReducer(state, bulkUpsertSessions([snapshot]));
+      for (const key of policyKeys) {
+        expect(readField(state, key), key).toBeUndefined();
+      }
+    });
   });
 });

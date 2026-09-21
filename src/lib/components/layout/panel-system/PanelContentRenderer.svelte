@@ -44,6 +44,17 @@
     void renderAttempt;
     return tabTypeRegistry.get(tab.type);
   });
+  const synchronouslyLoadedComponent = $derived.by(() => {
+    void renderAttempt;
+    return tabTypeRegistry.getLoadedComponent(tab.type);
+  });
+  const RenderedTabComponent = $derived(
+    renderedType === tab.type && TabComponent
+      ? TabComponent
+      : isActive || isAlwaysMountedTab(tab)
+        ? synchronouslyLoadedComponent
+        : undefined,
+  );
 
   $effect(() => {
     const type = tab.type;
@@ -51,6 +62,7 @@
     const shouldMount = active || isAlwaysMountedTab(tab);
     const attempt = renderAttempt;
     const definition = tabTypeDef;
+    const loadedComponent = synchronouslyLoadedComponent;
     let cancelled = false;
 
     if (!definition || renderedType !== type) {
@@ -58,7 +70,13 @@
       TabComponent = undefined;
       loadFailed = false;
     }
-    if (!definition || (renderedType === type && TabComponent) || !shouldMount) return;
+    if (!definition || !shouldMount) return;
+    if (loadedComponent) {
+      renderedType = type;
+      TabComponent = loadedComponent;
+      return;
+    }
+    if (renderedType === type && TabComponent) return;
 
     loadFailed = false;
     void tabTypeRegistry.loadComponent(type).then(
@@ -98,8 +116,8 @@
 
 <div class="panel-content-renderer h-full w-full overflow-hidden">
   {#if tabTypeDef}
-    {#if renderedType === tab.type && TabComponent}
-      <TabComponent {tab} {workspaceId} {layoutId} {isActive} {isPanelFocused} {onFocus} />
+    {#if RenderedTabComponent}
+      <RenderedTabComponent {tab} {workspaceId} {layoutId} {isActive} {isPanelFocused} {onFocus} />
     {:else if isActive && loadFailed}
       <div class="flex h-full flex-col items-center justify-center gap-3 text-subtle">
         <p>{m.error_boundary_title()}</p>

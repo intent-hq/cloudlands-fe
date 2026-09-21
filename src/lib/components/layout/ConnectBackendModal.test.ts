@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { warmImport } from '../../../test/warm-import';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -50,6 +51,8 @@ vi.mock('$store/renderer/slices/connections/connections-selectors', async () => 
 vi.mock('$lib/utils/open-external', () => ({
   openExternalUrl: mocks.openExternalUrl,
 }));
+
+warmImport(() => import('./ConnectBackendModal.svelte'));
 
 async function fillDetails() {
   await fireEvent.input(screen.getByLabelText('Device name'), {
@@ -138,19 +141,63 @@ describe('ConnectBackendModal', () => {
     await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
   });
 
-  it('passes detectHosts: false when the detect-all-IPs option is unticked', async () => {
+  it('passes detectHosts: false when the detect-all-IPs switch is turned off', async () => {
     const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
     render(ConnectBackendModal, { props: { open: true } });
 
     await fillDetails();
-    await fireEvent.click(screen.getByRole('checkbox', { name: 'Detect all backend IPs' }));
+    const toggle = screen.getByRole('switch', { name: 'Detect all backend IPs' });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
     await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await screen.findByText('AA:BB:CC:DD');
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-      expect.objectContaining({ detectHosts: false }),
-    );
+    expect(mocks.addConnectionRequested).toHaveBeenCalledWith({
+      label: 'Studio Mac',
+      accent: 'blue',
+      deviceIcon: 'auto',
+      host: '10.0.0.2',
+      port: 4180,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+      detectHosts: false,
+    });
+  });
+
+  it('disables switches during capture and preserves choices after returning to details', async () => {
+    mocks.syncState.value = { supported: true, enabled: true, status: null };
+    let finishCapture!: (value: { fingerprint: string; tokenValid: boolean }) => void;
+    mocks.captureFingerprintRequested.mockImplementationOnce((params) => ({
+      payload: [params],
+      promise: new Promise((resolve) => {
+        finishCapture = resolve;
+      }),
+    }));
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+    await fillDetails();
+    const detection = screen.getByRole('switch', {
+      name: 'Detect all backend IPs',
+    }) as HTMLButtonElement;
+    const cloud = screen.getByRole('switch', { name: 'Save to iCloud' }) as HTMLButtonElement;
+    await fireEvent.click(detection);
+    await fireEvent.click(cloud);
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(detection.disabled).toBe(true);
+    expect(cloud.disabled).toBe(true);
+    finishCapture({ fingerprint: 'AA:BB:CC:DD', tokenValid: true });
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    for (const label of ['Detect all backend IPs', 'Save to iCloud']) {
+      const toggle = screen.getByRole('switch', { name: label }) as HTMLButtonElement;
+      expect(toggle.disabled).toBe(false);
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      const description = document.getElementById(toggle.getAttribute('aria-describedby')!);
+      expect(description?.textContent?.trim()).toBeTruthy();
+    }
+    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
   });
 
   it('requires a name and assigns the selected accent', async () => {
@@ -210,6 +257,48 @@ describe('ConnectBackendModal', () => {
 
     expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
       expect.objectContaining({ deviceIcon: 'pottedPlant' }),
+    );
+  });
+
+  it('dismisses the icon picker before dismissing the modal with Escape', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    const picker = screen.getByRole('combobox');
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    expect(picker.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.keyDown(picker, { key: 'Escape' });
+    await vi.waitFor(() => expect(picker.getAttribute('aria-expanded')).toBe('false'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(document.activeElement).toBe(picker);
+    await fireEvent.keyDown(picker, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(mocks.captureFingerprintRequested).not.toHaveBeenCalled();
+    expect(mocks.addConnectionRequested).not.toHaveBeenCalled();
+  });
+
+  it('preserves a pointer-selected icon after returning to details and stores its value', async () => {
+    const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
+    render(ConnectBackendModal, { props: { open: true } });
+
+    const picker = screen.getByRole('combobox');
+    picker.focus();
+    await fireEvent.keyDown(picker, { key: 'Enter' });
+    await fireEvent.pointerUp(screen.getByRole('option', { name: 'Laptop', exact: true }), {
+      pointerType: 'mouse',
+    });
+    await fillDetails();
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('combobox').getAttribute('aria-label')).toContain('Laptop');
+    await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText('AA:BB:CC:DD');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
+
+    expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
+      expect.objectContaining({ deviceIcon: 'laptop' }),
     );
   });
 
@@ -379,15 +468,15 @@ describe('ConnectBackendModal', () => {
       await screen.findByText('AA:BB:CC:DD');
     }
 
-    it('hides the checkbox entirely when sync is unsupported (non-macOS)', async () => {
+    it('hides the switch entirely when sync is unsupported (non-macOS)', async () => {
       mocks.syncState.value = { supported: false, enabled: false, status: null };
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
 
-      expect(screen.queryByRole('checkbox', { name: 'Save to iCloud' })).toBeNull();
+      expect(screen.queryByRole('switch', { name: 'Save to iCloud' })).toBeNull();
     });
 
-    it('shows the checkbox checked by default on macOS and adds without syncExcluded', async () => {
+    it('keeps iCloud enabled by default on macOS and adds without syncExcluded', async () => {
       mocks.syncState.value = macSync(true);
       await renderAndReachConfirm();
 
@@ -399,23 +488,32 @@ describe('ConnectBackendModal', () => {
       await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
     });
 
-    it('adds with syncExcluded: true when sync is on but the box is unchecked', async () => {
+    it('adds with syncExcluded: true when sync is on but the switch is off', async () => {
       mocks.syncState.value = macSync(true);
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
 
-      const checkbox = screen.getByRole('checkbox', { name: 'Save to iCloud' });
-      expect(checkbox.getAttribute('aria-checked')).toBe('true');
-      await fireEvent.click(checkbox);
+      const toggle = screen.getByRole('switch', { name: 'Save to iCloud' });
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      await fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
 
       await fillDetails();
       await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       await screen.findByText('AA:BB:CC:DD');
       await fireEvent.click(screen.getByRole('button', { name: 'Confirm & connect' }));
 
-      expect(mocks.addConnectionRequested).toHaveBeenCalledWith(
-        expect.objectContaining({ syncExcluded: true }),
-      );
+      expect(mocks.addConnectionRequested).toHaveBeenCalledWith({
+        label: 'Studio Mac',
+        accent: 'blue',
+        deviceIcon: 'auto',
+        host: '10.0.0.2',
+        port: 4180,
+        fingerprint: 'AA:BB:CC:DD',
+        token: 'secret-token',
+        detectHosts: true,
+        syncExcluded: true,
+      });
       expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
     });
 
@@ -457,12 +555,12 @@ describe('ConnectBackendModal', () => {
       await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
     });
 
-    it('adds with syncExcluded and no confirm dialog when sync is off and the box is unchecked', async () => {
+    it('adds with syncExcluded and no confirm dialog when sync and the switch are off', async () => {
       mocks.syncState.value = macSync(false);
       const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
       render(ConnectBackendModal, { props: { open: true } });
 
-      await fireEvent.click(screen.getByRole('checkbox', { name: 'Save to iCloud' }));
+      await fireEvent.click(screen.getByRole('switch', { name: 'Save to iCloud' }));
       await fillDetails();
       await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       await screen.findByText('AA:BB:CC:DD');
@@ -538,7 +636,7 @@ describe('ConnectBackendModal', () => {
         const ConnectBackendModal = (await import('./ConnectBackendModal.svelte')).default;
         render(ConnectBackendModal, { props: { open: true } });
 
-        expect(screen.getByRole('checkbox', { name: 'Save to iCloud' })).toBeTruthy();
+        expect(screen.getByRole('switch', { name: 'Save to iCloud' })).toBeTruthy();
       } finally {
         delete (window as any).electronAPI.platform;
       }

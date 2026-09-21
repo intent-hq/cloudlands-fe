@@ -7,8 +7,12 @@
   import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
   import VideoLightbox from '$lib/components/ui/VideoLightbox.svelte';
   import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
-  import { parseIntentFileTarget } from '$lib/utils/workspace-file-image';
+  import {
+    parseIntentFileTarget,
+    workspaceAssetVideoSource,
+  } from '$lib/utils/workspace-file-image';
   import { m } from '$shared/paraglide/messages.js';
+  import { Button } from '$lib/components/ui/button';
 
   let { node, selected, editor, extension }: NodeViewProps = $props();
 
@@ -18,6 +22,7 @@
   let openerElement: HTMLElement | null = $state(null);
   let failedVideoUrl = $state<string | null>(null);
   let configuredWorkspaceId = $derived<string | undefined>(extension.options.workspaceId);
+  let mimeType = $derived(workspaceAssetVideoSource(videoUrl, configuredWorkspaceId)?.mimeType);
   let workspaceFile = $derived(parseWorkspaceFileImageUrl(videoUrl));
   let intentFile = $derived(parseIntentFileTarget(videoUrl, configuredWorkspaceId));
   let unavailablePath = $derived(workspaceFile?.path ?? intentFile?.path);
@@ -37,12 +42,15 @@
 <NodeViewWrapper class={`note-video-node${selected ? ' selected' : ''}`}>
   <div class="group relative inline-block max-w-full">
     {#if failedVideoUrl === videoUrl}
-      <MediaUnavailable
-        name={videoName}
-        reason={workspaceFile ? 'missing' : 'load-failed'}
-        path={unavailablePath}
-        workspaceId={unavailableWorkspaceId}
-      />
+      <div class="flex items-center gap-2" contenteditable="false">
+        <MediaUnavailable
+          name={videoName}
+          reason="load-failed"
+          path={unavailablePath}
+          workspaceId={unavailableWorkspaceId}
+        />
+        <VideoActionsMenu {videoUrl} {videoName} {mimeType} sourceKind="workspace" />
+      </div>
     {:else}
       <!-- svelte-ignore a11y_media_has_caption (workspace video has no captions field) -->
       <video
@@ -59,15 +67,17 @@
         class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
         contenteditable="false"
       >
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           class="flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring"
           onclick={openLightbox}
           aria-label={m.chat_videoBlock_play_ariaLabel({ name: videoName })}
         >
           <Fa icon={faExpand} size="sm" />
-        </button>
-        <VideoActionsMenu {videoUrl} {videoName} sourceKind="workspace" />
+        </Button>
+        <VideoActionsMenu {videoUrl} {videoName} {mimeType} sourceKind="workspace" />
       </div>
     {/if}
   </div>
@@ -77,6 +87,7 @@
   bind:open={lightboxOpen}
   {videoUrl}
   {videoName}
+  {mimeType}
   sourceKind="workspace"
   {openerElement}
 />
@@ -87,7 +98,7 @@
   }
 
   :global(.note-video-node.selected video) {
-    outline: 2px solid hsl(var(--ring));
+    outline: 1px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 </style>

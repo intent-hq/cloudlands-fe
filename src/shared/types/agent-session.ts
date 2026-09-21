@@ -110,6 +110,29 @@ export interface SessionStats {
 }
 
 /**
+ * `agent.list` row scope (§5.5 row scope, intent-hq/intent#5383). The three
+ * bins partition the workspace's NON-retired sessions: `topLevel` = no parent
+ * and foreground (the rows the sidebar lists by default), `delegated` = any
+ * parented row (a background CHILD is delegated, not background),
+ * `background` = unparented background agents. `all` is the default read.
+ */
+export type AgentListScope = 'all' | 'topLevel' | 'delegated' | 'background';
+
+/** One of the three `agent.list` bins (the non-default scopes). */
+export type AgentListBin = Exclude<AgentListScope, 'all'>;
+
+/**
+ * Per-bin counts of the workspace's non-retired sessions, served as
+ * `scopeCounts` on every `agent.list` response by daemons that support
+ * `scope`. Absent on older daemons (which also ignore `scope`).
+ */
+export interface AgentScopeCounts {
+  topLevel: number;
+  delegated: number;
+  background: number;
+}
+
+/**
  * Canonical AgentSession interface
  *
  * Represents a runtime session for an agent within a workspace.
@@ -133,6 +156,15 @@ export interface AgentSession {
 
   /** Workspace this agent belongs to */
   workspaceId: WorkspaceId;
+
+  /**
+   * Daemon parent linkage (§5.5 `AgentLite.parentAgentId`): the agent that
+   * spawned this one via `agent.delegate` / `ws.agent.create`. The daemon
+   * partitions the `agent.list` bins by this field, so it is the primary
+   * delegated-row marker; `metadata.createdByAgentId` is the older fallback.
+   * Omitted (never `null`) on top-level rows.
+   */
+  parentAgentId?: AgentId;
 
   /** Optional thread ID for conversation threading */
   threadId?: string;
@@ -224,6 +256,14 @@ export interface AgentSession {
   /** True if this is a background agent */
   isBackground?: boolean;
 
+  /**
+   * Daemon-owned per-agent notification mute (`notificationsMuted`, §5.5
+   * AgentLite). Set via `agent.update { changes: { notificationsMuted } }`
+   * and converged through `agent:updated`. A muted agent never derives
+   * `hasUnread` (see `deriveAgentHasUnread`).
+   */
+  notificationsMuted?: boolean;
+
   /** Current turn number for this session */
   currentTurnNumber?: number;
 
@@ -236,8 +276,9 @@ export interface AgentSession {
    * counts as unread). See `deriveAgentHasUnread` and
    * intent-hq/monorepo#1597. Always `false` for daemons that omit
    * `lastMessageId`, for background agents (`isBackground` /
-   * `metadata.isBackground`), and for delegated child agents
-   * (`metadata.createdByAgentId` set).
+   * `metadata.isBackground`), for delegated child agents
+   * (`metadata.createdByAgentId` set), and for muted agents
+   * (`notificationsMuted`).
    */
   hasUnread?: boolean;
 
@@ -245,15 +286,15 @@ export interface AgentSession {
   lastViewedAt?: Date | string;
 
   /** ISO deadline of an in-memory pending deletion (PROTOCOL §5.5 delete grace
-   *  window, v6.7+). Present only while an `agent.delete { undoDelayMs > 0 }`
+   *  window). Present only while an `agent.delete { undoDelayMs > 0 }`
    *  grace window is running; cleared by `agent.cancelDelete` and dropped by a
    *  daemon restart (the session survives). Rows carrying it are hidden from
    *  the FE agent list. */
   pendingDeleteAt?: string;
 
-  /** ISO timestamp of a soft retirement (PROTOCOL §5.5 soft retire, v7.5).
+  /** ISO timestamp of a soft retirement (PROTOCOL §5.5 soft retire, `agent.retire`).
    *  Presence-detected: served on `agent.get`/`agent.getSession` always and on
-   *  `agent.list` rows on retired-row reads (`retiredOnly: true`, v8.2 — the
+   *  `agent.list` rows on retired-row reads (`retiredOnly: true` — the
    *  FE seam's sole path to retired rows; `includeRetired` remains on the wire
    *  for other clients but is not exposed here); omitted on active rows, never
    *  `null`. A retired session is inert daemon-side (sends, queueing, watches,
@@ -364,7 +405,7 @@ export interface AgentSession {
   waitingForAgentIds?: string[];
 
   /**
-   * Idle-visibility for hook-owning agents (PROTOCOL.md §5.5, within v3.1,
+   * Idle-visibility for hook-owning agents (PROTOCOL §5.5 `AgentLite`,
    * additive): light metadata for the agent's ACTIVE (`scheduled`/`running`)
    * background hooks (§5.40), omitted when empty (absent, never `[]`) — so
    * a parent or client can tell a hook-waiting idle agent from a stalled
@@ -386,21 +427,6 @@ export interface AgentSession {
     prNumber: number;
     title?: string;
   }>;
-
-  /**
-   * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).
-   * Set when the agent is queued for admission (a process slot or memory
-   * headroom), cleared when resumed or transitions to normal running state.
-   * `reason` names the constraint the spawn queued under
-   * (intent-hq/intentd#1196); an absent wire `reason` (older daemons) is
-   * normalized to `'slots'` at the events bridge.
-   */
-  processQueueHint?: {
-    waiting: boolean;
-    used: number;
-    cap: number;
-    reason: 'slots' | 'memory-budget';
-  };
 
   /** Canonical stop/finish reason from the latest terminal stream/status event */
   stopReason?: string | null;

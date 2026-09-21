@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
+  import { Textarea } from '$lib/components/ui/textarea';
   /* eslint-disable max-lines */
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import type { Note } from '$shared/types';
   import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
@@ -18,13 +20,14 @@
     faFileLines,
     faGlobe,
     faRightLeft,
+    faUserPlus,
   } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import CheckoutModePill from '$lib/components/workspace/CheckoutModePill.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import WorkspaceActionsMenu, {
@@ -62,7 +65,10 @@
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
 
-  import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import {
+    requestArchiveWorkspace,
+    requestDeleteWorkspace,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
     loadWorkspacesRequested,
     setWorkspaceEntity,
@@ -78,12 +84,14 @@
   } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
   import { openTransferModal } from '$store/renderer/slices/workspace-transfer/workspace-transfer-slice';
+  import { openShareDialog } from '$store/renderer/slices/workspace-share/workspace-share-slice';
   import { selectWorkspaceDrivingClient } from '$store/renderer/slices/browser-clients/browser-clients-selectors';
   import { setWorkspaceBrowserClientRequested } from '$store/renderer/slices/browser-clients/browser-clients-slice';
+  import { selectWorkspaceHasBrowserTabs } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import DrivingClientIndicator from '$lib/components/workspace/DrivingClientIndicator.svelte';
   import SetPrimaryClientConfirmDialog from '$lib/components/workspace/SetPrimaryClientConfirmDialog.svelte';
-  import { resolveDrivingClientView } from '$lib/components/workspace/driving-indicator';
+  import { resolveDrivingClientSwitch } from '$lib/components/workspace/driving-indicator';
 
   const readyLogger = createLogger('ReadyTasks');
 
@@ -251,48 +259,22 @@
     }
   }
 
-  async function handleArchive() {
+  function handleArchive() {
     if (!$workspace) return;
-    const { toast } = await import('svelte-sonner');
-    const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
-
-    const result = await workspaceClient.archive($workspace.id);
-    if (result.ok) {
-      appStore.dispatch(loadWorkspacesRequested());
-      toast.warning(
-        m.workspace_multiSelectSidebar_archivedSpace_toast({ title: workspaceTitle }),
-        withToastCountdown(
-          {
-            duration: 15000,
-            action: {
-              label: m.workspace_multiSelectSidebar_undo_label(),
-              onClick: async () => {
-                const undoResult = await workspaceClient.unarchive($workspace.id);
-                if (undoResult.ok) {
-                  appStore.dispatch(loadWorkspacesRequested());
-                }
-              },
-            },
-          },
-          { pauseOnHover: false },
-        ),
-      );
-    } else {
-      toast.error(m.workspace_multiSelectSidebar_archiveFailed_error());
-    }
+    appStore.dispatch(requestArchiveWorkspace($workspace.id));
   }
 
   async function handleUnarchive() {
     if (!$workspace) return;
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     const workspaceTitle = $workspace.title || m.workspace_multiSelectSidebar_space_label();
 
     const result = await workspaceClient.unarchive($workspace.id);
     if (result.ok) {
       appStore.dispatch(loadWorkspacesRequested());
-      toast.success(m.workspace_progressCard_unarchivedSpace_toast({ title: workspaceTitle }));
+      notify.success(m.workspace_progressCard_unarchivedSpace_toast({ title: workspaceTitle }));
     } else {
-      toast.error(m.workspace_progressCard_unarchiveFailed_error());
+      notify.error(m.workspace_progressCard_unarchiveFailed_error());
     }
   }
 
@@ -427,12 +409,29 @@
     },
   });
 
+  // Owner-only (PROTOCOL §5.1 `myRole`): a missing role never offers Share.
+  const shareAction: MenuAction | null = $derived(
+    $workspace?.myRole === 'owner'
+      ? {
+          label: m.workspace_share_menu_label(),
+          icon: faUserPlus,
+          dividerBefore: true,
+          onClick: () => {
+            if (!$workspace) return;
+            appStore.dispatch(
+              openShareDialog({ workspaceId: $workspace.id, workspaceTitle: $workspace.title }),
+            );
+          },
+        }
+      : null,
+  );
+
   const transferAction: MenuAction | null = $derived(
     $workspace
       ? {
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
-          dividerBefore: true,
+          dividerBefore: !shareAction,
           onClick: () => {
             if (!$workspace) return;
             appStore.dispatch(
@@ -447,9 +446,11 @@
   );
 
   // REV-2 driving browser client (spec Model 8): the daemon resolves it; the
-  // indicator renders only when another eligible client could take over.
+  // indicator renders only when the workspace has a browser tab and another
+  // eligible client could take over (or the pin is offline).
   const drivingClient$ = selectWorkspaceDrivingClient(workspaceIdStore);
-  const drivingClientView = $derived(resolveDrivingClientView($drivingClient$));
+  const hasBrowserTabs$ = selectWorkspaceHasBrowserTabs(workspaceIdStore);
+  const drivingClientSwitch = $derived(resolveDrivingClientSwitch($drivingClient$));
 
   // "Set Current Client as Primary": pin this workspace's browser to this
   // app; the daemon also migrates the workspace's claimed (agent-owned) tabs
@@ -461,7 +462,7 @@
 
   const setPrimaryClientAction: MenuAction | null = $derived.by(() => {
     const ownClientId = $drivingClient$.ownClientId;
-    if (!drivingClientView?.canSwitchHere || !ownClientId || !workspaceId) return null;
+    if (!drivingClientSwitch?.canSwitchHere || !ownClientId || !workspaceId) return null;
     return {
       label: m.workspace_drivingClient_setPrimary_label(),
       icon: faGlobe,
@@ -483,6 +484,7 @@
     sidebarToggleAction,
     sidebarSideAction,
     ...(setPrimaryClientAction ? [setPrimaryClientAction] : []),
+    ...(shareAction ? [shareAction] : []),
     ...(transferAction ? [transferAction] : []),
   ]);
 
@@ -830,8 +832,8 @@
     <div class="flex items-center justify-between group">
       <div class="relative flex-1 flex flex-col min-w-0">
         {#if isEditingTitle}
-          <input
-            bind:this={titleInputRef}
+          <Input
+            bind:ref={titleInputRef}
             type="text"
             bind:value={editedTitle}
             onblur={saveTitle}
@@ -840,18 +842,20 @@
                py-0.5 rounded
                outline-none w-full leading-normal
                focus:ring-none! focus:outline-none!
-               transition-all duration-150"
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
             placeholder={m.workspace_links_untitled_label()}
           />
         {:else}
-          <button
-            class="relative z-10 text-xl font-semibold text-foreground bg-transparent
+          <Button
+            variant="plain"
+            class="relative z-10 text-xl font-semibold text-foreground bg-transparent {!$workspace?.title
+              ? 'opacity-50'
+              : ''}
                border-none py-0.5 pr-1 rounded cursor-text text-left
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-               transition-all duration-150 leading-normal
-               focus-visible:outline-1 focus-visible:outline-primary/50 focus-visible:-outline-offset-1
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-normal
+               focus-visible:outline-1 focus-visible:outline-primary-ink/50 focus-visible:-outline-offset-1
                disabled:cursor-default disabled:opacity-50 truncate min-w-0"
-            class:opacity-50={!$workspace?.title}
             onclick={startEditingTitle}
             title={m.workspace_sidebarHeader_editTitle_tooltip()}
             disabled={!$workspace}
@@ -859,7 +863,7 @@
             {#if $workspace}
               {$workspace.title || m.workspace_links_untitled_label()}
             {/if}
-          </button>
+          </Button>
         {/if}
         <span
           aria-hidden="true"
@@ -880,13 +884,11 @@
               data-workspace-actions-kebab
               data-workspace-actions-trigger
               aria-label={m.workspace_progressCard_actions_ariaLabel()}
-              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-150 hover:bg-transparent hover:border-none"
+              class="opacity-50 group-hover:opacity-70 hover:opacity-100! transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:bg-transparent hover:border-none"
               disabled={isDeleting}
             >
               {#if isDeleting}
-                <div
-                  class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-                ></div>
+                <IntentMarkLoader size={14} />
               {:else}
                 <KebabIcon class="size-4" />
               {/if}
@@ -894,7 +896,10 @@
           {/snippet}
 
           {#snippet content()}
-            <div class="w-48">
+            <div
+              class="min-w-48 w-max"
+              style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
+            >
               <WorkspaceActionsMenu
                 filePath={$workspace?.worktreePath ||
                   $workspace?.repositoryPath ||
@@ -1000,7 +1005,7 @@
             contentClass="border-0!"
             contentContainerClass="p-0! space-y-0!"
             showArrow={false}
-            class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-medium text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
+            class="h-5 min-w-0 shrink cursor-copy items-center justify-start overflow-hidden rounded-sm border-none bg-transparent p-0 text-left font-inherit font-normal text-muted-foreground outline-none transition-colors hover:underline focus:outline-none focus-visible:outline-none"
             bind:open={branchTooltipOpen}
             onOpenChange={handleBranchTooltipOpenChange}
             disableCloseOnTriggerClick
@@ -1041,8 +1046,8 @@
           </TooltipRich>
         {/if}
       </div>
-      <!-- driving browser client (REV-2); renders nothing with one eligible client -->
-      <DrivingClientIndicator {...$drivingClient$} />
+      <!-- driving browser client (REV-2); renders nothing with one eligible client or no browser tabs -->
+      <DrivingClientIndicator {...$drivingClient$} hasBrowserTabs={$hasBrowserTabs$} />
     </div>
   </div>
 
@@ -1062,7 +1067,7 @@
     <!-- Workflow action button (styled like AI-assisted action prompts) -->
     {#if workflowAction}
       {@const action = workflowAction}
-      <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
+      <div class="flex-1 w-full" transition:slide={{ axis: 'y', tier: 'moderate' }}>
         {#if action}
           <div class="mt-1">
             <Tooltip
@@ -1146,8 +1151,8 @@
       <div class="pt-1">
         <div class="relative flex">
           {#if isEditingStatusMessage}
-            <textarea
-              bind:this={statusInputRef}
+            <Textarea
+              bind:ref={statusInputRef}
               bind:value={editedStatusMessage}
               onblur={saveStatusMessage}
               onkeydown={handleStatusMessageKeydown}
@@ -1156,26 +1161,28 @@
               rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
               class="edit-input type-body relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-foreground outline-none leading-snug
-                     focus:ring-none! focus:outline-none! transition-all duration-150 disabled:opacity-50"
+                     focus:ring-none! focus:outline-none! transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
-              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
+              placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
+            ></Textarea>
           {:else if $workspace && currentStatusMessage}
-            <button
-              class="type-body relative z-10 w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
-                     transition-all duration-150 leading-snug hover:text-foreground
+            <Button
+              variant="plain"
+              truncateLabel={false}
+              labelClass="line-clamp-3"
+              class="type-body relative z-10 h-auto w-full cursor-text whitespace-pre-wrap break-words rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
+                     transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug hover:text-foreground
                      focus-visible:outline focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
               onclick={startEditingStatusMessage}
-              title={currentStatusMessage
-                ? m.workspace_sidebarHeader_editStatus_tooltip()
-                : m.workspace_sidebarHeader_addStatus_tooltip()}
+              title={currentStatusMessage}
               aria-label={currentStatusMessage
                 ? m.workspace_sidebarHeader_editStatus_ariaLabel()
                 : m.workspace_sidebarHeader_addStatus_ariaLabel()}
               disabled={!$workspace}
             >
               {currentStatusMessage}
-            </button>
+            </Button>
           {/if}
           <span
             aria-hidden="true"
@@ -1191,12 +1198,13 @@
     <!-- status screenshot (agent-authored, intent-hq/monorepo#997) -->
     {#if showStatusImage}
       <div class="py-1">
-        <button
-          bind:this={statusImageButtonRef}
+        <Button
+          variant="plain"
+          bind:ref={statusImageButtonRef}
           type="button"
           class="block w-full cursor-zoom-in bg-transparent border-none p-0
                  focus-visible:outline focus-visible:outline-1
-                 focus-visible:outline-primary/50 focus-visible:outline-offset-1"
+                 focus-visible:outline-primary-ink/50 focus-visible:outline-offset-1"
           onclick={() => (statusImageLightboxOpen = true)}
           title={m.workspace_progressCard_statusImage_title()}
           aria-label={m.workspace_progressCard_statusImage_ariaLabel()}
@@ -1208,7 +1216,7 @@
             onerror={(e) =>
               (failedStatusImageUrl = e.currentTarget.getAttribute('src') ?? statusImageUrl)}
           />
-        </button>
+        </Button>
       </div>
       <ImageLightbox
         bind:open={statusImageLightboxOpen}
@@ -1222,38 +1230,40 @@
     <!-- {#if isLoadingReadyTasks}
     <div
       class="w-full px-4x pb-3 flex items-center gap-2 text-xs text-subtle"
-      transition:slide={{ axis: 'y', duration: 200 }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
-      <Fa icon={faSpinner} spin size="xs" />
+      <IntentMarkLoader size={12} />
       <span>Finding ready tasks...</span>
     </div>
   {:else if displayReadyTasks.length > 0 && currentDisplayReadyTask}
-    <div class="w-full px-4x pb-3" transition:slide={{ axis: 'y', duration: 200 }}>
+    <div class="w-full px-4x pb-3" transition:slide={{ axis: 'y', tier: 'moderate' }}>
       <div class="flex items-center justify-between text-xs text-subtle">
         <span>{displayReadyTasks.length} ready task{displayReadyTasks.length > 1 ? 's' : ''}:</span>
         {#if displayReadyTasks.length > 1}
           <span class="flex items-center gap-1">
-            <button
+            <Button
+              variant="ghost-light"
               class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigatePrev}
               disabled={displayReadyTasks.length <= 1}
               title="Previous ready task"
             >
               <Fa icon={faChevronLeft} size="xs" />
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost-light"
               class="p-0.5 hover:bg-muted rounded transition-colors text-ghost cursor-pointer"
               onclick={navigateNext}
               disabled={displayReadyTasks.length <= 1}
               title="Next ready task"
             >
               <Fa icon={faChevronRight} size="xs" />
-            </button>
+            </Button>
           </span>
         {/if}
       </div>
-
-      <button
+      <Button
+        variant="ghost-light"
         class="flex items-center gap-2 w-full text-left text-sm text-subtle transition-colors py-1 rounded cursor-pointer"
         onclick={() => onOpenNote?.(currentDisplayReadyTask.id as string)}
         onmouseenter={() => (highlightedNoteId = currentDisplayReadyTask.id as string)}
@@ -1261,12 +1271,12 @@
       >
         <span class="flex-1 truncate text-xs">{currentDisplayReadyTask.title}</span>
         <Fa icon={faArrowRight} size="xs" class="text-ghost" />
-      </button>
+      </Button>
     </div>
   {:else if readyTasksError}
     <div
       class="w-full px-4x pb-3 text-xs text-danger mt-2"
-      transition:slide={{ axis: 'y', duration: 200 }}
+      transition:slide={{ axis: 'y', tier: 'moderate' }}
     >
       Error: {readyTasksError}
     </div>
@@ -1274,10 +1284,10 @@
   </div>
 </div>
 
-{#if drivingClientView}
+{#if drivingClientSwitch}
   <SetPrimaryClientConfirmDialog
     open={confirmingSetPrimaryClient}
-    currentHost={drivingClientView.hostName}
+    currentHost={drivingClientSwitch.hostName}
     onConfirm={handleConfirmSetPrimaryClient}
     onCancel={() => (confirmingSetPrimaryClient = false)}
   />
@@ -1288,7 +1298,7 @@
     background: hsl(var(--ring) / 0.3);
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     [data-workspace-title-edit-decoration],
     [data-workspace-status-edit-decoration] {
       transition-duration: 0s !important;

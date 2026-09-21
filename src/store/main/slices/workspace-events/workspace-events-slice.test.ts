@@ -3,7 +3,6 @@ import type { WorkspaceEvent } from '../../../../features/events/types';
 import {
   workspaceEventsReducer,
   initialState,
-  emitWorkspaceEvent,
   workspaceEventAccepted,
   cleanupWorkspace,
 } from './workspace-events-slice';
@@ -79,12 +78,6 @@ describe('workspaceEventsReducer', () => {
       state = reduce(workspaceEventAccepted(e2), state);
       expect(state.byWorkspaceId[WS].recentEvents).toHaveLength(1);
       expect(state.byWorkspaceId[WS2].recentEvents).toHaveLength(1);
-    });
-
-    it('emitWorkspaceEvent does not modify state (dedup handled in saga)', () => {
-      const event = makeEvent();
-      const state = reduce(emitWorkspaceEvent(event));
-      expect(state).toBe(initialState);
     });
   });
 

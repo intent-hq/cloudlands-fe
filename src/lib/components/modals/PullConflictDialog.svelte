@@ -14,6 +14,8 @@
     faArrowUpRightFromSquare,
     faFolder,
   } from '@fortawesome/free-solid-svg-icons';
+  import { untrack } from 'svelte';
+  import { readable } from 'svelte/store';
   import { onMount } from 'svelte';
   import {
     fetchEditors,
@@ -22,8 +24,9 @@
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { invoke } from '$lib/electron-bridge';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { createLogger } from '$lib/utils/client-logger';
+  import { acquireMarkerAttribute } from '$lib/utils/marker-attribute-lease';
   import { m } from '$shared/paraglide/messages.js';
 
   // Icon components for well-known editors
@@ -54,6 +57,8 @@
 
   interface Props {
     open?: boolean;
+    static?: boolean;
+    staticData?: { editors: InstalledEditor[] };
     error?: string;
     repoPath?: string;
     branchName?: string;
@@ -66,6 +71,8 @@
 
   let {
     open = $bindable(false),
+    static: staticPosition = false,
+    staticData,
     error = '',
     repoPath = '',
     branchName = '',
@@ -73,13 +80,27 @@
     onCancel,
   }: Props = $props();
 
-  const installedEditors$ = selectInstalledEditorsFiltered();
+  const installedEditors$ = untrack(() =>
+    staticData ? readable(staticData.editors) : selectInstalledEditorsFiltered(),
+  );
 
   // Dropdown open state
   let dropdownOpen = $state(false);
+  let contentRef: HTMLElement | null = $state(null);
+
+  // Mark <body> while the dialog content is mounted (including its outro) so the
+  // layering rules below can key off an attribute. A `body:has(...)` anchor would
+  // make every DOM/style mutation in the page a candidate `:has()` invalidation.
+  // The marker is leased per instance: overlapping dialogs (onboarding + the
+  // global create flow) keep it until the last one detaches.
+  $effect(() => {
+    if (staticPosition || !contentRef) return;
+    return acquireMarkerAttribute(contentRef.ownerDocument.body, 'data-pull-conflict-dialog-open');
+  });
 
   // Fetch installed editors on mount
   onMount(() => {
+    if (staticData) return;
     console.log('PullConflictDialog mounted, fetching installed editors');
     appStore.dispatch(fetchEditors());
   });
@@ -134,7 +155,7 @@
    * Logic adapted from WorkspaceActionsMenu.svelte.
    */
   async function openInEditor(editor: InstalledEditor) {
-    if (!repoPath) return;
+    if (staticData || !repoPath) return;
 
     try {
       switch (editor.handlerType) {
@@ -159,7 +180,7 @@
       onCancel?.();
     } catch (err) {
       logger.error(`Failed to open in ${editor.appName}:`, err);
-      toast.error(
+      notify.error(
         err instanceof Error
           ? err.message
           : m.modals_pullConflict_openFailed_error({ appName: editor.appName }),
@@ -173,8 +194,9 @@
   }
 </script>
 
-<Dialog.Root {open} onOpenChange={handleOpenChange}>
+<Dialog.Root {staticPosition} {open} onOpenChange={handleOpenChange}>
   <Dialog.Content
+    bind:ref={contentRef}
     data-pull-conflict-dialog
     showCloseButton={false}
     class="app-no-drag max-w-md gap-0 overflow-hidden rounded-lg p-0"
@@ -189,11 +211,6 @@
           <Dialog.Title class="text-lg font-semibold">
             {m.modals_pullConflict_title()}
           </Dialog.Title>
-          {#if branchName}
-            <p class="text-sm text-subtle mt-0.5">
-              {m.modals_pullConflict_branch_label({ branchName })}
-            </p>
-          {/if}
         </div>
       </div>
       <Dialog.Close
@@ -206,9 +223,12 @@
 
     <!-- Content -->
     <div class="p-6">
-      <Dialog.Description class="text-sm text-subtle mb-4">
+      {#if branchName}
+        <p class="type-body mb-4">{m.modals_pullConflict_branch_label({ branchName })}</p>
+      {/if}
+      <p class="type-body mb-4">
         {m.modals_pullConflict_description()}
-      </Dialog.Description>
+      </p>
       {#if error}
         <div
           class="bg-danger-background/10 py-2.5 px-3.5 text-sm text-danger whitespace-pre-wrap break-words max-h-32 overflow-auto"
@@ -219,9 +239,11 @@
     </div>
 
     <!-- Footer -->
-    <div class="px-6 py-4 border-t border-border flex flex-col gap-3">
+    <div class="px-6 py-4 border-t border-border flex flex-col gap-4">
       <div class="grid grid-cols-2 gap-2 items-center">
-        <p class="text-xs select-none">{m.modals_pullConflict_resolveInApp_label()}</p>
+        <p class="type-caption text-muted-foreground font-normal select-none">
+          {m.modals_pullConflict_resolveInApp_label()}
+        </p>
         <!-- Open in dropdown (combined IDEs and terminals) -->
         {#if $installedEditors$.length > 0}
           <DropdownMenu bind:open={dropdownOpen} align="start" portal={true}>
@@ -239,7 +261,8 @@
               <div class="max-w-60 py-1">
                 {#each $installedEditors$ as editor (editor.id)}
                   {@const IconComponent = EDITOR_ICONS[editor.id]}
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     class="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted transition-colors text-left cursor-pointer"
                     onclick={() => {
@@ -263,7 +286,7 @@
                       <Fa icon={faCode} class="w-4 h-4 ml-0.5 mr-0.5 opacity-30" />
                     {/if}
                     <span class="flex-1">{editor.name}</span>
-                  </button>
+                  </Button>
                 {/each}
               </div>
             {/snippet}
@@ -272,11 +295,13 @@
       </div>
       <div class="grid grid-cols-2 gap-2 items-center">
         <Tooltip content={m.modals_pullConflict_createWorkspace_tooltip()}>
-          <span class="text-xs inline-block">{m.modals_pullConflict_letIntentHandle_label()}</span>
+          <span class="type-caption text-muted-foreground font-normal inline-block"
+            >{m.modals_pullConflict_letIntentHandle_label()}</span
+          >
         </Tooltip>
         <!-- Create workspace action -->
         <Button
-          variant="default"
+          variant="primary"
           onclick={handleCreateWorkspace}
           class="w-full justify-start gap-2"
         >
@@ -289,17 +314,17 @@
 </Dialog.Root>
 
 <style>
-  :global(body:has([data-pull-conflict-dialog]) [data-slot='dialog-overlay']) {
+  :global(body[data-pull-conflict-dialog-open] [data-slot='dialog-overlay']) {
     z-index: 10000 !important;
     -webkit-app-region: no-drag;
   }
 
-  :global(body:has([data-pull-conflict-dialog]) [data-slot='dialog-content']) {
+  :global(body[data-pull-conflict-dialog-open] [data-slot='dialog-content']) {
     z-index: 10001 !important;
     -webkit-app-region: no-drag;
   }
 
-  :global(body:has([data-pull-conflict-dialog]) [data-slot='menu-content']) {
+  :global(body[data-pull-conflict-dialog-open] [data-slot='menu-content']) {
     z-index: 10002 !important;
   }
 </style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * CheckoutModePill - Tiny, quiet metadata pill showing how the workspace
    * checkout was provisioned (PROTOCOL §5.1). Renders nothing when
@@ -25,6 +26,7 @@
   import { formatBytesBinary, formatInteger } from '$lib/i18n/format';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { runShrinkWorkspaceAction } from './shrink-workspace-action';
   import { pollWorkspaceDiskUsage } from './disk-usage-poll';
   import { resolveEffectiveIsolationMode } from './initializer/isolation-mode';
@@ -250,8 +252,10 @@
           <span
             role="status"
             aria-label={m.workspace_diskUsagePill_refreshing_ariaLabel()}
-            class="ml-1 inline-block size-3 animate-spin rounded-full border border-current border-t-transparent align-middle text-subtle"
-          ></span>
+            class="ml-1 inline-flex size-3 align-middle text-subtle"
+          >
+            <IntentMarkLoader size={12} />
+          </span>
         {/if}
       </div>
       <div class="flex flex-col gap-0.5 text-xs text-subtle text-pretty">
@@ -274,17 +278,18 @@
       {/if}
       <div class="mt-0.5 flex flex-col gap-1 border-t border-border pt-1.5 text-xs">
         <div class="text-subtle">{m.workspace_diskUsagePill_shrink_description()}</div>
-        <button
+        <Button
+          variant="ghost"
           type="button"
           class="self-start cursor-pointer border-none bg-transparent p-0 font-medium text-accent-foreground underline decoration-dotted underline-offset-2 hover:opacity-80"
           onclick={handleShrinkClick}
         >
           {m.workspace_diskUsagePill_shrink_label()}
-        </button>
+        </Button>
       </div>
     {:else if loading}
       <div
-        class="flex min-w-56 flex-col gap-2 py-1"
+        class="flex w-full flex-col gap-2 py-1 {presentation === 'pill' ? 'min-w-56' : 'min-w-0'}"
         role="status"
         aria-label={m.workspace_diskUsagePill_loading_ariaLabel()}
       >

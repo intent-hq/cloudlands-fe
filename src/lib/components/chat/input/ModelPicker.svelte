@@ -95,14 +95,17 @@
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { createLogger } from '$lib/utils/client-logger';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
+  import { OPTION_LIST_END_SLOT_CLASS } from '$lib/styles/option-list-row';
   import {
     faArrowsRotate,
     faCheck,
     faChevronDown,
     faLock,
     faPlus,
+    faXmark,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -213,7 +216,7 @@
     defaultOptionDescription?: string;
     // Wraps the resolved defaultModelId label on the trigger when no explicit
     // model is selected (e.g. "Default ({model})" for the specialist editor's
-    // inherit state). Only applied when defaultModelId is set.
+    // inherit state). Also applies to the catalog-default fallback.
     formatDefaultModelLabel?: (modelLabel: string) => string;
     // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
     updateGlobalStore?: boolean;
@@ -771,7 +774,7 @@
             error: errorMsg,
           });
           if (errorMsg) {
-            toast.error(errorMsg, { duration: 6000 });
+            notify.error(errorMsg, { duration: 6000 });
           }
         }
       } catch (error) {
@@ -957,6 +960,11 @@
     defaultModelId ? mapDefaultPseudoSelection(defaultModelId) : undefined,
   );
 
+  function formatResolvedDefaultLabel(model: string): string {
+    if (formatDefaultModelLabel) return formatDefaultModelLabel(model);
+    return showDefaultOption ? m.chat_modelPicker_defaultModelPreview_label({ model }) : model;
+  }
+
   const currentModelLabel = $derived.by(() => {
     if (hasExplicitModel) {
       return localModel
@@ -970,17 +978,12 @@
     // defaultModelLabel (e.g. "Provider default"), then the bare model id. A
     // `<provider>:default` preview maps to its D2 row's label first.
     if (defaultModelId) {
-      const resolvedLabel =
-        defaultModelIdMappedOption?.label ??
-        getModelLabel(defaultModelId) ??
-        defaultModelLabel ??
-        parseCompoundModelId(defaultModelId).modelId;
-      return formatDefaultModelLabel ? formatDefaultModelLabel(resolvedLabel) : resolvedLabel;
+      const resolvedLabel = defaultModelIdMappedOption?.label ?? getModelLabel(defaultModelId);
+      if (resolvedLabel) return formatResolvedDefaultLabel(resolvedLabel);
+      return defaultModelLabel ?? parseCompoundModelId(defaultModelId).modelId;
     }
     if (catalogDefaultFallbackOption) {
-      return formatDefaultModelLabel
-        ? formatDefaultModelLabel(catalogDefaultFallbackOption.label)
-        : catalogDefaultFallbackOption.label;
+      return formatResolvedDefaultLabel(catalogDefaultFallbackOption.label);
     }
     return defaultModelLabel ?? m.chat_modelPicker_defaultModel_label();
   });
@@ -1144,7 +1147,7 @@
     if (hasNoAvailableProvider) {
       if (!noProviderToastShown) {
         noProviderToastShown = true;
-        toast.error(m.chat_modelPicker_noProviderAvailable_toast(), {
+        notify.error(m.chat_modelPicker_noProviderAvailable_toast(), {
           id: 'no-provider-available',
           duration: 6000,
           action: {
@@ -1233,7 +1236,6 @@
         .map((group) => group.parentKey ?? group.key),
     ]),
   ]);
-  const providerTabsEnabled = $derived(showReasoning && providerTabIds.length > 1);
   const preferredBrowseProviderId = $derived(
     providerTabIds.includes(selectedModelProviderId)
       ? selectedModelProviderId
@@ -1242,20 +1244,27 @@
         : (providerTabIds[0] ?? ''),
   );
   let activeBrowseProviderId = $state('');
+  let providerBrowseChanged = $state(false);
+  const providerTabsEnabled = $derived(activeBrowseProviderId !== '');
 
   $effect(() => {
-    if (!providerTabIds.includes(activeBrowseProviderId)) {
+    if (
+      !providerTabIds.includes(activeBrowseProviderId) ||
+      (dropdownOpen && !providerBrowseChanged)
+    ) {
       activeBrowseProviderId = preferredBrowseProviderId;
     }
   });
 
   $effect(() => {
-    if (dropdownOpen && providerTabsEnabled) {
-      activeBrowseProviderId = preferredBrowseProviderId;
+    if (dropdownOpen) {
+      activeBrowseProviderId = untrack(() => preferredBrowseProviderId);
+    } else {
+      providerBrowseChanged = false;
     }
   });
 
-  // Display groups — provider tabs replace the tall group stack in the chat picker.
+  // Display groups — every picker browses one provider at a time.
   const displayGroups = $derived.by(() =>
     groupedModelOptions
       .filter((group) => {
@@ -1380,9 +1389,7 @@
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
   );
   const showTriggerReasoningGauge = $derived(
-    currentReasoningEffort !== null &&
-      currentReasoningEffort !== 'none' &&
-      currentReasoningLevelIndex >= 0,
+    showReasoningFooter && currentReasoningEffort !== 'none',
   );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
@@ -1406,29 +1413,43 @@
       nonBlockingProviderWarnings.length > 0,
   );
 
+  const railProviderIds = $derived(providerTabIds);
+  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
+  let pointerInteraction = $state(false);
+
+  function clearModelSearch(event: MouseEvent) {
+    modelSearchValue = '';
+    (event.currentTarget as HTMLElement)
+      .closest('[data-slot="dropdown-content"]')
+      ?.querySelector<HTMLInputElement>('[role="searchbox"]')
+      ?.focus();
+  }
+
   function selectProviderTab(providerId: string) {
+    providerBrowseChanged = true;
     activeBrowseProviderId = providerId;
   }
 
   function handleProviderTabKeydown(event: KeyboardEvent, providerId: string) {
-    const currentIndex = providerTabIds.indexOf(providerId);
+    const currentIndex = railProviderIds.indexOf(providerId);
     if (currentIndex < 0) return;
 
     let nextIndex: number | undefined;
-    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % providerTabIds.length;
-    if (event.key === 'ArrowLeft') {
-      nextIndex = (currentIndex - 1 + providerTabIds.length) % providerTabIds.length;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
+      nextIndex = (currentIndex + 1) % railProviderIds.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + railProviderIds.length) % railProviderIds.length;
     }
     if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = providerTabIds.length - 1;
+    if (event.key === 'End') nextIndex = railProviderIds.length - 1;
     if (nextIndex === undefined) return;
 
     event.preventDefault();
     event.stopPropagation();
-    activeBrowseProviderId = providerTabIds[nextIndex] ?? providerId;
-    const tabs = (
-      event.currentTarget as HTMLButtonElement
-    ).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    selectProviderTab(railProviderIds[nextIndex] ?? providerId);
+    const tabs = (event.currentTarget as HTMLButtonElement)
+      .closest('[role="tablist"]')
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     tabs?.[nextIndex]?.focus();
   }
 
@@ -1595,7 +1616,7 @@
       });
 
       // Show toast notification explaining the switch
-      toast.info(
+      notify.info(
         m.chat_modelPicker_unavailableSwitched_toast({
           from: unavailableModelName,
           to: fallbackModelName,
@@ -1684,7 +1705,7 @@
       }
 
       const providerName = providerDisplayName(currentProvider);
-      toast.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
+      notify.warning(m.chat_modelPicker_noModelsForProvider_toast({ provider: providerName }), {
         description: m.chat_modelPicker_tryRefreshing_description(),
       });
     })();
@@ -1694,6 +1715,7 @@
   let dropdownRef = $state<{
     focusTrigger: () => void;
     dismissAndFocusTrigger: () => void;
+    openAndFocusSearch: () => Promise<void>;
   } | null>(null);
 
   $effect(() => {
@@ -1713,7 +1735,7 @@
     clearFallbackInfo();
   }
 
-  async function handleModelChange(value: string | string[]) {
+  async function handleModelChange(value: string | string[], event?: MouseEvent) {
     const modelValue = value as string;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
@@ -1737,7 +1759,9 @@
         return;
       }
     }
-    if (modalAware) {
+    // Keyboard selection removes the focused search/listbox. Return to its
+    // trigger instead of leaving focus on body; pointer callers keep their policy.
+    if (modalAware || !event) {
       queueMicrotask(() => {
         dropdownOpen = false;
         dropdownRef?.focusTrigger();
@@ -1756,10 +1780,16 @@
   // Expose open function for keyboard shortcut
   export function open() {
     if (!isLocked) {
-      dropdownOpen = true;
+      pointerInteraction = false;
+      void dropdownRef?.openAndFocusSearch();
     }
   }
 </script>
+
+<svelte:window
+  onpointerdown={() => (pointerInteraction = true)}
+  onkeydown={() => (pointerInteraction = false)}
+/>
 
 {#if isLocked}
   <!-- Show locked state without dropdown -->
@@ -1782,14 +1812,11 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if showReasoningFooter && currentReasoningEffort === null}
-        <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-          >· {currentReasoningLabel}</span
-        >
-      {:else if showTriggerReasoningGauge}
+      {#if showTriggerReasoningGauge}
         <EffortGauge
           value={currentReasoningLevelIndex}
           max={Math.max(1, reasoningLevels.length - 1)}
+          centered={currentReasoningEffort === null}
           testId="model-reasoning-effort-gauge"
           class="[&_line]:transition-none!"
         />
@@ -1803,14 +1830,11 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if showReasoningFooter && currentReasoningEffort === null}
-          <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-            >· {currentReasoningLabel}</span
-          >
-        {:else if showTriggerReasoningGauge}
+        {#if showTriggerReasoningGauge}
           <EffortGauge
             value={currentReasoningLevelIndex}
             max={Math.max(1, reasoningLevels.length - 1)}
+            centered={currentReasoningEffort === null}
             testId="model-reasoning-effort-gauge"
             class="[&_line]:transition-none!"
           />
@@ -1843,26 +1867,9 @@
   {/snippet}
 
   {#snippet dropdownFooter()}
-    {#if showReasoningFooter}
-      <div class="px-2 py-2" data-testid="model-reasoning-section">
-        <EffortPicker
-          mode="embedded"
-          {agentId}
-          {workspaceId}
-          effortLevels={reasoningLevels}
-          effort={persistedReasoningEffort}
-          disabled={reasoningControlDisabled}
-          busy={updatingReasoningEffort}
-          {modalAware}
-          onEffortChange={handleReasoningSelect}
-        />
-      </div>
-    {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
       <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <div
-          class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-        ></div>
+        <IntentMarkLoader size={12} />
         <span>{m.chat_modelPicker_loadingMore_label()}</span>
       </div>
     {/if}
@@ -1881,6 +1888,22 @@
         {/each}
       </div>
     {/if}
+    {#if showReasoningFooter}
+      <div class="w-full min-w-0 px-3 py-2" data-testid="model-reasoning-section">
+        <EffortPicker
+          mode="embedded"
+          class="w-full min-w-0 gap-2! [&>div]:w-24 [&>span]:min-w-0 [&>span>span]:truncate"
+          {agentId}
+          {workspaceId}
+          effortLevels={reasoningLevels}
+          effort={persistedReasoningEffort}
+          disabled={reasoningControlDisabled}
+          busy={updatingReasoningEffort}
+          {modalAware}
+          onEffortChange={handleReasoningSelect}
+        />
+      </div>
+    {/if}
   {/snippet}
 
   <Dropdown
@@ -1896,22 +1919,22 @@
     variant={variant === 'outline' ? 'outline' : variant === 'default' ? 'default' : 'ghost'}
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
-    placeholder={m.chat_modelPicker_searchModels_placeholder()}
-    class="min-w-0"
-    headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}
+    searchChrome
+    placeholder={m.ui_dropdown_search_ariaLabel()}
+    class="min-w-0 max-w-full"
+    headerClass={cn('model-picker-header border-b-0!', !hasNoAvailableProvider && 'pt-9')}
     triggerClass={cn(
-      'max-w-full',
-      (variant === 'outline' || variant === 'default') &&
-        'w-full justify-between border-border! focus-visible:border-ring! focus-visible:ring-2 focus-visible:ring-ring/40',
+      'max-w-full px-2!',
+      (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
       triggerClass,
     )}
     contentClass={cn(
-      'max-w-[calc(100vw-32px)] bg-background! text-foreground!',
-      '[&_[role=searchbox]]:border-b! [&_[role=searchbox]]:border-solid! [&_[role=searchbox]]:border-border!',
-      showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
+      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 h-[360px] min-h-0 flex flex-col rounded-xl pl-12',
+      pointerInteraction && 'model-picker-pointer',
     )}
-    contentMaxHeight={showReasoning ? 360 : undefined}
-    fillContentHeight={showReasoning}
+    contentMaxHeight={360}
+    fillContentHeight
+    animate={false}
     {portal}
     {collisionBoundary}
     {groupHeader}
@@ -1937,27 +1960,21 @@
           <Fa icon={faSettings} class="h-4 w-4" />
         {:else if isTriggerLabelResolved}
           {#if showModelLoading}
-            <span
-              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin shrink-0"
-              role="status"
-              aria-label={modelLoadingTitle}
-              title={modelLoadingTitle}
-            ></span>
+            <span class="size-3 shrink-0" title={modelLoadingTitle}>
+              <IntentMarkLoader size={12} />
+            </span>
           {:else if showModelWarning}
-            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-amber-600 shrink-0" />
+            <Fa icon={faTriangleExclamation} class="h-3 w-3 text-warning-ink shrink-0" />
           {/if}
           {#if hasProviderIcon(triggerProviderId)}
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
-          {#if showReasoningFooter && currentReasoningEffort === null}
-            <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-              >· {currentReasoningLabel}</span
-            >
-          {:else if showTriggerReasoningGauge}
+          {#if showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
               max={Math.max(1, reasoningLevels.length - 1)}
+              centered={currentReasoningEffort === null}
               testId="model-reasoning-effort-gauge"
               class="[&_line]:transition-none!"
             />
@@ -1972,21 +1989,26 @@
     {/snippet}
 
     {#snippet header()}
-      {#if providerTabsEnabled}
+      <div
+        class="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 border-r border-border bg-muted/20 py-2"
+        data-testid="model-provider-rail"
+      >
         <div
-          class="flex items-center gap-1 px-2 pt-2"
+          class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto"
           role="tablist"
+          aria-orientation="vertical"
           aria-label={m.chat_modelPicker_modelProviders_label()}
           data-testid="model-provider-tabs"
         >
-          {#each providerTabIds as providerTabId (providerTabId)}
+          {#each railProviderIds as providerTabId (providerTabId)}
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
               aria-label={providerDisplayName(providerTabId)}
+              title={providerDisplayName(providerTabId)}
               tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
               class={cn(
                 'text-muted-foreground hover:bg-muted/40',
@@ -1998,9 +2020,11 @@
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
             </Button>
           {/each}
+        </div>
+        {#if !hasNoAvailableProvider}
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-sm"
             iconOnly={true}
             aria-label={m.chat_modelPicker_noProviderAvailable_openSettings_label()}
             class="text-muted-foreground hover:bg-muted/40"
@@ -2009,42 +2033,55 @@
           >
             <Fa icon={faPlus} class="size-3 text-muted-foreground/50" />
           </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            iconOnly={true}
-            title={m.chat_modelPicker_refreshGroup_title({
-              group: providerDisplayName(activeBrowseProviderId),
-            })}
-            aria-label={m.chat_modelPicker_refreshGroup_title({
-              group: providerDisplayName(activeBrowseProviderId),
-            })}
-            class={cn(
-              'ml-auto text-subtle hover:bg-muted/40',
-              refreshingProviders.has(activeBrowseProviderId) && 'opacity-50! cursor-not-allowed',
-            )}
-            data-testid="model-provider-refresh-button"
-            disabled={refreshingProviders.has(activeBrowseProviderId)}
-            onclick={() => void handleRefreshProvider(activeBrowseProviderId)}
-          >
+        {/if}
+      </div>
+      {#if modelSearchValue}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly
+          class="absolute right-10 top-1.5 z-20"
+          aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
+          onclick={clearModelSearch}
+        >
+          <Fa icon={faXmark} class="size-3" />
+        </Button>
+      {/if}
+      {#if refreshProviderId}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly={true}
+          title={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          aria-label={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          class={cn(
+            'absolute right-2 top-1.5 text-subtle hover:bg-muted/40',
+            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
+          )}
+          data-testid="model-provider-refresh-button"
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          disabled={refreshingProviders.has(refreshProviderId)}
+          onclick={() => void handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}
+            <IntentMarkLoader size={12} />
+          {:else}
             <Fa
               icon={faArrowsRotate}
               size={10}
-              class={cn(
-                'text-subtle transition-transform duration-500',
-                refreshingProviders.has(activeBrowseProviderId) && 'animate-spin',
-              )}
+              class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             />
-          </Button>
-        </div>
+          {/if}
+        </Button>
       {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
           <div class="flex items-start gap-2" role="alert">
-            <Fa
-              icon={faTriangleExclamation}
-              class="h-3.5 w-3.5 text-warning-foreground mt-0.5 shrink-0"
-            />
+            <Fa icon={faTriangleExclamation} class="h-3.5 w-3.5 text-warning-ink mt-0.5 shrink-0" />
             <div class="min-w-0">
               <div class="text-xs font-medium text-foreground leading-tight">
                 {warningMessage.title}
@@ -2062,12 +2099,10 @@
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
-      <div class="flex gap-2 w-full min-w-0">
+      <div class="flex items-center gap-2.5 w-full min-w-0 py-1">
         {#if providerLoading}
           <div class="flex items-center gap-2 text-muted-foreground text-sm">
-            <div
-              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
-            ></div>
+            <IntentMarkLoader size={12} />
             <span>{option.label}</span>
           </div>
         {:else if providerLoadError}
@@ -2079,26 +2114,25 @@
           />
         {:else}
           <div class="flex-1 min-w-0">
-            <div class="flex items-baseline justify-between gap-2">
-              <span
-                class={cn(
-                  'truncate text-sm font-medium',
-                  option.value === USE_DEFAULT_VALUE && 'italic text-muted-foreground',
-                  selected && 'font-medium',
-                )}
-              >
-                {option.label}
-              </span>
-              {#if selected}
-                <Fa icon={faCheck} class="text-xs text-primary shrink-0" />
-              {/if}
-            </div>
+            <span
+              class={cn(
+                'block truncate text-sm font-normal',
+                option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
+              )}
+            >
+              {option.label}
+            </span>
             {#if option.description}
               <div class="text-xs text-subtle truncate mt-0.5" title={option.description}>
                 {option.description}
               </div>
             {/if}
           </div>
+          {#if selected}
+            <span class={OPTION_LIST_END_SLOT_CLASS}>
+              <Fa icon={faCheck} class="size-4 text-primary-ink shrink-0" />
+            </span>
+          {/if}
         {/if}
       </div>
     {/snippet}
@@ -2122,3 +2156,41 @@
     class={resolvedNoticeClass}
   />
 {/if}
+
+<style>
+  :global(.model-picker-panel > div:has(> input[role='searchbox'])) {
+    position: absolute;
+    top: 0.25rem;
+    left: 3.5rem;
+    right: 2.5rem;
+    width: auto;
+    padding: 0;
+    z-index: 10;
+    background: transparent;
+    border-radius: var(--radius-medium);
+  }
+  :global(.model-picker-panel > div:has(> input[role='searchbox']) > svg) {
+    display: none;
+  }
+  :global(.model-picker-panel input[role='searchbox']) {
+    height: 2rem;
+    padding: 0 1.75rem 0 0.25rem;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    border-radius: var(--radius-medium);
+    caret-color: var(--color-foreground);
+  }
+  :global(.model-picker-panel.model-picker-pointer) {
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  @container style(--motion-reduced: 1) {
+    :global(.model-picker-panel.model-picker-pointer) {
+      transition: none;
+    }
+  }
+</style>

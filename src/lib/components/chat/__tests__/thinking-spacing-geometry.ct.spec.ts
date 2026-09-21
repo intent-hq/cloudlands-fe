@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ThinkingSpacingGeometryHost from './ThinkingSpacingGeometryHost.svelte';
 
 for (const theme of ['light', 'dark'] as const) {
@@ -95,7 +95,11 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(reasoningDisclosures).toHaveCount(2);
         await reasoningDisclosures.nth(0).click();
         await reasoningDisclosures.nth(1).click();
-        await page.waitForTimeout(180);
+        await consecutiveReasoning.evaluate(async (root) => {
+          await Promise.all(
+            root.getAnimations({ subtree: true }).map((animation) => animation.finished),
+          );
+        });
         const reasoningGroupGap = await consecutiveReasoning.evaluate((root) => {
           const groups = [
             ...root.querySelectorAll<HTMLElement>('[data-testid="reasoning-tool-call"]'),
@@ -106,12 +110,13 @@ for (const theme of ['light', 'dark'] as const) {
           return secondRow.getBoundingClientRect().top - groups[0].getBoundingClientRect().bottom;
         });
         expect(reasoningGroupGap).toBeCloseTo(56 * zoom, 1);
-        const expandedBottomGap = await consecutiveReasoning.evaluate((root) => {
-          const details = root.querySelector<HTMLElement>('[data-operational-expanded-content]')!;
-          const body = details.querySelector<HTMLElement>('[data-reasoning-expanded-body]')!;
-          return details.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
-        });
-        expect(expandedBottomGap).toBeCloseTo(8 * zoom, 1);
+        const expandedBottomGap = () =>
+          consecutiveReasoning.evaluate((root) => {
+            const details = root.querySelector<HTMLElement>('[data-operational-expanded-content]')!;
+            const body = details.querySelector<HTMLElement>('[data-reasoning-expanded-body]')!;
+            return details.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
+          });
+        await expect.poll(expandedBottomGap).toBeCloseTo(8 * zoom, 1);
 
         const attention = component.getByTestId('attention-card-boundary');
         const disclosure = attention.getByTestId('reasoning-disclosure');
@@ -172,5 +177,5 @@ test('leaves no stale Thinking boundary motion with reduced motion', async ({ mo
     .getByTestId('attention-card-boundary')
     .locator('[data-operational-expanded-content]');
   await expect(details).toBeVisible();
-  expect(await details.evaluate((element) => element.getAnimations().length)).toBe(0);
+  await expect.poll(() => details.evaluate((element) => element.getAnimations().length)).toBe(0);
 });

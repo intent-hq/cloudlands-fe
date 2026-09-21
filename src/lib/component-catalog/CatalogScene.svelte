@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { tick, type Component } from 'svelte';
+  import { getContext, tick, type Component } from 'svelte';
+  import { catalogWidthContext, type CatalogWidthContext } from './CatalogShell.svelte';
   import { m } from '$shared/paraglide/messages.js';
+  import CatalogFixtureList from './CatalogFixtureList.svelte';
+  import { getCatalogEntry, type CatalogEntry } from './catalog';
   import { loadPreview, setActivePreview } from './preview-discovery';
   import { resolvePreviewState, type PreviewState } from './preview-definition';
   import { waitForCaptureStability } from './capture-stability';
@@ -14,7 +17,7 @@
   let {
     slug,
     requestedState,
-    requestedWidth = 720,
+    requestedWidth,
     requestedFit,
   }: {
     slug: string;
@@ -30,11 +33,22 @@
   let availableStates = $state<string[]>([]);
   let Preview = $state<Component<Record<string, unknown>> | null>(null);
   let scenes = $state<RenderedScene[]>([]);
+  let fallbackEntry = $state<CatalogEntry | null>(null);
+  let fallbackNote = $state('');
   let sceneElement = $state<HTMLElement>();
   let stabilityStatus = $state<'waiting' | 'stable' | 'error'>('waiting');
   let stabilityError = $state('');
   let captureMotion = $state<'full' | 'reduced'>('full');
-  const width = $derived(Math.min(1600, Math.max(240, Math.round(requestedWidth))));
+  const shellWidth = getContext<CatalogWidthContext | undefined>(catalogWidthContext);
+  const width = $derived(
+    Math.min(1600, Math.max(240, Math.round(shellWidth?.width ?? requestedWidth ?? 720))),
+  );
+
+  // Route links remain authoritative when their requested width changes; control changes
+  // flow back through the shell context without requiring a route reload.
+  $effect(() => {
+    shellWidth?.setWidth(requestedWidth);
+  });
 
   function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -79,9 +93,56 @@
       stabilityStatus = 'error';
       Preview = null;
       scenes = [];
+      fallbackEntry = null;
+      fallbackNote = '';
       error = `Preview ${stage} failed: ${describeError(cause)}`;
       if (cleanupError) error += ` Cleanup failed: ${describeError(cleanupError)}`;
       setActivePreview(null);
+    };
+
+    const prepareCapture = async () => {
+      try {
+        await tick();
+      } catch (preparationError) {
+        failScene('preparation', preparationError);
+        return;
+      }
+      if (cancelled) return;
+
+      try {
+        if (!sceneElement) throw new Error('Preview scene element is unavailable.');
+        const stability = await waitForCaptureStability(sceneElement, {
+          signal: stabilityController.signal,
+        });
+        if (cancelled) return;
+        captureMotion = stability.reducedMotion ? 'reduced' : 'full';
+        stabilityStatus = 'stable';
+        status = 'ready';
+        setActivePreview({
+          slug: nextSlug,
+          state: stateName,
+          width: nextWidth,
+          status: 'ready',
+          ...(nextFit ? { fit: nextFit } : {}),
+        });
+      } catch (preparationError) {
+        if (cancelled || stabilityController.signal.aborted) return;
+        const cleanupError = cleanupSetup();
+        stabilityStatus = 'error';
+        stabilityError = `Preview capture preparation failed: ${describeError(preparationError)}`;
+        if (cleanupError) stabilityError += ` Cleanup failed: ${describeError(cleanupError)}`;
+      }
+    };
+
+    const showInteractiveFallback = async (requestedName: string) => {
+      const entry = getCatalogEntry(nextSlug);
+      if (!entry) return false;
+      title = entry.name;
+      stateName = requestedName;
+      fallbackEntry = entry;
+      fallbackNote = `No named state “${requestedName}” for this component — showing the interactive fixture.`;
+      await prepareCapture();
+      return true;
     };
 
     status = 'loading';
@@ -91,6 +152,8 @@
     availableStates = [];
     Preview = null;
     scenes = [];
+    fallbackEntry = null;
+    fallbackNote = '';
     stabilityStatus = 'waiting';
     stabilityError = '';
     captureMotion = 'full';
@@ -107,6 +170,7 @@
       }
       if (cancelled) return;
       if (!loaded) {
+        if (await showInteractiveFallback(nextState ?? 'default')) return;
         status = 'error';
         stabilityStatus = 'error';
         stateName = nextState ?? '';
@@ -125,6 +189,7 @@
       } else {
         const resolved = resolvePreviewState(loaded.definition, nextState);
         if (!resolved.ok) {
+          if (await showInteractiveFallback(resolved.requestedState)) return;
           status = 'error';
           stabilityStatus = 'error';
           stateName = resolved.requestedState;
@@ -152,30 +217,7 @@
         }
         if (cancelled) return;
       }
-
-      try {
-        if (!sceneElement) throw new Error('Preview scene element is unavailable.');
-        const stability = await waitForCaptureStability(sceneElement, {
-          signal: stabilityController.signal,
-        });
-        if (cancelled) return;
-        captureMotion = stability.reducedMotion ? 'reduced' : 'full';
-        stabilityStatus = 'stable';
-        status = 'ready';
-        setActivePreview({
-          slug: nextSlug,
-          state: stateName,
-          width: nextWidth,
-          status: 'ready',
-          ...(nextFit ? { fit: nextFit } : {}),
-        });
-      } catch (preparationError) {
-        if (cancelled || stabilityController.signal.aborted) return;
-        const cleanupError = cleanupSetup();
-        stabilityStatus = 'error';
-        stabilityError = `Preview capture preparation failed: ${describeError(preparationError)}`;
-        if (cleanupError) stabilityError += ` Cleanup failed: ${describeError(cleanupError)}`;
-      }
+      await prepareCapture();
     })();
 
     return () => {
@@ -202,20 +244,20 @@
   data-preview-fit={requestedFit}
   bind:this={sceneElement}
 >
-  {#if requestedFit !== 'component'}
+  {#if requestedFit !== 'component' && !fallbackEntry}
     <header class="rounded-lg border border-border bg-card p-4">
-      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Named preview</p>
+      <p class="text-xs font-medium text-muted-foreground">Named preview</p>
       <h1 class="mt-1 text-2xl font-medium tracking-tight">{title || slug}</h1>
       {#if availableStates.length > 0}
         <nav class="mt-3 flex flex-wrap gap-2" aria-label="Preview states">
           <a
-            class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
+            class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary-ink hover:bg-muted"
             aria-current={stateName === 'all' ? 'page' : undefined}
             href={previewUrl('all')}>{m.sandbox_catalogScene_allStates_label()}</a
           >
           {#each availableStates as name (name)}
             <a
-              class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-muted"
+              class="rounded-md border border-border px-2 py-1 text-xs font-medium text-primary-ink hover:bg-muted"
               aria-current={name === stateName ? 'page' : undefined}
               href={previewUrl(name)}>{name}</a
             >
@@ -249,7 +291,22 @@
         <p class="font-medium">{stabilityError}</p>
       </div>
     {/if}
-    {#if Preview && scenes.length > 0}
+    {#if fallbackEntry}
+      <div class="mx-auto max-w-full" style:width={`${width}px`} data-testid="catalog-scene-focus">
+        <p class="type-caption mb-3 text-muted-foreground" role="status">
+          {fallbackNote}
+          {#if availableStates.length > 0}
+            Available states: {availableStates.join(', ')}.
+          {:else}
+            Available fixture states: {fallbackEntry.fixtures
+              .flatMap((fixture) => fixture.states)
+              .join(', ')}.
+          {/if}
+        </p>
+        <CatalogFixtureList entry={fallbackEntry} />
+        <div data-catalog-portal-target="scene"></div>
+      </div>
+    {:else if Preview && scenes.length > 0}
       <div
         class="preview-scene-list grid gap-8"
         data-preview-scene-list={stateName === 'all' ? 'all' : undefined}
@@ -265,11 +322,12 @@
               class="preview-frame max-w-full overflow-auto rounded-lg border border-border bg-background p-6"
             >
               <div
-                class="preview-focus mx-auto max-w-full rounded-md border border-border bg-card p-6"
+                class="preview-focus mx-auto max-w-full p-6"
                 style:width={`${width}px`}
                 data-testid="catalog-scene-focus"
               >
                 <Preview {...rendered.state.props} />
+                <div data-catalog-portal-target="scene"></div>
               </div>
             </div>
           </article>
@@ -281,7 +339,8 @@
 
 <style>
   .catalog-scene {
-    width: min(100%, 100rem);
+    width: 100%;
+    min-width: 0;
   }
 
   .catalog-scene.component-fit {

@@ -15,4 +15,5 @@ export const buttonGroupMetadata = parseUiComponentMetadata({
   removalGate: 'Retain while exported and group semantics and fixtures pass.',
   dynamicImports: [],
   fixtures: buttonGroupFixtures,
+  useWhen: ['Grouping connected one-shot actions; use ToggleGroup for persistent selection.'],
 });

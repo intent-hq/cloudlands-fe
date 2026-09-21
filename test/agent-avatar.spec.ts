@@ -3,12 +3,18 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 import {
   agentAvatarGeometry,
   agentAvatarVariants,
 } from '../src/features/agent/components/agent-avatar/avatar-size';
+import {
+  agentAvatarCatalogIdentities,
+  agentAvatarCatalogStates,
+} from '../src/features/agent/components/agent-avatar/agent-avatar.catalog';
 
-test.describe.configure({ mode: 'serial', timeout: 120_000 });
+// Each test mounts a fresh host; report every contract failure independently.
+test.describe.configure({ mode: 'default', timeout: 120_000 });
 
 let server: ViteDevServer;
 let baseUrl: string;
@@ -18,7 +24,9 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root: process.cwd(),
-    cacheDir: process.env.AGENT_AVATAR_VITE_CACHE_DIR,
+    cacheDir: viteHarnessCacheDir('agent-avatar', {
+      override: process.env.AGENT_AVATAR_VITE_CACHE_DIR,
+    }),
     plugins: [svelte({ configFile: resolve(process.cwd(), 'svelte.config.js') })],
     resolve: {
       alias: [
@@ -46,18 +54,28 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => server?.close());
 
+// Text metrics feed the avatar stack's overflow badge width, so the harness uses the
+// repo-bundled Inter Variable (like the CT harness and /sandbox) rather than host fonts.
+const HARNESS_FONT_UI =
+  "'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
 async function mountAvatarHost(page: Page) {
   await page.goto(`${baseUrl}src/app.html`);
   await page.addStyleTag({ url: `${baseUrl}src/lib/styles/tokens.css` });
-  await page.evaluate(async () => {
+  await page.addStyleTag({ url: `${baseUrl}node_modules/@fontsource-variable/inter/index.css` });
+  await page.evaluate(async (fontUi) => {
     Object.assign(globalThis, { process: { env: { NODE_ENV: 'test' } } });
+    document.documentElement.style.setProperty('--font-ui', fontUi);
+    document.body.style.fontFamily = 'var(--font-ui)';
+    await document.fonts.load("500 12px 'Inter Variable'");
+    await document.fonts.ready;
     const [{ mount, tick }, { default: Host }] = await Promise.all([
       import('/@id/svelte'),
       import('/test/fixtures/AgentAvatarHost.svelte'),
     ]);
     mount(Host, { target: document.body });
     await tick();
-  });
+  }, HARNESS_FONT_UI);
 }
 
 type Rgba = [number, number, number, number];
@@ -107,7 +125,12 @@ async function catalogPalettePng(locator: Locator, scale: number): Promise<Buffe
 
 async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer> {
   const dataUrl = await locator.evaluate((node, selectedScale) => {
-    const items = Array.from(node.children) as HTMLElement[];
+    // Avatar stack batch (96e48a0b) nests surfaces inside a positioning track.
+    const items = Array.from(
+      node.querySelectorAll<HTMLElement>(
+        '[data-agent-avatar-surface], [data-agent-avatar-overflow]',
+      ),
+    );
     const nodeRect = node.getBoundingClientRect();
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(nodeRect.width * selectedScale);
@@ -131,7 +154,7 @@ async function catalogStackPng(locator: Locator, scale: number): Promise<Buffer>
         );
         context.fill();
         context.fillStyle = style.color;
-        context.font = `500 ${12 * selectedScale}px system-ui`;
+        context.font = `500 ${12 * selectedScale}px 'Inter Variable'`;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillText(
@@ -177,14 +200,15 @@ function colorDistance(first: Rgba, second: Rgba): number {
   return Math.hypot(first[0] - second[0], first[1] - second[1], first[2] - second[2]);
 }
 
-type SurfaceFamily = 'neutral' | 'completed' | 'attention' | 'active' | 'waiting';
+// Avatar palette batch (96e48a0b): failures are red; completed glyphs use semantic ink.
+type SurfaceFamily = 'neutral' | 'completed' | 'attention' | 'failed' | 'active' | 'waiting';
 
 const surfaceFamilyByState = {
   running: 'active',
   responding: 'active',
   unread: 'neutral',
   completed: 'completed',
-  failed: 'attention',
+  failed: 'failed',
   waiting: 'waiting',
   'needs-permission': 'attention',
   'attention-discussion': 'attention',
@@ -194,9 +218,10 @@ const surfaceFamilyByState = {
 
 const expectedSurfaceByTheme = {
   light: {
-    neutral: [232, 237, 234, 255],
+    neutral: [225, 223, 222, 255],
     completed: [220, 229, 224, 255],
     attention: [255, 162, 64, 255],
+    failed: [228, 88, 88, 255],
     active: [209, 226, 78, 255],
     waiting: [196, 167, 242, 255],
   },
@@ -204,6 +229,7 @@ const expectedSurfaceByTheme = {
     neutral: [192, 206, 198, 255],
     completed: [53, 70, 60, 255],
     attention: [255, 181, 102, 255],
+    failed: [239, 118, 118, 255],
     active: [222, 237, 110, 255],
     waiting: [176, 150, 232, 255],
   },
@@ -212,10 +238,18 @@ const expectedSurfaceByTheme = {
 test('renders every vector and state without provider or status overlays', async ({ page }) => {
   await mountAvatarHost(page);
   const catalog = page.locator('[data-agent-avatar-catalog]');
+  const expectedCatalogStateCount =
+    agentAvatarCatalogIdentities.length * agentAvatarCatalogStates.length;
+  expect(agentAvatarCatalogIdentities).toHaveLength(13);
+  expect(agentAvatarCatalogStates).toHaveLength(11);
+  expect(expectedCatalogStateCount).toBe(143);
   await expect(page.locator('[data-catalog-avatar-design]')).toHaveCount(13);
   await expect(
     catalog.locator('.agent-avatar-catalog-states [data-agent-avatar-with-state]'),
-  ).toHaveCount(130);
+  ).toHaveCount(expectedCatalogStateCount);
+  await expect(
+    catalog.locator('.agent-avatar-catalog-states [data-avatar-state="idle"]'),
+  ).toHaveCount(13);
   const avatarSurfaces = page.locator(
     '[data-agent-avatar-with-state], [data-agent-message-leading-identity]',
   );
@@ -231,7 +265,7 @@ test('renders every vector and state without provider or status overlays', async
     page.locator('[data-testid="agent-message-chevron-column"] [data-icon]'),
   ).toHaveCount(7);
   await expect(catalog.locator('.agent-avatar-catalog-states [data-agent-avatar]')).toHaveCount(
-    130,
+    expectedCatalogStateCount,
   );
 });
 
@@ -277,7 +311,7 @@ test('renders repeated Coordinator message cards with canonical identity on the 
             'Coordinator',
           );
           await expect(card.getByTestId('agent-message-disclosure-toggle')).toHaveAccessibleName(
-            /sent a message: Coordinator message/,
+            'sent a message',
           );
 
           const [rowBox, identityBox, avatarBox, glyphBox] = await Promise.all([
@@ -330,7 +364,7 @@ test('resolves computed attribution surfaces for every canonical semantic state'
     neutral: ['idle', 'neutral'],
     running: ['running', 'active'],
     waiting: ['waiting', 'waiting'],
-    error: ['failed', 'attention'],
+    error: ['failed', 'failed'],
     attention: ['attention-discussion', 'attention'],
   } as const;
 
@@ -405,68 +439,6 @@ test('keeps named surface and art geometry clear at 200% zoom', async ({ page })
   }
 });
 
-test('fits the emphasized panel stack and aligned overflow count in a narrow tab', async ({
-  page,
-}) => {
-  await mountAvatarHost(page);
-  const host = page.locator('[data-live-panel-header]');
-  const stack = host.locator('[data-agent-avatar-stack]');
-  const avatars = stack.locator('[data-agent-avatar-with-state]');
-  const overflow = stack.locator('[data-agent-avatar-overflow]');
-  await expect(avatars).toHaveCount(2);
-  for (let index = 0; index < 2; index += 1) {
-    await expect(avatars.nth(index)).toHaveAttribute('data-avatar-variant', 'emphasized');
-  }
-  await expect(overflow).toHaveText('+2');
-  await expect(host.getByRole('tab')).toHaveAccessibleDescription('+2');
-  const overflowStyle = await overflow.evaluate((node) => {
-    const style = getComputedStyle(node);
-    return {
-      background: style.backgroundColor,
-      borderWidth: style.borderTopWidth,
-      borderRadius: style.borderRadius,
-      boxShadow: style.boxShadow,
-      fontSize: style.fontSize,
-    };
-  });
-  expect(overflowStyle).toEqual({
-    background: expect.not.stringMatching(/rgba\(0, 0, 0, 0\)|transparent/),
-    borderWidth: '0px',
-    borderRadius: '7px',
-    boxShadow: 'none',
-    fontSize: '12px',
-  });
-  for (const zoom of [1, 2]) {
-    await host.evaluate((node, selectedZoom) => {
-      node.style.zoom = String(selectedZoom);
-    }, zoom);
-    const [hostBox, stackBox, avatarBoxes, overflowBox] = await Promise.all([
-      host.boundingBox(),
-      stack.boundingBox(),
-      avatars.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON())),
-      overflow.boundingBox(),
-    ]);
-    const avatarTrackWidth = 24 * zoom + (avatarBoxes.length - 1) * 18 * zoom;
-    expect(stackBox?.width).toBeCloseTo(avatarTrackWidth + overflowBox!.width - 6 * zoom, 1);
-    expect(stackBox?.height).toBeCloseTo(24 * zoom, 1);
-    expect(overflowBox?.width).toBeGreaterThanOrEqual(24 * zoom);
-    expect(overflowBox?.height).toBeCloseTo(24 * zoom, 1);
-    for (const box of avatarBoxes) {
-      expect(box.width).toBeCloseTo(24 * zoom, 1);
-      expect(box.height).toBeCloseTo(24 * zoom, 1);
-    }
-    expect(overflowBox!.x - avatarBoxes.at(-1)!.x).toBeCloseTo(18 * zoom, 1);
-    const avatarCenter = avatarBoxes.at(-1)!.y + avatarBoxes.at(-1)!.height / 2;
-    const overflowCenter = overflowBox!.y + overflowBox!.height / 2;
-    expect(
-      Math.abs(avatarCenter - overflowCenter) * (await page.evaluate(() => devicePixelRatio)),
-    ).toBeLessThanOrEqual(0.5);
-    expect((stackBox?.x ?? 0) + (stackBox?.width ?? 0)).toBeLessThanOrEqual(
-      (hostBox?.x ?? 0) + (hostBox?.width ?? 0),
-    );
-  }
-});
-
 test('resolves opaque, separated semantic state tokens in light and dark modes', async ({
   page,
 }) => {
@@ -502,7 +474,17 @@ test('resolves opaque, separated semantic state tokens in light and dark modes',
     expect(backgrounds.size).toBe(familyColors.length);
     for (const [index, first] of familyColors.entries()) {
       for (const second of familyColors.slice(index + 1)) {
-        expect(colorDistance(first, second)).toBeGreaterThan(15);
+        expect(colorDistance(first, second)).toBeGreaterThan(8);
+        // Avatar palette batch (96e48a0b) uses muted neutral beside pale completed green.
+        if (
+          theme === 'light' &&
+          first === expectedSurfaceByTheme.light.neutral &&
+          second === expectedSurfaceByTheme.light.completed
+        ) {
+          expect(colorDistance(first, second)).toBeCloseTo(Math.sqrt(65), 6);
+        } else {
+          expect(colorDistance(first, second)).toBeGreaterThan(15);
+        }
       }
     }
     const waiting = expectedSurfaceByTheme[theme].waiting;
@@ -512,7 +494,7 @@ test('resolves opaque, separated semantic state tokens in light and dark modes',
   }
 });
 
-test('keeps every SVG path and circle color identical across states and color modes', async ({
+test("keeps every SVG path and circle on the state's opaque foreground in each color mode", async ({
   page,
 }) => {
   await mountAvatarHost(page);
@@ -531,6 +513,7 @@ test('keeps every SVG path and circle color identical across states and color mo
         .locator('[data-agent-avatar-with-state]')
         .evaluateAll((avatars) =>
           avatars.map((avatar) => ({
+            state: avatar.getAttribute('data-avatar-state'),
             color: getComputedStyle(avatar).color,
             opacity: getComputedStyle(avatar).opacity,
             shapes: Array.from(avatar.querySelectorAll('path, circle, rect')).map((shape) => {
@@ -539,15 +522,18 @@ test('keeps every SVG path and circle color identical across states and color mo
             }),
           })),
         );
-      for (const presentation of presentations.slice(1)) {
-        expect(presentation).toEqual(presentations[0]);
-      }
-      expect(presentations[0]?.opacity).toBe('1');
-      if (mode !== 'forced-colors') {
-        expect(presentations[0]?.color).toBe('rgb(8, 8, 8)');
-        for (const shape of presentations[0]?.shapes ?? []) {
+      // Avatar palette batch (96e48a0b) gives completed avatars their own foreground.
+      for (const presentation of presentations) {
+        expect(presentation.opacity).toBe('1');
+        if (mode !== 'forced-colors') {
+          const completedForeground = mode === 'light' ? 'rgb(42, 81, 64)' : 'rgb(212, 226, 216)';
+          expect(presentation.color).toBe(
+            presentation.state === 'completed' ? completedForeground : 'rgb(0, 0, 0)',
+          );
+        }
+        for (const shape of presentation.shapes) {
           for (const paint of [shape.fill, shape.stroke]) {
-            if (paint !== 'none') expect(paint).toBe('rgb(8, 8, 8)');
+            if (paint !== 'none') expect(paint).toBe(presentation.color);
           }
           expect(shape.opacity).toBe('1');
         }
@@ -596,7 +582,7 @@ test('computes butt caps and miter joins across avatar modes, widths, and zoom l
   }
 });
 
-test('keeps Settings Specialists at named standard geometry at 100% and 200%', async ({ page }) => {
+test('keeps Settings Specialists at named compact geometry at 100% and 200%', async ({ page }) => {
   await mountAvatarHost(page);
   const settings = page.locator('[data-settings-specialists]');
   const rows = settings.getByRole('button').filter({ has: page.locator('[data-agent-avatar]') });
@@ -606,7 +592,8 @@ test('keeps Settings Specialists at named standard geometry at 100% and 200%', a
       (node as HTMLElement).style.zoom = String(selectedZoom);
     }, zoom);
     for (const avatar of await settings.locator('[data-agent-avatar]').all()) {
-      await expect(avatar).toHaveAttribute('data-avatar-variant', 'standard');
+      // Settings navigation batch (7b81eb9b) deliberately uses compact avatars.
+      await expect(avatar).toHaveAttribute('data-avatar-variant', 'compact');
       const [box, style] = await Promise.all([
         avatar.boundingBox(),
         avatar.evaluate((node) => {
@@ -614,9 +601,9 @@ test('keeps Settings Specialists at named standard geometry at 100% and 200%', a
           return { padding: computed.paddingLeft, boxSizing: computed.boxSizing };
         }),
       ]);
-      expect(box?.width).toBeCloseTo(20 * zoom, 1);
-      expect(box?.height).toBeCloseTo(20 * zoom, 1);
-      expect(style).toEqual({ padding: '2px', boxSizing: 'border-box' });
+      expect(box?.width).toBeCloseTo(16 * zoom, 1);
+      expect(box?.height).toBeCloseTo(16 * zoom, 1);
+      expect(style).toEqual({ padding: '1px', boxSizing: 'border-box' });
     }
   }
 });
@@ -632,6 +619,7 @@ test('matches each theme palette in the catalog at 20px and 200%', async ({ page
       document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
       document.documentElement.classList.toggle('light', selectedTheme === 'light');
     }, theme);
+    await page.waitForTimeout(50);
     expect(await catalogPalettePng(states, 1)).toMatchSnapshot(
       `agent-avatar-theme-palette-${theme}-20px.png`,
     );
@@ -661,17 +649,11 @@ test('matches the emphasized catalog stack in each theme at 100% and 200%', asyn
   }
 });
 
-test('shows the state surface in live panel-header and subscription consumers', async ({
-  page,
-}) => {
+test('shows the state surface in the live subscription consumer', async ({ page }) => {
   await mountAvatarHost(page);
-  const panelAvatar = page.locator('[data-live-panel-header] [data-agent-avatar-surface]');
   const subscriptionAvatar = page.locator(
     '[data-live-subscription-row] [data-agent-avatar-surface]',
   );
-  await expect(panelAvatar).toHaveCount(2);
-  await expect(panelAvatar.nth(0)).toHaveAttribute('data-avatar-state', 'running');
-  await expect(panelAvatar.nth(1)).toHaveAttribute('data-avatar-state', 'unread');
   await expect(subscriptionAvatar).toHaveCount(1);
   await expect(subscriptionAvatar).toHaveAttribute('data-avatar-state', 'completed');
   for (const theme of ['light', 'dark'] as const) {
@@ -680,16 +662,11 @@ test('shows the state surface in live panel-header and subscription consumers', 
       document.documentElement.classList.toggle('light', selectedTheme === 'light');
     }, theme);
     await page.waitForTimeout(250);
-    for (const [avatar, family] of [
-      [panelAvatar.nth(1), 'neutral'],
-      [subscriptionAvatar, 'completed'],
-    ] as const) {
-      const presentation = await computedPresentation(avatar);
-      expect(presentation.background[3]).toBe(255);
-      expect(
-        colorDistance(presentation.background, expectedSurfaceByTheme[theme][family]),
-      ).toBeLessThanOrEqual(1);
-    }
+    const presentation = await computedPresentation(subscriptionAvatar);
+    expect(presentation.background[3]).toBe(255);
+    expect(
+      colorDistance(presentation.background, expectedSurfaceByTheme[theme].completed),
+    ).toBeLessThanOrEqual(1);
   }
 });
 

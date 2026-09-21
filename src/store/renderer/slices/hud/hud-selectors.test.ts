@@ -702,18 +702,36 @@ describe('selectHudAttnCount', () => {
     expect(selectHudAttnCount.select(state)).toBe(1);
   });
 
-  it('does not count a pending request while the agent runs a live turn (mid-turn gate)', () => {
-    // Mid-turn rehydration can deliver the persisted attention fields while
-    // the agent is still streaming — nothing must blink until the turn ends.
+  it('counts a pending request while the agent runs a live turn (attention trumps running)', () => {
+    // An automatic delivery restarts a top-level foreground agent without
+    // clearing the request, so it is still pending while the agent streams and
+    // must blink, bucket needs-attention, and still count on the running axis.
     const state = attnState({
       root: {
         status: 'active',
+        workspaceId: 'ws-1',
         attentionRequestKind: 'discussion',
         isResponding: true,
         messages: [],
       },
     });
-    expect(selectHudAttnCount.select(state)).toBe(0);
+    expect(selectHudAttnCount.select(state)).toBe(1);
+    const [card] = selectHudWorkspaceCards.select(state);
+    expect(card.agents.find((agent) => agent.id === 'root')).toMatchObject({
+      bucket: 'needs-attention',
+      attentionKind: 'discussion',
+    });
+    const tabCategories = selectWorkspaceTabStatuses.select(state)['ws-1'].categories;
+    expect(tabCategories).toContainEqual({
+      category: 'discussion',
+      count: 1,
+      agentNames: ['Coordinator'],
+    });
+    expect(tabCategories).toContainEqual({
+      category: 'running',
+      count: 1,
+      agentNames: ['Coordinator'],
+    });
   });
 
   it('counts a wire needs_attention rollup once when no per-agent signal covers it', () => {
@@ -1020,6 +1038,33 @@ describe('selectHudAttentionItems', () => {
     });
     expect(selectHudAttentionItems.select(failed)).toEqual([]);
     expect(selectHudAttnCount.select(failed)).toBe(0);
+  });
+
+  it('a muted top-level agent (§5.5 notificationsMuted) raises no ATTENTION row or count', () => {
+    const attention = gatedItemsState({
+      root: {
+        status: 'active',
+        notificationsMuted: true,
+        attentionRequestKind: 'blocker',
+        attentionRequestReason: 'Sandbox network is down',
+        messages: [],
+      },
+    });
+    expect(selectHudAttentionItems.select(attention)).toEqual([]);
+    expect(selectHudAttnCount.select(attention)).toBe(0);
+    const failed = gatedItemsState({
+      root: { status: 'error', notificationsMuted: true, messages: [] },
+    });
+    expect(selectHudAttentionItems.select(failed)).toEqual([]);
+    expect(selectHudAttnCount.select(failed)).toBe(0);
+    // An explicit `false` behaves like an unmuted session.
+    const unmuted = gatedItemsState({
+      root: { status: 'error', notificationsMuted: false, messages: [] },
+    });
+    expect(selectHudAttentionItems.select(unmuted).map((item) => item.kind)).toEqual([
+      'agent_failed',
+    ]);
+    expect(selectHudAttnCount.select(unmuted)).toBe(1);
   });
 
   it('a failed delegated sub-agent raises no row; a failed top-level agent still does', () => {
@@ -3250,6 +3295,46 @@ describe('selectHudWorkspaceCards', () => {
     expect(card.attentionSnippet).toEqual({
       kind: 'failed',
       text: 'Provider stream disconnected (upstream 529)',
+    });
+  });
+
+  it('failed card snippet skips a muted failed agent (§5.5 notificationsMuted)', () => {
+    // The muted root failed first in agent order; the unmuted child's
+    // stopReason is the one the strip surfaces.
+    const withUnmutedSibling = gatedState(
+      {
+        root: {
+          status: 'error',
+          notificationsMuted: true,
+          stopReason: 'Muted provider error',
+          messages: [],
+        },
+        child: { status: 'error', stopReason: 'Child sandbox crashed', messages: [] },
+      },
+      [],
+      'failed',
+    );
+    expect(selectHudWorkspaceCards.select(withUnmutedSibling)[0].attentionSnippet).toEqual({
+      kind: 'failed',
+      text: 'Child sandbox crashed',
+    });
+    // Only a muted agent failed: the strip keeps the generic failed line and
+    // never leaks the muted agent's stopReason.
+    const onlyMuted = gatedState(
+      {
+        root: {
+          status: 'error',
+          notificationsMuted: true,
+          stopReason: 'Muted provider error',
+          messages: [],
+        },
+      },
+      [],
+      'failed',
+    );
+    expect(selectHudWorkspaceCards.select(onlyMuted)[0].attentionSnippet).toEqual({
+      kind: 'failed',
+      text: '',
     });
   });
 

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import { getAvatarState, type AvatarState } from './avatar-state';
 import AgentAvatarWithState from './AgentAvatarWithState.svelte';
+import AgentAvatarCatalog from './AgentAvatarCatalog.svelte';
 import { agentAvatarCatalogStates, agentAvatarCatalogIdentities } from './agent-avatar.catalog';
 import { getAgentAvatarStateLabel } from './avatar-state-label';
 import { agentAvatarGeometry, agentAvatarVariants } from './avatar-size';
@@ -24,10 +25,6 @@ const stackSource = readFileSync(
 );
 const catalogSource = readFileSync(
   resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte'),
-  'utf8',
-);
-const tabSource = readFileSync(
-  resolve(process.cwd(), 'src/features/layout/components/panel-tabs/Tab.svelte'),
   'utf8',
 );
 const settingsSidebarSource = readFileSync(
@@ -171,7 +168,7 @@ describe('AgentAvatarWithState', () => {
     expect(source).toMatch(/transition: background-color/);
     expect(source).toContain('@media (forced-colors: active)');
     expect(source).toMatch(/forced-colors: active[\s\S]*outline: 1px solid CanvasText/);
-    expect(source).toMatch(/prefers-reduced-motion: reduce[\s\S]*transition: none/);
+    expect(source).toMatch(/@container style\(--motion-reduced: 1\)[\s\S]*transition: none/);
     for (const family of ['neutral', 'attention', 'failed', 'active', 'waiting']) {
       expect(tokenSource).toContain(`--theme-light-agent-avatar-surface-${family}:`);
       expect(tokenSource).toContain(`--theme-dark-agent-avatar-surface-${family}:`);
@@ -283,11 +280,7 @@ describe('AgentAvatarWithState', () => {
       expect(geometry.radius).toBeLessThan(geometry.surface / 2);
     }
     expect(catalogSource).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
-    expect(tabSource).not.toMatch(/<AgentAvatarWithState[\s\S]{0,180}\bsize=/);
     expect(catalogSource).toContain('<AgentAvatarStack');
-    expect(tabSource).toContain('<AgentAvatarStack');
-    expect(tabSource).toContain('variant="emphasized"');
-    expect(tabSource).toContain('overflowId=');
   });
 
   it('keeps visible product consumers off zero-clear-space canonical numeric sizes', () => {
@@ -335,8 +328,7 @@ describe('AgentAvatarWithState', () => {
   });
 
   it('renders the compact catalog as every design across every state', async () => {
-    const Catalog = (await import('./AgentAvatarCatalog.svelte')).default;
-    const { container } = render(Catalog);
+    const { container } = render(AgentAvatarCatalog);
     expect(container.querySelectorAll('[data-catalog-avatar-design]')).toHaveLength(
       agentAvatarCatalogIdentities.length,
     );

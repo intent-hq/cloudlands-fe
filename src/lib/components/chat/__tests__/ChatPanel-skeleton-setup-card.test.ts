@@ -7,20 +7,43 @@
  * rows — no WorkspaceSetupCard. The pure-predicate tests in
  * chat-panel-visibility.test.ts cannot catch the card being reintroduced
  * inside the skeleton branch, so this suite renders ChatPanel itself.
+ *
+ * ChatPanel must be imported statically: a dynamic `import()` inside a test
+ * body charges the Vite transform of ChatPanel's whole module graph to that
+ * test's `testTimeout`, which times out under multi-worker load
+ * (intent-hq/intent#3082). A static import pays the same cost during file
+ * collection, where no per-test timeout applies.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { flushSync } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { selectNativeExecutionPlan } from '../workspace-task-fallback';
+import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
+// Load the component during collection, not inside a test's timeout budget.
+// A timed-out dynamic import can otherwise mount after that test's cleanup.
+import ChatPanel from '../ChatPanel.svelte';
 
 const testState = vi.hoisted(() => {
+  const subscribers = new Set<() => void>();
   const readable = <T>(value: T) => ({
     subscribe: (run: (value: T) => void) => (run(value), () => {}),
   });
-  // Selector mock that re-reads its value at subscribe time, so each test can
-  // set the hydration phase before rendering.
+  // Match reference-based selector emissions for updates after mounting.
   const selectorFrom = <T>(get: () => T) =>
     Object.assign(
       vi.fn(() => ({
-        subscribe: (run: (value: T) => void) => (run(get()), () => {}),
+        subscribe: (run: (value: T) => void) => {
+          let current = get();
+          run(current);
+          const update = () => {
+            const next = get();
+            if (Object.is(current, next)) return;
+            current = next;
+            run(current);
+          };
+          subscribers.add(update);
+          return () => subscribers.delete(update);
+        },
       })),
       { select: vi.fn(get) },
     );
@@ -30,8 +53,19 @@ const testState = vi.hoisted(() => {
     readable,
     selector,
     selectorFrom,
+    notify: () => subscribers.forEach((update) => update()),
     transcriptHydration: 'loading' as string,
     transcriptHydratedOnce: false,
+    agentSession: null as Record<string, unknown> | null,
+    agentMessages: [] as unknown[],
+    agentHistoryMessages: [] as unknown[],
+    workspaceTasks: [] as Array<{
+      id: string;
+      title: string;
+      status: string;
+      specLinked?: boolean;
+    }>,
+    workspaceTasksInitialized: false,
     panelManager: {
       getPanelIds: vi.fn(() => [] as string[]),
       getPanel: vi.fn(() => null),
@@ -40,17 +74,31 @@ const testState = vi.hoisted(() => {
   return state;
 });
 
+vi.mock('../workspace-task-fallback', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../workspace-task-fallback')>();
+  return { ...actual, selectNativeExecutionPlan: vi.fn(actual.selectNativeExecutionPlan) };
+});
+
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
   return createAppStoreMockModule({
-    state: () => ({ browser: { byWorkspaceId: {} } }),
+    state: () => ({
+      agentSubscriptionUI: { entries: {} },
+      browser: { byWorkspaceId: {} },
+    }),
     dispatch: testState.dispatch,
   });
 });
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => testState.panelManager,
+}));
+// The on-demand `workspace.get` detail pull reads the real workspace slice,
+// which the store mock above does not carry; the setup card here is driven by
+// the `workspace` prop alone.
+vi.mock('$features/workspace/workspace-detail-hydration', () => ({
+  ensureWorkspaceDetail: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -66,7 +114,9 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn().mockResolvedValue({ success: true, data: [] }),
   listenSync: vi.fn(() => () => {}),
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+}));
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
@@ -75,13 +125,14 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
   selectHiddenTabs: testState.selector([] as unknown[]),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: testState.selector(null),
+  selectAgentSession: testState.selectorFrom(() => testState.agentSession),
+  selectAgentSessionsById: testState.selector({}),
   selectAgentIsResponding: testState.selector(false),
   selectAgentIsRunning: testState.selector(false),
   selectAgentSessionIsStreaming: testState.selector(false),
   selectAgentSessionStreamingContent: testState.selector(''),
-  selectAgentMessages: testState.selector([]),
-  selectAgentHistoryMessages: testState.selector([]),
+  selectAgentMessages: testState.selectorFrom(() => testState.agentMessages),
+  selectAgentHistoryMessages: testState.selectorFrom(() => testState.agentHistoryMessages),
   selectHistorySegmentMeta: testState.selector({
     gapToTail: false,
     oldestReached: false,
@@ -97,6 +148,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatLastChunkTime: testState.selector(null),
   selectChatLiveStreamPhase: testState.selector(null),
   selectChatModelUnavailable: testState.selector(null),
+  selectChatQuotaExceeded: testState.selector(null),
   selectChatReceivedFirstChunk: testState.selector(false),
   selectChatStatusEvents: testState.selector([]),
   selectChatStreamingStartTime: testState.selector(null),
@@ -117,6 +169,12 @@ vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: testState.selector(null),
 }));
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasks: testState.selectorFrom(() => testState.workspaceTasks),
+  selectWorkspaceTasksInitialized: testState.selectorFrom(
+    () => testState.workspaceTasksInitialized,
+  ),
+}));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: testState.selector([]),
   selectPanels: testState.selector([]),
@@ -129,6 +187,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
   selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectComposerContextItems: testState.selector([]),
   selectChatDraft: { select: vi.fn(() => '') },
 }));
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
@@ -141,6 +200,9 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
   selectChatAuroraEnabled: testState.selector(true),
   selectIsAgentMonospace: testState.selector(false),
 }));
+vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () => ({
+  selectDividerSession: testState.selector(null),
+}));
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   selectSpecialists: testState.selector([]),
   selectEffectiveBehaviorPrompt: testState.selector(''),
@@ -149,16 +211,16 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
   selectEffectiveDefaultProviderId: testState.selector(''),
   selectProviderCatalogLoaded: testState.selector(false),
+  selectProviderCatalogEntries: testState.selector([] as unknown[]),
   selectProviderAuthFailureGuidance: { select: () => null },
+  selectProviderDisplayName: { select: (_state: unknown, id: string) => id },
+  selectNormalizedProviderId: { select: (_state: unknown, id: string) => id },
 }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
-}));
-vi.mock('../DateSeparator.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../EventWakeupBanner.svelte', async () => ({
@@ -236,21 +298,43 @@ const workspace = {
   branch: 'feature/setup',
 };
 
-async function renderInitialWorkspaceChatPanel() {
-  const ChatPanel = (await import('../ChatPanel.svelte')).default;
+async function renderInitialWorkspaceChatPanel(
+  onTaskProgressChange?: (tasks: unknown[]) => void,
+  workspaceOverrides: Record<string, unknown> = {},
+) {
   render(ChatPanel, {
-    props: { workspace, agentId: 'agent-1', isActive: true, isInitialWorkspaceAgent: true },
+    props: {
+      workspace: { ...workspace, ...workspaceOverrides },
+      agentId: 'agent-1',
+      isActive: true,
+      isInitialWorkspaceAgent: true,
+      onTaskProgressChange,
+    },
   });
   await Promise.resolve();
 }
 
+// Wire shape of `Workspace.setupScript` (PROTOCOL §5.25): a SetupScript record,
+// not the bare string the FE `Workspace` type still declares.
+const wireSetupScript = {
+  script: 'pnpm install',
+  updatedAt: 1_700_000_000_000,
+  generatedBy: 'user',
+};
+
 describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    testState.agentSession = null;
+    testState.agentMessages = [];
+    testState.agentHistoryMessages = [];
+    testState.workspaceTasks = [];
+    testState.workspaceTasksInitialized = false;
     vi.stubGlobal(
       'ResizeObserver',
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );
@@ -282,4 +366,186 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
     await waitFor(() => expect(screen.getByTestId('mock-workspace-setup-card')).toBeTruthy());
     expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull();
   });
+
+  describe('setupScript wire shape → setupScriptContent', () => {
+    beforeEach(() => {
+      testState.transcriptHydration = 'settled';
+      testState.transcriptHydratedOnce = true;
+    });
+
+    it('hands the card the script text when the workspace prop carries the wire record', async () => {
+      await renderInitialWorkspaceChatPanel(undefined, { setupScript: wireSetupScript });
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      await waitFor(() =>
+        expect(card.getAttribute('data-setup-script-content')).toBe('pnpm install'),
+      );
+      expect(card.getAttribute('data-setup-script-status')).toBe('done');
+      // The prop already carried the script: no detail pull is needed.
+      expect(vi.mocked(ensureWorkspaceDetail)).not.toHaveBeenCalled();
+    });
+
+    it('hands the card the script text when the on-demand detail read serves the wire record', async () => {
+      vi.mocked(ensureWorkspaceDetail).mockResolvedValueOnce({
+        ...workspace,
+        setupScript: wireSetupScript,
+      } as never);
+
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      expect(vi.mocked(ensureWorkspaceDetail)).toHaveBeenCalledWith('ws-1');
+      await waitFor(() =>
+        expect(card.getAttribute('data-setup-script-content')).toBe('pnpm install'),
+      );
+      expect(card.getAttribute('data-setup-script-status')).toBe('done');
+    });
+
+    it('still accepts the legacy bare-string shape on the workspace prop', async () => {
+      await renderInitialWorkspaceChatPanel(undefined, { setupScript: 'echo legacy' });
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      await waitFor(() =>
+        expect(card.getAttribute('data-setup-script-content')).toBe('echo legacy'),
+      );
+      expect(vi.mocked(ensureWorkspaceDetail)).not.toHaveBeenCalled();
+    });
+
+    it('leaves the card without a script when the detail read serves none', async () => {
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      await waitFor(() => expect(vi.mocked(ensureWorkspaceDetail)).toHaveBeenCalledWith('ws-1'));
+      expect(card.getAttribute('data-setup-script-content')).toBeNull();
+      expect(card.getAttribute('data-setup-script-status')).toBeNull();
+    });
+  });
+
+  it('routes hydrated fallback progress to the header and gives a native plan precedence', async () => {
+    testState.transcriptHydration = 'settled';
+    testState.transcriptHydratedOnce = true;
+    testState.workspaceTasksInitialized = true;
+    testState.workspaceTasks = [
+      { id: 'task-1', title: 'Canonical workspace task', status: 'in_progress', specLinked: true },
+    ];
+
+    const onTaskProgressChange = vi.fn();
+    await renderInitialWorkspaceChatPanel(onTaskProgressChange);
+    await waitFor(() =>
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        {
+          id: 'workspace:task-1',
+          title: 'Canonical workspace task',
+          status: 'running',
+        },
+      ]),
+    );
+    expect(screen.queryByTestId('workspace-task-fallback-card')).toBeNull();
+
+    cleanup();
+    testState.agentMessages = [
+      {
+        id: 'assistant-plan',
+        role: 'assistant',
+        contentBlocks: [
+          {
+            type: 'plan',
+            entries: [{ content: 'Native plan', priority: 'high', status: 'in_progress' }],
+          },
+        ],
+      },
+    ];
+    await renderInitialWorkspaceChatPanel(onTaskProgressChange);
+    await waitFor(() => expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull());
+    expect(screen.queryByTestId('workspace-task-fallback-card')).toBeNull();
+    await waitFor(() =>
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'plan:assistant-plan:0:0', title: 'Native plan', status: 'running' },
+      ]),
+    );
+  });
+
+  it.each([false, true])(
+    'does not rescan unchanged history on live-only updates (history plan: %s)',
+    async (hasHistoryPlan) => {
+      const planMessage = (id: string, title: string) => ({
+        id,
+        role: 'assistant',
+        contentBlocks: [
+          {
+            id: `${id}:plan`,
+            type: 'plan',
+            entries: [{ content: title, priority: 'high', status: 'in_progress' }],
+          },
+        ],
+      });
+      testState.transcriptHydration = 'settled';
+      testState.transcriptHydratedOnce = true;
+      testState.workspaceTasksInitialized = true;
+      testState.workspaceTasks = [
+        { id: 'task-1', title: 'Workspace task', status: 'in_progress', specLinked: true },
+      ];
+      const history = Array.from({ length: 8 }, (_, index) => ({
+        id: `history-${index}`,
+        role: 'assistant',
+        contentBlocks: [{ type: 'text', text: 'History' }],
+      }));
+      testState.agentHistoryMessages = hasHistoryPlan
+        ? [planMessage('history-plan', 'History task'), ...history]
+        : history;
+      const historyMessages = testState.agentHistoryMessages;
+      const historyScanCount = () =>
+        vi
+          .mocked(selectNativeExecutionPlan)
+          .mock.calls.filter(([sources]) => sources.some((source) => source === historyMessages))
+          .length;
+      const expectedInitial = hasHistoryPlan
+        ? [{ id: 'plan:history-plan:plan:0', title: 'History task', status: 'running' }]
+        : [{ id: 'workspace:task-1', title: 'Workspace task', status: 'running' }];
+      const onTaskProgressChange = vi.fn();
+      await renderInitialWorkspaceChatPanel(onTaskProgressChange);
+      await waitFor(() => expect(onTaskProgressChange).toHaveBeenLastCalledWith(expectedInitial));
+      expect(historyScanCount()).toBe(1);
+
+      for (let index = 0; index < 3; index += 1) {
+        testState.agentMessages = [
+          {
+            id: 'live-text',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: `${index}` }],
+          },
+        ];
+        flushSync(() => testState.notify());
+        expect(onTaskProgressChange).toHaveBeenLastCalledWith(expectedInitial);
+        expect(historyScanCount()).toBe(1);
+      }
+
+      testState.agentMessages = [planMessage('live-plan', 'Live task')];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'plan:live-plan:plan:0', title: 'Live task', status: 'running' },
+      ]);
+      testState.agentMessages = [
+        { id: 'empty-plan', role: 'assistant', contentBlocks: [{ type: 'plan', entries: [] }] },
+      ];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([]);
+
+      testState.agentMessages = [];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith(expectedInitial);
+      expect(historyScanCount()).toBe(1);
+
+      testState.agentHistoryMessages = [planMessage('reloaded-plan', 'Reloaded task')];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'plan:reloaded-plan:plan:0', title: 'Reloaded task', status: 'running' },
+      ]);
+      testState.agentHistoryMessages = [];
+      flushSync(() => testState.notify());
+      expect(onTaskProgressChange).toHaveBeenLastCalledWith([
+        { id: 'workspace:task-1', title: 'Workspace task', status: 'running' },
+      ]);
+    },
+  );
 });

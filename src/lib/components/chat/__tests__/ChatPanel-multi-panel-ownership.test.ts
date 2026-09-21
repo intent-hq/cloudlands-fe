@@ -3,7 +3,14 @@
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  chatInterestLeaseCount,
+  clearAllChatInterestLeases,
+  hasChatInterestLease,
+  onLastChatInterestLeaseReleased,
+} from '$features/agent/utils/chat-interest-leases';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import ChatPanel from '../ChatPanel.svelte';
 
 const testState = vi.hoisted(() => {
   const readable = <T>(value: T) => ({
@@ -84,14 +91,16 @@ vi.mock('$lib/client', () => ({
       set: vi.fn().mockResolvedValue({ ok: true }),
       clear: vi.fn().mockResolvedValue({ ok: true }),
     },
-    agents: { retry: vi.fn(), editQueued: vi.fn() },
+    agents: { retry: vi.fn(), editQueued: vi.fn(), getQueue: vi.fn().mockResolvedValue([]) },
   },
 }));
 vi.mock('$lib/electron-bridge', () => ({
   invoke: vi.fn().mockResolvedValue({ success: true, data: [] }),
   listenSync: vi.fn(() => () => {}),
 }));
-vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+}));
 vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/SlotOnly.svelte')).default }));
 
 vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
@@ -120,6 +129,7 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-selectors', () => ({
   selectChatLastChunkTime: testState.selector(null),
   selectChatLiveStreamPhase: testState.selector(null),
   selectChatModelUnavailable: testState.selector(null),
+  selectChatQuotaExceeded: testState.selector(null),
   selectChatReceivedFirstChunk: testState.selector(false),
   selectChatStatusEvents: testState.selector([]),
   selectChatStreamingStartTime: testState.selector(null),
@@ -140,6 +150,10 @@ vi.mock('$store/renderer/slices/agent-queue/agent-queue-selectors', () => ({
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: testState.selector(null),
 }));
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasks: testState.selector([]),
+  selectWorkspaceTasksInitialized: testState.selector(false),
+}));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: testState.selector([]),
   selectPanels: testState.selector([]),
@@ -152,6 +166,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
   selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectComposerContextItems: testState.selector([]),
   selectChatDraft: { select: vi.fn(() => '') },
 }));
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
@@ -172,16 +187,16 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
 vi.mock('$store/renderer/slices/provider-catalog/provider-catalog-selectors', () => ({
   selectEffectiveDefaultProviderId: testState.selector(''),
   selectProviderCatalogLoaded: testState.selector(false),
+  selectProviderCatalogEntries: testState.selector([] as unknown[]),
   selectProviderAuthFailureGuidance: { select: () => null },
+  selectProviderDisplayName: { select: (_state: unknown, id: string) => id },
+  selectNormalizedProviderId: { select: (_state: unknown, id: string) => id },
 }));
 
 vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
-}));
-vi.mock('../DateSeparator.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../EventWakeupBanner.svelte', async () => ({
@@ -269,6 +284,7 @@ function updatePanelActions() {
 
 describe('ChatPanel multi-panel context ownership', () => {
   beforeEach(() => {
+    clearAllChatInterestLeases();
     vi.clearAllMocks();
     testState.agentSessionIsStreaming = false;
     testState.chatAuroraEnabled = true;
@@ -278,6 +294,7 @@ describe('ChatPanel multi-panel context ownership', () => {
       'ResizeObserver',
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );
@@ -285,7 +302,107 @@ describe('ChatPanel multi-panel context ownership', () => {
 
   afterEach(() => {
     cleanup();
+    clearAllChatInterestLeases();
     vi.unstubAllGlobals();
+  });
+
+  it('leases the active agent before initialization and viewed-state sweep dispatches', () => {
+    const leaseAtDispatch: Array<{ type: string; leased: boolean }> = [];
+    testState.dispatch.mockImplementation((action) => {
+      if (action?.type === 'chatState/initializeChatRequested') {
+        leaseAtDispatch.push({ type: action.type, leased: hasChatInterestLease('agent-1') });
+        // Model the init saga's synchronous viewed-state update and subscription
+        // sweep before ChatPanel's first reactive lease-transfer effect can run.
+        testState.dispatch({
+          type: 'unreadTracking/markAgentAsViewed',
+          payload: ['agent-1'],
+        });
+      } else if (
+        action?.type === 'unreadTracking/markAgentAsViewed' &&
+        leaseAtDispatch.length === 1
+      ) {
+        leaseAtDispatch.push({ type: action.type, leased: hasChatInterestLease('agent-1') });
+      }
+      return action;
+    });
+
+    const view = render(ChatPanel, {
+      props: { workspace, agentId: 'agent-1', isActive: true },
+    });
+
+    expect(leaseAtDispatch).toEqual([
+      { type: 'chatState/initializeChatRequested', leased: true },
+      { type: 'unreadTracking/markAgentAsViewed', leased: true },
+    ]);
+    expect(chatInterestLeaseCount('agent-1')).toBe(1);
+
+    view.unmount();
+    expect(chatInterestLeaseCount('agent-1')).toBe(0);
+  });
+
+  it('reference-counts two panels and releases only after the final panel closes', () => {
+    const first = render(ChatPanel, {
+      props: { workspace, agentId: 'agent-1', isActive: true },
+    });
+    const second = render(ChatPanel, {
+      props: { workspace, agentId: 'agent-1', isActive: true },
+    });
+
+    expect(chatInterestLeaseCount('agent-1')).toBe(2);
+    first.unmount();
+    expect(chatInterestLeaseCount('agent-1')).toBe(1);
+    second.unmount();
+    expect(chatInterestLeaseCount('agent-1')).toBe(0);
+  });
+
+  it('transfers later active-agent interest once and releases the current lease on destroy', async () => {
+    const releasedAgents: string[] = [];
+    const replacementLeaseAtRelease: boolean[] = [];
+    const stopListening = onLastChatInterestLeaseReleased((releasedAgentId) => {
+      releasedAgents.push(releasedAgentId);
+      if (releasedAgentId === 'agent-1') {
+        replacementLeaseAtRelease.push(hasChatInterestLease('agent-2'));
+      }
+    });
+    try {
+      const view = render(ChatPanel, {
+        props: { workspace, agentId: 'agent-1', isActive: true },
+      });
+
+      await view.rerender({ workspace, agentId: 'agent-2', isActive: true });
+      await waitFor(() => expect(chatInterestLeaseCount('agent-2')).toBe(1));
+      expect(chatInterestLeaseCount('agent-1')).toBe(0);
+      expect(releasedAgents).toEqual(['agent-1']);
+      expect(replacementLeaseAtRelease).toEqual([true]);
+
+      await view.rerender({ workspace, agentId: 'agent-2', isActive: true });
+      expect(chatInterestLeaseCount('agent-2')).toBe(1);
+      expect(releasedAgents).toEqual(['agent-1']);
+
+      view.unmount();
+      expect(chatInterestLeaseCount('agent-2')).toBe(0);
+      expect(releasedAgents).toEqual(['agent-1', 'agent-2']);
+    } finally {
+      stopListening();
+    }
+  });
+
+  it('does not release a lease when an inactive panel is destroyed before acquisition', () => {
+    const releasedAgents: string[] = [];
+    const stopListening = onLastChatInterestLeaseReleased((releasedAgentId) => {
+      releasedAgents.push(releasedAgentId);
+    });
+    try {
+      const view = render(ChatPanel, {
+        props: { workspace, agentId: 'agent-1', isActive: false },
+      });
+
+      expect(chatInterestLeaseCount('agent-1')).toBe(0);
+      view.unmount();
+      expect(releasedAgents).toEqual([]);
+    } finally {
+      stopListening();
+    }
   });
 
   it('does not sync multi-panel context from inactive cached ChatPanel instances', async () => {

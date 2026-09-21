@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import ActiveWorkspacesCard from './cards/ActiveWorkspacesCard.svelte';
   import AllWorkspacesCard from './cards/AllWorkspacesCard.svelte';
@@ -308,7 +309,9 @@
                   side="bottom"
                   sideOffset={4}
                 >
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     type="button"
                     class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground"
                     onclick={() => appStore.dispatch(setShowCreateModal(true))}
@@ -316,7 +319,7 @@
                     data-spaces-create
                   >
                     <Fa icon={faPlus} size="xs" />
-                  </button>
+                  </Button>
                 </Tooltip>
                 <Menu.Root bind:open={spacesOptionsOpen}>
                   <Menu.Trigger>
@@ -326,17 +329,19 @@
                         side="bottom"
                         sideOffset={4}
                       >
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           {...props}
                           type="button"
-                          class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
+                          class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-muted/50 focus-visible:text-foreground data-[state=open]:bg-muted/50 data-[state=open]:text-foreground"
                           aria-label={m.layout_sidebarPanel_workspaceListOptions_tooltip()}
                           aria-haspopup="menu"
                           aria-expanded={spacesOptionsOpen}
                           data-spaces-options-trigger
                         >
                           <KebabIcon class="size-3.5" />
-                        </button>
+                        </Button>
                       </Tooltip>
                     {/snippet}
                   </Menu.Trigger>
@@ -379,7 +384,9 @@
                   side="bottom"
                   sideOffset={4}
                 >
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     class="w-8 h-8 flex items-center justify-center rounded-md outline-none transition-colors cursor-pointer focus-visible:bg-muted/50 focus-visible:text-foreground {searchVisible
                       ? 'text-foreground bg-muted/50'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}"
@@ -391,7 +398,7 @@
                     data-combined-panel-search-toggle
                   >
                     <Fa icon={faMagnifyingGlass} size="xs" />
-                  </button>
+                  </Button>
                 </Tooltip>
               </div>
             </div>
@@ -449,13 +456,16 @@
             {/if}
           </div>
           <div class="flex items-center gap-0.5 shrink-0">
-            <button
-              class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+            <Button
+              variant="ghost"
+              size="icon-compact"
+              iconOnly
+              class="text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
               onclick={() => appStore.dispatch(closePanel())}
               aria-label={m.layout_sidebarPanel_close_ariaLabel()}
             >
               <Fa icon={faXmark} size="xs" />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -515,7 +525,7 @@
     transition: none;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     [data-panel-shell] {
       transition: none;
     }
@@ -570,7 +580,7 @@
       opacity var(--motion-standard) var(--ease-standard);
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .combined-panel-spaces,
     .combined-panel-divider {
       transition-duration: 0ms;

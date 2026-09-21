@@ -101,25 +101,25 @@ export async function resolveInterruptedAgents(
 
     const result = await appClient.agents.resolveInterrupted(params);
     logger.info('Resolved interrupted agents', { result });
-    import('svelte-sonner')
-      .then(({ toast }) => {
+    import('$lib/components/patterns/notify')
+      .then(({ notify }) => {
         const resumed = result.resumed.length;
         const abandoned = result.abandoned.length;
         const failed = result.failed.length;
         if (resumed > 0)
-          toast.success(
+          notify.success(
             resumed === 1
               ? m.layout_appShell_resumedAgents_one({ count: resumed })
               : m.layout_appShell_resumedAgents_many({ count: resumed }),
           );
         if (abandonOnly && abandoned > 0)
-          toast.info(
+          notify.info(
             abandoned === 1
               ? m.layout_appShell_abandonedAgents_one({ count: abandoned })
               : m.layout_appShell_abandonedAgents_many({ count: abandoned }),
           );
         if (failed > 0)
-          toast.error(
+          notify.error(
             failed === 1
               ? m.layout_appShell_resolveFailedCount_one({ count: failed })
               : m.layout_appShell_resolveFailedCount_many({ count: failed }),
@@ -128,9 +128,9 @@ export async function resolveInterruptedAgents(
       .catch(() => {});
   } catch (error) {
     logger.error('Failed to resolve interrupted agents', { error });
-    import('svelte-sonner')
-      .then(({ toast }) => {
-        toast.error(
+    import('$lib/components/patterns/notify')
+      .then(({ notify }) => {
+        notify.error(
           abandonOnly
             ? m.layout_appShell_abandonInterruptedFailed_error()
             : m.layout_appShell_resolveInterruptedFailed_error(),

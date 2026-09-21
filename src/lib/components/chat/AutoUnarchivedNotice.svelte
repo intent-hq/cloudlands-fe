@@ -22,7 +22,7 @@
 
 <div class="auto-unarchived-notice my-4 flex w-full items-center gap-3" role="status" {title}>
   <div class="h-px min-w-4 flex-1 bg-border"></div>
-  <span class="flex min-w-0 shrink items-start gap-2 text-center text-xs text-muted-foreground">
+  <span class="flex min-w-0 shrink items-start gap-2 text-left text-xs text-muted-foreground">
     <Fa icon={faBoxOpen} class="mt-0.5 h-3 w-3 flex-shrink-0" />
     <span class="min-w-0 break-words">{m.chat_autoUnarchivedNotice_unarchived_label()}</span>
   </span>

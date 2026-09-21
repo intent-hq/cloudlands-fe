@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import type { Note, TaskStatus } from '$shared/types';
   import { ListContainer, ListItem } from '$lib/components/ui/list';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -28,6 +30,7 @@
   import {
     type AvatarState,
     getAvatarStateForSession,
+    isSessionRunning,
   } from '$features/agent/components/agent-avatar/avatar-state';
   import { selectAgentSessionsByIds } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
@@ -49,8 +52,8 @@
   } from '$features/layout/panel-layout-adapter';
 
   import { deleteNote, createNote, updateNoteTitle } from '$features/notes/notes-write-service';
-  import { toast } from 'svelte-sonner';
-  import { withToastCountdown } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
+  import { withToastCountdown } from '$lib/components/patterns/notify';
   import { store as appStore } from '$store/renderer/store';
   import ResourceIconTile from '$lib/components/shared/ResourceIconTile.svelte';
   import { isCmdClickModifier } from '$shared/utils/link-helpers';
@@ -202,7 +205,7 @@
           void deleteNote(workspaceId, note.id);
           closeContextMenu();
 
-          toast.warning(
+          notify.warning(
             m.layout_noteTab_deletedNote_toast({ title: noteTitle }),
             withToastCountdown(
               {
@@ -372,10 +375,12 @@
       const agent = agentSessionsById.get(agentId);
       if (!agent) continue;
 
-      // Shared precedence: a live turn with an unresolved tool is still running,
-      // so tool-executing agents stay visible here instead of dropping out.
+      // Shared running test: a live turn with an unresolved tool is still running,
+      // so tool-executing agents stay visible here instead of dropping out. The
+      // avatar state itself may outrank `running` (e.g. `question`), so it is
+      // not used as the visibility gate.
+      if (!isSessionRunning(agent)) continue;
       const state = getAvatarStateForSession(agent);
-      if (state !== 'running') continue;
 
       // Get specialist from agent metadata
       const specialistId = agent.metadata?.specialist || agent.agentMetadata?.specialist;
@@ -414,14 +419,15 @@
 
 <div class={cn('w-full flex flex-col', className)}>
   {#if onCreateNote}
-    <button
+    <Button
+      variant="ghost"
       onclick={onCreateNote}
       class="-mt-1 mb-2 text-muted-foreground hover:text-foreground p-1 cursor-pointer transition-colors flex items-center gap-1 text-xs"
       title={m.workspace_notesPanel_newNote_tooltip()}
     >
       <Fa icon={faPlus} size="xs" />
       <span>{m.workspace_notesPanel_attachContext_label()}</span>
-    </button>
+    </Button>
   {/if}
 
   {#if loading}
@@ -475,41 +481,32 @@
             ondblclick={(e) => handleDoubleClick(note, e)}
             oncontextmenu={(e) => handleContextMenu(e, note)}
             class={cn(
-              'relative w-full transition-all duration-150 flex items-center group/note min-w-0',
+              'note-row relative w-full transition-[opacity,border-color,border-top-width] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none flex items-center group/note min-w-0',
               isDragging && 'opacity-50',
               isDragOver && 'border-t-2 border-accent',
             )}
           >
             {#if editingNoteId === note.id}
-              <!-- Inline edit mode - matches ListItem sm size styling with active state -->
-              {@const leftIndent = depth * Math.round((indentSize * 16) / 22)}
+              <!-- Match the ListItem title and icon columns while editing. -->
+              {@const leftIndent = depth * indentSize}
               <div
                 class="relative z-10 flex items-center gap-2 rounded-md px-2 py-0.5 text-foreground"
                 style="margin-left: {leftIndent}px; width: calc(100% - {leftIndent}px);"
               >
-                {#if note?.metadata?.task?.status}
-                  <TaskStatusIcon
-                    status={hasChildrenStatus || (note.metadata!.task!.status as TaskStatus)}
-                    size={14}
-                  />
-                {:else if hasTasks}
-                  {@const size = 14}
-                  {@const strokeWidth = 2.5}
-                  {@const radius = (size - strokeWidth) / 2}
-                  {@const circumference = 2 * Math.PI * radius}
-                  {@const completedPctNorm = taskStats.completed / taskStats.total}
-                  {@const completedOffset = circumference * (1 - completedPctNorm)}
-                  <svg width={size} height={size} class="transform -rotate-90 shrink-0">
-                    <circle
-                      cx={size / 2}
-                      cy={size / 2}
-                      r={radius}
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width={strokeWidth}
-                      class="text-ghost"
+                <div class="flex w-(--row-icon-box-regular) shrink-0 items-center justify-center">
+                  {#if note?.metadata?.task?.status}
+                    <TaskStatusIcon
+                      status={hasChildrenStatus || (note.metadata!.task!.status as TaskStatus)}
+                      size={14}
                     />
-                    {#if taskStats.completed > 0}
+                  {:else if hasTasks}
+                    {@const size = 14}
+                    {@const strokeWidth = 2.5}
+                    {@const radius = (size - strokeWidth) / 2}
+                    {@const circumference = 2 * Math.PI * radius}
+                    {@const completedPctNorm = taskStats.completed / taskStats.total}
+                    {@const completedOffset = circumference * (1 - completedPctNorm)}
+                    <svg width={size} height={size} class="transform -rotate-90 shrink-0">
                       <circle
                         cx={size / 2}
                         cy={size / 2}
@@ -517,39 +514,50 @@
                         fill="none"
                         stroke="currentColor"
                         stroke-width={strokeWidth}
-                        stroke-dasharray={circumference}
-                        stroke-dashoffset={completedOffset}
-                        stroke-linecap="round"
-                        class="text-emerald-500"
+                        class="text-ghost"
                       />
-                    {/if}
-                  </svg>
-                {:else}
-                  <ResourceIconTile kind="note" />
-                {/if}
-                <input
-                  bind:this={editInputRef}
+                      {#if taskStats.completed > 0}
+                        <circle
+                          cx={size / 2}
+                          cy={size / 2}
+                          r={radius}
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width={strokeWidth}
+                          stroke-dasharray={circumference}
+                          stroke-dashoffset={completedOffset}
+                          stroke-linecap="round"
+                          class="text-emerald-500"
+                        />
+                      {/if}
+                    </svg>
+                  {:else}
+                    <ResourceIconTile kind="note" />
+                  {/if}
+                </div>
+                <Input
+                  bind:ref={editInputRef}
                   type="text"
                   bind:value={editingValue}
                   onblur={saveEdit}
                   onkeydown={handleEditKeydown}
-                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none bg-transparent text-sm outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  class="inline-edit-input relative z-10 min-w-0 flex-1 border-none px-0 bg-transparent type-body font-normal outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
             {:else if note?.metadata?.task?.status}
               <!-- Task note with status - show TaskStatusIcon -->
               {@const activeAgents = getActiveAgentsForNote(note)}
-              <div class="relative flex-1 w-full flex items-center gap-1">
+              <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
-                  iconClass="text-ghost"
+                  iconClass="relative w-(--row-icon-box-regular) text-ghost"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text"
+                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-ui px-1 py-0"
+                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
@@ -560,20 +568,21 @@
                       status={hasChildrenStatus || (note.metadata!.task!.status as TaskStatus)}
                       size={14}
                     />
+                    {#if isUnread}
+                      <span
+                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        title={m.workspace_notesPanel_unreadChanges_tooltip()}
+                      ></span>
+                    {/if}
                   {/snippet}
-                  {#if isUnread}
-                    <span
-                      class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
-                    ></span>
-                  {/if}
                 </ListItem>
 
                 <!-- Show active agents working on this note -->
                 {#if activeAgents.length > 0}
                   <div class="flex items-center gap-0.5 pr-1 -space-x-1">
                     {#each activeAgents.slice(0, 3) as { agentId, state, onClick, specialist } (agentId)}
-                      <button
+                      <Button
+                        variant="ghost"
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
@@ -581,7 +590,7 @@
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
                         <AgentAvatarWithState {agentId} variant="compact" {state} {specialist} />
-                      </button>
+                      </Button>
                     {/each}
                     {#if activeAgents.length > 3}
                       <span
@@ -604,16 +613,16 @@
               {@const inProgressPctNorm = taskStats.inProgress / taskStats.total}
               {@const completedOffset = circumference * (1 - completedPctNorm)}
               {@const inProgressOffset = circumference * (1 - inProgressPctNorm)}
-              <div class="relative flex-1 w-full flex">
+              <div class="relative flex w-full min-w-0 flex-1">
                 <ListItem
-                  iconClass="text-ghost"
+                  iconClass="relative w-(--row-icon-box-regular) text-ghost"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text"
+                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-ui px-1 py-0"
+                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
@@ -655,7 +664,7 @@
                             stroke-dasharray={circumference}
                             stroke-dashoffset={inProgressOffset}
                             stroke-linecap="round"
-                            class="text-primary"
+                            class="text-primary-ink"
                             style="transform-origin: center; transform: rotate({completedPctNorm *
                               360}deg);"
                           />
@@ -677,26 +686,27 @@
                         {/if}
                       </svg>
                     </div>
+                    {#if isUnread}
+                      <span
+                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        title={m.workspace_notesPanel_unreadChanges_tooltip()}
+                      ></span>
+                    {/if}
                   {/snippet}
-                  {#if isUnread}
-                    <span
-                      class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
-                    ></span>
-                  {/if}
                 </ListItem>
               </div>
             {:else}
               {@const activeAgents = getActiveAgentsForNote(note)}
-              <div class="relative flex-1 w-full flex items-center gap-1">
+              <div class="relative flex w-full min-w-0 flex-1 items-center gap-1">
                 <ListItem
+                  iconClass="relative w-(--row-icon-box-regular)"
                   title={getNoteTitle(note)}
-                  titleClass="cursor-text"
+                  titleClass="cursor-text type-body font-normal leading-(--text-body-line-height)"
                   active={selectedNoteId === note.id}
                   indent={depth}
                   {indentSize}
                   badge={isCollapsed && hasChildren ? childNotes.length : undefined}
-                  badgeClass="text-ui px-1 py-0"
+                  badgeClass="type-caption font-normal tabular-nums text-muted-foreground px-1 py-0"
                   onclick={(event) => onOpenNote?.(note.id, event)}
                   onkeydown={(event) =>
                     handleModifiedEnter(event, (keyEvent) => onOpenNote?.(note.id, keyEvent))}
@@ -704,20 +714,21 @@
                 >
                   {#snippet iconSnippet()}
                     <ResourceIconTile kind="note" />
+                    {#if isUnread}
+                      <span
+                        class="absolute top-0 right-0 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
+                        title={m.workspace_notesPanel_unreadChanges_tooltip()}
+                      ></span>
+                    {/if}
                   {/snippet}
-                  {#if isUnread}
-                    <span
-                      class="absolute top-0 -left-1 w-1.5 h-1.5 bg-background border border-muted-foreground/50 rounded-full"
-                      title={m.workspace_notesPanel_unreadChanges_tooltip()}
-                    ></span>
-                  {/if}
                 </ListItem>
 
                 <!-- Show active agents working on this note -->
                 {#if activeAgents.length > 0}
                   <div class="flex items-center gap-0.5 pr-1 -space-x-1">
                     {#each activeAgents.slice(0, 3) as { agentId, state, onClick, specialist } (agentId)}
-                      <button
+                      <Button
+                        variant="ghost"
                         type="button"
                         class="cursor-pointer hover:opacity-80 transition-opacity"
                         onclick={onClick}
@@ -725,7 +736,7 @@
                         title={m.workspace_notesPanel_openAgent_tooltip()}
                       >
                         <AgentAvatarWithState {agentId} variant="compact" {state} {specialist} />
-                      </button>
+                      </Button>
                     {/each}
                     {#if activeAgents.length > 3}
                       <span
@@ -747,7 +758,8 @@
                 : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
             ></span>
             {#if hasChildren}
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 class="shrink-0 p-1 mr-1 text-muted-foreground hover:text-muted-foreground transition-colors cursor-pointer opacity-0 group-hover/note:opacity-100"
                 onclick={(e) => toggleCollapse(note.id as string, e)}
@@ -756,12 +768,12 @@
                   : m.workspace_notesPanel_collapse_ariaLabel()}
               >
                 <div
-                  class="transition-transform duration-150 ease-out"
+                  class="transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                   class:rotate-90={isCollapsed}
                 >
                   <Fa icon={faChevronDown} size="10" />
                 </div>
-              </button>
+              </Button>
             {/if}
           </div>
         {/if}
@@ -782,5 +794,15 @@
 <style>
   input.inline-edit-input::selection {
     background: hsl(var(--ring) / 0.3);
+  }
+
+  /* Off-screen rows skip style/layout/paint; the intrinsic size matches the 36px
+     ListItem row so scrollHeight stays stable before a row is first rendered. The
+     clip margin keeps the focus ring and inline-edit outline
+     (-inset-x-2) visible outside the row box under paint containment. */
+  .note-row {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 36px;
+    overflow-clip-margin: 8px;
   }
 </style>

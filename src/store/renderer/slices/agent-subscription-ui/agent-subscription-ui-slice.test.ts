@@ -19,6 +19,7 @@ import {
   selectWokenUpInfo,
   selectCompletionStatus,
   selectSubscriptionSnapshotStatus,
+  selectAgentSubscriptionLane,
 } from './agent-subscription-ui-selectors';
 import type {
   AgentSubscriptionUIState,
@@ -524,6 +525,22 @@ describe('agentSubscriptionUI selectors', () => {
     );
     expect(selectSubscriptionSnapshotStatus.select(stateWith(ready), WS, AGENT)).toBe('ready');
   });
+
+  it.each(['loading', 'failed'] as const)(
+    'keeps an empty agent lane visible while its snapshot is %s',
+    (snapshotStatus) => {
+      const key = makeKey(WS, AGENT);
+      const slice: AgentSubscriptionUIState = {
+        entries: { [key]: { ...emptyEntry, snapshotStatus } },
+      };
+
+      expect(selectAgentSubscriptionLane.select(stateWith(slice), WS, AGENT)).toEqual({
+        visible: true,
+        count: 0,
+        participantAgentIds: [],
+      });
+    },
+  );
 
   it('selectWaitingState returns completed when set', () => {
     const key = makeKey(WS, AGENT);

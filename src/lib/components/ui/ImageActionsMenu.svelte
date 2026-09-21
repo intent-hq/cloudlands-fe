@@ -10,7 +10,8 @@
    */
   import Fa from 'svelte-fa';
   import { faEllipsis } from '@fortawesome/free-solid-svg-icons';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
+  import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import { cn } from '$lib/utils.js';
   import { m } from '$shared/paraglide/messages.js';
@@ -126,7 +127,7 @@
       document.body.removeChild(link);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     } catch {
-      toast.error(m.ui_imageActionsMenu_downloadFailed_error());
+      notify.error(m.ui_imageActionsMenu_downloadFailed_error());
     }
   }
 
@@ -134,9 +135,9 @@
     if (!workspaceFile) return;
     try {
       await writeTextToClipboard(workspaceFile.path);
-      toast.success(m.ui_imageActionsMenu_pathCopied_label());
+      notify.success(m.ui_imageActionsMenu_pathCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 
@@ -144,9 +145,9 @@
     if (!isHttpsImage) return;
     try {
       await writeTextToClipboard(imageUrl);
-      toast.success(m.ui_imageActionsMenu_linkCopied_label());
+      notify.success(m.ui_imageActionsMenu_linkCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 
@@ -177,9 +178,9 @@
       // Clipboard image writes only accept PNG.
       if (blob.type !== 'image/png') blob = await convertToPngBlob(blob);
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      toast.success(m.ui_imageActionsMenu_imageCopied_label());
+      notify.success(m.ui_imageActionsMenu_imageCopied_label());
     } catch {
-      toast.error(m.ui_imageActionsMenu_copyFailed_error());
+      notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
   }
 </script>
@@ -188,13 +189,23 @@
   <Menu.Trigger
     class={cn(
       'flex h-7 w-7 items-center justify-center rounded-md bg-black/60 text-white',
-      'hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring',
+      'hover:bg-black/75',
       triggerClass,
     )}
-    aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
     onclick={(event: MouseEvent) => event.stopPropagation()}
   >
-    <Fa icon={faEllipsis} size="sm" />
+    {#snippet child({ props })}
+      <Button
+        {...props}
+        variant="plain"
+        size="icon-sm"
+        wrapContent={false}
+        active={open}
+        aria-label={m.ui_imageActionsMenu_trigger_ariaLabel()}
+      >
+        <Fa icon={faEllipsis} size="sm" />
+      </Button>
+    {/snippet}
   </Menu.Trigger>
   <Menu.Content class={contentClass} align="end">
     <Menu.Item onSelect={() => void download()}>

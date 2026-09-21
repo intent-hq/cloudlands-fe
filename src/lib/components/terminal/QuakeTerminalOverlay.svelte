@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
   /* eslint-disable max-lines */
   /**
    * QuakeTerminalOverlay - A sleek, Quake-style terminal overlay
@@ -46,6 +47,7 @@
   import SetupScriptBanner from './SetupScriptBanner.svelte';
   import ScriptOutputViewer from './ScriptOutputViewer.svelte';
   import TerminalSidebar from './TerminalSidebar.svelte';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import Fa from 'svelte-fa';
   import {
     faPlus,
@@ -57,7 +59,6 @@
     faPlay,
     faStop,
     faRotateRight,
-    faSpinner,
     faTableColumns,
     faArrowUpRightFromSquare,
     faCircle,
@@ -70,7 +71,7 @@
     isLiveScriptStatus,
     type ScriptStatusKind,
   } from '$features/scripts/utils/script-status';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { rewriteBrowserLinkForDisplay } from '$lib/utils/browser-url-resolution';
   import { resolveBrowserLinkForOpen } from '$lib/utils/browser-link-open';
@@ -192,7 +193,7 @@
       const result = await scriptsClient.detect(workspaceId);
       appStore.dispatch(refreshScripts(workspaceId));
       if (!result.success) {
-        toast.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
+        notify.error(result.error || m.terminal_quakeOverlay_detectFailed_error());
         return;
       }
       const detected = result.detected ?? 0;
@@ -217,13 +218,13 @@
             ? m.terminal_quakeOverlay_detectedNoNew_one({ count: detected })
             : m.terminal_quakeOverlay_detectedNoNew_many({ count: detected });
       if (detected === 0) {
-        toast.info(m.terminal_quakeOverlay_noScriptsDetected_info());
+        notify.info(m.terminal_quakeOverlay_noScriptsDetected_info());
       } else {
-        toast.success(summary);
+        notify.success(summary);
       }
       const skippedRunning = result.skippedRunning ?? [];
       if (skippedRunning.length > 0) {
-        toast.warning(
+        notify.warning(
           skippedRunning.length === 1
             ? m.scripts_detect_skippedRunning_one({ name: skippedRunning[0] })
             : m.scripts_detect_skippedRunning_many({
@@ -253,8 +254,8 @@
     },
     restarting: {
       label: () => m.workspace_devScripts_restarting_label(),
-      dotClass: 'bg-amber-500',
-      textClass: 'text-amber-500',
+      dotClass: 'bg-warning',
+      textClass: 'text-warning-ink',
     },
     idle: {
       label: () => m.terminal_quakeOverlay_status_idle(),
@@ -347,12 +348,12 @@
     try {
       const result = await mutation();
       if (!result.success) {
-        toast.error(result.error || fallbackError);
+        notify.error(result.error || fallbackError);
         return false;
       }
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : fallbackError);
+      notify.error(error instanceof Error ? error.message : fallbackError);
       return false;
     }
   }
@@ -813,7 +814,7 @@
         rows: 24,
       });
       if (!result.success || !result.id) {
-        toast.error(m.terminal_adapter_openFailed_error());
+        notify.error(m.terminal_adapter_openFailed_error());
         return;
       }
       const stale = workspaceId !== createWorkspaceId;
@@ -830,7 +831,7 @@
       if (!$isOpen) appStore.dispatch(openTerminalOverlay(createWorkspaceId, result.id));
       requestAnimationFrame(() => overlayContainer?.focus());
     } catch {
-      toast.error(m.terminal_adapter_openFailed_error());
+      notify.error(m.terminal_adapter_openFailed_error());
     } finally {
       isCreatingTerminal = false;
     }
@@ -1010,7 +1011,7 @@
               <!-- Script name (editable) -->
               <div class="relative inline-flex min-w-0 items-center">
                 {#if isEditingScriptName}
-                  <input
+                  <Input
                     type="text"
                     data-edit-script-header-name
                     bind:value={editedScriptName}
@@ -1044,8 +1045,8 @@
                   <span class="relative z-10 flex-shrink-0 text-xs font-semibold text-green-500"
                     >$</span
                   >
-                  <input
-                    bind:this={editScriptCommandTextarea}
+                  <Input
+                    bind:ref={editScriptCommandTextarea}
                     bind:value={editedScriptCommand}
                     class="inline-edit-input relative z-10 min-w-0 flex-1 border-0 bg-transparent px-0 font-mono text-xs text-muted-foreground outline-none focus:outline-none! focus:ring-0!"
                     placeholder={/* i18n-ignore (shell command example) */ 'npm run dev'}
@@ -1178,7 +1179,7 @@
               <Fa icon={faTerminal} class="w-3.5 h-3.5 text-muted-foreground/75" />
               <div class="relative inline-flex min-w-0 items-center">
                 {#if isEditingHeaderName}
-                  <input
+                  <Input
                     type="text"
                     data-edit-header-terminal
                     bind:value={headerEditValue}
@@ -1335,7 +1336,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class={cn(
-                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none min-w-0 max-w-90 whitespace-nowrap group/tab',
                 'hover:text-foreground hover:bg-muted/80',
                 isActive && 'text-foreground bg-sidebar shadow-sm',
               )}
@@ -1349,7 +1350,7 @@
               <!-- Tab Label (editable) -->
               <div class="relative inline-flex min-w-0 items-center">
                 {#if editingTerminalId === term.id}
-                  <input
+                  <Input
                     type="text"
                     data-edit-terminal={term.id}
                     bind:value={editingValue}
@@ -1379,7 +1380,7 @@
                 variant="plain"
                 size="icon-xs"
                 iconOnly
-                class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                 onclick={(e) => closeTerminal(term.id, e)}
                 aria-label={m.terminal_quakeOverlay_closeTerminal_ariaLabel()}
               >
@@ -1399,7 +1400,7 @@
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               class={cn(
-                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-150 min-w-0 max-w-90 whitespace-nowrap group/tab',
+                'flex items-center gap-1.5 h-full px-2.5 text-sm font-medium text-muted-foreground cursor-pointer transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none min-w-0 max-w-90 whitespace-nowrap group/tab',
                 'hover:text-foreground hover:bg-muted/80',
                 isScriptActive && 'text-foreground bg-sidebar shadow-sm',
               )}
@@ -1430,7 +1431,7 @@
               ></div>
               <div class="relative inline-flex min-w-0 items-center">
                 {#if editingScriptTabId === script.id}
-                  <input
+                  <Input
                     type="text"
                     data-edit-script-tab={script.id}
                     bind:value={editingScriptTabValue}
@@ -1476,7 +1477,7 @@
                   variant="plain"
                   size="icon-xs"
                   iconOnly
-                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-150 cursor-pointer"
+                  class="ml-0.5 p-1 text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover/tab:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none cursor-pointer"
                   data-dismiss-script-tab={script.id}
                   onclick={(event) => dismissPreviouslyRunningTab(script.id, event)}
                   aria-label={m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()}
@@ -1517,7 +1518,7 @@
               disabled={isDetectingScripts}
             >
               {#if isDetectingScripts}
-                <Fa icon={faSpinner} spin size="sm" class="mr-1.5" />
+                <IntentMarkLoader size={14} class="mr-1.5" />
                 {m.terminal_quakeOverlay_detecting_label()}
               {:else}
                 {m.terminal_quakeOverlay_detectScripts_label()}
@@ -1684,7 +1685,7 @@
     pointer-events: none;
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .terminal-panel,
     .terminal-panel.is-visible {
       transition: none;

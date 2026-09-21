@@ -17,10 +17,20 @@
     children: Snippet<[workspaceId: string, active: boolean]>;
   } = $props();
 
-  let retention = $state(createWorkspaceSurfaceRetentionState());
+  let retention = $state(
+    untrack(() =>
+      reconcileWorkspaceSurfaces(createWorkspaceSurfaceRetentionState(), {
+        activeWorkspaceId,
+        openWorkspaceIds,
+        workspaceEntityIds,
+      }),
+    ),
+  );
   let surfacesRef = $state.raw<HTMLDivElement | null>(null);
 
-  $effect(() => {
+  // Reconcile before updating visibility so a cold destination joins the same
+  // render pass instead of leaving every existing surface hidden until an effect.
+  $effect.pre(() => {
     const current = untrack(() => retention);
     const next = reconcileWorkspaceSurfaces(current, {
       activeWorkspaceId,
@@ -56,13 +66,16 @@
     {@const isActive = surface.workspaceId === activeWorkspaceId}
     <div
       class="absolute inset-0"
-      hidden={!isActive}
+      class:opacity-0={!isActive}
+      class:pointer-events-none={!isActive}
       inert={!isActive}
       aria-hidden={!isActive}
       data-retained-workspace-surface={surface.workspaceId}
       data-retained-workspace-active={isActive}
       data-retained-workspace-generation={surface.generation}
     >
+      <!-- Keep retained browser guests in-viewport and paintable for background
+           capture. display:none suspends painting; inert still isolates focus. -->
       {@render children(surface.workspaceId, isActive)}
     </div>
   {/each}

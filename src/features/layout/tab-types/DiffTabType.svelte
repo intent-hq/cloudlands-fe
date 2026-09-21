@@ -36,7 +36,7 @@
     toggleDiffSideBySide,
   } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { isAbsolutePath } from '$lib/utils/path-utils';
   import { m } from '$shared/paraglide/messages.js';
   import { faFile } from '@fortawesome/free-solid-svg-icons';
@@ -88,9 +88,12 @@
     return false;
   }
 
+  // The file-tracking store only covers the primary root; its suffix matching
+  // would pick a primary change with the same trailing path for a
+  // secondary-root diff, so root-scoped tabs skip the store lookups entirely.
   // Find only active (staged/unstaged) changes
   function findActiveChangeByPath(path: string | null): TrackedChange | null {
-    if (!path) return null;
+    if (!path || gitRootId) return null;
     return (
       $ftChanges$.find(
         (c) => matchesPath(c, path) && (c.stage === 'staged' || c.stage === 'unstaged'),
@@ -100,7 +103,7 @@
 
   // Find the most-recent committed-stage entry in the store that carries a commitHash
   function findCommittedChangeByPath(path: string | null): TrackedChange | null {
-    if (!path) return null;
+    if (!path || gitRootId) return null;
     let latest: TrackedChange | null = null;
     let latestTs = -Infinity;
     for (const c of $ftChanges$) {
@@ -128,7 +131,7 @@
   // whose files[] includes this path. Lets TrackedChangeDiffViewer's committed-by-hash branch
   // render HASH^..HASH for files with only committed changes on the current branch.
   function synthesiseCommittedChangeFromCommits(path: string | null): TrackedChange | null {
-    if (!path) return null;
+    if (!path || gitRootId) return null;
     for (const commit of $ftCommits$) {
       if (!commit?.hash) continue;
       if (!commit.files?.some((f) => f?.path && commitFileMatchesPath(f.path, path))) continue;
@@ -230,18 +233,18 @@
       patchLength: hunkPatch.length,
     });
     if (!workspaceId) {
-      toast.error(m.layout_diffTab_noWorkspace_error());
+      notify.error(m.layout_diffTab_noWorkspace_error());
       return;
     }
     const result = await gitClient.stageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
-      toast.success(m.layout_diffTab_hunkStaged_toast());
+      notify.success(m.layout_diffTab_hunkStaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
       appStore.dispatch(refreshRequested(workspaceId, true));
     } else {
-      toast.error(result.error || m.layout_diffTab_stageHunkFailed_error());
+      notify.error(result.error || m.layout_diffTab_stageHunkFailed_error());
     }
   }
 
@@ -252,18 +255,18 @@
       patchLength: hunkPatch.length,
     });
     if (!workspaceId) {
-      toast.error(m.layout_diffTab_noWorkspace_error());
+      notify.error(m.layout_diffTab_noWorkspace_error());
       return;
     }
     const result = await gitClient.unstageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
-      toast.success(m.layout_diffTab_hunkUnstaged_toast());
+      notify.success(m.layout_diffTab_hunkUnstaged_toast());
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
       appStore.dispatch(refreshRequested(workspaceId, true));
     } else {
-      toast.error(result.error || m.layout_diffTab_unstageHunkFailed_error());
+      notify.error(result.error || m.layout_diffTab_unstageHunkFailed_error());
     }
   }
 </script>

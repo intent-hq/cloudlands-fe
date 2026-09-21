@@ -1,8 +1,12 @@
-import { cubicOut } from 'svelte/easing';
-import type { TransitionConfig } from 'svelte/transition';
+import { spring, type ImmediateMotionConfig as TransitionConfig } from '$lib/motion';
+import { prefersReducedMotion } from '$lib/utils/reduced-motion';
 import { beforeFollowBottomMutation, type FollowBottomMutation } from '$lib/utils/smartScroll';
 
-const DURATION_MS = 180;
+const DURATION_MS = spring.moderate.settleMs;
+// Svelte's `transition.stop()` aborts the animation without a terminal tick,
+// so the transition lease also carries a lifetime bound: a full bidirectional
+// reversal plus slack, after which the follower releases it on its own.
+const TRANSITION_LEASE_OPTIONS = { maxHoldMs: DURATION_MS * 2 + 500 };
 // Svelte's runtime completes an absent transition config without creating a
 // Web Animation, although its generated component type excludes undefined.
 const NO_TRANSITION = undefined as unknown as TransitionConfig;
@@ -31,13 +35,6 @@ function cancelActiveMotion(node: HTMLElement): void {
   motion.bottomMutation.settle();
 }
 
-function reducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true
-  );
-}
-
 function numericStyle(style: CSSStyleDeclaration, property: keyof CSSStyleDeclaration): number {
   const value = Number.parseFloat(String(style[property]));
   return Number.isFinite(value) ? value : 0;
@@ -64,7 +61,7 @@ export function captureQueuedMessageRowMotion(node: HTMLElement): () => void {
     const targetHeight = layoutHeight(node);
     const targetOpacity = numericStyle(getComputedStyle(node), 'opacity') || 1;
 
-    if (reducedMotion() || currentHeight <= 0 || targetHeight <= 0 || !node.animate) {
+    if (prefersReducedMotion() || currentHeight <= 0 || targetHeight <= 0 || !node.animate) {
       node.style.height = '';
       node.style.overflow = '';
       bottomMutation.settle();
@@ -72,13 +69,14 @@ export function captureQueuedMessageRowMotion(node: HTMLElement): () => void {
     }
 
     node.style.height = `${currentHeight}px`;
+    const easing = getComputedStyle(node).getPropertyValue('--spring-exit-ease').trim();
     const animation = node.animate(
       [
         { height: `${currentHeight}px`, opacity: currentOpacity },
         { height: `${targetHeight}px`, opacity: Math.min(currentOpacity, targetOpacity, 0.72) },
         { height: `${targetHeight}px`, opacity: targetOpacity },
       ],
-      { duration: DURATION_MS, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' },
+      { duration: spring.moderate.settleMs, ...(easing && { easing }) },
     );
     const motion = { animation, bottomMutation };
     activeMotions.set(node, motion);
@@ -99,17 +97,20 @@ export function queuedMessageRowTransition(
   _params?: undefined,
   options: { direction?: 'in' | 'out' | 'both' } = {},
 ): TransitionConfig {
-  let bottomMutation: FollowBottomMutation | null = beforeFollowBottomMutation(node);
+  let bottomMutation: FollowBottomMutation | null = beforeFollowBottomMutation(
+    node,
+    TRANSITION_LEASE_OPTIONS,
+  );
   let previousT: number | null = null;
   let phase: 'intro' | 'idle' | 'outro' = options.direction === 'out' ? 'outro' : 'intro';
   const acquireBottomMutation = () => {
-    bottomMutation ??= beforeFollowBottomMutation(node);
+    bottomMutation ??= beforeFollowBottomMutation(node, TRANSITION_LEASE_OPTIONS);
   };
   const settleBottomMutation = () => {
     bottomMutation?.settle();
     bottomMutation = null;
   };
-  if (reducedMotion()) {
+  if (prefersReducedMotion()) {
     settleBottomMutation();
     return NO_TRANSITION;
   }
@@ -123,8 +124,8 @@ export function queuedMessageRowTransition(
   const opacity = numericStyle(style, 'opacity') || 1;
 
   return {
-    duration: DURATION_MS,
-    easing: cubicOut,
+    duration: spring.moderate.settleMs,
+    easing: spring.moderate.exit.easing,
     css: (t) =>
       `overflow:hidden;height:${t * height}px;` +
       `padding-top:${t * numericStyle(style, 'paddingTop')}px;` +

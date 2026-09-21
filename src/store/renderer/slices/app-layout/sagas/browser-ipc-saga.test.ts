@@ -35,8 +35,14 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import { PANEL_LAYOUT_STORAGE_KEY_PREFIX } from '../../panel-layout/panel-layout-types';
-import { emptyWorkspaceState, panelLayoutReducer } from '../../panel-layout/panel-layout-slice';
+import {
+  emptyWorkspaceState,
+  panelLayoutReducer as rawPanelLayoutReducer,
+} from '../../panel-layout/panel-layout-slice';
+import { withPanelLayoutInvariants } from '../../panel-layout/panel-layout-invariants.test-helpers';
 import { browserIpcSaga } from './browser-ipc-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const NOW = new Date('2026-07-31T00:00:00.000Z').getTime();
 const TAB = (url: string) => ({
@@ -1400,7 +1406,7 @@ describe('browserIpcSaga', () => {
     await task.toPromise();
   });
 
-  it('marks hidden owned tabs with hidden: true in list replies (monorepo#3045)', async () => {
+  it('lists requested URLs for visible and hidden tabs but omits them for legacy tabs', async () => {
     const task = start();
     state = {
       panelLayout: {
@@ -1413,8 +1419,15 @@ describe('browserIpcSaga', () => {
                     id: 'browser-visible',
                     type: 'browser',
                     browserUrl: 'http://a/',
+                    browserRequestedUrl: 'http://daemon.localhost:3000/',
                     title: 'A',
                     ownerAgentId: 'agent-1',
+                  },
+                  {
+                    id: 'browser-legacy',
+                    type: 'browser',
+                    browserUrl: 'http://legacy/',
+                    title: 'Legacy',
                   },
                 ],
                 activeTabId: null,
@@ -1425,6 +1438,7 @@ describe('browserIpcSaga', () => {
                 id: 'browser-hidden',
                 type: 'browser',
                 browserUrl: 'http://b/',
+                browserRequestedUrl: 'http://daemon.localhost:4000/',
                 title: 'B',
                 ownerAgentId: 'agent-1',
               },
@@ -1442,13 +1456,21 @@ describe('browserIpcSaga', () => {
         {
           tabId: 'browser-visible',
           url: 'http://a/',
+          requestedUrl: 'http://daemon.localhost:3000/',
           title: 'A',
           closable: true,
           ownerAgentId: 'agent-1',
         },
         {
+          tabId: 'browser-legacy',
+          url: 'http://legacy/',
+          title: 'Legacy',
+          closable: true,
+        },
+        {
           tabId: 'browser-hidden',
           url: 'http://b/',
+          requestedUrl: 'http://daemon.localhost:4000/',
           title: 'B',
           closable: true,
           ownerAgentId: 'agent-1',
@@ -1679,6 +1701,48 @@ describe('browserIpcSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  it.each(['tab-a', 'missing', undefined])(
+    'routes recovery only for an existing requested browser tab: %s',
+    async (recoverTabId) => {
+      const dispatch = vi.fn();
+      state = {
+        panelLayout: {
+          byWorkspaceId: {
+            'ws-a': {
+              panels: { one: { tabs: [{ id: 'tab-a', ...TAB('http://a/') }] } },
+            },
+          },
+        },
+      };
+      const task = start(dispatch);
+      try {
+        await emit(
+          { workspaceId: 'ws-a', requestId: 'req-1', recoverTabId },
+          'browser:list-tabs-request',
+        );
+        expect(dispatch.mock.calls).toEqual(
+          recoverTabId === 'tab-a'
+            ? [
+                [
+                  {
+                    type: 'tabState/requestBrowserTabRecovery',
+                    payload: ['tab-a', 'req-1'],
+                  },
+                ],
+              ]
+            : [],
+        );
+        expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('browser:list-tabs-response', {
+          requestId: 'req-1',
+          tabs: [{ tabId: 'tab-a', url: 'http://a/', title: 'Browser', closable: true }],
+        });
+      } finally {
+        task.cancel();
+        await task.toPromise();
+      }
+    },
+  );
 
   it('replies with an empty tab list for a held workspace with no browser tabs', async () => {
     const task = start();
@@ -1938,6 +2002,7 @@ describe('browserIpcSaga', () => {
         panelLayout: { byWorkspaceId: {} },
         tabState: { workspaceStacks: [[wsId]] },
         workspaceAgents: { byWorkspaceId: {} },
+        workspace: { workspaces: createCollection('id') },
       };
     };
     const seedStorage = (wsId: string, tabs: unknown[]) => {
@@ -2046,7 +2111,11 @@ describe('browserIpcSaga', () => {
       // workspaceStacks — staying silent times the request out as "renderer
       // did not respond" (monorepo#2789 live regression in v2.64.0).
       const { task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       seedStorage('ws-routed-1', [
         { id: 'browser-1', type: 'browser', title: 'A', browserUrl: 'http://a/', closable: true },
       ]);
@@ -2070,7 +2139,11 @@ describe('browserIpcSaga', () => {
 
     it('stays silent when the route is /workspace/new and the workspace is otherwise unhosted', async () => {
       const { actions, task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       window.history.pushState({}, '', '/workspace/new');
       try {
         await emit({ workspaceId: 'new', requestId: 'req-r2' }, 'browser:list-tabs-request');
@@ -2086,7 +2159,11 @@ describe('browserIpcSaga', () => {
 
     it('stays silent for a non-routed workspace when the window is routed to a different one', async () => {
       const { actions, task } = startWithReducer();
-      state = { panelLayout: { byWorkspaceId: {} }, tabState: { workspaceStacks: [] } };
+      state = {
+        panelLayout: { byWorkspaceId: {} },
+        tabState: { workspaceStacks: [] },
+        workspace: { workspaces: createCollection('id') },
+      };
       window.history.pushState({}, '', '/workspace/ws-routed-other');
       try {
         await emit(

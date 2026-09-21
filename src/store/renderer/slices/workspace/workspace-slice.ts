@@ -1,4 +1,4 @@
-import type { PullRequestInfo, Workspace } from '$shared/types';
+import type { PullRequestInfo, Workspace, WorkspaceDiffSummary } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
 import { shallowEqual } from 'fast-equals';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -10,6 +10,7 @@ import {
   getItem,
   type Collection,
   removeItem,
+  replaceItem,
   updateItem,
   upsertItem,
 } from '@augmentcode/themis/utils/collections/collection-utils';
@@ -50,6 +51,17 @@ export type WorkspaceState = {
   pendingArchives: Record<string, boolean>;
   pendingCreations: Record<string, Workspace>;
   pendingTitleMutations: Record<string, PendingWorkspaceTitleMutation>;
+  /**
+   * Workspaces whose stored row was hydrated from `workspace.get` at least
+   * once (`setWorkspaceEntity(..., { detailRead: true })`). `workspace.list`
+   * rows are slim (PROTOCOL §5.1: `setupScript`, `contextLinks`, `diskUsage`,
+   * `diffSummary.files`, … are detail-only), so an absent detail field on a
+   * row without this mark means "not fetched yet", not "none". Detail-only
+   * fields are carried forward across list refreshes (see
+   * `mergeWorkspaceEnrichment`), so the mark stays valid until the row leaves
+   * the store.
+   */
+  detailHydrated: Record<string, true>;
   recency: WorkspaceRecencyState;
 };
 
@@ -64,6 +76,7 @@ export const initialState: WorkspaceState = {
   pendingArchives: {},
   pendingCreations: {},
   pendingTitleMutations: {},
+  detailHydrated: {},
   recency: defaultWorkspaceRecencyState,
 };
 
@@ -112,10 +125,21 @@ export const clearPendingCreation = createAction<[wsId: string]>('workspace/clea
 
 export const resetWorkspaceState = createAction('workspace/resetWorkspaceState');
 
+export type WorkspaceEntityUpsertOptions = {
+  /**
+   * The row is an authoritative `workspace.get` read: detail-only fields and
+   * the `pullRequests` pool are taken as served (`workspace.get` never slims
+   * and serves the full merged pool, PROTOCOL §5.1), and the row is marked
+   * detail-hydrated. Leave unset for `workspace.update`-style projections and
+   * delta upserts, which keep the carry-forward / union semantics.
+   */
+  detailRead?: boolean;
+};
+
 /** Store a full workspace entity by ID. */
-export const setWorkspaceEntity = createAction<[workspace: Workspace]>(
-  'workspace/setWorkspaceEntity',
-);
+export const setWorkspaceEntity = createAction<
+  [workspace: Workspace, options?: WorkspaceEntityUpsertOptions]
+>('workspace/setWorkspaceEntity');
 
 /** Merge partial changes into an existing workspace entity. No-op if workspace not found. */
 export const updateWorkspaceEntity = createAction<[wsId: string, changes: Partial<Workspace>]>(
@@ -213,39 +237,98 @@ function unionPullRequests(
 }
 
 /**
- * `pullRequestsMode` picks the merge semantics for the BE-owned `pullRequests`
- * pool: `"replace"` for the authoritative `workspace.list` emit path (the
- * daemon serves the merged pool there, so a non-empty incoming list also
- * reconciles stale entries away), `"union"` for non-authoritative upserts
- * (`workspace.get` projections / delta upserts carry the unmerged stored
- * list — see {@link unionPullRequests}).
+ * `workspace.list` rows serve `diffSummary.files` as `[]` (PROTOCOL §5.1 —
+ * the per-file list is detail-only). Keep the file list a `workspace.get`
+ * already hydrated when the incoming summary is the same snapshot
+ * (`updatedAt` matches) and carries no files; a newer snapshot wins as-is.
+ */
+function mergeDiffSummary(
+  existing: WorkspaceDiffSummary | undefined,
+  incoming: WorkspaceDiffSummary | undefined,
+): WorkspaceDiffSummary | undefined {
+  if (!incoming) return existing;
+  if (
+    existing &&
+    incoming.files.length === 0 &&
+    existing.files.length > 0 &&
+    existing.updatedAt === incoming.updatedAt
+  ) {
+    return { ...incoming, files: existing.files };
+  }
+  return incoming;
+}
+
+/**
+ * `mode` picks the merge semantics for the BE-owned `pullRequests` pool and
+ * the detail-only fields:
+ * - `"replace"` — the authoritative `workspace.list` emit path: a non-empty
+ *   incoming pool replaces the stored one (the daemon serves the merged pool
+ *   there, so stale entries reconcile away);
+ * - `"union"` — non-authoritative upserts (`workspace.update`-style
+ *   projections / delta upserts carry the unmerged stored list — see
+ *   {@link unionPullRequests});
+ * - `"detail"` — an authoritative `workspace.get` read: the pool is taken as
+ *   served (full merged pool, uncapped, never `pullRequestsTotal`; an omitted
+ *   pool means none) and so are the detail-only fields and the optional PR
+ *   fields (`activePullRequest`, `prNumber`, `prStatus`, `prUrl` — omitted
+ *   when absent, PROTOCOL §5.1, so an omission clears a removed PR).
+ *
+ * Detail-only fields (`setupScript`, `contextLinks`, `diskUsage`,
+ * `diffSummary.files` — absent from slim `workspace.list` rows, PROTOCOL
+ * §5.1) are carried forward from the stored row when a `"replace"` /
+ * `"union"` row omits them, so a list refresh never undoes a `workspace.get`
+ * hydration; only a `"detail"` read can clear them.
  */
 function mergeWorkspaceEnrichment(
   existing: Workspace | undefined,
   incoming: Workspace,
-  pullRequestsMode: 'replace' | 'union' = 'replace',
+  mode: 'replace' | 'union' | 'detail' = 'replace',
 ): Workspace {
   const normalized = normalizeWorkspacePaths(incoming);
   if (!existing) {
     return normalized;
   }
 
+  if (mode === 'detail') {
+    return {
+      ...normalized,
+      agentSummary: normalized.agentSummary ?? existing.agentSummary,
+      pullRequestsTotal: undefined,
+    };
+  }
+
   const hasIncomingPullRequests =
     normalized.pullRequests !== undefined && normalized.pullRequests.length > 0;
+  const pullRequests =
+    mode === 'union'
+      ? unionPullRequests(existing.pullRequests, normalized.pullRequests)
+      : hasIncomingPullRequests
+        ? normalized.pullRequests
+        : existing.pullRequests;
+  // The list row's `pullRequestsTotal` describes the capped pool it carries;
+  // a write-path projection never carries one, so in union mode keep the
+  // stored total and drop it once the merged pool reaches it.
+  const pullRequestsTotal =
+    mode === 'union' || !hasIncomingPullRequests
+      ? existing.pullRequestsTotal
+      : normalized.pullRequestsTotal;
 
   return {
     ...normalized,
     agentSummary: normalized.agentSummary ?? existing.agentSummary,
     activePullRequest: normalized.activePullRequest ?? existing.activePullRequest,
-    pullRequests:
-      pullRequestsMode === 'union'
-        ? unionPullRequests(existing.pullRequests, normalized.pullRequests)
-        : hasIncomingPullRequests
-          ? normalized.pullRequests
-          : existing.pullRequests,
+    pullRequests,
+    pullRequestsTotal:
+      pullRequestsTotal !== undefined && pullRequestsTotal > (pullRequests?.length ?? 0)
+        ? pullRequestsTotal
+        : undefined,
     prNumber: normalized.prNumber ?? existing.prNumber,
     prStatus: normalized.prStatus ?? existing.prStatus,
     prUrl: normalized.prUrl ?? existing.prUrl,
+    setupScript: normalized.setupScript ?? existing.setupScript,
+    contextLinks: normalized.contextLinks ?? existing.contextLinks,
+    diskUsage: normalized.diskUsage ?? existing.diskUsage,
+    diffSummary: mergeDiffSummary(existing.diffSummary, normalized.diffSummary),
   };
 }
 
@@ -290,6 +373,22 @@ function clearBooleanMapEntry(map: Record<string, boolean>, key: string): Record
   return rest;
 }
 
+function pruneDetailHydrated(
+  map: Record<string, true>,
+  keep: (wsId: string) => boolean,
+): Record<string, true> {
+  const next: Record<string, true> = {};
+  let removed = false;
+  for (const wsId of Object.keys(map)) {
+    if (keep(wsId)) {
+      next[wsId] = true;
+    } else {
+      removed = true;
+    }
+  }
+  return removed ? next : map;
+}
+
 function clearPendingCreationEntry(
   map: Record<string, Workspace>,
   key: string,
@@ -319,7 +418,7 @@ function buildVisibleWorkspaceState(
     }
 
     // Rows carrying the daemon's delete-grace-window deadline (PROTOCOL §5.1
-    // `pendingDeleteAt`, v6.7+) stay hidden: the daemon still serves them while
+    // `pendingDeleteAt`) stay hidden: the daemon still serves them while
     // the window runs, but the FE soft-hid them at delete-request time.
     if (workspace.pendingDeleteAt) {
       continue;
@@ -396,6 +495,9 @@ workspaceReducer.with(replaceWorkspaceList, (state, { payload: [workspaces] }) =
     ...state,
     workspaces: nextVisibleState.workspaces,
     pendingCreations: nextVisibleState.pendingCreations,
+    detailHydrated: pruneDetailHydrated(state.detailHydrated, (wsId) =>
+      Boolean(getWorkspaceById(nextVisibleState.workspaces, wsId)),
+    ),
   };
 });
 workspaceReducer.with(markWorkspacePendingDeletion, (state, { payload: [wsId] }) => {
@@ -425,7 +527,7 @@ workspaceReducer.with(clearPendingCreation, (state, { payload: [wsId] }) => {
   if (next === state.pendingCreations) return state;
   return { ...state, pendingCreations: next };
 });
-workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
+workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace, options] }) => {
   if (state.pendingDeletions[workspace.id]) return state;
   // Hide rows carrying the daemon delete-grace-window deadline (see
   // buildVisibleWorkspaceState); drop the entity if it was still visible.
@@ -435,16 +537,29 @@ workspaceReducer.with(setWorkspaceEntity, (state, { payload: [workspace] }) => {
     return { ...state, workspaces: removeItem(state.workspaces, workspace.id) };
   }
   const existing = getWorkspaceById(state.workspaces, workspace.id);
-  // Entity upserts carry per-workspace `workspace.get`/`workspace.update`
+  const detailRead = options?.detailRead === true;
+  // Plain entity upserts carry per-workspace `workspace.update`-style
   // projections whose `pullRequests` is the unmerged stored list (§6.9) —
-  // union it with the current pool instead of replacing.
+  // union it with the current pool instead of replacing. An authoritative
+  // `workspace.get` read (`detailRead`) is applied as served.
   const merged = applyPendingWorkspaceTitle(
     state,
-    mergeWorkspaceEnrichment(existing, workspace, 'union'),
+    mergeWorkspaceEnrichment(existing, workspace, detailRead ? 'detail' : 'union'),
   );
+  // `upsertItem` shallow-merges over the stored item, so a field the detail
+  // read omits would survive it; a detail read replaces the row outright.
+  const workspaces = !existing
+    ? addItem(state.workspaces, merged)
+    : detailRead
+      ? replaceItem(state.workspaces, workspace.id, merged)
+      : upsertItem(state.workspaces, merged);
   return {
     ...state,
-    workspaces: existing ? upsertItem(state.workspaces, merged) : addItem(state.workspaces, merged),
+    workspaces,
+    detailHydrated:
+      detailRead && !state.detailHydrated[workspace.id]
+        ? { ...state.detailHydrated, [workspace.id]: true }
+        : state.detailHydrated,
   };
 });
 workspaceReducer.with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) => {
@@ -537,6 +652,7 @@ workspaceReducer.with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
     ...state,
     workspaces: removeItem(state.workspaces, wsId as Workspace['id']),
     pendingTitleMutations: clearPendingTitleMutation(state.pendingTitleMutations, wsId),
+    detailHydrated: pruneDetailHydrated(state.detailHydrated, (id) => id !== wsId),
   };
 });
 workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
@@ -566,6 +682,7 @@ workspaceReducer.with(workspaceDeleted, (state, { payload: [wsId] }) => {
     pendingArchives: nextPendingArchives,
     pendingCreations: nextPendingCreations,
     pendingTitleMutations: nextPendingTitleMutations,
+    detailHydrated: pruneDetailHydrated(state.detailHydrated, (id) => id !== wsId),
     recency: {
       lastViewedAt: nextLastViewedAt,
     },
@@ -620,5 +737,6 @@ workspaceReducer.with(resetWorkspaceState, (state) => ({
   pendingArchives: {},
   pendingCreations: {},
   pendingTitleMutations: {},
+  detailHydrated: {},
   recency: defaultWorkspaceRecencyState,
 }));

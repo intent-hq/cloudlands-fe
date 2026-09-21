@@ -15,6 +15,7 @@ import {
 } from './panel-layout-tabless';
 import { panelTabsAreEquivalent } from './panel-tab-identity';
 import type { PanelDefaultWidthTier } from '../../../../shared/panel-layout-sizing';
+import type { BrowserTab } from '../../../../shared/types/browser-clients';
 import type {
   WorkspacePanelLayoutState,
   PanelLayoutNode,
@@ -211,6 +212,49 @@ export const selectHiddenTabs = store.createSelector<[wsId: string], PanelTab[]>
   return getItems(ws.hiddenTabs ?? emptyWorkspaceState.hiddenTabs);
 });
 
+export type BrowserTabVisibility = BrowserTab['visibility'];
+export type LayoutBrowserTab = {
+  tab: PanelTab;
+  visibility: BrowserTabVisibility;
+  /**
+   * Layout fact, not a paint guarantee: visible AND its panel's active tab
+   * (the same rule the local `listTabs` fallback applies). A hidden tab is
+   * never displayed.
+   */
+  displayed: boolean;
+};
+
+/**
+ * Every browser tab in a workspace layout — live or mirror — with where it
+ * lives: `visible` in a panel's tab bar, `hidden` in `hiddenTabs`
+ * (monorepo#2857), and whether the layout displays it. Shared by the
+ * registry report and the sidebar's driving-client gate so both see the
+ * same set.
+ */
+export function collectBrowserTabs(layout: WorkspacePanelLayoutState): LayoutBrowserTab[] {
+  const out: LayoutBrowserTab[] = [];
+  for (const panel of Object.values(layout.panels)) {
+    for (const tab of panel.tabs) {
+      if (tab.type === 'browser') {
+        out.push({ tab, visibility: 'visible', displayed: panel.activeTabId === tab.id });
+      }
+    }
+  }
+  // Pre-#2857 persisted/test states may lack the field.
+  for (const tab of getItems(layout.hiddenTabs ?? emptyWorkspaceState.hiddenTabs)) {
+    if (tab.type === 'browser') out.push({ tab, visibility: 'hidden', displayed: false });
+  }
+  return out;
+}
+
+/** Whether the workspace layout holds any browser tab (local or mirror, visible or hidden). */
+export const selectWorkspaceHasBrowserTabs = store.createSelector<[wsId: string], boolean>(
+  (state, wsId) => {
+    const ws = state?.panelLayout?.byWorkspaceId[wsId] ?? emptyWorkspaceState;
+    return collectBrowserTabs(ws).length > 0;
+  },
+);
+
 /** Select visible horizontal panel-column counts for workspace width reservation. */
 export const selectPanelColumnCountsByWorkspaceId = store.createSelector((state) => {
   return Object.fromEntries(
@@ -388,7 +432,7 @@ export const selectRecentlyClosed = store.createSelector<[wsId: string], Recentl
 );
 
 /** Select the newest column close that can be applied to the current layout. */
-export const selectLastClosedPanelColumn = store.createSelector<
+const selectLastClosedPanelColumn = store.createSelector<
   [wsId: string],
   RecentlyClosedPanelColumn | null
 >((state, wsId) => {
@@ -399,4 +443,19 @@ export const selectLastClosedPanelColumn = store.createSelector<
         createCollection<RecentlyClosedPanelColumn, 'historyId'>('historyId'),
     ).find((closed) => isRecentlyClosedPanelColumnRestorable(workspace, closed)) ?? null
   );
+});
+
+/** Select whether the newest restorable panel close was a column or a tab. */
+export const selectLastPanelClose = store.createSelector<
+  [wsId: string],
+  { kind: 'column' | 'tab'; closedAt: number } | null
+>((state, wsId) => {
+  const lastClosedPanelTab = selectRecentlyClosed.select(state, wsId)[0] ?? null;
+  const lastClosedPanelColumn = selectLastClosedPanelColumn.select(state, wsId);
+  return lastClosedPanelColumn &&
+    (!lastClosedPanelTab || lastClosedPanelColumn.closedAt >= lastClosedPanelTab.closedAt)
+    ? { kind: 'column', closedAt: lastClosedPanelColumn.closedAt }
+    : lastClosedPanelTab
+      ? { kind: 'tab', closedAt: lastClosedPanelTab.closedAt }
+      : null;
 });

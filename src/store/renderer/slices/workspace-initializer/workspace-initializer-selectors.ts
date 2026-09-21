@@ -1,5 +1,10 @@
 import { store } from '../../store';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  selectOrchestratorSpecialist,
+  selectSpecialists,
+} from '../specialists/specialists-selectors';
+import { resolveNewWorkspaceSpecialistDefault } from './utils/new-workspace-specialist-default';
 
 export const selectWorkspaceInitializerHydrated = store.createSelector(
   (state) => state.workspaceInitializer.hydrated,
@@ -39,4 +44,19 @@ export const selectWorkspaceInitializerLastSubmittedAgent = store.createSelector
 
 export const selectWorkspaceInitializerPendingGitHubPrefill = store.createSelector(
   (state) => state.workspaceInitializer.pendingGitHubPrefill,
+);
+
+/**
+ * The specialist id the New Workspace modal would currently start with
+ * (`null` = General): its remembered selection, or the orchestrator when team
+ * mode is remembered. Lets other surfaces (e.g. workspace-create proposals)
+ * default to the same initial agent as the modal.
+ */
+export const selectNewWorkspaceDefaultSpecialist = store.createSelector((state): string | null =>
+  resolveNewWorkspaceSpecialistDefault({
+    compactFormState: state.workspaceInitializer.compactFormState,
+    lastSubmittedAgent: state.workspaceInitializer.lastSubmittedAgent,
+    specialists: selectSpecialists.select(state),
+    orchestratorId: selectOrchestratorSpecialist.select(state)?.id ?? null,
+  }),
 );

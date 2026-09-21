@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { SettingsDisclosure } from '$lib/components/patterns/settings';
+  import { Button, Input, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
   import { faPlus, faRotateLeft, faTrash, faPencil } from '@fortawesome/free-solid-svg-icons';
 
@@ -28,8 +30,6 @@
     saveFileSpecialist,
   } from '$store/renderer/slices/specialists/specialists-slice';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import AgentRulesEditor from './AgentRulesEditor.svelte';
   import AutoSaveTextarea from './AutoSaveTextarea.svelte';
@@ -38,7 +38,7 @@
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import SpecialistModelOptions from './SpecialistModelOptions.svelte';
   import { isRedundantBuiltInOverride } from './utils/builtin-override-redundancy';
-  import { toast } from 'svelte-sonner';
+  import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
   import { formatNumber } from '$lib/i18n/format';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
@@ -647,7 +647,7 @@
     const expectedPath = folderPath
       ? `${folderPath}/${createdId}.md`
       : `~/.intent/specialists/${createdId}.md`;
-    toast.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
+    notify.success(m.settings_aiBehavior_createdToast({ name: newName.trim() }), {
       description: expectedPath.replace(/^\/Users\/[^/]+/, '~'),
     });
 
@@ -677,7 +677,7 @@
       data-testid="all-agents-editor-layout"
       class="flex min-w-0 flex-col gap-4 xl:h-full xl:min-h-0 xl:flex-1"
     >
-      <p class="text-sm text-muted-foreground">
+      <p class="type-body text-muted-foreground">
         {m.settings_agentRules_description()}
       </p>
       <div
@@ -704,7 +704,7 @@
           class="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2"
         >
           {#if !isBuiltIn && !hasOverrides}
-            <input
+            <Input
               type="text"
               value={currentSpecialist.name}
               onblur={(e) => handleNameSave(e.currentTarget.value)}
@@ -716,13 +716,13 @@
               }}
               aria-label={m.settings_aiBehavior_name_label()}
               placeholder={m.settings_aiBehavior_specialistName_placeholder()}
-              class="min-w-0 flex-1 text-base font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="min-w-0 flex-1 type-title font-medium text-foreground bg-transparent border-none outline-none px-0 py-0 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
             />
           {:else}
-            <h2 class="text-base font-medium text-foreground">{currentSpecialist.name}</h2>
+            <h2 class="type-title font-medium text-foreground">{currentSpecialist.name}</h2>
             {#if isBuiltIn && hasOverrides}
               <span
-                class="text-xs px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium inline-flex items-center gap-1"
+                class="type-caption px-1.5 py-0.5 rounded bg-primary/15 text-primary-ink font-medium inline-flex items-center gap-1"
               >
                 <Fa icon={faPencil} class="w-2.5 h-2.5" />
                 {m.settings_aiBehavior_modifiedBadge()}
@@ -730,14 +730,16 @@
             {/if}
           {/if}
           {#if isBuiltIn && hasOverrides}
-            <button
+            <Button
+              variant="plain"
+              size="sm"
               type="button"
               onclick={resetToDefault}
-              class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+              class="h-auto type-caption text-muted-foreground hover:text-foreground gap-1"
             >
               <Fa icon={faRotateLeft} class="w-3 h-3" />
               {m.settings_aiBehavior_reset()}
-            </button>
+            </Button>
           {/if}
           {#if specialistFilePath}
             <div class="ml-auto shrink-0">
@@ -760,7 +762,7 @@
         <!-- Specialist identity and source context. -->
         <div class="min-w-0">
           {#if !isBuiltIn && !hasOverrides}
-            <input
+            <Input
               type="text"
               value={currentSpecialist.description}
               onblur={(e) => handleDescriptionSave(e.currentTarget.value)}
@@ -771,14 +773,14 @@
                 }
               }}
               placeholder={m.settings_aiBehavior_specialistDescription_placeholder()}
-              class="w-full text-sm text-muted-foreground bg-transparent border-none outline-none px-0 py-0 mt-1 focus:ring-0 focus:outline-none placeholder:text-muted-foreground"
+              class="type-body mt-1 w-full border-none bg-transparent px-0 py-0 text-muted-foreground outline-none placeholder:text-muted-foreground focus:outline-none focus:ring-0"
             />
           {:else}
-            <p class="text-sm text-muted-foreground mt-1">{currentSpecialist.description}</p>
+            <p class="type-body mt-1 text-muted-foreground">{currentSpecialist.description}</p>
           {/if}
 
           {#if !isBuiltIn}
-            <p class="text-sm text-muted-foreground mt-2">
+            <p class="type-body mt-2 text-muted-foreground">
               {#if sourceLabel === 'Project'}
                 {m.settings_aiBehavior_projectInfo_before()}
                 <code class="bg-muted px-1 py-0.5 rounded break-all"
@@ -796,7 +798,7 @@
               {/if}
             </p>
           {/if}
-          <p class="text-sm text-muted-foreground mt-2">
+          <p class="type-body mt-2 text-muted-foreground">
             {m.settings_aiBehavior_usageHint()}
           </p>
         </div>
@@ -804,7 +806,7 @@
         <!-- Preserve the specialist model, reasoning, and delegation controls. -->
         <div class="min-w-0">
           <div class="flex min-w-0 flex-wrap items-center gap-3">
-            <span class="text-sm font-medium text-foreground shrink-0">
+            <span class="type-body shrink-0 font-medium text-foreground">
               {m.settings_aiBehavior_model_label()}
             </span>
             <ModelPicker
@@ -828,29 +830,32 @@
           <!-- Delegation model options (PROTOCOL §5.11 modelOptions). Keyed on
                the specialist id so draft rows never leak across specialist
                switches (remounting resets the component's local rows). -->
-          <details class="mt-4 min-w-0">
-            <summary class="text-ui cursor-pointer text-muted-foreground">
-              {m.settings_aiBehavior_advanced_label()}
-            </summary>
+          <SettingsDisclosure
+            label={m.settings_aiBehavior_advanced_label()}
+            class="mt-4"
+            flush
+            muted
+          >
             {#key currentSpecialist.id}
               <SpecialistModelOptions
                 savedOptions={savedModelOptions}
                 onCommit={handleModelOptionsCommit}
               />
             {/key}
-          </details>
+          </SettingsDisclosure>
         </div>
 
         {#if !isBuiltIn}
           <div class="pt-4 border-border">
-            <button
+            <Button
+              variant="ghost"
               type="button"
               onclick={deleteSpecialist}
-              class="text-xs text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
+              class="type-body text-muted-foreground hover:text-danger transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Fa icon={faTrash} class="w-3 h-3" />
               {m.settings_aiBehavior_deleteSpecialist()}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -867,22 +872,23 @@
         data-testid="create-specialist-prompt-column"
         class="min-h-0 min-w-0 h-full xl:flex xl:flex-col"
       >
-        <h2 class="mb-2 shrink-0 text-base font-medium text-foreground">
+        <h2 class="mb-2 shrink-0 type-title font-medium text-foreground">
           {m.settings_aiBehavior_createSpecialist_title()}
         </h2>
         <div class="flex min-h-0 flex-1 flex-col gap-1.5">
-          <textarea
+          <Textarea
             id="create-specialist-prompt"
             bind:value={newPrompt}
             placeholder={m.settings_aiBehavior_newPrompt_placeholder()}
-            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 text-sm
+            class="min-h-72 w-full grow resize-none rounded-lg border border-border bg-background p-3 type-body
               focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 xl:min-h-0
-              {newPromptIsOverLimit ? 'border-danger' : ''}"></textarea>
+              {newPromptIsOverLimit ? 'border-danger' : ''}"
+          ></Textarea>
           {#if newPromptIsApproachingLimit || newPromptIsOverLimit}
             <div
-              class="flex shrink-0 items-center justify-end text-xs {newPromptIsOverLimit
+              class="flex shrink-0 items-center justify-end type-caption {newPromptIsOverLimit
                 ? 'text-danger'
-                : 'text-warning'}"
+                : 'text-warning-ink'}"
             >
               <span>
                 {m.settings_autoSave_limitUsed({
@@ -904,7 +910,7 @@
         <div>
           <label
             for="create-specialist-name"
-            class="text-sm font-medium text-foreground block mb-1.5"
+            class="type-body font-medium text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_name_label()}
           </label>
@@ -920,7 +926,7 @@
         <div>
           <label
             for="create-specialist-description"
-            class="text-sm font-medium text-foreground block mb-1.5"
+            class="type-body font-medium text-foreground block mb-1.5"
           >
             {m.settings_aiBehavior_description_label()}
           </label>
@@ -934,7 +940,7 @@
         </div>
 
         <div class="flex items-center gap-3">
-          <span class="text-sm font-medium text-foreground shrink-0">
+          <span class="type-body shrink-0 font-medium text-foreground">
             {m.settings_aiBehavior_model_label()}
           </span>
           <ModelPicker
@@ -994,10 +1000,5 @@
       height: 100%;
       min-height: 0;
     }
-  }
-
-  /* Warning color fallback */
-  .text-warning {
-    color: hsl(38, 92%, 50%);
   }
 </style>

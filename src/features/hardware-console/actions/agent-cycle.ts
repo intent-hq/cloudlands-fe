@@ -19,7 +19,7 @@ import {
   getAgentAttentionRequest,
   getAgentStopReasonTimestamp,
 } from '$shared/utils/agent-attention';
-import { derivePendingQuestions } from '$lib/components/chat/questions/pending-questions';
+import { sessionHasPendingQuestion } from '$lib/components/chat/questions/pending-questions';
 import { getItems, type Collection } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
@@ -88,9 +88,8 @@ export function isSessionInProgress(session: StoredAgentSession | undefined): bo
 }
 
 /**
- * Mirror of the LED engine's `isAgentTurnActive` gate (led/snapshot.ts) —
- * broader than `isSessionInProgress` (adds tool waits, activation, Waiting).
- * Gates the pending-question derivation and the idle definition.
+ * Broader turn-active gate than `isSessionInProgress` (adds tool waits,
+ * activation, Waiting). Feeds the idle definition only.
  */
 function isAgentTurnActive(session: StoredAgentSession): boolean {
   const status = session.status as AgentStatus;
@@ -113,22 +112,6 @@ function isAgentTurnActive(session: StoredAgentSession): boolean {
   );
 }
 
-/** Whether a session has a pending Q&A wizard question (dismissal-gated). */
-function hasPendingQuestion(session: StoredAgentSession): boolean {
-  // This hardware path sees only the session tail, not panel history or its
-  // recovery projection. An off-page marker can return false here while the
-  // panel stays fail-closed; workspace hardware state still uses displayStatus.
-  const pending = derivePendingQuestions(
-    session.messages ?? [],
-    isAgentTurnActive(session),
-    false,
-    session.metadata?.pendingQuestionsMessageId,
-  );
-  if (!pending) return false;
-  const dismissedId = session.metadata?.dismissedQuestionsMessageId;
-  return !(typeof dismissedId === 'string' && dismissedId === pending.messageId);
-}
-
 /** Attention priority buckets, highest urgency first. */
 export type SessionAttentionPriority = 'blocker' | 'question' | 'discussion';
 
@@ -144,7 +127,7 @@ export function sessionAttentionPriority(
   if (!session || session.status === AgentStatus.Deleted) return null;
   const kind = getAgentAttentionRequest(session)?.kind ?? null;
   if (kind === 'blocker') return 'blocker';
-  if (hasPendingQuestion(session)) return 'question';
+  if (sessionHasPendingQuestion(session)) return 'question';
   return kind === 'discussion' ? 'discussion' : null;
 }
 

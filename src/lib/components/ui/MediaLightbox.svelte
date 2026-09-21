@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount, type Snippet } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import type { Snippet } from 'svelte';
+  import { fade } from '$lib/motion';
   import { faXmark } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import Portal from './Portal.svelte';
@@ -33,10 +33,6 @@
 
   let dialogElement: HTMLDivElement | null = $state(null);
   let closeButtonElement: HTMLButtonElement | null = $state(null);
-  let prefersReducedMotion = $state(
-    typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true,
-  );
 
   function close() {
     open = false;
@@ -72,16 +68,6 @@
     }
   }
 
-  onMount(() => {
-    const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!mediaQuery) return;
-    const updatePreference = (event: MediaQueryListEvent) => {
-      prefersReducedMotion = event.matches;
-    };
-    mediaQuery.addEventListener?.('change', updatePreference);
-    return () => mediaQuery.removeEventListener?.('change', updatePreference);
-  });
-
   $effect(() => {
     if (!open) return;
     return pushEscapeLayer(close);
@@ -107,7 +93,7 @@
       aria-modal="true"
       aria-label={ariaLabel}
       tabindex="-1"
-      transition:fade={{ duration: prefersReducedMotion ? 0 : 200 }}
+      transition:fade={{ tier: 'moderate' }}
     >
       <div class="absolute right-4 top-4 z-[1002] flex items-center gap-1">
         {#if actions}

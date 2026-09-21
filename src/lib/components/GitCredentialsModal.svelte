@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { handleLink } from '$features/navigation/link-handler';
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { faGithub } from '@fortawesome/free-brands-svg-icons';
@@ -76,12 +77,13 @@
       <!-- Header -->
       <div class="flex justify-between items-center p-4 border-b border-border">
         <h2 class="m-0 text-lg font-semibold flex items-center gap-2">
-          <Fa icon={faKey} class="text-amber-500" />
+          <Fa icon={faKey} class="text-warning-ink" />
           {m.lib_gitCredentials_title()}
         </h2>
-        <button
+        <Button
+          variant="ghost"
           class="bg-transparent border-none text-2xl cursor-pointer text-muted-foreground hover:text-foreground"
-          onclick={handleClose}>×</button
+          onclick={handleClose}>×</Button
         >
       </div>
 
@@ -97,12 +99,13 @@
                 {m.lib_gitCredentials_failedOperation_label()}
               </p>
               {#if canRetry}
-                <button
+                <Button
+                  variant="ghost"
                   class="text-sm text-blue-600 dark:text-blue-400 underline bg-transparent border-none cursor-pointer p-0 hover:text-blue-800 dark:hover:text-blue-300"
                   onclick={() => onRetryInTerminal?.()}
                 >
                   {m.lib_gitCredentials_tryInTerminal_label()}
-                </button>
+                </Button>
               {/if}
             </div>
             {#if command}
@@ -140,13 +143,14 @@
             <!-- i18n-ignore (shell command) -->
             <p class="m-0">eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519</p>
           </div>
-          <button
+          <Button
+            variant="ghost"
             class="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
             onclick={openGitHubSSHDocs}
           >
             <Fa icon={faExternalLink} size="xs" />
             {m.lib_gitCredentials_sshGuide_label()}
-          </button>
+          </Button>
         </div>
 
         <!-- Option 2: Git Credential Manager -->
@@ -170,13 +174,14 @@
             <!-- i18n-ignore (shell command) -->
             <p class="m-0">git credential-manager configure</p>
           </div>
-          <button
+          <Button
+            variant="ghost"
             class="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
             onclick={openGitCredentialManagerDocs}
           >
             <Fa icon={faExternalLink} size="xs" />
             {m.lib_gitCredentials_gcmDocs_label()}
-          </button>
+          </Button>
         </div>
 
         <!-- Note about GitHub auth -->
@@ -191,12 +196,12 @@
 
       <!-- Footer -->
       <div class="flex justify-end gap-2 p-4 border-t border-border">
-        <button
+        <Button
           class="bg-muted border-none px-4 py-2 rounded cursor-pointer text-foreground hover:bg-muted/80"
           onclick={handleClose}
         >
           {m.lib_gitCredentials_close_label()}
-        </button>
+        </Button>
       </div>
     </div>
   </div>

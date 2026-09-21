@@ -20,6 +20,7 @@
   import ToolCall from './ToolCall.svelte';
   import ThinkingBlock from './ThinkingBlock.svelte';
   import ReasoningHistoryBlock from './ReasoningHistoryBlock.svelte';
+  import ExecutionPlanCard from './ExecutionPlanCard.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import MarkdownViewer from '$lib/components/markdown/MarkdownViewer.svelte';
   import AugmentCodeSnippet from '$lib/components/editor/AugmentCodeSnippet.svelte';
@@ -70,7 +71,7 @@
   import NavLink from './NavLink.svelte';
 
   import { createLogger } from '$lib/utils/client-logger';
-  import { fly } from 'svelte/transition';
+  import { fly } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
 
   import {
@@ -104,7 +105,7 @@
     isLastConversationMessage = false,
   }: Props = $props();
 
-  // Lazy full-block hydration (§5.5 slim projection → v7.2
+  // Lazy full-block hydration (§5.5 slim projection →
   // agent.getMessageBlock): substitute cached full blocks for slim-truncated
   // ones before any downstream derivation. Init-time subscription (agentId is
   // stable per component instance); under-budget content passes through with
@@ -504,12 +505,12 @@
       <InlineProposal {agentId} {workspaceId} {messageId} {proposal} />
     {/if}
   {:else if isNavLinkBlock(block)}
-    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+    <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       <NavLink target={block.target} label={block.label} {workspaceId} />
     </div>
   {:else if block.type === 'text' && block.text}
     {@const parsedContent = parsedContentMap.get(parsedKey) || []}
-    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+    <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       {#if isStreaming}
         <!-- During streaming, use simple text display to avoid expensive markdown processing -->
         <div
@@ -546,7 +547,7 @@
       {/if}
     </div>
   {:else if block.type === 'image' && (block.data || block.dataTruncated) && block.mimeType}
-    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+    <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       <ChatImageBlock
         data={block.data}
         mimeType={block.mimeType}
@@ -567,7 +568,7 @@
     {@const toolResult = findToolResult(toolResultsMap, toolBlock)}
     {@const toolState = toolStates.get(toolBlock.id) || 'completed'}
     {@const resultContent = getToolResultPayload(toolResult)}
-    <div class="w-full" in:fly={{ y: 10, duration: 200 }}>
+    <div class="w-full" in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}>
       <ToolCall
         toolUse={toolBlock}
         {toolState}
@@ -581,7 +582,10 @@
     </div>
   {:else if block.type === 'tool_result' && isStandaloneToolResult(toolResultClassification, block)}
     {@const resultPresentation = getStandaloneToolResultPresentation(block)}
-    <div class="border border-border rounded-md" in:fly={{ y: 10, duration: 200 }}>
+    <div
+      class="border border-border rounded-md"
+      in:fly={{ axis: 'y', distance: 10, tier: 'moderate' }}
+    >
       <div class="px-3 py-2 bg-muted/50 border-b border-border">
         <span class="type-caption text-subtle">{m.chat_messageContent_toolResult_label()}</span>
       </div>
@@ -631,6 +635,8 @@
         {/if}
       </div>
     </div>
+  {:else if block.type === 'plan' && block.entries}
+    <ExecutionPlanCard entries={block.entries} />
   {:else if block.type === 'thinking'}
     {#if reasoningHistory}
       <ReasoningHistoryBlock

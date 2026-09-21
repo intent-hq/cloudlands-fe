@@ -1,8 +1,12 @@
+import { safeDisclosureTransition } from '../disclosure-motion';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   safeSubscriptionRowTransition,
   SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS,
   SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS,
+  SUBSCRIPTION_LEADING_COLUMN_CLASS,
+  SUBSCRIPTION_ROW_GEOMETRY_CLASS,
+  SUBSCRIPTION_TRAILING_CONTROLS_CLASS,
 } from '../subscription-disclosure';
 
 function rowStyle(): CSSStyleDeclaration {
@@ -24,6 +28,17 @@ afterEach(() => {
 });
 
 describe('safeSubscriptionRowTransition', () => {
+  it('defines the shared row and leading-column geometry', () => {
+    expect(SUBSCRIPTION_ROW_GEOMETRY_CLASS).toContain('min-h-9');
+    expect(SUBSCRIPTION_ROW_GEOMETRY_CLASS).toContain('gap-2');
+    expect(SUBSCRIPTION_ROW_GEOMETRY_CLASS).toContain('px-3!');
+    expect(SUBSCRIPTION_ROW_GEOMETRY_CLASS).toContain('py-2!');
+    expect(SUBSCRIPTION_LEADING_COLUMN_CLASS).toContain('h-(--agent-avatar-standard-surface-size)');
+    expect(SUBSCRIPTION_LEADING_COLUMN_CLASS).toContain('w-(--agent-avatar-standard-surface-size)');
+    expect(SUBSCRIPTION_TRAILING_CONTROLS_CLASS).toContain('ml-auto');
+    expect(SUBSCRIPTION_TRAILING_CONTROLS_CLASS).toContain('shrink-0');
+  });
+
   it('moves a clipped row from zero height and opacity to its measured natural box', () => {
     vi.spyOn(window, 'getComputedStyle').mockReturnValue(rowStyle());
     vi.stubGlobal(
@@ -76,5 +91,30 @@ describe('safeSubscriptionRowTransition', () => {
       height: 'auto',
     } as CSSStyleDeclaration);
     expect(safeSubscriptionRowTransition(document.createElement('div'))).toEqual({ duration: 0 });
+  });
+});
+
+describe('queue disclosure outro', () => {
+  it('retains a measurable intermediate box and collapses height, spacing and opacity to zero', () => {
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+      ...rowStyle(),
+      paddingTop: '4px',
+    } as CSSStyleDeclaration);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false })),
+    );
+    const node = document.createElement('div');
+    const config = safeDisclosureTransition(node, { tier: 'moderate' }, { direction: 'out' });
+    expect(config.duration).toBeGreaterThan(0);
+    config.tick?.(1, 0);
+    expect(node.style.height).toBe('36px');
+    config.tick?.(0.5, 0.5);
+    expect(node.style.height).toBe('18px');
+    expect(node.style.paddingTop).toBe('2px');
+    config.tick?.(0, 1);
+    expect(node.style.height).toBe('0px');
+    expect(node.style.paddingTop).toBe('0px');
+    expect(node.style.opacity).toBe('0');
   });
 });

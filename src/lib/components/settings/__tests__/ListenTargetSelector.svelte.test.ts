@@ -9,6 +9,7 @@
  * while selected), and hand-picking specific IPs on top of loopback.
  */
 import { fireEvent, render } from '@testing-library/svelte';
+import axe from 'axe-core';
 import { describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 import ListenTargetSelector from '../ListenTargetSelector.svelte';
@@ -27,17 +28,17 @@ function renderSelector(props: Partial<Parameters<typeof render>[1]> & Record<st
   return { ...utils, onchange };
 }
 
-const asInput = (el: HTMLElement): HTMLInputElement => el as HTMLInputElement;
+const asCheckbox = (el: HTMLElement): HTMLButtonElement => el as HTMLButtonElement;
+const isChecked = (el: HTMLElement): boolean => el.getAttribute('aria-checked') === 'true';
 
 describe('ListenTargetSelector', () => {
   it('renders available IPs with the bound ones checked, plus all-interfaces', () => {
     const { getByRole } = renderSelector({});
     expect(
-      asInput(getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }))
-        .checked,
+      isChecked(getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() })),
     ).toBe(false);
-    expect(asInput(getByRole('checkbox', { name: '192.168.1.10' })).checked).toBe(true);
-    expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).checked).toBe(false);
+    expect(isChecked(getByRole('checkbox', { name: '192.168.1.10' }))).toBe(true);
+    expect(isChecked(getByRole('checkbox', { name: '10.0.0.5' }))).toBe(false);
   });
 
   it('always lists loopback checked and locked, even when absent from selectedIps', () => {
@@ -45,10 +46,10 @@ describe('ListenTargetSelector', () => {
     // bindAddress persisted before the always-bound rule; it is still always
     // offered, checked and non-interactive, with the explanatory note.
     const { getByRole, getByText } = renderSelector({});
-    const loopback = asInput(
+    const loopback = asCheckbox(
       getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(true);
+    expect(isChecked(loopback)).toBe(true);
     expect(loopback.disabled).toBe(true);
     expect(getByText(m.settings_listenTargets_loopbackAlwaysBound_note())).toBeTruthy();
   });
@@ -59,13 +60,14 @@ describe('ListenTargetSelector', () => {
       tunnelSelected: true,
     });
     expect(
-      asInput(getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() })).disabled,
+      asCheckbox(getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }))
+        .disabled,
     ).toBe(true);
     await rerender({ selectedIps: ['192.168.1.10', '127.0.0.1'], tunnelSelected: false });
-    const loopback = asInput(
+    const loopback = asCheckbox(
       getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(true);
+    expect(isChecked(loopback)).toBe(true);
     expect(loopback.disabled).toBe(true);
   });
 
@@ -74,7 +76,7 @@ describe('ListenTargetSelector', () => {
       availableIps: ['10.0.0.5'],
       selectedIps: ['172.16.0.9'],
     });
-    expect(asInput(getByRole('checkbox', { name: '172.16.0.9' })).checked).toBe(true);
+    expect(isChecked(getByRole('checkbox', { name: '172.16.0.9' }))).toBe(true);
   });
 
   it('selecting another IP emits the union of selected IPs plus loopback', async () => {
@@ -84,6 +86,21 @@ describe('ListenTargetSelector', () => {
       ips: ['192.168.1.10', '10.0.0.5', '127.0.0.1'],
       tunnel: false,
     });
+  });
+
+  it('rolls a rejected selection back synchronously before the next paint', () => {
+    const { getByRole, onchange } = renderSelector({});
+    const initial = getByRole('checkbox', { name: '10.0.0.5' });
+
+    initial.click();
+
+    expect(onchange).toHaveBeenCalledWith({
+      ips: ['192.168.1.10', '10.0.0.5', '127.0.0.1'],
+      tunnel: false,
+    });
+    const rolledBack = getByRole('checkbox', { name: '10.0.0.5' });
+    expect(rolledBack).not.toBe(initial);
+    expect(isChecked(rolledBack)).toBe(false);
   });
 
   it('does not duplicate loopback when it is already selected', async () => {
@@ -109,11 +126,11 @@ describe('ListenTargetSelector', () => {
     // it covers the other addresses (locked) and never gets loopback
     // appended; unchecking it falls back to loopback-only.
     const { getByRole, onchange } = renderSelector({ selectedIps: ['::'] });
-    const specific = asInput(getByRole('checkbox', { name: '10.0.0.5' }));
-    expect(specific.checked).toBe(true);
+    const specific = asCheckbox(getByRole('checkbox', { name: '10.0.0.5' }));
+    expect(isChecked(specific)).toBe(true);
     expect(specific.disabled).toBe(true);
-    const v6 = asInput(getByRole('checkbox', { name: '::' }));
-    expect(v6.checked).toBe(true);
+    const v6 = asCheckbox(getByRole('checkbox', { name: '::' }));
+    expect(isChecked(v6)).toBe(true);
     expect(v6.disabled).toBe(false);
     await fireEvent.click(v6);
     expect(onchange).toHaveBeenCalledWith({ ips: ['127.0.0.1'], tunnel: false });
@@ -124,8 +141,8 @@ describe('ListenTargetSelector', () => {
     // checked but disabled until all-interfaces is unchecked.
     const { getByRole, getByText } = renderSelector({ selectedIps: ['0.0.0.0'] });
     for (const name of ['192.168.1.10', '10.0.0.5', m.settings_listenTargets_loopback_label()]) {
-      const box = asInput(getByRole('checkbox', { name }));
-      expect(box.checked).toBe(true);
+      const box = asCheckbox(getByRole('checkbox', { name }));
+      expect(isChecked(box)).toBe(true);
       expect(box.disabled).toBe(true);
     }
     expect(getByText(m.settings_listenTargets_coveredByAllInterfaces_note())).toBeTruthy();
@@ -133,10 +150,10 @@ describe('ListenTargetSelector', () => {
 
   it('unchecking all-interfaces makes the covered addresses toggleable again', async () => {
     const { getByRole, rerender } = renderSelector({ selectedIps: ['0.0.0.0'] });
-    expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).disabled).toBe(true);
+    expect(asCheckbox(getByRole('checkbox', { name: '10.0.0.5' })).disabled).toBe(true);
     await rerender({ selectedIps: ['127.0.0.1'] });
-    const other = asInput(getByRole('checkbox', { name: '10.0.0.5' }));
-    expect(other.checked).toBe(false);
+    const other = asCheckbox(getByRole('checkbox', { name: '10.0.0.5' }));
+    expect(isChecked(other)).toBe(false);
     expect(other.disabled).toBe(false);
   });
 
@@ -145,10 +162,10 @@ describe('ListenTargetSelector', () => {
       selectedIps: ['0.0.0.0'],
       tunnelSelected: true,
     });
-    const loopback = asInput(
+    const loopback = asCheckbox(
       getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(true);
+    expect(isChecked(loopback)).toBe(true);
     expect(loopback.disabled).toBe(true);
     expect(queryByText(m.settings_listenTargets_loopbackAlwaysBound_note())).toBeNull();
   });
@@ -186,7 +203,7 @@ describe('ListenTargetSelector', () => {
       selectedIps: ['0.0.0.0'],
       tunnelSelected: true,
     });
-    const allInterfaces = asInput(
+    const allInterfaces = asCheckbox(
       getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
     );
     expect(allInterfaces.disabled).toBe(false);
@@ -199,7 +216,7 @@ describe('ListenTargetSelector', () => {
     // it is the only way out — land on loopback-only so the individual
     // entries become toggleable again.
     const { getByRole, onchange } = renderSelector({ selectedIps: ['0.0.0.0'] });
-    const allInterfaces = asInput(
+    const allInterfaces = asCheckbox(
       getByRole('checkbox', { name: m.settings_listenTargets_allInterfaces_label() }),
     );
     await fireEvent.click(allInterfaces);
@@ -209,8 +226,8 @@ describe('ListenTargetSelector', () => {
   it('loopback-only: the specific IPs render unchecked and toggleable', async () => {
     const { getByRole, onchange } = renderSelector({ selectedIps: ['127.0.0.1'] });
     for (const name of ['192.168.1.10', '10.0.0.5']) {
-      const box = asInput(getByRole('checkbox', { name }));
-      expect(box.checked).toBe(false);
+      const box = asCheckbox(getByRole('checkbox', { name }));
+      expect(isChecked(box)).toBe(false);
       expect(box.disabled).toBe(false);
     }
     await fireEvent.click(getByRole('checkbox', { name: '10.0.0.5' }));
@@ -219,17 +236,23 @@ describe('ListenTargetSelector', () => {
 
   it('tunnel-only posture (persisted out-of-band): loopback still renders checked+locked with the note', () => {
     const { getByRole, getByText } = renderSelector({ selectedIps: [], tunnelSelected: true });
-    const loopback = asInput(
+    const loopback = asCheckbox(
       getByRole('checkbox', { name: m.settings_listenTargets_loopback_label() }),
     );
-    expect(loopback.checked).toBe(true);
+    expect(isChecked(loopback)).toBe(true);
     expect(loopback.disabled).toBe(true);
     expect(getByText(m.settings_listenTargets_tunnelOnly_note())).toBeTruthy();
   });
 
   it('disables all checkboxes while a save is in flight', () => {
     const { getByRole } = renderSelector({ saving: true });
-    expect(asInput(getByRole('checkbox', { name: '10.0.0.5' })).disabled).toBe(true);
-    expect(asInput(getByRole('checkbox', { name: '192.168.1.10' })).disabled).toBe(true);
+    expect(asCheckbox(getByRole('checkbox', { name: '10.0.0.5' })).disabled).toBe(true);
+    expect(asCheckbox(getByRole('checkbox', { name: '192.168.1.10' })).disabled).toBe(true);
+  });
+
+  it('has no scoped axe violations', async () => {
+    const { container } = renderSelector({});
+    const result = await axe.run(container, { rules: { 'color-contrast': { enabled: false } } });
+    expect(result.violations.map(({ id }) => id)).toEqual([]);
   });
 });

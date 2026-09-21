@@ -1,3 +1,1 @@
-import Root from './settings-section.svelte';
-
-export { Root as SettingsSection };
+export { SettingsSection } from '$lib/components/patterns/settings';

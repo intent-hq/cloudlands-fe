@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { spring } from '$lib/motion';
 import type { ContentBlock, ToolUseBlock } from '$shared/types';
 
 vi.mock('$store/renderer/store', async () => {
@@ -176,7 +177,9 @@ describe('shared operational disclosure-row contract', () => {
       'matchMedia',
       vi.fn(() => ({ matches: false })),
     );
-    expect(safeOperationalDetailsTransition(document.createElement('div')).duration).toBe(150);
+    expect(safeOperationalDetailsTransition(document.createElement('div')).duration).toBe(
+      spring.moderate.settleMs,
+    );
   });
 
   it('renders the same body-sized tone, geometry, and narrow containment across all consumers', () => {
@@ -326,7 +329,8 @@ describe('shared operational disclosure-row contract', () => {
     });
     const toolIcon = container.querySelector('[data-tool-icon]')!;
     expectClasses(toolIcon, CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(toolIcon.className).toContain('animate-pulse');
+    expect(toolIcon.hasAttribute('data-streaming-pulse')).toBe(true);
+    expect(toolIcon.className).not.toContain('animate-pulse');
     cleanup();
 
     render(ContextEngineToolCall, { props: { toolUse: contextTool, toolState: 'running' } });
@@ -334,15 +338,19 @@ describe('shared operational disclosure-row contract', () => {
       .getByTestId('context-engine-tool-call')
       .querySelector('[data-tool-icon]')!;
     expectClasses(searchIcon, CHAT_OPERATIONAL_LEADING_CLASS);
-    expect(searchIcon.className).toContain('animate-pulse');
+    expect(searchIcon.hasAttribute('data-streaming-pulse')).toBe(true);
     expect(screen.queryByTestId('tool-call-status')).toBeNull();
     expect(document.querySelector('[data-operational-trailing]')).toBeNull();
     cleanup();
 
     render(ThinkingBlock, { props: { content: 'Thinking', isStreaming: true } });
-    const brain = screen.getByTestId('reasoning-tool-call').querySelector('[data-icon="brain"]')!;
-    expectClasses(brain, CHAT_OPERATIONAL_ICON_CLASS);
-    expect(brain.className).toContain('animate-pulse');
+    const reasoning = screen.getByTestId('reasoning-tool-call');
+    const spinner = within(reasoning).getByRole('status', { name: 'Loading' });
+    expect(spinner.getAttribute('data-variant')).toBe('bloom');
+    expect(reasoning.querySelector('[data-icon="brain"]')).toBeNull();
+    expect(
+      reasoning.querySelector('[data-operational-leading]')!.hasAttribute('data-streaming-pulse'),
+    ).toBe(true);
     cleanup();
 
     const group = render(ResponseGroup, {
@@ -357,13 +365,12 @@ describe('shared operational disclosure-row contract', () => {
   it('keeps reasoning indented and centers the response-group guide on its header icon', async () => {
     const reasoning = render(ThinkingBlock, { props: { content: 'Expanded reasoning' } });
     await fireEvent.click(screen.getByTestId('reasoning-disclosure'));
-    expectClasses(
-      reasoning.container.querySelector('[data-operational-expanded-content]')!,
-      OPERATIONAL_EXPANDED_CONTENT_CLASS,
-    );
-    expect(
-      reasoning.container.querySelector('[data-operational-expanded-content]')?.className,
-    ).toContain('pb-2');
+    // Padding belongs inside the measured height wrapper so it cannot clip reasoning.
+    const reasoningContent = reasoning.container.querySelector(
+      '[data-operational-expanded-content] > div',
+    )!;
+    expectClasses(reasoningContent, OPERATIONAL_EXPANDED_CONTENT_CLASS);
+    expect(reasoningContent.className).toContain('pb-2');
     cleanup();
 
     const group = render(ResponseGroup, { props: { name: 'Group', children } });
@@ -697,7 +704,7 @@ describe('shared operational disclosure-row contract', () => {
 
       expect(within(row).queryByRole('button')).toBeNull();
       expect(icon.tagName).toBe('DIV');
-      expect(icon.className).toContain('animate-pulse');
+      expect(icon.hasAttribute('data-streaming-pulse')).toBe(true);
       expect(icon.className).not.toContain('cursor-pointer');
     });
   });

@@ -1,5 +1,6 @@
 // @ui-invariant-exempt: caller-ledger assertions read only the hand-maintained menu.meta array, and vitest related already runs this suite via the direct menu.meta import
 import { afterEach, describe, expect, it } from 'vitest';
+import { tick } from 'svelte';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import MenuTestHarness from './MenuTestHarness.svelte';
 import LegacyMenuHarness from './LegacyMenuHarness.svelte';
@@ -17,7 +18,7 @@ async function openMenu() {
 }
 
 describe('Menu keyboard and focus behavior', () => {
-  it('supports arrows, Home, End, and typeahead while skipping disabled items', async () => {
+  it('supports arrows, paging, Home, End, and typeahead with one roving tab stop', async () => {
     render(MenuTestHarness);
     await openMenu();
     const apple = screen.getByRole('menuitem', { name: 'Apple' });
@@ -25,7 +26,22 @@ describe('Menu keyboard and focus behavior', () => {
     const cherry = screen.getByRole('menuitem', { name: 'Cherry' });
     const more = screen.getByRole('menuitem', { name: 'More' });
     await waitFor(() => expect(document.activeElement).toBe(apple));
+    const menu = apple.closest<HTMLElement>('[role="menu"]')!;
+    const enabledItems = Array.from(
+      menu.querySelectorAll<HTMLElement>('[data-menu-item]:not([data-disabled])'),
+    );
+    Object.defineProperty(menu, 'clientHeight', { configurable: true, value: 80 });
+    enabledItems.forEach((item, index) => {
+      item.getBoundingClientRect = () =>
+        ({ top: index * 20, bottom: index * 20 + 20, height: 20 }) as DOMRect;
+    });
+    expect(enabledItems.filter((item) => item.tabIndex === 0)).toEqual([apple]);
     await fireEvent.keyDown(apple, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(banana);
+    expect(enabledItems.filter((item) => item.tabIndex === 0)).toEqual([banana]);
+    await fireEvent.keyDown(banana, { key: 'PageDown' });
+    expect(document.activeElement).toBe(enabledItems[5]);
+    await fireEvent.keyDown(enabledItems[5], { key: 'PageUp' });
     expect(document.activeElement).toBe(banana);
     await fireEvent.keyDown(banana, { key: 'End' });
     expect(document.activeElement).toBe(more);
@@ -33,6 +49,62 @@ describe('Menu keyboard and focus behavior', () => {
     expect(document.activeElement).toBe(apple);
     await fireEvent.keyDown(apple, { key: 'c' });
     await waitFor(() => expect(document.activeElement).toBe(cherry));
+  });
+
+  it('moves the highlight with keyboard focus after pointer hover and leave', async () => {
+    render(MenuTestHarness);
+    await openMenu();
+    const apple = screen.getByRole('menuitem', { name: 'Apple' });
+    const banana = screen.getByRole('menuitem', { name: 'Banana' });
+    const cherry = screen.getByRole('menuitem', { name: 'Cherry' });
+    const menu = screen.getByRole('menu');
+    const highlight = menu.querySelector('[data-slot="menu-list-highlight"]')!;
+    const items = Array.from(
+      menu.querySelectorAll<HTMLElement>('[data-menu-item]:not([data-disabled])'),
+    );
+    items.forEach((item, index) => {
+      item.getBoundingClientRect = () =>
+        ({ top: index * 20, bottom: index * 20 + 20, left: 0, width: 100, height: 20 }) as DOMRect;
+    });
+    await waitFor(() => expect(document.activeElement).toBe(apple));
+    await fireEvent.pointerMove(banana, { pointerType: 'mouse', clientX: 10, clientY: 30 });
+    await waitFor(() => expect(document.activeElement).toBe(banana));
+    await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
+    const suppressFocusEvent = (event: Event) => event.stopImmediatePropagation();
+    menu.addEventListener('focusin', suppressFocusEvent, true);
+    menu.addEventListener('focus', suppressFocusEvent, true);
+    await fireEvent.keyDown(banana, { key: 'ArrowDown' });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await waitFor(() => {
+      expect(document.activeElement).toBe(cherry);
+      expect(highlight.getAttribute('data-active-index')).toBe('2');
+    });
+    await fireEvent.keyDown(cherry, { key: 'ArrowUp' });
+    await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
+    await fireEvent.pointerLeave(menu, { pointerType: 'mouse' });
+    await fireEvent.keyDown(banana, { key: 'ArrowUp' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(apple);
+      expect(highlight.getAttribute('data-active-index')).toBe('0');
+    });
+    await fireEvent.keyDown(apple, { key: 'ArrowDown' });
+    await waitFor(() => expect(highlight.getAttribute('data-active-index')).toBe('1'));
+  });
+
+  it('does not reset keyboard focus that already moved inside the menu when the open-focus frame runs', async () => {
+    render(MenuTestHarness);
+    await openMenu();
+    const apple = screen.getByRole('menuitem', { name: 'Apple' });
+    const banana = screen.getByRole('menuitem', { name: 'Banana' });
+    // Keyboard navigation moves focus before the deferred open-focus frame fires.
+    banana.focus();
+    expect(document.activeElement).toBe(banana);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await tick();
+    expect(document.activeElement).toBe(banana);
+    expect(document.activeElement).not.toBe(apple);
   });
 
   it('dismisses with Escape and restores focus to the trigger', async () => {
@@ -66,6 +138,39 @@ describe('Menu keyboard and focus behavior', () => {
 });
 
 describe('Menu command state behavior', () => {
+  it.each([
+    { iconWeight: undefined, expectedWeight: 'regular' },
+    { iconWeight: 'bold' as const, expectedWeight: 'bold' },
+  ])(
+    'forwards $expectedWeight icons without changing command or submenu behavior',
+    async ({ iconWeight, expectedWeight }) => {
+      render(MenuTestHarness, { props: { iconWeight } });
+      const trigger = await openMenu();
+      const menu = screen.getByRole('menu');
+      const icons = menu.querySelectorAll('svg[data-icon]');
+      expect(icons).toHaveLength(3);
+      for (const icon of icons) expect(icon.getAttribute('data-weight')).toBe(expectedWeight);
+      expect(menu.querySelector('[iconweight]')).toBeNull();
+
+      const command = screen.getByRole('menuitem', { name: 'Attach files' });
+      expect(command.querySelectorAll('svg')).toHaveLength(1);
+      expect(command.querySelectorAll('kbd')).toHaveLength(1);
+      await fireEvent.click(command);
+      expect(screen.getByTestId('selected').textContent).toBe('attach');
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(document.activeElement).toBe(trigger);
+
+      await openMenu();
+      const more = screen.getByRole('menuitem', { name: 'More' });
+      more.focus();
+      await fireEvent.keyDown(more, { key: 'ArrowRight' });
+      const archive = await screen.findByRole('menuitem', { name: 'Archive' });
+      await fireEvent.click(archive);
+      expect(screen.getByTestId('selected').textContent).toBe('archive');
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    },
+  );
+
   it('prevents disabled selection and exposes disabled semantics', async () => {
     render(MenuTestHarness);
     await openMenu();
@@ -107,6 +212,7 @@ describe('Menu command state behavior', () => {
     expect(command.getAttribute('data-slot')).toBe('menu-command-item');
     expect(command.querySelector('svg')).toBeTruthy();
     expect(command.querySelector('kbd')?.textContent).toBe('⇧⌘A');
+    expect(command.querySelector('kbd')?.getAttribute('data-slot')).toBe('shortcut-chip');
   });
 });
 
@@ -136,6 +242,16 @@ describe('Menu stacked content', () => {
     await fireEvent.click(email);
     expect(screen.getByTestId('selected').textContent).toBe('email');
   });
+
+  it('renders a custom submenu body and returns focus with ArrowLeft', async () => {
+    render(MenuTestHarness, { props: { stacked: true } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Open stacked menu' }));
+    const custom = screen.getByRole('menuitem', { name: 'Custom panel' });
+    await fireEvent.keyDown(custom, { key: 'ArrowRight' });
+    const action = await screen.findByRole('menuitem', { name: 'Custom action' });
+    await fireEvent.keyDown(action, { key: 'ArrowLeft' });
+    await waitFor(() => expect(document.activeElement).toBe(custom));
+  });
 });
 
 describe('Menu metadata and compatibility', () => {
@@ -145,6 +261,9 @@ describe('Menu metadata and compatibility', () => {
     expect(menuSemantics.interaction).toBe('command');
     expect(menuSemantics.selectionReplacement).toBe('$lib/components/ui/select');
     expect(menuMetadata.callers).toHaveLength(16);
+    expect(menuMetadata.callers).toContain(
+      'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
+    );
     expect(menuMetadata.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
     expect(menuMetadata.callers).toContain('src/lib/components/chat/input/SimpleRichInput.svelte');
   });
@@ -240,16 +359,16 @@ describe('Menu metadata and compatibility', () => {
     await openMenu();
     const menu = screen.getByRole('menu');
     const apple = screen.getByRole('menuitem', { name: 'Apple' });
-    const checkbox = screen.getByRole('menuitemcheckbox', { name: 'Show panel' });
     expect(menu.className).toContain('bg-popover');
     expect(menu.className).toContain('border-border');
     expect(menu.className).toContain('overflow-y-auto');
     expect(menu.className).toContain('rounded-md');
     expect(menu.className).toContain('shadow-(--elevation-overlay)');
-    expect(apple.className).toContain('min-h-7');
-    expect(apple.className).toContain('rounded-md');
-    expect(apple.className).toContain('type-body');
-    expect(checkbox.className).toContain('data-[state=checked]:bg-accent/60');
+    expect(menu.getAttribute('data-surface-level')).toBe('3');
+    expect(apple.className).toContain('min-h-(--control-height-small)');
+    expect(apple.className).toContain('rounded-(--radius-row)');
+    expect(apple.className).toContain('type-caption');
+    expect(menu.querySelector('[data-slot="menu-list-highlight"]')).toBeTruthy();
     expect(menu.className).not.toMatch(/bg-(?:white|black|gray|slate|zinc|neutral)-?/);
   });
 

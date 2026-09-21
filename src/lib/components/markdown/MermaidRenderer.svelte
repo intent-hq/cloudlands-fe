@@ -1,10 +1,13 @@
 <script lang="ts" module>
+  import { Button } from '$lib/components/ui/button';
   import mermaid from 'mermaid';
   import elkLayouts from '@mermaid-js/layout-elk';
 
   // Register the ELK layout engine once per module load; per-diagram
   // frontmatter (`config: layout: ...`) still overrides the default.
   mermaid.registerLayoutLoaders(elkLayouts);
+
+  export type MermaidRenderState = 'pending' | 'empty' | 'rendered' | 'error';
 </script>
 
 <script lang="ts">
@@ -23,9 +26,10 @@
     code: string;
     className?: string;
     showExpandButton?: boolean;
+    onRenderStateChange?: (state: MermaidRenderState) => void;
   }
 
-  let { code, className = '', showExpandButton = true }: Props = $props();
+  let { code, className = '', showExpandButton = true, onRenderStateChange }: Props = $props();
 
   let renderedSvg = $state('');
   let error = $state<string | null>(null);
@@ -212,6 +216,16 @@
       renderDiagram(code, $isDarkTheme);
     }
   });
+
+  // Mirrors the template branches below so hosts can lay out the block
+  // differently when there is no diagram to show.
+  let renderState = $derived<MermaidRenderState>(
+    error ? 'error' : renderedSvg ? 'rendered' : !code?.trim() ? 'empty' : 'pending',
+  );
+
+  $effect(() => {
+    onRenderStateChange?.(renderState);
+  });
 </script>
 
 <div class="mermaid-renderer {className}">
@@ -229,14 +243,16 @@
         {@html renderedSvg}
       </div>
       {#if showExpandButton}
-        <button
+        <Button
+          size="icon-compact"
+          iconOnly
           class="expand-button"
           onclick={openFullscreen}
           title={m.markdown_mermaid_expand_tooltip()}
           aria-label={m.markdown_mermaid_expand_ariaLabel()}
         >
           <Fa icon={faExpand} size="sm" />
-        </button>
+        </Button>
       {/if}
     </div>
   {:else if !code?.trim()}
@@ -282,7 +298,7 @@
     border-radius: 0.5rem;
   }
 
-  .mermaid-svg-container:hover .expand-button {
+  .mermaid-svg-container:hover :global(.expand-button) {
     opacity: 1;
   }
 
@@ -297,31 +313,26 @@
     height: auto;
   }
 
-  .expand-button {
+  /* Sizing comes from the Button `icon-compact` size (square, zero padding). */
+  .mermaid-svg-container :global(.expand-button) {
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 1.75rem;
-    height: 1.75rem;
-    padding: 0;
     background: rgb(0 0 0 / 0.6);
     border: 0;
     border-radius: 0.375rem;
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.2s ease-in-out;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     color: white;
     z-index: 10;
   }
 
-  .expand-button:hover {
+  .mermaid-svg-container :global(.expand-button:hover) {
     background: rgb(0 0 0 / 0.75);
   }
 
-  .expand-button:active {
+  .mermaid-svg-container :global(.expand-button:active) {
     transform: scale(0.95);
   }
 
@@ -431,7 +442,7 @@
     width: 20px;
     height: 20px;
     border: 2px solid hsl(var(--muted));
-    border-top-color: hsl(var(--primary));
+    border-top-color: hsl(var(--primary-ink));
     animation: spin 0.8s linear infinite;
   }
 

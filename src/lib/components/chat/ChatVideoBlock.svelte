@@ -4,6 +4,7 @@
   import VideoActionsMenu from '$lib/components/ui/VideoActionsMenu.svelte';
   import VideoLightbox from '$lib/components/ui/VideoLightbox.svelte';
   import MediaUnavailable from '$lib/components/ui/MediaUnavailable.svelte';
+  import { Button } from '$lib/components/ui/button';
   import { parseWorkspaceFileImageUrl } from '$lib/utils/image-actions';
 
   interface Props {
@@ -45,20 +46,30 @@
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-video>
   {#if frameUnavailable}
-    <MediaUnavailable
-      {name}
-      reason={workspaceFile ? 'missing' : 'load-failed'}
-      path={workspaceFile?.path}
-      workspaceId={workspaceFile?.workspaceId}
-    />
+    <div class="flex items-center gap-2">
+      <MediaUnavailable
+        {name}
+        reason="load-failed"
+        path={workspaceFile?.path}
+        workspaceId={workspaceFile?.workspaceId}
+      />
+      <VideoActionsMenu
+        {videoUrl}
+        videoName={name}
+        sourceKind={source.kind}
+        mimeType={source.mimeType}
+      />
+    </div>
   {:else}
     <div
       class="group relative aspect-video w-full max-h-40 max-w-2xl"
       style="width: min(100%, calc(10rem * 16 / 9));"
     >
-      <button
-        bind:this={triggerRef}
+      <Button
+        bind:ref={triggerRef}
         type="button"
+        variant="ghost"
+        size="default"
         class="relative block size-full cursor-pointer overflow-hidden rounded-lg border border-border bg-muted/40 p-0 shadow-(--elevation-raised) focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 forced-colors:border"
         aria-label={m.chat_videoBlock_play_ariaLabel({ name })}
         data-testid="chat-video-snapshot"
@@ -100,7 +111,7 @@
             </svg>
           </span>
         </span>
-      </button>
+      </Button>
       <VideoActionsMenu
         {videoUrl}
         videoName={name}

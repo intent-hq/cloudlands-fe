@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { Input } from '$lib/components/ui/input';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { logger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
 
   import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { TooltipRich } from '$lib/components/ui/tooltip';
   import {
     faBars,
@@ -219,13 +222,13 @@
       return;
     }
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
     try {
       await navigator.clipboard.writeText(workspace.branch);
-      toast.success(m.workspace_sidebarHeader_branchCopied_toast());
+      notify.success(m.workspace_sidebarHeader_branchCopied_toast());
     } catch (error) {
       logger.error('Failed to copy branch name:', error);
-      toast.error(m.workspace_sidebarHeader_branchCopyFailed_error());
+      notify.error(m.workspace_sidebarHeader_branchCopyFailed_error());
     }
   }
 
@@ -235,7 +238,7 @@
       return;
     }
 
-    const { toast } = await import('svelte-sonner');
+    const { notify } = await import('$lib/components/patterns/notify');
 
     if (!workspace || !editedBranch.trim()) {
       isEditingBranch = false;
@@ -252,7 +255,7 @@
     const validationError = getBranchNameValidationError(newBranch);
     if (validationError) {
       logger.error('Invalid branch name format', { branchName: newBranch, error: validationError });
-      toast.error(validationError);
+      notify.error(validationError);
       editedBranch = workspace.branch || '';
       isEditingBranch = false;
       return;
@@ -273,12 +276,12 @@
         }
       } else {
         logger.error('Failed to rename branch', { error: result.error });
-        toast.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
+        notify.error(result.error || m.workspace_sidebarHeader_renameBranchFailed_error());
         editedBranch = workspace.branch || '';
       }
     } catch (error) {
       logger.error('Error renaming branch:', error);
-      toast.error(m.workspace_sidebarHeader_renameBranchFailed_error());
+      notify.error(m.workspace_sidebarHeader_renameBranchFailed_error());
       editedBranch = workspace.branch || '';
     } finally {
       isEditingBranch = false;
@@ -459,27 +462,29 @@
   <div class="flex min-w-0 flex-1 flex-col gap-1">
     <div class="relative flex w-full min-w-0 items-center">
       {#if isEditingTitle}
-        <input
-          bind:this={titleInputRef}
+        <Input
+          bind:ref={titleInputRef}
           type="text"
           bind:value={editedTitle}
           onblur={saveTitle}
           onkeydown={handleTitleKeydown}
-          class="edit-input type-title relative z-10 w-full rounded border-none bg-transparent py-0.5 text-foreground
-                 outline-none leading-normal
-                 focus:ring-none! focus:outline-none!
-                 transition-all duration-150"
+          aria-label={m.workspace_sidebarHeader_editTitle_tooltip()}
+          class="type-title h-auto w-full rounded border-none bg-transparent px-0 py-0.5 text-foreground leading-normal
+                 hover:bg-transparent focus-visible:bg-transparent focus-visible:shadow-none
+                 focus-visible:outline-solid focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]"
           placeholder={m.ui_editableName_placeholder()}
         />
       {:else}
-        <button
-          class="type-title relative z-10 cursor-text rounded border-none bg-transparent py-0.5 pr-1 text-left text-foreground
+        <Button
+          variant="ghost"
+          class="type-title relative z-10 h-auto cursor-text rounded border-none bg-transparent px-0 py-0.5 pr-1 text-left text-foreground
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-                 transition-all duration-150 leading-normal line-clamp-3
+                 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-normal line-clamp-3
                 focus-visible:outline focus-visible:outline-1
                  focus-visible:outline-ring focus-visible:outline-offset-[-1px]
-                 disabled:cursor-default disabled:opacity-50"
-          class:opacity-50={!workspace?.title}
+                 disabled:cursor-default disabled:opacity-50 {!workspace?.title
+            ? 'opacity-50'
+            : ''}"
           onclick={startEditingTitle}
           title={m.workspace_sidebarHeader_editTitle_tooltip()}
           disabled={!workspace}
@@ -487,20 +492,14 @@
           {#if workspace}
             {workspace.title || m.workspace_links_untitled_label()}
           {/if}
-        </button>
+        </Button>
       {/if}
-      <span
-        aria-hidden="true"
-        class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
-          ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
-          : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
-      ></span>
     </div>
 
     <!-- status message -->
     {#if isEditingStatusMessage}
-      <textarea
-        bind:this={statusInputRef}
+      <Textarea
+        bind:ref={statusInputRef}
         bind:value={editedStatusMessage}
         onblur={saveStatusMessage}
         onkeydown={handleStatusMessageKeydown}
@@ -511,31 +510,33 @@
         class="type-body max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded bg-none py-0.5 text-foreground
                outline-none leading-snug
                focus:ring-none! focus:outline-none!
-               transition-all duration-150 disabled:opacity-50"
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
         style="field-sizing: content;"
-        placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}></textarea>
+        placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
+      ></Textarea>
     {:else if workspace}
-      <button
-        class="type-body cursor-text rounded border-none bg-transparent py-0.5 text-left text-muted-foreground
-               max-w-full overflow-hidden line-clamp-2 break-words whitespace-normal
-               transition-all duration-150 leading-snug
+      <Button
+        variant="ghost"
+        truncateLabel={false}
+        labelClass="line-clamp-3"
+        class="type-body h-auto cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground {!currentStatusMessage
+          ? 'italic text-ghost'
+          : ''}
+               max-w-full break-words whitespace-pre-wrap
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-snug
                hover:text-foreground hover:opacity-80
                focus-visible:outline focus-visible:outline-1
                focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                disabled:cursor-default disabled:opacity-50"
-        class:italic={!currentStatusMessage}
-        class:text-ghost={!currentStatusMessage}
         onclick={startEditingStatusMessage}
-        title={currentStatusMessage
-          ? m.workspace_sidebarHeader_editStatus_tooltip()
-          : m.workspace_sidebarHeader_addStatus_tooltip()}
+        title={currentStatusMessage || m.workspace_sidebarHeader_addStatus_tooltip()}
         aria-label={currentStatusMessage
           ? m.workspace_sidebarHeader_editStatus_ariaLabel()
           : m.workspace_sidebarHeader_addStatus_ariaLabel()}
         disabled={!workspace}
       >
         {currentStatusMessage || m.workspace_sidebarHeader_addStatus_label()}
-      </button>
+      </Button>
     {/if}
 
     <!-- repository and branch metadata -->
@@ -556,8 +557,8 @@
       {#if workspace}
         <div class="flex h-5 min-w-0 flex-1 items-center leading-5" data-sidebar-branch-metadata>
           {#if isEditingBranch}
-            <input
-              bind:this={branchInputRef}
+            <Input
+              bind:ref={branchInputRef}
               type="text"
               bind:value={editedBranch}
               onblur={saveBranch}
@@ -565,7 +566,7 @@
               disabled={isSavingBranch}
               class="type-caption h-5 w-0 min-w-0 flex-1 rounded-sm bg-none px-1 py-0 leading-5 text-foreground
                      outline-none focus:ring-none! focus:outline-none!
-                     transition-all duration-150 disabled:opacity-50"
+                     transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
             />
           {:else}
@@ -578,8 +579,8 @@
               contentClass="border-0!"
               contentContainerClass="p-0! space-y-0!"
               showArrow={false}
-              class="type-caption flex h-5 w-0 min-w-0 flex-1 cursor-text items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border-none bg-transparent p-0 text-left leading-5 text-muted-foreground
-                     transition-all duration-150 hover:text-foreground
+              class="type-caption flex h-5 w-0 min-w-0 flex-1 cursor-text items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-sm border-none bg-transparent p-0 text-left font-normal leading-5 text-muted-foreground
+                     transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none hover:text-foreground
                      focus-visible:outline focus-visible:outline-1
                      focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                      disabled:cursor-default disabled:opacity-50"
@@ -621,14 +622,12 @@
           variant="ghost-light"
           size="icon-sm"
           aria-label={m.workspace_sidebarHeader_actions_ariaLabel()}
-          class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-150"
+          class="opacity-50 group-hover:opacity-70 hover:!opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
           disabled={isDeleting}
           data-workspace-actions-trigger
         >
           {#if isDeleting}
-            <div
-              class="animate-spin h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full"
-            ></div>
+            <IntentMarkLoader size={14} />
           {:else}
             <Fa icon={faEllipsisV} size="sm" />
           {/if}
@@ -636,7 +635,10 @@
       {/snippet}
 
       {#snippet content()}
-        <div class="w-48">
+        <div
+          class="min-w-48 w-max"
+          style="max-width: min(20rem, calc(var(--bits-dropdown-menu-content-available-width, 100vw) - 0.625rem))"
+        >
           <WorkspaceActionsMenu
             filePath={workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || ''}
             workspaceId={workspace?.id || workspaceId}

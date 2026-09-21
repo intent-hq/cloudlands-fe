@@ -7,17 +7,21 @@ export const sidebarMetadata = parseUiComponentMetadata({
   publicImport: '$lib/components/ui/sidebar',
   legacyImports: [],
   exports: [
+    'Callout',
     'Content',
     'Footer',
     'Group',
     'GroupAction',
+    'GroupActions',
     'GroupContent',
     'GroupLabel',
+    'Harness',
     'Header',
     'Input',
     'Inset',
     'Menu',
     'MenuAction',
+    'MenuActions',
     'MenuBadge',
     'MenuButton',
     'MenuItem',
@@ -30,17 +34,21 @@ export const sidebarMetadata = parseUiComponentMetadata({
     'Root',
     'Separator',
     'Sidebar',
+    'SidebarCallout',
     'SidebarContent',
     'SidebarFooter',
     'SidebarGroup',
     'SidebarGroupAction',
+    'SidebarGroupActions',
     'SidebarGroupContent',
     'SidebarGroupLabel',
+    'SidebarHarness',
     'SidebarHeader',
     'SidebarInput',
     'SidebarInset',
     'SidebarMenu',
     'SidebarMenuAction',
+    'SidebarMenuActions',
     'SidebarMenuBadge',
     'SidebarMenuButton',
     'SidebarMenuItem',
@@ -56,10 +64,31 @@ export const sidebarMetadata = parseUiComponentMetadata({
     'sidebarMetadata',
     'useSidebar',
   ],
+  // Minimal composition from the sidebar-navigation default fixture.
+  usage: `<script lang="ts">
+  import * as Sidebar from '$lib/components/ui/sidebar';
+</script>
+
+<Sidebar.Provider open persist={false}>
+  <Sidebar.Root>
+    <Sidebar.Content>
+      <Sidebar.Group>
+        <Sidebar.GroupLabel>Navigation</Sidebar.GroupLabel>
+        <Sidebar.GroupContent>
+          <Sidebar.Menu>
+            <Sidebar.MenuItem><Sidebar.MenuButton label="Overview" /></Sidebar.MenuItem>
+          </Sidebar.Menu>
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+    </Sidebar.Content>
+  </Sidebar.Root>
+  <Sidebar.Inset><Sidebar.Trigger />Workspace content</Sidebar.Inset>
+</Sidebar.Provider>`,
   category: 'pattern',
   owner: '012-F2',
   callers: [
     'src/lib/component-catalog/renderers/NavigationHelpCatalogPreview.svelte',
+    'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',
     'src/lib/components/file-explorer/file-explorer-layout.svelte',
     'src/lib/components/file-explorer/file-explorer-sidebar.svelte',
   ],

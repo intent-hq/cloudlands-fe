@@ -13,7 +13,6 @@
     faLock,
     faRefresh,
     faTriangleExclamation,
-    faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { tick } from 'svelte';
@@ -39,7 +38,7 @@
     onGoBack?: () => void;
     onGoForward?: () => void;
     onRefresh?: () => void;
-    /** Close on the host, or force-close the daemon row while it is offline. */
+    /** Force-close the daemon row while its host is offline. */
     onClose?: (options: { force: boolean }) => void;
   }
 
@@ -124,7 +123,7 @@
     <div class="flex gap-0.5">
       <Button
         variant="ghost-light"
-        size="icon-xs"
+        size="icon-compact"
         onclick={() => onGoBack?.()}
         disabled={offline || !canGoBack}
         tooltip={m.browser_embedded_goBack_tooltip()}
@@ -135,7 +134,7 @@
       </Button>
       <Button
         variant="ghost-light"
-        size="icon-xs"
+        size="icon-compact"
         onclick={() => onGoForward?.()}
         disabled={offline || !canGoForward}
         tooltip={m.browser_embedded_goForward_tooltip()}
@@ -146,7 +145,7 @@
       </Button>
       <Button
         variant="ghost-light"
-        size="icon-xs"
+        size="icon-compact"
         onclick={() => onRefresh?.()}
         disabled={offline}
         tooltip={m.browser_embedded_refresh_tooltip()}
@@ -158,12 +157,13 @@
     </div>
 
     <div
-      class="flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2 {offline
+      class="flex h-8 min-w-0 flex-1 items-center rounded-md bg-background {offline
         ? 'opacity-60'
         : ''}"
+      data-browser-address-surface
     >
       {#if isEditingUrl}
-        <form onsubmit={submitUrl} class="flex h-full min-w-0 flex-1 items-center">
+        <form onsubmit={submitUrl} class="flex h-full min-w-0 flex-1 items-center px-2">
           <Input
             bind:this={urlInputRef}
             type="text"
@@ -179,14 +179,15 @@
             aria-invalid={urlDraftInvalid || undefined}
             title={urlDraftInvalid ? m.browser_panel_invalidUrl_error() : undefined}
           />
-          <Button type="submit" variant="ghost" size="xs" class="sr-only">
+          <Button type="submit" variant="ghost" size="compact" class="sr-only">
             {m.browser_embedded_go_label()}
           </Button>
         </form>
       {:else}
-        <button
+        <Button
+          variant="plain"
           type="button"
-          class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md px-6 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
           onclick={() => void startEditingUrl()}
           disabled={offline}
           aria-label={m.browser_embedded_editAddress_ariaLabel()}
@@ -205,26 +206,14 @@
               >{pageHostname}</span
             >
           {/if}
-        </button>
+        </Button>
       {/if}
     </div>
-
-    <Button
-      variant="ghost-light"
-      size="icon-xs"
-      onclick={() => onClose?.({ force: false })}
-      disabled={offline}
-      tooltip={m.browser_embedded_close_tooltip()}
-      tooltipSide="bottom"
-      aria-label={m.browser_embedded_close_ariaLabel()}
-    >
-      <Fa icon={faXmark} size="xs" />
-    </Button>
   </div>
 
   {#if offline}
     <div
-      class="flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning"
+      class="flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning-ink"
       data-browser-viewer-offline-banner
       role="status"
     >
@@ -232,7 +221,7 @@
       <span class="min-w-0 flex-1">
         {m.browser_viewer_hostOffline_description({ host: host.name })}
       </span>
-      <Button variant="outline" size="xs" onclick={() => onClose?.({ force: true })}>
+      <Button variant="outline" size="compact" onclick={() => onClose?.({ force: true })}>
         {m.browser_viewer_forceClose_label()}
       </Button>
     </div>

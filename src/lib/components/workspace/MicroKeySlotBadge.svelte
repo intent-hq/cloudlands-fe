@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   /**
    * Numbered micro-key slot badge: a small faint square showing the 1-based
    * slot number a workspace occupies (pinned or auto-filled). Clicking it
@@ -81,16 +82,22 @@
 </script>
 
 <!-- The interactive click target composes the shared non-interactive square
-     (identical visual to the toast surfaces); hover states ride the square. -->
-<button
+     (identical visual to the toast surfaces); hover states ride the square.
+     The size override collapses the default button box to the square itself so
+     numbered rows keep the same height and dot/title offset as un-numbered rows. -->
+<Button
+  variant="ghost"
+  size="icon"
   type="button"
-  class="micro-key-slot-badge shrink-0 cursor-pointer a11y-ignore"
+  class="micro-key-slot-badge size-4 min-w-0 shrink-0 cursor-pointer rounded-[3px] p-0 a11y-ignore"
   aria-label={m.workspace_microKeyBadge_ariaLabel({ number: formatInteger(slot + 1) })}
   title={m.workspace_microKeyBadge_tooltip({ number: formatInteger(slot + 1) })}
   onclick={handleClick}
 >
-  <MicroKeySlotSquare {slot} class="transition-colors {slotHoverClasses}" />
-</button>
+  <span class="contents">
+    <MicroKeySlotSquare {slot} class="transition-colors {slotHoverClasses}" />
+  </span>
+</Button>
 
 {#if menu}
   <SidebarContextMenu x={menu.x} y={menu.y} items={getMenuItems()} onClickOutside={closeMenu} />

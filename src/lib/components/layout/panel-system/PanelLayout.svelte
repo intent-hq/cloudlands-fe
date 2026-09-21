@@ -37,14 +37,13 @@
   } from './panel-render-gate';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { appClient } from '$lib/client';
   import { derived, writable } from 'svelte/store';
   import { createLogger } from '$lib/utils/client-logger';
   import { hasCapability } from '$lib/utils/platform-capabilities';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
 
   import { resize } from '$lib/components/layout/size-transition';
-  import { fade } from 'svelte/transition';
+  import { fade } from '$lib/motion';
   import { flattenPanels, openTabFromConfig } from './panel-ai-layout-helpers';
   import { NoteId } from '$shared/types/branded-ids';
   import { updateNoteTitle } from '$features/notes/notes-write-service';
@@ -90,7 +89,8 @@
     selectPendingPanelReveal,
     selectRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-  import { removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
+  import { createPanelTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
+  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
     markPanelTouched,
@@ -167,6 +167,9 @@
   const focusedPanelId$ = selectFocusedPanelId(workspaceIdStore);
   const activeTab$ = selectActiveTab(workspaceIdStore);
   const allTabs$ = selectAllTabs(workspaceIdStore);
+  // Collaborators (multiplayer w3) are refused on terminal + browser methods, so
+  // their "New terminal" / "New browser" entry points are withheld up front.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
   const panelColumnDefaultWidthTiers$ = selectPanelColumnDefaultWidthTiers(workspaceIdStore);
   const panelDefaultWidthViewport = writable(0);
   const panelColumnDefaultWidths$ = derived(
@@ -816,10 +819,8 @@
     }),
   );
   let lifecycleMotionReadyForLayoutId = $state<string | null>(null);
-  const layoutMotionDuration = $derived(
-    lifecycleMotionReadyForLayoutId === effectiveLayoutId && !suppressCommittedPanelMoveMotion
-      ? 220
-      : 0,
+  const layoutMotionEnabled = $derived(
+    lifecycleMotionReadyForLayoutId === effectiveLayoutId && !suppressCommittedPanelMoveMotion,
   );
 
   $effect(() => {
@@ -933,50 +934,8 @@
     return unsubscribe;
   });
 
-  // Handler to create a new terminal via the daemon (`terminal.create`,
-  // PROTOCOL §5.13). The daemon assigns the terminalId; we surface it as
-  // `MutationResult.id` from the live client.
-  async function handleCreateTerminal(panelId?: string) {
-    try {
-      const result = await appClient.terminals.create({
-        workspaceId,
-        cols: 80,
-        rows: 24,
-      });
-
-      if (result.success && result.id) {
-        logger.info('Created new terminal', { terminalId: result.id });
-
-        // Clear any stale Redux entry for this id before saving fresh metadata.
-        // `saveTerminalMetadata` spreads the existing entry to preserve
-        // customName across remounts, but for a freshly daemon-assigned id
-        // (e.g. after a daemon restart that resets the id counter) a stale
-        // customName from a previously renamed terminal must not carry over.
-        appStore.dispatch(removeTerminal(workspaceId, result.id));
-
-        // Save terminal metadata without a hardcoded title — the reducer keeps
-        // any daemon-provided name and only falls back to 'Terminal'.
-        terminalManager.saveTerminalMetadata(result.id, workspaceId);
-
-        // Reload terminals to include the new one
-        loadTerminals(workspaceId);
-
-        // Open the new terminal as a tab in the panel layout
-        layoutManager.openTab(
-          {
-            type: 'terminal',
-            title: m.layout_panelLayout_terminal_fallback(),
-            terminalId: result.id,
-            closable: true,
-          },
-          panelId,
-        );
-      } else if (!result.success) {
-        logger.error('Failed to create terminal', { error: result.error });
-      }
-    } catch (error) {
-      logger.error('Failed to create terminal', error);
-    }
+  function handleCreateTerminal(panelId?: string) {
+    appStore.dispatch(createPanelTerminalRequested(workspaceId, panelId));
   }
 
   // Handler to open a new browser tab. The embedded browser panel needs the
@@ -1521,7 +1480,7 @@
       ondragovercapture={handlePaneInsertionDragOver}
       ondropcapture={handlePaneInsertionDrop}
       ondragleave={handlePaneInsertionDragLeave}
-      transition:resize={{ axis: 'x', duration: layoutMotionDuration }}
+      transition:resize={{ axis: 'x', enabled: layoutMotionEnabled, tier: 'moderate' }}
     >
       <div class:opacity-0={panelMovePreviewRoot !== null} class="h-full w-full min-w-0">
         <PanelContainer
@@ -1568,8 +1527,8 @@
           {onCreateAgent}
           {onCreateAgentWithSpecialist}
           {onCreateNote}
-          onCreateTerminal={handleCreateTerminal}
-          onOpenBrowser={canOpenBrowserPanel ? handleOpenBrowser : undefined}
+          onCreateTerminal={$isCollaborator$ ? undefined : handleCreateTerminal}
+          onOpenBrowser={canOpenBrowserPanel && !$isCollaborator$ ? handleOpenBrowser : undefined}
         />
       </div>
       {#if visiblePanelMovePreview}
@@ -1652,14 +1611,14 @@
 {#if active && keyboardShortcuts.leaderActive}
   <div
     class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-popover border border-border rounded-lg shadow-lg px-4 py-2 z-50"
-    transition:fade={{ duration: 100 }}
+    transition:fade={{ tier: 'fast' }}
   >
     <div class="text-sm font-medium text-foreground">
       {#if keyboardShortcuts.showPanelNumbers}
-        <span class="text-primary">{m.layout_panelLayout_pressKeys_before()}</span>
+        <span class="text-primary-ink">{m.layout_panelLayout_pressKeys_before()}</span>
         {m.layout_panelLayout_jumpToPanel_after()}
       {:else}
-        <span class="text-primary">⌘K</span>
+        <span class="text-primary-ink">⌘K</span>
         {m.layout_panelLayout_leaderActivated_label()}
         <span class="text-subtle ml-2"> {m.layout_panelLayout_leaderHints_label()} </span>
       {/if}

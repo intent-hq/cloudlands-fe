@@ -10,7 +10,14 @@ vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: mocks.startRootStoreLifecycle,
 }));
 vi.mock('$store/renderer/seeders', () => ({}));
-vi.mock('$features/backend/splash-gate', () => ({ wireSplashGate: () => () => {} }));
+// Native animation behavior is covered in window-blur-animations.ct.spec.ts.
+vi.mock('$lib/actions/pause-window-animations', () => ({
+  pauseWindowAnimations: () => ({ destroy() {} }),
+}));
+vi.mock('$features/backend/splash-gate', () => ({
+  dismissSplashElement: () => {},
+  wireSplashGate: () => () => {},
+}));
 vi.mock('$lib/utils/history-navigation', () => ({
   attachMouseHistoryNavigation: () => () => {},
   handleHistoryNavigateIpc: () => {},

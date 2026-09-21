@@ -7,7 +7,7 @@
    * provider icon, connection status, and install/login state. Extracted from
    * AgentGrid to keep per-provider rendering isolated.
    */
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import {
     faArrowUpRightFromSquare,
     faArrowsRotate,
@@ -18,7 +18,10 @@
   import { cn } from '$lib/utils';
   import ProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
+  import { Button } from '$lib/components/ui/button';
+  import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
+  import ClaudeLoginButton from './ClaudeLoginButton.svelte';
   import { shell } from '$lib/electron-bridge';
   import { m } from '$shared/paraglide/messages.js';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
@@ -127,6 +130,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.target !== e.currentTarget) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       handleCardClick();
@@ -138,7 +142,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_tabindex -->
   <div
     class={cn(
-      'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-500 border',
+      'group/card relative w-full aspect-[3/4] flex flex-col justify-between p-7 text-left rounded-xl overflow-hidden transition-colors duration-spring-slow ease-spring-slow motion-reduce:transition-none border',
       cardClickable ? 'cursor-pointer border-transparent' : 'cursor-default border-border',
       (ready || needsAction) && 'border-border',
       installed && brand.isLight && 'text-slate-800',
@@ -163,10 +167,10 @@
   >
     <!-- Gradient overlay — always present, opacity animates on install -->
     <div
+      data-testid="provider-card-artwork"
       class={cn(
-        'absolute inset-0 rounded-lg transition-all transform duration-700 ease-out',
+        'absolute inset-0 rounded-lg transition-all transform duration-spring-slow ease-spring-slow motion-reduce:transition-none',
         !installed && 'opacity-0 translate-y-full',
-        needsLogin && 'translate-y-[calc(100%_-_13rem)]',
         installed && 'opacity-100',
       )}
       style="background: linear-gradient(in oklab to bottom, {brand.color1} 10%, {brand.color2} 88%);"
@@ -175,15 +179,11 @@
     <!-- Icon in top-left -->
     <span
       class={cn(
-        'relative z-10 transition-all transform origin-center duration-300',
+        'relative z-10 transition-all transform origin-center duration-spring-slow ease-spring-slow motion-reduce:transition-none',
         provider.statusLoading && 'animate-pulse',
       )}
     >
-      <ProviderIcon
-        providerId={provider.id}
-        class={cn(installed && needsLogin && 'text-foreground')}
-        size={32}
-      />
+      <ProviderIcon providerId={provider.id} class="size-8" size={32} />
     </span>
 
     <!-- Full-card-width "SELECTED" banner across the top edge; the card's
@@ -192,7 +192,7 @@
     {#if ready && selected}
       <div
         data-testid="provider-card-selected-banner"
-        class="absolute top-0 inset-x-0 z-20 flex items-center justify-center bg-primary text-primary-foreground py-1 text-xs font-semibold uppercase tracking-widest"
+        class="absolute top-0 inset-x-0 z-20 flex items-center justify-center bg-primary text-primary-foreground py-1 text-xs font-semibold"
       >
         {m.onboarding_providerCard_selected_label()}
       </div>
@@ -202,27 +202,32 @@
     <div class="relative z-10 flex flex-col">
       <div class="flex items-center gap-1.5 min-w-0 pb-1.5">
         {#if provider.docsUrl}
-          <button
+          <Button
+            variant="plain"
             onclick={(e) => openDocs(provider.docsUrl, e)}
-            class="font-medium text-lg truncate min-w-0 cursor-pointer"
+            class="h-auto shrink min-w-0 font-medium text-lg cursor-pointer"
+            labelClass="text-left"
           >
             {provider.name}
-          </button>
+          </Button>
         {:else}
           <div class="font-medium text-lg truncate min-w-0">
             {provider.name}
           </div>
         {/if}
         {#if provider.docsUrl}
-          <button
+          <Button
+            variant="plain"
             type="button"
-            class="group/button shrink-0 opacity-50 flex items-center gap-1.5 hover:opacity-100 transition-colors p-0.5 cursor-pointer"
+            size="icon-compact"
+            iconOnly
+            class="group/button shrink-0 opacity-50 hover:opacity-100 transition-colors cursor-pointer"
             onclick={(e) => openDocs(provider.docsUrl, e)}
             title={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
             aria-label={m.onboarding_providerCard_openDocs_tooltip({ name: provider.name })}
           >
             <Fa icon={faArrowUpRightFromSquare} size={11} />
-          </button>
+          </Button>
         {/if}
       </div>
 
@@ -231,7 +236,10 @@
           <span class="opacity-50">{m.onboarding_providerCard_checking_label()}</span>
         {:else if ready}
           <div class="flex items-center whitespace-nowrap min-w-0">
-            <div class="flex items-center -ml-3.5" transition:slide={{ axis: 'x', duration: 200 }}>
+            <div
+              class="flex items-center -ml-3.5"
+              transition:slide={{ axis: 'x', tier: 'moderate' }}
+            >
               <div class="h-px bg-gradient-to-r from-transparent to-current w-3 mt-px"></div>
               <Fa icon={faPlug} class="mr-1.5 translate-y-[0.5px] transform rotate-45" size={12} />
             </div>
@@ -241,7 +249,7 @@
                 <Tooltip side="top" content={provider.authDetails} disableHoverableContent>
                   <div
                     class="text-xs opacity-70 font-normal truncate pl-1"
-                    transition:slide={{ axis: 'y', duration: 200 }}
+                    transition:slide={{ axis: 'y', tier: 'moderate' }}
                   >
                     {m.onboarding_providerCard_connectedAs_label({ details: provider.authDetails })}
                   </div>
@@ -252,10 +260,14 @@
         {:else if authUnknown}
           <span>{m.providers_antigravity_authUnknown()}</span>
         {:else if needsLogin}
-          <span
-            class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
-            >{m.onboarding_providerCard_logIn_label()}</span
-          >
+          {#if provider.id === 'claude-code'}
+            <ClaudeLoginButton />
+          {:else}
+            <span
+              class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
+              >{m.onboarding_providerCard_logIn_label()}</span
+            >
+          {/if}
         {:else}
           <span
             class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
@@ -265,9 +277,12 @@
 
         <div class="flex items-center gap-1.5">
           {#if needsInstall || needsLogin || authUnknown}
-            <button
+            <Button
+              variant="plain"
               type="button"
-              class="flex-none opacity-50 hover:opacity-100 transition-colors px-0.5 py-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              size="icon-compact"
+              iconOnly
+              class="size-5 flex-none opacity-50 hover:opacity-100 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={(e) => {
                 e.stopPropagation();
                 userRefreshing = true;
@@ -278,14 +293,12 @@
               title={m.onboarding_providerCard_refreshStatus_tooltip({ name: provider.name })}
               aria-label={m.onboarding_providerCard_refreshStatus_tooltip({ name: provider.name })}
             >
-              <span
-                class={cn('inline-block', {
-                  'animate-spin': $providerLoadingMap$[provider.id] || userRefreshing,
-                })}
-              >
+              {#if $providerLoadingMap$[provider.id] || userRefreshing}
+                <IntentMarkLoader size={14} />
+              {:else}
                 <Fa icon={faArrowsRotate} size={14} />
-              </span>
-            </button>
+              {/if}
+            </Button>
           {/if}
         </div>
       </div>
@@ -293,7 +306,7 @@
       <!-- Actionable login guidance: the catalog's login command with
            copy-to-clipboard (docs link above stays the secondary action).
            Clicks must not bubble to the card (which opens docs). -->
-      {#if needsLogin && provider.loginCommandHint}
+      {#if needsLogin && provider.id !== 'claude-code' && provider.loginCommandHint}
         <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
         <div
           data-testid="provider-card-login-hint"
@@ -311,30 +324,23 @@
         </div>
       {/if}
 
-      <!-- claude-code: a desktop-app sign-in does not carry over to the CLI
-           credential chain — the CLI login is still required. -->
-      {#if needsLogin && provider.id === 'claude-code'}
-        <p data-testid="provider-card-claude-desktop-note" class="mt-2 text-xs opacity-70">
-          {m.onboarding_providerCard_claudeDesktopNote_label()}
-        </p>
-      {/if}
-
       <!-- npx requirement hint for shim providers when binary not installed + npx missing/old -->
       {#if showNpxMissingHint}
-        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+        <div class="mt-2 flex items-start gap-2 text-xs text-warning-ink">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
             {m.onboarding_providerCard_requiresNpx_before()}
-            <button
+            <Button
+              variant="ghost"
               type="button"
               class="underline hover:no-underline"
               onclick={() => shell.open('https://nodejs.org')}
-              >{m.onboarding_providerCard_installFromNodejs_label()}</button
+              >{m.onboarding_providerCard_installFromNodejs_label()}</Button
             >
           </span>
         </div>
       {:else if showNpxOldHint}
-        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+        <div class="mt-2 flex items-start gap-2 text-xs text-warning-ink">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>{m.onboarding_providerCard_npxTooOld_label()}</span>
         </div>
@@ -342,15 +348,16 @@
 
       <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
       {#if provider.warning && !provider.statusLoading}
-        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+        <div class="mt-2 flex items-start gap-2 text-xs text-warning-ink">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
             {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
-              — <button
+              — <Button
+                variant="ghost"
                 type="button"
                 class="underline hover:no-underline"
                 onclick={() => void shell.open('https://nodejs.org')}
-                ><!-- i18n-ignore (domain name) -->nodejs.org</button
+                ><!-- i18n-ignore (domain name) -->nodejs.org</Button
               >
             {/if}
           </span>

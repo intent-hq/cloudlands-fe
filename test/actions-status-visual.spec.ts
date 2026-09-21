@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const artifactDir = path.resolve('.demo-artifacts/20260722-actions-status');
@@ -14,6 +15,7 @@ test.use(existsSync(systemChrome) ? { channel: 'chrome' } : {});
 test.beforeAll(async () => {
   mkdirSync(artifactDir, { recursive: true });
   server = await createServer({
+    cacheDir: viteHarnessCacheDir('actions-status-visual'),
     server: { host: '127.0.0.1', port: 0, strictPort: false, watch: { ignored: ['**/*'] } },
   });
   await server.listen();
@@ -44,22 +46,13 @@ test('captures Actions & status at genuine 200% device scale with reduced motion
   });
 
   try {
-    await page.goto(`${baseUrl}sandbox`, { waitUntil: 'networkidle' });
+    // Wave 11 batch 5a (388bffff) retired the gallery group filter; use the live Button page.
+    await page.goto(`${baseUrl}sandbox/button?motion=reduced`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Customize preview' }).click();
     const reduceMotion = page.getByRole('switch', { name: 'Reduce motion' });
-    if (!(await reduceMotion.isChecked())) await reduceMotion.click();
     await expect(reduceMotion).toBeChecked();
-    await page.getByTestId('catalog-group-filter').click();
-    await page.getByRole('option', { name: 'Actions & status' }).click();
-
-    const gallery = page.getByTestId('catalog-gallery');
-    const actionEntries = gallery.locator('[data-catalog-gallery-entry]');
-    await expect(actionEntries).toHaveCount(5);
-    for (const slug of ['badge', 'button', 'button-group', 'toggle', 'toggle-group']) {
-      await expect(gallery.locator(`[data-catalog-gallery-entry="${slug}"]`)).toBeVisible();
-    }
-
-    const runAction = page.getByRole('button', { name: 'Run action' });
-    const heading = page.getByRole('heading', { name: 'Actions & status', exact: true });
+    const runAction = page.getByRole('button', { name: '1. Primary', exact: true });
+    const heading = page.getByRole('main').getByRole('heading', { level: 1 });
     const [headingBox, motion] = await Promise.all([
       heading.boundingBox(),
       runAction.evaluate((element) => {
@@ -100,7 +93,7 @@ test('captures Actions & status at genuine 200% device scale with reduced motion
     expect(pngDimensions(screenshot).height).toBeGreaterThan(physical.height);
     writeFileSync(path.join(artifactDir, 'actions-status-zoom-200.png'), screenshot);
   } finally {
-    await cdp.send('Emulation.clearDeviceMetricsOverride');
+    if (!page.isClosed()) await cdp.send('Emulation.clearDeviceMetricsOverride');
   }
 });
 

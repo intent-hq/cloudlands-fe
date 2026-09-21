@@ -92,6 +92,41 @@ describe('LiveNotesClient mutations (fake transport)', () => {
     });
   });
 
+  // The daemon merges a full-content write against concurrent edits and echoes
+  // the merged text (`newContent`) plus, on newer daemons, the post-write
+  // `rev`; both surface on the MutationResult so the save path can apply them.
+  it("setContent surfaces the daemon's merged newContent and rev on the MutationResult", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      ok: true,
+      noteId: 'note-1',
+      title: 'T',
+      updatedAt: 'now',
+      newContent: 'merged text',
+      rev: 7,
+      convertedCount: 0,
+      createdTaskNoteIds: [],
+      createdTasks: [],
+      warnings: [],
+    });
+    const client = new LiveNotesClient();
+
+    expect(await client.setContent('note-1', 'mine', 6, 'ws-1')).toEqual({
+      success: true,
+      newContent: 'merged text',
+      noteRev: 7,
+    });
+  });
+
+  it('setContent surfaces newContent without a rev when the daemon omits it (older daemons)', async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, noteId: 'note-1', newContent: 'merged text' });
+    const client = new LiveNotesClient();
+
+    expect(await client.setContent('note-1', 'mine', 6, 'ws-1')).toEqual({
+      success: true,
+      newContent: 'merged text',
+    });
+  });
+
   // Round-5 regression: note ids are not globally unique (every workspace has
   // a `spec` note) and the resolver cache is last-writer-wins across
   // workspaces, so a caller-supplied workspaceId must win over the cache —

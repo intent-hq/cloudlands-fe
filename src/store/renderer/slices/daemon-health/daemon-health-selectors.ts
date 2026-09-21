@@ -167,3 +167,13 @@ export const selectUnslothStatus = store.createSelector(
 export const selectUnslothStopping = store.createSelector(
   (state) => state.daemonHealth.unslothStopping,
 );
+
+/** Last agent.memoryUsage result (fetched while the agent memory breakdown is open), if any. */
+export const selectAgentMemoryUsage = store.createSelector(
+  (state) => state.daemonHealth.agentMemoryUsage,
+);
+
+/** True when the last agent.memoryUsage fetch failed. */
+export const selectAgentMemoryUsageError = store.createSelector(
+  (state) => state.daemonHealth.agentMemoryUsageError,
+);

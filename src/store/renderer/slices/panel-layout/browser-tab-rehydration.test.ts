@@ -87,6 +87,26 @@ describe('collectRehydratableBrowserTabs', () => {
     expect(collectRehydratableBrowserTabs(layout)).toEqual([]);
   });
 
+  it('collects hidden browser tabs carrying a persisted requested URL', () => {
+    const layout = {
+      panels: {},
+      hiddenTabs: [
+        browserTab({
+          browserUrl: 'http://127.0.0.1:52345/',
+          browserRequestedUrl: 'http://daemon.localhost:3000/',
+        }),
+      ],
+    };
+
+    expect(collectRehydratableBrowserTabs(layout)).toEqual([
+      {
+        tabId: 'tab-1',
+        requestedUrl: 'http://daemon.localhost:3000/',
+        storedUrl: 'http://127.0.0.1:52345/',
+      },
+    ]);
+  });
+
   it('skips tabs missing a stored URL', () => {
     const layout = {
       panels: {

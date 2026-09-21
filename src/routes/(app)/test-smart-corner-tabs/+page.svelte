@@ -33,7 +33,7 @@
     >
       {#snippet children(tab)}
         <div class="grid gap-3">
-          <p class="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          <p class="text-xs font-medium text-muted-foreground">
             {tab.label}
           </p>
           <h1 class="text-2xl font-semibold tracking-tight text-card-foreground">

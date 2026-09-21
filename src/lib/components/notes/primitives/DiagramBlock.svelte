@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from '$lib/components/ui/button';
   import { NodeViewWrapper } from 'svelte-tiptap';
   import type { NodeViewProps } from '@tiptap/core';
   import type { DiagramPrimitive } from '$shared/types/notes-primitives';
@@ -10,12 +11,12 @@
     faCopy,
     faCheck,
   } from '@fortawesome/free-solid-svg-icons';
-  import { slide } from 'svelte/transition';
+  import { slide } from '$lib/motion';
   import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { toast } from '$lib/components/ui/toast';
+  import { notify } from '$lib/components/patterns/notify';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
 
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -251,7 +252,6 @@
           text.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
           text.setAttribute('font-size', kindComputed.fontSize || '8px');
           text.setAttribute('font-weight', '500');
-          text.setAttribute('text-transform', 'uppercase');
           text.setAttribute('opacity', '0.6');
           text.textContent = kindText;
           g.appendChild(text);
@@ -398,14 +398,14 @@
   async function handleCopyAsSvg() {
     await copyAsSvg();
     copiedSvg = true;
-    toast.success(m.notes_diagramBlock_svgCopied_label());
+    notify.success(m.notes_diagramBlock_svgCopied_label());
     setTimeout(() => (copiedSvg = false), 2000);
   }
 
   async function handleCopyAsPng() {
     await copyAsPng();
     copiedPng = true;
-    toast.success(m.notes_diagramBlock_pngCopied_label());
+    notify.success(m.notes_diagramBlock_pngCopied_label());
     setTimeout(() => (copiedPng = false), 2000);
   }
 </script>
@@ -418,8 +418,9 @@
       <div class="flex items-center gap-2 mb-2">
         {#if linkedAgentId}
           <!-- Show agent avatar that opens the agent panel -->
-          <button
+          <Button
             type="button"
+            variant="ghost"
             class="flex-none hover:opacity-80 transition-opacity cursor-pointer"
             onclick={(event) => {
               const agentWsId = workspaceId;
@@ -435,10 +436,11 @@
             title={m.notes_diagramBlock_viewAgent_tooltip()}
           >
             <AgentAvatar agentId={linkedAgentId} variant="compact" />
-          </button>
+          </Button>
         {/if}
-        <button
+        <Button
           type="button"
+          variant="ghost"
           class="flex items-center gap-1.5 text-subtle transition-colors flex-1 min-w-0 cursor-pointer"
           onclick={toggleExpanded}
         >
@@ -453,7 +455,7 @@
               {m.notes_diagramBlock_stateCount_label({ count: primitive.states.length })}
             </span>
           {/if}
-        </button>
+        </Button>
 
         <!-- Copy dropdown -->
         <DropdownMenu align="end">
@@ -463,10 +465,14 @@
               side="top"
               delayDuration={300}
             >
-              <button
+              <Button
                 {...props}
                 type="button"
-                class="flex-none p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
+                variant="ghost"
+                size="icon"
+                iconOnly
+                class="flex-none rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-muted-foreground cursor-pointer"
+                aria-label={m.notes_diagramBlock_copyDiagram_tooltip()}
                 onclick={(e) => {
                   e.stopPropagation();
                   (props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
@@ -477,13 +483,14 @@
                 {:else}
                   <Fa icon={faCopy} size="sm" />
                 {/if}
-              </button>
+              </Button>
             </Tooltip>
           {/snippet}
           {#snippet content({ close }: { close: () => void })}
             <div class="min-w-36">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
                 onclick={() => {
                   handleCopyAsSvg();
@@ -492,9 +499,10 @@
               >
                 <Fa icon={faCode} size="xs" class="text-ghost" />
                 {m.notes_diagramBlock_copyAsSvg_label()}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-muted/50 transition-colors cursor-pointer"
                 onclick={() => {
                   handleCopyAsPng();
@@ -503,7 +511,7 @@
               >
                 <Fa icon={faImage} size="xs" class="text-ghost" />
                 {m.notes_diagramBlock_copyAsPng_label()}
-              </button>
+              </Button>
             </div>
           {/snippet}
         </DropdownMenu>
@@ -511,7 +519,7 @@
 
       <!-- Expanded content -->
       {#if expanded}
-        <div bind:this={diagramContainer} transition:slide={{ duration: 150 }}>
+        <div bind:this={diagramContainer} transition:slide={{ tier: 'moderate' }}>
           <DiagramRenderer
             diagram={primitive}
             onUpdate={handleDiagramUpdate}

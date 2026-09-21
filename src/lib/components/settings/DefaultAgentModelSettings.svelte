@@ -23,6 +23,13 @@
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
   import {
+    SettingsForm,
+    defineSettings,
+    defineSettingsCustomControls,
+    type SettingsControlContext,
+  } from '$lib/components/patterns/settings';
+  import { Button } from '$lib/components/patterns/settings/custom-controls';
+  import {
     buildResetToInheritPayloads,
     hasExplicitModelPin,
   } from './utils/reset-specialists-to-inherit';
@@ -99,32 +106,56 @@
     // `model.defaultProvider` write from provider-settings-saga against that
     // atomic write, corrupting the persisted default (monorepo#4102-recurrence).
   }
+
+  const schema = $derived(
+    defineSettings({
+      sections: [
+        {
+          id: 'default-agent-model-section',
+          title: m.settings_section_defaults(),
+          entries: [
+            {
+              kind: 'custom',
+              id: 'default-agent-model',
+              label: m.settings_aiBehavior_defaultModel_label(),
+            },
+          ],
+        },
+      ],
+    }),
+  );
 </script>
 
-<div data-testid={testId} class="flex min-w-0 flex-wrap items-center gap-3">
-  <span class="text-sm font-medium text-foreground shrink-0">
-    {m.settings_aiBehavior_defaultModel_label()}
-  </span>
-  <ModelPicker
-    selectedModel={$selectedModel$}
-    onModelChange={handleModelChange}
-    showDefaultOption={false}
-    variant="default"
-    size="sm"
-    updateGlobalDefault
-    showReasoning
-    reasoningEffort={$defaultReasoningEffort$ || null}
-    onReasoningChange={(effort) => {
-      appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
-    }}
+{#snippet defaultModelControl(_: SettingsControlContext)}
+  <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2">
+    {#if anySpecialistHasExplicitModel}
+      <Button type="button" variant="link" size="sm" onclick={resetAllSpecialistsToInherit}>
+        {m.settings_aiBehavior_resetAllSpecialists()}
+      </Button>
+    {/if}
+    <ModelPicker
+      selectedModel={$selectedModel$}
+      onModelChange={handleModelChange}
+      showDefaultOption={false}
+      variant="outline"
+      showProviderWarningNotice
+      noticeClass="mt-2"
+      size="sm"
+      updateGlobalDefault
+      showReasoning
+      reasoningEffort={$defaultReasoningEffort$ || null}
+      onReasoningChange={(effort) => {
+        appStore.dispatch(setDefaultReasoningEffort(effort ?? ''));
+      }}
+    />
+  </div>
+{/snippet}
+
+<div data-testid={testId}>
+  <SettingsForm
+    {schema}
+    embedded
+    compact={false}
+    custom={defineSettingsCustomControls({ 'default-agent-model': defaultModelControl })}
   />
-  {#if anySpecialistHasExplicitModel}
-    <button
-      type="button"
-      onclick={resetAllSpecialistsToInherit}
-      class="ml-auto text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-    >
-      {m.settings_aiBehavior_resetAllSpecialists()}
-    </button>
-  {/if}
 </div>

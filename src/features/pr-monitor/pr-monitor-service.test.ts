@@ -1,6 +1,5 @@
 /**
- * PR-monitor service wire contract + event folding (PROTOCOL §6.9 / §6.5,
- * v6.1).
+ * PR-monitor service wire contract + event folding (PROTOCOL §6.9 / §6.5).
  *
  * FAKE transport only: the backend-transport seam is mocked. Asserts the
  * exact `prMonitor.list` / `prMonitor.cancel` / `prMonitor.flush` request

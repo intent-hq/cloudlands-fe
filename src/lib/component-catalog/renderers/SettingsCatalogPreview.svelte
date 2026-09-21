@@ -1,16 +1,19 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import { Form } from '$lib/components/patterns/form';
   import { FileInput } from '$lib/components/ui/file-input';
   import { SettingsFieldRow } from '$lib/components/ui/settings-field-row';
   import { SettingsPageShell } from '$lib/components/ui/settings-page-shell';
   import { SettingsSection } from '$lib/components/ui/settings-section';
   import { Slider } from '$lib/components/ui/slider';
+  import * as Tabs from '$lib/components/ui/tabs';
   import type { CatalogRendererProps } from '../catalog-renderers';
 
   let { componentId, fixture }: CatalogRendererProps = $props();
   let volume = $state(45);
   let selectedFiles = $state<FileList | undefined>();
   let backActionCount = $state(0);
+  let settingsTab = $state('general');
 </script>
 
 <div
@@ -20,7 +23,7 @@
 >
   {#if componentId === 'settings-page-shell'}
     <SettingsPageShell
-      title="Application settings"
+      title={fixture.title}
       description="Configure appearance, notifications, providers, and workspace behavior from one focused surface with a deliberately long description that remains readable."
       backHref={fixture.id === 'busy-shell' ? '#catalog-settings-shell' : undefined}
       backLabel="Back to workspace"
@@ -31,24 +34,20 @@
       measure={fixture.id === 'busy-shell' ? 'wide' : 'standard'}
       class="h-128 rounded-md border border-border"
       contentClass="py-4 sm:py-5"
+      bind:navigationValue={settingsTab}
+      navigationLabel="Catalog settings sections"
     >
       {#snippet navigation()}
-        <nav
-          class="flex w-max min-w-full gap-6 whitespace-nowrap text-sm"
-          aria-label="Catalog settings sections"
-          data-testid="catalog-settings-nav-strip"
-        >
-          <a class="font-medium text-primary" href="#catalog-general">General settings</a>
-          <a class="text-muted-foreground" href="#catalog-appearance">Appearance and colors</a>
-          <a class="text-muted-foreground" href="#catalog-accounts">Accounts and providers</a>
-          <a class="text-muted-foreground" href="#catalog-workspace">Workspace behavior</a>
-          <a class="text-muted-foreground" href="#catalog-agents">Agent preferences</a>
-        </nav>
+        <Tabs.Trigger value="general">General settings</Tabs.Trigger>
+        <Tabs.Trigger value="appearance">Appearance and colors</Tabs.Trigger>
+        <Tabs.Trigger value="accounts">Accounts and providers</Tabs.Trigger>
+        <Tabs.Trigger value="workspace">Workspace behavior</Tabs.Trigger>
+        <Tabs.Trigger value="agents">Agent preferences</Tabs.Trigger>
       {/snippet}
       <div class="min-h-128" data-testid="catalog-settings-long-content">
         <SettingsSection
-          id="catalog-general"
-          title="General"
+          id={`catalog-${fixture.id}-general`}
+          title={`${fixture.title} general`}
           description="Common application behavior."
         >
           <SettingsFieldRow
@@ -128,18 +127,40 @@
       </SettingsFieldRow>
     </div>
   {:else if componentId === 'slider'}
-    <div class="grid max-w-md gap-4">
-      <label class="grid gap-1 text-sm font-medium">
-        Catalog volume: {volume}
-        <Slider bind:value={volume} aria-label="Catalog volume" />
-      </label>
-      <Slider value={25} disabled aria-label="Disabled catalog volume" />
-      <Slider value={75} aria-label="Invalid catalog volume" aria-invalid="true" />
+    <div class="grid max-w-md gap-5" data-slider-capture-delay-ms="200">
+      <div class="grid gap-1 text-sm">
+        <span class="text-muted-foreground">Default</span>
+        <Slider
+          bind:value={volume}
+          aria-label="Catalog volume"
+          data-capture-interaction="hover-drag"
+        />
+      </div>
+      <div class="grid gap-1 text-sm">
+        <span class="text-muted-foreground">Inline value</span>
+        <Slider value={62} showValue valuePosition="right" aria-label="Catalog volume with value" />
+      </div>
+      <div class="grid gap-1 text-sm">
+        <span class="text-muted-foreground">Discrete steps</span>
+        <Slider
+          value={40}
+          steps={[0, 15, 40, 70, 100]}
+          showSteps
+          showValue
+          valuePosition="right"
+          formatValue={(value) => `${value}%`}
+          aria-label="Catalog stepped volume"
+        />
+      </div>
+      <div class="grid gap-1 text-sm">
+        <span class="text-muted-foreground">Disabled</span>
+        <Slider value={25} disabled aria-label="Disabled catalog volume" />
+      </div>
       <output class="sr-only" aria-label="Catalog slider value">{volume}</output>
     </div>
   {:else if componentId === 'file-input'}
     <div class="grid gap-4">
-      <form class="grid gap-3" data-testid="catalog-file-form">
+      <Form class="grid gap-3" data-testid="catalog-file-form" onSubmit={() => {}}>
         <FileInput
           id="catalog-theme-file"
           label="Choose theme files"
@@ -161,7 +182,9 @@
             Reset from parent
           </Button>
         </div>
-      </form>
+      </Form>
+      <FileInput id="catalog-hover-file" label="Hover file input" state="hover" />
+      <FileInput id="catalog-focus-file" label="Focused file input" state="focus" />
       <FileInput
         id="catalog-invalid-file"
         label="Choose invalid file"

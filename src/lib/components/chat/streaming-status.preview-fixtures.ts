@@ -1,6 +1,5 @@
 import type { ComponentProps } from 'svelte';
 import {
-  PREVIEW_FIXTURE_IDS,
   PREVIEW_FIXTURE_TIMESTAMPS,
   definePreviewFixture,
 } from '$lib/component-catalog/preview-fixtures';
@@ -18,7 +17,6 @@ const statusEvent = definePreviewFixture({
 const statusProps = definePreviewFixture<StreamingStatusProps>({
   isStreaming: false,
   isProcessing: false,
-  seed: PREVIEW_FIXTURE_IDS.agent,
   statusEvents: [],
 });
 
@@ -41,6 +39,14 @@ export const STREAMING_STATUS_PREVIEW_FIXTURES = Object.freeze({
         timestamp: Date.parse(PREVIEW_FIXTURE_TIMESTAMPS.lastActivity),
       }),
     ],
+  }),
+  'slot-wait': statusProps({
+    isProcessing: true,
+    processQueueHint: { waiting: true, used: 3, cap: 3, reason: 'slots' },
+  }),
+  'memory-wait': statusProps({
+    isProcessing: true,
+    processQueueHint: { waiting: true, used: 2, cap: 4, reason: 'memory-budget' },
   }),
   error: statusProps({
     error: 'The response stream ended before the agent finished.',

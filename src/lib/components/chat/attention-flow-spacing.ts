@@ -43,5 +43,5 @@ export function eventCardAssistantMarginClass(
   hasAssistantMessages: boolean,
 ): string {
   if (!hasAssistantMessages) return '';
-  return isAttentionRequestEventNotification(message) ? 'mb-4' : 'mb-8';
+  return isAttentionRequestEventNotification(message) ? 'mb-4' : 'mb-6';
 }

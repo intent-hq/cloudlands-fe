@@ -1,19 +1,41 @@
 import { runSaga, stdChannel } from 'redux-saga';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  getItems,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 
 const mocks = vi.hoisted(() => ({
   clearAdapter: vi.fn(),
   getJSON: vi.fn(),
+  getWorkspace: vi.fn(),
+  listTabs: vi.fn(),
   loadHistory: vi.fn(),
   removeItem: vi.fn(),
+  removeTab: vi.fn(),
   resolveBrowserLinkUrl: vi.fn(),
   saveHistory: vi.fn(),
   setJSON: vi.fn(),
+  syncTabs: vi.fn(),
+  upsertTab: vi.fn(),
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   clearPanelLayoutAdapter: mocks.clearAdapter,
+}));
+vi.mock('$lib/client', () => ({
+  appClient: {
+    browser: {
+      listTabs: mocks.listTabs,
+      upsertTab: mocks.upsertTab,
+      removeTab: mocks.removeTab,
+      syncTabs: mocks.syncTabs,
+    },
+    workspaces: {
+      get: mocks.getWorkspace,
+    },
+  },
 }));
 vi.mock('$features/layout/panel-layout-history.client', () => ({
   loadPanelLayoutHistory: mocks.loadHistory,
@@ -37,11 +59,26 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
   },
 }));
 
+import { fork } from 'typed-redux-saga';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type { AgentSession, ContextLink, Note, Workspace } from '$shared/types';
+import type { BrowserTabListing } from '$shared/types/browser-clients';
 import { ContentType, NoteVisibility } from '$shared/types';
+import {
+  browserClientsReducer,
+  initialState as browserClientsInitialState,
+} from '../../browser-clients/browser-clients-slice';
+import {
+  browserTabRegistryReducer,
+  initialState as browserTabRegistryInitialState,
+} from '../../browser-tab-registry/browser-tab-registry-slice';
+import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice';
 import { connectionsListReceived } from '../../connections/connections-slice';
-import { setWorkspaceEntity, setWorkspaceHasLoaded } from '../../workspace/workspace-slice';
+import {
+  replaceWorkspaceList,
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '../../workspace/workspace-slice';
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -53,6 +90,7 @@ import {
   closeActiveTab,
   closeAllOthersEverywhere,
   closeAllTabs,
+  closeFocusedPanelTab,
   closeOtherTabs,
   closePanel,
   closeTab,
@@ -60,6 +98,8 @@ import {
   closeTabsByType,
   closeTabsToRight,
   consumePendingFocus,
+  destroyHiddenTabsByOwnerAgent,
+  destroyTabsByType,
   emptyWorkspaceState,
   focusPanel,
   goBack,
@@ -83,11 +123,13 @@ import {
   panelLayoutScopeMounted,
   panelLayoutScopeUnmounted,
   preparePanelLayoutBackendRestore,
+  resetEmptiedByUserClose,
   reconcilePanelColumnCount,
   reconcileStaleAgentTabs,
   reorderTabs,
   reopenClosedPanelColumn,
   reopenClosedTab,
+  restoreHiddenTab,
   revealDeferredSpecTab,
   revealHiddenTabAvoidingPanel,
   resetLayout,
@@ -108,7 +150,8 @@ import {
   updateTabTitle,
   updateTabViewport,
 } from '../panel-layout-slice';
-import { panelLayoutReducer } from '../panel-layout-slice';
+import { panelLayoutReducer as rawPanelLayoutReducer } from '../panel-layout-slice';
+import { withPanelLayoutInvariants } from '../panel-layout-invariants.test-helpers';
 import {
   initialState as userPreferencesInitialState,
   userPreferencesReducer,
@@ -126,12 +169,17 @@ import {
   PANEL_LAYOUT_PERSISTENCE_VERSION,
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
   type LayoutSnapshot,
+  type PanelLayoutSliceState,
+  type PanelTab,
   type WorkspacePanelLayout,
+  type WorkspacePanelLayoutState,
 } from '../panel-layout-types';
 import {
   displacedOrphanSliverFixture,
   narrowOverlappingGeometryFixture,
+  tablessSplitFixture,
 } from '../panel-layout-restore.test-fixtures';
+import { browserTabRegistrySaga, REPORT_DEBOUNCE_MS } from './browser-tab-registry-saga';
 import {
   hydrateWorkspaceLayout,
   isStoredLayoutValid,
@@ -139,6 +187,8 @@ import {
   waitForWorkspaceLayoutRestore,
   watchRightmostColumnRequests,
 } from './panel-layout-saga';
+
+const panelLayoutReducer = withPanelLayoutInvariants(rawPanelLayoutReducer);
 
 const WS_1 = 'ws-1';
 const WS_2 = 'ws-2';
@@ -183,7 +233,7 @@ function storeState(
     tabState: { currentTabId: activeWorkspaceId },
     connections: { activeId: activeBackendId, windowBackendId: activeBackendId },
     workspaceAgents: { byWorkspaceId: {} },
-    workspace: { workspaces: createCollection('id') },
+    workspace: { workspaces: createCollection('id'), detailHydrated: {} },
   };
 }
 
@@ -251,7 +301,11 @@ function startRestoreSaga(
   agents: AgentSession[],
   initialLayout = emptyWorkspaceState,
   contextLinks?: ContextLink[],
-  opts: { workspaceListLoaded?: boolean } = {},
+  opts: {
+    workspaceListLoaded?: boolean;
+    slimRow?: boolean;
+    myRole?: 'owner' | 'collaborator';
+  } = {},
 ) {
   mocks.getJSON.mockReturnValue(stored);
   let backendId = LOCAL_CONNECTION_ID;
@@ -273,20 +327,38 @@ function startRestoreSaga(
     workspace: {
       workspaces: createCollection(
         'id',
-        contextLinks ? [{ id: WS_1, contextLinks } as unknown as Workspace] : [],
+        contextLinks || opts.myRole
+          ? [{ id: WS_1, contextLinks, myRole: opts.myRole } as unknown as Workspace]
+          : opts.slimRow
+            ? [{ id: WS_1 } as unknown as Workspace]
+            : [],
       ),
       hasLoaded: opts.workspaceListLoaded ?? true,
+      detailHydrated: {},
     },
   };
   const channel = stdChannel();
   const dispatch = vi.fn((action) => {
     state = { ...state, panelLayout: panelLayoutReducer(state.panelLayout, action) };
     if (action.type === setWorkspaceEntity.type) {
+      const [workspace, options] = action.payload;
       state = {
         ...state,
         workspace: {
           ...state.workspace,
-          workspaces: createCollection('id', [action.payload[0]]),
+          workspaces: createCollection('id', [workspace]),
+          detailHydrated: options?.detailRead
+            ? { ...state.workspace.detailHydrated, [workspace.id]: true }
+            : state.workspace.detailHydrated,
+        },
+      };
+    }
+    if (action.type === replaceWorkspaceList.type) {
+      state = {
+        ...state,
+        workspace: {
+          ...state.workspace,
+          workspaces: createCollection('id', action.payload[0]),
         },
       };
     }
@@ -354,8 +426,10 @@ const persistActionCreators = [
   openBlankWorkingPanel,
   closeTab,
   closeActiveTab,
+  closeFocusedPanelTab,
   closeTabsByType,
   closeTabsByAgentId,
+  destroyHiddenTabsByOwnerAgent,
   removeScript,
   reopenClosedTab,
   setActiveTab,
@@ -633,6 +707,41 @@ describe('panelLayoutSaga', () => {
     },
   );
 
+  // The application menu and the global new-browser / new-terminal shortcuts
+  // dispatch openTabInRightmostColumnRequested directly, bypassing the
+  // owner-only gates in the navigation and terminal sagas; the router is the
+  // choke point that drops those for a collaborator (multiplayer w3) while
+  // ordinary content still opens.
+  it.each([
+    ['browser', { type: 'browser', title: 'Browser', browserUrl: 'about:blank', closable: true }],
+    ['terminal', { type: 'terminal', title: 'Terminal', terminalId: 'term-1', closable: true }],
+  ] as const)('drops a collaborator %s open at the rightmost-column router', async (_type, tab) => {
+    const state: any = storeState();
+    state.workspace = {
+      workspaces: createCollection('id', [{ id: WS_1, myRole: 'collaborator' } as never]),
+    };
+    const { channel, dispatch, task } = startSaga(state);
+
+    channel.put(openTabInRightmostColumnRequested(WS_1, tab as any, { newTabId: 'blocked' }));
+    await settle();
+    expect(dispatch).not.toHaveBeenCalled();
+
+    channel.put(
+      openTabInRightmostColumnRequested(
+        WS_1,
+        { type: 'note', title: 'Plan', noteId: 'plan', closable: true },
+        { newTabId: 'tab-plan' },
+      ),
+    );
+    await settle();
+    expect(dispatch.mock.calls.map(([action]) => action.type)).toEqual([
+      'panelLayout/reconcilePanelColumnCount',
+      'panelLayout/openTabInRightmostColumn',
+    ]);
+    expect(dispatch.mock.calls[1]?.[0]).toMatchObject({ payload: { newTabId: 'tab-plan' } });
+    await cancelSaga(task);
+  });
+
   it.each([true, false])(
     'preserves the production bootstrap when coordinator=%s mounts before persistence',
     async (coordinator) => {
@@ -856,35 +965,17 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(second.task);
   });
 
-  it('derives a legacy one-panel count after a stale same-backend remount', async () => {
+  it('derives a legacy one-panel count when the column count was selected before the restore', async () => {
     const selected = panelLayoutReducer(undefined, setPanelColumnCount(WS_1, 3, 10)).byWorkspaceId[
       WS_1
     ];
-    const current: WorkspacePanelLayout = {
-      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
-      root: selected.root,
-      panels: selected.panels,
-      focusedPanelId: selected.focusedPanelId,
-      canvasWidth: selected.canvasWidth,
-      canvasWidthSource: selected.canvasWidthSource,
-      columnCount: 3,
-    };
     const legacy: WorkspacePanelLayout = {
       root: { type: 'panel', panelId: 'legacy' },
       panels: { legacy: { id: 'legacy', tabs: [tab], activeTabId: tab.id } },
       focusedPanelId: 'legacy',
       canvasWidth: 1600,
     };
-    const run = startRestoreSaga(current, [], selected);
-    await settle();
-    const history = run.getState().panelLayout.byWorkspaceId[WS_1].layoutHistory;
-    mocks.getJSON.mockReturnValue(legacy);
-    run.dispatch.mockClear();
-    mocks.setJSON.mockClear();
-
-    run.send(panelLayoutScopeUnmounted(WS_1));
-    await settle();
-    run.send(panelLayoutScopeMounted(WS_1));
+    const run = startRestoreSaga(legacy, [], selected);
     await settle();
 
     const restored = run.getState().panelLayout.byWorkspaceId[WS_1];
@@ -908,7 +999,6 @@ describe('panelLayoutSaga', () => {
       columnCount: 1,
     });
     expect(restored.panels.legacy).toMatchObject({ activeTabId: tab.id, tabs: [tab] });
-    expect(restored.layoutHistory).toBe(history);
     expect(mocks.saveHistory).not.toHaveBeenCalled();
     expect(mocks.setJSON.mock.calls.at(-1)).toEqual([
       STORAGE_KEY_1,
@@ -921,6 +1011,353 @@ describe('panelLayoutSaga', () => {
       }),
     ]);
     await cancelSaga(run.task);
+  });
+
+  // intent-hq/intent#4835: the retention cap unmounts an out-of-view
+  // workspace's panel-layout scope and remounts it later in the same session.
+  // Storage holds only what was persisted from this in-memory layout (with
+  // registry-held browser fields stripped), so re-installing it would replace
+  // the live tabs with geometry shells and re-navigate the offscreen guest.
+  it('keeps the live in-memory layout across a same-session scope remount', async () => {
+    const run = startRestoreSaga(layout, []);
+    await settle();
+    run.dispatch(
+      openTab(
+        WS_1,
+        {
+          type: 'browser',
+          title: 'Sandbox',
+          closable: true,
+          hostClientId: 'cli-desk',
+          browserUrl: 'http://127.0.0.1:52345/',
+          browserRequestedUrl: 'http://daemon.localhost:3000/',
+          ownerAgentId: 'agent-1',
+          emulatedSize: { width: 1280, height: 900 },
+        },
+        'panel-1',
+        'b1',
+      ),
+    );
+    await settle();
+    const live = run.getState().panelLayout.byWorkspaceId[WS_1];
+    const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+    expect(Object.values(persisted.panels).flatMap((panel) => panel.tabs)).toContainEqual(
+      expect.not.objectContaining({ browserUrl: expect.anything() }),
+    );
+    mocks.getJSON.mockReturnValue(persisted);
+    mocks.getJSON.mockClear();
+    run.dispatch.mockClear();
+
+    run.send(panelLayoutScopeUnmounted(WS_1));
+    await settle();
+    run.send(panelLayoutScopeMounted(WS_1));
+    await settle();
+
+    expect(mocks.getJSON).not.toHaveBeenCalled();
+    expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      initializeLayout.type,
+    );
+    expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+      setRestoreStatus.type,
+    );
+    expect(run.getState().panelLayout.byWorkspaceId[WS_1]).toBe(live);
+
+    // The remounted workspace is still a mounted one: a later mutation persists.
+    mocks.setJSON.mockClear();
+    run.dispatch(updateTabTitle(WS_1, 'b1', 'Renamed'));
+    await settle();
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    await cancelSaga(run.task);
+  });
+
+  it('restores from storage again after clearPanelLayout voided the in-memory provenance', async () => {
+    const run = startRestoreSaga(layout, []);
+    await settle();
+    run.dispatch.mockClear();
+    mocks.getJSON.mockClear();
+
+    run.send(panelLayoutScopeUnmounted(WS_1));
+    run.dispatch(clearPanelLayout(WS_1));
+    await settle();
+    run.send(panelLayoutScopeMounted(WS_1));
+    await settle();
+
+    expect(mocks.getJSON).toHaveBeenCalledWith(STORAGE_KEY_1);
+    expect(
+      run.dispatch.mock.calls.find(([action]) => action.type === initializeLayout.type)?.[0].payload
+        .layout,
+    ).toMatchObject({ panels: layout.panels });
+    expect(run.getState().panelLayout.byWorkspaceId[WS_1].restoreStatus).toBe('restored');
+    await cancelSaga(run.task);
+  });
+
+  describe('same-session scope remount with the registry saga (intent-hq/intent#4835)', () => {
+    const OWN = 'cli-desk';
+    const REQUESTED = 'http://daemon.localhost:5920/workspace/x';
+    const LIVE = 'http://127.0.0.1:63240/workspace/x';
+    const MOVED = 'http://127.0.0.1:61111/workspace/x';
+    const SIZE = { width: 1280, height: 900 };
+    const claimedRow = (): BrowserTabListing => ({
+      tabId: 'b1',
+      workspaceId: WS_1,
+      hostClientId: OWN,
+      url: LIVE,
+      requestedUrl: REQUESTED,
+      title: 'Intent',
+      ownerAgentId: 'agent-1',
+      emulatedSize: SIZE,
+      visibility: 'visible',
+      displayed: true,
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      hostConnected: true,
+    });
+    // What `stripRegistryHeldFields` leaves in storage for a registry-hosted tab.
+    const storedShell: WorkspacePanelLayout = {
+      ...layout,
+      panels: {
+        'panel-1': {
+          id: 'panel-1',
+          tabs: [{ id: 'b1', type: 'browser', title: 'Intent', closable: true, hostClientId: OWN }],
+          activeTabId: 'b1',
+        },
+      },
+    };
+
+    async function flush(ms = REPORT_DEBOUNCE_MS) {
+      await vi.advanceTimersByTimeAsync(ms);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+
+    /** Both sagas over the production reducers, the way the app runs them. */
+    function startComposedSaga(stored: WorkspacePanelLayout) {
+      mocks.getJSON.mockReturnValue(stored);
+      let state: any = {
+        ...storeState(WS_1),
+        panelLayout: { byWorkspaceId: {} },
+        browserTabRegistry: browserTabRegistryInitialState,
+        browserClients: { ...browserClientsInitialState, ownClientId: OWN },
+        daemonHealth: { health: 'healthy', connectionGeneration: 1 },
+        workspaceAgents: { byWorkspaceId: { [WS_1]: { agentIds: [], foregroundAgentIds: [] } } },
+        agentSessions: { byAgentId: {} },
+        workspaceNotes: workspaceNotesReducer(undefined, { type: '@@test/init' }),
+        workspace: {
+          workspaces: createCollection('id', [{ id: WS_1 } as unknown as Workspace]),
+          hasLoaded: true,
+          loadedBackendId: LOCAL_CONNECTION_ID,
+          detailHydrated: {},
+        },
+      };
+      const channel = stdChannel();
+      const dispatch = vi.fn((action) => {
+        state = {
+          ...state,
+          panelLayout: panelLayoutReducer(state.panelLayout, action),
+          browserTabRegistry: browserTabRegistryReducer(state.browserTabRegistry, action),
+          browserClients: browserClientsReducer(state.browserClients, action),
+        };
+        channel.put(action);
+      });
+      const task = runSaga({ channel, dispatch, getState: () => state }, function* root() {
+        yield* fork(browserTabRegistrySaga);
+        yield* panelLayoutSaga({ activeWorkspaceId: WS_1 });
+      });
+      return {
+        dispatch,
+        getState: () => state,
+        send: channel.put,
+        setConnectionGeneration: (connectionGeneration: number) => {
+          state = { ...state, daemonHealth: { health: 'healthy', connectionGeneration } };
+        },
+        tabs: () =>
+          Object.values(state.panelLayout.byWorkspaceId[WS_1]?.panels ?? {}).flatMap(
+            (panel: any) => panel.tabs as PanelTab[],
+          ),
+        hidden: () => getItems(state.panelLayout.byWorkspaceId[WS_1].hiddenTabs) as PanelTab[],
+        task,
+      };
+    }
+
+    beforeEach(() => {
+      mocks.listTabs.mockResolvedValue([claimedRow()]);
+      mocks.syncTabs.mockResolvedValue({ drop: [] });
+      mocks.removeTab.mockResolvedValue({ ok: true });
+      mocks.upsertTab.mockImplementation(async (workspaceId: string, input: { tabId: string }) => ({
+        ...claimedRow(),
+        ...input,
+        workspaceId,
+      }));
+    });
+
+    // The retention cap unmounts an out-of-view workspace's scope and
+    // remounts it later while its agent-owned tab's guest is kept alive
+    // offscreen. The remount must not reinstall the persisted shell over the
+    // live tab: the guest's own navigation report (`updateTabBrowserUrl`)
+    // then lands on the live tab, not on a de-owned shell, and rows arriving
+    // afterwards (here: a reconnect) complete nothing and re-resolve nothing.
+    it('keeps the live tab, its claim and its guest across a retention-cap remount', async () => {
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: LIVE,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      const run = startComposedSaga(storedShell);
+      await flush();
+      // Restart path: the shell is restored and filled from the registry row.
+      expect(run.tabs()).toEqual([
+        expect.objectContaining({
+          id: 'b1',
+          browserUrl: LIVE,
+          browserRequestedUrl: REQUESTED,
+          ownerAgentId: 'agent-1',
+          emulatedSize: SIZE,
+        }),
+      ]);
+      const live = run.tabs()[0];
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout | undefined;
+      expect(Object.values((persisted ?? storedShell).panels).flatMap((p) => p.tabs)[0]).toEqual(
+        expect.not.objectContaining({ ownerAgentId: expect.anything() }),
+      );
+      mocks.getJSON.mockReturnValue(persisted ?? storedShell);
+      mocks.getJSON.mockClear();
+      mocks.listTabs.mockClear();
+      mocks.upsertTab.mockClear();
+      mocks.syncTabs.mockClear();
+      mocks.resolveBrowserLinkUrl.mockClear();
+      run.dispatch.mockClear();
+      // The tunnel forward moved meanwhile: a re-resolution would navigate
+      // the kept-alive guest to a new port.
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: MOVED,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+
+      run.send(panelLayoutScopeUnmounted(WS_1));
+      await flush(0);
+      run.send(panelLayoutScopeMounted(WS_1));
+      await flush();
+
+      expect(mocks.getJSON).not.toHaveBeenCalled();
+      expect(mocks.listTabs).not.toHaveBeenCalled();
+      expect(run.dispatch.mock.calls.map(([action]) => action.type)).not.toContain(
+        initializeLayout.type,
+      );
+      expect(run.tabs()[0]).toBe(live);
+
+      // The guest reports its location; the rows land only afterwards.
+      run.dispatch(updateTabBrowserUrl(WS_1, 'b1', LIVE));
+      const listing = deferred<BrowserTabListing[]>();
+      mocks.listTabs.mockReturnValue(listing.promise);
+      run.setConnectionGeneration(2);
+      run.dispatch(connectionStatusChanged('connected'));
+      await flush(0);
+      listing.resolve([claimedRow()]);
+      await flush();
+
+      expect(mocks.resolveBrowserLinkUrl).not.toHaveBeenCalled();
+      expect(
+        run.dispatch.mock.calls
+          .filter(([action]) => action.type === updateTabBrowserUrl.type)
+          .map(([action]) => action.payload[2]),
+      ).toEqual([LIVE]);
+      expect(mocks.upsertTab.mock.calls.filter(([, input]) => input.ownerAgentId === null)).toEqual(
+        [],
+      );
+      expect(
+        mocks.syncTabs.mock.calls.flatMap(([inputs]) =>
+          (inputs as { ownerAgentId: string | null }[]).filter((i) => i.ownerAgentId === null),
+        ),
+      ).toEqual([]);
+      expect(run.tabs()).toEqual([
+        expect.objectContaining({
+          id: 'b1',
+          browserUrl: LIVE,
+          browserRequestedUrl: REQUESTED,
+          ownerAgentId: 'agent-1',
+          emulatedSize: SIZE,
+        }),
+      ]);
+
+      // Still owned: a close hides the tab instead of removing the row.
+      run.dispatch(closeTab(WS_1, 'b1', 'panel-1', 1000));
+      await flush();
+      expect(run.hidden().map((t) => t.id)).toEqual(['b1']);
+      expect(mocks.removeTab).not.toHaveBeenCalled();
+      await cancelSaga(run.task);
+    });
+
+    // Closing the workspace tab is a full teardown (`workspaceUnmounted`, on
+    // top of the scope unmount): the guests left with the workspace and the
+    // registry forgot what it reported. A reopen is not an unpark — it must
+    // restore from storage and settle again, or the registry stays
+    // `unmounted` (no rows applied, no reports) until the next reconnect.
+    it('restores from storage and re-reconciles the registry after a full workspaceUnmounted', async () => {
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: LIVE,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      const run = startComposedSaga(storedShell);
+      await flush();
+      expect(run.tabs()[0]).toEqual(expect.objectContaining({ id: 'b1', ownerAgentId: 'agent-1' }));
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout | undefined;
+      mocks.getJSON.mockReturnValue(persisted ?? storedShell);
+      mocks.getJSON.mockClear();
+      mocks.listTabs.mockClear();
+      mocks.upsertTab.mockClear();
+      run.dispatch.mockClear();
+
+      run.dispatch(panelLayoutScopeUnmounted(WS_1));
+      run.dispatch(workspaceUnmounted(WS_1));
+      await flush(0);
+      expect(run.getState().browserTabRegistry.byWorkspaceId[WS_1].phase).toBe('unmounted');
+
+      // Scope mount first — the guard must not key off the action type.
+      run.dispatch(panelLayoutScopeMounted(WS_1));
+      run.dispatch(workspaceMounted(WS_1));
+      await flush();
+
+      const types = run.dispatch.mock.calls.map(([action]) => action.type);
+      expect(mocks.getJSON).toHaveBeenCalled();
+      expect(types).toContain(initializeLayout.type);
+      expect(
+        run.dispatch.mock.calls
+          .filter(([action]) => action.type === setRestoreStatus.type)
+          .map(([action]) => action.payload[1]),
+      ).toEqual(['pending', 'restored']);
+      expect(mocks.listTabs).toHaveBeenCalledTimes(1);
+      expect(run.getState().browserTabRegistry.byWorkspaceId[WS_1].phase).toBe('applied');
+      expect(run.tabs()).toEqual([
+        expect.objectContaining({
+          id: 'b1',
+          browserUrl: LIVE,
+          browserRequestedUrl: REQUESTED,
+          ownerAgentId: 'agent-1',
+          emulatedSize: SIZE,
+        }),
+      ]);
+
+      // The reporter is live again: a mutation reaches the daemon.
+      run.dispatch(updateTabBrowserUrl(WS_1, 'b1', MOVED));
+      await flush();
+      expect(mocks.upsertTab).toHaveBeenCalledWith(
+        WS_1,
+        expect.objectContaining({ tabId: 'b1', url: MOVED }),
+      );
+      await cancelSaga(run.task);
+    });
   });
 
   it('restores a legacy initial-agent layout without adding pin state', async () => {
@@ -951,6 +1388,270 @@ describe('panelLayoutSaga', () => {
     )?.[0].payload.layout;
     expect(restored.panels['panel-1']).not.toHaveProperty('pinned');
     await cancelSaga(task);
+  });
+
+  describe('collaborator restore (multiplayer w3)', () => {
+    const terminalTab = { id: 'term-1', type: 'terminal' as const, title: 'Shell', closable: true };
+    const ownedBrowserTab = {
+      id: 'browser-owned',
+      type: 'browser' as const,
+      title: 'Agent page',
+      closable: true,
+      ownerAgentId: 'agent-1',
+      browserUrl: 'http://a.test/',
+    };
+    const plainBrowserTab = {
+      id: 'browser-plain',
+      type: 'browser' as const,
+      title: 'Page',
+      closable: true,
+      browserUrl: 'http://b.test/',
+    };
+    const hiddenOwnedBrowserTab = { ...ownedBrowserTab, id: 'browser-hidden' };
+    const mixedLayout: WorkspacePanelLayout = {
+      ...layout,
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        children: [
+          { type: 'panel', panelId: 'panel-1' },
+          { type: 'panel', panelId: 'panel-2' },
+        ],
+        sizes: [50, 50],
+      },
+      panels: {
+        'panel-1': { id: 'panel-1', tabs: [tab, terminalTab], activeTabId: terminalTab.id },
+        'panel-2': {
+          id: 'panel-2',
+          tabs: [ownedBrowserTab, plainBrowserTab],
+          activeTabId: plainBrowserTab.id,
+        },
+      },
+      hiddenTabs: [hiddenOwnedBrowserTab],
+      columnCount: 2,
+    };
+
+    /** Fold what the saga dispatched through the real reducer, in order. */
+    function reduceDispatched(dispatch: ReturnType<typeof vi.fn>) {
+      return dispatch.mock.calls.reduce((acc, [action]) => panelLayoutReducer(acc, action), {
+        byWorkspaceId: {},
+      } as PanelLayoutSliceState);
+    }
+
+    async function restoreAs(myRole: 'owner' | 'collaborator') {
+      mocks.getJSON.mockReturnValue(mixedLayout);
+      const state = storeState(WS_1);
+      state.workspace = { workspaces: createCollection('id', [{ id: WS_1, myRole } as never]) };
+      const { dispatch, task } = startSaga(state);
+      await settle();
+      await cancelSaga(task);
+      return dispatch;
+    }
+
+    const ownerOnlyTabs = (ws: WorkspacePanelLayoutState) =>
+      Object.values(ws.panels)
+        .flatMap((panel) => panel.tabs)
+        .filter((t) => t.type === 'terminal' || t.type === 'browser')
+        .map((t) => t.id);
+
+    it('destroys restored terminal and browser tabs before settling and leaves nothing to reopen', async () => {
+      const dispatch = await restoreAs('collaborator');
+      const actions = dispatch.mock.calls.map(([action]) => action);
+      const destroys = actions.filter((action) => action.type === destroyTabsByType.type);
+      const initializedAt = actions.findIndex((action) => action.type === initializeLayout.type);
+      const restoredAt = actions.findIndex(
+        (action) => action.type === setRestoreStatus.type && action.payload[1] === 'restored',
+      );
+      expect(destroys.length).toBeGreaterThan(0);
+      for (const destroy of destroys) {
+        const at = actions.indexOf(destroy);
+        expect(at).toBeGreaterThan(initializedAt);
+        expect(at).toBeLessThan(restoredAt);
+      }
+
+      const settled = reduceDispatched(dispatch);
+      const ws = settled.byWorkspaceId[WS_1];
+      expect(ws.restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(Object.values(ws.panels).flatMap((p) => p.tabs.map((t) => t.id))).toEqual([tab.id]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('terminal');
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('browser');
+      for (const snapshot of ws.layoutHistory) {
+        expect(
+          Object.values(snapshot.panels)
+            .flatMap((p) => p.tabs)
+            .filter((t) => t.type === 'terminal' || t.type === 'browser'),
+        ).toEqual([]);
+      }
+
+      let after = panelLayoutReducer(settled, reopenClosedTab(WS_1, 1000));
+      after = panelLayoutReducer(after, reopenClosedTab(WS_1, 1001, terminalTab.id));
+      after = panelLayoutReducer(after, restoreHiddenTab(WS_1, hiddenOwnedBrowserTab.id));
+      after = panelLayoutReducer(after, goBack(WS_1));
+      const reopened = after.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(reopened)).toEqual([]);
+      expect(getItems(reopened.hiddenTabs)).toEqual([]);
+    });
+
+    it('leaves an owner restore free of role-driven tab destroys', async () => {
+      const dispatch = await restoreAs('owner');
+      expect(dispatch.mock.calls.some(([action]) => action.type === destroyTabsByType.type)).toBe(
+        false,
+      );
+      const ws = reduceDispatched(dispatch).byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(ws).sort()).toEqual(
+        [terminalTab.id, ownedBrowserTab.id, plainBrowserTab.id].sort(),
+      );
+      expect(getItems(ws.hiddenTabs).map((t) => t.id)).toEqual([hiddenOwnedBrowserTab.id]);
+    });
+
+    const ownerOnlyTabsInHistory = (ws: WorkspacePanelLayoutState) =>
+      ws.layoutHistory.flatMap((snapshot) =>
+        Object.values(snapshot.panels)
+          .flatMap((p) => p.tabs)
+          .filter((t) => t.type === 'terminal' || t.type === 'browser')
+          .map((t) => t.id),
+      );
+
+    it('keeps owner-only tabs out of disk history that lands after the restore purge', async () => {
+      let resolveHistory!: (value: unknown) => void;
+      mocks.loadHistory.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      );
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        myRole: 'collaborator',
+      });
+      await settle();
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1].restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toEqual([]);
+
+      resolveHistory({
+        history: [
+          { ...mixedLayout, timestamp: 1 },
+          { ...mixedLayout, timestamp: 2 },
+        ],
+        historyIndex: 1,
+      });
+      await settle();
+
+      const imported = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(imported.layoutHistory).toHaveLength(2);
+      expect(ownerOnlyTabsInHistory(imported)).toEqual([]);
+
+      run.dispatch(goBack(WS_1));
+      run.dispatch(goForward(WS_1));
+      const navigated = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(navigated)).toEqual([]);
+      expect(getItems(navigated.hiddenTabs)).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('withholds owner-only tabs when a backend switch re-restores a mounted workspace', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        myRole: 'collaborator',
+      });
+      await settle();
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toEqual([]);
+
+      run.dispatch.mockClear();
+      run.setBackendId(REMOTE_ID);
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
+      await settle();
+
+      const actions = run.dispatch.mock.calls.map(([action]) => action);
+      const initializedAt = actions.findIndex((action) => action.type === initializeLayout.type);
+      const restoredAt = actions.findIndex(
+        (action) => action.type === setRestoreStatus.type && action.payload[1] === 'restored',
+      );
+      const destroyAt = actions.findIndex((action) => action.type === destroyTabsByType.type);
+      expect(initializedAt).toBeGreaterThanOrEqual(0);
+      expect(destroyAt).toBeGreaterThan(initializedAt);
+      expect(destroyAt).toBeLessThan(restoredAt);
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ws.restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('terminal');
+      expect(ws.recentlyClosed.map((entry) => entry.tab.type)).not.toContain('browser');
+      await cancelSaga(run.task);
+    });
+
+    // Layout restore can win the startup race against `workspace.list`: the
+    // role is unknown, so the persisted owner-only tabs mount. The record
+    // arriving afterwards — by itself or with the list load — must strip them.
+    it('strips owner-only tabs when the collaborator record arrives after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      const restored = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(restored.restoreStatus).toBe('restored');
+      expect(ownerOnlyTabs(restored)).toEqual([
+        terminalTab.id,
+        ownedBrowserTab.id,
+        plainBrowserTab.id,
+      ]);
+      expect(run.dispatch.mock.calls.map(([a]) => a.type)).not.toContain(destroyTabsByType.type);
+
+      run.dispatch(
+        setWorkspaceEntity({ id: WS_1, myRole: 'collaborator' } as unknown as Workspace),
+      );
+      await settle();
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(Object.values(ws.panels).flatMap((p) => p.tabs.map((t) => t.id))).toEqual([tab.id]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      expect(ws.recentlyClosed).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('strips owner-only tabs when the workspace list loads after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      expect(ownerOnlyTabs(run.getState().panelLayout.byWorkspaceId[WS_1])).toHaveLength(3);
+
+      run.dispatch(
+        replaceWorkspaceList([{ id: WS_1, myRole: 'collaborator' } as unknown as Workspace]),
+      );
+      run.dispatch(setWorkspaceHasLoaded(true));
+      await settle();
+
+      const ws = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(ws)).toEqual([]);
+      expect(Object.values(ws.panels).flatMap((p) => p.tabs.map((t) => t.id))).toEqual([tab.id]);
+      expect(getItems(ws.hiddenTabs)).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('leaves an owner layout untouched when the record arrives after the restore', async () => {
+      const run = startRestoreSaga(mixedLayout, [], emptyWorkspaceState, undefined, {
+        workspaceListLoaded: false,
+      });
+      await settle();
+      const before = run.getState().panelLayout.byWorkspaceId[WS_1];
+
+      run.dispatch(setWorkspaceEntity({ id: WS_1, myRole: 'owner' } as unknown as Workspace));
+      run.dispatch(setWorkspaceHasLoaded(true));
+      await settle();
+
+      const after = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(ownerOnlyTabs(after)).toEqual(ownerOnlyTabs(before));
+      expect(after.panels).toBe(before.panels);
+      await cancelSaga(run.task);
+    });
   });
 
   it('removes an explicit legacy unpin during restore', async () => {
@@ -1107,11 +1808,15 @@ describe('panelLayoutSaga', () => {
       focusedPanelId: 'foreign-panel',
     };
 
+    // A stored layout that restores valid but tabless ('empty',
+    // 'normalized-empty', 'tabless-split') is a lost panel tree, not a user
+    // choice, and reseeds with the first-open resolver (initial agent first).
     it.each([
       ['missing', undefined, 'agent-initial'],
       ['invalid', { bad: true }, 'agent-recent'],
-      ['empty', emptyStoredLayout, 'agent-recent'],
-      ['normalized-empty', foreignOnlyLayout, 'agent-recent'],
+      ['empty', emptyStoredLayout, 'agent-initial'],
+      ['normalized-empty', foreignOnlyLayout, 'agent-initial'],
+      ['tabless-split', tablessSplitFixture(), 'agent-initial'],
     ])('opens the expected agent after a %s restore', async (_name, stored, expectedAgentId) => {
       const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
       const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
@@ -1139,10 +1844,137 @@ describe('panelLayoutSaga', () => {
       await cancelSaga(run.task);
     });
 
+    it('reseeds and persists the primary agent tab for a restored tabless split (lost panel tree)', async () => {
+      const initial = agent('agent-initial', 'Coordinator', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(tablessSplitFixture(), [initial]);
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(workspace.restoreStatus).toBe('restored');
+      const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
+      expect(tabs).toEqual([expect.objectContaining({ type: 'agent', agentId: 'agent-initial' })]);
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+      expect(
+        Object.values(persisted.panels).flatMap((panel) => panel.tabs.map((tab) => tab.agentId)),
+      ).toEqual(['agent-initial']);
+      await cancelSaga(run.task);
+    });
+
+    it('keeps the layout empty when the user closed the last tab this session', async () => {
+      const initial = agent('agent-initial', 'Coordinator', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(layout, [initial]);
+      await settle();
+      mocks.setJSON.mockClear();
+
+      run.dispatch(closeTab(WS_1, tab.id, 'panel-1', 30));
+      run.dispatch(setAgents(WS_1, [initial]));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([]);
+      expect(
+        run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
+      ).toHaveLength(0);
+      // The explicit close is the one tabless write that must reach storage.
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+      expect(Object.values(persisted.panels).flatMap((panel) => panel.tabs)).toEqual([]);
+      await cancelSaga(run.task);
+    });
+
+    it('persists the empty layout after a Cmd+W last-tab close and keeps it empty on remount', async () => {
+      const initial = agent('agent-initial', 'Coordinator', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(layout, [initial]);
+      await settle();
+      mocks.setJSON.mockClear();
+
+      // Cmd+W dispatches closeFocusedPanelTab; its inner closeTab never reaches the store.
+      run.dispatch(closeFocusedPanelTab(WS_1, 30));
+      await settle();
+
+      expect(
+        Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
+          (panel: any) => panel.tabs,
+        ),
+      ).toEqual([]);
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+      expect(persisted).toBeDefined();
+      expect(Object.values(persisted.panels).flatMap((panel) => panel.tabs)).toEqual([]);
+
+      mocks.getJSON.mockReturnValue(persisted);
+      run.dispatch(workspaceUnmounted(WS_1));
+      await settle();
+      run.dispatch(workspaceMounted(WS_1));
+      run.dispatch(setAgents(WS_1, [initial]));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(workspace.restoreStatus).toBe('restored');
+      expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([]);
+      expect(
+        run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
+      ).toHaveLength(0);
+      await cancelSaga(run.task);
+    });
+
+    it('keeps a user-emptied layout empty across a same-session unmount and remount', async () => {
+      const initial = agent('agent-initial', 'Coordinator', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(layout, [initial]);
+      await settle();
+      run.dispatch(closeTab(WS_1, tab.id, 'panel-1', 30));
+      await settle();
+      const persisted = mocks.setJSON.mock.calls.at(-1)?.[1] as WorkspacePanelLayout;
+      expect(Object.values(persisted.panels).flatMap((panel) => panel.tabs)).toEqual([]);
+
+      // Switching workspaces and back re-restores from the tabless storage entry.
+      mocks.getJSON.mockReturnValue(persisted);
+      run.dispatch(workspaceUnmounted(WS_1));
+      await settle();
+      run.dispatch(workspaceMounted(WS_1));
+      run.dispatch(setAgents(WS_1, [initial]));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(workspace.restoreStatus).toBe('restored');
+      expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([]);
+      expect(
+        run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
+      ).toHaveLength(0);
+      await cancelSaga(run.task);
+    });
+
+    it('reseeds a tabless layout restored from another backend even after a user close this session', async () => {
+      const initial = agent('agent-initial', 'Coordinator', undefined, { isInitialAgent: true });
+      const run = startRestoreSaga(layout, [initial]);
+      await settle();
+      run.dispatch(closeTab(WS_1, tab.id, 'panel-1', 30));
+      await settle();
+      expect(run.getState().panelLayout.byWorkspaceId[WS_1].emptiedByUserClose).toBe(true);
+      run.dispatch.mockClear();
+
+      // The incoming backend's stored layout is tabless too, but its user
+      // never emptied it: the outgoing session's close must not carry over.
+      mocks.getJSON.mockReturnValue(tablessSplitFixture());
+      run.setBackendId(REMOTE_ID);
+      run.send(
+        connectionsListReceived({
+          connections: [],
+          activeId: REMOTE_ID,
+          windowBackendId: REMOTE_ID,
+        }),
+      );
+      run.dispatch(setAgents(WS_1, [initial]));
+      await settle();
+
+      const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+      expect(workspace.restoreStatus).toBe('restored');
+      expect(workspace.emptiedByUserClose).toBe(false);
+      const tabs = Object.values(workspace.panels).flatMap((panel: any) => panel.tabs);
+      expect(tabs).toEqual([expect.objectContaining({ type: 'agent', agentId: 'agent-initial' })]);
+      await cancelSaga(run.task);
+    });
+
     it.each([
       ['no user-message stamp', {}],
-      ['top-level initial marker', { isInitialAgent: true }],
-      ['metadata initial marker', { metadata: { isInitialAgent: true } }],
       ['wrong workspace', { workspaceId: WS_2 }],
       ['deleted status', { status: 'deleted' }],
       ['pending deletion', { pendingDeleteAt: '2026-07-31T03:00:00.000Z' }],
@@ -1180,7 +2012,7 @@ describe('panelLayoutSaga', () => {
       const tabs = Object.values(run.getState().panelLayout.byWorkspaceId[WS_1].panels).flatMap(
         (panel: any) => panel.tabs,
       );
-      expect(tabs).toEqual([expect.objectContaining({ agentId: 'agent-recent' })]);
+      expect(tabs).toEqual([expect.objectContaining({ agentId: 'agent-initial' })]);
       expect(
         run.dispatch.mock.calls.filter(([action]) => action.type === openTabInAdjacentOrSplit.type),
       ).toHaveLength(1);
@@ -1201,6 +2033,8 @@ describe('panelLayoutSaga', () => {
     });
 
     describe('first-open context-link seeding (workspaces created elsewhere)', () => {
+      afterEach(() => mocks.getWorkspace.mockReset());
+
       const contextLinks: ContextLink[] = [
         {
           kind: 'issue',
@@ -1271,7 +2105,7 @@ describe('panelLayoutSaga', () => {
       });
 
       it.each([
-        ['a stored empty layout (user closed all tabs)', emptyStoredLayout],
+        ['a stored tabless layout', emptyStoredLayout],
         ['an invalid stored layout', { bad: true }],
       ])('does not seed after %s', async (_name, stored) => {
         const recent = agent('agent-recent', 'Recent', '2026-07-31T02:00:00.000Z');
@@ -1314,6 +2148,45 @@ describe('panelLayoutSaga', () => {
         await settle();
 
         expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial');
+        await cancelSaga(run.task);
+      });
+
+      it('pulls detail via workspace.get when the slim list row omits contextLinks, then seeds once', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        mocks.getWorkspace.mockResolvedValue({ id: WS_1, contextLinks } as unknown as Workspace);
+        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
+          slimRow: true,
+        });
+
+        await vi.waitFor(() =>
+          expectSeededSplit(run.getState().panelLayout.byWorkspaceId[WS_1], 'agent-initial'),
+        );
+        expect(mocks.getWorkspace).toHaveBeenCalledTimes(1);
+        expect(mocks.getWorkspace).toHaveBeenCalledWith(WS_1);
+        expect(run.getState().workspace.detailHydrated[WS_1]).toBe(true);
+        expect(
+          run.dispatch.mock.calls.filter(
+            ([action]) => action.type === openTabInAdjacentOrSplit.type,
+          ),
+        ).toHaveLength(1);
+        await cancelSaga(run.task);
+      });
+
+      it('opens the plain agent tab when the slim row detail read yields nothing', async () => {
+        const initial = agent('agent-initial', 'Initial', undefined, { isInitialAgent: true });
+        mocks.getWorkspace.mockResolvedValue(null);
+        const run = startRestoreSaga(undefined, [initial], emptyWorkspaceState, undefined, {
+          slimRow: true,
+        });
+
+        await vi.waitFor(() => {
+          const workspace = run.getState().panelLayout.byWorkspaceId[WS_1];
+          expect(Object.values(workspace.panels).flatMap((panel: any) => panel.tabs)).toEqual([
+            expect.objectContaining({ type: 'agent', agentId: 'agent-initial' }),
+          ]);
+        });
+        expect(run.getState().panelLayout.byWorkspaceId[WS_1].root.type).toBe('panel');
+        expect(run.getState().workspace.detailHydrated[WS_1]).toBeUndefined();
         await cancelSaga(run.task);
       });
 
@@ -1441,6 +2314,35 @@ describe('panelLayoutSaga', () => {
       expect(mocks.resolveBrowserLinkUrl).toHaveBeenCalledWith(REQUESTED, expect.anything());
       expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
         updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
+      );
+      await cancelSaga(task);
+    });
+
+    it('re-resolves a restored hidden tunneled tab onto the fresh endpoint', async () => {
+      const layout = browserLayout();
+      const browserTab = layout.panels['panel-1'].tabs[0];
+      layout.panels['panel-1'] = { id: 'panel-1', tabs: [], activeTabId: null };
+      layout.hiddenTabs = [browserTab];
+      mocks.getJSON.mockReturnValue(layout);
+      mocks.resolveBrowserLinkUrl.mockResolvedValue({
+        url: FRESH_TUNNEL,
+        rewritten: true,
+        requestedUrl: REQUESTED,
+        tunneled: true,
+      });
+      const { channel, dispatch, getState, task } = startReducingSaga();
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+
+      expect(dispatch.mock.calls.map(([action]) => action)).toContainEqual(
+        updateTabBrowserUrl(WS_1, 'tab-b', FRESH_TUNNEL, REQUESTED),
+      );
+      expect(getItem(getState().panelLayout.byWorkspaceId[WS_1].hiddenTabs, 'tab-b')).toMatchObject(
+        {
+          browserUrl: FRESH_TUNNEL,
+          browserRequestedUrl: REQUESTED,
+        },
       );
       await cancelSaga(task);
     });
@@ -1785,6 +2687,58 @@ describe('panelLayoutSaga', () => {
     await cancelSaga(task);
   });
 
+  // The footer's "Close hidden tabs" destroy (monorepo#2857 semantics) must
+  // reach both stores: an unpersisted layout reloads with the hidden tab
+  // back, and unpersisted history lets goBack resurrect it after a reload.
+  it('persists the layout and purged history after destroyHiddenTabsByOwnerAgent', async () => {
+    const owned = {
+      id: 'tab-owned',
+      type: 'browser' as const,
+      title: 'Owned',
+      closable: true,
+      browserUrl: 'http://a.test/',
+      ownerAgentId: 'agent-1',
+    };
+    const before = storeState();
+    before.panelLayout.byWorkspaceId[WS_1] = {
+      ...workspaceState([{ ...snapshot, timestamp: 5 }, snapshot]),
+      panels: { 'panel-1': { id: 'panel-1', tabs: [tab, owned], activeTabId: tab.id } },
+    };
+    // The user hid the tab from the tab bar (hide-on-close), then destroyed it
+    // from the footer; the real reducers produce the post-destroy state.
+    const hidden = panelLayoutReducer(before.panelLayout, closeTab(WS_1, owned.id, 'panel-1', 10));
+    expect(getItem(hidden.byWorkspaceId[WS_1].hiddenTabs, owned.id)).toBeDefined();
+    const state = {
+      ...before,
+      panelLayout: panelLayoutReducer(
+        hidden,
+        destroyHiddenTabsByOwnerAgent(WS_1, 'agent-1', null, 11),
+      ),
+    };
+    mocks.getJSON.mockReturnValue(undefined);
+    const { channel, task } = startSaga(state);
+    await settle();
+    channel.put(destroyHiddenTabsByOwnerAgent(WS_1, 'agent-1', null, 11));
+    await settle();
+
+    expect(mocks.setJSON).toHaveBeenCalledTimes(1);
+    const stored = mocks.setJSON.mock.calls[0]?.[1] as WorkspacePanelLayout;
+    expect(stored.hiddenTabs ?? []).toEqual([]);
+    expect(stored.panels['panel-1'].tabs.map((t) => t.id)).toEqual([tab.id]);
+
+    await vi.advanceTimersByTimeAsync(HISTORY_PERSIST_DEBOUNCE_MS);
+    await settle();
+    expect(mocks.saveHistory).toHaveBeenCalledTimes(1);
+    const [savedWsId, savedHistory, savedBackendId] = mocks.saveHistory.mock.calls[0];
+    expect(savedWsId).toBe(WS_1);
+    expect(savedBackendId).toBe(LOCAL_CONNECTION_ID);
+    expect(savedHistory.history.length).toBeGreaterThan(0);
+    for (const entry of savedHistory.history) {
+      expect(entry.panels['panel-1'].tabs.map((t: { id: string }) => t.id)).not.toContain(owned.id);
+    }
+    await cancelSaga(task);
+  });
+
   it('persists saved widths instead of the session-only expanded geometry', async () => {
     const state = storeState();
     state.panelLayout.byWorkspaceId[WS_1] = {
@@ -1857,6 +2811,113 @@ describe('panelLayoutSaga', () => {
 
     expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, layout]]);
     await cancelSaga(task);
+  });
+
+  // A hang can tear tabs out of the in-memory layout before the scope
+  // unmounts; the persist that follows must not write that tabless tree over
+  // the stored populated one (only an explicit user close may).
+  describe('post-restore tabless writes', () => {
+    const tablessInMemory = {
+      ...workspaceState(),
+      panels: { 'panel-1': { id: 'panel-1', tabs: [], activeTabId: null } },
+    };
+    const tablessPersisted = {
+      ...layout,
+      panels: { 'panel-1': { id: 'panel-1', tabs: [], activeTabId: null } },
+    };
+
+    async function restoreThenEmptyInMemory() {
+      mocks.getJSON.mockReturnValue(layout);
+      const state = storeState();
+      const run = startSaga(state);
+      await settle();
+      run.channel.put(workspaceMounted(WS_1));
+      await settle();
+      mocks.setJSON.mockClear();
+      state.panelLayout.byWorkspaceId[WS_1] = tablessInMemory;
+      return run;
+    }
+
+    it.each([reconcileStaleAgentTabs, closeTabsByAgentId, updateTabTitle, focusPanel])(
+      'leaves a stored layout with tabs untouched when $type runs against a tabless in-memory layout',
+      async (creator) => {
+        const { channel, task } = await restoreThenEmptyInMemory();
+        channel.put({ type: creator.type, payload: { wsId: WS_1 } });
+        await settle();
+
+        expect(mocks.setJSON.mock.calls).toEqual([]);
+        await cancelSaga(task);
+      },
+    );
+
+    it('writes nothing on scope or workspace unmount of a tabless in-memory layout', async () => {
+      const { channel, task } = await restoreThenEmptyInMemory();
+      channel.put(panelLayoutScopeUnmounted(WS_1));
+      channel.put(workspaceUnmounted(WS_1));
+      await settle();
+
+      expect(mocks.setJSON.mock.calls).toEqual([]);
+      await cancelSaga(task);
+    });
+
+    it('leaves a stored layout with only hidden tabs untouched too', async () => {
+      const hiddenOnly = { ...layout, panels: tablessPersisted.panels, hiddenTabs: [tab] };
+      mocks.getJSON.mockReturnValue(hiddenOnly);
+      const state = storeState();
+      const { channel, task } = startSaga(state);
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+      mocks.setJSON.mockClear();
+      state.panelLayout.byWorkspaceId[WS_1] = tablessInMemory;
+      channel.put({ type: updateTabTitle.type, payload: { wsId: WS_1 } });
+      await settle();
+
+      expect(mocks.setJSON.mock.calls).toEqual([]);
+      await cancelSaga(task);
+    });
+
+    it.each([
+      closeTab,
+      closeActiveTab,
+      closeFocusedPanelTab,
+      closeAllTabs,
+      closeTabsByType,
+      closePanel,
+      resetLayout,
+    ])('still persists the tabless layout for the explicit user close $type', async (creator) => {
+      const { channel, task } = await restoreThenEmptyInMemory();
+      channel.put({ type: creator.type, payload: { wsId: WS_1 } });
+      await settle();
+
+      expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, tablessPersisted]]);
+      await cancelSaga(task);
+    });
+
+    it('treats a destroying closeTab as teardown, not an explicit user close', async () => {
+      const { channel, task } = await restoreThenEmptyInMemory();
+      channel.put(closeTab(WS_1, tab.id, 'panel-1', 10, { destroy: true }));
+      await settle();
+
+      expect(mocks.setJSON.mock.calls).toEqual([]);
+      await cancelSaga(task);
+    });
+
+    it('persists a tabless layout when the stored one has no tabs either', async () => {
+      mocks.getJSON.mockReturnValue(tablessPersisted);
+      const state = storeState();
+      const { channel, task } = startSaga(state);
+      await settle();
+      channel.put(workspaceMounted(WS_1));
+      await settle();
+      mocks.setJSON.mockClear();
+      state.panelLayout.byWorkspaceId[WS_1] = tablessInMemory;
+      channel.put({ type: focusPanel.type, payload: { wsId: WS_1 } });
+      await settle();
+
+      expect(mocks.setJSON.mock.calls).toEqual([[STORAGE_KEY_1, tablessPersisted]]);
+      await cancelSaga(task);
+    });
   });
 
   // REV-2 §5.45: a registry-hosted browser tab persists geometry only; its
@@ -2423,6 +3484,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
@@ -2463,6 +3525,7 @@ describe('panelLayoutSaga', () => {
       // adds WS_1 at saga start, workspaceMounted adds WS_2 later), which is
       // guaranteed in JS — a reordering here means the switch loop changed.
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
@@ -2521,6 +3584,7 @@ describe('panelLayoutSaga', () => {
       await waiter.toPromise();
       expect(waited).toBe(true);
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
@@ -2558,6 +3622,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_1),
         setRestoreStatus(WS_1, 'pending'),
         initializeLayout(WS_1, layout),
@@ -2591,17 +3656,18 @@ describe('panelLayoutSaga', () => {
 
       const dispatched = dispatch.mock.calls.map(([action]) => action);
       expect(dispatched.map((action) => action.type)).toEqual([
+        resetEmptiedByUserClose.type,
         preparePanelLayoutBackendRestore.type,
         setRestoreStatus.type,
         resetLayout.type,
         loadLayoutHistory.type,
         setRestoreStatus.type,
       ]);
-      expect(dispatched[0]).toEqual(preparePanelLayoutBackendRestore(WS_1));
-      expect(dispatched[1]).toEqual(setRestoreStatus(WS_1, 'pending'));
-      expect(dispatched[2].payload.wsId).toBe(WS_1);
-      expect(dispatched[3]).toEqual(loadLayoutHistory(WS_1, [], 0));
-      expect(dispatched[4]).toEqual(setRestoreStatus(WS_1, 'empty'));
+      expect(dispatched[1]).toEqual(preparePanelLayoutBackendRestore(WS_1));
+      expect(dispatched[2]).toEqual(setRestoreStatus(WS_1, 'pending'));
+      expect(dispatched[3].payload.wsId).toBe(WS_1);
+      expect(dispatched[4]).toEqual(loadLayoutHistory(WS_1, [], 0));
+      expect(dispatched[5]).toEqual(setRestoreStatus(WS_1, 'empty'));
       await cancelSaga(task);
     });
 
@@ -2636,6 +3702,7 @@ describe('panelLayoutSaga', () => {
       await settle();
 
       expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        resetEmptiedByUserClose(),
         preparePanelLayoutBackendRestore(WS_2),
         setRestoreStatus(WS_2, 'pending'),
         initializeLayout(WS_2, layout),
