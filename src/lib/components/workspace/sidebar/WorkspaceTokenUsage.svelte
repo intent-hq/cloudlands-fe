@@ -429,6 +429,13 @@
     if (!suppressTouchFocusPreview) focusedTarget = rowTarget(row);
   }
 
+  function handleRowClick(row: BreakdownRow, event: MouseEvent) {
+    // Touch already toggles on pointerdown; its compatibility click must not reselect it.
+    // Zero-detail activation still supports keyboard and assistive technology clicks.
+    if (event.button !== 0 || (suppressTouchFocusPreview && event.detail > 0)) return;
+    setPersistedTarget(row);
+  }
+
   function handleRowKeydown(row: BreakdownRow, rows: BreakdownRow[], event: KeyboardEvent) {
     const currentIndex = rows.findIndex(
       (candidate) => rowKey(rowTarget(candidate)) === rowKey(rowTarget(row)),
@@ -821,6 +828,7 @@
                               onfocus={() => handleRowFocus(row)}
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, agentRows, event)}
+                              onclick={(event) => handleRowClick(row, event)}
                             ></button>
                           </li>
                         {/each}
@@ -860,7 +868,7 @@
                               onfocus={() => handleRowFocus(row)}
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, agentRows, event)}
-                              >{row.label}</Button
+                              onclick={(event) => handleRowClick(row, event)}>{row.label}</Button
                             >
                             <span id={`${detailsId}-agent-message-only-${index}`} class="sr-only">
                               {messageCountsLabel(row.humanMessages, row.agentMessages)}
@@ -944,6 +952,7 @@
                               onfocus={() => handleRowFocus(row)}
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, modelRows, event)}
+                              onclick={(event) => handleRowClick(row, event)}
                             ></button>
                           </li>
                         {/each}
@@ -983,7 +992,7 @@
                               onfocus={() => handleRowFocus(row)}
                               onblur={(event) => handleRowBlur(row, event)}
                               onkeydown={(event) => handleRowKeydown(row, modelRows, event)}
-                              >{row.label}</Button
+                              onclick={(event) => handleRowClick(row, event)}>{row.label}</Button
                             >
                             <span id={`${detailsId}-model-message-only-${index}`} class="sr-only">
                               {messageCountsLabel(row.humanMessages, row.agentMessages)}

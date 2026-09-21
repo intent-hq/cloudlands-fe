@@ -538,6 +538,51 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(previewStatus).toContainText('By model');
 });
 
+for (const messageOnly of [false, true]) {
+  test(`persists sequential mouse selections in both dimensions (message-only: ${messageOnly})`, async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
+      props: { selectionMatrix: true, messageOnly },
+    });
+    await component.getByTestId('token-usage-disclosure').click();
+    const details = page.getByTestId('token-usage-details');
+    const agentGroup = details.getByRole('radiogroup', { name: 'By agent' });
+    const modelGroup = details.getByRole('radiogroup', { name: 'By model' });
+    const agent = agentGroup.getByRole('radio', {
+      name: messageOnly ? /Agent messages/ : /Agent beta/,
+    });
+    const model = modelGroup.getByRole('radio', {
+      name: messageOnly ? /Model Message Only/ : /Model B:/,
+    });
+    await agent.click();
+    await model.click();
+    await expect(details.locator('.preview-status')).toContainText(
+      messageOnly ? 'Model Message Only 0 processed' : 'Model B 50 processed',
+    );
+    await expect(details.locator('.message-composition-label .animated-number-value')).toHaveText(
+      messageOnly ? '9 human messages and 1 agent message' : '4 human and 3 agent messages',
+    );
+    for (const radio of [agent, model]) {
+      await expect(radio).toHaveAttribute('aria-checked', 'true');
+      await expect(radio).toHaveAttribute('tabindex', '0');
+    }
+    await expect(agentGroup.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
+    await expect(modelGroup.locator('[role="radio"][tabindex="0"]')).toHaveCount(1);
+    await page.mouse.move(0, 0);
+    await model.blur();
+    await expect(agent).toHaveAttribute('aria-checked', 'true');
+    await expect(model).toHaveAttribute('aria-checked', 'true');
+    await expect(details.locator('.preview-status')).toContainText(
+      messageOnly ? 'Model Message Only 0 processed' : 'Model B 50 processed',
+    );
+    await expect(agentGroup.locator('.breakdown-stack-item')).toHaveCount(2);
+    await expect(modelGroup.locator('.breakdown-stack-item')).toHaveCount(2);
+  });
+}
+
 test('retains each selected dimension and reaches message-only scopes', async ({ mount, page }) => {
   await page.setViewportSize({ width: 1100, height: 720 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
