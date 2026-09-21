@@ -1366,14 +1366,26 @@ describe('handleInviteDeepLink — sign-in required', () => {
 
     it('native box: authorized while the box is open closes it through its abort signal and the join proceeds', async () => {
       showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
+      // The box resolves only through its signal: without the abort-driven
+      // close the flow would hang here rather than proceed on `settled`.
+      const order: string[] = [];
       showMessageBox.mockImplementationOnce(
         (options: { cancelId: number; signal?: AbortSignal }) =>
           new Promise<{ response: number }>((resolve) => {
-            options.signal?.addEventListener('abort', () =>
-              resolve({ response: options.cancelId }),
-            );
+            options.signal?.addEventListener('abort', () => {
+              order.push('device-code-box-closed');
+              resolve({ response: options.cancelId });
+            });
           }),
       );
+      showMessageBox.mockImplementationOnce(async () => {
+        order.push('prove-box');
+        return { response: 0 };
+      });
+      guestAdd.mockImplementation(async () => {
+        order.push('guest.add');
+        return { id: 'guest-id', tokenEncrypted: true };
+      });
 
       const pending = handleInviteDeepLink(LINK);
       await vi.waitFor(() => expect(showMessageBox).toHaveBeenCalledTimes(1));
@@ -1381,9 +1393,11 @@ describe('handleInviteDeepLink — sign-in required', () => {
         type: 'info',
         message: expect.stringContaining(CONNECT.userCode),
       });
+      expect(order).toEqual([]);
       emitAuthChanged('authorized');
       await pending;
 
+      expect(order).toEqual(['device-code-box-closed', 'prove-box', 'guest.add']);
       expect(openExternal).not.toHaveBeenCalled();
       expect(showMessageBox).toHaveBeenCalledTimes(2);
       expect(showMessageBox.mock.calls[1][0]).toMatchObject({
