@@ -16,12 +16,12 @@
  *
  * Local CT bundle builds need the same 8 GB heap cap as CI's build step;
  * Node's default heap can run out while Vite bundles the component registry.
- * Apply the heap default unless the caller already chose a heap size: an unset
- * NODE_OPTIONS gets the flag, a pre-set one without a --max-old-space-size flag
- * (e.g. a host-injected `--require` such as Datadog's dd-trace; see
+ * Apply the heap default unless the caller already chose a heap cap: an unset
+ * NODE_OPTIONS gets the flag, a pre-set one without a heap flag (e.g. a
+ * host-injected `--require` such as Datadog's dd-trace; see
  * intent-hq/intent#4565) keeps its options with the flag appended, and one that
- * already carries --max-old-space-size (or its V8 underscore alias) is left
- * untouched.
+ * already carries --max-old-space-size or --max-old-space-size-percentage (or
+ * their V8 underscore aliases) is left untouched.
  * CI keeps its per-step limits: 8 GB for building, 4 GB for cached test runs,
  * so the larger build allowance does not leak into its long-lived test phase.
  * Playwright rebuilds in-process when sources change between dependency
@@ -367,11 +367,13 @@ export function resolveCtAlignedPlaywrightCli() {
 const CT_HEAP_FLAG = '--max-old-space-size=8192';
 // NODE_OPTIONS accepts the V8 underscore alias (`--max_old_space_size=`, as
 // scripts/vite-build.mjs also honours) and double-quoted option tokens.
-const HEAP_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size=/;
+const HEAP_SIZE_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size=/;
 const HEAP_PERCENTAGE_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size[-_]percentage=/;
+/** Either heap cap: the caller chose one, so the launcher default must not be appended. */
+const HEAP_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size(?:[-_]percentage)?=/;
 
 /** The last matching heap-flag token in a space-separated option string (Node applies the last). */
-function heapFlagToken(value, flagRe = HEAP_FLAG_RE) {
+function heapFlagToken(value, flagRe = HEAP_SIZE_FLAG_RE) {
   const tokens = value?.trim().split(/\s+/) ?? [];
   return (
     tokens

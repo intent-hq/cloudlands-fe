@@ -170,6 +170,34 @@ describe('buildChildEnv', () => {
     });
     expect(env.NODE_OPTIONS).toBe(preset);
   });
+
+  // A percentage cap is an explicit heap choice too, and it would override an
+  // appended --max-old-space-size anyway.
+  it.each([
+    ['canonical flag', '--max-old-space-size-percentage=25'],
+    ['V8 underscore alias', '--max_old_space_size_percentage=25'],
+    ['double-quoted token', '"--max-old-space-size-percentage=25"'],
+    ['flag after other options', '--require /x/dd-trace/init --max-old-space-size-percentage=25'],
+  ])('keeps a pre-set NODE_OPTIONS that chooses a heap percentage (%s)', (_label, preset) => {
+    const { env } = buildChildEnv({
+      env: { ...baseEnv, NODE_OPTIONS: preset },
+      isTTY: false,
+      root: '/repo',
+    });
+    expect(env.NODE_OPTIONS).toBe(preset);
+  });
+
+  it('leaves the percentage cap as the flag the heap hint reports', () => {
+    const preset = '--require /x/dd-trace/init --max-old-space-size-percentage=25';
+    const { env } = buildChildEnv({
+      env: { ...baseEnv, NODE_OPTIONS: preset },
+      isTTY: false,
+      root: '/repo',
+    });
+    const hint = heapExhaustionHint({ code: 134, signal: null, env });
+    expect(hint).toContain('--max-old-space-size-percentage=25 (NODE_OPTIONS)');
+    expect(hint).not.toContain('8192');
+  });
 });
 
 describe('exitCodeFromChild', () => {
