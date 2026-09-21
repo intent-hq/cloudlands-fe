@@ -1,5 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
 
+import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
+import { docTextOffsets } from './doc-text-offsets';
 import {
   createBidirectionalOffsetMapper,
   createOffsetMapper,
@@ -22,11 +26,17 @@ vi.mock('diff', async (importOriginal) => {
   };
 });
 
-/** A markdown piece and the plain text the editor projects for it. */
-type Piece = [markdown: string, plain: string];
+/** A markdown piece and whether the editor projects it into the plain text. */
+type Piece = [markdown: string, shared: boolean];
 
 interface LargeNote {
   markdown: string;
+  /** Every shared piece, in document order. */
+  shared: string[];
+}
+
+interface ProjectedNote extends LargeNote {
+  /** The production plain-text projection of `markdown` (`docTextOffsets`). */
   plain: string;
   /**
    * `[plainOffset, markdownOffset]` strictly inside runs the two texts share,
@@ -67,10 +77,10 @@ const WORDS = [
 ];
 
 /**
- * A synthetic note in the shape `docTextOffsets` projects: textblocks joined
- * by one `\n`, every markdown syntax character absent from the plain text.
- * Deterministic for a seed so the recorded shared-character samples are an
- * oracle independent of the alignment under test.
+ * A synthetic markdown note — headings, lists, fenced code, bold, italic and
+ * links — deterministic for a seed, with every piece of text the editor
+ * projects verbatim recorded in order so `sampleSharedRuns` can locate the
+ * shared runs independently of the alignment under test.
  */
 function generateLargeNote(minMarkdownLength: number, seed = 1): LargeNote {
   const rng = mulberry32(seed);
@@ -80,8 +90,8 @@ function generateLargeNote(minMarkdownLength: number, seed = 1): LargeNote {
     const s = words(n);
     return s[0].toUpperCase() + s.slice(1) + '.';
   };
-  const shared = (text: string): Piece => [text, text];
-  const syntax = (text: string): Piece => [text, ''];
+  const shared = (text: string): Piece => [text, true];
+  const syntax = (text: string): Piece => [text, false];
   const plainBlock = (): Piece[] => [shared(sentence(8 + Math.floor(rng() * 12)))];
   const formattedBlock = (): Piece[] => {
     const link = words(2);
@@ -134,31 +144,74 @@ function generateLargeNote(minMarkdownLength: number, seed = 1): LargeNote {
   }
 
   const markdown: string[] = [];
-  const plain: string[] = [];
-  const samples: Array<[number, number]> = [];
-  let markdownOffset = 0;
-  let plainOffset = 0;
+  const sharedPieces: string[] = [];
   blocks.forEach((block, index) => {
     if (index > 0) {
       const listRun = block[0][0] === '- ' && blocks[index - 1][0][0] === '- ';
-      const separator = listRun ? '\n' : '\n\n';
-      markdown.push(separator);
-      markdownOffset += separator.length;
-      plain.push('\n');
-      plainOffset += 1;
+      markdown.push(listRun ? '\n' : '\n\n');
     }
-    for (const [md, text] of block) {
-      if (md === text && md.length > 1) {
-        samples.push([plainOffset + (md.length >> 1), markdownOffset + (md.length >> 1)]);
-      }
+    for (const [md, isShared] of block) {
       markdown.push(md);
-      markdownOffset += md.length;
-      plain.push(text);
-      plainOffset += text.length;
+      if (isShared) sharedPieces.push(md);
     }
   });
-  return { markdown: markdown.join(''), plain: plain.join(''), samples };
+  return { markdown: markdown.join(''), shared: sharedPieces };
 }
+
+/**
+ * The plain text the remote-cursors binding maps against: the markdown parsed
+ * the way the note editor does it, then projected by production
+ * `docTextOffsets`.
+ */
+async function projectWithEditor(markdown: string): Promise<string> {
+  const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });
+  const editor = new Editor({
+    element: document.createElement('div'),
+    extensions: [StarterKit],
+    content: html,
+  });
+  try {
+    return docTextOffsets(editor.state.doc).text;
+  } finally {
+    editor.destroy();
+  }
+}
+
+/**
+ * Locate every shared piece in both texts by a forward `indexOf` from the end
+ * of the previous piece (pieces occur in order on both sides, and only syntax
+ * sits between them in the markdown) and record the offset of its middle
+ * character — an oracle that never consults the alignment under test.
+ */
+function sampleSharedRuns(plain: string, markdown: string, shared: string[]) {
+  const samples: Array<[number, number]> = [];
+  let plainPos = 0;
+  let markdownPos = 0;
+  for (const piece of shared) {
+    const inPlain = plain.indexOf(piece, plainPos);
+    const inMarkdown = markdown.indexOf(piece, markdownPos);
+    if (inPlain === -1 || inMarkdown === -1) {
+      throw new Error(`shared piece ${JSON.stringify(piece)} missing from a projection`);
+    }
+    if (piece.length > 1) {
+      samples.push([inPlain + (piece.length >> 1), inMarkdown + (piece.length >> 1)]);
+    }
+    plainPos = inPlain + piece.length;
+    markdownPos = inMarkdown + piece.length;
+  }
+  return samples;
+}
+
+async function projectLargeNote(minMarkdownLength: number, seed = 1): Promise<ProjectedNote> {
+  const note = generateLargeNote(minMarkdownLength, seed);
+  const plain = await projectWithEditor(note.markdown);
+  return { ...note, plain, samples: sampleSharedRuns(plain, note.markdown, note.shared) };
+}
+
+let largeNote: ProjectedNote;
+beforeAll(async () => {
+  largeNote = await projectLargeNote(150 * 1024);
+}, 120_000);
 
 describe('mapOffsetThroughDiff', () => {
   it('leaves offsets before a change unchanged', () => {
@@ -299,17 +352,19 @@ describe('createBidirectionalOffsetMapper', () => {
 });
 
 describe('plain-text ↔ markdown alignment of a large note', () => {
-  const note = generateLargeNote(150 * 1024);
-
-  it('generates a fixture in the projected shape', () => {
+  it('projects the fixture through the editor without its markdown syntax', () => {
+    const note = largeNote;
     expect(note.markdown.length).toBeGreaterThanOrEqual(150 * 1024);
     expect(note.plain.length).toBeLessThan(note.markdown.length);
     expect(note.plain).not.toContain('**');
-    expect(note.plain).not.toContain('\n\n');
+    expect(note.plain).not.toContain('](https://');
+    expect(note.plain).not.toContain('```');
+    expect(note.plain).not.toContain('- ');
     expect(note.samples.length).toBeGreaterThan(1000);
   });
 
   it('aligns a ≥150 KB note in well under a second', () => {
+    const note = largeNote;
     const started = performance.now();
     const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
     const elapsed = performance.now() - started;
@@ -320,6 +375,7 @@ describe('plain-text ↔ markdown alignment of a large note', () => {
   });
 
   it('maps every shared character exactly, in both directions', () => {
+    const note = largeNote;
     const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
     const misses: string[] = [];
     for (const [plainOffset, markdownOffset] of note.samples) {
@@ -331,6 +387,112 @@ describe('plain-text ↔ markdown alignment of a large note', () => {
       }
     }
     expect(misses, misses.slice(0, 5).join('\n')).toEqual([]);
+  });
+});
+
+describe('plain-text ↔ markdown alignment of a note formatted on every line', () => {
+  /** No line of this note appears verbatim in its markdown: bold splits every word. */
+  const LINE = '- aaaaaa**aaaaaa**b\n';
+  const LINES = 8192;
+  let note: { plain: string; markdown: string };
+  beforeAll(async () => {
+    const markdown = LINE.repeat(LINES);
+    note = { markdown, plain: await projectWithEditor(markdown) };
+  }, 120_000);
+
+  /** `[plainStart, markdownStart, length]` of each verbatim run of one line, by forward search on both sides. */
+  function runsOfLine(line: number): Array<[number, number, number]> {
+    const runs: Array<[number, number, number]> = [];
+    let plainPos = 0;
+    let markdownPos = 0;
+    for (let i = 0; i <= line; i += 1) {
+      for (const piece of ['aaaaaa', 'aaaaaa', 'b']) {
+        const inPlain = note.plain.indexOf(piece, plainPos);
+        const inMarkdown = note.markdown.indexOf(piece, markdownPos);
+        if (i === line) runs.push([inPlain, inMarkdown, piece.length]);
+        plainPos = inPlain + piece.length;
+        markdownPos = inMarkdown + piece.length;
+      }
+    }
+    return runs;
+  }
+
+  it('projects to one plain line per item', () => {
+    expect(note.markdown.length).toBeGreaterThanOrEqual(160 * 1024);
+    expect(note.plain).not.toContain('*');
+    expect(note.plain).not.toContain('- ');
+    expect(note.plain.split('\n').filter(Boolean)).toHaveLength(LINES);
+  });
+
+  it('aligns inside the budget', () => {
+    const started = performance.now();
+    const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
+    const elapsed = performance.now() - started;
+    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
+    expect(bToA(note.markdown.length)).toBe(note.plain.length);
+    expect(aToB(1)).toBe(note.markdown.indexOf('aaaaaa') + 1);
+  });
+
+  it.each([0, 1, 1000, LINES >> 1, LINES - 2, LINES - 1])(
+    'maps the verbatim runs of line %i exactly, in both directions',
+    (line) => {
+      const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
+      for (const [plainStart, markdownStart, length] of runsOfLine(line)) {
+        // The offset before a run may map to either side of the syntax that
+        // precedes it; every other offset of the run maps to its counterpart.
+        for (let k = 1; k <= length; k += 1) {
+          expect(aToB(plainStart + k), `plain ${plainStart}+${k}`).toBe(markdownStart + k);
+        }
+        for (let k = 0; k <= length; k += 1) {
+          expect(bToA(markdownStart + k), `markdown ${markdownStart}+${k}`).toBe(plainStart + k);
+        }
+      }
+    },
+  );
+});
+
+describe('alignment of blocks that never anchor', () => {
+  /** Every block of `a` is long enough to anchor, yet not four code units of it occur in `b`. */
+  const unanchorable = (size: number): [string, string] => {
+    const blocks = Math.ceil(size / 14);
+    return ['abcdefghijklm\n'.repeat(blocks), 'nopqrstuvwxyz\n'.repeat(blocks)];
+  };
+
+  /** `map` never moves backwards, never leaves `to`, and lands on `to`'s end for `from`'s end. */
+  function expectMonotonic(
+    map: (offset: number) => number,
+    fromLength: number,
+    toLength: number,
+    stride: number,
+  ) {
+    let previous = 0;
+    for (let offset = 0; offset <= fromLength; offset += stride) {
+      const mapped = map(offset);
+      expect(mapped, `@ ${offset}`).toBeGreaterThanOrEqual(previous);
+      expect(mapped, `@ ${offset}`).toBeLessThanOrEqual(toLength);
+      previous = mapped;
+    }
+    expect(map(fromLength)).toBe(toLength);
+  }
+
+  it.each([150, 1024])('gives up on a %i KB pair inside the budget', (kilobytes) => {
+    const [a, b] = unanchorable(kilobytes * 1024);
+    const started = performance.now();
+    const { aToB, bToA } = createBidirectionalOffsetMapper(a, b);
+    const elapsed = performance.now() - started;
+    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(600);
+    expectMonotonic(aToB, a.length, b.length, 1009);
+    expectMonotonic(bToA, b.length, a.length, 1009);
+    expect(aToB(0)).toBe(0);
+  });
+
+  it('still anchors the blocks that do match after a run that does not', () => {
+    const [a, b] = unanchorable(20 * 1024);
+    const tail = 'A closing paragraph that both sides share verbatim.';
+    const { aToB, bToA } = createBidirectionalOffsetMapper(a + tail, b + tail);
+    const inTail = a.length + tail.indexOf('share');
+    expect(aToB(inTail)).toBe(b.length + tail.indexOf('share'));
+    expect(bToA(b.length + tail.indexOf('share'))).toBe(inTail);
   });
 });
 
@@ -374,7 +536,7 @@ describe('alignment when the diff budget is exhausted', () => {
 
   it('still aligns the large note quickly', () => {
     jsdiff.abort = true;
-    const note = generateLargeNote(150 * 1024);
+    const note = largeNote;
     const started = performance.now();
     const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
     const elapsed = performance.now() - started;
@@ -435,5 +597,70 @@ describe('rebaseText', () => {
 
   it('verifier scenario: undoing the sent text removes it from the merged echo', () => {
     expect(rebaseText('body first', 'AGENT\nbody first', 'body')).toBe('AGENT\nbody');
+  });
+
+  it('does not re-apply a deletion theirs already made when a repeated line could anchor elsewhere', () => {
+    // Anchoring the second "Repeated heading" onto the first would read the
+    // deletion as a deleted first line, then delete again from the echo.
+    const base = 'Repeated heading\nRepeated heading';
+    const theirs = base.slice(2);
+    expect(rebaseText(base, theirs, theirs)).toBe(theirs);
+  });
+
+  describe('near-identical triples', () => {
+    const rng = mulberry32(7);
+    const bases = [
+      'alpha beta gamma\ndelta epsilon zeta\nfinal paragraph.',
+      'Repeated heading\n- same list item\n- same list item\nRepeated heading\n- same list item\nend.',
+      'a😀b\nThis is a long paragraph with text.\n',
+      Array(6).fill('Repeated heading').join('\n'),
+    ];
+    const codePointBoundary = (text: string, offset: number) =>
+      !(
+        /[\uD800-\uDBFF]/.test(text[offset - 1] ?? '') && /[\uDC00-\uDFFF]/.test(text[offset] ?? '')
+      );
+    const boundaries = (text: string) =>
+      Array.from({ length: text.length + 1 }, (_, i) => i).filter((i) =>
+        codePointBoundary(text, i),
+      );
+    const deleteAt = (text: string, offset: number, length: number) => {
+      let end = Math.min(offset + length, text.length);
+      if (!codePointBoundary(text, end)) end += 1;
+      return text.slice(0, offset) + text.slice(end);
+    };
+
+    it('the same deletion on both sides is applied once', () => {
+      let checked = 0;
+      for (const base of bases) {
+        for (const offset of boundaries(base)) {
+          for (const length of [1, 2, 5, 17]) {
+            const theirs = deleteAt(base, offset, length);
+            if (theirs === base) continue;
+            expect(rebaseText(base, theirs, theirs), JSON.stringify({ base, theirs })).toBe(theirs);
+            checked += 1;
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(300);
+    });
+
+    it('an insertion of ours survives exactly once on top of their deletion', () => {
+      let checked = 0;
+      for (const base of bases) {
+        const points = boundaries(base);
+        for (let i = 0; i < 80; i += 1) {
+          const theirsAt = points[Math.floor(rng() * points.length)];
+          const theirs = deleteAt(base, theirsAt, 1 + Math.floor(rng() * 6));
+          const oursAt = points[Math.floor(rng() * points.length)];
+          const ours = base.slice(0, oursAt) + 'Ω' + base.slice(oursAt);
+          const merged = rebaseText(base, theirs, ours);
+          const label = JSON.stringify({ base, theirs, ours, merged });
+          expect(merged.split('Ω').length, label).toBe(2);
+          expect(merged.replace('Ω', ''), label).toBe(theirs);
+          checked += 1;
+        }
+      }
+      expect(checked).toBe(bases.length * 80);
+    });
   });
 });
