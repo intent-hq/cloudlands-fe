@@ -2270,8 +2270,6 @@
         );
       }
 
-      await goto(`/workspace/${workspace.id}`);
-
       // Save last submitted agent settings before clearing form.
       // This allows the form to restore these values after submission.
       appStore.dispatch(
@@ -2285,7 +2283,9 @@
         }),
       );
 
+      // Clear before navigation can unmount the form and flush its draft.
       clearForm();
+      await goto(`/workspace/${workspace.id}`);
       oncreate?.();
     } catch (err) {
       if (err instanceof Error && err.message.startsWith(UNKNOWN_SPECIALIST_ERROR_PREFIX)) {
@@ -2330,8 +2330,11 @@
     initialPrompt = '';
     contextItems = []; // Clear attachment items
     richTextarea?.clear(); // Clear the TipTap editor content
+    // Cancel the queued save before clearing: an immediate close/unmount can
+    // flush the submitted prompt before the empty-state effect runs (#5569).
+    draftSaver.cancel();
     // Immediately clear the persisted daemon draft (drafts.clear under the
-    // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage key
+    // sentinel keys, PROTOCOL §5.16) and the legacy sessionStorage keys.
     clearNewWorkspaceDraft(appClient.drafts);
     // Note: NOT resetting selectedSpecialist, selectedModel, modelWasOverridden, isTeamMode
     // These are preserved so the user's last agent selection persists across workspace creations
@@ -2708,8 +2711,8 @@
     try {
       const sent = await placeAndSendFirstMessage();
       if (!sent) return;
-      await goto(`/workspace/${pending.workspaceId}`);
       clearForm();
+      await goto(`/workspace/${pending.workspaceId}`);
       oncreate?.();
     } finally {
       isCreating = false;
