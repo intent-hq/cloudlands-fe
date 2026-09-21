@@ -1,0 +1,94 @@
+name: Temporary sidebar tabs Linux geometry
+
+on:
+  push:
+    branches: ['ci/sidebar-tabs-alignment']
+    paths: ['.github/workflows/sidebar-tabs-linux-geometry.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sidebar-tabs-linux-alignment
+  cancel-in-progress: true
+
+jobs:
+  geometry:
+    runs-on: gh-linux-8x
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      GIT_TERMINAL_PROMPT: '0'
+      SANDBOX_GEOMETRY_UPDATE: '0'
+      TARGET_SHA: b0473d68276a18ebc1ad119d254faf2c48261d36
+      BASELINE: src/lib/components/layout/sidebar-nav/__geometry__/sidebar-tabs.geometry.json
+    steps:
+      - name: Checkout exact sidebar alignment source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          persist-credentials: false
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate i18n messages
+        run: pnpm run generate:i18n
+      - name: Install CT-aligned Chromium
+        timeout-minutes: 8
+        run: node scripts/run-ct-tests.mjs --install-browsers chromium
+      - name: Assert source and Linux platform
+        run: |
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(node -p 'process.platform')" = linux
+          test -z "$(git status --porcelain)"
+          mkdir -p geometry-evidence
+          git rev-parse HEAD > geometry-evidence/source-sha.txt
+          node -p 'JSON.stringify({platform:process.platform,arch:process.arch,node:process.version})' > geometry-evidence/runtime.json
+          node scripts/run-ct-tests.mjs --print-playwright-version > geometry-evidence/playwright-version.txt
+      - name: Build focused component bundle without running tests
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+        run: pnpm run test:ct sidebar-tabs.geometry.ct.spec.ts sidebar-tabs.preview.ct.spec.ts --only-changed=HEAD --pass-with-no-tests --reporter=list
+      - name: Generate all sidebar geometry states on Linux
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+          SANDBOX_GEOMETRY_UPDATE: '1'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: geometry-evidence/generation.json
+        run: pnpm run test:ct sidebar-tabs.geometry.ct.spec.ts --workers=1 --retries=0 --reporter=list,json
+      - name: Verify geometry and interactions without snapshot updates
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: geometry-evidence/verification.json
+        run: |
+          sha256sum "$BASELINE" > geometry-evidence/baseline.sha256
+          pnpm run test:ct sidebar-tabs.geometry.ct.spec.ts sidebar-tabs.preview.ct.spec.ts --workers=1 --retries=0 --repeat-each=3 --reporter=list,json
+          sha256sum --check geometry-evidence/baseline.sha256
+          test "$(git diff --name-only)" = "$BASELINE"
+          git diff --check
+          git diff -- "$BASELINE" > geometry-evidence/baseline.diff
+          cp "$BASELINE" geometry-evidence/sidebar-tabs.geometry.json
+      - name: Upload verified Linux baseline and evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: sidebar-tabs-linux-geometry
+          path: geometry-evidence/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload failure diagnostics
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sidebar-tabs-linux-geometry-failure
+          path: |
+            geometry-evidence/
+            test-results/
+          retention-days: 7
