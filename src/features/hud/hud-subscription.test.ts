@@ -135,6 +135,8 @@ function scriptHappyBackend(backend: MockBackendHandle) {
   backend.onSubscribe(() => ({ subscriptionId: SUB_ID }));
   backend.onRequest('stats.getUsage', () => usageResult());
   backend.onRequest('stats.getRateHistory', () => rateHistoryResult());
+  // PROTOCOL §5.5 daemon-global busy set — nothing mid-turn by default.
+  backend.onRequest('agent.listActive', () => ({ streams: [] }));
 }
 
 describe('HUD subscription (mock backend, real store)', () => {
@@ -744,7 +746,7 @@ describe('HUD subscription (mock backend, real store)', () => {
     }
   });
 
-  it('holds an unknown agent takeover until its workspace agent.list lands, then honors the mute (§5.5)', async () => {
+  it('holds an unknown agent takeover until its workspace agent hydration lands, then honors the mute (§5.5)', async () => {
     const { onTakeoverTrigger } = await import('./takeover/hud-takeover-bus');
     const received: Array<{ kind: string; detail?: string }> = [];
     const unsubscribe = onTakeoverTrigger((trigger) => received.push(trigger));
@@ -1113,7 +1115,7 @@ describe('HUD subscription (mock backend, real store)', () => {
     expect(selectHudFeed.select(appStore.state)).toEqual([]);
   });
 
-  it('hydrates agent.list for every visible workspace on open and folds lastAgentResponse in (§5.5)', async () => {
+  it('hydrates the topLevel agent.list bin for every visible workspace on open and folds lastAgentResponse in (§5.5, intent#5531)', async () => {
     const WS2_ID = '22222222-2222-4222-8222-222222222222';
     const AGENT_ID = 'agent-11111111-aaaa-4aaa-8aaa-111111111111';
     scriptHappyBackend(backend);
@@ -1121,7 +1123,7 @@ describe('HUD subscription (mock backend, real store)', () => {
     // lastAgentResponse present — no live status event is pushed in this test.
     backend.onRequest('agent.list', (params) => {
       const { workspaceId } = params as { workspaceId: string };
-      if (workspaceId !== WS_ID) return { agents: [] };
+      if (workspaceId !== WS_ID) return { agents: [], retiredCount: 0 };
       return {
         agents: [
           {
@@ -1137,6 +1139,8 @@ describe('HUD subscription (mock backend, real store)', () => {
             metadata: { isBackground: false },
           },
         ],
+        retiredCount: 0,
+        scopeCounts: { topLevel: 1, delegated: 0, background: 0 },
       };
     });
     appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_ID)));
@@ -1146,12 +1150,22 @@ describe('HUD subscription (mock backend, real store)', () => {
       await flush();
       await flush();
 
-      // One agent.list per visible workspace, no repeats.
+      // One SCOPED agent.list per visible workspace, no repeats — never the
+      // unscoped all-rows read (intent-hq/intent#5531: that frame passed 1 MiB
+      // at 459 sessions, multiplied here by the workspace count).
       const listCalls = () => backend.requests.filter((r) => r.method === 'agent.list');
-      expect(listCalls().map((r) => (r.params as { workspaceId: string }).workspaceId)).toEqual(
-        expect.arrayContaining([WS_ID, WS2_ID]),
+      expect(listCalls().map((r) => r.params)).toEqual(
+        expect.arrayContaining([
+          { workspaceId: WS_ID, scope: 'topLevel' },
+          { workspaceId: WS2_ID, scope: 'topLevel' },
+        ]),
       );
       expect(listCalls()).toHaveLength(2);
+      // The busy set is read ONCE for the whole pass, not once per workspace.
+      const listActiveCalls = () => backend.requests.filter((r) => r.method === 'agent.listActive');
+      expect(listActiveCalls()).toHaveLength(1);
+      // No busy agent → no point reads.
+      expect(backend.requests.filter((r) => r.method === 'agent.get')).toEqual([]);
 
       // The AgentLite hydration reached the session slice: the HUD card line
       // source (`lastAgentResponse`) is present without any live event.
@@ -1164,15 +1178,138 @@ describe('HUD subscription (mock backend, real store)', () => {
       appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS3_ID)));
       await flush();
       expect(listCalls()).toHaveLength(3);
+      expect(listActiveCalls()).toHaveLength(2);
 
       // …and an unrelated store change never re-fetches (once per workspace).
       appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS3_ID)));
       await flush();
       expect(listCalls()).toHaveLength(3);
+      expect(listActiveCalls()).toHaveLength(2);
     } finally {
       appStore.dispatch(removeWorkspaceEntity(WS_ID));
       appStore.dispatch(removeWorkspaceEntity(WS2_ID));
       appStore.dispatch(removeWorkspaceEntity('33333333-3333-4333-8333-333333333333'));
+    }
+  });
+
+  it('point-reads a busy background agent absent from the topLevel bin via agent.get and lands it in the store (intent#5531)', async () => {
+    const WS_BG_ID = '55555555-5555-4555-8555-555555555555';
+    const WS_OTHER_ID = '66666666-6666-4666-8666-666666666666';
+    const TOP_ID = 'agent-11111111-aaaa-4aaa-8aaa-111111111111';
+    const BUSY_BG_ID = 'agent-22222222-bbbb-4bbb-8bbb-222222222222';
+    const GONE_ID = 'agent-33333333-cccc-4ccc-8ccc-333333333333';
+    const FOREIGN_BUSY_ID = 'agent-44444444-dddd-4ddd-8ddd-444444444444';
+    scriptHappyBackend(backend);
+    backend.onRequest('agent.list', (params) => {
+      const { workspaceId } = params as { workspaceId: string };
+      if (workspaceId !== WS_BG_ID) return { agents: [], retiredCount: 0 };
+      return {
+        agents: [
+          {
+            id: TOP_ID,
+            workspaceId: WS_BG_ID,
+            name: 'Coordinator',
+            status: 'active',
+            messageCount: 3,
+            lastActivity: '2026-07-30T11:59:00Z',
+            createdAt: '2026-07-30T10:00:00Z',
+            updatedAt: '2026-07-30T11:59:00Z',
+            metadata: { isBackground: false },
+          },
+        ],
+        retiredCount: 0,
+        scopeCounts: { topLevel: 1, delegated: 1, background: 1 },
+      };
+    });
+    // The daemon-global busy set: the top-level row (already listed — no
+    // point read), a busy background child (not in the bin — point read), a
+    // busy row whose session vanished between the reads, and a busy agent of
+    // a workspace that is NOT HUD-visible (never read).
+    backend.onRequest('agent.listActive', () => ({
+      streams: [
+        {
+          agentId: TOP_ID,
+          sessionId: 's-1',
+          workspaceId: WS_BG_ID,
+          startTime: '2026-07-30T11:58:00Z',
+        },
+        {
+          agentId: BUSY_BG_ID,
+          sessionId: 's-2',
+          workspaceId: WS_BG_ID,
+          startTime: '2026-07-30T11:59:00Z',
+        },
+        {
+          agentId: GONE_ID,
+          sessionId: 's-3',
+          workspaceId: WS_BG_ID,
+          startTime: '2026-07-30T11:59:30Z',
+        },
+        {
+          agentId: FOREIGN_BUSY_ID,
+          sessionId: 's-4',
+          workspaceId: WS_OTHER_ID,
+          startTime: '2026-07-30T11:59:40Z',
+        },
+      ],
+    }));
+    backend.onRequest('agent.get', (params) => {
+      const { agentId } = params as { agentId: string };
+      if (agentId === BUSY_BG_ID) {
+        return {
+          agent: {
+            id: BUSY_BG_ID,
+            workspaceId: WS_BG_ID,
+            name: 'Implementor',
+            status: 'active',
+            messageCount: 7,
+            parentAgentId: TOP_ID,
+            lastAgentResponse: 'Running the focused vitest suite',
+            lastActivity: '2026-07-30T11:59:00Z',
+            createdAt: '2026-07-30T10:30:00Z',
+            updatedAt: '2026-07-30T11:59:00Z',
+            metadata: { isBackground: true, delegationDepth: 1 },
+          },
+        };
+      }
+      // PROTOCOL §5.5 / 09-error-codes: a deleted session is -32602 not-found.
+      throw Object.assign(new Error(`agent not found: ${agentId}`), {
+        rpcCode: -32602,
+        data: { code: 'not-found' },
+      });
+    });
+    appStore.dispatch(setWorkspaceEntity(makeHudWorkspace(WS_BG_ID)));
+    try {
+      stop = startHudSubscription();
+      await flush();
+      await flush();
+      await flush();
+
+      expect(
+        backend.requests.filter((r) => r.method === 'agent.list').map((r) => r.params),
+      ).toEqual([{ workspaceId: WS_BG_ID, scope: 'topLevel' }]);
+      expect(backend.requests.filter((r) => r.method === 'agent.listActive')).toHaveLength(1);
+      // Exactly the busy rows the topLevel bin did not carry, for THIS
+      // workspace only — bounded by the busy count, never the session count.
+      const getIds = backend.requests
+        .filter((r) => r.method === 'agent.get')
+        .map((r) => (r.params as { agentId: string }).agentId)
+        .sort();
+      expect(getIds).toEqual([BUSY_BG_ID, GONE_ID].sort());
+
+      // Both the top-level row and the busy background child are in the
+      // store; the vanished row was skipped without failing the hydration.
+      const sessions = appStore.state.agentSessions?.byAgentId ?? {};
+      expect(sessions[TOP_ID]?.name).toBe('Coordinator');
+      expect(sessions[BUSY_BG_ID]?.lastAgentResponse).toBe('Running the focused vitest suite');
+      expect(sessions[BUSY_BG_ID]?.metadata?.isBackground).toBe(true);
+      expect(sessions[GONE_ID]).toBeUndefined();
+      expect(sessions[FOREIGN_BUSY_ID]).toBeUndefined();
+      expect(appStore.state.workspaceAgents?.byWorkspaceId?.[WS_BG_ID]?.agentIds).toEqual(
+        expect.arrayContaining([TOP_ID, BUSY_BG_ID]),
+      );
+    } finally {
+      appStore.dispatch(removeWorkspaceEntity(WS_BG_ID));
     }
   });
 });
