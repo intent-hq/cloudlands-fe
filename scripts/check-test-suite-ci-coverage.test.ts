@@ -83,7 +83,7 @@ interface Word {
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
 const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
   'src/lib/components/ui/card/operate-patterns.playwright.config.ts':
-    '2026-09-21: manual macOS visual harness whose spec hardcodes a system Chrome path; no CI runner can host it',
+    '2026-09-21: intentionally manual visual harness; its spec renders Operate pattern contact sheets into a dated .demo-artifacts/ directory for human review, with no checked-in baselines to compare against in CI',
   'e2e/build-smoke.config.ts':
     '2026-09-21, provisional: needs a packaged app; the follow-up PR "Run the build-smoke suite from a nightly/dispatch Linux workflow" wires it and removes this entry',
 });
