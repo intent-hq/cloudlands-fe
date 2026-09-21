@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import DiagramPresentationGeometryHarness from './DiagramPresentationGeometryHarness.svelte';
 
 test('keeps diagram surfaces separated and control focus visible', async ({ mount }) => {

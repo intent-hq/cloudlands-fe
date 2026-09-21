@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import MermaidLabelContrastHost from './MermaidLabelContrastHost.svelte';
 import { COMMIT_CHAIN_SOURCE, S3_LOGBOOK_SOURCE } from './mermaid-label-contrast.fixtures';
 
