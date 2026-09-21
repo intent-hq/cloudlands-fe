@@ -539,9 +539,6 @@ describe('agentListBinOf (§5.5 row-scope partition)', () => {
         metadata: { createdByAgentId: 'agent-parent' } as AgentSession['metadata'],
       }),
     ).toBe('delegated');
-    expect(agentListBinOf({ ...mockAgent('a'), parentSessionId: 'agent-parent' })).toBe(
-      'delegated',
-    );
     expect(
       agentListBinOf({
         ...mockBackgroundAgent('a'),
@@ -551,6 +548,16 @@ describe('agentListBinOf (§5.5 row-scope partition)', () => {
         } as AgentSession['metadata'],
       }),
     ).toBe('delegated');
+  });
+
+  it('does not classify a fork-only row (parentSessionId, no parent agent) as delegated — the bin follows the parent_agent_id partition key', () => {
+    const fork = { ...mockAgent('a'), parentSessionId: 'agent-parent' as never };
+    expect(agentListBinOf(fork)).toBe('topLevel');
+    expect(agentListBinOf({ ...mockBackgroundAgent('a'), parentSessionId: 'agent-parent' })).toBe(
+      'background',
+    );
+    // Whatever classifies as delegated has a byParent key, and vice versa.
+    expect(agentListBinOf(fork) === 'delegated').toBe(agentDelegationParentOf(fork) !== null);
   });
 
   it('classifies a row by the wire parentAgentId alone — no createdByAgentId, no fork marker (§5.5 partition key)', () => {

@@ -216,17 +216,15 @@ function isBackgroundAgent(agent: AgentSession): boolean {
  * The `agent.list` bin a non-retired session partitions into (§5.5 row scope):
  * any parented row is `delegated` (a background CHILD is delegated, not
  * background), an unparented background agent is `background`, everything
- * else is `topLevel`. Parentage is the wire `parentAgentId` the daemon
- * partitions by, with `metadata.createdByAgentId` (older rows) and the fork
- * marker `parentSessionId` as fallbacks. Retired sessions are their own bin
- * and never classify here — callers check `retiredAt` first.
+ * else is `topLevel`. Parentage is exactly `agentDelegationParentOf` — the
+ * `parent_agent_id` the daemon partitions by — so a row classifies as
+ * delegated iff it has a `byParent` key to count under; the fork marker
+ * `parentSessionId` is a session reference, not a parent agent, and never
+ * parents a row. Retired sessions are their own bin and never classify here —
+ * callers check `retiredAt` first.
  */
 export function agentListBinOf(agent: AgentSession): AgentListBin {
-  if (
-    (typeof agent.parentAgentId === 'string' && agent.parentAgentId.length > 0) ||
-    agent.parentSessionId ||
-    typeof agent.metadata?.createdByAgentId === 'string'
-  ) {
+  if (agentDelegationParentOf(agent) !== null) {
     return 'delegated';
   }
   return isBackgroundAgent(agent) ? 'background' : 'topLevel';
@@ -235,7 +233,8 @@ export function agentListBinOf(agent: AgentSession): AgentListBin {
 /**
  * The `delegatedCounts.byParent` key a delegated row counts under (§5.5): the
  * wire `parentAgentId` the daemon groups by, with `metadata.createdByAgentId`
- * (older rows) as the fallback. `null` for an unparented row.
+ * (older rows) as the fallback. `null` for an unparented row — including a
+ * fork carrying only `parentSessionId`.
  */
 export function agentDelegationParentOf(agent: AgentSession): string | null {
   if (typeof agent.parentAgentId === 'string' && agent.parentAgentId.length > 0) {

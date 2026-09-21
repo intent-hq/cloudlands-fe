@@ -8,7 +8,7 @@ import { getAgentLineStats } from '$features/line-changes/line-changes.client';
 import { appClient } from '$lib/client';
 import { isForbiddenErrorResponse } from '$lib/client/live/backend-transport-types';
 import { createLogger } from '$lib/utils/client-logger';
-import type { Workspace } from '$shared/types';
+import type { AgentDelegatedCounts, AgentSession, Workspace } from '$shared/types';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { selectActiveBackendId } from '../../../utils/backend-storage-namespace';
 import { takeEveryFromWindowEvent } from '../../../utils/ipc-channel';
@@ -72,6 +72,7 @@ import {
   addAgent,
   adjustDelegatedParentCount,
   adjustScopeCount,
+  agentDelegationParentOf,
   fetchBackgroundAgentsRequested,
   fetchDelegatedAgentsRequested,
   fetchRetiredAgentsRequested,
@@ -103,6 +104,7 @@ import {
   selectLoadedDelegatedParentIds,
   selectRetiredAgentsLoaded,
   selectScopeCounts,
+  selectScopeCountsGeneration,
   selectWorkspaceAgentIds,
 } from '../../workspace-agents/workspace-agents-selectors';
 import { selectOlderEventsNextToken } from '../../workspace-events/workspace-events-selectors';
@@ -618,15 +620,50 @@ function* fetchLazyBinAgents(workspaceId: string, bin: LazyAgentListBin): SagaGe
       }
     }
     // Re-baseline the bin's count to the rows actually loaded so the bin
-    // label and its contents can never disagree after a load.
+    // label and its contents can never disagree after a load. The delegated
+    // bin's rows are every parent's children, so its `byParent` totals
+    // re-baseline from the same read — `Σ byParent[*].total` must keep
+    // matching `scopeCounts.delegated` (§5.5).
     const counts = yield* selectScopeCounts.effect(workspaceId);
     if (counts) {
       yield* put(adjustScopeCount(workspaceId, bin, fetched.length - counts[bin]));
+    }
+    if (bin === 'delegated') {
+      yield* rebaselineDelegatedCountsFromRows(workspaceId, fetched);
     }
     yield* put(setLazyBinLoaded(workspaceId, bin, true));
   } finally {
     yield* put(setIsLoadingLazyBin(workspaceId, bin, false));
   }
+}
+
+/**
+ * Replace `delegatedCounts.byParent` with the totals of the delegated rows a
+ * whole-bin read served, grouped by the parent key the daemon groups by.
+ * `running` is not derivable from a list row here, so each parent keeps its
+ * daemon-served running count clipped to the new total (loaded rows are
+ * authoritative for running once hydrated) and the workspace-wide `running`
+ * stays `Σ byParent[*].running`.
+ */
+function* rebaselineDelegatedCountsFromRows(
+  workspaceId: string,
+  rows: readonly AgentSession[],
+): SagaGenerator<void> {
+  const counts = yield* selectDelegatedCounts.effect(workspaceId);
+  if (!counts) return;
+  const totals: Record<string, number> = {};
+  for (const row of rows) {
+    const parentAgentId = agentDelegationParentOf(row);
+    if (parentAgentId) totals[parentAgentId] = (totals[parentAgentId] ?? 0) + 1;
+  }
+  const byParent: AgentDelegatedCounts['byParent'] = {};
+  let running = 0;
+  for (const [parentAgentId, total] of Object.entries(totals)) {
+    const parentRunning = Math.min(total, counts.byParent[parentAgentId]?.running ?? 0);
+    byParent[parentAgentId] = { total, running: parentRunning };
+    running += parentRunning;
+  }
+  yield* put(setDelegatedCounts(workspaceId, { running, byParent }));
 }
 
 /**
@@ -637,7 +674,12 @@ function* fetchLazyBinAgents(workspaceId: string, bin: LazyAgentListBin): SagaGe
  * a failed read leaves the parent unloaded so the next expand retries, rows
  * merge in via `addAgent`. The parent's `byParent` total re-baselines to the
  * rows served, with `scopeCounts.delegated` moved by the same delta so the
- * two stay in lockstep; `running` is left to the loaded rows.
+ * two stay in lockstep; `running` is left to the loaded rows. The
+ * re-baseline is skipped when a fresher baseline landed while the read was
+ * in flight — a whole-bin load (which re-baselines every parent from its own
+ * rows) or a hydration read (`setScopeCounts`, generation bump) — so a
+ * superseded per-parent read never moves counts a newer read already owns;
+ * its rows still merge in.
  */
 function* fetchDelegatedAgentsForParent(
   workspaceId: string,
@@ -646,6 +688,7 @@ function* fetchDelegatedAgentsForParent(
   if (!(yield* selectScopeCounts.effect(workspaceId))) return;
   if (yield* selectDelegatedParentLoaded.effect(workspaceId, parentAgentId)) return;
   if (yield* selectIsLoadingDelegatedParent.effect(workspaceId, parentAgentId)) return;
+  const baselineGeneration = yield* selectScopeCountsGeneration.effect(workspaceId);
   yield* put(setIsLoadingDelegatedParent(workspaceId, parentAgentId, true));
   try {
     const listed: Awaited<ReturnType<typeof appClient.agents.list>> = yield* call(
@@ -669,8 +712,11 @@ function* fetchDelegatedAgentsForParent(
         yield* put(addAgent(workspaceId, agent));
       }
     }
+    const superseded =
+      (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) ||
+      (yield* selectScopeCountsGeneration.effect(workspaceId)) !== baselineGeneration;
     const counts = yield* selectDelegatedCounts.effect(workspaceId);
-    if (counts) {
+    if (counts && !superseded) {
       const delta = fetched.length - (counts.byParent[parentAgentId]?.total ?? 0);
       if (delta !== 0) {
         yield* put(adjustDelegatedParentCount(workspaceId, parentAgentId, delta));

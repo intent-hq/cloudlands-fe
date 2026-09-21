@@ -75,6 +75,9 @@ import {
   fetchRetiredAgentsRequested,
   hydrateAgentsRequested,
   setAgentsLoaded,
+  setDelegatedCounts,
+  setScopeCounts,
+  workspaceAgentsReducer,
 } from '../../workspace-agents/workspace-agents-slice';
 import {
   loadEventsRequested,
@@ -2670,6 +2673,202 @@ describe('lifecycleReadSaga', () => {
       payload: [WS, PARENT],
     });
     await stop(run.task);
+  });
+
+  // Count-baseline invariant (§5.5): `Σ byParent[*].total === scopeCounts.delegated`
+  // must hold after every completion order of the delegated reads. These run
+  // the production saga against the real `workspaceAgentsReducer` so the
+  // resulting store state — not the dispatched action list — is what is
+  // asserted.
+  describe('delegated count baseline across whole-bin, by-parent and hydration reads (real reducer)', () => {
+    const SEEDED_DELEGATED = {
+      running: 0,
+      byParent: { [PARENT]: { total: 2, running: 0 }, [OTHER_PARENT]: { total: 1, running: 0 } },
+    };
+    const childOf = (id: string, parentAgentId: string) =>
+      agent(id, { parentAgentId: parentAgentId as never });
+
+    function startWithAgentsReducer() {
+      const channel = stdChannel();
+      const actions: { type: string }[] = [];
+      let agentsState = workspaceAgentsReducer(undefined, { type: '@@INIT' } as never);
+      const dispatch = (action: { type: string }) => {
+        actions.push(action);
+        agentsState = workspaceAgentsReducer(agentsState, action as never);
+        return action;
+      };
+      const current = state();
+      const task = runSaga(
+        { channel, dispatch, getState: () => ({ ...current, workspaceAgents: agentsState }) },
+        lifecycleReadSaga,
+      );
+      dispatch(setScopeCounts(WS, { topLevel: 2, delegated: 3, background: 0 }));
+      dispatch(setDelegatedCounts(WS, SEEDED_DELEGATED));
+      const wsState = () => agentsState.byWorkspaceId[WS]!;
+      const sumByParent = () =>
+        Object.values(wsState().delegatedCounts?.byParent ?? {}).reduce((n, e) => n + e.total, 0);
+      return { channel, actions, task, dispatch, wsState, sumByParent };
+    }
+
+    it('re-baselines byParent alongside scopeCounts.delegated from one whole-bin read', async () => {
+      const run = startWithAgentsReducer();
+      mocks.agents.list.mockResolvedValue([
+        childOf('agent-c1', PARENT),
+        childOf('agent-c2', PARENT),
+        childOf('agent-c3', PARENT),
+        childOf('agent-c4', OTHER_PARENT),
+      ]);
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+
+      expect(mocks.agents.list.mock.calls).toEqual([[WS, { scope: 'delegated' }]]);
+      expect(run.wsState().delegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().scopeCounts?.delegated).toBe(4);
+      expect(run.wsState().delegatedCounts).toEqual({
+        running: 0,
+        byParent: { [PARENT]: { total: 3, running: 0 }, [OTHER_PARENT]: { total: 1, running: 0 } },
+      });
+      expect(run.sumByParent()).toBe(run.wsState().scopeCounts?.delegated);
+      await stop(run.task);
+    });
+
+    it('drops a parent whose whole-bin rows are gone and clips running to the new total', async () => {
+      const run = startWithAgentsReducer();
+      run.dispatch(
+        setDelegatedCounts(WS, {
+          running: 3,
+          byParent: {
+            [PARENT]: { total: 2, running: 2 },
+            [OTHER_PARENT]: { total: 1, running: 1 },
+          },
+        }),
+      );
+      mocks.agents.list.mockResolvedValue([childOf('agent-c1', PARENT)]);
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+
+      expect(run.wsState().scopeCounts?.delegated).toBe(1);
+      expect(run.wsState().delegatedCounts).toEqual({
+        running: 1,
+        byParent: { [PARENT]: { total: 1, running: 1 } },
+      });
+      await stop(run.task);
+    });
+
+    it('a by-parent read that completes after the whole-bin read leaves the whole-bin baseline untouched', async () => {
+      const run = startWithAgentsReducer();
+      let resolveParent!: (rows: AgentSession[]) => void;
+      mocks.agents.list.mockImplementation((_ws: string, options: { parentAgentId?: string }) =>
+        options.parentAgentId
+          ? new Promise<AgentSession[]>((resolve) => {
+              resolveParent = resolve;
+            })
+          : Promise.resolve([
+              childOf('agent-c1', PARENT),
+              childOf('agent-c2', PARENT),
+              childOf('agent-c3', OTHER_PARENT),
+            ]),
+      );
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+      await settle();
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+      expect(run.wsState().delegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().scopeCounts?.delegated).toBe(3);
+
+      // The parked, older read lands with one row: it never re-baselines over
+      // the whole-bin coverage, so the label still matches the loaded rows.
+      resolveParent([childOf('agent-c1', PARENT)]);
+      await settle();
+
+      expect(run.wsState().agentIds.map(String).sort()).toEqual([
+        'agent-c1',
+        'agent-c2',
+        'agent-c3',
+      ]);
+      expect(run.wsState().scopeCounts?.delegated).toBe(3);
+      expect(run.wsState().delegatedCounts?.byParent[PARENT]).toEqual({ total: 2, running: 0 });
+      expect(run.sumByParent()).toBe(3);
+      expect(run.wsState().loadingDelegatedParentIds).toEqual({});
+      await stop(run.task);
+    });
+
+    it('a whole-bin read that completes after the by-parent read re-baselines over it (either order converges)', async () => {
+      const run = startWithAgentsReducer();
+      let resolveBin!: (rows: AgentSession[]) => void;
+      mocks.agents.list.mockImplementation((_ws: string, options: { parentAgentId?: string }) =>
+        options.parentAgentId
+          ? Promise.resolve([childOf('agent-c1', PARENT)])
+          : new Promise<AgentSession[]>((resolve) => {
+              resolveBin = resolve;
+            }),
+      );
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS));
+      await settle();
+      run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+      await settle();
+      // The by-parent read landed first: parent 2→1, bin 3→2, in lockstep.
+      expect(run.wsState().scopeCounts?.delegated).toBe(2);
+      expect(run.wsState().delegatedCounts?.byParent[PARENT]).toEqual({ total: 1, running: 0 });
+      expect(run.sumByParent()).toBe(2);
+
+      resolveBin([
+        childOf('agent-c1', PARENT),
+        childOf('agent-c2', PARENT),
+        childOf('agent-c3', OTHER_PARENT),
+      ]);
+      await settle();
+
+      expect(run.wsState().delegatedAgentsLoaded).toBe(true);
+      expect(run.wsState().scopeCounts?.delegated).toBe(3);
+      expect(run.wsState().delegatedCounts?.byParent[PARENT]).toEqual({ total: 2, running: 0 });
+      expect(run.sumByParent()).toBe(3);
+      await stop(run.task);
+    });
+
+    it('a by-parent read that completes after a hydration baseline keeps the daemon-served counts', async () => {
+      const run = startWithAgentsReducer();
+      let resolveParent!: (rows: AgentSession[]) => void;
+      mocks.agents.list.mockImplementation(
+        () =>
+          new Promise<AgentSession[]>((resolve) => {
+            resolveParent = resolve;
+          }),
+      );
+      const HYDRATED_COUNTS = { topLevel: 2, delegated: 5, background: 0 };
+      const HYDRATED_DELEGATED = {
+        running: 1,
+        byParent: { [PARENT]: { total: 4, running: 1 }, [OTHER_PARENT]: { total: 1, running: 0 } },
+      };
+      mocks.agents.listWithMeta.mockResolvedValue({
+        agents: [agent(PARENT), agent(OTHER_PARENT)],
+        retiredCount: 0,
+        scopeCounts: HYDRATED_COUNTS,
+        delegatedCounts: HYDRATED_DELEGATED,
+      });
+
+      run.channel.put(fetchDelegatedAgentsRequested(WS, PARENT));
+      await settle();
+      run.channel.put(hydrateAgentsRequested(WS));
+      await settle();
+      expect(run.wsState().scopeCounts).toEqual(HYDRATED_COUNTS);
+      expect(run.wsState().delegatedCounts).toEqual(HYDRATED_DELEGATED);
+
+      // The older by-parent read lands with one row after the fresh baseline:
+      // its delta is dropped, the row still merges, the parent is loaded.
+      resolveParent([childOf('agent-c1', PARENT)]);
+      await settle();
+
+      expect(run.wsState().scopeCounts).toEqual(HYDRATED_COUNTS);
+      expect(run.wsState().delegatedCounts).toEqual(HYDRATED_DELEGATED);
+      expect(run.wsState().agentIds.map(String)).toContain('agent-c1');
+      expect(run.wsState().loadedDelegatedParentIds).toEqual({ [PARENT]: true });
+      await stop(run.task);
+    });
   });
 
   it('does not cancel concurrent agent hydrates across workspaces (#1934)', async () => {

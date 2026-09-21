@@ -6167,6 +6167,35 @@ describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 sc
       expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
       expect(delegatedCountsOf()).toBeNull();
     });
+
+    it('a fork-only row (parentSessionId, no parent agent) never moves the delegated bin without a byParent key — Σ byParent[*].total stays equal to scopeCounts.delegated across create, delete, retire and restore', async () => {
+      const sumByParent = () =>
+        Object.values(delegatedCountsOf()?.byParent ?? {}).reduce((n, e) => n + e.total, 0);
+      const handler = capturedHandlers[0]!;
+      expect(sumByParent()).toBe(COUNTS.delegated);
+
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-fork' as never, parentSessionId: 'agent-primary' as never });
+      });
+      handler(notification('agent:created', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel + 1 });
+      expect(delegatedCountsOf()).toEqual(DELEGATED);
+      expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
+
+      handler(notification('agent:retired', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      handler(notification('agent:restored', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel + 1 });
+
+      handler(notification('agent:deleted', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      expect(delegatedCountsOf()).toEqual(DELEGATED);
+      expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
+    });
   });
 });
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {

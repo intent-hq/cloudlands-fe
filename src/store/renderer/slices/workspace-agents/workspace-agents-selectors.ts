@@ -99,6 +99,15 @@ export const selectScopeCounts = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).scopeCounts;
 });
 
+/**
+ * Bumped each time a hydration read installs an authoritative count baseline
+ * (`setScopeCounts`); a deferred count adjustment captured under an older
+ * generation is stale and must be dropped.
+ */
+export const selectScopeCountsGeneration = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).scopeCountsGeneration;
+});
+
 /** True once the on-demand `scope: "delegated"` read has hydrated the delegated rows. */
 export const selectDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).delegatedAgentsLoaded;
