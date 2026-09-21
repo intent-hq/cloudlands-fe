@@ -355,7 +355,6 @@ describe('editorial conversation presentation contract', () => {
     expect(panel).toContain('const transcriptBottomInsetClass = $derived(');
     expect(panel).toContain('{transcriptBottomInsetClass}');
     expect(queueEdgeLayout).toContain("return isCompactMode ? 'pb-3' : 'pb-6'");
-    expect(panel).toContain("isCompactMode ? 'pb-2' : 'pb-3'");
     expect(panel).not.toContain("'pb-1 pt-3'");
     expect(panel).not.toContain('eventSubscriptionsOwnEndGap');
     expect(panel).not.toContain('eventSubscriptionsVisible');

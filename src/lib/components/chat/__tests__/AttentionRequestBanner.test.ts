@@ -29,6 +29,8 @@ describe('AttentionRequestBanner', () => {
     expect(screen.getByTestId('attention-request-reason').textContent).toContain(
       'Choose the scope',
     );
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId('attention-request-header').querySelector('[title]')).toBeNull();
     attentionRequest.set({
       kind: 'blocker',
       reason: 'Docker daemon is down',
@@ -40,6 +42,8 @@ describe('AttentionRequestBanner', () => {
     expect(screen.getByTestId('attention-request-reason').textContent).toContain(
       'Docker daemon is down',
     );
+    expect(screen.getByTestId('attention-request-header').querySelector('[title]')).not.toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
     attentionRequest.set(null);
     await waitFor(() => expect(screen.queryByTestId('attention-request-banner')).toBeNull());
   });

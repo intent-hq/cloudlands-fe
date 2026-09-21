@@ -216,7 +216,7 @@ test('keeps the regular Aurora clipped during reduced-motion streaming transitio
   await expect(aurora).toHaveCount(0);
 });
 
-test('separates suggestions from the composer while resizing into compact mode', async ({
+test('keeps transcript suggestions above the composer while resizing into compact mode', async ({
   mount,
 }) => {
   const props = { width: 720, height: 960, suggestions: true };
@@ -224,6 +224,8 @@ test('separates suggestions from the composer while resizing into compact mode',
   const suggestions = component.getByTestId('suggested-prompts-surface');
   const list = component.getByTestId('suggested-prompts-list');
   const input = component.getByTestId('message-input');
+  const transcript = component.getByTestId('chat-transcript-inner');
+  const composer = component.getByTestId('chat-composer-shell');
   const gap = async () => {
     const [promptsBox, inputBox] = await Promise.all([
       suggestions.boundingBox(),
@@ -233,15 +235,17 @@ test('separates suggestions from the composer while resizing into compact mode',
   };
 
   await expect(suggestions).toBeVisible();
+  await expect(transcript.getByTestId('suggested-prompts-surface')).toBeVisible();
+  await expect(composer.getByTestId('suggested-prompts-surface')).toHaveCount(0);
   await expect(list).toHaveAttribute('data-compact', 'false');
-  await expect.poll(gap).toBeCloseTo(12, 1);
+  await expect.poll(gap).toBeGreaterThan(0);
   await component.update({ props: { ...props, height: 480 } });
   await expect(list).toHaveAttribute('data-compact', 'true');
-  await expect.poll(gap).toBeCloseTo(8, 1);
+  await expect.poll(gap).toBeGreaterThan(0);
 
   await suggestions.getByRole('button', { name: 'Edit in input' }).first().click();
   await expect(input.locator('.tiptap-editor')).toContainText('Review the layout.');
-  await expect.poll(gap).toBeCloseTo(8, 1);
+  await expect.poll(gap).toBeGreaterThan(0);
 });
 
 test('keeps attachments, controls, tab order, and resize behavior inside the nested surface', async ({

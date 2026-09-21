@@ -2,7 +2,7 @@
   /**
    * AttentionRequestBanner Component
    *
-   * Transcript card shown when the current agent has a pending
+   * Transcript notice shown when the current agent has a pending
    * attention request (requestDiscussion / reportBlocker). Scrolls with the
    * conversation at the shared content width, and
    * retires automatically when the daemon clears the session fields on the
@@ -12,11 +12,8 @@
    * automatic deliveries leave it pending.
    */
   import { writable } from 'svelte/store';
-  import { safeDisclosureTransition } from './disclosure-motion';
-  import Fa from 'svelte-fa';
-  import { faCommentDots, faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
   import { selectAgentAttentionRequest } from '$store/renderer/slices/agent-session/agent-session-selectors';
-  import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
+  import ChatNotice from './ChatNotice.svelte';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -35,43 +32,14 @@
 </script>
 
 {#if $attentionRequest$}
-  <div
-    class="mb-2 w-full min-w-0 rounded-(--radius-large) border border-border bg-card font-family-child"
-    data-testid="attention-request-banner"
-    transition:safeDisclosureTransition={{ tier: 'moderate' }}
-  >
-    <div class="flex min-w-0 flex-col gap-1 px-3 py-2.5 type-caption">
-      <div class="flex items-start justify-between gap-3" data-testid="attention-request-header">
-        <span
-          class="flex min-w-0 items-start gap-2 {$attentionRequest$.kind === 'blocker'
-            ? 'text-danger'
-            : 'text-warning-ink'}"
-        >
-          <Fa
-            icon={$attentionRequest$.kind === 'blocker' ? faCircleExclamation : faCommentDots}
-            size="13"
-          />
-          <span class="min-w-0 break-words" data-testid="attention-request-label">
-            {$attentionRequest$.kind === 'blocker'
-              ? m.chat_agentCard_attentionBlocker_label()
-              : m.chat_agentCard_attentionDiscussion_label()}
-          </span>
-        </span>
-        {#if $attentionRequest$.timestamp}
-          <RelativeTime
-            date={$attentionRequest$.timestamp}
-            class="shrink-0 whitespace-nowrap text-xs text-ghost"
-          />
-        {/if}
-      </div>
-      {#if $attentionRequest$.reason}
-        <span
-          class="max-h-32 overflow-y-auto break-words whitespace-pre-wrap text-subtle"
-          data-testid="attention-request-reason"
-        >
-          {$attentionRequest$.reason}
-        </span>
-      {/if}
-    </div>
-  </div>
+  <ChatNotice
+    title={$attentionRequest$.kind === 'blocker'
+      ? m.chat_agentCard_attentionBlocker_label()
+      : m.chat_agentCard_attentionDiscussion_label()}
+    tone={$attentionRequest$.kind === 'blocker' ? 'danger' : 'warning'}
+    reason={$attentionRequest$.reason}
+    timestamp={$attentionRequest$.timestamp}
+    announce={false}
+    testIdPrefix="attention-request"
+  />
 {/if}

@@ -62,6 +62,23 @@ for (const [scenario, between] of [
   ],
   ['visible prose', [assistant([{ type: 'text', text: 'Visible response between the cards.' }])]],
   [
+    'visible system notice',
+    [
+      {
+        id: 'seam-system',
+        role: 'system',
+        timestamp,
+        contentBlocks: [
+          {
+            type: 'text',
+            text: 'Need access before continuing.',
+            meta: { kind: 'blocker-report' },
+          },
+        ],
+      } as AgentMessage,
+    ],
+  ],
+  [
     'visible tool',
     [
       assistant([
@@ -116,7 +133,7 @@ for (const [scenario, between] of [
           },
         );
         const body = root
-          .querySelector('[data-message-id="seam-assistant"]')
+          .querySelector('[data-message-id="seam-assistant"], [data-message-id="seam-system"]')
           ?.getBoundingClientRect();
         return {
           cards,
