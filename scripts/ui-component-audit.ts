@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { type AST, parse } from 'svelte/compiler';
 import type { UiComponentInventory } from '../src/lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import {
@@ -199,129 +200,153 @@ export interface ButtonBackgroundAudit {
 
 // Non-colour `bg-*` utilities (size, position, repeat, clip, gradient, ...) never paint a surface.
 const NON_COLOUR_BACKGROUND_UTILITIES =
-  /^bg-(?:transparent|inherit|current|none|auto|cover|contain|fixed|local|scroll|clip-|origin-|blend-|repeat|no-repeat|gradient-|linear-|radial-|conic-|top|bottom|left|right|center|size-|position-|\[)/;
+  /^bg-(?:transparent|inherit|current|none|auto|cover|contain|fixed|local|scroll|clip-|origin-|blend-|repeat|no-repeat|gradient-|linear-|radial-|conic-|top|bottom|left|right|center|size-|position-)/;
+// Arbitrary (`bg-[…]`) and CSS-variable (`bg-(…)`) values paint a colour unless the value is an
+// image, a gradient, or carries a non-colour type hint (`bg-[length:…]`, `bg-(image:…)`).
+const NON_COLOUR_ARBITRARY_BACKGROUND =
+  /^bg-[[(](?:url\(|image-set\(|(?:linear|radial|conic)-gradient\(|(?:image|length|size|position|repeat|attachment|origin|clip):)/;
+// `bg-x/50`, `bg-[#000]/[0.4]`: translucent tints, not an opaque surface.
+const TRANSLUCENT_BACKGROUND = /\/(?:\d+|\[[^\]]*\])$/;
 
 function opaqueBackgroundClasses(classValue: string): string[] {
-  return [...classValue.matchAll(/(?<![\w:/-])!?(bg-[a-zA-Z][\w-]*)(?![\w/-])/g)]
-    .map((match) => match[1])
-    .filter((token) => !NON_COLOUR_BACKGROUND_UTILITIES.test(token));
+  return classValue
+    .split(/\s+/)
+    .map((token) => token.replace(/^!/, ''))
+    .filter(
+      (token) =>
+        /^bg-./.test(token) &&
+        !TRANSLUCENT_BACKGROUND.test(token) &&
+        !NON_COLOUR_BACKGROUND_UTILITIES.test(token) &&
+        !NON_COLOUR_ARBITRARY_BACKGROUND.test(token),
+    );
 }
 
-// Returns the end index (exclusive) of the tag whose `<` sits at `start`, honouring
-// quoted attribute values and `{...}` expressions so `>` inside them does not close the tag.
-function tagEnd(source: string, start: number): number {
-  let depth = 0;
-  let quote: string | null = null;
-  for (let index = start; index < source.length; index += 1) {
-    const char = source[index];
-    if (quote) {
-      if (char === quote) quote = null;
+interface EstreeNode {
+  type?: string;
+  [key: string]: unknown;
+}
+
+function isNode(value: unknown): value is EstreeNode {
+  return typeof value === 'object' && value !== null;
+}
+
+// String literals reachable from a template expression, e.g. every branch of
+// `class={cn("px-2", active ? "bg-primary" : `bg-${tone}`)}`.
+function stringLiterals(expression: unknown): string[] {
+  const literals: string[] = [];
+  const stack: unknown[] = [expression];
+  while (stack.length) {
+    const node = stack.pop();
+    if (Array.isArray(node)) {
+      stack.push(...node);
       continue;
     }
-    if (depth > 0) {
-      if (char === '{') depth += 1;
-      else if (char === '}') depth -= 1;
-      else if (char === "'" || char === '"' || char === '`') quote = char;
-      continue;
+    if (!isNode(node)) continue;
+    if (node.type === 'Literal' && typeof node.value === 'string') {
+      literals.push(node.value);
+    } else if (node.type === 'TemplateLiteral' && Array.isArray(node.quasis)) {
+      for (const quasi of node.quasis as Array<{
+        value: { cooked?: string | null; raw: string };
+      }>) {
+        literals.push(quasi.value.cooked ?? quasi.value.raw);
+      }
     }
-    if (char === '{') depth = 1;
-    else if (char === '"' || char === "'") quote = char;
-    else if (char === '>') return index + 1;
+    stack.push(...Object.values(node));
   }
-  return source.length;
+  return literals;
 }
 
-// Returns the end index (exclusive) of the balanced `{...}` expression opening at `start`,
-// honouring quoted strings so braces inside them do not affect the depth.
-function expressionEnd(source: string, start: number): number {
-  let depth = 0;
-  let quote: string | null = null;
-  for (let index = start; index < source.length; index += 1) {
-    const char = source[index];
-    if (quote) {
-      if (char === quote) quote = null;
-      continue;
-    }
-    if (char === "'" || char === '"' || char === '`') quote = char;
-    else if (char === '{') depth += 1;
-    else if (char === '}' && (depth -= 1) === 0) return index + 1;
+function attributeStrings(value: AST.Attribute['value']): string[] {
+  if (value === true) return [];
+  return (Array.isArray(value) ? value : [value]).flatMap((part) =>
+    part.type === 'Text' ? [part.data] : stringLiterals(part.expression),
+  );
+}
+
+// The `[name, value]` pairs of an object-literal spread (`{...{ class: "bg-x" }}`), or null when
+// the spread is not statically known (`{...props}`, computed keys, nested spreads).
+function literalSpreadProperties(expression: unknown): Array<[string, unknown]> | null {
+  if (!isNode(expression) || expression.type !== 'ObjectExpression') return null;
+  const entries: Array<[string, unknown]> = [];
+  for (const property of expression.properties as unknown[]) {
+    if (!isNode(property) || property.type !== 'Property' || property.computed) return null;
+    const key = property.key;
+    const name =
+      isNode(key) && key.type === 'Identifier'
+        ? (key.name as string)
+        : isNode(key) && key.type === 'Literal' && typeof key.value === 'string'
+          ? key.value
+          : null;
+    if (name === null) return null;
+    entries.push([name, property.value]);
   }
-  return source.length;
+  return entries;
 }
 
-interface TagAttribute {
-  // Attribute name, or the identifier of a `{shorthand}` attribute.
-  name: string;
-  // Attribute value without its delimiters; `{...}` expressions keep the inner source.
-  value: string;
-  expression: boolean;
-}
-
-// Tokenizes the attributes of the single opening tag `tag` (`<Name ...>`), so callers can
-// inspect attribute names and values without regexes leaking across attribute boundaries.
-function tagAttributes(tag: string): TagAttribute[] {
-  const attributes: TagAttribute[] = [];
-  let index = /^<[^\s/>]*/.exec(tag)?.[0].length ?? 0;
-  while (index < tag.length) {
-    const char = tag[index];
-    if (/\s/.test(char)) {
-      index += 1;
-      continue;
-    }
-    if (char === '/' || char === '>') break;
-    if (char === '{') {
-      const end = expressionEnd(tag, index);
-      const inner = tag.slice(index + 1, end - 1).trim();
-      attributes.push({ name: inner, value: inner, expression: true });
-      index = end;
-      continue;
-    }
-    const name = /^[^\s=/>{]+/.exec(tag.slice(index))?.[0] ?? '';
-    index += name.length;
-    const equals = /^\s*=\s*/.exec(tag.slice(index));
-    if (!equals) {
-      attributes.push({ name, value: '', expression: false });
-      continue;
-    }
-    index += equals[0].length;
-    const opener = tag[index];
-    if (opener === '{') {
-      const end = expressionEnd(tag, index);
-      attributes.push({ name, value: tag.slice(index + 1, end - 1), expression: true });
-      index = end;
-    } else if (opener === '"' || opener === "'") {
-      const close = tag.indexOf(opener, index + 1);
-      const end = close === -1 ? tag.length : close;
-      attributes.push({ name, value: tag.slice(index + 1, end), expression: false });
-      index = end + 1;
-    } else {
-      const bare = /^[^\s/>]*/.exec(tag.slice(index))?.[0] ?? '';
-      attributes.push({ name, value: bare, expression: false });
-      index += bare.length;
-    }
-  }
-  return attributes;
-}
-
-function buttonOpaqueBackgrounds(tag: string): string[] {
-  const attributes = tagAttributes(tag);
-  if (attributes.some((attribute) => /^(?:bind:)?variant$/.test(attribute.name))) return [];
-  const classes = new Set<string>();
-  for (const attribute of attributes) {
-    if (attribute.name === 'class') {
-      const values = attribute.expression
-        ? [...attribute.value.matchAll(/"([^"]*)"|'([^']*)'|`([^`]*)`/g)].map(
-            (literal) => literal[1] ?? literal[2] ?? literal[3] ?? '',
-          )
-        : [attribute.value];
-      values.flatMap(opaqueBackgroundClasses).forEach((token) => classes.add(token));
-    } else if (attribute.name.startsWith('class:')) {
-      opaqueBackgroundClasses(attribute.name.slice('class:'.length)).forEach((token) =>
-        classes.add(token),
-      );
+// Opaque background classes a `<Button>` receives without also selecting a `variant`. Attributes
+// are read in source order so a later `class` overrides an earlier spread's `class`; a runtime
+// spread may supply `variant`, so such a Button is treated as unknown rather than flagged.
+function buttonOpaqueBackgrounds(component: AST.Component): string[] {
+  let hasVariant = false;
+  let classStrings: string[] = [];
+  const directives: string[] = [];
+  for (const attribute of component.attributes) {
+    switch (attribute.type) {
+      case 'Attribute':
+        if (attribute.name === 'variant') hasVariant = true;
+        else if (attribute.name === 'class') classStrings = attributeStrings(attribute.value);
+        break;
+      case 'BindDirective':
+        if (attribute.name === 'variant') hasVariant = true;
+        break;
+      case 'ClassDirective':
+        directives.push(attribute.name);
+        break;
+      case 'SpreadAttribute': {
+        const properties = literalSpreadProperties(attribute.expression);
+        if (!properties) return [];
+        for (const [name, value] of properties) {
+          if (name === 'variant') hasVariant = true;
+          else if (name === 'class') classStrings = stringLiterals(value);
+        }
+        break;
+      }
+      default:
+        break;
     }
   }
+  if (hasVariant) return [];
+  const classes = new Set([...classStrings, ...directives].flatMap(opaqueBackgroundClasses));
   return [...classes].sort(sortText);
+}
+
+// Every rendered `<Button>` component node in a Svelte file. Parsing (rather than regex over the
+// raw source) keeps HTML comments, `<script>`/`<style>` bodies, and string contents out of scope.
+function buttonComponents(file: string, source: string): AST.Component[] {
+  let root: AST.Root;
+  try {
+    root = parse(source, { modern: true, filename: file });
+  } catch (error) {
+    throw new Error(`${file}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const components: AST.Component[] = [];
+  const stack: unknown[] = [root.fragment];
+  while (stack.length) {
+    const node = stack.pop();
+    if (Array.isArray(node)) {
+      stack.push(...node);
+      continue;
+    }
+    if (!isNode(node)) continue;
+    if (node.type === 'Component' && node.name === 'Button') {
+      components.push(node as unknown as AST.Component);
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'attributes' || key === 'expression' || key === 'metadata') continue;
+      if (isNode(value)) stack.push(value);
+    }
+  }
+  return components.sort((a, b) => a.start - b.start);
 }
 
 export function buildButtonBackgroundAudit(root = projectRoot): ButtonBackgroundAudit {
@@ -329,12 +354,11 @@ export function buildButtonBackgroundAudit(root = projectRoot): ButtonBackground
   for (const absolute of walk(path.join(root, 'src')).filter(productionSvelteSource)) {
     const file = normalizedRelative(root, absolute);
     const source = fs.readFileSync(absolute, 'utf8');
-    for (const match of source.matchAll(/<Button(?=[\s/>])/g)) {
-      const classes = buttonOpaqueBackgrounds(
-        source.slice(match.index, tagEnd(source, match.index)),
-      );
+    if (!source.includes('<Button')) continue;
+    for (const component of buttonComponents(file, source)) {
+      const classes = buttonOpaqueBackgrounds(component);
       if (!classes.length) continue;
-      const line = source.slice(0, match.index).split('\n').length;
+      const line = source.slice(0, component.start).split('\n').length;
       findings.push({ file, line, classes });
     }
   }
