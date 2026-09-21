@@ -436,6 +436,18 @@ export interface CreateWorkspaceOptions {
  */
 async function dumpProviderCardDiagnostics(page: Page, providerName: string): Promise<void> {
   const describe = (e: unknown) => `unavailable: ${(e as Error).message}`;
+  const invoke = (channel: string, ...args: unknown[]) =>
+    page
+      .evaluate(
+        ([channel, args]) =>
+          (
+            window as unknown as {
+              electronAPI: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> };
+            }
+          ).electronAPI.invoke(channel, ...args),
+        [channel, args] as const,
+      )
+      .catch(describe);
   const ariaLabels = await page
     .evaluate(() =>
       [...document.querySelectorAll('[data-onboarding-step] [aria-label]')].map((el) =>
@@ -443,16 +455,29 @@ async function dumpProviderCardDiagnostics(page: Page, providerName: string): Pr
       ),
     )
     .catch(describe);
-  const availability = await page
-    .evaluate(() =>
-      (
-        window as unknown as { electronAPI: { invoke: (channel: string) => Promise<unknown> } }
-      ).electronAPI.invoke('providers:get-availability'),
-    )
-    .catch(describe);
+  const availability = await invoke('providers:get-availability');
+  // The grid renders the daemon's catalog rows, gated by the per-provider
+  // `providers:check-single` verdict — the two inputs the aggregate call
+  // above does not cover.
+  const catalog = await invoke('backend:request', { method: 'providers.catalog' });
+  const rows = (catalog as { result?: { providers?: Array<Record<string, unknown>> } })?.result
+    ?.providers;
+  const row = rows?.find((r) => r.displayName === providerName);
+  const singleCheck = row ? await invoke('providers:check-single', row.id) : 'no catalog row';
   console.log(`❌ Provider card "Use ${providerName}" not found.`);
   console.log(`   onboarding aria-labels: ${JSON.stringify(ariaLabels)}`);
   console.log(`   providers:get-availability: ${JSON.stringify(availability)}`);
+  console.log(
+    `   providers.catalog: ${JSON.stringify(
+      rows?.map(({ id, displayName, visible, requiresEnvVar }) => ({
+        id,
+        displayName,
+        visible,
+        requiresEnvVar,
+      })) ?? catalog,
+    )}`,
+  );
+  console.log(`   providers:check-single(${row?.id}): ${JSON.stringify(singleCheck)}`);
   const shot = join(
     process.cwd(),
     'e2e-reports',
