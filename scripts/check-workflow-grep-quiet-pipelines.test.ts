@@ -29,7 +29,7 @@ const WORKFLOWS_DIR = '.github/workflows';
 const PIPE_TO_GREP = /(?:^|[^|])\|(?!\|)\s*grep(?=[\s|;&<>()]|$)/g;
 const COMMAND_TERMINATOR = /\||;|\(|\)|(?<![<>])&/;
 const TOKEN_BOUNDARY = /[\s<>]+/;
-const QUOTED = /'[^']*'|"[^"]*"/g;
+const COMMENT_START = /[\s;|&(]/;
 const LINE_CONTINUATION = /\s*\\\s*$/;
 const SHORT_QUIET_FLAG = /^-[A-Za-z]*q[A-Za-z]*$/;
 const LONG_QUIET_FLAGS = new Set(['--quiet', '--silent']);
@@ -74,10 +74,68 @@ const hasQuietFlag = (grepArgs: string): boolean => {
   return false;
 };
 
+type ShellContext = { kind: 'exec'; parens: number; closer?: ')' | '`' } | { kind: 'double' };
+
+// The executable part of a logical line: single-quoted text and the literal
+// parts of double-quoted text are blanked out, the body of a `$(…)` or `` `…` ``
+// substitution inside double quotes is kept (it still runs), escaped characters
+// are blanked, and an inline `#` comment ends the text. A quote with no closing
+// mate on the line is kept verbatim so a multi-line string cannot hide a pipeline.
+const executableText = (text: string): string => {
+  const stack: ShellContext[] = [{ kind: 'exec', parens: 0 }];
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const top = stack[stack.length - 1];
+    if (ch === '\\') {
+      out += '  ';
+      i++;
+    } else if (top.kind === 'double') {
+      if (ch === '"') {
+        stack.pop();
+        out += ' ';
+      } else if (ch === '$' && text[i + 1] === '(') {
+        stack.push({ kind: 'exec', parens: 0, closer: ')' });
+        out += '$(';
+        i++;
+      } else if (ch === '`' && text.indexOf('`', i + 1) !== -1) {
+        stack.push({ kind: 'exec', parens: 0, closer: '`' });
+        out += ' ';
+      } else {
+        out += ' ';
+      }
+    } else if (ch === '#' && (i === 0 || COMMENT_START.test(text[i - 1]))) {
+      break;
+    } else if (ch === "'" || ch === '"') {
+      const close = text.indexOf(ch, i + 1);
+      if (close === -1) {
+        out += ch;
+      } else if (ch === "'") {
+        out += ' '.repeat(close - i + 1);
+        i = close;
+      } else {
+        stack.push({ kind: 'double' });
+        out += ' ';
+      }
+    } else if (
+      (ch === ')' && top.closer === ')' && top.parens === 0) ||
+      (ch === '`' && top.closer === '`')
+    ) {
+      stack.pop();
+      out += ' ';
+    } else {
+      if (ch === '(') top.parens++;
+      else if (ch === ')' && top.parens > 0) top.parens--;
+      out += ch;
+    }
+  }
+  return out;
+};
+
 const isQuietGrepPipeline = (text: string): boolean => {
-  const unquoted = text.replace(QUOTED, ' ');
-  return [...unquoted.matchAll(PIPE_TO_GREP)].some((match) =>
-    hasQuietFlag(unquoted.slice((match.index ?? 0) + match[0].length)),
+  const executable = executableText(text);
+  return [...executable.matchAll(PIPE_TO_GREP)].some((match) =>
+    hasQuietFlag(executable.slice((match.index ?? 0) + match[0].length)),
   );
 };
 
@@ -113,6 +171,14 @@ describe('workflow grep -q pipeline detector', () => {
     ['echo "$OUT" | grep -E x >/dev/null | grep -q y'],
     ['echo "$OUT" | grep -q x 2>&1'],
     ['FOUND=$(printf x | grep -q x && echo yes)'],
+    ['FOUND="$(seq 100000 | grep -q 1 && echo yes)"'],
+    ['if [ -z "$(printf x | grep -q x)" ]; then'],
+    ['echo "$(echo "a|b" | grep -q x)"'],
+    ['FOUND="`printf x | grep -q x && echo yes`"'],
+    ['echo "$OUT" | grep -e \'x|y\' -q'],
+    ['echo "$OUT" | grep 2>/dev/null -q x'],
+    ['echo ${#OUT} | grep -q x'],
+    ['echo "$OUT" | grep -q x # comment'],
   ])('flags %s', (line) => {
     expect(lineNumbers(run('echo start', line))).toEqual([4]);
   });
@@ -139,6 +205,11 @@ describe('workflow grep -q pipeline detector', () => {
     ['echo "$OUT" | grep x >/dev/null; grep -q y file'],
     ['echo "$OUT" | grep x; echo "$OUT" | grep -E y >/dev/null'],
     ['echo "a|b" | grep x'],
+    ['echo "$OUT" | grep x # no -q here'],
+    ['echo "$OUT" | grep x # was: | grep -q x'],
+    ['echo "$OUT" | grep -E \'has -q word\' >/dev/null'],
+    ['echo "$(printf x | grep x)" | grep y'],
+    ['echo \\"$OUT\\" | grep x'],
   ])('does not flag %s', (line) => {
     expect(lineNumbers(run('echo start', line))).toEqual([]);
   });
