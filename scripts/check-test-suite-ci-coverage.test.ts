@@ -361,24 +361,17 @@ const defaultConfig = (runner: Runner, suites: readonly string[]) =>
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
-/** `source` with its comments replaced by a space; strings and every other token stay intact. */
-const withoutComments = (source: string) => {
-  const scanner = ts.createScanner(
-    ts.ScriptTarget.Latest,
-    false,
-    ts.LanguageVariant.Standard,
-    source,
-  );
-  let code = '';
-  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
-    code +=
-      kind === ts.SyntaxKind.SingleLineCommentTrivia ||
-      kind === ts.SyntaxKind.MultiLineCommentTrivia
-        ? ' '
-        : scanner.getTokenText();
-  }
-  return code;
-};
+/**
+ * `source` reprinted without its comments; string and template contents stay
+ * intact. Parsing (not bare scanning) is required: only the parser rescans a
+ * template's tail after `${…}`, so `${x}://…` is template text, not a comment.
+ */
+const withoutComments = (source: string) =>
+  ts
+    .createPrinter({ removeComments: true })
+    .printFile(
+      ts.createSourceFile('launcher.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS),
+    );
 
 // A mention of the suite in a launcher's code — its repo path or bare basename,
 // comments excluded — bounded by non-path characters, so `playwright-ct.config.ts`
@@ -853,6 +846,27 @@ describe('test-suite CI coverage detector', () => {
     expect(reached("const config = 'vitest.config.ts'; // e2e/build-smoke.config.ts")).toEqual([
       'vitest.config.ts',
     ]);
+  });
+
+  it('keeps template literals whole while dropping the comments around them', () => {
+    const reached = (source: string) => [
+      ...suitesReferencedBy('node scripts/x.mjs', suites, () => source),
+    ];
+    expect(
+      reached(
+        'const cmd = `${runner} --config=e2e/build-smoke.config.ts`;\n// Related: playwright-ct.config.ts',
+      ),
+    ).toEqual(['e2e/build-smoke.config.ts']);
+    expect(
+      reached(
+        'const url = `${scheme}://example.invalid`; const args = ["--config=e2e/build-smoke.config.ts"];',
+      ),
+    ).toEqual(['e2e/build-smoke.config.ts']);
+    expect(
+      reached(
+        'const s = `${a}//${`${b}//x`} vitest.config.ts` /* e2e/build-smoke.config.ts */; // playwright-ct.config.ts',
+      ),
+    ).toEqual(['vitest.config.ts']);
   });
 
   it('matches launcher mentions of suite paths containing regex metacharacters exactly', () => {
