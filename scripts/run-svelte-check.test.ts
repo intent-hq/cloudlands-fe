@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import {
   closeSync,
@@ -365,7 +366,10 @@ describe('runSvelteCheck', () => {
         `process.exit(${exitCode});`,
       ].join('\n');
 
-    const runChild = async (code: string, nodeArgs = '') => {
+    // `preload` is injected as its own argv entries: CT_NODE_ARGS is split on
+    // whitespace with no quoting, so a tmpdir containing a space would break
+    // the path apart.
+    const runChild = async (code: string, nodeArgs = '', preload?: string) => {
       const dir = mkdtempSync(path.join(tmpdir(), 'rss-child-test-'));
       const outputPath = path.join(dir, 'output');
       const oraclePath = path.join(dir, 'oracle');
@@ -380,6 +384,10 @@ describe('runSvelteCheck', () => {
           CT_NODE_ARGS: `${nodeArgs} --input-type=module --eval`,
           [ORACLE_FILE_ENV]: oraclePath,
         },
+        spawnImpl: preload
+          ? (((cmd: string, argv: string[], opts: object) =>
+              spawn(cmd, ['--require', preload, ...argv], opts)) as never)
+          : undefined,
         printError: (message: string) => errors.push(message),
       });
       closeSync(outputFd);
@@ -409,13 +417,14 @@ describe('runSvelteCheck', () => {
     it('measures the peak when a preload writes a startup banner to the child stdout first', async () => {
       const banner =
         'DATADOG TRACER CONFIGURATION - {"date":"2026-09-20T00:00:00.000Z","service":"node","enabled":true}';
-      const preloadDir = mkdtempSync(path.join(tmpdir(), 'rss-banner-preload-'));
+      const preloadDir = mkdtempSync(path.join(tmpdir(), 'rss banner preload-'));
       const preload = path.join(preloadDir, 'banner.cjs');
       writeFileSync(preload, `process.stdout.write(${JSON.stringify(`${banner}\n`)});`);
       try {
         const { peakRssMiB, childMaxRssMiB, output, ...rest } = await runChild(
           touch256MiBAndExit(0),
-          `--require ${preload}`,
+          '',
+          preload,
         );
         expect(rest).toEqual({ exitCode: 0, errors: [] });
         expect(output).toContain(banner);
