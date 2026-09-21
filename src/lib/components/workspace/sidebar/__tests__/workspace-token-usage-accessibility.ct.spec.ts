@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import WorkspaceTokenUsageAccessibilityHost from './WorkspaceTokenUsageAccessibilityHost.svelte';
 
 type Rgba = [number, number, number, number];
@@ -905,7 +905,9 @@ test('renders the full reference table as a wide overlay from the real workspace
       sidebarRegion.boundingBox(),
       workspaceContent.boundingBox(),
       disclosure.evaluate((element) => {
-        const processedValue = element.querySelector('span[aria-hidden="true"]')!;
+        const processedValue = element.querySelector(
+          '[data-slot="button-label"] > [aria-hidden="true"]',
+        )!;
         const style = getComputedStyle(element);
         return {
           backgroundColor: style.backgroundColor,
@@ -991,8 +993,7 @@ test('renders the full reference table as a wide overlay from the real workspace
       }),
     ),
   ).toBe(true);
-  expect(detailsMetrics.borderRadius).toBeGreaterThanOrEqual(4);
-  expect(detailsMetrics.borderRadius).toBeLessThanOrEqual(7);
+  expect(detailsMetrics.borderRadius).toBe(8);
   expect(detailsMetrics.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(detailsMetrics.borderColor).not.toBe('rgba(0, 0, 0, 0)');
   expect(detailsMetrics).toMatchObject({
@@ -1224,6 +1225,7 @@ test('renders the full reference table as a wide overlay from the real workspace
     ),
     compositionStrip.evaluate((strip) => {
       const box = strip.getBoundingClientRect();
+      const section = strip.closest('section')!;
       const segments = Array.from(
         strip.querySelectorAll<HTMLElement>('.composition-strip-segment'),
       );
@@ -1232,11 +1234,9 @@ test('renders the full reference table as a wide overlay from the real workspace
         borderRadius: getComputedStyle(strip).borderRadius,
         overflowX: getComputedStyle(strip).overflowX,
         summaryGap:
-          box.top -
-          strip.parentElement!.querySelector('.token-summary')!.getBoundingClientRect().bottom,
+          box.top - section.querySelector('.token-summary')!.getBoundingClientRect().bottom,
         rowsGap:
-          strip.parentElement!.querySelector('.composition-row')!.getBoundingClientRect().top -
-          box.bottom,
+          section.querySelector('.composition-row')!.getBoundingClientRect().top - box.bottom,
         gaps: segments.slice(1).map((segment, index) => {
           const previous = segments[index].getBoundingClientRect();
           return segment.getBoundingClientRect().left - previous.right;
@@ -1626,7 +1626,9 @@ test('renders the full reference table as a wide overlay from the real workspace
     sidebarRegion.boundingBox(),
     details.boundingBox(),
     disclosure.evaluate((element) => {
-      const processedValue = element.querySelector('span[aria-hidden="true"]')!;
+      const processedValue = element.querySelector(
+        '[data-slot="button-label"] > [aria-hidden="true"]',
+      )!;
       return {
         processedFontSize: getComputedStyle(processedValue).fontSize,
         processedText: processedValue.textContent?.trim(),

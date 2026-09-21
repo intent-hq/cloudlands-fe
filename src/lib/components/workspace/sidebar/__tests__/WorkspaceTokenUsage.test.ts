@@ -165,7 +165,9 @@ describe('WorkspaceTokenUsage', () => {
     );
     expect(document.getElementById('workspace-token-usage-cache-ws-1')).toBeNull();
     expect(document.getElementById(detailsId!)).toBeNull();
-    expect(disclosure.querySelector('[aria-hidden="true"]')?.textContent).toBe('1K');
+    expect(
+      disclosure.querySelector('[data-slot="button-label"] > [aria-hidden="true"]')?.textContent,
+    ).toBe('1K');
     expect(visibleText(disclosure)).toBe('1K 1K tokens used');
     expect(disclosure.querySelector('svg')).toBeNull();
     expect(disclosure.classList).toContain('font-normal');
@@ -275,8 +277,9 @@ describe('WorkspaceTokenUsage', () => {
     const row = screen.getByTestId('workspace-token-usage');
     expect(visibleText(screen.getByTestId('token-usage-details'))).toContain('9M processed');
     expect(
-      screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
-        ?.textContent,
+      screen
+        .getByTestId('token-usage-disclosure')
+        .querySelector('[data-slot="button-label"] > [aria-hidden="true"]')?.textContent,
     ).toBe('9M');
     expect(row.textContent).not.toContain('updating');
 
@@ -325,11 +328,12 @@ describe('WorkspaceTokenUsage', () => {
     expect(modelSection.classList).toContain('breakdown-section');
     expect(composition.querySelector('.composition-header')).toBeNull();
     expect(composition.querySelector('.preview-status')?.classList).toContain('sr-only');
-    expect(compositionStrip.nextElementSibling?.tagName).toBe('DL');
-    expect(compositionStrip.classList).toContain('mb-5');
-    expect(compositionStrip.classList).not.toContain('mb-3');
-    expect(compositionStrip.classList).toContain('h-1.5');
-    expect(compositionStrip.classList).not.toContain('h-2');
+    const compositionStripSlot = compositionStrip.parentElement!;
+    expect(compositionStripSlot.nextElementSibling?.tagName).toBe('DL');
+    expect(compositionStripSlot.classList).toContain('mb-5');
+    expect(compositionStripSlot.classList).not.toContain('mb-3');
+    expect(compositionStripSlot.classList).toContain('h-1.5');
+    expect(compositionStripSlot.classList).not.toContain('h-2');
     expect(compositionStrip.getAttribute('aria-label')).toContain(
       'Token composition, Cached context: 9M tokens, 99%',
     );
@@ -1173,8 +1177,9 @@ describe('WorkspaceTokenUsage', () => {
     await renderExpandedTokenUsage();
 
     expect(
-      screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
-        ?.textContent,
+      screen
+        .getByTestId('token-usage-disclosure')
+        .querySelector('[data-slot="button-label"] > [aria-hidden="true"]')?.textContent,
     ).toBe('4K');
 
     const modelSection = screen.getByTestId('token-usage-by-model');
@@ -1211,8 +1216,9 @@ describe('WorkspaceTokenUsage', () => {
     await renderExpandedTokenUsage();
 
     expect(
-      screen.getByTestId('token-usage-disclosure').querySelector('[aria-hidden="true"]')
-        ?.textContent,
+      screen
+        .getByTestId('token-usage-disclosure')
+        .querySelector('[data-slot="button-label"] > [aria-hidden="true"]')?.textContent,
     ).toBe('30');
     const modelSection = screen.getByTestId('token-usage-by-model');
     expect(visibleText(modelSection)).toBe('By model Model Big 100%');
