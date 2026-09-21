@@ -208,6 +208,73 @@ describe('waitForCaptureStability', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('accepts readiness after the shorter post-readiness budget has elapsed', async () => {
+    vi.useFakeTimers();
+    setFonts(Promise.resolve());
+    const frames = useManualFrames();
+    const root = document.createElement('div');
+    const marker = document.createElement('div');
+    marker.dataset.ready = 'true';
+    const stability = waitForCaptureStability(root, {
+      readiness: { selector: '[data-ready="true"]' },
+      readinessTimeoutMs: 20,
+      timeoutMs: 5,
+    });
+
+    await vi.advanceTimersByTimeAsync(10);
+    root.append(marker);
+    await Promise.resolve();
+    await frames.next();
+    await frames.next();
+
+    await expect(stability).resolves.toMatchObject({ imageCount: 0 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('bounds an explicit initial readiness override', async () => {
+    vi.useFakeTimers();
+    const root = document.createElement('div');
+    const stability = waitForCaptureStability(root, {
+      readiness: { selector: '[data-ready="true"]' },
+      readinessTimeoutMs: 25,
+      timeoutMs: 100,
+    });
+    const rejection = expect(stability).rejects.toThrow(
+      'Preview did not become stable within 25ms.',
+    );
+
+    await vi.advanceTimersByTimeAsync(24);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await rejection;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps the post-readiness timeout independent from a longer readiness override', async () => {
+    vi.useFakeTimers();
+    setFonts(Promise.resolve());
+    const root = document.createElement('div');
+    const marker = document.createElement('div');
+    marker.dataset.ready = 'true';
+    const image = document.createElement('img');
+    Object.defineProperty(image, 'complete', { configurable: true, value: false });
+    root.append(marker, image);
+    const stability = waitForCaptureStability(root, {
+      readiness: { selector: '[data-ready="true"]' },
+      readinessTimeoutMs: 100,
+      timeoutMs: 25,
+    });
+    const rejection = expect(stability).rejects.toThrow(
+      'Preview did not become stable within 25ms.',
+    );
+
+    await vi.advanceTimersByTimeAsync(25);
+
+    await rejection;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('waits for the exact declared marker count and a generation on every marker', async () => {
     setFonts(Promise.resolve());
     useTimerFrames();

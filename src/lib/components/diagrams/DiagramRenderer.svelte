@@ -84,7 +84,6 @@
   let noteLaneWidth = $state<number | null>(null);
   let windowHeight = $state<number | undefined>();
   let stepViewportActive = $state(false);
-  let stepViewportStartHeight = $state<number | null>(null);
   let restoreStepScroll: (() => void) | undefined;
   let keepStepInView: (() => void) | undefined;
   let fontMeasurementRevision = $state(0);
@@ -173,7 +172,6 @@
   let transitionRevision = 0;
   let motionPhase = $state<'settled' | 'camera' | 'exit' | 'scene'>('settled');
   let cameraAnimations: Animation[] = [];
-  let cameraSourceScale = $state(1);
 
   const CAMERA_MOTION_MS = 180;
   const CAMERA_MOTION_EASING = 'cubic-bezier(0.65, 0, 0.35, 1)';
@@ -187,56 +185,43 @@
   function captureCameraStage() {
     const camera = rendererEl?.querySelector<SVGSVGElement>('.diagram-svg-layer');
     const geometry = rendererEl?.querySelector<SVGGElement>('.diagram-geometry-motion');
-    const matrix = camera?.getScreenCTM?.();
+    const matrix = geometry?.getScreenCTM?.();
     return {
       camera: camera ? getComputedStyle(camera).transform : null,
-      geometry: geometry ? getComputedStyle(geometry).transform : null,
       screenMatrix: matrix
         ? new DOMMatrix([matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f])
         : null,
-      scale: matrix ? Math.hypot(matrix.a, matrix.b) : renderedScale,
     };
   }
 
   function animateCameraStage(previous: ReturnType<typeof captureCameraStage>) {
     if (motionDuration(1) === 0 || !rendererEl) return [];
-    const elements = [
-      [rendererEl.querySelector<SVGSVGElement>('.diagram-svg-layer'), previous.camera],
-      [rendererEl.querySelector<SVGGElement>('.diagram-geometry-motion'), previous.geometry],
-    ] as const;
-    return elements.flatMap(([element, previousTransform]) => {
-      if (!element || !previousTransform) return [];
-      for (const animation of element.getAnimations({ subtree: false })) animation.cancel();
-      const nextTransform = getComputedStyle(element).transform;
-      let startTransform = previousTransform;
-      if (element === elements[0][0] && previous.screenMatrix) {
-        const screen = element.getScreenCTM();
-        if (screen) {
-          // The centered SVG's layout origin moves when the content-derived frame
-          // changes height. Rebase its old screen pose into the new parent space.
-          const current = new DOMMatrix([
-            screen.a,
-            screen.b,
-            screen.c,
-            screen.d,
-            screen.e,
-            screen.f,
-          ]);
-          startTransform = new DOMMatrix(nextTransform)
-            .multiply(current.inverse())
-            .multiply(previous.screenMatrix)
-            .toString();
-        }
-      }
-      const keyframes = cameraMotionKeyframes(startTransform, nextTransform);
-      if (keyframes.length === 0) return [];
-      const animation = element.animate(keyframes, {
-        duration: CAMERA_MOTION_MS,
-        easing: CAMERA_MOTION_EASING,
-      });
-      animation.finished.catch(() => undefined);
-      return [animation];
+    const camera = rendererEl.querySelector<SVGSVGElement>('.diagram-svg-layer');
+    const geometry = rendererEl.querySelector<SVGGElement>('.diagram-svg-layer > g');
+    if (!camera || !geometry || !previous.camera) return [];
+    for (const animation of camera.getAnimations({ subtree: false })) animation.cancel();
+    const nextTransform = getComputedStyle(camera).transform;
+    let startTransform = previous.camera;
+    const screen = previous.screenMatrix ? camera.getScreenCTM() : null;
+    if (screen && previous.screenMatrix) {
+      // Interpolate the complete world pose once. Rebasing the geometry origin
+      // separately would multiply independently animated translation and scale.
+      const current = new DOMMatrix([screen.a, screen.b, screen.c, screen.d, screen.e, screen.f]);
+      const geometryTransform = new DOMMatrix(getComputedStyle(geometry).transform);
+      startTransform = new DOMMatrix(nextTransform)
+        .multiply(current.inverse())
+        .multiply(previous.screenMatrix)
+        .multiply(geometryTransform.inverse())
+        .toString();
+    }
+    const keyframes = cameraMotionKeyframes(startTransform, nextTransform);
+    if (keyframes.length === 0) return [];
+    const animation = camera.animate(keyframes, {
+      duration: CAMERA_MOTION_MS,
+      easing: CAMERA_MOTION_EASING,
     });
+    animation.finished.catch(() => undefined);
+    return [animation];
   }
 
   function revealConnection(
@@ -281,12 +266,22 @@
       await Promise.allSettled(stageAnimations.map((animation) => animation.finished));
       if (revision !== transitionRevision) return;
     }
+    if (heldNodes.length === 0 && visibleNodes.length > 0) {
+      // Disjoint scenes have no shared paint to bridge exit and destination fitting.
+      // Enter inside the fitted union while outgoing paint is still opaque, then
+      // let it exit only after incoming paint has finished becoming visible.
+      motionPhase = 'scene';
+      revealEnteringScene = true;
+      flushSync();
+      if (!(await waitForVisualAnimations(revision))) return;
+    }
     motionPhase = 'exit';
     holdSharedScene = false;
     retainDepartingScene = false;
     presentedStateId = stateId;
     flushSync();
     if (!(await waitForVisualAnimations(revision))) return;
+    const previousCameraStage = captureCameraStage();
     departingNodes = [];
     departingGroups = [];
     departingEdges = [];
@@ -295,6 +290,12 @@
     heldGroups = [];
     heldEdges = [];
     heldLabelPositions = new Map();
+    // Outgoing paint has finished fading. Fit the destination with shared geometry
+    // (or the already-visible disjoint scene) before revealing any remaining entry.
+    motionPhase = 'camera';
+    flushSync();
+    cameraAnimations = animateCameraStage(previousCameraStage);
+    if (!(await waitForVisualAnimations(revision))) return;
     motionPhase = 'scene';
     revealEnteringScene = true;
     flushSync();
@@ -1131,9 +1132,9 @@
     return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
   }
 
-  // Frame the complete destination from the first transition frame. Departing paint
-  // remains mounted for its exit, but cannot move the incoming scene's fit or origin.
-  let visibleBounds = $derived(measureSceneBounds(false));
+  // Keep both coordinate sets inside the SVG through exits and shared-node motion.
+  // Clearing the retained scene restores active-scene-only fitting at rest.
+  let visibleBounds = $derived(measureSceneBounds(true));
 
   let svgWidth = $derived.by(() => {
     if (!visibleBounds) return 800;
@@ -1151,62 +1152,7 @@
   );
   let contentHeight = $derived((svgHeight + 6) * renderedScale);
   let destinationFrameHeight = $derived(Math.ceil((svgHeight + 6) * renderedScale + 20));
-  // Include departing paint until its exit finishes, then hug the incoming scene.
-  let stateFrameHeight = $derived(
-    Math.ceil(
-      (svgHeight + 6) *
-        (motionPhase === 'camera' ? Math.max(cameraSourceScale, renderedScale) : renderedScale) +
-        20,
-    ),
-  );
-  // Target only the incoming step: held/departing paint may enlarge the drawing,
-  // but must not make the viewport detour beyond its two settled heights.
-  let stepFrameHeight = $derived.by(() => {
-    if (!stepViewportActive || !automaticallyFitState || presentationWidth === null)
-      return stateFrameHeight;
-    const incoming = measureSceneBounds(false);
-    if (!incoming) return stateFrameHeight;
-    // Predict the existing width-only fit without changing the camera or its scale.
-    const incomingScale =
-      cameraZoom *
-      Math.min(
-        noteLaneWidth === null ? 1.25 : Math.max(1, readableScale),
-        Math.max(
-          readableScale,
-          Math.max(1, presentationWidth - 16) /
-            Math.max(1, (incoming.width + canvasPadding * 2) * cameraZoom),
-        ),
-      );
-    const targetHeight = Math.ceil((incoming.height + canvasPadding * 2 + 6) * incomingScale + 20);
-    // Keep held source nodes visible until the existing camera stage releases them.
-    // A rapid reversal starts here from the currently painted height, not an old endpoint.
-    if (
-      motionPhase === 'camera' &&
-      stepViewportStartHeight !== null &&
-      targetHeight < stepViewportStartHeight
-    )
-      return stepViewportStartHeight;
-    return targetHeight;
-  });
-  let stepContentHeight = $derived.by(() => {
-    if (!stepViewportActive || stepViewportStartHeight === null) return stateFrameHeight;
-    const endpointHeight = Math.max(stepViewportStartHeight, stepFrameHeight);
-    // Capped steps retain the natural frame so native scrolling can expose all paint.
-    if (endpointHeight >= (windowHeight ?? Infinity) * 0.9 - 1) {
-      const retained = measureSceneBounds(true);
-      const retainedBottomOverflow =
-        retained && visibleBounds
-          ? Math.max(
-              0,
-              retained.height - visibleBounds.height,
-              retained.maxY - visibleBounds.maxY,
-            ) * renderedScale
-          : 0;
-      return stateFrameHeight + retainedBottomOverflow;
-    }
-    // A temporary scene union must not center departing paint below both endpoints.
-    return Math.min(stateFrameHeight, endpointHeight);
-  });
+  let stateFrameHeight = $derived(destinationFrameHeight);
   let drawingOverflows = $derived(
     automaticallyFitState &&
       ((windowHeight !== undefined && stateFrameHeight > windowHeight * 0.9 + 1) ||
@@ -1215,7 +1161,6 @@
 
   function stopStepViewportTracking() {
     stepViewportActive = false;
-    stepViewportStartHeight = null;
     keepStepInView = undefined;
     restoreStepScroll?.();
     restoreStepScroll = undefined;
@@ -1224,7 +1169,6 @@
   function startStepViewportTracking() {
     stopStepViewportTracking();
     if (!rendererEl) return;
-    stepViewportStartHeight = scrollContainerEl?.getBoundingClientRect().height ?? null;
     stepViewportActive = true;
     const renderer = rendererEl;
     const ancestors: HTMLElement[] = [];
@@ -1381,7 +1325,6 @@
     if (stateId === currentStateId) return;
     startStepViewportTracking();
     const previousCameraStage = captureCameraStage();
-    cameraSourceScale = previousCameraStage.scale;
     transitionRevision += 1;
     const revision = transitionRevision;
     const sourceNodes = renderedNodes;
@@ -1484,12 +1427,7 @@
   }
 </script>
 
-<svelte:window
-  bind:innerHeight={windowHeight}
-  onresize={() => {
-    stepViewportStartHeight = null;
-  }}
-/>
+<svelte:window bind:innerHeight={windowHeight} />
 
 <div
   bind:this={rendererEl}
@@ -1544,7 +1482,7 @@
     aria-label={automaticallyFitState ? m.diagram_controls_walkthrough_ariaLabel() : undefined}
     tabindex={drawingOverflows ? 0 : undefined}
     style:height={automaticallyFitState
-      ? `${Math.min(stepFrameHeight, (windowHeight ?? Infinity) * 0.9)}px`
+      ? `${Math.min(stateFrameHeight, (windowHeight ?? Infinity) * 0.9)}px`
       : undefined}
   >
     {#if layoutError}
@@ -1564,7 +1502,7 @@
           ? `max(100%, ${contentWidth + 16}px)`
           : `${contentWidth}px`}
         style:height={automaticallyFitState
-          ? `max(100%, ${stepContentHeight}px)`
+          ? `max(100%, ${stateFrameHeight}px)`
           : `${contentHeight}px`}
       >
         <!-- SVG Layer (edges, groups, and HTML overlay) -->
@@ -1959,7 +1897,7 @@
   }
 
   .stepping-viewport {
-    transition: height var(--diagram-move-exit-duration) var(--diagram-camera-easing);
+    transition: height var(--diagram-camera-duration) var(--diagram-camera-easing);
   }
 
   .stateful-diagram .diagram-content {
@@ -2072,12 +2010,10 @@
     transition-delay: 0ms;
   }
 
-  /* Once exits finish, changing the SVG origin and its containing frame is one
-     coordinate rebase, not another camera move. Interpolating only the origin
-     leaves entering paint outside the already-shrunken frame. Node/edge motion
-     remains independent; the deliberate camera stage still interpolates. */
-  .stateful-diagram:not(.camera-stage) .diagram-svg-layer,
-  .stateful-diagram:not(.camera-stage) .diagram-svg-layer > .diagram-geometry-motion {
+  /* The camera animation owns world-pose interpolation, including the origin
+     rebase. Shared node/edge motion remains independently animated below it. */
+  .stateful-diagram .diagram-svg-layer,
+  .stateful-diagram .diagram-svg-layer > .diagram-geometry-motion {
     transition: none;
   }
 

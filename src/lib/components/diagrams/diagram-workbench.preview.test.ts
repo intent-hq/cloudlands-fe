@@ -12,8 +12,18 @@ import {
   DIAGRAM_WORKBENCH_MERMAID_CASE_IDS,
   MERMAID_WORKBENCH_CASES,
 } from './diagram-workbench.preview-fixtures';
+import { preview } from './diagram-workbench.preview.svelte';
 
 describe('diagram workbench fixtures', () => {
+  it('declares the exact all-case readiness contract and initialization budget', () => {
+    expect(preview.captureReadiness).toEqual({
+      selector: '[data-diagram-workbench-ready="true"]',
+      count: 1,
+      generationAttribute: 'data-diagram-workbench-generation',
+      readinessTimeoutMs: 24_000,
+    });
+  });
+
   it('publishes stable IDs from one authoritative registry', () => {
     expect(DIAGRAM_WORKBENCH_CASE_IDS).toEqual(Object.keys(DIAGRAM_WORKBENCH_CASES));
     expect(DIAGRAM_WORKBENCH_MERMAID_CASE_IDS).toEqual(

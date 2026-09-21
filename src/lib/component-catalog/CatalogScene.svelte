@@ -227,7 +227,11 @@
         if (!sceneElement) throw new Error('Preview scene element is unavailable.');
         await watchCaptureStability(
           sceneElement,
-          { readiness: loaded.definition.captureReadiness, signal: stabilityController.signal },
+          {
+            readiness: loaded.definition.captureReadiness,
+            readinessTimeoutMs: loaded.definition.captureReadiness?.readinessTimeoutMs,
+            signal: stabilityController.signal,
+          },
           {
             onWaiting: (nextStabilityGeneration) => {
               if (cancelled || generation !== previewGeneration) return;

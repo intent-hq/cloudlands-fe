@@ -83,6 +83,10 @@ function geometry(element: Element) {
     nodes: [...root.querySelectorAll('[data-node-id]')]
       .map((node) => node.getAttribute('data-node-id'))
       .sort(),
+    paintedNodes: painted
+      .filter((node) => node.hasAttribute('data-node-id'))
+      .map((node) => node.getAttribute('data-node-id'))
+      .sort(),
     edges: [...root.querySelectorAll('.diagram-edge')]
       .map((node) => node.getAttribute('data-edge-id'))
       .sort(),
@@ -134,7 +138,9 @@ function geometry(element: Element) {
 
 async function open(page: Page, width: number, motion: string) {
   await page.setViewportSize({ width: 1280, height: 1000 });
-  await page.emulateMedia({ reducedMotion: motion === 'reduced' ? 'reduce' : 'no-preference' });
+  // Exercise the catalog's explicit motion preference in isolation. Combining it with the
+  // OS reduced-motion blanket creates Chromium's 0.01ms bookkeeping animations.
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.goto(
     `${baseUrl}/sandbox/diagram-workbench?state=custom-walkthrough&theme=light&width=${width}&motion=${motion}`,
   );
@@ -208,6 +214,26 @@ for (const width of [960, 662, 420]) {
         body: JSON.stringify({ steps, transitions }, null, 2),
         contentType: 'application/json',
       });
+      // A temporary transition frame must release its departing-scene space.
+      expect(steps.at(-1)!.height).toBeCloseTo(steps[0].height, 0);
+      expect(steps.at(-1)!.scale).toBeCloseTo(steps[0].scale, 4);
+      if (motion === 'full') {
+        const departure = transitions[0];
+        // Keep the outgoing user visible during its exit, rather than dropping
+        // paint to satisfy containment. Check every observed transition phase.
+        expect(
+          departure.some(
+            (sample) => sample.phase === 'exit' && sample.paintedNodes.includes('user'),
+          ),
+        ).toBe(true);
+        for (const phase of ['camera', 'exit', 'scene']) {
+          const frames = departure.filter((sample) => sample.phase === phase);
+          expect(frames.length, phase).toBeGreaterThan(0);
+          expect(Math.max(...frames.map((sample) => sample.overflow)), phase).toBeLessThanOrEqual(
+            1,
+          );
+        }
+      }
       // Active-scene sizing intentionally changes height between steps. Bound each
       // step's own whitespace, not a union or the first step's reserved frame.
       for (const step of steps) {

@@ -92,6 +92,69 @@ async function expectScene(container: HTMLElement, nodeId: string, selected: num
 }
 
 describe('diagram prop lifecycle', () => {
+  it('keeps visible paint through a disjoint scene handoff, including zero-opacity entry', async () => {
+    document.documentElement.classList.remove('catalog-reduced-motion');
+    // jsdom does not supply the browser's initial opacity or apply WAAPI keyframes.
+    const style = document.createElement('style');
+    style.textContent = 'foreignObject { opacity: 1; }';
+    document.head.append(style);
+    const running = new Map<Animation, () => void>();
+    vi.spyOn(Element.prototype, 'animate').mockImplementation(function (this: Element, keyframes) {
+      const element = this as SVGElement;
+      const frames = keyframes as Keyframe[];
+      const originalOpacity = element.style.opacity;
+      const apply = (frame: Keyframe | undefined) => {
+        if (frame?.opacity !== undefined) element.style.opacity = String(frame.opacity);
+      };
+      apply(frames[0]);
+      let resolve!: (value: Animation) => void;
+      let playState: AnimationPlayState = 'running';
+      const animation = {
+        get playState() {
+          return playState;
+        },
+        effect: { getComputedTiming: () => ({ endTime: 1 }) },
+        finished: new Promise<Animation>((done) => {
+          resolve = done;
+        }),
+        cancel: () => {
+          running.delete(animation);
+          element.style.opacity = originalOpacity;
+          playState = 'idle';
+          resolve(animation);
+        },
+      } as unknown as Animation;
+      running.set(animation, () => {
+        apply(frames.at(-1));
+        playState = 'finished';
+        running.delete(animation);
+        resolve(animation);
+        animation.onfinish?.call(animation, new Event('finish') as AnimationPlaybackEvent);
+      });
+      return animation;
+    });
+    vi.spyOn(Element.prototype, 'getAnimations').mockImplementation(() => [...running.keys()]);
+    try {
+      const result = render(DiagramRenderer, { props: { diagram: diagram('A') } });
+      await expectScene(result.container, 'A-one', 0);
+      await fireEvent.click(steps(result.container)[1]);
+      const visibleNodes = () =>
+        [...result.container.querySelectorAll('[data-node-id]')].filter(
+          (node) => Number(getComputedStyle(node).opacity) > 0.01,
+        );
+      for (let frame = 0; frame < 16; frame += 1) {
+        expect(visibleNodes().length, `visible paint before frame ${frame}`).toBeGreaterThan(0);
+        for (const finish of [...running.values()]) finish();
+        await deliverFrames();
+        expect(visibleNodes().length, `visible paint after frame ${frame}`).toBeGreaterThan(0);
+      }
+      await expectScene(result.container, 'A-two', 1);
+      expect(running.size).toBe(0);
+    } finally {
+      style.remove();
+    }
+  });
+
   it('cannot transfer queued step focus to a replacement with matching step identifiers', async () => {
     const result = render(DiagramRenderer, { props: { diagram: diagram('A') } });
     await expectScene(result.container, 'A-one', 0);
@@ -233,7 +296,7 @@ describe('diagram prop lifecycle', () => {
     await expectScene(result.container, 'B-one', 0);
   });
 
-  it('invalidates an old pending transition before it can reveal the replacement scene', async () => {
+  it('invalidates a pending disjoint entry before it can advance the replacement scene', async () => {
     document.documentElement.classList.remove('catalog-reduced-motion');
     const onUpdate = vi.fn();
     const result = render(DiagramRenderer, { props: { diagram: diagram('A'), onUpdate } });
@@ -242,7 +305,7 @@ describe('diagram prop lifecycle', () => {
       result.container
         .querySelector('.diagram-renderer')
         ?.getAttribute('data-diagram-motion-phase'),
-    ).toBe('exit');
+    ).toBe('scene');
     expect(frames.size).toBeGreaterThan(0);
     await result.rerender({ diagram: diagram('B') });
     await deliverFrames();
@@ -251,23 +314,60 @@ describe('diagram prop lifecycle', () => {
     expect(onUpdate.mock.calls).toEqual([[{ currentStateId: 'finish' }]]);
   });
 
-  it('keeps the active transition and shared paint on a parent echo', async () => {
+  it('keeps the active transition and handoff paint on a parent echo', async () => {
     document.documentElement.classList.remove('catalog-reduced-motion');
     const original = diagram('A');
     const onUpdate = vi.fn();
     const result = render(DiagramRenderer, { props: { diagram: original, onUpdate } });
     await fireEvent.click(steps(result.container)[1]);
     const scene = result.container.querySelector('g.diagram-geometry-motion');
+    const nodes = [...result.container.querySelectorAll('[data-node-id]')];
     await result.rerender({ diagram: { ...structuredClone(original), currentStateId: 'finish' } });
     expect(result.container.querySelector('g.diagram-geometry-motion') === scene).toBe(true);
+    expect([...result.container.querySelectorAll('[data-node-id]')]).toEqual(nodes);
     expect(
       result.container
         .querySelector('.diagram-renderer')
         ?.getAttribute('data-diagram-motion-phase'),
-    ).toBe('exit');
-    await deliverFrames();
-    await deliverFrames();
+    ).toBe('scene');
+    // Disjoint entry bridges the outgoing exit before compact destination fitting.
+    await waitFor(async () => {
+      await deliverFrames();
+      expect(
+        result.container
+          .querySelector('.diagram-renderer')
+          ?.getAttribute('data-diagram-motion-phase'),
+      ).toBe('camera');
+    });
+    await waitFor(async () => {
+      await deliverFrames();
+      expect(
+        result.container
+          .querySelector('.diagram-renderer')
+          ?.getAttribute('data-diagram-motion-phase'),
+      ).toBe('scene');
+    });
     await expectScene(result.container, 'A-two', 1);
+    expect(onUpdate.mock.calls).toEqual([[{ currentStateId: 'finish' }]]);
+  });
+
+  it('invalidates the compact destination camera before it can advance replacement paint', async () => {
+    document.documentElement.classList.remove('catalog-reduced-motion');
+    const onUpdate = vi.fn();
+    const result = render(DiagramRenderer, { props: { diagram: diagram('A'), onUpdate } });
+    await fireEvent.click(steps(result.container)[1]);
+    await waitFor(async () => {
+      await deliverFrames();
+      expect(
+        result.container
+          .querySelector('.diagram-renderer')
+          ?.getAttribute('data-diagram-motion-phase'),
+      ).toBe('camera');
+    });
+    await result.rerender({ diagram: diagram('B') });
+    await deliverFrames();
+    await deliverFrames();
+    await expectScene(result.container, 'B-one', 0);
     expect(onUpdate.mock.calls).toEqual([[{ currentStateId: 'finish' }]]);
   });
 });

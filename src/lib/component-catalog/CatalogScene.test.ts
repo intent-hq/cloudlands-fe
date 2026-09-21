@@ -80,6 +80,11 @@ describe('CatalogScene', () => {
       width: 420,
       status: 'ready',
     });
+    expect(mocks.watchCaptureStability).toHaveBeenCalledWith(
+      screen.getByTestId('catalog-scene'),
+      expect.objectContaining({ readiness: undefined, readinessTimeoutMs: undefined }),
+      expect.any(Object),
+    );
 
     await preview.rerender({ slug: 'button', requestedState: 'disabled', requestedWidth: 320 });
     await waitFor(() =>
@@ -95,7 +100,10 @@ describe('CatalogScene', () => {
       definition: {
         ...buttonPreview,
         id: 'diagram-workbench',
-        captureReadiness: { selector: '[data-testid="catalog-scene"]' },
+        captureReadiness: {
+          selector: '[data-testid="catalog-scene"]',
+          readinessTimeoutMs: 24_000,
+        },
       },
     });
     render(CatalogScene, {
@@ -114,7 +122,11 @@ describe('CatalogScene', () => {
     expect(mocks.watchCaptureStability).toHaveBeenCalledWith(
       screen.getByTestId('catalog-scene'),
       expect.objectContaining({
-        readiness: { selector: '[data-testid="catalog-scene"]' },
+        readiness: {
+          selector: '[data-testid="catalog-scene"]',
+          readinessTimeoutMs: 24_000,
+        },
+        readinessTimeoutMs: 24_000,
       }),
       expect.any(Object),
     );

@@ -6,6 +6,7 @@ import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
 let baseUrl = externalBaseUrl ?? '';
 let server: ViteDevServer | undefined;
+const maxActiveSceneGap = 64;
 
 test.describe.configure({ mode: 'default' });
 
@@ -84,14 +85,17 @@ function sceneGeometry(element: Element) {
         bottom: box.bottom + margin,
       };
     });
+  const paintedTop = Math.min(...boxes.map((box) => box.top));
+  const paintedBottom = Math.max(...boxes.map((box) => box.bottom));
   return {
     state: element.getAttribute('data-diagram-state'),
     settled: element.getAttribute('data-diagram-settled') === 'true',
     width: viewport.width,
     height: viewport.height,
     drawingHeight: drawing.height,
-    topGap: Math.min(...boxes.map((box) => box.top)) - viewport.top,
-    bottomGap: viewport.bottom - Math.max(...boxes.map((box) => box.bottom)),
+    paintedHeight: paintedBottom - paintedTop,
+    topGap: paintedTop - viewport.top,
+    bottomGap: viewport.bottom - paintedBottom,
     overflow: Math.max(
       0,
       ...boxes.flatMap((box) => [
@@ -204,15 +208,15 @@ for (const fixture of fixtures) {
           expect(scene.minPrimaryFont).toBeGreaterThanOrEqual(12);
           expect(scene.edges.every((edge) => edge.path && edge.length > 0)).toBe(true);
           expect(scene.overflow, JSON.stringify(scene)).toBeLessThanOrEqual(1);
-          expect(scene.topGap, JSON.stringify(scene)).toBeLessThanOrEqual(64);
-          expect(scene.bottomGap, JSON.stringify(scene)).toBeLessThanOrEqual(64);
+          expect(scene.topGap, JSON.stringify(scene)).toBeLessThanOrEqual(maxActiveSceneGap);
+          expect(scene.bottomGap, JSON.stringify(scene)).toBeLessThanOrEqual(maxActiveSceneGap);
         }
         expect(Math.max(...scenes.map((scene) => scene.drawingHeight))).toBeGreaterThan(
           scenes[0].height + 40,
         );
         expect(
-          Math.max(...scenes.map((scene) => Math.abs(scene.height - scenes[0].height))),
-        ).toBeLessThanOrEqual(1);
+          Math.max(...scenes.map((scene) => scene.height - scene.paintedHeight)),
+        ).toBeLessThanOrEqual(maxActiveSceneGap * 2);
       });
     }
   }
