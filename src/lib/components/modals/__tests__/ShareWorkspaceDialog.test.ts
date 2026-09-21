@@ -334,12 +334,15 @@ describe('ShareWorkspaceDialog — create and copy', () => {
     expect(toastMocks.success).not.toHaveBeenCalled();
   });
 
-  it('disables the row copy with the Remote Access hint when the daemon sent no url', async () => {
+  // A missing rebuilt url means Remote Access or the Tailcat tunnel is off;
+  // the dialog cannot tell which, so the hint names both settings.
+  it('disables the row copy with a hint naming both settings when the daemon sent no url', async () => {
     renderDialog({ invites: [openInvite], inviteLinks: {} });
 
     const copy = screen.getByTestId('share-invite-copy') as HTMLButtonElement;
     expect(copy.disabled).toBe(true);
     expect(copy.getAttribute('title')).toMatch(/Remote Access/);
+    expect(copy.getAttribute('title')).toMatch(/Tailcat/);
     await fireEvent.click(copy);
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
     expect(toastMocks.success).not.toHaveBeenCalled();

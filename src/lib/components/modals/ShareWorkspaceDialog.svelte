@@ -749,7 +749,7 @@
                         disabled={!inviteLink(invite.id)}
                         title={inviteLink(invite.id)
                           ? undefined
-                          : m.workspace_share_listenerDown_error()}
+                          : m.workspace_share_linkUnavailable_tooltip()}
                         onclick={() => copyInvite(invite)}
                         aria-label={m.workspace_share_copyInvite_ariaLabel({
                           audience: inviteAudience(invite),
