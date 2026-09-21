@@ -1366,8 +1366,10 @@ describe('handleInviteDeepLink — sign-in required', () => {
 
     it('native box: authorized while the box is open closes it through its abort signal and the join proceeds', async () => {
       showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
-      // The box resolves only through its signal: without the abort-driven
-      // close the flow would hang here rather than proceed on `settled`.
+      // The mock box resolves only through its abort signal. A missing
+      // abort-driven close would not hang the flow (`settled` still wins the
+      // race); the `order` assertion below is what proves the box was closed
+      // before the prove prompt and `guest.add`.
       const order: string[] = [];
       showMessageBox.mockImplementationOnce(
         (options: { cancelId: number; signal?: AbortSignal }) =>
