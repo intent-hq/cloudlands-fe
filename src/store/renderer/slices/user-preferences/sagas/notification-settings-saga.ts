@@ -32,7 +32,7 @@ const NOTIFICATION_PATHS = {
   soundPath: 'notifications.soundPath',
 } as const;
 
-export function* persistNotificationSettingsWorker() {
+function* persistNotificationSettingsWorker() {
   yield* call(syncSoundPath);
   yield* delay(100);
   const enabled = yield* selectNotificationEnabled.effect();
