@@ -27,7 +27,8 @@ export const ALLOWLIST = Object.freeze({
 
 export const REMEDIATION_HINT = [
   'Bound the read: `agent.get { agentId }` for known ids, `agent.listActive {}` for liveness,',
-  'or pass `scope` (`topLevel` / `delegated` / `background`) or `retiredOnly: true` to list one bin.',
+  'or pass `scope` (a `topLevel` / `delegated` / `background` literal, or a variable) or',
+  '`retiredOnly: true` to list one bin — `scope: undefined` / `retiredOnly: false` are still unscoped.',
   'An unscoped list serves every session of the workspace and exceeded the 1 MiB frame budget',
   'at 459 sessions (intent-hq/intent#5531).',
   `A deliberate exception is an ALLOWLIST entry in ${SCRIPT_PATH} with a one-line justification.`,
@@ -43,7 +44,18 @@ const QUOTES = new Set(["'", '"', '`']);
 // `call(appClient.agents.list, …)`, and the saga tuple `[appClient.agents, appClient.agents.list]`.
 const WIRE_LITERAL_PATTERN = /(['"`])agent\.list\1/g;
 const WRAPPER_PATTERN = /\.agents\.(?:list|listWithMeta)\s*(?=[(\],])/g;
-const SCOPE_OPTION_PATTERN = /\b(?:scope|retiredOnly)\b/;
+// A call is bounded by an unquoted option property (`{ … , key … }`) whose value is
+// statically a bin: `retiredOnly: true`, or `scope` as a literal from SCOPE_VALUES
+// (`'topLevel' as const` included), a variable or member path (`scope: bin`,
+// `scope: props.scope`), or the shorthand `{ scope }`. `retiredOnly: false` / a variable
+// `retiredOnly`, `scope: undefined` / `null` / `''` / an unknown literal, and either word
+// inside a string literal or another key (`scoped`) do not bound the read.
+const OPTION_KEY_PATTERN = /^(?:scope|retiredOnly)(?![\w$])/;
+const OPTION_VALUE_PATTERN = /^\s*:\s*/;
+const OPTION_SHORTHAND_PATTERN = /^\s*[,}]/;
+const IDENTIFIER_PATTERN = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/;
+const SCOPE_VALUES = new Set(['topLevel', 'delegated', 'background']);
+const UNBOUNDED_IDENTIFIERS = new Set(['undefined', 'null']);
 const OPENERS = new Set(['(', '[', '{']);
 const CLOSERS = new Set([')', ']', '}']);
 const MAX_ARGUMENT_SPAN = 4000;
@@ -129,6 +141,46 @@ const isWireRequest = (text, match) =>
   ['(', ','].includes(previousToken(text, match.index)) &&
   nextToken(text, match.index + match[0].length) !== ':';
 
+// Whether the option value starting at `rest` statically bounds the read (see the
+// OPTION_* rule above). `rest` begins right after the property key.
+function isBoundingOption(key, rest) {
+  if (key === 'retiredOnly') return /^\s*:\s*true(?![\w$])/.test(rest);
+  if (OPTION_SHORTHAND_PATTERN.test(rest)) return true;
+  const separator = OPTION_VALUE_PATTERN.exec(rest);
+  if (!separator) return false;
+  const value = rest.slice(separator[0].length);
+  if (QUOTES.has(value[0])) {
+    const end = literalEnd(value, 0);
+    return value[end - 1] === value[0] && SCOPE_VALUES.has(value.slice(1, end - 1));
+  }
+  const identifier = IDENTIFIER_PATTERN.exec(value);
+  return identifier !== null && !UNBOUNDED_IDENTIFIERS.has(identifier[0]);
+}
+
+// Whether the argument text carries a bounding `scope` / `retiredOnly` option property.
+// String and template literals are skipped so a value merely containing the word never
+// counts; a key counts only in property position (after `{` or `,`).
+function hasBoundingOption(args) {
+  let i = 0;
+  while (i < args.length) {
+    const char = args[i];
+    if (char === '\\') i += 2;
+    else if (QUOTES.has(char)) i = literalEnd(args, i);
+    else {
+      const key = OPTION_KEY_PATTERN.exec(args.slice(i))?.[0];
+      if (
+        key &&
+        ['{', ','].includes(previousToken(args, i)) &&
+        isBoundingOption(key, args.slice(i + key.length))
+      ) {
+        return true;
+      }
+      i += 1;
+    }
+  }
+  return false;
+}
+
 // Every unscoped request in one file: `{ line, text }` per offending call.
 export function findUnscopedAgentListRequests(content) {
   const text = blankComments(content);
@@ -144,7 +196,7 @@ export function findUnscopedAgentListRequests(content) {
     spans.push([match.index, argumentSpan(text, start, next === ']' ? -2 : -1)]);
   }
   return spans
-    .filter(([, args]) => !SCOPE_OPTION_PATTERN.test(args))
+    .filter(([, args]) => !hasBoundingOption(args))
     .map(([index]) => {
       const line = text.slice(0, index).split('\n').length;
       return { line, text: content.split('\n')[line - 1].trim() };

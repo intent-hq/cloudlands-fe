@@ -40,6 +40,25 @@ describe('agent.list scope guard', () => {
       'request after a block-comment opener in a string',
       'const s = "/*"; request(\'agent.list\', {})',
     ],
+    ['retiredOnly: false', "await request('agent.list', { workspaceId, retiredOnly: false });"],
+    ['retiredOnly variable', 'yield call(appClient.agents.list, workspaceId, { retiredOnly });'],
+    ['scope: undefined', "await request('agent.list', { workspaceId, scope: undefined });"],
+    ['scope: null', 'await client.agents.list(workspaceId, { scope: null });'],
+    ['empty scope literal', "await request('agent.list', { workspaceId, scope: '' });"],
+    ['unknown scope literal', "await request('agent.list', { workspaceId, scope: 'all' });"],
+    [
+      'string value containing scope',
+      "await request('agent.list', { workspaceId, label: 'scope' });",
+    ],
+    [
+      'string value spelling a scope option',
+      "await request('agent.list', { workspaceId, reason: \"scope: 'topLevel'\" });",
+    ],
+    [
+      'template value containing retiredOnly',
+      "request('agent.list', { ws, note: `retiredOnly: true` });",
+    ],
+    ['similarly named key', "await request('agent.list', { workspaceId, scoped: true });"],
   ])('flags an unscoped %s request', (_name, ...lines) => {
     const hits = findUnscopedAgentListRequests(lines.join('\n'));
     const expectedLine = lines.findIndex((line) => /agents?\.list/.test(line)) + 1;
@@ -56,6 +75,18 @@ describe('agent.list scope guard', () => {
       '});',
     ],
     ['scoped saga tuple', "yield call([c.agents, c.agents.list], id, { scope: 'background' });"],
+    [
+      'scope literal as const',
+      "await request('agent.list', { workspaceId, scope: 'topLevel' as const });",
+    ],
+    ['scope template literal', "await request('agent.list', { workspaceId, scope: `delegated` });"],
+    ['scope variable', 'yield call([c.agents, c.agents.list], workspaceId, { scope: bin });'],
+    ['scope member path', 'await client.agents.list(workspaceId, { scope: options.scope });'],
+    ['scope shorthand', "await request('agent.list', { workspaceId, scope });"],
+    [
+      'retiredOnly: true wrapper',
+      'const rows = yield call(appClient.agents.list, id, { retiredOnly: true });',
+    ],
     ['string comparison', "if (method === 'agent.list') return handler(params);"],
     ['switch case', "case 'agent.list': {", '  return listHandler();', '}'],
     ['object key', "const handlers = { 'agent.list': listAgents };"],
