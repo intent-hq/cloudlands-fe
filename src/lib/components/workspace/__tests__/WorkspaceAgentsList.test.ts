@@ -879,6 +879,79 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(onLoadDelegated).toHaveBeenLastCalledWith();
   });
 
+  it('renders the per-parent bar above the virtualization threshold (counted group disables the flat virtual path)', async () => {
+    const agents = Array.from({ length: 21 }, (_, index) =>
+      makeAgent(`parent-${index}`, { name: `Parent ${index}` }),
+    );
+    const [first] = agents;
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const onLoadDelegated = vi.fn();
+    const props = {
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: agents.length, delegated: 2, background: 0 },
+      delegatedCounts: { running: 1, byParent: { [first.id]: { total: 2, running: 1 } } },
+      onLoadDelegated,
+    };
+    const view = render(WorkspaceAgentsList, { props });
+    await waitFor(() =>
+      expect(view.container.querySelector(`[data-agent-panel-row="${first.id}"]`)).toBeTruthy(),
+    );
+
+    // Count-first, before any delegated row is loaded: the bar is present with
+    // the daemon numbers, which the uniform-row virtual path cannot render.
+    const bar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${first.id}"]`,
+    );
+    expect(bar?.textContent).toContain('1 / 2 delegated running');
+    expect(bar?.getAttribute('aria-expanded')).toBe('false');
+    expect(view.container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(1);
+    expect(view.container.querySelector('[data-index]')).toBeNull();
+    expect(onLoadDelegated).not.toHaveBeenCalled();
+
+    // Expanding the bar requests only that parent's children.
+    await fireEvent.click(bar!);
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+    expect(onLoadDelegated).toHaveBeenLastCalledWith(first.id);
+    expect(
+      view.container.querySelector(`[data-agent-delegation-loading="${first.id}"]`),
+    ).toBeTruthy();
+
+    // Whole-bin hydration: the bar stays in place and now reads from the rows.
+    const children = ['child-a', 'child-b'].map((id) =>
+      makeAgent(id, {
+        name: id,
+        metadata: { createdByAgentId: first.id } as AgentSession['metadata'],
+      }),
+    );
+    appStore.dispatch(bulkUpsertSessions(children));
+    await view.rerender({
+      ...props,
+      agents: [...agents, ...children],
+      runningAgentIds: [children[0].id],
+      delegatedAgentsLoaded: true,
+    });
+    const hydratedBar = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-toggle="${first.id}"]`,
+    );
+    expect(hydratedBar?.getAttribute('aria-expanded')).toBe('true');
+    expect(hydratedBar?.textContent).toContain('2 delegated');
+    expect(view.container.querySelector(`[data-agent-panel-row="${children[0].id}"]`)).toBeTruthy();
+    expect(view.container.querySelector(`[data-agent-panel-row="${children[1].id}"]`)).toBeTruthy();
+    expect(onLoadDelegated).toHaveBeenCalledTimes(1);
+
+    // A childless list of the same size still virtualizes.
+    await view.rerender({
+      agents,
+      workspaceId,
+      scopeCounts: { topLevel: agents.length, delegated: 0, background: 0 },
+      delegatedCounts: { running: 0, byParent: {} },
+      onLoadDelegated,
+    });
+    await waitFor(() => expect(view.container.querySelector('[data-index]')).toBeTruthy());
+    expect(view.container.querySelector('[data-agent-delegation-toggle]')).toBeNull();
+  });
+
   it('virtualizes the retired bin above the threshold', async () => {
     const active = makeAgent('active-agent', { name: 'Active agent' });
     const retired = Array.from({ length: 40 }, (_, index) =>

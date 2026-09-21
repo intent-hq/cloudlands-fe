@@ -182,7 +182,17 @@
   ]);
   // Fall back to the regular list when delegations exist (tree heights are variable)
   // or a coordinator is present (its section headers need the regular rendering).
-  const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
+  // A daemon-served per-parent delegated group is a delegation too: its bar
+  // renders only through the tree, and it is not a flat 40px row.
+  const hasCountedDelegatedGroup = $derived(
+    hasDelegatedCounts &&
+      topLevelForegroundAgents.some(
+        (agent) => (delegatedCounts?.byParent[agent.id]?.total ?? 0) > 0,
+      ),
+  );
+  const shouldUseVirtual = $derived(
+    !hasCountedDelegatedGroup && shouldVirtualizeWorkspaceAgentRows(filteredAgentRows),
+  );
   // The retired bin is always flat with uniform-height rows, so a length check suffices.
   const shouldVirtualizeRetired = $derived(
     retiredAgents.length > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
