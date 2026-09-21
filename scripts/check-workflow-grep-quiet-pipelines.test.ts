@@ -100,8 +100,9 @@ type ShellContext = { kind: 'exec'; parens: number; closer?: ')' | '`' } | { kin
 // parts of double-quoted text are replaced by a placeholder word, the body of a
 // `$(…)` or `` `…` `` substitution inside double quotes is kept (it still runs),
 // escaped characters are replaced, and an inline `#` comment ends the text. A
-// quote with no closing mate on the line is kept verbatim so a multi-line string
-// cannot hide a pipeline.
+// substitution closer is a word boundary, so a flag ending the substitution is
+// scanned on its own. A quote with no closing mate on the line is kept verbatim
+// so a multi-line string cannot hide a pipeline.
 const executableText = (text: string): string => {
   const stack: ShellContext[] = [{ kind: 'exec', parens: 0 }];
   let out = '';
@@ -143,7 +144,7 @@ const executableText = (text: string): string => {
       (ch === '`' && top.closer === '`')
     ) {
       stack.pop();
-      out += QUOTED_PLACEHOLDER;
+      out += ' ';
     } else {
       if (ch === '(') top.parens++;
       else if (ch === ')' && top.parens > 0) top.parens--;
@@ -196,6 +197,11 @@ describe('workflow grep -q pipeline detector', () => {
     ['if [ -z "$(printf x | grep -q x)" ]; then'],
     ['echo "$(echo "a|b" | grep -q x)"'],
     ['FOUND="`printf x | grep -q x && echo yes`"'],
+    ['FOUND="$(seq 100000 | grep 1 --quiet)"'],
+    ['FOUND="$(seq 100000 | grep 1 --silent)"'],
+    ['FOUND="$(seq 100000 | grep 1 -q)"'],
+    ['FOUND="`seq 100000 | grep 1 --quiet`"'],
+    ['FOUND=$(seq 100000 | grep 1 --quiet)'],
     ['echo "$OUT" | grep -e \'x|y\' -q'],
     ['echo "$OUT" | grep 2>/dev/null -q x'],
     ['echo ${#OUT} | grep -q x'],
@@ -242,6 +248,8 @@ describe('workflow grep -q pipeline detector', () => {
     ['echo "$OUT" | grep --file -q >/dev/null'],
     ['echo "$OUT" | grep -eq x >/dev/null'],
     ['echo "$OUT" | grep -ie -q >/dev/null'],
+    ['FOUND="$(seq 100000 | grep 1 --count)"'],
+    ['FOUND="`seq 100000 | grep 1 --count`"'],
   ])('does not flag %s', (line) => {
     expect(lineNumbers(run('echo start', line))).toEqual([]);
   });
