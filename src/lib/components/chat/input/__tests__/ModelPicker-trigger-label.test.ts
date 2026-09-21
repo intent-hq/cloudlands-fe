@@ -605,6 +605,45 @@ describe('ModelPicker trigger label regressions', () => {
     expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
   });
 
+  it('attributes a bare session model to the agent provider when that provider is outside the enabled set (guest window)', async () => {
+    // Guest-window shape: the host's settings are not readable
+    // (`settings.list` is administrator-only), so `providers.enabled` never
+    // hydrates and only the first-catalog-row default provider (auggie) is
+    // enabled locally — the host agent's provider (claude-code) is reached
+    // only through the per-agent fetch. The daemon pins a BARE model id on
+    // the session, so catalog-ownership attribution must consult that
+    // per-agent group instead of falling back to the default provider.
+    selectedModel$.set(undefined);
+    availableModels$.set([{ value: 'butler', label: 'Auggie Butler' }]);
+    enabledProviderIds$.set(['auggie']);
+    activeProviderId$.set('auggie');
+    sessions.set('agent-1', {
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      provider: 'claude-code',
+      model: 'claude-opus-4-8',
+    });
+    sessionVersion$.update((value) => value + 1);
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'claude-opus-4-8',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        isLocked: true,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+
+    expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('claude-code');
+    expect(screen.getByRole('button').textContent ?? '').toContain('Claude Opus 4.8');
+    expect(screen.getByTestId('provider-icon').getAttribute('data-provider-id')).toBe(
+      'claude-code',
+    );
+  });
+
   it('does not render a provider icon for unknown provider IDs', () => {
     activeProviderId$.set('anthropic');
 

@@ -38,10 +38,73 @@ const invite = {
 describe('workspaceSharingClient wire contract (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('listMembers forwards workspace.members.list and returns the rows verbatim', async () => {
-    mockedRequest.mockResolvedValueOnce({ members: [member] });
-    await expect(workspaceSharingClient.listMembers('ws-1')).resolves.toEqual([member]);
+  it('listMembers forwards workspace.members.list and returns the rows with the guest cap', async () => {
+    mockedRequest.mockResolvedValueOnce({ members: [member], guestCount: 2, guestLimit: 5 });
+    await expect(workspaceSharingClient.listMembers('ws-1')).resolves.toEqual({
+      members: [member],
+      guestCount: 2,
+      guestLimit: 5,
+    });
     expect(mockedRequest).toHaveBeenCalledWith('workspace.members.list', { workspaceId: 'ws-1' });
+  });
+
+  // Older daemons omit the cap fields; the client reports them as unknown
+  // (null) rather than inventing a limit.
+  it('listMembers reports the guest cap as null when the daemon omits it', async () => {
+    mockedRequest.mockResolvedValueOnce({ members: [member] });
+    await expect(workspaceSharingClient.listMembers('ws-1')).resolves.toEqual({
+      members: [member],
+      guestCount: null,
+      guestLimit: null,
+    });
+  });
+
+  it('listPrincipals forwards principal.list with no params and returns the rows verbatim', async () => {
+    const principal = {
+      principalId: 'p-erin',
+      login: 'erin',
+      displayName: 'Erin',
+      avatarUrl: null,
+      githubUserId: 5,
+    };
+    mockedRequest.mockResolvedValueOnce({ principals: [principal] });
+    await expect(workspaceSharingClient.listPrincipals()).resolves.toEqual([principal]);
+    expect(mockedRequest).toHaveBeenCalledWith('principal.list', {});
+  });
+
+  it('addMember sends { workspaceId, principalId } and folds the result or the error', async () => {
+    mockedRequest.mockResolvedValueOnce({ added: true, memberCount: 2 });
+    await expect(workspaceSharingClient.addMember('ws-1', 'p-erin')).resolves.toEqual({
+      success: true,
+      result: { added: true, memberCount: 2 },
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('workspace.members.add', {
+      workspaceId: 'ws-1',
+      principalId: 'p-erin',
+    });
+
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'invalid_params',
+        message: 'guest limit',
+        rpcCode: -32602,
+        data: { code: 'guest-limit' },
+      }),
+    );
+    await expect(workspaceSharingClient.addMember('ws-1', 'p-erin')).resolves.toEqual({
+      success: false,
+      code: 'guest-limit',
+      rpcCode: -32602,
+    });
+
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({ code: 'forbidden', message: 'not the owner', rpcCode: -32003 }),
+    );
+    await expect(workspaceSharingClient.addMember('ws-1', 'p-erin')).resolves.toEqual({
+      success: false,
+      code: 'forbidden',
+      rpcCode: -32003,
+    });
   });
 
   it('removeMember sends { workspaceId, principalId } and folds errors', async () => {
@@ -153,6 +216,25 @@ describe('workspaceSharingClient wire contract (fake transport)', () => {
       rpcCode: -32603,
     });
     expect(inviteErrorCode({ data: { code: 'listener-down' } })).toBeUndefined();
+  });
+
+  // Guest cap reached (intent-hq/intentd#1917): `workspace.invite.create`
+  // rejects with `data.code = 'guest-limit'`, which is an invite code.
+  it('createInvite surfaces the guest-limit code when the workspace is at capacity', async () => {
+    mockedRequest.mockRejectedValueOnce(
+      new BackendError({
+        code: 'invalid-params',
+        message: 'guest limit reached',
+        rpcCode: -32602,
+        data: { code: 'guest-limit' },
+      }),
+    );
+    await expect(workspaceSharingClient.createInvite('ws-1')).resolves.toEqual({
+      success: false,
+      code: 'guest-limit',
+      rpcCode: -32602,
+    });
+    expect(inviteErrorCode({ data: { code: 'guest-limit' } })).toBe('guest-limit');
   });
 
   it('listInvites forwards workspace.invite.list and returns the rows verbatim', async () => {

@@ -638,6 +638,249 @@ describe('QueuedMessageList', () => {
     expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
   });
 
+  describe('human author identity (multiplayer)', () => {
+    // Queue entries carry the daemon's `messageMetadata.fromPrincipalId`
+    // stamp (PROTOCOL §5.5, intent-hq/intentd#1869); the author projection is
+    // resolved by the panel from the transcript and handed in as `authors`
+    // only once the workspace has more than one member.
+    const guest = {
+      principalId: 'principal-guest',
+      login: 'guest',
+      displayName: 'Guest User',
+      avatarUrl: 'https://avatars.example/guest.png',
+    };
+    const owner = {
+      principalId: 'principal-owner',
+      login: 'owner',
+      displayName: null,
+      avatarUrl: null,
+    };
+    const authors = new Map([
+      [guest.principalId, guest],
+      [owner.principalId, owner],
+    ]);
+
+    it('renders each stamped entry with its own author once authors are provided', () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              id: 'q-guest',
+              content: 'queued by guest',
+              messageMetadata: { fromPrincipalId: guest.principalId },
+            }),
+            queued({
+              id: 'q-owner',
+              content: 'queued by owner',
+              position: 1,
+              messageMetadata: { fromPrincipalId: owner.principalId },
+            }),
+          ],
+          authors,
+        },
+      });
+
+      const headers = screen.getAllByTestId('queued-message-author');
+      expect(headers.map((h) => h.getAttribute('data-principal-id'))).toEqual([
+        guest.principalId,
+        owner.principalId,
+      ]);
+      expect(headers[0].getAttribute('aria-label')).toContain('Guest User');
+      expect(headers[1].getAttribute('aria-label')).toContain('owner');
+      expect(screen.getAllByTestId('queued-message-author-name').map((n) => n.textContent)).toEqual(
+        ['Guest User', 'owner'],
+      );
+      const avatar = screen.getByTestId('queued-message-author-avatar') as HTMLImageElement;
+      expect(avatar.getAttribute('src')).toBe(guest.avatarUrl);
+      expect(screen.getByTestId('queued-message-author-avatar-fallback').textContent).toBe('O');
+      expect(screen.getByText('queued by guest')).toBeTruthy();
+      expect(screen.getByText('queued by owner')).toBeTruthy();
+    });
+
+    it('omits the author when no authors are provided (single-member workspace)', () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({ content: 'solo', messageMetadata: { fromPrincipalId: guest.principalId } }),
+          ],
+        },
+      });
+
+      expect(screen.queryByTestId('queued-message-author')).toBeNull();
+      expect(screen.getByText('solo')).toBeTruthy();
+    });
+
+    it("omits the author on the viewer's own entries, keeping it on other members'", () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              id: 'q-guest',
+              content: 'queued by guest',
+              messageMetadata: { fromPrincipalId: guest.principalId },
+            }),
+            queued({
+              id: 'q-owner',
+              content: 'queued by owner',
+              position: 1,
+              messageMetadata: { fromPrincipalId: owner.principalId },
+            }),
+          ],
+          authors,
+          ownPrincipalId: owner.principalId,
+        },
+      });
+
+      const headers = screen.getAllByTestId('queued-message-author');
+      expect(headers.map((h) => h.getAttribute('data-principal-id'))).toEqual([guest.principalId]);
+      expect(screen.getByText('queued by guest')).toBeTruthy();
+      expect(screen.getByText('queued by owner')).toBeTruthy();
+    });
+
+    it('omits the author on unstamped or unresolvable entries', () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({ id: 'q-legacy', content: 'older daemon entry' }),
+            queued({
+              id: 'q-new',
+              content: 'member without a transcript row yet',
+              position: 1,
+              messageMetadata: { fromPrincipalId: 'principal-unseen' },
+            }),
+          ],
+          authors,
+        },
+      });
+
+      expect(screen.queryByTestId('queued-message-author')).toBeNull();
+      expect(screen.getByText('older daemon entry')).toBeTruthy();
+      expect(screen.getByText('member without a transcript row yet')).toBeTruthy();
+    });
+
+    it("renders the entry's own author projection with no transcript history", () => {
+      // A member whose first message is queued before any of their transcript
+      // rows exist: the daemon serves the projection on the queue entry
+      // (intent-hq/intentd#1869), so the empty transcript map is not needed.
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              id: 'q-first',
+              content: 'first ever message, still queued',
+              messageMetadata: { fromPrincipalId: guest.principalId },
+              author: guest,
+            }),
+            // Stale transcript copy vs. fresher projection: the projection wins.
+            queued({
+              id: 'q-renamed',
+              content: 'renamed since the transcript row',
+              position: 1,
+              messageMetadata: { fromPrincipalId: owner.principalId },
+              author: { ...owner, displayName: 'Owner Renamed' },
+            }),
+          ],
+          authors: new Map(),
+        },
+      });
+
+      const headers = screen.getAllByTestId('queued-message-author');
+      expect(headers.map((h) => h.getAttribute('data-principal-id'))).toEqual([
+        guest.principalId,
+        owner.principalId,
+      ]);
+      expect(screen.getAllByTestId('queued-message-author-name').map((n) => n.textContent)).toEqual(
+        ['Guest User', 'Owner Renamed'],
+      );
+      expect(screen.getByText('first ever message, still queued')).toBeTruthy();
+    });
+
+    it('omits the author on an explicit null projection even when the transcript resolves it', () => {
+      // `author: null` is the daemon's authoritative "principal row is gone";
+      // the stamp-based transcript fallback applies only when the field is absent.
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              id: 'q-gone',
+              content: 'author row deleted',
+              messageMetadata: { fromPrincipalId: guest.principalId },
+              author: null,
+            }),
+            queued({
+              id: 'q-legacy',
+              content: 'older daemon, stamp only',
+              position: 1,
+              messageMetadata: { fromPrincipalId: guest.principalId },
+            }),
+          ],
+          authors,
+        },
+      });
+
+      const headers = screen.getAllByTestId('queued-message-author');
+      expect(headers).toHaveLength(1);
+      expect(headers[0].closest('[data-message-id]')?.getAttribute('data-message-id')).toBe(
+        'q-legacy',
+      );
+      expect(screen.getByText('author row deleted')).toBeTruthy();
+      expect(screen.getByText('older daemon, stamp only')).toBeTruthy();
+    });
+
+    it('omits the author on daemon-origin entries even when a projection is attached', () => {
+      // Agent-to-agent sends and system wakes fall back to the workspace owner
+      // on the daemon side; they are not human-authored and get no attribution.
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              id: 'q-agent',
+              content: 'agent-to-agent',
+              messageMetadata: {
+                type: 'agent_message',
+                fromAgentId: 'agent-2',
+                fromPrincipalId: owner.principalId,
+              },
+              author: owner,
+            }),
+            queued({
+              id: 'q-system',
+              content: 'system wake',
+              position: 1,
+              messageMetadata: { source: 'system', fromPrincipalId: owner.principalId },
+              author: owner,
+            }),
+          ],
+          authors,
+        },
+      });
+
+      expect(screen.queryByTestId('queued-message-author')).toBeNull();
+      expect(screen.getByText('agent-to-agent')).toBeTruthy();
+      expect(screen.getByText('system wake')).toBeTruthy();
+    });
+
+    it('does not render the author while the entry is being edited', async () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: 'edit me',
+              messageMetadata: { fromPrincipalId: guest.principalId },
+            }),
+          ],
+          authors,
+        },
+      });
+
+      expect(screen.getByTestId('queued-message-author')).toBeTruthy();
+      await fireEvent.dblClick(screen.getByTestId('queued-message-content'));
+      await tick();
+      expect(screen.getByTestId('queued-message-edit-mode')).toBeTruthy();
+      expect(screen.queryByTestId('queued-message-author')).toBeNull();
+    });
+  });
+
   describe('image thumbnails', () => {
     const IMAGE_BLOCKS: NonNullable<QueuedMessage['imageBlocks']> = [
       { type: 'image', data: 'AAAA', mimeType: 'image/png' },

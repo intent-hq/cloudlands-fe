@@ -75,3 +75,11 @@ export interface PresencePerson extends PresenceIdentity {
   /** This window's own principal. */
   self: boolean;
 }
+
+/**
+ * Where a person is looking right now inside one workspace, resolved from
+ * their roster focus items: the agent chat they have open, else the note.
+ * A person on the bare workspace tab (or offline) has no target.
+ */
+export type PresenceFocusTarget =
+  { kind: 'agent'; agentId: string } | { kind: 'note'; noteId: string };

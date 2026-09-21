@@ -28,7 +28,7 @@
   const attribution = $derived(getAgentMessageAttribution(message.metadata));
   const wake = $derived(getAutomatedWakePresentation(message));
   const text = $derived.by(() => {
-    const body = getPresentedUserMessageText(message);
+    const body = getPresentedUserMessageText(message, workspace?.ownerPrincipalId);
     if (attribution) {
       const name =
         attribution.kind === 'chief' ? m.layout_chiefCard_title() : attribution.displayName;

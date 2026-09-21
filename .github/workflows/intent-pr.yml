@@ -596,7 +596,7 @@ jobs:
               -e "await import('./$MODULE'); process.exit(0);" \
               2>&1) || EXIT_CODE=$?
 
-            if [ "$EXIT_CODE" -ne 0 ] && echo "$OUTPUT" | grep -q "Cannot find package 'svelte'"; then
+            if [ "$EXIT_CODE" -ne 0 ] && grep -q "Cannot find package 'svelte'" <<<"$OUTPUT"; then
               echo "FAIL: $MODULE"
               echo "$OUTPUT" | head -3
               FAILED=1

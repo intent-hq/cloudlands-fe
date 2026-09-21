@@ -326,6 +326,13 @@ interface ChatDeltaEntity {
    * appMessageId on the delta path.
    */
   appMessageId?: string;
+  /**
+   * The serve-time `author` projection lifted onto user-row deltas
+   * (intentd#1869) — the same `{ principalId, login, displayName, avatarUrl }`
+   * object the snapshot page carries, so a live human row renders its author
+   * identically to a hydrated one. Older daemons omit it entirely.
+   */
+  author?: AgentMessage['author'];
 }
 
 function parseDeltaEntity(raw: unknown, incremental: boolean): ChatDeltaEntity | null {
@@ -357,6 +364,9 @@ function parseDeltaEntity(raw: unknown, incremental: boolean): ChatDeltaEntity |
       : {}),
     ...(typeof e.appMessageId === 'string' && e.appMessageId.length > 0
       ? { appMessageId: e.appMessageId }
+      : {}),
+    ...(e.author && typeof e.author === 'object' && !Array.isArray(e.author)
+      ? { author: e.author as AgentMessage['author'] }
       : {}),
   };
 }
@@ -609,6 +619,7 @@ export class ChatTranscriptReconciler {
     if (entity.messageSeq !== undefined) next.seq = entity.messageSeq;
     if (entity.metadata) next.metadata = entity.metadata;
     if (entity.appMessageId) next.appMessageId = entity.appMessageId;
+    if (entity.author) next.author = entity.author;
     this.messages = [...this.messages.slice(0, index), next, ...this.messages.slice(index + 1)];
   }
 }

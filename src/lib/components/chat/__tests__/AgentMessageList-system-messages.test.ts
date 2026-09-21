@@ -2,9 +2,10 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import AgentMessageList from '../AgentMessageList.svelte';
-import type { AgentMessage } from '$shared/types';
+import type { AgentMessage, Workspace } from '$shared/types';
+import { buildCollaboratorSenderPreamble } from '$lib/utils/collaborator-sender-attribution';
 
 // Mock the Redux store to avoid initialization errors
 vi.mock('$store/renderer/store', async () => {
@@ -310,5 +311,61 @@ describe('AgentMessageList - System Messages', () => {
 
     expect(screen.getByRole('status')).toBeTruthy();
     expect(screen.getByText(/Model changed to gpt-5-codex/)).toBeTruthy();
+  });
+});
+
+describe('AgentMessageList - search filter memo', () => {
+  const GUEST_AUTHOR = {
+    principalId: 'principal-guest',
+    login: 'octocat',
+    displayName: 'The Octocat',
+    avatarUrl: null,
+  };
+  const GUEST_PREAMBLE = buildCollaboratorSenderPreamble(
+    GUEST_AUTHOR.login,
+    GUEST_AUTHOR.displayName,
+    GUEST_AUTHOR.principalId,
+  );
+  const messages: AgentMessage[] = [
+    {
+      id: 'msg-guest',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: `${GUEST_PREAMBLE}\n\nhello from the guest` }],
+      timestamp: new Date().toISOString(),
+      metadata: { fromPrincipalId: GUEST_AUTHOR.principalId },
+      author: GUEST_AUTHOR,
+    } as AgentMessage,
+    {
+      id: 'msg-owner',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'hello from the owner' }],
+      timestamp: new Date().toISOString(),
+    },
+  ];
+  // Matches only inside the daemon's collaborator preamble, never in the bodies.
+  const searchQuery = 'collaborator (guest)';
+
+  // Regression (fe#2715 review): the filter memo was keyed on message count +
+  // query only, so a later `ownerPrincipalId` (which decides whether the
+  // preamble is searchable) reused the stale filtered list.
+  it('re-filters when ownerPrincipalId changes with the same messages and query', async () => {
+    const { rerender } = render(AgentMessageList, {
+      props: { messages, searchQuery, workspace: null },
+    });
+
+    // No owner id → nothing is stripped → the preamble is searchable.
+    expect(screen.getByText(/hello from the guest/)).toBeTruthy();
+    expect(screen.queryByText(/hello from the owner/)).toBeNull();
+
+    await rerender({
+      messages,
+      searchQuery,
+      workspace: { id: 'ws-1', ownerPrincipalId: 'principal-owner' } as unknown as Workspace,
+    });
+
+    // Owner id known → the guest preamble is stripped → no message matches
+    // (the row leaves after its outro transition settles).
+    await waitFor(() => expect(screen.queryByText(/hello from the guest/)).toBeNull());
+    expect(screen.queryByText(/hello from the owner/)).toBeNull();
   });
 });

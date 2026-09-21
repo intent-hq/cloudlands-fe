@@ -137,6 +137,28 @@ describe('provider-settings selectors', () => {
       expect(selectEnabledProviderIds.select(state)).toContain('auggie');
     });
 
+    it('guest backend: unhydrated settings leave only the first-catalog-row default enabled', () => {
+      // A guest window's backend is the host daemon, whose `settings.list` is
+      // administrator-only: `providers.enabled` never hydrates and the model
+      // slice falls back to the first catalog row at catalog hydration. The
+      // enabled set is therefore just that default — the host agent's own
+      // provider (claude-code) is outside it, so the picker must resolve the
+      // agent's provider from the session, never from this set.
+      const model = modelReducer(modelInitialState, providerCatalogLoaded(MOCK_PROVIDER_CATALOG));
+      const state = {
+        ...mockState({}),
+        model,
+      } as StoreState;
+
+      expect(selectEffectiveDefaultProviderId.select(state)).toBe(
+        MOCK_PROVIDER_CATALOG.providers[0].id,
+      );
+      expect(selectEnabledProviderIds.select(state)).toEqual([
+        MOCK_PROVIDER_CATALOG.providers[0].id,
+      ]);
+      expect(selectEnabledProviderIds.select(state)).not.toContain('claude-code');
+    });
+
     it('should include explicitly enabled providers', () => {
       const state = mockState({ 'claude-code': true });
       const ids = selectEnabledProviderIds.select(state);

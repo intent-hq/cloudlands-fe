@@ -291,6 +291,7 @@ import {
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { formatGuestSessionLabel } from '$lib/utils/connection-label';
 import {
   reportStreamLifecycle,
   streamTurnCorrelation,
@@ -2638,7 +2639,11 @@ function handleWorkspaceMembershipRemoved(
   closeWorkspaceTabAndNavigateAway(workspaceId).catch((error) => {
     logger.warn('closeWorkspaceTabAndNavigateAway failed after membership removal', error);
   });
-  void showWorkspaceAccessRemovedToast({ workspaceId, title, hostLabel: session.label });
+  void showWorkspaceAccessRemovedToast({
+    workspaceId,
+    title,
+    hostLabel: formatGuestSessionLabel(session),
+  });
   return true;
 }
 
