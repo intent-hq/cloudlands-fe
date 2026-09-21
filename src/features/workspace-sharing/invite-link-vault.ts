@@ -26,11 +26,14 @@ export function readInviteLink(inviteId: string): string | null {
 /**
  * Split `workspace.invite.list` rows into their secret-free store shape,
  * parking every `url` that came along. A row without a url (Remote Access
- * listener down) parks nothing and stays uncopyable until the next read.
+ * listener down) drops any link parked for it earlier, so the invite is
+ * uncopyable until a later read returns the url again — a stale link must
+ * not outlive the row that no longer carries it.
  */
 export function vaultInviteLinks(rows: WorkspaceInviteRow[]): WorkspaceInvite[] {
   return rows.map(({ url, ...invite }) => {
     if (url) storeInviteLink(invite.id, url);
+    else links.delete(invite.id);
     return invite;
   });
 }

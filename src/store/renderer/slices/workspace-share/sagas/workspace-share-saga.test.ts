@@ -653,6 +653,35 @@ describe('workspaceShareSaga', () => {
     h.task.cancel();
   });
 
+  // Regression (fe#2715 review): a refresh whose row no longer carries a url
+  // (Remote Access listener went down) must retire the link parked by an
+  // earlier read — otherwise the dialog keeps offering the stale capability.
+  it('drops a parked link when a later refresh lists the invite without a url', async () => {
+    let listReads = 0;
+    mocks.request.mockImplementation((method: string) => {
+      if (method === 'workspace.members.list') return Promise.resolve({ members: [owner] });
+      if (method === 'workspace.invite.list') {
+        listReads += 1;
+        return Promise.resolve({
+          invites: [listReads === 1 ? invite : { ...invite, url: undefined }],
+        });
+      }
+      return Promise.resolve({});
+    });
+    const h = harness(opened());
+
+    h.dispatch(shareDataRequested());
+    await settle();
+    expect(readInviteLink('inv-1')).toBe(LISTED_URL);
+
+    h.dispatch(shareDataRequested());
+    await settle();
+    expect(calls('workspace.invite.list')).toHaveLength(2);
+    expect(getItems(h.state().invites).map((row) => row.id)).toEqual(['inv-1']);
+    expect(readInviteLink('inv-1')).toBeNull();
+    h.task.cancel();
+  });
+
   it('logs only bounded codes when a mutation fails with a message carrying daemon material', async () => {
     const leaky = Object.assign(new Error(`invite ${LEAK_MARKER} rejected`), { rpcCode: -32602 });
     replyByMethod({ 'workspace.invite.revoke': leaky });

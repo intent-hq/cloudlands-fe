@@ -113,12 +113,62 @@ describe('InviteNoticeModal', () => {
     render(InviteNoticeModal, { props: { open: true, payload: PLAINTEXT, onAcknowledge } });
 
     const dialogEl = await screen.findByRole('alertdialog');
-    expect(document.activeElement).toBe(dialogEl);
+    expect(dialogEl.contains(document.activeElement)).toBe(true);
 
     await fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
 
     expect(onAcknowledge).toHaveBeenCalledOnce();
     expect(screen.queryByRole('alertdialog')).toBeNull();
+    outside.remove();
+  });
+
+  it('traps Tab within the dialog while open and restores focus on close', async () => {
+    const InviteNoticeModal = await loadModal();
+
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+
+    const { rerender } = render(InviteNoticeModal, {
+      props: { open: true, payload: FAILED, onAcknowledge: vi.fn() },
+    });
+
+    const dialogEl = await screen.findByRole('alertdialog');
+    const focusable = Array.from(dialogEl.querySelectorAll<HTMLElement>('button:not([disabled])'));
+    expect(focusable.length).toBeGreaterThan(1);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    last.focus();
+    await fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+
+    await fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+
+    await rerender({ open: false, payload: FAILED, onAcknowledge: vi.fn() });
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it('restores focus to the opener when OK acknowledges', async () => {
+    const InviteNoticeModal = await loadModal();
+
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+
+    render(InviteNoticeModal, { props: { open: true, payload: FAILED, onAcknowledge: vi.fn() } });
+    await screen.findByRole('alertdialog');
+    expect(document.activeElement).not.toBe(outside);
+
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.deeplink_inviteFailed_ok_button() }),
+    );
+
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 
   it('acknowledges on backdrop click', async () => {

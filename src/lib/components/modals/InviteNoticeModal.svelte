@@ -14,6 +14,7 @@
     faXmark,
   } from '@fortawesome/free-solid-svg-icons';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { FocusTrap } from '$lib/utils/accessibility';
   import type { InviteNoticeShowPayload } from '$shared/ipc/invite-notice';
   import { describeInviteFailureReason } from '$shared/utils/invite-failure-text';
   import { m } from '$shared/paraglide/messages.js';
@@ -51,11 +52,16 @@
   );
 
   // Move focus into the dialog on open (ARIA alertdialog pattern) so Escape
-  // reaches the keydown handler immediately.
+  // reaches the keydown handler immediately, and trap it there so Tab cycles
+  // within the dialog instead of escaping behind the overlay; focus returns
+  // to where it was once the dialog closes.
   $effect(() => {
-    if (open && payload && dialogEl) {
-      dialogEl.focus();
-    }
+    if (!open || !payload || !dialogEl) return;
+    const el = dialogEl;
+    const trap = new FocusTrap(el);
+    trap.activate();
+    if (!el.contains(document.activeElement)) el.focus();
+    return () => trap.deactivate();
   });
 
   function acknowledge() {
