@@ -810,6 +810,39 @@ describe('plain-text ↔ markdown alignment of repeated paragraphs', () => {
   });
 });
 
+describe('alignment of link-shaped text the editor shows', () => {
+  it.each<[string, string, string]>([
+    [
+      'a code span',
+      'intro `[x](abcdef)` outro\n\nabcdef outro',
+      'intro [x](abcdef) outro\nabcdef outro',
+    ],
+    ['a fence', '```\n[x](abcdef)\n```\n\nabcdef outro', '[x](abcdef)\nabcdef outro'],
+    [
+      'a reference without a definition',
+      '**intro** [x][abcdef] outro\n\nabcdef outro',
+      'intro [x][abcdef] outro\nabcdef outro',
+    ],
+    [
+      'an escaped link',
+      '**intro** \\[x](abcdef) outro\n\nabcdef outro',
+      'intro [x](abcdef) outro\nabcdef outro',
+    ],
+  ])('maps every character of %s', async (_name, markdown, expectedPlain) => {
+    const plain = await projectWithEditor(markdown);
+    expect(plain).toBe(expectedPlain);
+    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    const needle = /\[x\]\S+/.exec(plain)?.[0] ?? '';
+    expect(needle).not.toBe('');
+    for (let into = 1; into < needle.length; into += 1) {
+      const p = plain.indexOf(needle) + into;
+      const m = markdown.indexOf(needle) + into;
+      expect(aToB(p), `${needle}[${into}] →`).toBe(m);
+      expect(bToA(m), `${needle}[${into}] ←`).toBe(p);
+    }
+  });
+});
+
 describe('alignment of blocks that never anchor', () => {
   /** Every block of `a` is long enough to anchor, yet not four code units of it occur in `b`. */
   const unanchorable = (size: number): [string, string] => {
@@ -864,10 +897,12 @@ describe('alignment over a corpus of small notes', () => {
   /**
    * A small synthetic note built from atoms whose projection is modelled
    * independently of the alignment: headings, split-word and punctuation-only
-   * formatting, URLs, fenced code, blank-line runs, soft wraps, unicode, and
-   * paragraphs repeated verbatim (formatted first, plain later). The atoms are
-   * the oracle: an offset strictly inside an atom shared by both sides must map
-   * to the same offset inside the same atom.
+   * formatting, URLs, fenced code, blank-line runs, soft wraps, unicode,
+   * link-shaped text the editor shows (code spans, escapes, unresolved
+   * references), text it hides (images, comment anchors, link definitions),
+   * and paragraphs repeated verbatim (formatted first, plain later). The
+   * atoms are the oracle: an offset strictly inside an atom shared by both
+   * sides must map to the same offset inside the same atom.
    */
   function generateSmallNote(seed: number): Atom[] {
     const rng = mulberry32(seed);
@@ -876,10 +911,11 @@ describe('alignment over a corpus of small notes', () => {
     const words = (n: number) => Array.from({ length: n }, pick).join(' ');
     const shared = (text: string): Atom => [text, text];
     const syntax = (md: string): Atom => [md, ''];
-    const sentence = (): Atom[] => {
-      const roll = rng();
-      if (roll < 0.25) return [shared(words(2 + Math.floor(rng() * 5)))];
-      if (roll < 0.4) {
+    const url = () => `https://${pick()}.example/${pick()}`;
+    const definitions: Atom[][] = [];
+    const sentences: Array<() => Atom[]> = [
+      () => [shared(words(2 + Math.floor(rng() * 5)))],
+      () => {
         const [head, tail] = [pick(), pick()];
         return [
           syntax('**'),
@@ -887,30 +923,78 @@ describe('alignment over a corpus of small notes', () => {
           syntax('**'),
           shared(`${head.slice(3)} ${tail}`),
         ];
-      }
-      if (roll < 0.55)
-        return [syntax('**'), shared(words(2)), syntax('**'), shared(` ${words(2)}`)];
-      if (roll < 0.65) {
+      },
+      () => [syntax('**'), shared(words(2)), syntax('**'), shared(` ${words(2)}`)],
+      () => [
+        shared(`${pick()} `),
+        syntax('['),
+        shared(pick()),
+        syntax(`](https://${pick()}/${pick()}/${pick()})`),
+        shared(` ${pick()}`),
+      ],
+      () => [syntax('**'), shared('!!!!'), syntax('**'), shared(' ????????')],
+      () => [
+        shared(`${unicode[Math.floor(rng() * unicode.length)]} `),
+        syntax('*'),
+        shared(pick()),
+        syntax('*'),
+        shared(` ${unicode[Math.floor(rng() * unicode.length)]}`),
+      ],
+      () => [shared(words(3)), [' \n', '\uFFFC'], shared(words(3))],
+      // A link-shaped code span is shown as written.
+      () => [
+        shared(`${pick()} `),
+        syntax('`'),
+        shared(`[${pick()}](${pick()})`),
+        syntax('`'),
+        shared(` ${pick()}`),
+      ],
+      // An escape shows its character without the backslash.
+      () => [
+        shared(`${pick()} `),
+        syntax('\\'),
+        shared(`[${pick()}](${pick()}) `),
+        syntax('\\'),
+        shared(`*${pick()}`),
+        syntax('\\'),
+        shared(`* ${pick()}`),
+      ],
+      // A reference link shows its label; its definition at the end of the
+      // note shows nothing.
+      () => {
+        const label = `ref-${definitions.length + 1}`;
+        definitions.push([syntax(`[${label}]: ${url()}`)]);
         return [
           shared(`${pick()} `),
           syntax('['),
           shared(pick()),
-          syntax(`](https://${pick()}/${pick()}/${pick()})`),
+          syntax(`][${label}]`),
           shared(` ${pick()}`),
         ];
-      }
-      if (roll < 0.75) return [syntax('**'), shared('!!!!'), syntax('**'), shared(' ????????')];
-      if (roll < 0.85) {
+      },
+      // A reference without a definition is text.
+      () => [shared(`${pick()} [${pick()}][missing-${pick()}] ${pick()}`)],
+      // An image shows nothing, and so does a comment anchor.
+      () => [shared(pick()), syntax(`![${pick()}](${url()}.png)`), shared(` ${pick()}`)],
+      () => [
+        shared(pick()),
+        syntax(`<!--agent:${pick()}-${Math.floor(rng() * 1000)}-->`),
+        shared(` ${pick()}`),
+      ],
+      // A bare URL, and a link whose label is its own URL, show the URL once.
+      () => [shared(`${pick()} ${url()} ${pick()}`)],
+      () => {
+        const target = url();
         return [
-          shared(`${unicode[Math.floor(rng() * unicode.length)]} `),
-          syntax('*'),
-          shared(pick()),
-          syntax('*'),
-          shared(` ${unicode[Math.floor(rng() * unicode.length)]}`),
+          shared(`${pick()} `),
+          syntax('['),
+          shared(target),
+          syntax(`](${target})`),
+          shared(` ${pick()}`),
         ];
-      }
-      return [shared(words(3)), [' \n', '\uFFFC'], shared(words(3))];
-    };
+      },
+    ];
+    const sentence = (): Atom[] => sentences[Math.floor(rng() * sentences.length)]();
     const paragraph = (): Atom[] => [
       ...sentence(),
       ...(rng() < 0.5 ? [shared('. '), ...sentence()] : []),
@@ -941,8 +1025,9 @@ describe('alignment over a corpus of small notes', () => {
         block = [shared(plainParagraphs[Math.floor(rng() * plainParagraphs.length)])];
       } else block = paragraph();
       const plain = block.map(([, p]) => p).join('');
-      // A single-line paragraph's projection is itself valid markdown.
-      if (!/[\n\uFFFC]/.test(plain) && !block[0][0].startsWith('#')) plainParagraphs.push(plain);
+      // A single-line paragraph's projection is itself valid markdown, as
+      // long as the editor showed no `[` or `*` that would now be syntax.
+      if (!/[\n\uFFFC[*]/.test(plain) && !block[0][0].startsWith('#')) plainParagraphs.push(plain);
       blocks.push(block);
     }
 
@@ -956,6 +1041,7 @@ describe('alignment over a corpus of small notes', () => {
       }
       atoms.push(...block);
     });
+    for (const definition of definitions) atoms.push(['\n\n', ''], ...definition);
     return atoms;
   }
 

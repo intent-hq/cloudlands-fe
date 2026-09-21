@@ -1,4 +1,5 @@
 import { diffArrays, diffChars } from 'diff';
+import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
 
 /**
  * One-sided text rebase for the note save path: when the daemon echoes a
@@ -43,8 +44,8 @@ function charHunks(from: string, to: string): Hunk[] {
  */
 const ALIGNMENT_BUDGET_MS = 250;
 /**
- * Words, whitespace runs, a masked destination (see `maskDestinations`), and
- * single code points (a surrogate pair is one token).
+ * Words, whitespace runs, a masked run (see `maskHidden`), and single code
+ * points (a surrogate pair is one token).
  */
 const TOKEN = /[\p{L}\p{N}_]+|\s+|\0+|./gsu;
 /** `TOKEN` anchored at `lastIndex`, for reading the one token that starts there. */
@@ -52,8 +53,6 @@ const TOKEN_AT = /[\p{L}\p{N}_]+|\s+|\0+|./suy;
 const WORD_AT = /[\p{L}\p{N}_]+/uy;
 const NOT_LETTER = /\P{L}+/gu;
 const BLANK = /^\s+$/u;
-/** A link destination `](…)` or reference label `][…]`, closed on its own line. */
-const DESTINATION = /\]\([^()\n]*\)|\]\[[^\]\n]*\]/g;
 /** Textblocks at least this long are trusted as verbatim anchors. */
 const MIN_ANCHOR_LENGTH = 12;
 /**
@@ -114,8 +113,9 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * run of blocks that never match verbatim (inline formatting in each) is
  * anchored piecewise instead, see `MAX_UNANCHORED_RUN`; so is a run whose
  * next block matches only beyond textblocks the run does not account for.
- * Link destinations are masked first (`maskDestinations`) so that no search
- * or diff matches text the plain text does not show.
+ * The markdown the editor does not show — link destinations, images, link
+ * definitions — is masked first (`maskHidden`) so that no search or diff
+ * matches it.
  * The anchor loop and every diff share one deadline: past it, the remaining
  * text is emitted as one replaced span. A surrogate pair never straddles a
  * span boundary: anchors, trimmed prefixes and tokens stop outside pairs and
@@ -127,7 +127,7 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
 function anchoredHunks(from: string, markdown: string): Hunk[] {
   const out: Hunk[] = [];
   if (from === markdown) return out;
-  const to = maskDestinations(markdown);
+  const to = maskHidden(markdown);
   const deadline = performance.now() + ALIGNMENT_BUDGET_MS;
   let fromPos = 0;
   let toPos = 0;
@@ -235,7 +235,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
  *
  * The plain text and the markdown also hold the same letters between the
  * anchor and a true hit: block and inline syntax (`## `, `- `, `1. `, `> `,
- * `**`, `[`, a masked destination) adds none, while a word of an earlier
+ * `**`, `[`, a masked run) adds none, while a word of an earlier
  * textblock on the hit's markdown line, or of the plain line itself before a
  * later occurrence of the probe (`**edi**tor caret. editor`), does. Only the
  * letters after the last break are compared, which keeps the comparison short
@@ -361,24 +361,303 @@ function findAnchor(
   return at === -1 ? -1 : start + at;
 }
 
+/** The token shape `maskHidden` reads: `raw` is the source a token consumed. */
+interface LexedToken {
+  type: string;
+  raw: string;
+  tokens?: LexedToken[];
+  items?: LexedToken[];
+  header?: Array<{ tokens: LexedToken[] }>;
+  rows?: Array<Array<{ tokens: LexedToken[] }>>;
+}
+
 /**
- * `markdown` with every link destination and reference label — the text
- * between a `](` or `][` and its `)` / `]` on the same line — replaced by
- * U+0000, code unit for code unit. That text is absent from the plain text,
- * so neither an anchor search nor a diff may match a word inside it
- * (`[render](https://sync/…) sync` against `render sync`); the mask keeps
- * every other offset where it was.
+ * Where each line of a token's `text` — the string its children's `raw`s add
+ * up to — starts in the source. Between two line starts the text and the
+ * source run in step, so `sourceStarts[k] + (offset - lineStarts[k])` is the
+ * source offset of `text[offset]` on line `k`.
  */
-function maskDestinations(markdown: string): string {
+interface TextMap {
+  text: string;
+  lineStarts: number[];
+  sourceStarts: number[];
+}
+
+/** Every hidden run — link destination, image, definition — sits after one of these. */
+const HIDEABLE = /\]\(|\]\[|\]:/;
+/** Every math token starts with one of these; without them the math tokenizers are inert. */
+const MATH_DELIMITER = /\$|\\[([]/;
+/**
+ * Longest markdown lexed with the math tokenizers, whose `start` hooks make
+ * the lexer quadratic in the token count: 10k one-line paragraphs of 128 KB
+ * lex in ~85 ms, of 256 KB in ~300 ms — past the alignment budget — while
+ * without them a 1 MB note lexes in under 100 ms.
+ */
+const MAX_MATH_LEXED_LENGTH = 128 * 1024;
+
+type HiddenTextLexer = ReturnType<typeof createTiptapTaskListMarked>;
+const hiddenTextLexers: { math?: HiddenTextLexer; plain?: HiddenTextLexer } = {};
+/** The last mask: the base text is aligned again each time the editor text changes. */
+let lastMask: { markdown: string; masked: string } | undefined;
+
+/**
+ * `markdown` with the text the editor does not show — the destination and
+ * title of a link (`](…)` or `][…]`), an image, the URL and title of a link
+ * definition — replaced by U+0000, code unit for code unit. That text is
+ * absent from the plain text, so neither an anchor search nor a diff may
+ * match a word inside it (`[render](https://sync/…) sync` against
+ * `render sync`); the mask keeps every other offset where it was.
+ *
+ * What is hidden is read off the tokens of the renderer's own marked
+ * instance, not off the syntax: link-shaped text the lexer reads as a code
+ * span, a fence, an escape or an unresolved reference label is visible, and
+ * never produces a link token. Tokens carry no offsets, but each `raw` is the
+ * source it consumed: at the top level the raws add up to the source, and
+ * inside a container — list item, block quote, heading — the children see
+ * the container's text with its marker and indentation gone, each line a
+ * suffix of the source line (`suffixLineMap`); a table cell's text is found
+ * in its row. A container whose text does not map back that way is left
+ * unmasked, and every range is checked against the source before it is
+ * masked — a gap in the mapping costs a mask, never a visible character.
+ *
+ * Lexing is outside the alignment budget and memoised for the last markdown:
+ * a source with nothing hideable in it (`HIDEABLE`) is not lexed at all, one
+ * without a math delimiter is lexed without the math tokenizers (same
+ * tokens, linear time), and one with a delimiter is lexed as the renderer
+ * does up to `MAX_MATH_LEXED_LENGTH` and left unmasked beyond it.
+ */
+function maskHidden(markdown: string): string {
+  if (lastMask?.markdown === markdown) return lastMask.masked;
+  const masked = computeHiddenMask(markdown);
+  lastMask = { markdown, masked };
+  return masked;
+}
+
+function computeHiddenMask(markdown: string): string {
+  if (!HIDEABLE.test(markdown)) return markdown;
+  const math = MATH_DELIMITER.test(markdown);
+  if (math && markdown.length > MAX_MATH_LEXED_LENGTH) return markdown;
+  let tokens: LexedToken[];
+  try {
+    const lexer = math
+      ? (hiddenTextLexers.math ??= createTiptapTaskListMarked())
+      : (hiddenTextLexers.plain ??= createTiptapTaskListMarked({ math: false }));
+    tokens = lexer.lexer(markdown) as unknown as LexedToken[];
+  } catch {
+    return markdown;
+  }
+  const top: TextMap = { text: joinRaw(tokens), lineStarts: [0], sourceStarts: [0] };
+  // marked normalises line endings; a source it rewrote has no exact offsets.
+  if (top.text !== markdown) return markdown;
+  const ranges: Array<[number, number]> = [];
+  collectHidden(tokens, top, 0, markdown, ranges);
+  if (ranges.length === 0) return markdown;
+  ranges.sort((a, b) => a[0] - b[0]);
   let out = '';
   let pos = 0;
-  for (const match of markdown.matchAll(DESTINATION)) {
-    const inner = match[0].slice(2, -1);
-    const start = match.index + 2;
-    out += markdown.slice(pos, start) + '\u0000'.repeat(inner.length);
-    pos = start + inner.length;
+  for (const [start, end] of ranges) {
+    if (start < pos) continue;
+    out += markdown.slice(pos, start) + '\u0000'.repeat(end - start);
+    pos = end;
   }
-  return pos === 0 ? markdown : out + markdown.slice(pos);
+  return out + markdown.slice(pos);
+}
+
+function joinRaw(tokens: LexedToken[]): string {
+  let text = '';
+  for (const token of tokens) text += token.raw;
+  return text;
+}
+
+function mapToSource(map: TextMap, offset: number): number {
+  let k = map.lineStarts.length - 1;
+  while (k > 0 && map.lineStarts[k] > offset) k -= 1;
+  return map.sourceStarts[k] + (offset - map.lineStarts[k]);
+}
+
+/**
+ * The map of `text`, the children's text of the container whose `raw` sits at
+ * `at` in `parent`: line `k` of `text` must be a suffix of line `k` of `raw` —
+ * what is left once the marker or indentation before it is gone — and the
+ * lines of `raw` after the last line of `text` must be blank. `undefined`
+ * when `raw` is not shaped that way.
+ */
+function suffixLineMap(
+  parent: TextMap,
+  at: number,
+  raw: string,
+  text: string,
+): TextMap | undefined {
+  const rawLines = raw.split('\n');
+  const textLines = text.split('\n');
+  if (textLines.length > rawLines.length) return undefined;
+  const map: TextMap = { text, lineStarts: [], sourceStarts: [] };
+  let rawPos = 0;
+  let textPos = 0;
+  for (let k = 0; k < rawLines.length; k += 1) {
+    const rawLine = rawLines[k];
+    if (k < textLines.length) {
+      const line = textLines[k];
+      if (!rawLine.endsWith(line)) return undefined;
+      map.lineStarts.push(textPos);
+      map.sourceStarts.push(mapToSource(parent, at + rawPos) + (rawLine.length - line.length));
+      textPos += line.length + 1;
+    } else if (rawLine.trim() !== '') {
+      return undefined;
+    }
+    rawPos += rawLine.length + 1;
+  }
+  return map;
+}
+
+/**
+ * Append to `ranges` the source ranges hidden inside `tokens`, consecutive
+ * in `map.text` from `at`.
+ */
+function collectHidden(
+  tokens: LexedToken[],
+  map: TextMap,
+  at: number,
+  source: string,
+  ranges: Array<[number, number]>,
+): void {
+  for (const token of tokens) {
+    const { raw } = token;
+    if (token.type === 'link' || token.type === 'image') {
+      collectHiddenInLink(token, map, at, source, ranges);
+    } else if (token.type === 'def') {
+      const colon = raw.indexOf(']:');
+      if (colon !== -1) hide(map, at + colon + 2, at + raw.trimEnd().length, source, ranges);
+    } else if (token.type === 'table') {
+      collectHiddenInTable(token, map, at, source, ranges);
+    } else {
+      const children = token.tokens ?? token.items;
+      if (children) {
+        const inner = childMap(map, at, raw, joinRaw(children));
+        if (inner) collectHidden(children, inner.map, inner.at, source, ranges);
+      }
+    }
+    at += raw.length;
+  }
+}
+
+/**
+ * Where the children of the token whose `raw` sits at `at` in `parent` see
+ * their text: at the start of `raw` (a paragraph, a list, an inline text
+ * block), at its only occurrence on a one-line `raw` (`**` or `*` around it,
+ * a heading's marker before it), or one suffix per line (`suffixLineMap`).
+ */
+function childMap(
+  parent: TextMap,
+  at: number,
+  raw: string,
+  text: string,
+): { map: TextMap; at: number } | undefined {
+  if (raw.startsWith(text)) return { map: parent, at };
+  if (!text.includes('\n')) {
+    const found = raw.indexOf(text);
+    if (found !== -1 && raw.indexOf(text, found + 1) === -1) {
+      return {
+        map: { text, lineStarts: [0], sourceStarts: [mapToSource(parent, at + found)] },
+        at: 0,
+      };
+    }
+  }
+  const map = suffixLineMap(parent, at, raw, text);
+  return map && { map, at: 0 };
+}
+
+/**
+ * An image shows as one object replacement character, so all of it is hidden.
+ * A link shows its label, the text between `[` and `](` / `][`; the rest up to
+ * the closing `)` / `]` is hidden. An autolink or a bare URL shows its text.
+ */
+function collectHiddenInLink(
+  token: LexedToken,
+  map: TextMap,
+  at: number,
+  source: string,
+  ranges: Array<[number, number]>,
+): void {
+  const { raw } = token;
+  if (token.type === 'image') {
+    hide(map, at, at + raw.length, source, ranges);
+    return;
+  }
+  const label = token.tokens ? joinRaw(token.tokens) : '';
+  if (!token.tokens || raw.charCodeAt(0) !== 91 || !raw.startsWith(label, 1)) return;
+  const after = 1 + label.length;
+  const opener = raw.slice(after, after + 2);
+  if ((opener === '](' || opener === '][') && raw.length > after + 2) {
+    hide(map, at + after + 2, at + raw.length - 1, source, ranges);
+  }
+  collectHidden(token.tokens, map, at + 1, source, ranges);
+}
+
+/**
+ * Line `0` of a table is its header, line `2 + i` its row `i`; each cell's
+ * text (the cells are trimmed, so it is never blank) is the next occurrence
+ * on its line after the cell before it.
+ */
+function collectHiddenInTable(
+  token: LexedToken,
+  map: TextMap,
+  at: number,
+  source: string,
+  ranges: Array<[number, number]>,
+): void {
+  const lines = token.raw.split('\n');
+  const lineStarts: number[] = [];
+  let pos = 0;
+  for (const line of lines) {
+    lineStarts.push(pos);
+    pos += line.length + 1;
+  }
+  const rows = [token.header ?? [], ...(token.rows ?? [])];
+  rows.forEach((cells, index) => {
+    const lineIndex = index === 0 ? 0 : index + 1;
+    const line = lines[lineIndex];
+    if (line === undefined) return;
+    let cellPos = 0;
+    for (const cell of cells) {
+      const text = joinRaw(cell.tokens);
+      if (text === '') continue;
+      const found = line.indexOf(text, cellPos);
+      if (found === -1) return;
+      const cellMap: TextMap = {
+        text,
+        lineStarts: [0],
+        sourceStarts: [mapToSource(map, at + lineStarts[lineIndex]) + found],
+      };
+      collectHidden(cell.tokens, cellMap, 0, source, ranges);
+      cellPos = found + text.length;
+    }
+  });
+}
+
+/**
+ * Append the source ranges of `map.text[start, end)` to `ranges`, one per
+ * line, each only if the source holds that text there.
+ */
+function hide(
+  map: TextMap,
+  start: number,
+  end: number,
+  source: string,
+  ranges: Array<[number, number]>,
+): void {
+  let pos = start;
+  while (pos < end) {
+    let lineEnd = map.text.indexOf('\n', pos);
+    if (lineEnd === -1 || lineEnd > end) lineEnd = end;
+    if (lineEnd > pos) {
+      const from = mapToSource(map, pos);
+      if (source.startsWith(map.text.slice(pos, lineEnd), from)) {
+        ranges.push([from, from + (lineEnd - pos)]);
+      }
+    }
+    pos = lineEnd + 1;
+  }
 }
 
 /**
