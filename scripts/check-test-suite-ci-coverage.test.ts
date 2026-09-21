@@ -14,7 +14,12 @@
  * `--config X`, `-c X`), by running the runner on its default config (`vitest`
  * → `vitest.config.*`, `playwright test` → `playwright.config.*`), or by
  * launching a local script (`node|tsx scripts/<file>`) whose source names the
- * config basename. Shell comments never count; folded (`>`) bodies and `\`
+ * config basename. Only the word in executable position counts — past leading
+ * `VAR=value`s and wrappers such as `cross-env` / `xvfb-run`, unwrapped from
+ * `pnpm exec` / `npx` — so a script or runner named inside a quoted string or a
+ * shell comment (`echo "run pnpm run test:x later"`) is data, not a command;
+ * the quoted arguments of `sh -c`, `bash -c` and `concurrently` are the one
+ * exception, parsed as command lines of their own. Folded (`>`) bodies and `\`
  * line continuations are joined before matching. Anything else needs an
  * `ALLOWLIST` entry with a reason, and a stale entry fails too.
  *
@@ -37,13 +42,18 @@ const SUITE_CONFIG = /(?:^|\/)(vitest|playwright)[^/]*\.config\.[^/]+$/;
 const PNPM_RUN_WRAPPER = 'scripts/pnpm-run.mjs';
 const RUN_STEP = /^(\s*)(?:-\s+)?run:(?:\s+(.*))?$/;
 const BLOCK_SCALAR = /^([|>])[-+0-9]*\s*(?:#.*)?$/;
-const SHELL_COMMENT = /(^|\s)#.*$/;
 const LINE_CONTINUATION = /\s*\\\n\s*/g;
 const FOLDED_NEWLINE = /([^\n])\n(?=[^\n])/g;
 const SCRIPT_NAME = /^[\w:.-]+$/;
-const SHELL_CHAIN = /\s*(?:&&|\|\||;|\n)\s*/;
+const ENV_ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LAUNCHER = /^scripts\/[\w./-]+$/;
 const RUNNERS = ['vitest', 'playwright'] as const;
+/** Commands that run the rest of their line as the command. */
+const WRAPPERS = new Set(['cross-env', 'env', 'xvfb-run', 'corepack']);
+/** Commands that run the bins named after them. */
+const BIN_HOSTS = new Set(['pnpm', 'npx', 'pnpx']);
+/** Commands that run their quoted arguments as command lines. */
+const NESTED_RUNNERS = new Set(['sh', 'bash', 'concurrently']);
 const MAX_SCRIPT_HOPS = 16;
 
 type Runner = (typeof RUNNERS)[number];
@@ -53,6 +63,11 @@ type Reader = (path: string) => string | undefined;
 interface Invocation {
   name: string;
   args: string[];
+}
+/** One shell word; `quoted` when any part of it was quoted. */
+interface Word {
+  text: string;
+  quoted: boolean;
 }
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
@@ -77,12 +92,10 @@ function listSuiteConfigs(root = process.cwd()): string[] {
 
 const unquote = (value: string) => value.replace(/^(['"])(.*)\1$/, '$2');
 
-/** A shell line without its trailing `# comment`; `''` for a comment-only line. */
-const stripComment = (line: string) => line.replace(SHELL_COMMENT, '').trim();
-
 /**
- * The `run:` step bodies of a workflow file. Comments are dropped, a folded
- * (`>`) body is joined on spaces, and `\` line continuations are joined.
+ * The `run:` step bodies of a workflow file: a folded (`>`) body joined on
+ * spaces, `\` line continuations joined. Shell comments stay in the text and
+ * are dropped by `commandSegments`, where quoting is known.
  */
 function workflowRunSteps(workflow: string): string[] {
   const lines = workflow.split('\n');
@@ -95,7 +108,7 @@ function workflowRunSteps(workflow: string): string[] {
     const value = (match[2] ?? '').trim();
     const block = BLOCK_SCALAR.exec(value);
     if (!block) {
-      steps.push(stripComment(unquote(value)));
+      steps.push(unquote(value));
       continue;
     }
     const keyColumn = line.indexOf('run:');
@@ -105,8 +118,7 @@ function workflowRunSteps(workflow: string): string[] {
       const indent = next.length - next.trimStart().length;
       if (next.trim() !== '' && indent <= keyColumn) break;
       index += 1;
-      const text = stripComment(next);
-      if (text !== '' || next.trim() === '') body.push(text);
+      body.push(next.trim());
     }
     const joined = body.join('\n');
     steps.push(
@@ -119,34 +131,122 @@ function workflowRunSteps(workflow: string): string[] {
   return steps;
 }
 
-const commandSegments = (text: string) =>
-  text
-    .split(SHELL_CHAIN)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
+/**
+ * A command line as the words of each simple command it runs. Splits on `&&`,
+ * `||`, `|`, `;`, `&` and newlines outside quotes (`2>&1` stays a word), drops
+ * quotes, treats a word-initial `#` as a comment to end of line, and appends
+ * the quoted arguments of a nested runner (`sh -c`, `concurrently`) parsed as
+ * command lines of their own. Any other quoted string is one word of data.
+ */
+function commandSegments(text: string): string[][] {
+  const segments: Word[][] = [];
+  let words: Word[] = [];
+  let current = '';
+  let quoted = false;
+  let open: string | undefined;
+  const endWord = () => {
+    if (current !== '' || quoted) words.push({ text: current, quoted });
+    current = '';
+    quoted = false;
+  };
+  const endSegment = () => {
+    endWord();
+    if (words.length) segments.push(words);
+    words = [];
+  };
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (open) {
+      if (char === open) open = undefined;
+      else if (char === '\\' && open === '"' && next !== undefined) current += text[(index += 1)];
+      else current += char;
+    } else if (char === '"' || char === "'") {
+      open = char;
+      quoted = true;
+    } else if (char === '\\' && next !== undefined) {
+      current += text[(index += 1)];
+    } else if (char === '#' && current === '' && !quoted) {
+      while (index < text.length && text[index] !== '\n') index += 1;
+      endSegment();
+    } else if (char === '\n' || char === ';') {
+      endSegment();
+    } else if (char === '&' && next !== '&' && (text[index - 1] === '>' || next === '>')) {
+      current += char;
+    } else if (char === '&' || char === '|') {
+      if (next === char || (char === '|' && next === '&')) index += 1;
+      endSegment();
+    } else if (/\s/.test(char)) {
+      endWord();
+    } else {
+      current += char;
+    }
+  }
+  endSegment();
+  return segments.flatMap(expandNestedRunner);
+}
 
-const tokens = (segment: string) => segment.split(/\s+/).map(unquote);
+function expandNestedRunner(words: Word[]): string[][] {
+  const texts = words.map((word) => word.text);
+  const at = commandIndex(texts);
+  const nested = NESTED_RUNNERS.has(basename(texts[at] ?? ''))
+    ? words.slice(at + 1).filter((word) => word.quoted)
+    : [];
+  return [texts, ...nested.flatMap((word) => commandSegments(word.text))];
+}
+
+/** Index of the word in executable position: past leading `VAR=value`s, wrappers and their flags. */
+function commandIndex(words: string[]): number {
+  let index = 0;
+  while (index < words.length) {
+    if (ENV_ASSIGNMENT.test(words[index])) {
+      index += 1;
+      continue;
+    }
+    if (!WRAPPERS.has(basename(words[index]))) break;
+    index += 1;
+    while (index < words.length && words[index].startsWith('-')) index += 1;
+  }
+  return index;
+}
 
 /**
- * Package scripts a command invokes — `pnpm run <s>`, `pnpm <s>`,
- * `node scripts/pnpm-run.mjs <s>` — each with the trailing args pnpm forwards
- * to the script (a separating `--` dropped).
+ * The program a simple command runs, unwrapped from a bin host
+ * (`pnpm exec X`, `pnpm X`, `npx X`) and its flags, with the index of its word.
+ */
+function programOf(words: string[]): { index: number; name: string } {
+  let index = commandIndex(words);
+  const host = basename(words[index] ?? '');
+  if (BIN_HOSTS.has(host)) {
+    index += 1;
+    while (index < words.length && words[index].startsWith('-')) index += 1;
+    if (host === 'pnpm' && ['exec', 'dlx'].includes(words[index])) index += 1;
+  }
+  return { index, name: basename(words[index] ?? '') };
+}
+
+const isPnpmRunWrapper = (word: string | undefined) =>
+  word === PNPM_RUN_WRAPPER || (word?.endsWith(`/${PNPM_RUN_WRAPPER}`) ?? false);
+
+/**
+ * Package scripts a command invokes in executable position — `pnpm run <s>`,
+ * `pnpm <s>`, `node scripts/pnpm-run.mjs <s>` — each with the trailing args
+ * pnpm forwards to the script (a separating `--` dropped).
  */
 function invokedScripts(command: string, scripts: Scripts): Invocation[] {
   const invocations: Invocation[] = [];
-  for (const segment of commandSegments(command)) {
-    const words = tokens(segment);
-    for (let index = 0; index < words.length - 1; index += 1) {
-      const word = words[index];
-      const next = words[index + 1];
-      if (word === 'pnpm' || word.endsWith(`/${PNPM_RUN_WRAPPER}`) || word === PNPM_RUN_WRAPPER) {
-        const at = next === 'run' && word === 'pnpm' ? index + 2 : index + 1;
-        const target = words[at];
-        if (target && SCRIPT_NAME.test(target) && target in scripts) {
-          const args = words.slice(at + 1);
-          invocations.push({ name: target, args: args[0] === '--' ? args.slice(1) : args });
-        }
-      }
+  for (const words of commandSegments(command)) {
+    const index = commandIndex(words);
+    const word = words[index] ?? '';
+    let at = -1;
+    if (word === 'pnpm') at = words[index + 1] === 'run' ? index + 2 : index + 1;
+    else if (isPnpmRunWrapper(word)) at = index + 1;
+    else if (['node', 'tsx'].includes(basename(word)) && isPnpmRunWrapper(words[index + 1]))
+      at = index + 2;
+    const target = at < 0 ? undefined : words[at];
+    if (target && SCRIPT_NAME.test(target) && target in scripts) {
+      const args = words.slice(at + 1);
+      invocations.push({ name: target, args: args[0] === '--' ? args.slice(1) : args });
     }
   }
   return invocations;
@@ -174,11 +274,9 @@ function expandCommands(scripts: Scripts, steps: readonly string[]): string[] {
 }
 
 const runnerOf = (words: string[]): Runner | undefined => {
-  for (let index = 0; index < words.length; index += 1) {
-    const word = basename(words[index]);
-    if (word === 'vitest') return 'vitest';
-    if (word === 'playwright' && words[index + 1] === 'test') return 'playwright';
-  }
+  const { index, name } = programOf(words);
+  if (name === 'vitest') return 'vitest';
+  if (name === 'playwright' && words[index + 1] === 'test') return 'playwright';
   return undefined;
 };
 
@@ -200,16 +298,15 @@ const defaultConfig = (runner: Runner, suites: readonly string[]) =>
 const mentionsBasename = (source: string, suite: string) =>
   new RegExp(`(?:^|[^\\w./-])${basename(suite).replace(/[.]/g, '\\.')}(?![\\w.-])`).test(source);
 
-const launcherFiles = (words: string[]): string[] =>
-  words
-    .filter(
-      (word, index) =>
-        index > 0 &&
-        ['node', 'tsx'].includes(basename(words[index - 1])) &&
-        LAUNCHER.test(word) &&
-        word !== PNPM_RUN_WRAPPER,
-    )
-    .map(normalizePath);
+/** The `scripts/<file>` a `node|tsx [flags] <file>` command launches. */
+const launcherFile = (words: string[]): string | undefined => {
+  const { index, name } = programOf(words);
+  if (!['node', 'tsx'].includes(name)) return undefined;
+  let at = index + 1;
+  while (at < words.length && words[at].startsWith('-')) at += 1;
+  const file = words[at];
+  return file && LAUNCHER.test(file) && file !== PNPM_RUN_WRAPPER ? normalizePath(file) : undefined;
+};
 
 /**
  * The suites one command line reaches: the config it names, the runner's
@@ -222,19 +319,17 @@ function suitesReferencedBy(
 ): Set<string> {
   const reached = new Set<string>();
   const suiteSet = new Set(suites);
-  for (const segment of commandSegments(command)) {
-    const words = tokens(segment);
+  for (const words of commandSegments(command)) {
     const runner = runnerOf(words);
     if (runner) {
       const explicit = explicitConfig(words);
       const config = explicit ? normalizePath(explicit) : defaultConfig(runner, suites);
       if (suiteSet.has(config)) reached.add(config);
     }
-    for (const launcher of launcherFiles(words)) {
-      const source = readLauncher(launcher);
-      if (source === undefined) continue;
-      for (const suite of suites) if (mentionsBasename(source, suite)) reached.add(suite);
-    }
+    const launcher = launcherFile(words);
+    const source = launcher === undefined ? undefined : readLauncher(launcher);
+    if (source === undefined) continue;
+    for (const suite of suites) if (mentionsBasename(source, suite)) reached.add(suite);
   }
   return reached;
 }
@@ -367,7 +462,7 @@ describe('test-suite CI coverage detector', () => {
     expect(isSuiteConfig('vite.config.mjs')).toBe(false);
   });
 
-  it('extracts inline and block-scalar run: steps, dropping comments and joining folded lines', () => {
+  it('extracts inline and block-scalar run: steps, joining folded and continued lines', () => {
     const workflow = [
       'steps:',
       '  - name: inline',
@@ -394,16 +489,82 @@ describe('test-suite CI coverage detector', () => {
     expect(workflowRunSteps(workflow)).toEqual([
       'pnpm run lint',
       'pnpm run check',
-      'pnpm install --frozen-lockfile\n\npnpm run test:unit --shard=1/2',
+      '# shell comment naming pnpm run test:ct\npnpm install --frozen-lockfile\n\npnpm run test:unit --shard=1/2  # was: pnpm run test:playwright',
       'pnpm run dist:linux --flag',
       'pnpm exec playwright test --config=playwright.manual.config.ts',
     ]);
+    expect(coveredSuites(input(workflow))).toEqual(
+      new Set(['vitest.config.ts', 'playwright.manual.config.ts']),
+    );
   });
 
-  it('ignores a script named only in a trailing shell comment', () => {
-    const workflow = steps('echo skipped # pnpm run test:playwright');
-    expect(workflowRunSteps(workflow)).toEqual(['echo skipped']);
-    expect(coveredSuites(input(workflow)).size).toBe(0);
+  it('splits a command line into simple commands, quote-aware, dropping shell comments', () => {
+    expect(commandSegments('echo skipped # pnpm run test:playwright')).toEqual([
+      ['echo', 'skipped'],
+    ]);
+    expect(
+      commandSegments('# pnpm run test:ct\npnpm run lint;pnpm run check&&echo "a && b" || echo c'),
+    ).toEqual([
+      ['pnpm', 'run', 'lint'],
+      ['pnpm', 'run', 'check'],
+      ['echo', 'a && b'],
+      ['echo', 'c'],
+    ]);
+    expect(commandSegments('pnpm run test:unit 2>&1 | tee out.log &')).toEqual([
+      ['pnpm', 'run', 'test:unit', '2>&1'],
+      ['tee', 'out.log'],
+    ]);
+    expect(commandSegments(`echo "it's #1" 'say "hi"' --config="x y.ts" \\#tag`)).toEqual([
+      ['echo', "it's #1", 'say "hi"', '--config=x y.ts', '#tag'],
+    ]);
+  });
+
+  it('parses the quoted arguments of sh -c, bash -c and concurrently as command lines', () => {
+    expect(commandSegments('concurrently -k "pnpm run test:unit" "pnpm run test:ct"')).toEqual([
+      ['concurrently', '-k', 'pnpm run test:unit', 'pnpm run test:ct'],
+      ['pnpm', 'run', 'test:unit'],
+      ['pnpm', 'run', 'test:ct'],
+    ]);
+    expect(commandSegments(`bash -c 'echo "pnpm run test:ct" && pnpm run lint'`)).toEqual([
+      ['bash', '-c', 'echo "pnpm run test:ct" && pnpm run lint'],
+      ['echo', 'pnpm run test:ct'],
+      ['pnpm', 'run', 'lint'],
+    ]);
+    const nested = steps('sh -c "pnpm run test:playwright 2>&1 | tee out.log"');
+    expect([...coveredSuites(input(nested))]).toEqual(['playwright.config.ts']);
+  });
+
+  it('finds the program in executable position past env assignments, wrappers and bin hosts', () => {
+    expect(runnerOf(['REMOTE_ENV_PROFILE=standard', 'vitest', 'run'])).toBe('vitest');
+    expect(
+      runnerOf(['cross-env', 'CI=1', 'xvfb-run', '-a', 'pnpm', 'exec', 'playwright', 'test']),
+    ).toBe('playwright');
+    expect(runnerOf(['npx', '--no-install', 'vitest'])).toBe('vitest');
+    expect(runnerOf(['pnpm', 'playwright', 'install'])).toBeUndefined();
+    expect(runnerOf(['echo', 'vitest'])).toBeUndefined();
+    expect(runnerOf(['ls', 'node_modules/.bin/playwright', 'test'])).toBeUndefined();
+    expect(launcherFile(['node', '--max-old-space-size=4096', 'scripts/run-ct-tests.mjs'])).toBe(
+      'scripts/run-ct-tests.mjs',
+    );
+    expect(launcherFile(['cat', 'scripts/run-ct-tests.mjs'])).toBeUndefined();
+    expect(launcherFile(['node', 'scripts/pnpm-run.mjs', 'test:ct'])).toBeUndefined();
+  });
+
+  it('never counts a script or runner named as data: quoted, echoed, or commented', () => {
+    for (const run of [
+      'echo "use pnpm run test:playwright later"',
+      "echo 'pnpm run test:playwright' 'playwright test'",
+      'echo skipped # pnpm run test:playwright',
+      'echo playwright test --config=playwright.manual.config.ts',
+      'echo vitest run',
+      'ls vitest.config.ts playwright.config.ts',
+      'cat scripts/run-ct-tests.mjs scripts/ui-invariant-suites.mjs',
+      'node scripts/dev-stack.mjs --build "pnpm run test:unit"',
+      'echo skip && echo "pnpm run test:ct" | grep vitest',
+    ]) {
+      expect(coveredSuites(input(steps(run))).size, run).toBe(0);
+      expect(invokedScripts(run, scripts), run).toEqual([]);
+    }
   });
 
   it('extracts package-script invocations through env and wrapper prefixes with forwarded args', () => {
