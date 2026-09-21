@@ -84,8 +84,20 @@ function makeIdleEvent(overrides: Partial<AgentIdleEvent['data']> = {}, workspac
   } as unknown as AgentIdleEvent;
 }
 
-/** agent.list result (PROTOCOL §5.5 AgentLite subset) where only the idle agent exists (no suppression). */
-const SOLO_AGENT_LIST = {
+/** §5.5 AgentLite row subset the idle-gate stub serves (`agent.get` by id, `agent.listActive` busy subset). */
+interface AgentRow {
+  id: string;
+  workspaceId?: string;
+  name?: string;
+  status?: string;
+  isStreaming?: boolean;
+  isResponding?: boolean;
+  notificationsMuted?: boolean;
+  metadata?: { isBackground?: boolean; specialist?: string };
+}
+
+/** Workspace rows (PROTOCOL §5.5 AgentLite subset) where only the idle agent exists (no suppression). */
+const SOLO_AGENT_LIST: { agents: AgentRow[] } = {
   agents: [
     {
       id: 'agent-1',
@@ -121,12 +133,17 @@ function settingsGetResult(path: string, value: unknown) {
 /**
  * Exact-wire backendRequest stub (AGENTS.md wire-testing rule): each served
  * method asserts the precise request it receives — `settings.get` must carry
- * exactly `{ path }` with a known notifications.* path, `agent.list` /
- * `workspace.get` exactly `{ workspaceId }` with an expected id — and answers
- * with PROTOCOL-shaped payloads. Unexpected methods/params throw, which the
- * service folds to its failure paths; tests where that fold is
- * indistinguishable from legitimate suppression ALSO assert the exact
- * `mockBackendRequest.mock.calls` transcript after acting.
+ * exactly `{ path }` with a known notifications.* path, `agent.get` exactly
+ * `{ agentId, workspaceId }` and `workspace.get` exactly `{ workspaceId }`
+ * with an expected id, `agent.listActive` exactly `{}` (daemon-global) — and
+ * answers with PROTOCOL-shaped payloads. `agent.get` for a row absent from
+ * `agentListResult` rejects with the daemon's `not-found` shape;
+ * `agent.listActive` serves the `isStreaming || isResponding` rows as
+ * `streams` (each stamped with its row `workspaceId`, defaulting to the first
+ * expected id). Unexpected methods/params throw, which the service folds to
+ * its failure paths; tests where that fold is indistinguishable from
+ * legitimate suppression ALSO assert the exact `mockBackendRequest.mock.calls`
+ * transcript after acting.
  */
 function stubBackendWire({
   workspaceIds = ['ws-1'],
@@ -138,7 +155,7 @@ function stubBackendWire({
   workspaceIds?: string[];
   settingsValues?: Record<string, boolean>;
   settingsError?: boolean;
-  agentListResult?: { agents: unknown[] };
+  agentListResult?: { agents: AgentRow[] };
   workspaceGetResult?: { workspace: { id: string; title: string } };
 } = {}): void {
   mockBackendRequest.mockImplementation(async (method: string, params?: unknown) => {
@@ -157,30 +174,63 @@ function stubBackendWire({
       expect(typeof values[path]).toBe('boolean');
       return settingsGetResult(path, values[path]);
     }
-    if (method === 'agent.list' || method === 'workspace.get') {
+    if (method === 'agent.listActive') {
+      expect(params).toEqual({});
+      return {
+        streams: agentListResult.agents
+          .filter((row) => row.isStreaming === true || row.isResponding === true)
+          .map((row) => ({ agentId: row.id, workspaceId: row.workspaceId ?? workspaceIds[0] })),
+      };
+    }
+    if (method === 'agent.get') {
+      const { agentId, workspaceId } = (params ?? {}) as { agentId?: string; workspaceId?: string };
+      expect(workspaceIds).toContain(workspaceId);
+      expect(params).toEqual({ agentId, workspaceId });
+      const row = agentListResult.agents.find((candidate) => candidate.id === agentId);
+      if (!row) {
+        throw Object.assign(new Error(`Agent not found: ${agentId}`), {
+          rpcCode: -32602,
+          data: { code: 'not-found' },
+        });
+      }
+      return { agent: row };
+    }
+    if (method === 'workspace.get') {
       const workspaceId = (params as { workspaceId?: string } | undefined)?.workspaceId ?? '';
       expect(workspaceIds).toContain(workspaceId);
       expect(params).toEqual({ workspaceId });
       // Default workspace.get fixture is keyed to the REQUESTED id so
       // multi-workspace tests get a per-id-consistent Workspace envelope.
-      return method === 'agent.list'
-        ? agentListResult
-        : (workspaceGetResult ?? { workspace: { id: workspaceId, title: 'My Workspace' } });
+      return workspaceGetResult ?? { workspace: { id: workspaceId, title: 'My Workspace' } };
     }
     throw new Error(`Unexpected backendRequest method: ${method}`);
   });
 }
 
-/** The exact wire transcript one handleWebAgentIdle run produces. */
+/**
+ * The exact wire transcript one handleWebAgentIdle run produces: the settings
+ * reads, then the bounded idle gate (`agent.get` for the idle agent, the
+ * daemon-global `agent.listActive` busy set, one `agent.get` per active
+ * sibling in `siblingIds`), then `workspace.get`.
+ */
 function idleWireCalls(
   workspaceId = 'ws-1',
-  { agentList = true, workspaceGet = true }: { agentList?: boolean; workspaceGet?: boolean } = {},
+  {
+    idleGate = true,
+    busySet = true,
+    siblingIds = [],
+    workspaceGet = true,
+  }: { idleGate?: boolean; busySet?: boolean; siblingIds?: string[]; workspaceGet?: boolean } = {},
 ): unknown[][] {
   const calls: unknown[][] = [
     ['settings.get', { path: 'notifications.enabled' }],
     ['settings.get', { path: 'notifications.soundOnlyWhenUnfocused' }],
   ];
-  if (agentList) calls.push(['agent.list', { workspaceId }]);
+  if (idleGate) {
+    calls.push(['agent.get', { agentId: 'agent-1', workspaceId }]);
+    if (busySet) calls.push(['agent.listActive', {}]);
+    for (const agentId of siblingIds) calls.push(['agent.get', { agentId, workspaceId }]);
+  }
   if (workspaceGet) calls.push(['workspace.get', { workspaceId }]);
   return calls;
 }
@@ -281,7 +331,7 @@ describe('web-notification-service', () => {
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockBackendRequest.mock.calls).toEqual(
-        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
       );
     });
 
@@ -297,7 +347,7 @@ describe('web-notification-service', () => {
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockBackendRequest.mock.calls).toEqual(
-        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
       );
     });
 
@@ -306,11 +356,11 @@ describe('web-notification-service', () => {
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockBackendRequest.mock.calls).toEqual(
-        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
       );
     });
 
-    it('skips background agents (agent.list metadata)', async () => {
+    it('skips background agents (agent.get metadata) without reading the busy set', async () => {
       stubBackendWire({
         agentListResult: {
           agents: [
@@ -328,15 +378,27 @@ describe('web-notification-service', () => {
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances).toHaveLength(0);
-      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { busySet: false, workspaceGet: false }),
+      );
     });
 
-    it('skips when the agent is waiting on other agents (event fast path, no agent.list read)', async () => {
+    it('notifies when the idle agent row is not-found and the busy set is empty', async () => {
+      stubBackendWire({ agentListResult: { agents: [] } });
+      await handleWebAgentIdle(makeIdleEvent());
+
+      // A `not-found` row means no flags — parity with the old empty
+      // `agent.list`: the gate falls through to the busy set and notifies.
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('skips when the agent is waiting on other agents (event fast path, no idle-gate read)', async () => {
       await handleWebAgentIdle(makeIdleEvent({ isWaitingForOtherAgents: true }));
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockBackendRequest.mock.calls).toEqual(
-        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
       );
     });
 
@@ -354,14 +416,14 @@ describe('web-notification-service', () => {
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
-    it('skips when the agent is waiting on active hooks (event fast path, no agent.list read)', async () => {
+    it('skips when the agent is waiting on active hooks (event fast path, no idle-gate read)', async () => {
       await handleWebAgentIdle(
         makeIdleEvent({ waitingOnHooks: [{ hookId: 'hook-1', name: 'Watch CI' }] }),
       );
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockBackendRequest.mock.calls).toEqual(
-        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
       );
     });
 
@@ -379,7 +441,7 @@ describe('web-notification-service', () => {
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
-    it('skips when the agent is waiting on active PR monitors (event fast path, no agent.list read)', async () => {
+    it('skips when the agent is waiting on active PR monitors (event fast path, no idle-gate read)', async () => {
       await handleWebAgentIdle(
         makeIdleEvent({
           waitingOnPrMonitors: [{ monitorId: 'mon-1', repo: 'intent-hq/intentd', prNumber: 42 }],
@@ -388,7 +450,7 @@ describe('web-notification-service', () => {
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockBackendRequest.mock.calls).toEqual(
-        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
       );
     });
 
@@ -406,12 +468,12 @@ describe('web-notification-service', () => {
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
     });
 
-    it('skips when the workspace is archived (event fast path, no agent.list read)', async () => {
+    it('skips when the workspace is archived (event fast path, no idle-gate read)', async () => {
       await handleWebAgentIdle(makeIdleEvent({ workspaceArchived: true }));
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockBackendRequest.mock.calls).toEqual(
-        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
       );
     });
 
@@ -447,21 +509,60 @@ describe('web-notification-service', () => {
       });
       await handleWebAgentIdle(makeIdleEvent());
 
+      // Bounded transcript: busy set, then ONE `agent.get` for the active
+      // sibling — never an unscoped `agent.list`.
       expect(MockNotification.instances).toHaveLength(0);
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { siblingIds: ['agent-2'], workspaceGet: false }),
+      );
+    });
+
+    it('ignores busy streams from OTHER workspaces in the daemon-global busy set', async () => {
+      stubBackendWire({
+        agentListResult: {
+          agents: [
+            ...SOLO_AGENT_LIST.agents,
+            {
+              id: 'agent-elsewhere',
+              workspaceId: 'ws-2',
+              isStreaming: true,
+              isResponding: true,
+            },
+          ],
+        },
+      });
+      await handleWebAgentIdle(makeIdleEvent());
+
+      // The foreign stream is filtered client-side; its row is never read.
+      expect(MockNotification.instances).toHaveLength(1);
+      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+    });
+
+    it('drops the notification when agent.listActive fails (parity with a failed agent.list)', async () => {
+      stubBackendWire();
+      const stub = mockBackendRequest.getMockImplementation()!;
+      mockBackendRequest.mockImplementation(async (method: string, params?: unknown) => {
+        if (method === 'agent.listActive') throw new Error('daemon unavailable');
+        return stub(method, params);
+      });
+      await handleWebAgentIdle(makeIdleEvent());
+
+      expect(MockNotification.instances).toHaveLength(0);
+      expect(mockPlayNotificationSound).not.toHaveBeenCalled();
       expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
     });
 
-    it('skips muted agents (event fast path): no banner, no sound, no agent.list read', async () => {
+    it('skips muted agents (event fast path): no banner, no sound, no idle-gate read', async () => {
       await handleWebAgentIdle(makeIdleEvent({ notificationsMuted: true }));
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockPlayNotificationSound).not.toHaveBeenCalled();
       expect(mockBackendRequest.mock.calls).toEqual(
-        idleWireCalls('ws-1', { agentList: false, workspaceGet: false }),
+        idleWireCalls('ws-1', { idleGate: false, workspaceGet: false }),
       );
     });
 
-    it('skips muted agents (agent.list notificationsMuted): no banner, no sound', async () => {
+    it('skips muted agents (agent.get notificationsMuted): no banner, no sound, no busy-set read', async () => {
       stubBackendWire({
         agentListResult: {
           agents: [
@@ -481,7 +582,9 @@ describe('web-notification-service', () => {
 
       expect(MockNotification.instances).toHaveLength(0);
       expect(mockPlayNotificationSound).not.toHaveBeenCalled();
-      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls('ws-1', { workspaceGet: false }));
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { busySet: false, workspaceGet: false }),
+      );
     });
 
     it('does not let a running MUTED sibling hold the other-agents-active gate', async () => {
@@ -504,10 +607,12 @@ describe('web-notification-service', () => {
       await handleWebAgentIdle(makeIdleEvent());
 
       expect(MockNotification.instances).toHaveLength(1);
-      expect(mockBackendRequest.mock.calls).toEqual(idleWireCalls());
+      expect(mockBackendRequest.mock.calls).toEqual(
+        idleWireCalls('ws-1', { siblingIds: ['agent-2'] }),
+      );
     });
 
-    it('enriches specialist from agent.list metadata when the payload lacks it', async () => {
+    it('enriches specialist from agent.get metadata when the payload lacks it', async () => {
       stubBackendWire({
         agentListResult: {
           agents: [

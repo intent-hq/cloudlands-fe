@@ -4,6 +4,7 @@ import { actionChannel, all, call, flush, fork, race, take } from 'typed-redux-s
 import type { AgentIdleEvent } from '$features/events/types';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { playNotificationSoundPerSettings } from '$features/notifications/notification-sound-gate';
+import { readIdleNotificationGate } from '$features/notifications/utils/idle-gate';
 import { buildNotificationContent } from '$features/notifications/utils/notification-content';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { readSetting } from '$lib/client/live/live-settings-client';
@@ -29,15 +30,6 @@ type NotificationNavigateEvent = { workspaceId?: string; chief?: boolean; agentI
 type NativeNotificationEvent =
   | { kind: 'show'; data?: NotificationShowEvent }
   | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
-type AgentListResult = {
-  agents?: Array<{
-    id?: string;
-    isStreaming?: boolean;
-    isResponding?: boolean;
-    notificationsMuted?: boolean;
-    metadata?: { isBackground?: boolean; specialist?: string };
-  }>;
-};
 
 function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent> {
   return eventChannel<NativeNotificationEvent>((emit) => {
@@ -187,23 +179,15 @@ function* handleWebIdle(event: AgentIdleEvent, activeWorkspaceId: string | null)
       return;
     }
 
-    const agentList = (yield* call(backendRequest, 'agent.list', { workspaceId })) as
-      AgentListResult | undefined;
-    const agents = agentList?.agents ?? [];
-    const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
-    if (idleAgent?.metadata?.isBackground) return;
-    if (idleAgent?.notificationsMuted === true) return;
-    // Muted siblings never hold the other-agents-active gate: their own idle
-    // is suppressed, so counting them would leave the workspace silent.
-    if (
-      agents.some(
-        (agent) =>
-          agent.id !== event.data.agentId &&
-          agent.notificationsMuted !== true &&
-          (agent.isStreaming || agent.isResponding),
-      )
-    )
-      return;
+    // Bounded wire gate (idle-gate.ts, intent#5531 — never the unscoped
+    // `agent.list`): `agent.get` for the idle agent's own flags, then
+    // `agent.listActive` + per-active-sibling `agent.get`.
+    const verdict = yield* call(readIdleNotificationGate, backendRequest, {
+      workspaceId,
+      agentId: event.data.agentId,
+    });
+    if (verdict.kind !== 'notify') return;
+    const idleAgent = verdict.idleAgent;
 
     const isChief = workspaceId === CHIEF_WORKSPACE_ID;
     let workspaceTitle: string | undefined;
