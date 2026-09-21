@@ -42,10 +42,10 @@ const user = {
 };
 
 describe('gitlabAuthReducer', () => {
-  it('starts unconfigured on gitlab.com with the PAT path as default', () => {
+  it('starts unconfigured on gitlab.com with device-grant support not yet reported', () => {
     expect(gitlabAuthReducer(undefined, { type: '@@init' })).toEqual(initialState);
     expect(initialState.host).toBe('gitlab.com');
-    expect(initialState.deviceGrantSupported).toBe(false);
+    expect(initialState.deviceGrantSupported).toBeNull();
   });
 
   it('setGitLabHost to another instance drops the previous identity and pending grant', () => {
@@ -63,6 +63,7 @@ describe('gitlabAuthReducer', () => {
       ...configuredA,
       host: 'gitlab.example.com',
       isConfigured: false,
+      deviceGrantSupported: null,
       user: null,
       method: null,
       deviceFlow: null,

@@ -13,7 +13,7 @@ export const initialState: GitLabAuthState = {
   isConfigured: false,
   isAuthenticating: false,
   deviceFlow: null,
-  deviceGrantSupported: false,
+  deviceGrantSupported: null,
   user: null,
   error: null,
   method: null,
@@ -81,7 +81,7 @@ export const setGitLabAuthStatus = createAction(
   (params: {
     host: string;
     isConfigured: boolean;
-    deviceGrantSupported: boolean;
+    deviceGrantSupported: boolean | null;
     user: ForgeUser | null;
     method: ForgeAuthMethod | null;
   }) => params,
@@ -128,9 +128,17 @@ export const gitlabAuthReducer = createReducer<GitLabAuthState>(initialState);
 
 gitlabAuthReducer.with(setGitLabHost, (state, { payload: [host] }) => {
   if (host.toLowerCase() === state.host.toLowerCase()) return { ...state, host };
-  // The configured identity and any pending grant belong to the previous
-  // instance; a new host starts unconfigured until its own status is read.
-  return { ...state, host, isConfigured: false, user: null, method: null, deviceFlow: null };
+  // The configured identity, grant support and any pending grant belong to the
+  // previous instance; a new host starts unconfigured until its own status is read.
+  return {
+    ...state,
+    host,
+    isConfigured: false,
+    deviceGrantSupported: null,
+    user: null,
+    method: null,
+    deviceFlow: null,
+  };
 });
 gitlabAuthReducer.with(setGitLabAuthStatus, (state, { payload }) => ({
   ...state,

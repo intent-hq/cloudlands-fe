@@ -159,6 +159,82 @@ describe('gitlabAuthSaga', () => {
     await run.task.toPromise();
   });
 
+  it('a slow mount-time read for the default host cannot overwrite a later-initialized host', async () => {
+    let resolveDefault!: (value: unknown) => void;
+    let resolveScoped!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation(
+      (_provider: string, host?: string) =>
+        new Promise((resolve) => {
+          if (host === undefined) resolveDefault = resolve;
+          else resolveScoped = resolve;
+        }),
+    );
+    const run = harness();
+    run.channel.put(initializeGitLabAuth());
+    await settle();
+    run.channel.put(initializeGitLabAuth(HOST));
+    await settle();
+    expect(mocks.getStatus.mock.calls).toEqual([
+      ['gitlab', undefined],
+      ['gitlab', HOST],
+    ]);
+
+    resolveScoped({ ...UNCONFIGURED_STATUS, host: HOST });
+    await settle();
+    const hydratedB = {
+      host: HOST,
+      isConfigured: false,
+      deviceGrantSupported: true,
+      user: null,
+      method: null,
+    };
+    expect(run.state()).toMatchObject(hydratedB);
+
+    // The default host's read lands last: A's connection must not replace B.
+    resolveDefault({ ...CONFIGURED_STATUS, host: OTHER_HOST, method: 'device' });
+    await settle();
+    expect(run.state()).toMatchObject(hydratedB);
+    expect(
+      run.dispatched.filter((a) => (a as { type: string }).type === 'gitlabAuth/setAuthStatus'),
+    ).toHaveLength(1);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('a stale default-host read cannot overwrite a grant the user started against another host', async () => {
+    let resolveDefault!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation((_provider: string, host?: string) => {
+      if (host === undefined)
+        return new Promise((resolve) => {
+          resolveDefault = resolve;
+        });
+      return Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST, deviceFlow: PENDING_FLOW });
+    });
+    mocks.connect.mockResolvedValue({ success: true, deviceFlow: PENDING_INFO });
+    const run = harness();
+    run.channel.put(initializeGitLabAuth());
+    await settle();
+    run.channel.put(startGitLabDeviceAuth(HOST));
+    await settle();
+    const pendingOnB = {
+      host: HOST,
+      isConfigured: false,
+      isAuthenticating: true,
+      deviceFlow: PENDING_INFO,
+      user: null,
+    };
+    expect(run.state()).toMatchObject(pendingOnB);
+
+    resolveDefault({ ...CONFIGURED_STATUS, host: OTHER_HOST, method: 'device' });
+    await settle();
+    expect(run.state()).toMatchObject(pendingOnB);
+    expect(run.dispatched.map((a) => (a as { type: string }).type)).not.toContain(
+      'gitlabAuth/setAuthStatus',
+    );
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('starts the device grant with the exact connect params and polls until authorized', async () => {
     mocks.connect.mockResolvedValue({
       success: true,

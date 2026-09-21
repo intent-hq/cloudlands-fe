@@ -162,12 +162,21 @@ function* pollDeviceFlowWorker(
   });
 }
 
+/**
+ * Reads the status for `host` (the daemon's default when omitted) and hydrates
+ * the slice. The write is dropped when the selection moved to a third host
+ * while the read was in flight: that host's own read or connect owns the state
+ * now, and a stale result must not put the previous host back.
+ */
 function* initialize(host?: string): SagaGenerator<void> {
   try {
+    const selectedAtStart = yield* selectGitLabAuthHost.effect();
     const status = yield* call(readStatus, host);
     if (!status) return;
-    const fallbackHost = host ?? (yield* selectGitLabAuthHost.effect());
-    yield* put(setGitLabAuthStatus(statusPayload(status, fallbackHost)));
+    const target = host ?? selectedAtStart;
+    const selectedNow = yield* selectGitLabAuthHost.effect();
+    if (!sameHost(selectedNow, selectedAtStart) && !sameHost(selectedNow, target)) return;
+    yield* put(setGitLabAuthStatus(statusPayload(status, target)));
     // A pending grant is resumed so a settings remount or client refresh does
     // not drop the in-flight code.
     if (validPendingFlow(status.deviceFlow)) {
@@ -376,7 +385,9 @@ function* gitlabAuthChangedWorker(
 }
 
 export function* gitlabAuthSaga(): SagaGenerator<void> {
-  yield* takeEvery(initializeGitLabAuth, initializeGitLabAuthWorker);
+  // Only the latest initialize may hydrate: an older read (mount-time default
+  // host) that resolved after a newer one would otherwise overwrite it.
+  yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker);
   yield* takeEvery(startGitLabDeviceAuth, startGitLabDeviceAuthWorker);
   yield* takeEvery(connectGitLabWithToken, connectGitLabWithTokenWorker);
   yield* takeEvery(checkGitLabAuthStatus, checkGitLabAuthStatusWorker);
