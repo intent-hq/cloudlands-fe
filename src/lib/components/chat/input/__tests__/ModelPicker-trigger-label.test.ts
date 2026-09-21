@@ -165,6 +165,15 @@ vi.mock('$store/renderer/store', async () => {
       providerCatalog,
       providerSettings: { enabledProviders: {} },
       model: { defaultProviderId: 'auggie' },
+      // The picker's guest/collaborator gate reads the caller role: a settled
+      // owner window keeps these label regressions on the unlocked path.
+      workspace: { hasLoaded: false, workspaces: { idField: 'id', map: {}, ids: [] } },
+      connections: { windowBackendId: 'local', hasReceivedList: true },
+      guestSessions: {
+        sessions: { idField: 'id', map: {}, ids: [] },
+        hasReceivedList: true,
+        listUnavailable: false,
+      },
     }),
     dispatch: mockReduxDispatch,
   });
