@@ -3,7 +3,7 @@
    * ShareWorkspaceDialog — the owner-side sharing surface (multiplayer w4).
    *
    * Offers the guests already authed on this host (`principal.list`, minus
-   * the current roster) in an "Invite an existing GitHub user" dropdown whose
+   * the current roster) in an "Invite an existing user" dropdown whose
    * Invite attaches the pick directly (`workspace.members.add`, no link);
    * creates `intent://invite` links (optionally pinned to a GitHub login;
    * an unpinned link is reusable until it expires or is revoked, a pinned

@@ -6483,7 +6483,7 @@
   "workspace_share_githubRequired_title": "Connect GitHub first",
   "workspace_share_githubRequired_description": "Members are identified by their GitHub account. Connect GitHub to create invite links.",
   "workspace_share_connectGithub_label": "Connect GitHub",
-  "workspace_share_existingGuest_label": "Invite an existing GitHub user",
+  "workspace_share_existingGuest_label": "Invite an existing user",
   "workspace_share_existingGuest_description": "People who already signed in to this host can be added without a link.",
   "workspace_share_existingGuest_placeholder": "Choose a user",
   "workspace_share_existingGuest_invite_label": "Invite",

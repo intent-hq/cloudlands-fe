@@ -6483,7 +6483,7 @@
   "workspace_share_githubRequired_title": "请先连接 GitHub",
   "workspace_share_githubRequired_description": "成员通过其 GitHub 账户进行识别。连接 GitHub 以创建邀请链接。",
   "workspace_share_connectGithub_label": "连接 GitHub",
-  "workspace_share_existingGuest_label": "邀请现有 GitHub 用户",
+  "workspace_share_existingGuest_label": "邀请现有用户",
   "workspace_share_existingGuest_description": "已登录此主机的用户无需链接即可添加。",
   "workspace_share_existingGuest_placeholder": "选择用户",
   "workspace_share_existingGuest_invite_label": "邀请",

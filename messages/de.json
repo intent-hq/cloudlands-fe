@@ -6483,7 +6483,7 @@
   "workspace_share_githubRequired_title": "Zuerst GitHub verbinden",
   "workspace_share_githubRequired_description": "Mitglieder werden über ihr GitHub-Konto identifiziert. Verbinden Sie GitHub, um Einladungslinks zu erstellen.",
   "workspace_share_connectGithub_label": "GitHub verbinden",
-  "workspace_share_existingGuest_label": "Vorhandenen GitHub-Benutzer einladen",
+  "workspace_share_existingGuest_label": "Vorhandenen Benutzer einladen",
   "workspace_share_existingGuest_description": "Personen, die sich bereits auf diesem Host angemeldet haben, können ohne Link hinzugefügt werden.",
   "workspace_share_existingGuest_placeholder": "Benutzer auswählen",
   "workspace_share_existingGuest_invite_label": "Einladen",

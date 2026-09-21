@@ -837,7 +837,7 @@ describe('ShareWorkspaceDialog — revoke and remove', () => {
   });
 });
 
-describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
+describe('ShareWorkspaceDialog — invite an existing user', () => {
   const erin: HostPrincipal = {
     principalId: 'p-erin',
     login: 'erin',
@@ -854,7 +854,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
   };
 
   async function pick(name: string | RegExp) {
-    const trigger = screen.getByRole('combobox', { name: /Invite an existing GitHub user/ });
+    const trigger = screen.getByRole('combobox', { name: /Invite an existing user/ });
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     await fireEvent.pointerUp(await screen.findByRole('option', { name }), {
@@ -876,7 +876,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     const form = screen.getByLabelText(/Restrict to a GitHub user/).closest('form')!;
     expect(section.compareDocumentPosition(form) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    const trigger = screen.getByRole('combobox', { name: /Invite an existing GitHub user/ });
+    const trigger = screen.getByRole('combobox', { name: /Invite an existing user/ });
     trigger.focus();
     await fireEvent.keyDown(trigger, { key: 'Enter' });
     expect(await screen.findAllByRole('option')).toHaveLength(2);
@@ -960,7 +960,7 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     expect(
       (
         screen.getByRole('combobox', {
-          name: /Invite an existing GitHub user/,
+          name: /Invite an existing user/,
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);

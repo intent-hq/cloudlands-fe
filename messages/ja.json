@@ -6483,7 +6483,7 @@
   "workspace_share_githubRequired_title": "まず GitHub を接続してください",
   "workspace_share_githubRequired_description": "メンバーは GitHub アカウントで識別されます。招待リンクを作成するには GitHub を接続してください。",
   "workspace_share_connectGithub_label": "GitHub を接続",
-  "workspace_share_existingGuest_label": "既存の GitHub ユーザーを招待",
+  "workspace_share_existingGuest_label": "既存のユーザーを招待",
   "workspace_share_existingGuest_description": "このホストにすでにサインインしている人は、リンクなしで追加できます。",
   "workspace_share_existingGuest_placeholder": "ユーザーを選択",
   "workspace_share_existingGuest_invite_label": "招待",
