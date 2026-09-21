@@ -57,6 +57,41 @@ describe('spec pattern sources guard', () => {
       "const ROOT_SPEC_SUFFIX: string = /* suffix */ '.spec.ts';",
       'rootConstant',
     ],
+    [
+      'root regex from a RegExp constructor string',
+      "const RE = new RegExp('^test/.*\\\\.spec\\\\.ts$');",
+      'rootPattern',
+    ],
+    [
+      'root regex string with escaped slashes',
+      'const RE = new RegExp("^test\\\\/.*\\\\.spec\\\\.ts$", "i");',
+      'rootPattern',
+    ],
+    [
+      'root regex string with a unicode-escaped dot',
+      "const RE = new RegExp('^test/.*\\u002espec\\\\.ts$');",
+      'rootPattern',
+    ],
+    [
+      'CT regex from a RegExp constructor string',
+      "const CT_RE = new RegExp('\\\\.ct\\\\.spec\\\\.ts$');",
+      'ctSuffix',
+    ],
+    [
+      'root glob string inside a template substitution',
+      "const message = `Found ${globSync('test/**/*.spec.ts').length}`;",
+      'rootPattern',
+    ],
+    [
+      'root regex inside a template substitution',
+      'const n = `${files.filter((f) => /^test\\/.*\\.spec\\.ts$/.test(f)).length} root specs`;',
+      'rootPattern',
+    ],
+    [
+      'CT suffix in template text after a substitution',
+      'const glob = `${dir}/**/*.ct.spec.ts`;',
+      'ctSuffix',
+    ],
   ])('flags %s', (_name, line, rule) => {
     expect(rules(line)).toEqual([rule]);
   });
@@ -99,8 +134,42 @@ describe('spec pattern sources guard', () => {
     ],
     ['typed constant not on a ROOT_ name', "const suffix: string = '.spec.ts';"],
     ['typed ROOT_ name holding something else', "const ROOT_PACKAGE: string = 'package.json';"],
+    [
+      'block comment inside a template substitution',
+      'const m = `${/* *.ct.spec.ts */ count} specs`;',
+    ],
+    [
+      'line comment inside a multi-line template substitution',
+      'const m = `${\n  // mirrors test/**/*.spec.ts\n  count\n} specs`;',
+    ],
+    [
+      'RegExp constructor string naming a suffix family',
+      "const RE = new RegExp('\\\\.(?:test|spec)\\\\.ts$');",
+    ],
+    ['escaped substitution in template text', 'const s = `\\${ROOT_TEST_DIR}/**/*.md`;'],
   ])('ignores %s', (_name, line) => {
     expect(rules(line)).toEqual([]);
+  });
+
+  it('locates a hit inside a multi-line template substitution on its own line', () => {
+    expect(
+      findOffenders(
+        [
+          'const message = `head',
+          '  ${count > 0',
+          "    ? globSync('test/**/*.spec.ts').length",
+          "    : 'none'}",
+          'tail`;',
+        ].join('\n'),
+      ),
+    ).toEqual([{ line: 3, text: "? globSync('test/**/*.spec.ts').length", rule: 'rootPattern' }]);
+  });
+
+  it('inspects the cooked value of a string but the raw body of a regex', () => {
+    const literals = extractLiterals(
+      ["const s = 'a\\\\.b\\tc\\u0041\\x42\\u{43}';", 'const r = /a\\.b\\tc/;'].join('\n'),
+    );
+    expect(literals.map((literal) => literal.text)).toEqual(['a\\.b\tcABC', 'a\\.b\\tc']);
   });
 
   it('reports the line and source text of every hit', () => {
@@ -126,9 +195,19 @@ describe('spec pattern sources guard', () => {
     expect(literals.map((literal) => literal.text)).toEqual(['^test\\/', 'q', 'z']);
   });
 
-  it('walks template expressions without ending the template early', () => {
-    const literals = extractLiterals('const s = `${a ? `${b}` : "}"} tail`; const t = /x/;');
-    expect(literals.map((literal) => literal.text)).toEqual(['${a ? `${b}` : "}"} tail', 'x']);
+  it('splits a template into its text runs and the literals of its substitutions', () => {
+    const literals = extractLiterals(
+      'const s = `head ${a ? `in ${b}` : "}"} tail ${/re/} \\`end`; const t = /x/;',
+    );
+    expect(literals.map((literal) => literal.text)).toEqual([
+      'head ',
+      'in ',
+      '}',
+      ' tail ',
+      're',
+      ' `end',
+      'x',
+    ]);
   });
 
   it('scans only source under the roots and never test files or the pattern modules', () => {

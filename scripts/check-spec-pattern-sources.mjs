@@ -16,7 +16,8 @@ import {
 // `test/**/*.spec.ts` unaware of `testIgnore`. This gate scans `scripts/**` and
 // `playwright/**` for the literals such a copy needs.
 //
-// A string, template, or regex literal is an offender when
+// A string literal, the literal text of a template, or a regex literal is an offender
+// when
 //   (a) it starts with the root test dir (`test/`, `^test\/`, `./test/`) and also
 //       contains the root spec suffix (`.spec.ts` / `\.spec\.ts`);
 //   (b) it contains the CT spec suffix (`.ct.spec.ts` / `\.ct\.spec\.ts`);
@@ -25,6 +26,9 @@ import {
 //   (d) it initialises a `const` / `let` / `var` named `ROOT_*` / `PLAYWRIGHT_*` and
 //       holds either half of (a) on its own (`ROOT_TEST_DIR = 'test'`,
 //       `ROOT_SPEC_SUFFIX = '.spec.ts'`).
+// Strings and template text are inspected with their escapes resolved, so
+// `new RegExp('^test/.*\\.spec\\.ts$')` reads as the regex it compiles; a `${…}`
+// substitution is code, and its own strings and regexes are inspected separately.
 // Comments are not literals, so a documented example never trips the gate. Test-path
 // heuristics that only name a suffix family (`\.(?:ct|visual)\.spec\.`,
 // `\.(?:test|spec)\.ts$`) match none of the forms. `*.test.*` files are skipped
@@ -65,6 +69,21 @@ const DECLARATION_PATTERN = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)
 // a division.
 const REGEX_PRECEDERS = new Set([...'(,=:[!&|?{};+-*%<>~^']);
 const REGEX_KEYWORDS = new Set(['return', 'typeof', 'case', 'in', 'of', 'instanceof', 'void']);
+const ESCAPE_PATTERN =
+  /\\(?:u\{([0-9a-fA-F]+)\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|\r\n|([\s\S]))/g;
+const SIMPLE_ESCAPES = Object.freeze({
+  n: '\n',
+  t: '\t',
+  r: '\r',
+  b: '\b',
+  f: '\f',
+  v: '\v',
+  0: '\0',
+  '\n': '',
+  '\r': '',
+  '\u2028': '',
+  '\u2029': '',
+});
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // `.` may be spelled `\.` in a regex, and a `/` may be `\/`.
@@ -136,79 +155,110 @@ function stringEnd(text, start) {
   return text.length;
 }
 
-// End (exclusive) of the template literal opening at `start`; `${…}` expressions are
-// walked by brace depth, nested templates included.
-function templateEnd(text, start) {
-  let i = start + 1;
-  while (i < text.length) {
-    const char = text[i];
-    if (char === '\\') i += 2;
-    else if (char === '`') return i + 1;
-    else if (char === '$' && text[i + 1] === '{') {
-      let depth = 1;
-      i += 2;
-      while (i < text.length && depth > 0) {
-        if (text[i] === '`') i = templateEnd(text, i);
-        else if (QUOTES.has(text[i])) i = stringEnd(text, i);
-        else {
-          if (text[i] === '{') depth += 1;
-          else if (text[i] === '}') depth -= 1;
-          i += 1;
-        }
-      }
-    } else i += 1;
-  }
-  return text.length;
-}
+// The value a string literal or template text evaluates to: escape sequences resolved,
+// line continuations dropped, an unknown escape reduced to its character. This is the
+// pattern `new RegExp(string)` compiles, so `'^test/.*\\.spec\\.ts$'` is inspected as
+// `^test/.*\.spec\.ts$`.
+const cook = (raw) =>
+  raw.replace(ESCAPE_PATTERN, (match, codePoint, unit, byte, char) => {
+    if (codePoint !== undefined) {
+      const value = parseInt(codePoint, 16);
+      return value <= 0x10ffff ? String.fromCodePoint(value) : match;
+    }
+    if (unit !== undefined) return String.fromCharCode(parseInt(unit, 16));
+    if (byte !== undefined) return String.fromCharCode(parseInt(byte, 16));
+    if (char === undefined) return '';
+    return Object.hasOwn(SIMPLE_ESCAPES, char) ? SIMPLE_ESCAPES[char] : char;
+  });
 
-// Every string, template, and regex literal in the source as `{ start, text }` (`text`
-// without its delimiters), plus `code`: the source with every comment blanked to spaces
-// (newlines kept, so offsets match). Comments are skipped, so a documented pattern is
-// never a literal; `//` inside a string never opens a comment. The regex/division and
-// declaration lookbacks run on `code`, so a comment between `=` and a literal cannot
-// hide it.
+// Every string literal, template text run, and regex literal in the source as
+// `{ start, text }` — strings and template text cooked (see `cook`), regex bodies raw,
+// `start` the offset of the opening delimiter (for a template's later text runs, of
+// the `}` closing the preceding substitution) — plus `code`: the source with every
+// comment blanked to spaces (newlines kept, so offsets match). Comments are skipped,
+// so a documented pattern is never a literal; `//` inside a string never opens a
+// comment. A template's `${…}` substitutions are scanned as code, so their strings,
+// regexes, and comments are handled like any other. The regex/division and declaration
+// lookbacks run on `code`, so a comment between `=` and a literal cannot hide it.
 function tokenize(source) {
   const literals = [];
   const code = source.split('');
   const blank = (from, to) => {
     for (let k = from; k < to; k += 1) if (code[k] !== '\n') code[k] = ' ';
   };
-  let i = 0;
-  while (i < source.length) {
-    const char = source[i];
-    if (char === '/' && source[i + 1] === '/') {
-      const newline = source.indexOf('\n', i);
-      const end = newline === -1 ? source.length : newline;
-      blank(i, end);
-      i = end;
-    } else if (char === '/' && source[i + 1] === '*') {
-      const close = source.indexOf('*/', i + 2);
-      const end = close === -1 ? source.length : close + 2;
-      blank(i, end);
-      i = end;
-    } else if (QUOTES.has(char)) {
-      const end = stringEnd(source, i);
-      literals.push({
-        start: i,
-        text: source.slice(i + 1, source[end - 1] === char ? end - 1 : end),
-      });
-      i = end;
-    } else if (char === '`') {
-      const end = templateEnd(source, i);
-      literals.push({
-        start: i,
-        text: source.slice(i + 1, source[end - 1] === '`' ? end - 1 : end),
-      });
-      i = end;
-    } else if (char === '/' && opensRegex(code, i)) {
-      const end = regexEnd(source, i);
-      if (end === -1) i += 1;
-      else {
-        literals.push({ start: i, text: source.slice(i + 1, end - 1) });
+
+  // Scans code from `from`; inside a substitution it stops at the `}` closing it and
+  // returns that offset, otherwise it returns the end of the source.
+  const scanCode = (from, insideSubstitution) => {
+    let depth = 0;
+    let i = from;
+    while (i < source.length) {
+      const char = source[i];
+      if (char === '/' && source[i + 1] === '/') {
+        const newline = source.indexOf('\n', i);
+        const end = newline === -1 ? source.length : newline;
+        blank(i, end);
         i = end;
+      } else if (char === '/' && source[i + 1] === '*') {
+        const close = source.indexOf('*/', i + 2);
+        const end = close === -1 ? source.length : close + 2;
+        blank(i, end);
+        i = end;
+      } else if (QUOTES.has(char)) {
+        const end = stringEnd(source, i);
+        const closed = end > i + 1 && source[end - 1] === char;
+        literals.push({ start: i, text: cook(source.slice(i + 1, closed ? end - 1 : end)) });
+        i = end;
+      } else if (char === '`') {
+        i = scanTemplate(i);
+      } else if (char === '/' && opensRegex(code, i)) {
+        const end = regexEnd(source, i);
+        if (end === -1) i += 1;
+        else {
+          literals.push({ start: i, text: source.slice(i + 1, end - 1) });
+          i = end;
+        }
+      } else if (insideSubstitution && char === '}' && depth === 0) {
+        return i;
+      } else {
+        if (char === '{') depth += 1;
+        else if (char === '}') depth -= 1;
+        i += 1;
       }
-    } else i += 1;
-  }
+    }
+    return i;
+  };
+
+  // Scans the template literal opening at `start` and returns the offset after its
+  // closing backtick. Each non-empty run of literal text is a literal of its own; each
+  // `${…}` substitution is code.
+  const scanTemplate = (start) => {
+    let runStart = start;
+    let textStart = start + 1;
+    const pushRun = (end) => {
+      if (end > textStart)
+        literals.push({ start: runStart, text: cook(source.slice(textStart, end)) });
+    };
+    let i = textStart;
+    while (i < source.length) {
+      const char = source[i];
+      if (char === '\\') i += 2;
+      else if (char === '`') {
+        pushRun(i);
+        return i + 1;
+      } else if (char === '$' && source[i + 1] === '{') {
+        pushRun(i);
+        const close = scanCode(i + 2, true);
+        runStart = close;
+        textStart = Math.min(close + 1, source.length);
+        i = textStart;
+      } else i += 1;
+    }
+    pushRun(source.length);
+    return source.length;
+  };
+
+  scanCode(0, false);
   return { literals, code: code.join('') };
 }
 
