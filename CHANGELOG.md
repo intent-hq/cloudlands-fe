@@ -4,6 +4,29 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.172.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.171.1...v2.172.0) (2026-09-21)
+
+
+### 🚀 Features
+
+* **daemon-status:** show agent memory with a per-agent breakdown dialog ([#2697](https://github.com/intent-hq/cloudlands-fe/issues/2697)) ([69cb8f0](https://github.com/intent-hq/cloudlands-fe/commit/69cb8f08aa4571901ee9eb2b40e9b3a732fa8bc4))
+* **multiplayer:** workspace sharing, presence, invites and guest sessions (fe stack) ([#2715](https://github.com/intent-hq/cloudlands-fe/issues/2715)) ([76e66cb](https://github.com/intent-hq/cloudlands-fe/commit/76e66cb55ecb0c3a5481ad70dd5b4625f1598cb0))
+* **presence:** workspace presence dots, member rows, chat presence and typing ([#2454](https://github.com/intent-hq/cloudlands-fe/issues/2454)) ([1aca84b](https://github.com/intent-hq/cloudlands-fe/commit/1aca84b4f5dff274362123172b2ef697e001dbcd))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.89 ([#2714](https://github.com/intent-hq/cloudlands-fe/issues/2714)) ([967dbac](https://github.com/intent-hq/cloudlands-fe/commit/967dbaca3c47aabafc8184216c328980bac0c6a0))
+* bump intentd sidecar to v0.9.90 ([#2722](https://github.com/intent-hq/cloudlands-fe/issues/2722)) ([15d3210](https://github.com/intent-hq/cloudlands-fe/commit/15d32109c242917b16d0f756bf341da51f6798ce))
+* **ci:** repair the root Playwright suite and gate it in CI Gate ([#2709](https://github.com/intent-hq/cloudlands-fe/issues/2709)) ([eb43931](https://github.com/intent-hq/cloudlands-fe/commit/eb439311b06921a2fb8cd5ed39a6efed9dd8e6b5))
+* **scripts:** read the RSS test oracle from a file instead of the child stdout ([#2717](https://github.com/intent-hq/cloudlands-fe/issues/2717)) ([d84e6ce](https://github.com/intent-hq/cloudlands-fe/commit/d84e6ced2aba9f7a918b9879ff641f504965e3f2))
+* **settings:** keep the requested tab through the boot window ([#2707](https://github.com/intent-hq/cloudlands-fe/issues/2707)) ([fe7117d](https://github.com/intent-hq/cloudlands-fe/commit/fe7117dc11eaaae8e7970e923d75f43fcb01d297))
+
+
+### ⚡ Performance
+
+* replace unscoped agent.list callers with bounded agent.get / agent.listActive reads ([#2721](https://github.com/intent-hq/cloudlands-fe/issues/2721)) ([c781783](https://github.com/intent-hq/cloudlands-fe/commit/c781783fdade90df8596db573078216603c4de59))
+
 ## [2.171.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.171.0...v2.171.1) (2026-09-20)
 
 
