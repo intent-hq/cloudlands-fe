@@ -1198,9 +1198,13 @@ describe('provider-status-bridge-seeder', () => {
       (window as any).electronAPI = originalElectronAPI;
     });
 
-    function bridgeWith(response: unknown) {
+    function bridgeWith(response: unknown, versions?: { electron: string }) {
       const invokeSpy = vi.fn(async () => response);
-      (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+      (window as any).electronAPI = {
+        ...(originalElectronAPI || {}),
+        invoke: invokeSpy,
+        ...(versions ? { versions } : {}),
+      };
       return invokeSpy;
     }
 
@@ -1231,15 +1235,74 @@ describe('provider-status-bridge-seeder', () => {
       expect(response.success).toBe(true);
       expect(response.data?.providers.mock).toEqual(MOCK_VERDICT);
       expect(response.data?.hasAnyProvider).toBe(true);
+      // Main's gate is open when it reports mock available — mirror main and
+      // stop listing mock as hidden.
+      expect(response.data?.hiddenProviders).not.toContain('mock');
     });
 
     it('keeps main default-deny verdicts as-is (bridge present, env gate closed)', async () => {
       const denied = { available: false, error: 'Mock provider requires TESTING=true' };
       bridgeWith({ success: true, providerId: 'mock', data: denied });
 
-      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+      });
 
-      expect(response).toEqual({ success: true, providerId: 'mock', data: denied });
+      const single = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+      const aggregate = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(single).toEqual({ success: true, providerId: 'mock', data: denied });
+      expect(aggregate.data?.providers.mock).toEqual(denied);
+      expect(aggregate.data?.hiddenProviders).toEqual(expect.arrayContaining(['mock']));
+    });
+
+    it('does not forward to the dev/CT browser-mock bridge (sentinel electron version)', async () => {
+      // Both the dev browser mock and the CT host bridge route `invoke` back
+      // into this mock router, so forwarding to them would recurse.
+      const invokeSpy = bridgeWith(MOCK_ENVELOPE, { electron: '0.0.0-browser' });
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+      });
+
+      const single = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+      const aggregate = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(invokeSpy).not.toHaveBeenCalled();
+      expect(single).toEqual({ success: true, providerId: 'mock', data: { available: false } });
+      expect(aggregate.data?.providers.mock).toEqual({ available: false });
+      expect(aggregate.data?.hasAnyProvider).toBe(false);
+    });
+
+    it('treats a rejected bridge invoke as unavailable without failing the aggregate', async () => {
+      const invokeSpy = vi.fn(async () => {
+        throw new Error('bridge down');
+      });
+      (window as any).electronAPI = { ...(originalElectronAPI || {}), invoke: invokeSpy };
+      routeDaemon({
+        'host.checkAuggie': { available: true, path: '/usr/local/bin/auggie' },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+      });
+
+      const single = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock');
+      const aggregate = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(invokeSpy).toHaveBeenCalled();
+      expect(single).toEqual({ success: true, providerId: 'mock', data: { available: false } });
+      expect(aggregate.success).toBe(true);
+      expect(aggregate.data?.providers.mock).toEqual({ available: false });
+      expect(aggregate.data?.providers.auggie.available).toBe(true);
+      expect(aggregate.data?.hasAnyProvider).toBe(true);
     });
 
     it('reports mock unavailable without a preload bridge (web build)', async () => {

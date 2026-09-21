@@ -72,6 +72,7 @@ import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
 import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
 import { m } from '$shared/paraglide/messages.js';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { getProviderAuthVerdicts } from '$features/providers/provider-auth-status.client';
 import {
   type ProviderAuthStatusParams,
@@ -183,7 +184,6 @@ function withAuth(
  * still degrade to unknown via `getAuthVerdicts()`).
  */
 async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
-  const hiddenProviders = computeHiddenProviders();
   const [auggieCheck, toolsResult, authVerdicts, discovery, mock] = await Promise.all([
     checkAuggie(),
     backendRequest<HostToolAvailabilityResult>('host.toolAvailability', {
@@ -204,6 +204,12 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   ]);
   const tools = toolsResult?.tools ?? {};
   const tool = (name: string): HostCheckResult => tools[name] ?? { available: false };
+  // Main forces mock to `{ available: false }` whenever its env gate is
+  // closed, so an available verdict means main's gate is open — mirror
+  // main's aggregate and stop listing mock as hidden.
+  const hiddenProviders = computeHiddenProviders().filter(
+    (id) => !(id === 'mock' && mock.available),
+  );
 
   const auggie: ProviderStatus = { available: auggieCheck.available === true };
   const claudeCode: ProviderStatus = {
@@ -325,17 +331,26 @@ interface CheckSingleEnvelope {
 /**
  * Mock provider — env-gated in main (`TESTING=true` + `MOCK_AGENT_SCRIPT_PATH`,
  * `checkMockAvailability`), which the renderer cannot read. Forward the probe
- * to the real preload bridge when present (packaged app; same idiom as
- * window-state-bridge-seeder) and unwrap main's `{ success, data }` envelope;
- * without a bridge, or when main did not answer with a verdict, keep main's
- * default-deny `{ available: false }`.
+ * to the real preload bridge (packaged app) and unwrap main's
+ * `{ success, data }` envelope; otherwise keep main's default-deny
+ * `{ available: false }`. The gate is `isElectronPlatform()`, not bridge
+ * presence: the dev browser mock and the CT host bridge both install a
+ * `window.electronAPI` (sentinel electron version) whose `invoke` routes back
+ * into this mock router, so forwarding to them would recurse. A rejected
+ * invoke is also a deny — the aggregate must not lose the other providers'
+ * verdicts over the mock slot.
  */
 async function checkMockProvider(): Promise<ProviderStatus> {
+  if (!isElectronPlatform()) return { available: false };
   const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
   if (!bridge || typeof bridge.invoke !== 'function') return { available: false };
-  const response = (await bridge.invoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock')) as
-    CheckSingleEnvelope | undefined;
-  return response?.success === true && response.data ? response.data : { available: false };
+  try {
+    const response = (await bridge.invoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'mock')) as
+      CheckSingleEnvelope | undefined;
+    return response?.success === true && response.data ? response.data : { available: false };
+  } catch {
+    return { available: false };
+  }
 }
 
 /** Single-provider recheck (AgentGrid card refresh) — same verdicts as
