@@ -1,0 +1,172 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// Non-test source must not request `agent.list` without a `scope` / `retiredOnly`
+// option. An unscoped read serves every non-retired session of the workspace: at 459
+// sessions the frame passed the daemon's 1 MiB soft budget (intent-hq/intent#5531), and
+// the same fan-out was reintroduced four times by callers that needed a few rows.
+// Bounded reads exist for every need: `agent.get { agentId }` for known ids,
+// `agent.listActive {}` for liveness, and a `scope`d / `retiredOnly` list for one bin.
+export const SCRIPT_PATH = 'scripts/check-agent-list-scope.mjs';
+export const SCAN_ROOT = 'src';
+export const SCANNED_EXTENSIONS = new Set(['.ts', '.svelte', '.js', '.mjs']);
+
+// Documented exceptions: repo-relative path → one-line justification. An entry whose
+// file no longer carries an unscoped request is reported as stale and must be removed.
+export const ALLOWLIST = Object.freeze({
+  'src/lib/client/live/live-agents-client.ts':
+    'the AppClient `agents.list` / `agents.listWithMeta` wrapper — the one renderer wire caller; its callers carry the scope',
+  'src/features/debug/main/debug.ipc.ts':
+    'dev-only (`NODE_ENV === development`) human-triggered debug dump that lists every bin',
+  'src/store/renderer/seeders/agents-seeder.ts':
+    'test-harness seeder — `mock-bootstrap` seeders run only in focused tests, never in production',
+  'src/lib/constants/specialists.ts':
+    'agent-facing prompt text naming the MCP `ws.app.agents.list` binding, not a request',
+});
+
+export const REMEDIATION_HINT = [
+  'Bound the read: `agent.get { agentId }` for known ids, `agent.listActive {}` for liveness,',
+  'or pass `scope` (`topLevel` / `delegated` / `background`) or `retiredOnly: true` to list one bin.',
+  'An unscoped list serves every session of the workspace and exceeded the 1 MiB frame budget',
+  'at 459 sessions (intent-hq/intent#5531).',
+  `A deliberate exception is an ALLOWLIST entry in ${SCRIPT_PATH} with a one-line justification.`,
+].join('\n');
+
+const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', '.git', 'paraglide']);
+const TEST_PATH_PATTERN =
+  /(?:^|\/)(?:__tests__|test|mocks)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|\.(?:ct|visual)\.spec\./;
+// Line comments, block comments, and Svelte HTML comments are blanked (newlines kept)
+// so a documented example cannot trigger the gate — or satisfy the scope check — and
+// line numbers stay accurate.
+const COMMENT_PATTERN = /\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(?<=^|[^:'"`])\/\/[^\n]*/gm;
+// Wire form: the `'agent.list'` literal as a call argument (`request('agent.list', …)`,
+// including a generic `request<T>(\n 'agent.list', …)`). Wrapper form: a direct
+// `.agents.list(` / `.agents.listWithMeta(`, the method reference passed to a saga
+// `call(appClient.agents.list, …)`, and the saga tuple `[appClient.agents, appClient.agents.list]`.
+const WIRE_LITERAL_PATTERN = /(['"`])agent\.list\1/g;
+const WRAPPER_PATTERN = /\.agents\.(?:list|listWithMeta)\s*(?=[(\],])/g;
+const SCOPE_OPTION_PATTERN = /\b(?:scope|retiredOnly)\b/;
+const OPENERS = new Set(['(', '[', '{']);
+const CLOSERS = new Set([')', ']', '}']);
+const MAX_ARGUMENT_SPAN = 4000;
+
+const normalize = (value) => value.split(path.sep).join('/').replace(/^\.\//, '');
+
+export const isScannedPath = (filePath) =>
+  SCANNED_EXTENSIONS.has(path.posix.extname(filePath)) && !TEST_PATH_PATTERN.test(filePath);
+
+const blankComments = (text) =>
+  text.replace(COMMENT_PATTERN, (match) => match.replace(/[^\n]/g, ' '));
+
+const previousToken = (text, index) => {
+  for (let i = index - 1; i >= 0; i -= 1) if (!/\s/.test(text[i])) return text[i];
+  return '';
+};
+
+const nextToken = (text, index) => {
+  for (let i = index; i < text.length; i += 1) if (!/\s/.test(text[i])) return text[i];
+  return '';
+};
+
+// The argument text of the call the match belongs to: from `start` until the bracket
+// depth drops to `stopDepth` (one enclosing `)` for a literal argument or a saga tuple,
+// the method's own `(`…`)` for a direct call). Unbalanced text ends at the span cap.
+function argumentSpan(text, start, stopDepth) {
+  let depth = 0;
+  const end = Math.min(text.length, start + MAX_ARGUMENT_SPAN);
+  for (let i = start; i < end; i += 1) {
+    const char = text[i];
+    if (OPENERS.has(char)) depth += 1;
+    else if (CLOSERS.has(char)) {
+      depth -= 1;
+      if (depth === stopDepth) return text.slice(start, i);
+    }
+  }
+  return text.slice(start, end);
+}
+
+const isWireRequest = (text, match) =>
+  ['(', ','].includes(previousToken(text, match.index)) &&
+  nextToken(text, match.index + match[0].length) !== ':';
+
+// Every unscoped request in one file: `{ line, text }` per offending call.
+export function findUnscopedAgentListRequests(content) {
+  const text = blankComments(content);
+  const spans = [];
+  for (const match of text.matchAll(WIRE_LITERAL_PATTERN)) {
+    if (!isWireRequest(text, match)) continue;
+    spans.push([match.index, argumentSpan(text, match.index + match[0].length, -1)]);
+  }
+  for (const match of text.matchAll(WRAPPER_PATTERN)) {
+    const after = match.index + match[0].length;
+    const next = text[after];
+    const start = next === '(' ? after + 1 : after;
+    spans.push([match.index, argumentSpan(text, start, next === ']' ? -2 : -1)]);
+  }
+  return spans
+    .filter(([, args]) => !SCOPE_OPTION_PATTERN.test(args))
+    .map(([index]) => {
+      const line = text.slice(0, index).split('\n').length;
+      return { line, text: content.split('\n')[line - 1].trim() };
+    })
+    .sort((a, b) => a.line - b.line);
+}
+
+// Hits in non-allowlisted files plus allowlist entries that no longer match anything.
+export function checkAgentListScope(files, allowlist = ALLOWLIST) {
+  const hits = [];
+  const matched = new Set();
+  for (const file of files) {
+    const filePath = normalize(file.path);
+    if (!isScannedPath(filePath)) continue;
+    const requests = findUnscopedAgentListRequests(file.content);
+    if (!requests.length) continue;
+    if (Object.hasOwn(allowlist, filePath)) matched.add(filePath);
+    else hits.push(...requests.map((request) => ({ path: filePath, ...request })));
+  }
+  const stale = Object.keys(allowlist).filter((filePath) => !matched.has(filePath));
+  return { hits, stale };
+}
+
+export const formatHit = ({ path: filePath, line, text }) => `${filePath}:${line}\n    ${text}`;
+
+export function collectSourceFiles(root, directory = path.join(root, SCAN_ROOT)) {
+  const files = [];
+  if (!fs.existsSync(directory)) return files;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (!SKIPPED_DIRECTORIES.has(entry.name)) files.push(...collectSourceFiles(root, absolute));
+    } else if (entry.isFile()) {
+      const relative = normalize(path.relative(root, absolute));
+      if (isScannedPath(relative)) {
+        files.push({ path: relative, content: fs.readFileSync(absolute, 'utf8') });
+      }
+    }
+  }
+  return files;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const { hits, stale } = checkAgentListScope(collectSourceFiles(process.cwd()));
+  if (hits.length || stale.length) {
+    const lines = [];
+    if (hits.length) {
+      lines.push(
+        `Unscoped \`agent.list\` request${hits.length === 1 ? '' : 's'} in non-test source:`,
+      );
+      lines.push(...hits.map((hit) => `  ${formatHit(hit)}`));
+      lines.push('', REMEDIATION_HINT);
+    }
+    if (stale.length) {
+      lines.push(
+        `Stale ALLOWLIST ${stale.length === 1 ? 'entry' : 'entries'} in ${SCRIPT_PATH} (no unscoped request left):`,
+      );
+      lines.push(...stale.map((filePath) => `  ${filePath}`));
+    }
+    console.error(lines.join('\n'));
+    process.exit(1);
+  }
+  console.log('agent.list scope check passed: every non-test request is bounded.');
+}
