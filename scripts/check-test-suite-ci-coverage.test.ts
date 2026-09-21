@@ -73,10 +73,7 @@ interface Word {
 }
 
 /** Uncovered suites with a reason they have no CI job: path → one-line justification. */
-const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({
-  'e2e/playwright.config.e2e.ts':
-    'Electron E2E suite needs a packaged app build and a display; test:e2e:ci is referenced by no workflow',
-});
+const ALLOWLIST: Readonly<Record<string, string>> = Object.freeze({});
 
 const normalizePath = (value: string) => posix.normalize(value.replaceAll('\\', '/'));
 
