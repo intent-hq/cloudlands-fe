@@ -11,6 +11,7 @@
 import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { DraftAttachment } from '$lib/client/app-client';
 import type { CompactWorkspaceInitializerFormState } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 
 const mocks = vi.hoisted(() => {
@@ -29,7 +30,11 @@ const mocks = vi.hoisted(() => {
     draftGet: vi.fn(),
     draftSet: vi.fn(),
     draftClear: vi.fn(),
-    persistedDraft: null as { text: string; updatedAt: string } | null,
+    persistedDraft: null as {
+      text: string;
+      attachments?: DraftAttachment[];
+      updatedAt: string;
+    } | null,
     getLastUsedSetupScript: vi.fn(() => undefined),
     recordLastUsedSetupScript: vi.fn(),
     // Per-test persisted form state returned by the selector mock (read
@@ -347,6 +352,69 @@ describe('post-create repo-field preservation', () => {
     unmount();
     expect(mocks.persistedDraft?.text).toBe('Keep this draft');
   });
+
+  it.each(['after creation', 'before creation'])(
+    'ignores stale restore work when drafts.get resolves %s',
+    async (restoreTiming) => {
+      vi.useFakeTimers();
+      mockCreateSuccess();
+      let resolveRestore!: (draft: NonNullable<typeof mocks.persistedDraft>) => void;
+      mocks.draftGet.mockImplementationOnce(
+        () => new Promise((resolve) => (resolveRestore = resolve)),
+      );
+      let finishNavigation!: () => void;
+      mocks.goto.mockImplementation(
+        () => new Promise<void>((resolve) => (finishNavigation = resolve)),
+      );
+      const { component, getByRole, unmount } = render(CompactWorkspaceInitializer, {
+        props: { isExpanded: false },
+      });
+      const staleDraft = {
+        text: 'Old persisted prompt',
+        updatedAt: '2026-09-21T00:00:00Z',
+        attachments: [
+          {
+            id: 'old-image',
+            type: 'file',
+            label: 'old.png',
+            imageData: 'aGVsbG8=',
+            imageMimeType: 'image/png',
+          },
+        ],
+      };
+      try {
+        if (restoreTiming === 'before creation') {
+          resolveRestore({ ...staleDraft, attachments: [] });
+          await vi.advanceTimersByTimeAsync(0);
+          // The restore's delayed editor update is still queued at 50ms.
+        }
+        sessionStorage.setItem(
+          PREFILL_KEY,
+          JSON.stringify({
+            repoPath: '/tmp/test-repo',
+            branch: 'main',
+            prompt: 'Submitted prompt',
+            autoCreate: true,
+          }),
+        );
+        await component.applyPrefill();
+        await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledOnce(), { interval: 1 });
+        expect(mocks.draftClear).toHaveBeenCalled();
+        mocks.draftSet.mockClear();
+        if (restoreTiming === 'after creation') resolveRestore(staleDraft);
+        await vi.advanceTimersByTimeAsync(300);
+        expect(getByRole('textbox').textContent?.trim()).toBe('');
+        unmount();
+        for (const [, , text, attachments] of mocks.draftSet.mock.calls) {
+          expect(text).toBe('');
+          expect(attachments).toBeUndefined();
+        }
+        expect(mocks.persistedDraft).toBeNull();
+      } finally {
+        finishNavigation?.();
+      }
+    },
+  );
 
   it('preserves the local repo selection and agent prefs in the persisted form state', async () => {
     mockCreateSuccess();

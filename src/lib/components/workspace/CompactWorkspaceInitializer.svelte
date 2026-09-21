@@ -727,9 +727,14 @@
   // initial empty save cannot clear a not-yet-restored draft. Non-fatal.
   let draftRestored = $state(false);
   let draftRestoreFailed = false;
+  let draftRestoreCancelled = false;
+  onDestroy(() => {
+    draftRestoreCancelled = true;
+  });
   (async () => {
     try {
       const restore = await restoreNewWorkspaceDraft(appClient.drafts);
+      if (draftRestoreCancelled) return;
       draftRestoreFailed = restore.status === 'error';
       if (restore.status === 'restored') {
         if (restore.contextItems.length > 0 && contextItems.length === 0) {
@@ -738,7 +743,7 @@
         if (restore.text && !initialPrompt) {
           initialPrompt = restore.text;
           setTimeout(() => {
-            richTextarea?.setContent(restore.text);
+            if (!draftRestoreCancelled) richTextarea?.setContent(restore.text);
           }, 50);
         }
       }
@@ -2327,6 +2332,8 @@
       scope = '';
     }
     remoteSetup = null;
+    // A late drafts.get or its delayed editor update must not refill the form.
+    draftRestoreCancelled = true;
     initialPrompt = '';
     contextItems = []; // Clear attachment items
     richTextarea?.clear(); // Clear the TipTap editor content
