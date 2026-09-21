@@ -133,9 +133,16 @@
   $effect(() => {
     const currentCandidates = candidates;
     const currentMax = maxWebviews;
+    const recoveryTabIds = new Set(Object.keys($recoveryRequests$));
     const { currentCache, nextCache } = untrack(() => ({
       currentCache: cache,
-      nextCache: updateOffscreenWebviewCache(cache, currentCandidates, Date.now(), currentMax),
+      nextCache: updateOffscreenWebviewCache(
+        cache,
+        currentCandidates,
+        Date.now(),
+        currentMax,
+        recoveryTabIds,
+      ),
     }));
     if (!areOffscreenWebviewCachesEqual(currentCache, nextCache)) {
       for (const candidate of currentCandidates) {
