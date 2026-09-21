@@ -30,6 +30,7 @@ const PIPE_TO_GREP = /(?:^|[^|])\|(?!\|)\s*grep(?=[\s|;&<>()]|$)/g;
 const COMMAND_TERMINATOR = /\||;|\(|\)|(?<![<>])&/;
 const TOKEN_BOUNDARY = /[\s<>]+/;
 const QUOTED = /'[^']*'|"[^"]*"/g;
+const LINE_CONTINUATION = /\s*\\\s*$/;
 const SHORT_QUIET_FLAG = /^-[A-Za-z]*q[A-Za-z]*$/;
 const LONG_QUIET_FLAGS = new Set(['--quiet', '--silent']);
 
@@ -45,11 +46,24 @@ interface WorkflowLine {
   text: string;
 }
 
-const codeLines = (workflow: string): WorkflowLine[] =>
-  workflow
-    .split('\n')
-    .map((text, index) => ({ line: index + 1, text }))
-    .filter(({ text }) => !text.trim().startsWith('#'));
+// Logical lines: a trailing `\` joins the next physical line, reported at the
+// line where the command starts.
+const codeLines = (workflow: string): WorkflowLine[] => {
+  const lines: WorkflowLine[] = [];
+  let open: WorkflowLine | undefined;
+  workflow.split('\n').forEach((text, index) => {
+    const continued = LINE_CONTINUATION.test(text);
+    const body = text.replace(LINE_CONTINUATION, '');
+    if (open) {
+      open.text += ` ${body.trim()}`;
+    } else {
+      open = { line: index + 1, text: body };
+      lines.push(open);
+    }
+    if (!continued) open = undefined;
+  });
+  return lines.filter(({ text }) => !text.trim().startsWith('#'));
+};
 
 const hasQuietFlag = (grepArgs: string): boolean => {
   const command = grepArgs.split(COMMAND_TERMINATOR, 1)[0];
@@ -127,6 +141,18 @@ describe('workflow grep -q pipeline detector', () => {
     ['echo "a|b" | grep x'],
   ])('does not flag %s', (line) => {
     expect(lineNumbers(run('echo start', line))).toEqual([]);
+  });
+
+  it('joins backslash-continued lines and reports the starting line', () => {
+    const workflow = run('echo start', 'echo "$OUT" | \\', '  grep -q pattern', 'echo done');
+    expect(describeHits('wf.yml', findQuietGrepPipelines(workflow))).toBe(
+      'wf.yml:4: echo "$OUT" | grep -q pattern',
+    );
+  });
+
+  it('does not flag a backslash-continued drain', () => {
+    const workflow = run('echo "$OUT" | \\', '  grep -E pattern >/dev/null', 'echo done');
+    expect(lineNumbers(workflow)).toEqual([]);
   });
 
   it('ignores commented-out pipelines', () => {
