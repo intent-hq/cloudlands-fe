@@ -384,6 +384,30 @@ describe('runSvelteCheck', () => {
       },
     );
 
+    // intent-hq/intent#5509: a host with Datadog tracing injected into Node
+    // (NODE_OPTIONS -r dd-trace/init) prints its startup configuration to the
+    // child's stdout before anything the child writes itself.
+    it('measures the peak when a preload writes a startup banner to the child stdout first', async () => {
+      const banner =
+        'DATADOG TRACER CONFIGURATION - {"date":"2026-09-20T00:00:00.000Z","service":"node","enabled":true}';
+      const preloadDir = mkdtempSync(path.join(tmpdir(), 'rss-banner-preload-'));
+      const preload = path.join(preloadDir, 'banner.cjs');
+      writeFileSync(preload, `process.stdout.write(${JSON.stringify(`${banner}\n`)});`);
+      try {
+        const { peakRssMiB, output, ...rest } = await runChild(
+          'Buffer.alloc(256 * 1024 * 1024, 1); console.log(process.resourceUsage().maxRSS); process.exit(0);',
+          `--require ${preload}`,
+        );
+        expect(rest).toEqual({ exitCode: 0, errors: [] });
+        expect(output).toContain(banner);
+        const childMaxRssMiB = Math.round(Number(output.trim()) / 1024);
+        expect(childMaxRssMiB).toBeGreaterThanOrEqual(256);
+        expect(peakRssMiB).toBeGreaterThanOrEqual(childMaxRssMiB);
+      } finally {
+        rmSync(preloadDir, { recursive: true, force: true });
+      }
+    });
+
     it('still reports a peak after a V8 heap-limit OOM abort', async () => {
       const { exitCode, peakRssMiB, errors } = await runChild(
         [
