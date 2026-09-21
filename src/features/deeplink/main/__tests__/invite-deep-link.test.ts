@@ -1291,20 +1291,22 @@ describe('handleInviteDeepLink — sign-in required', () => {
   // click the button — the flow's end settles the prompt on its own.
   describe('the wait starts when the code is shown', () => {
     it('modal: authorized (event) while no button was clicked → prove prompt, browser never opened', async () => {
+      connectFirst();
       const signIn = fakeConsent('pending');
       const prove2 = fakeConsent('open');
       showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
 
       const pending = handleInviteDeepLink(LINK);
-      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(2));
       expect(clipboardWriteText).toHaveBeenCalledWith(CONNECT.userCode);
       emitAuthChanged('authorized');
       await pending;
 
       expect(openExternal).not.toHaveBeenCalled();
-      expect(showInviteConsent).toHaveBeenCalledTimes(2);
-      expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'sign-in-required' });
-      expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ mode: 'prove', login: 'octocat' });
+      expect(showInviteConsent).toHaveBeenCalledTimes(3);
+      expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'connect-forge' });
+      expect(showInviteConsent.mock.calls[1][0]).toMatchObject({ mode: 'sign-in-required' });
+      expect(showInviteConsent.mock.calls[2][0]).toMatchObject({ mode: 'prove', login: 'octocat' });
       expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('superseded');
       expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
       expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
@@ -1325,6 +1327,7 @@ describe('handleInviteDeepLink — sign-in required', () => {
         if (!signedIn) throw localRefusal('github-not-connected');
         return PROOF;
       });
+      connectFirst();
       const signIn = fakeConsent('pending');
       const prove2 = fakeConsent('open');
       showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
@@ -1340,11 +1343,12 @@ describe('handleInviteDeepLink — sign-in required', () => {
     }, 15_000);
 
     it('modal: denied while no button was clicked → sign-in-denied failure, browser never opened', async () => {
+      connectFirst();
       const signIn = fakeConsent('pending');
       showInviteConsent.mockReturnValue(signIn.prompt);
 
       const pending = handleInviteDeepLink(LINK);
-      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(2));
       emitAuthChanged('denied');
       await pending;
 
@@ -1362,6 +1366,7 @@ describe('handleInviteDeepLink — sign-in required', () => {
       vi.useFakeTimers();
       try {
         const baselineListeners = notificationListeners.size;
+        connectFirst();
         const signIn = fakeConsent('pending');
         let shown!: () => void;
         const consentShown = new Promise<void>((resolve) => {
