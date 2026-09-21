@@ -1,5 +1,14 @@
+// @verify-changed-triggers: tsconfig*.json
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CANARY_DIR,
   CANARY_PATHS,
+  CANARY_TSCONFIG_EXCLUDE,
   decideExitCode,
   findMissingCanaries,
   formatCanaryFailure,
@@ -17,6 +27,7 @@ import {
   stripJsonc,
 } from './check-dead-code-lib.mjs';
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [CANARY_SVELTE, CANARY_TS] = CANARY_PATHS;
 const RULES = { duplicates: 'warn' };
 
@@ -150,6 +161,68 @@ describe('stripCanaryIssues + exit decision', () => {
     const report = renderIssues(rows, RULES);
     expect(report).toContain('Unused exports (1)');
     expect(report).toContain('src/a.ts  foo:3:14');
+  });
+});
+
+// The gate writes and deletes the canary files while it runs. A `tsc` overlapping that
+// window (`pnpm run type-check` next to `pnpm run lint:dead-code`) enumerates the files
+// on startup and fails with TS6053 when they are gone by the time it reads them, so every
+// root tsconfig that would pick them up has to exclude them (cloudlands-fe#2724).
+describe('tsconfig excludes the canary directory', () => {
+  type TsConfig = { extends?: string; include?: string[]; exclude?: string[] };
+
+  // tsc treats a bare directory entry (`dist`) as `dist/**/*` in include and exclude.
+  // `!`-prefixed include entries are not tsconfig syntax and match nothing.
+  function matchesAny(file: string, patterns: string[]): boolean {
+    return patterns.some(
+      (pattern) =>
+        !pattern.startsWith('!') &&
+        (path.matchesGlob(file, pattern) || path.matchesGlob(file, `${pattern}/**/*`)),
+    );
+  }
+
+  // `include` / `exclude` are not merged across `extends`: the nearest config wins, and
+  // a chain that sets neither falls back to tsc's `**/*`.
+  function fileLists(configPath: string): { include: string[]; exclude: string[] } {
+    let include: string[] | undefined;
+    let exclude: string[] | undefined;
+    const seen = new Set<string>();
+    let current: string | undefined = configPath;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      const config: TsConfig = JSON.parse(stripJsonc(readFileSync(current, 'utf8')));
+      include ??= config.include;
+      exclude ??= config.exclude;
+      current = config.extends ? path.resolve(path.dirname(current), config.extends) : undefined;
+    }
+    return { include: include ?? ['**/*'], exclude: exclude ?? [] };
+  }
+
+  const rootConfigs = readdirSync(REPO_ROOT)
+    .filter((name) => /^tsconfig.*\.json$/.test(name))
+    .sort();
+
+  it('the shared exclude glob covers both canary files', () => {
+    expect(rootConfigs).toContain('tsconfig.json');
+    for (const canary of CANARY_PATHS) {
+      expect(path.matchesGlob(canary, CANARY_TSCONFIG_EXCLUDE)).toBe(true);
+    }
+  });
+
+  it('the renderer tsconfig would otherwise include the canary, so the exclude is load-bearing', () => {
+    const { include } = fileLists(path.join(REPO_ROOT, 'tsconfig.json'));
+    for (const canary of CANARY_PATHS) expect(matchesAny(canary, include)).toBe(true);
+  });
+
+  it.each(rootConfigs)('%s excludes every canary file its include patterns match', (name) => {
+    const { include, exclude } = fileLists(path.join(REPO_ROOT, name));
+    for (const canary of CANARY_PATHS) {
+      if (!matchesAny(canary, include)) continue;
+      expect(
+        matchesAny(canary, exclude),
+        `${name} includes ${canary}; add ${JSON.stringify(CANARY_TSCONFIG_EXCLUDE)} to its "exclude"`,
+      ).toBe(true);
+    }
   });
 });
 
