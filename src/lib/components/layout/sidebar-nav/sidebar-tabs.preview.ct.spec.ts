@@ -4,6 +4,20 @@ import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
 test.use({ reducedMotion: 'reduce' });
 
+async function expectNoFocusRing(tab: Locator) {
+  await expect(tab).toHaveCSS('outline-style', 'none');
+  // Tailwind's ring-0 serializes as zero-size shadow layers, not necessarily 'none'.
+  await expect
+    .poll(() =>
+      tab.evaluate((node) =>
+        (getComputedStyle(node).boxShadow.match(/-?\d*\.?\d+px/g) ?? [])
+          .map(Number.parseFloat)
+          .filter((length) => length !== 0),
+      ),
+    )
+    .toEqual([]);
+}
+
 async function observePaneMotion(panel: Locator) {
   await panel.evaluate((node) => {
     const element = node as HTMLElement;
@@ -106,8 +120,7 @@ test('arrows, Home and End select tabs without moving focus into hidden content'
   await workspaces.focus();
   await workspaces.press('ArrowRight');
   await expect(intent).toBeFocused();
-  await expect(intent).toHaveCSS('outline-style', 'none');
-  await expect(intent).toHaveCSS('box-shadow', 'none');
+  await expectNoFocusRing(intent);
   await expect(intent).toHaveAttribute('aria-selected', 'true');
   await expect(shell).toHaveAttribute('data-panel-item', 'chief');
   await expect(intentPanel).toBeVisible();
@@ -119,8 +132,7 @@ test('arrows, Home and End select tabs without moving focus into hidden content'
 
   await intent.press('ArrowLeft');
   await expect(workspaces).toBeFocused();
-  await expect(workspaces).toHaveCSS('outline-style', 'none');
-  await expect(workspaces).toHaveCSS('box-shadow', 'none');
+  await expectNoFocusRing(workspaces);
   await expect(shell).toHaveAttribute('data-panel-item', 'all-workspaces');
   expect(await intentPanel.evaluate((node) => (node as HTMLElement).inert)).toBe(true);
   expect(await intentPanel.evaluate((node) => (node as HTMLElement).hidden)).toBe(true);
@@ -239,14 +251,18 @@ test('drag resizing changes the keyboard axis without remounting workspace searc
   const searchElement = await search.elementHandle();
 
   async function dragBy(delta: number) {
-    const handle = await component.getByTestId('width-resize-handle').boundingBox();
+    const resizeHandle = component.getByTestId('width-resize-handle');
+    const handle = await resizeHandle.boundingBox();
     expect(handle).not.toBeNull();
-    const x = handle!.x + handle!.width / 2;
+    // The handle straddles the shell's clipped edge. Start in its inner half.
+    const x = handle!.x + handle!.width / 4;
     const y = handle!.y + handle!.height / 2;
-    await page.mouse.move(x, y);
+    await resizeHandle.hover({ position: { x: handle!.width / 4, y: handle!.height / 2 } });
     await page.mouse.down();
+    await expect(resizeHandle).toHaveAttribute('data-resizing', 'true');
     await page.mouse.move(x + delta, y, { steps: 5 });
     await page.mouse.up();
+    await expect(resizeHandle).toHaveAttribute('data-resizing', 'false');
   }
 
   await dragBy(-108);
