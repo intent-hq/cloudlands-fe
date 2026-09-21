@@ -102,7 +102,7 @@
   const isCombinedWorkspace = $derived(
     displayedPanelItem !== null && isCombinedWorkspacePanelItem(displayedPanelItem),
   );
-  const workspaceTab = $derived(
+  let workspaceTab = $derived(
     displayedPanelItem === 'chief' && !$isCollaboratorOnlyClient$ ? 'chief' : 'all-workspaces',
   );
   let pointerTabChange = false;
@@ -110,6 +110,9 @@
 
   function handleWorkspaceTabChange(value: string) {
     if (value === 'chief' || value === 'all-workspaces') {
+      // Tabs updates selection immediately; match its pane interactivity before
+      // the cadenced Redux selector catches up. External navigation still derives it.
+      workspaceTab = value;
       animateTabContent = pointerTabChange;
       pointerTabChange = false;
       appStore.dispatch(openPanel(value));

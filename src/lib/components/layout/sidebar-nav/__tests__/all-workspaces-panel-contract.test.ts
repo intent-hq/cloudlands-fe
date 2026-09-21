@@ -33,6 +33,8 @@ describe('Sidebar workspace and Intent tabs', () => {
     cleanup();
     appStore.dispatch(closePanel());
     appStore.dispatch(setShowCreateModal(false));
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('switches destinations without closing the sidebar and links tabs to panels', async () => {
@@ -53,6 +55,33 @@ describe('Sidebar workspace and Intent tabs', () => {
     await fireEvent.click(workspaces);
     expect(appStore.state.sidebarNav.panelItem).toBe('all-workspaces');
     expect(workspaces.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('keeps pane interactivity in sync with selection before the Redux frame arrives', async () => {
+    renderPanel();
+    await tick();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+
+    const workspaces = screen.getByRole('tab', {
+      name: m.layout_sidebarPanel_workspacesTab_label(),
+    });
+    const intent = screen.getByRole('tab', { name: m.layout_chiefCard_title() });
+    for (const tab of [intent, workspaces]) {
+      await fireEvent.click(tab);
+      expect(tab.getAttribute('aria-selected')).toBe('true');
+      const activePanel = screen.getByRole('tabpanel');
+      expect(activePanel.id).toBe(tab.getAttribute('aria-controls'));
+      expect(activePanel.hasAttribute('inert')).toBe(false);
+      const inactivePanel = screen
+        .getAllByRole('tabpanel', { hidden: true })
+        .find((panel) => panel !== activePanel)!;
+      expect(inactivePanel.hasAttribute('hidden')).toBe(true);
+      expect(inactivePanel.hasAttribute('inert')).toBe(true);
+      expect(screen.getByTestId('intent-content').getAttribute('data-active')).toBe(
+        String(tab === intent),
+      );
+    }
   });
 
   it('honors external Intent navigation and hides inactive content from interaction', async () => {
