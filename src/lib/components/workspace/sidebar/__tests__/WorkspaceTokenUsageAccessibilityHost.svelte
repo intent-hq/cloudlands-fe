@@ -15,6 +15,7 @@
     crossFilter?: boolean;
     navigators?: boolean;
     messageOnly?: boolean;
+    selectionMatrix?: boolean;
     scopedCosts?: boolean;
   }
 
@@ -27,6 +28,7 @@
     crossFilter = true,
     navigators = true,
     messageOnly = false,
+    selectionMatrix = false,
     scopedCosts = true,
   }: Props = $props();
   // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
@@ -226,6 +228,66 @@
       lastScanAt: '2026-08-22T00:00:00Z',
     }),
   );
+
+  // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+  if (selectionMatrix) {
+    const totals = (inputTokens: number) => ({
+      inputTokens,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    });
+    // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+    store.dispatch(
+      tokenUsageReceived(workspaceId, {
+        totals: totals(900),
+        byAgentId: { alpha: totals(750), beta: totals(150) },
+        byModel: { 'model-a': totals(700), 'model-b': totals(200) },
+        byAgentModel: [
+          {
+            agentId: 'alpha',
+            model: 'model-a',
+            totals: totals(600),
+            humanMessages: 6,
+            agentMessages: 1,
+          },
+          {
+            agentId: 'alpha',
+            model: 'model-b',
+            totals: totals(150),
+            humanMessages: 1,
+            agentMessages: 5,
+          },
+          {
+            agentId: 'beta',
+            model: 'model-a',
+            totals: totals(100),
+            humanMessages: 2,
+            agentMessages: 1,
+          },
+          {
+            agentId: 'beta',
+            model: 'model-b',
+            totals: totals(50),
+            humanMessages: 4,
+            agentMessages: 3,
+          },
+          ...(messageOnly
+            ? [
+                {
+                  agentId: 'messages-only',
+                  model: 'model-message-only',
+                  totals: totals(0),
+                  humanMessages: 9,
+                  agentMessages: 1,
+                },
+              ]
+            : []),
+        ],
+        lastScanAt: '2026-08-22T00:00:00Z',
+      }),
+    );
+  }
 
   $effect(() => {
     const root = document.documentElement;

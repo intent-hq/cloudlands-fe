@@ -737,6 +737,63 @@ describe('WorkspaceTokenUsage', () => {
     );
   });
 
+  it.each([false, true])(
+    'persists sequential mouse selections independently (message-only: %s)',
+    async (messageOnly) => {
+      const usage = makeSelectionMatrixUsage();
+      if (messageOnly) {
+        usage.byAgentModel!.push({
+          agentId: 'agent-messages',
+          model: 'model-messages',
+          totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+          humanMessages: 9,
+          agentMessages: 1,
+        });
+      }
+      mocks.state.usage = usage;
+      mocks.state.agents = [
+        { id: 'agent-alpha', name: 'Alpha' },
+        { id: 'agent-beta', name: 'Beta' },
+        { id: 'agent-messages', name: 'Messages' },
+      ];
+      await renderExpandedTokenUsage();
+
+      const details = screen.getByTestId('token-usage-details');
+      const status = details.querySelector('.preview-status')!;
+      const agent = screen.getByRole('radio', {
+        name: messageOnly ? /By agent, Messages:/ : /By agent, Beta:/,
+      });
+      const model = screen.getByRole('radio', {
+        name: messageOnly ? /By model, Model Messages:/ : /By model, Model B:/,
+      });
+      for (const radio of [agent, model]) {
+        await fireEvent.pointerEnter(radio, { pointerType: 'mouse' });
+        await fireEvent.pointerDown(radio, { pointerType: 'mouse', button: 0 });
+        radio.focus();
+        await fireEvent.pointerUp(radio, { pointerType: 'mouse', button: 0 });
+        await fireEvent.click(radio);
+        await fireEvent.pointerLeave(radio, { pointerType: 'mouse' });
+      }
+
+      expect(visibleText(status)).toBe(
+        messageOnly
+          ? 'Active scope By model Model Messages 0 processed'
+          : 'Active scope By model Model B 50 processed',
+      );
+      expect(visibleText(details.querySelector('.message-composition-label')!)).toBe(
+        messageOnly ? '9 human messages and 1 agent message' : '4 human and 3 agent messages',
+      );
+      for (const radio of [agent, model]) {
+        expect(radio.getAttribute('aria-checked')).toBe('true');
+        expect(radio.tabIndex).toBe(0);
+      }
+      model.blur();
+      await fireEvent.blur(model);
+      expect(agent.getAttribute('aria-checked')).toBe('true');
+      expect(model.getAttribute('aria-checked')).toBe('true');
+    },
+  );
+
   it('retains the touch-selected agent when the model selection changes', async () => {
     mocks.state.usage = makeSelectionMatrixUsage();
     mocks.state.agents = [
@@ -751,16 +808,28 @@ describe('WorkspaceTokenUsage', () => {
     const modelB = screen.getByRole('radio', { name: 'By model, Model B: 200 tokens, 22%' });
 
     await fireEvent.pointerDown(beta, { pointerType: 'touch' });
+    await fireEvent.click(beta, { detail: 1 });
     expect(beta.getAttribute('aria-checked')).toBe('true');
     expect(visibleText(status)).toBe('Active scope By agent Beta 100 processed');
 
     await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
+    await fireEvent.click(modelB, { detail: 1 });
     expect(modelB.getAttribute('aria-checked')).toBe('true');
     expect(beta.getAttribute('aria-checked')).toBe('true');
     expect(visibleText(status)).toBe('Active scope By model Model B 50 processed');
     expect(visibleText(details.querySelector('.message-composition-label')!)).toBe(
       '4 human and 3 agent messages',
     );
+
+    await fireEvent.pointerDown(modelB, { pointerType: 'touch' });
+    await fireEvent.click(modelB, { detail: 1 });
+    expect(modelB.getAttribute('aria-checked')).toBe('false');
+    expect(beta.getAttribute('aria-checked')).toBe('true');
+    expect(visibleText(status)).toBe('Active scope By agent Beta 100 processed');
+
+    await fireEvent.click(modelB, { detail: 0 });
+    expect(modelB.getAttribute('aria-checked')).toBe('true');
+    expect(visibleText(status)).toBe('Active scope By model Model B 50 processed');
   });
 
   it('intersects simultaneous navigator selections and restores their parent scope', async () => {
