@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import NeutralBorderContractHost from './NeutralBorderContractHost.svelte';
 
@@ -10,16 +10,20 @@ const probes = [
   ['form', '[data-slot="input"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
 
-// Subscription surfaces and panel shells have no border.
+// Subscription surfaces and chat prompts have no border.
 const borderlessProbes = [
   ['subscription', '[data-testid="event-subscriptions-card"]', 'top'],
-  ['panel', '.panel', 'top'],
   ['chat', '[data-testid="pinned-user-prompt"]', 'top'],
 ] as const satisfies ReadonlyArray<readonly [string, string, Edge]>;
+
+// Panel shells reserve a focus-invariant 1px border that stays transparent while unfocused
+// (see panel-shell-corners.ct.spec.ts).
+const panelShellSelector = '.panel';
 
 const sampledSelectors = [
   ...probes.map(([, selector]) => selector),
   ...borderlessProbes.map(([, selector]) => selector),
+  panelShellSelector,
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:first-child',
   '[data-testid="panel-border-fixture"] [data-loading-panel] > div:last-child',
   '[data-testid="event-subscriptions-outer-header"]',
@@ -101,6 +105,10 @@ for (const theme of ['light', 'dark'] as const) {
       expect(
         borderlessStyles.every(({ width, ownerCount }) => width === '0px' && ownerCount === 0),
       ).toBe(true);
+
+      const panelBorder = await border(page.locator(panelShellSelector), 'top');
+      expect(panelBorder.width).toBe('1px');
+      expect(panelBorder.color).toBe('rgba(0, 0, 0, 0)');
 
       // The shared overlay recipe (85641bef) uses a dark-only structural border.
       const dialogBorder = await border(page.locator('[data-slot="dialog-content"]'), 'top');

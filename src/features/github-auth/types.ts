@@ -51,6 +51,28 @@ export interface GithubRepo {
 }
 
 /**
+ * Options for starting GitHub authentication
+ */
+export interface StartAuthOptions {
+  /**
+   * Start a fresh device flow even when a token is already configured, so an
+   * existing connection can be re-authorized (e.g. to pick up new scopes).
+   */
+  reconnect?: boolean;
+}
+
+/**
+ * One `github.users.search` hit (§5.27): the daemon's login-prefix user
+ * search over `GET /search/users`, already camelCase on the wire.
+ */
+export interface GithubUserSearchHit {
+  id: number;
+  login: string;
+  avatarUrl: string | null;
+  htmlUrl: string | null;
+}
+
+/**
  * Result from starting GitHub authentication
  */
 export interface StartAuthResult {

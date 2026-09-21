@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { IconWeight } from 'phosphor-svelte';
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
   import type { IconDefinition } from '$lib/icons/phosphor-icons';
@@ -13,10 +14,12 @@
     class: className,
     children,
     icon,
+    iconWeight,
     ...restProps
   }: WithoutChildrenOrChild<MenuPrimitive.SubTriggerProps> & {
     children?: Snippet;
     icon?: IconDefinition;
+    iconWeight?: IconWeight;
   } = $props();
 </script>
 
@@ -27,11 +30,11 @@
   class={cn(menuItem(), className)}
   {...restProps}
 >
-  <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true">
-    {#if icon}
-      <Fa {icon} size={16} class="size-4 text-muted-foreground opacity-70" />
-    {/if}
-  </span>
+  {#if icon}
+    <span data-slot="menu-item-leading" class="size-4 shrink-0" aria-hidden="true">
+      <Fa {icon} weight={iconWeight} size={16} class="size-4 text-muted-foreground opacity-70" />
+    </span>
+  {/if}
   {@render children?.()}
   <span data-slot="menu-sub-chevron" class={OPTION_LIST_END_SLOT_CLASS} aria-hidden="true">›</span>
 </MenuPrimitive.SubTrigger>

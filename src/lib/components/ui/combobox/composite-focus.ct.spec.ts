@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../../test/ct-test';
 import Combobox from './combobox.svelte';
 import BrowserViewerTabHeader from '../../browser/BrowserViewerTabHeader.svelte';
 import SearchableCombobox from '../searchable-combobox/searchable-combobox.svelte';
@@ -47,28 +47,16 @@ for (const kind of ['combobox', 'searchable', 'file', 'copy', 'sidebar'] as cons
 }
 
 for (const kind of ['input', 'textarea'] as const) {
-  test(`${kind} shows the semantic outline on keyboard focus by default`, async ({
-    mount,
-    page,
-  }) => {
+  test(`${kind} uses caret-only keyboard focus by default`, async ({ mount, page }) => {
     if (kind === 'input') await mount(Input, { props: { 'aria-label': 'Text' } });
     else await mount(Textarea, { props: { 'aria-label': 'Text' } });
     const field = page.getByRole('textbox');
     const restShadow = await field.evaluate((node) => getComputedStyle(node).boxShadow);
     await page.keyboard.press('Tab');
     await expect(field).toBeFocused();
-    await expect(field).toHaveCSS('outline-style', 'solid');
-    await expect(field).toHaveCSS('outline-width', '1px');
-    await expect(field).toHaveCSS('outline-offset', '2px');
-    const expectedColor = await field.evaluate((node) => {
-      const token = document.createElement('span');
-      token.style.color = `hsl(${getComputedStyle(node).getPropertyValue('--focus-ring')})`;
-      document.body.appendChild(token);
-      const color = getComputedStyle(token).color;
-      token.remove();
-      return color;
-    });
-    await expect(field).toHaveCSS('outline-color', expectedColor);
+    await expect(field).toHaveCSS('outline-style', 'none');
+    const textColor = await field.evaluate((node) => getComputedStyle(node).color);
+    await expect(field).toHaveCSS('caret-color', textColor);
     await expect(field).toHaveCSS('box-shadow', restShadow);
   });
 

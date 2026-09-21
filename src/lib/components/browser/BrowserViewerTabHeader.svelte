@@ -157,12 +157,13 @@
     </div>
 
     <div
-      class="flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2 {offline
+      class="flex h-8 min-w-0 flex-1 items-center rounded-md bg-background {offline
         ? 'opacity-60'
         : ''}"
+      data-browser-address-surface
     >
       {#if isEditingUrl}
-        <form onsubmit={submitUrl} class="flex h-full min-w-0 flex-1 items-center">
+        <form onsubmit={submitUrl} class="flex h-full min-w-0 flex-1 items-center px-2">
           <Input
             bind:this={urlInputRef}
             type="text"
@@ -184,9 +185,9 @@
         </form>
       {:else}
         <Button
-          variant="ghost"
+          variant="plain"
           type="button"
-          class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md px-6 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
           onclick={() => void startEditingUrl()}
           disabled={offline}
           aria-label={m.browser_embedded_editAddress_ariaLabel()}
@@ -212,7 +213,7 @@
 
   {#if offline}
     <div
-      class="flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning"
+      class="flex items-center gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning-ink"
       data-browser-viewer-offline-banner
       role="status"
     >

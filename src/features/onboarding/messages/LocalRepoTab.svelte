@@ -265,7 +265,9 @@
       <Button
         variant="ghost"
         type="button"
-        class="text-muted-foreground/60 hover:text-foreground cursor-pointer p-1.5 mr-0.5 rounded hover:bg-muted/40 transition-colors"
+        size="icon-compact"
+        iconOnly
+        class="text-muted-foreground/60 hover:text-foreground cursor-pointer mr-0.5 rounded hover:bg-muted/40 transition-colors"
         onclick={handleSelectFolder}
         aria-label={m.onboarding_localRepoTab_browse_ariaLabel()}
         title={m.onboarding_localRepoTab_browse_ariaLabel()}

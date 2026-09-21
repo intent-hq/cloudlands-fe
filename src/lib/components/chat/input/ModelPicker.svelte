@@ -80,6 +80,7 @@
     selectNormalizedProviderId,
     selectProviderDisplayName,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
   import { getAgentProvider } from '$shared/types/agent-session';
   import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
   import { AUGGIE_LEGACY_GROUP_KEY, buildGroupedModelOptions } from './model-picker-groups';
@@ -105,6 +106,7 @@
     faChevronDown,
     faLock,
     faPlus,
+    faXmark,
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -133,8 +135,15 @@
   const activeProviderId$ = selectActiveProviderId();
   const modelFetchProviderIds$ = selectModelFetchProviderIds();
   const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
+  // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
+  // host catalog regardless (`isGuestLocked` is declared with the props below
+  // and only read once the picker is rendering).
   function canUseProviderModels(providerId: string): boolean {
-    return normalizeProviderId(providerId) !== 'antigravity' || $antigravityModelsAllowed$;
+    return (
+      normalizeProviderId(providerId) !== 'antigravity' ||
+      $antigravityModelsAllowed$ ||
+      isGuestLocked
+    );
   }
   const availableEnabledProviderIds$ = selectAvailableEnabledProviderIds();
   const selectedModel$ = selectSelectedModel();
@@ -301,6 +310,19 @@
   });
 
   const effectiveProviderId = $derived(explicitProviderId ?? $activeProviderId$);
+
+  // A guest window (multiplayer w4) or a `collaborator` seat cannot change an
+  // agent's model, and its local provider availability says nothing about the
+  // host: the agent-bound picker renders read-only with the host catalog
+  // label and no availability warnings (intent#5378). The selector fails
+  // closed while the window's identity is still the boot-time default.
+  const workspaceIdStore = writable(untrack(() => workspaceId) ?? '');
+  const isWorkspaceCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+  const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
+  const effectiveLocked = $derived(isLocked || isGuestLocked);
 
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
@@ -472,10 +494,12 @@
   // The per-agent fetch is only needed when the effective provider's models
   // aren't already covered by the all-providers fetch because the agent's
   // provider is since unavailable. Skipping it otherwise avoids a duplicate fetch.
+  // A guest-locked picker always runs it: the all-providers fetch follows the
+  // guest's local availability, so this is its only route to the host catalog.
   const usesAgentProviderFetch = $derived(
     canUseProviderModels(effectiveProviderId) &&
-      effectiveProviderId !== $activeProviderId$ &&
-      !isEffectiveProviderAvailable,
+      (isGuestLocked ||
+        (effectiveProviderId !== $activeProviderId$ && !isEffectiveProviderAvailable)),
   );
 
   // Separate generation counter from fetchAllProviderModels: in unlocked mode
@@ -707,8 +731,17 @@
     propModelAtLocalChange = undefined;
   });
 
+  // A live owner → collaborator role change must not let a deferred update
+  // queued during streaming reach the backend once streaming ends.
   $effect(() => {
-    if (!deferUpdate && pendingModelUpdate) {
+    if (isGuestLocked && pendingModelUpdate) {
+      logger.info('Dropping deferred model update (picker guest-locked):', { agentId });
+      pendingModelUpdate = null;
+    }
+  });
+
+  $effect(() => {
+    if (!deferUpdate && pendingModelUpdate && !isGuestLocked) {
       const model = pendingModelUpdate;
       pendingModelUpdate = null;
       logger.info('Applying deferred model update:', { model, agentId });
@@ -720,8 +753,15 @@
   // for every provider, so a bare pick is attributed to the loaded group that
   // contains the row rather than blanket-attributed to the default provider.
   // A legacy compound prefix (persisted ids) still wins outright; when several
-  // groups own the same bare id — or no loaded group owns it — the default
-  // provider keeps priority (the intent-hq/monorepo#1657 contract).
+  // groups own the same bare id the default provider keeps priority (the
+  // intent-hq/monorepo#1657 contract). The per-agent group — the effective
+  // provider's models when that provider is outside the enabled set (disabled
+  // locally, or never enabled in a guest window, where the host's settings
+  // are administrator-only and `providers.enabled` never hydrates) — is
+  // consulted too, so a pick from it attributes to the agent's provider. With
+  // no owning group, an agent-bound picker attributes the bare id to the
+  // session's own provider (what the daemon resolves a bare `agent.setModel`
+  // id against when `providerId` is absent); otherwise the default provider.
   function resolvePickedTriple(model: string): { providerId: string; modelId: string } {
     const { providerId: legacyProviderId, modelId } = splitLegacyCompoundId(model);
     if (legacyProviderId) return { providerId: legacyProviderId, modelId };
@@ -740,10 +780,14 @@
     for (const [rowProviderId, options] of Object.entries(allProviderModels)) {
       if (matchesIn(rowProviderId, options)) return { providerId: rowProviderId, modelId };
     }
-    return { providerId: $defaultProviderId$, modelId };
+    if (agentProviderModels && matchesIn(effectiveProviderId, agentProviderModels)) {
+      return { providerId: normalizeProviderId(effectiveProviderId), modelId };
+    }
+    return { providerId: explicitProviderId ?? $defaultProviderId$, modelId };
   }
 
   async function applyBackendModelUpdate(model: string) {
+    if (isGuestLocked) return;
     if (agentId && workspaceId) {
       try {
         // Send the picked model's provider explicitly: the owning catalog
@@ -752,6 +796,9 @@
         // rejecting cross-provider picks.
         const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
         const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
+        // The role may have changed while the RPC was in flight; the reasoning
+        // reconciliation below issues further mutations, so stop here if locked.
+        if (isGuestLocked) return;
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
           const targetOption = flatModelOptions.find(
@@ -783,6 +830,10 @@
   }
 
   async function handleModelSelect(model: string | undefined) {
+    if (isGuestLocked) {
+      dropdownValue = localModel ?? USE_DEFAULT_VALUE;
+      return;
+    }
     if (model !== undefined && !canUseProviderModels(resolvePickedTriple(model).providerId)) {
       dropdownValue = localModel ?? USE_DEFAULT_VALUE;
       return;
@@ -812,6 +863,10 @@
     onModelChange?.(model, { providerId: pickedProviderId, modelId: pickedModelId });
 
     await tick();
+
+    // The role may have changed while yielding; never mutate session state
+    // from a picker that is now guest-locked.
+    if (isGuestLocked) return;
 
     if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
     if (!updateGlobalStore) return;
@@ -1125,6 +1180,7 @@
   // and degraded failures are surfaced by the daemon-health UI instead.
   const hasNoAvailableProvider = $derived(
     !providerId &&
+      !isGuestLocked &&
       $hasCheckedOnce$ &&
       $daemonHealth$ === 'healthy' &&
       $availableEnabledProviderIds$.length === 0,
@@ -1235,7 +1291,6 @@
         .map((group) => group.parentKey ?? group.key),
     ]),
   ]);
-  const providerTabsEnabled = $derived(showReasoning && providerTabIds.length > 1);
   const preferredBrowseProviderId = $derived(
     providerTabIds.includes(selectedModelProviderId)
       ? selectedModelProviderId
@@ -1244,20 +1299,27 @@
         : (providerTabIds[0] ?? ''),
   );
   let activeBrowseProviderId = $state('');
+  let providerBrowseChanged = $state(false);
+  const providerTabsEnabled = $derived(activeBrowseProviderId !== '');
 
   $effect(() => {
-    if (!providerTabIds.includes(activeBrowseProviderId)) {
+    if (
+      !providerTabIds.includes(activeBrowseProviderId) ||
+      (dropdownOpen && !providerBrowseChanged)
+    ) {
       activeBrowseProviderId = preferredBrowseProviderId;
     }
   });
 
   $effect(() => {
-    if (dropdownOpen && providerTabsEnabled) {
-      activeBrowseProviderId = preferredBrowseProviderId;
+    if (dropdownOpen) {
+      activeBrowseProviderId = untrack(() => preferredBrowseProviderId);
+    } else {
+      providerBrowseChanged = false;
     }
   });
 
-  // Display groups — provider tabs replace the tall group stack in the chat picker.
+  // Display groups — every picker browses one provider at a time.
   const displayGroups = $derived.by(() =>
     groupedModelOptions
       .filter((group) => {
@@ -1314,6 +1376,7 @@
   });
 
   const isSelectedModelUnavailable = $derived.by(() => {
+    if (isGuestLocked) return false;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return true;
     if (!$hasCheckedOnce$) return false;
     if (isLoadingModels) return false;
@@ -1382,16 +1445,17 @@
     currentReasoningEffort ? reasoningLevels.indexOf(currentReasoningEffort) : -1,
   );
   const showTriggerReasoningGauge = $derived(
-    currentReasoningEffort !== null &&
-      currentReasoningEffort !== 'none' &&
-      currentReasoningLevelIndex >= 0,
+    showReasoningFooter && currentReasoningEffort !== 'none',
   );
   const triggerLabel = $derived(currentModelLabel);
   const triggerAccessibleLabel = $derived(
     showReasoningFooter ? `${currentModelLabel} · ${currentReasoningLabel}` : currentModelLabel,
   );
   const lockedButtonTitle = $derived(
-    lockedTitle?.trim() || m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
+    isGuestLocked
+      ? m.chat_modelPicker_guestLocked_title()
+      : lockedTitle?.trim() ||
+          m.chat_modelPicker_modelLocked_title({ model: triggerAccessibleLabel }),
   );
   // The in-flight commit window is announced with `aria-busy` and re-entry is
   // ignored in `handleReasoningSelect`; it must not feed the HTML `disabled`
@@ -1399,6 +1463,7 @@
   let updatingReasoningEffort = $state(false);
   const reasoningControlDisabled = $derived(
     reasoningDisabled ||
+      isGuestLocked ||
       (!onReasoningChange && (!agentId || !workspaceId)) ||
       reasoningLevels.length === 0,
   );
@@ -1408,29 +1473,43 @@
       nonBlockingProviderWarnings.length > 0,
   );
 
+  const railProviderIds = $derived(providerTabIds);
+  const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
+  let pointerInteraction = $state(false);
+
+  function clearModelSearch(event: MouseEvent) {
+    modelSearchValue = '';
+    (event.currentTarget as HTMLElement)
+      .closest('[data-slot="dropdown-content"]')
+      ?.querySelector<HTMLInputElement>('[role="searchbox"]')
+      ?.focus();
+  }
+
   function selectProviderTab(providerId: string) {
+    providerBrowseChanged = true;
     activeBrowseProviderId = providerId;
   }
 
   function handleProviderTabKeydown(event: KeyboardEvent, providerId: string) {
-    const currentIndex = providerTabIds.indexOf(providerId);
+    const currentIndex = railProviderIds.indexOf(providerId);
     if (currentIndex < 0) return;
 
     let nextIndex: number | undefined;
-    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % providerTabIds.length;
-    if (event.key === 'ArrowLeft') {
-      nextIndex = (currentIndex - 1 + providerTabIds.length) % providerTabIds.length;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
+      nextIndex = (currentIndex + 1) % railProviderIds.length;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + railProviderIds.length) % railProviderIds.length;
     }
     if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = providerTabIds.length - 1;
+    if (event.key === 'End') nextIndex = railProviderIds.length - 1;
     if (nextIndex === undefined) return;
 
     event.preventDefault();
     event.stopPropagation();
-    activeBrowseProviderId = providerTabIds[nextIndex] ?? providerId;
-    const tabs = (
-      event.currentTarget as HTMLButtonElement
-    ).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    selectProviderTab(railProviderIds[nextIndex] ?? providerId);
+    const tabs = (event.currentTarget as HTMLButtonElement)
+      .closest('[role="tablist"]')
+      ?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
     tabs?.[nextIndex]?.focus();
   }
 
@@ -1471,7 +1550,7 @@
   // Only show on pickers tied to an existing agent (agentId) — the workspace
   // initializer creates new agents and shouldn't display fallback warnings.
   const showModelWarning = $derived(
-    !!agentId && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
+    !!agentId && !isGuestLocked && (isSelectedModelUnavailable || $fallbackInfo$ !== null),
   );
 
   // The selected model isn't in the catalog yet, but its provider hasn't
@@ -1526,6 +1605,7 @@
   // Only applies to pickers tied to an existing agent — onboarding doesn't need this.
   $effect(() => {
     if (!agentId) return;
+    if (isGuestLocked) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
@@ -1635,6 +1715,7 @@
 
   $effect(() => {
     if (!silentFallback) return;
+    if (isGuestLocked) return;
     if (!canUseProviderModels(selectedModelProviderId || effectiveProviderId)) return;
     if (!isSelectedModelUnavailable) return;
     if (!isLoadingModels && flatModelOptions.length === 0) return;
@@ -1696,6 +1777,7 @@
   let dropdownRef = $state<{
     focusTrigger: () => void;
     dismissAndFocusTrigger: () => void;
+    openAndFocusSearch: () => Promise<void>;
   } | null>(null);
 
   $effect(() => {
@@ -1715,7 +1797,8 @@
     clearFallbackInfo();
   }
 
-  async function handleModelChange(value: string | string[]) {
+  async function handleModelChange(value: string | string[], event?: MouseEvent) {
+    if (effectiveLocked) return;
     const modelValue = value as string;
     // Gate user-picked changes to a *different* model behind the optional
     // confirmation callback (mid-conversation switch warning). Re-selecting
@@ -1733,13 +1816,17 @@
         localModel,
         modelValue === USE_DEFAULT_VALUE ? null : modelValue,
       );
-      if (!confirmed) {
+      // The confirmation may resolve after the window's role changed; a pick
+      // that started in an owner window must not land once guest-locked.
+      if (!confirmed || isGuestLocked) {
         // Revert the dropdown's internal selection back to the current model.
         dropdownValue = localModel ?? USE_DEFAULT_VALUE;
         return;
       }
     }
-    if (modalAware) {
+    // Keyboard selection removes the focused search/listbox. Return to its
+    // trigger instead of leaving focus on body; pointer callers keep their policy.
+    if (modalAware || !event) {
       queueMicrotask(() => {
         dropdownOpen = false;
         dropdownRef?.focusTrigger();
@@ -1757,13 +1844,19 @@
 
   // Expose open function for keyboard shortcut
   export function open() {
-    if (!isLocked) {
-      dropdownOpen = true;
+    if (!effectiveLocked) {
+      pointerInteraction = false;
+      void dropdownRef?.openAndFocusSearch();
     }
   }
 </script>
 
-{#if isLocked}
+<svelte:window
+  onpointerdown={() => (pointerInteraction = true)}
+  onkeydown={() => (pointerInteraction = false)}
+/>
+
+{#if effectiveLocked}
   <!-- Show locked state without dropdown -->
   <Button
     {variant}
@@ -1784,14 +1877,11 @@
         <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
       {/if}
       <span class="flex-1 text-left truncate">{triggerLabel}</span>
-      {#if showReasoningFooter && currentReasoningEffort === null}
-        <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-          >· {currentReasoningLabel}</span
-        >
-      {:else if showTriggerReasoningGauge}
+      {#if showTriggerReasoningGauge}
         <EffortGauge
           value={currentReasoningLevelIndex}
           max={Math.max(1, reasoningLevels.length - 1)}
+          centered={currentReasoningEffort === null}
           testId="model-reasoning-effort-gauge"
           class="[&_line]:transition-none!"
         />
@@ -1805,14 +1895,11 @@
           <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
-        {#if showReasoningFooter && currentReasoningEffort === null}
-          <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-            >· {currentReasoningLabel}</span
-          >
-        {:else if showTriggerReasoningGauge}
+        {#if showTriggerReasoningGauge}
           <EffortGauge
             value={currentReasoningLevelIndex}
             max={Math.max(1, reasoningLevels.length - 1)}
+            centered={currentReasoningEffort === null}
             testId="model-reasoning-effort-gauge"
             class="[&_line]:transition-none!"
           />
@@ -1845,21 +1932,6 @@
   {/snippet}
 
   {#snippet dropdownFooter()}
-    {#if showReasoningFooter}
-      <div class="px-2 py-2" data-testid="model-reasoning-section">
-        <EffortPicker
-          mode="embedded"
-          {agentId}
-          {workspaceId}
-          effortLevels={reasoningLevels}
-          effort={persistedReasoningEffort}
-          disabled={reasoningControlDisabled}
-          busy={updatingReasoningEffort}
-          {modalAware}
-          onEffortChange={handleReasoningSelect}
-        />
-      </div>
-    {/if}
     {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
       <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
         <IntentMarkLoader size={12} />
@@ -1881,6 +1953,22 @@
         {/each}
       </div>
     {/if}
+    {#if showReasoningFooter}
+      <div class="w-full min-w-0 px-3 py-2" data-testid="model-reasoning-section">
+        <EffortPicker
+          mode="embedded"
+          class="w-full min-w-0 gap-2! [&>div]:w-24 [&>span]:min-w-0 [&>span>span]:truncate"
+          {agentId}
+          {workspaceId}
+          effortLevels={reasoningLevels}
+          effort={persistedReasoningEffort}
+          disabled={reasoningControlDisabled}
+          busy={updatingReasoningEffort}
+          {modalAware}
+          onEffortChange={handleReasoningSelect}
+        />
+      </div>
+    {/if}
   {/snippet}
 
   <Dropdown
@@ -1897,20 +1985,21 @@
     size={size === 'xs' ? 'xs' : 'sm'}
     searchable={!hasNoAvailableProvider}
     searchChrome
-    placeholder={m.chat_modelPicker_searchModels_placeholder()}
-    class="min-w-0"
-    headerClass={providerTabsEnabled ? 'bg-popover! border-b!' : 'border-b-0!'}
+    placeholder={m.ui_dropdown_search_ariaLabel()}
+    class="min-w-0 max-w-full"
+    headerClass={cn('model-picker-header border-b-0!', !hasNoAvailableProvider && 'pt-9')}
     triggerClass={cn(
-      'max-w-full',
+      'max-w-full px-2!',
       (variant === 'outline' || variant === 'default') && 'w-full justify-between border-border!',
       triggerClass,
     )}
     contentClass={cn(
-      'max-w-[calc(100vw-32px)] bg-background! text-foreground! [--selected:var(--muted)]',
-      showReasoning ? 'w-85 h-90 min-h-0 max-h-90 flex flex-col' : 'w-[332px]',
+      'model-picker-panel max-w-[calc(100vw-16px)] bg-popover! text-foreground! w-96 h-[360px] min-h-0 flex flex-col rounded-xl pl-12',
+      pointerInteraction && 'model-picker-pointer',
     )}
-    contentMaxHeight={showReasoning ? 360 : undefined}
-    fillContentHeight={showReasoning}
+    contentMaxHeight={360}
+    fillContentHeight
+    animate={false}
     {portal}
     {collisionBoundary}
     {groupHeader}
@@ -1946,14 +2035,11 @@
             <ProviderIcon providerId={triggerProviderId} class="size-3.5" />
           {/if}
           <span class="truncate">{triggerLabel}</span>
-          {#if showReasoningFooter && currentReasoningEffort === null}
-            <span class="shrink-0 text-xs" data-testid="model-reasoning-strength"
-              >· {currentReasoningLabel}</span
-            >
-          {:else if showTriggerReasoningGauge}
+          {#if showTriggerReasoningGauge}
             <EffortGauge
               value={currentReasoningLevelIndex}
               max={Math.max(1, reasoningLevels.length - 1)}
+              centered={currentReasoningEffort === null}
               testId="model-reasoning-effort-gauge"
               class="[&_line]:transition-none!"
             />
@@ -1968,21 +2054,26 @@
     {/snippet}
 
     {#snippet header()}
-      {#if providerTabsEnabled}
+      <div
+        class="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 border-r border-border bg-muted/20 py-2"
+        data-testid="model-provider-rail"
+      >
         <div
-          class="flex items-center gap-1 px-2 pt-2"
+          class="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto"
           role="tablist"
+          aria-orientation="vertical"
           aria-label={m.chat_modelPicker_modelProviders_label()}
           data-testid="model-provider-tabs"
         >
-          {#each providerTabIds as providerTabId (providerTabId)}
+          {#each railProviderIds as providerTabId (providerTabId)}
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="icon-sm"
               iconOnly={true}
               role="tab"
               aria-selected={providerTabId === activeBrowseProviderId}
               aria-label={providerDisplayName(providerTabId)}
+              title={providerDisplayName(providerTabId)}
               tabindex={providerTabId === activeBrowseProviderId ? 0 : -1}
               class={cn(
                 'text-muted-foreground hover:bg-muted/40',
@@ -1994,9 +2085,11 @@
               <ProviderIcon providerId={providerTabId} class="size-4" size={16} />
             </Button>
           {/each}
+        </div>
+        {#if !hasNoAvailableProvider}
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             iconOnly={true}
             aria-label={m.chat_modelPicker_noProviderAvailable_openSettings_label()}
             class="text-muted-foreground hover:bg-muted/40"
@@ -2005,31 +2098,50 @@
           >
             <Fa icon={faPlus} class="size-3 text-muted-foreground/50" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            iconOnly={true}
-            title={m.chat_modelPicker_refreshGroup_title({
-              group: providerDisplayName(activeBrowseProviderId),
-            })}
-            aria-label={m.chat_modelPicker_refreshGroup_title({
-              group: providerDisplayName(activeBrowseProviderId),
-            })}
-            class={cn(
-              'ml-auto text-subtle hover:bg-muted/40',
-              refreshingProviders.has(activeBrowseProviderId) && 'opacity-50! cursor-not-allowed',
-            )}
-            data-testid="model-provider-refresh-button"
-            disabled={refreshingProviders.has(activeBrowseProviderId)}
-            onclick={() => void handleRefreshProvider(activeBrowseProviderId)}
-          >
+        {/if}
+      </div>
+      {#if modelSearchValue}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly
+          class="absolute right-10 top-1.5 z-20"
+          aria-label={m.chat_modelPicker_clearSearch_ariaLabel()}
+          onclick={clearModelSearch}
+        >
+          <Fa icon={faXmark} class="size-3" />
+        </Button>
+      {/if}
+      {#if refreshProviderId}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          iconOnly={true}
+          title={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          aria-label={m.chat_modelPicker_refreshGroup_title({
+            group: providerDisplayName(refreshProviderId),
+          })}
+          class={cn(
+            'absolute right-2 top-1.5 text-subtle hover:bg-muted/40',
+            refreshingProviders.has(refreshProviderId) && 'opacity-50!',
+          )}
+          data-testid="model-provider-refresh-button"
+          aria-busy={refreshingProviders.has(refreshProviderId)}
+          disabled={refreshingProviders.has(refreshProviderId)}
+          onclick={() => void handleRefreshProvider(refreshProviderId)}
+        >
+          {#if refreshingProviders.has(refreshProviderId)}
+            <IntentMarkLoader size={12} />
+          {:else}
             <Fa
               icon={faArrowsRotate}
               size={10}
               class="text-subtle transition-transform duration-spring-slow ease-spring-slow motion-reduce:transition-none"
             />
-          </Button>
-        </div>
+          {/if}
+        </Button>
       {/if}
       {#if showModelWarning && warningMessage}
         <div class="px-3 py-2.5 border-b border-border bg-warning/5">
@@ -2052,7 +2164,7 @@
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
       {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
-      <div class="flex gap-2 w-full min-w-0">
+      <div class="flex items-center gap-2.5 w-full min-w-0 py-1">
         {#if providerLoading}
           <div class="flex items-center gap-2 text-muted-foreground text-sm">
             <IntentMarkLoader size={12} />
@@ -2069,7 +2181,7 @@
           <div class="flex-1 min-w-0">
             <span
               class={cn(
-                'block truncate text-sm font-medium',
+                'block truncate text-sm font-normal',
                 option.value === USE_DEFAULT_VALUE && 'text-muted-foreground',
               )}
             >
@@ -2109,3 +2221,41 @@
     class={resolvedNoticeClass}
   />
 {/if}
+
+<style>
+  :global(.model-picker-panel > div:has(> input[role='searchbox'])) {
+    position: absolute;
+    top: 0.25rem;
+    left: 3.5rem;
+    right: 2.5rem;
+    width: auto;
+    padding: 0;
+    z-index: 10;
+    background: transparent;
+    border-radius: var(--radius-medium);
+  }
+  :global(.model-picker-panel > div:has(> input[role='searchbox']) > svg) {
+    display: none;
+  }
+  :global(.model-picker-panel input[role='searchbox']) {
+    height: 2rem;
+    padding: 0 1.75rem 0 0.25rem;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    border-radius: var(--radius-medium);
+    caret-color: var(--color-foreground);
+  }
+  :global(.model-picker-panel.model-picker-pointer) {
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  @container style(--motion-reduced: 1) {
+    :global(.model-picker-panel.model-picker-pointer) {
+      transition: none;
+    }
+  }
+</style>

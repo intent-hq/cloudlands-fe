@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import ComboboxHarness from '../combobox/combobox.test-harness.svelte';
 import MenuHarness from '../menu/MenuTestHarness.svelte';
@@ -31,8 +31,23 @@ async function expectRow(row: Locator) {
   });
 }
 
+// bits-ui parks floating content at translate(0, -200%) until floating-ui has
+// positioned it, so a lone boundingBox() sample can catch that frame. Read every
+// box in one browser round trip and report whether the wrapper is positioned yet.
+async function sampleBoxes([first, ...rest]: Locator[]) {
+  const others = await Promise.all(rest.map((locator) => locator.elementHandle()));
+  return first.evaluate((element, others) => {
+    const wrapper = element.closest<HTMLElement>('[data-bits-floating-content-wrapper]');
+    const positioned = !wrapper || !wrapper.style.transform.includes('-200%');
+    const boxes = [element, ...others].map((node) => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y, width, height };
+    });
+    return { positioned, boxes };
+  }, others);
+}
+
 async function expectInset(container: Locator, row: Locator) {
-  const [containerBox, rowBox] = await Promise.all([container.boundingBox(), row.boundingBox()]);
   const inset = await container.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
@@ -42,21 +57,31 @@ async function expectInset(container: Locator, row: Locator) {
       paddingRight: style.paddingRight,
     };
   });
-  expect(containerBox).not.toBeNull();
-  expect(rowBox).not.toBeNull();
   expect(inset.paddingLeft).toBe('4px');
   expect(inset.paddingRight).toBe('4px');
-  expect(rowBox!.x - containerBox!.x).toBe(inset.borderLeft + 4);
-  expect(containerBox!.x + containerBox!.width - rowBox!.x - rowBox!.width).toBe(
-    inset.borderRight + 4,
-  );
+  await expect(async () => {
+    const {
+      positioned,
+      boxes: [containerBox, rowBox],
+    } = await sampleBoxes([container, row]);
+    expect(positioned).toBe(true);
+    expect(rowBox.x - containerBox.x).toBe(inset.borderLeft + 4);
+    expect(containerBox.x + containerBox.width - rowBox.x - rowBox.width).toBe(
+      inset.borderRight + 4,
+    );
+  }).toPass();
 }
 
 async function expectHighlight(row: Locator, highlight: Locator) {
   await expect(highlight).toBeVisible();
-  const rowBox = await row.boundingBox();
-  expect(rowBox).not.toBeNull();
-  await expect.poll(() => highlight.boundingBox()).toEqual(rowBox);
+  await expect(async () => {
+    const {
+      positioned,
+      boxes: [rowBox, highlightBox],
+    } = await sampleBoxes([row, highlight]);
+    expect(positioned).toBe(true);
+    expect(highlightBox).toEqual(rowBox);
+  }).toPass();
 }
 
 async function firstTextStart(locator: Locator) {
@@ -115,9 +140,9 @@ for (const theme of ['light', 'dark'] as const) {
       await trigger.focus();
       await trigger.press('ArrowDown');
       const menu = page.getByRole('menu');
-      // The menu takes keyboard focus one frame after opening; wait for it
-      // before navigating so the End key is handled by the menu.
-      await expect.poll(() => menu.evaluate((node) => node.matches(':focus-within'))).toBe(true);
+      // A keyboard open settles with the first enabled item focused; wait for
+      // that before navigating so the End key is handled by the menu.
+      await expect(page.getByRole('menuitem', { name: 'Apple' })).toBeFocused();
       await page.keyboard.press('End');
       await page.keyboard.press('ArrowUp');
       const row = page.getByRole('menuitemradio', { name: 'Comfortable' });
@@ -126,11 +151,11 @@ for (const theme of ['light', 'dark'] as const) {
       await expectInset(menu, row);
       await expectHighlight(row, menu.locator('.bg-selected'));
       expect(await row.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('400');
-      const labelStart = await firstTextStart(menu.locator('[data-slot="menu-label"]'));
-      const rowStarts = await Promise.all(
-        (await menu.locator('[data-menu-item]').all()).map(firstTextStart),
-      );
-      for (const rowStart of rowStarts) expect(rowStart).toBeCloseTo(labelStart, 0);
+      for (const item of await menu.locator('[data-menu-item]').all()) {
+        const start = await firstTextStart(item);
+        const hasIcon = await item.locator('[data-slot="menu-item-leading"]').count();
+        expect(start - (await item.boundingBox())!.x).toBeCloseTo(hasIcon ? 32 : 8, 0);
+      }
       const indicator = row.locator('[data-slot="menu-item-indicator"]');
       expect(
         (await row.boundingBox())!.x +
@@ -219,6 +244,25 @@ for (const theme of ['light', 'dark'] as const) {
       await expectHighlight(radioRow, group.locator('.bg-active'));
       expect(await radioRow.evaluate((node) => getComputedStyle(node).fontWeight)).toBe('500');
       await expectFocusTuple(radioRow);
+      const otherRadioRow = radio.getByRole('radio', { name: 'Two' });
+      await otherRadioRow.hover();
+      await expect(radioRow).toBeFocused();
+      await expect(otherRadioRow).toHaveAttribute('aria-checked', 'false');
+      await expect(otherRadioRow).toHaveCSS('font-weight', '400');
+      await expect(radioRow).toHaveAttribute('aria-checked', 'true');
+      await expect(radioRow).toHaveCSS('font-weight', '500');
+      await expect(radio.getByTestId('value')).toHaveText('one');
+      await radioRow.press('ArrowDown');
+      await expect(otherRadioRow).toBeFocused();
+      await expect(otherRadioRow).toHaveAttribute('aria-checked', 'true');
+      await expect(otherRadioRow).toHaveCSS('font-weight', '500');
+      await expect(radioRow).toHaveAttribute('aria-checked', 'false');
+      await expect(radioRow).toHaveCSS('font-weight', '400');
+      await expect(radio.getByTestId('value')).toHaveText('two');
+      await expectFocusTuple(otherRadioRow);
+      await otherRadioRow.press('Space');
+      await expect(otherRadioRow).toHaveAttribute('aria-checked', 'true');
+      await expect(radio.getByTestId('value')).toHaveText('two');
       await radio.unmount();
 
       const sidebar = await mount(SidebarHarness);

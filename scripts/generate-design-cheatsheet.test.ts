@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   cheatsheetPath,
   generateDesignCheatsheet,
-  monorepoDocsDir,
   runDesignCheatsheetGenerator,
 } from './generate-design-cheatsheet';
 
@@ -18,15 +17,16 @@ describe('generated design-system cheatsheet', () => {
   function tempTarget() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'design-cheatsheet-'));
     tempDirs.push(dir);
-    return path.join(dir, 'docs', 'fe', 'DESIGN_SYSTEM_CHEATSHEET.md');
+    return path.join(dir, 'docs', 'DESIGN_SYSTEM_CHEATSHEET.md');
   }
 
-  it('fails the check loudly when the companion artifact is missing', async () => {
+  it('fails the check and names the regenerate command when the file is missing', async () => {
     const result = await runDesignCheatsheetGenerator('check', tempTarget());
 
     expect(result.exitCode).toBe(1);
     expect(result.message).toContain('missing');
-    expect(result.message).toContain('monorepo artifact');
+    expect(result.message).toContain('DESIGN_SYSTEM_CHEATSHEET.md');
+    expect(result.message).toContain('pnpm exec tsx scripts/generate-design-cheatsheet.ts');
     expect(result.message).not.toContain('stale');
   });
 
@@ -39,21 +39,15 @@ describe('generated design-system cheatsheet', () => {
     const stale = await runDesignCheatsheetGenerator('check', target);
     expect(stale.exitCode).toBe(1);
     expect(stale.message).toContain('stale');
+    expect(stale.message).toContain('DESIGN_SYSTEM_CHEATSHEET.md');
+    expect(stale.message).toContain('pnpm exec tsx scripts/generate-design-cheatsheet.ts');
   });
 
-  // The committed copy lives in the monorepo's docs/fe/. A monorepo checkout must keep
-  // it current; a standalone checkout cannot produce it, so the check reports that
-  // explicitly instead of skipping.
   it('keeps the committed cheatsheet current with the pattern manifest', async () => {
     const result = await runDesignCheatsheetGenerator('check');
 
-    if (fs.existsSync(monorepoDocsDir)) {
-      expect(result.exitCode, result.message).toBe(0);
-      expect(fs.readFileSync(cheatsheetPath, 'utf8')).toBe(await generateDesignCheatsheet());
-    } else {
-      expect(result.exitCode).toBe(1);
-      expect(result.message).toContain('monorepo artifact');
-    }
+    expect(result.exitCode, result.message).toBe(0);
+    expect(fs.readFileSync(cheatsheetPath, 'utf8')).toBe(await generateDesignCheatsheet());
   });
 
   it('points loading feedback to the shared indeterminate indicator', async () => {

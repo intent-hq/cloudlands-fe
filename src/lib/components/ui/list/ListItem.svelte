@@ -242,12 +242,7 @@
     <div id={contentId} class="flex min-w-0 flex-1 items-baseline gap-1 text-left">
       {#if title}
         <div
-          class={cn(
-            config.titleSize,
-            'max-w-full min-w-0 shrink truncate leading-5',
-            (selected || active) && '[--text-caption-weight:500]',
-            titleClass,
-          )}
+          class={cn(config.titleSize, 'max-w-full min-w-0 shrink truncate leading-5', titleClass)}
         >
           {title}
         </div>

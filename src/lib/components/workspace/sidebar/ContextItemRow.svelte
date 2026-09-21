@@ -173,7 +173,9 @@
   <!-- Content -->
   <div class="flex-1 flex items-baseline gap-1.5 min-w-0">
     <div class="w-full min-w-0 flex items-center gap-1.5">
-      <span class="text-ui truncate {isSelected ? 'text-primary-ink' : ''}">{displayTitle()}</span>
+      <span class="type-body font-normal truncate {isSelected ? 'text-primary-ink' : ''}"
+        >{displayTitle()}</span
+      >
       {#if item.type === 'note' && item.isSpec}
         <span class="text-xs px-1 py-0.5 rounded bg-primary/10 text-primary font-medium"
           >{m.workspace_contextItem_spec_label()}</span
@@ -194,7 +196,10 @@
         <Button
           variant="ghost"
           type="button"
-          class="p-1 rounded hover:bg-muted transition-colors cursor-pointer"
+          size="icon-compact"
+          iconOnly
+          aria-label={m.workspace_contextItem_openInBrowser_label()}
+          class="rounded hover:bg-muted transition-colors cursor-pointer"
           onclick={handleExternalClick}
         >
           <Fa icon={faExternalLink} size="xs" class="text-ghost" />

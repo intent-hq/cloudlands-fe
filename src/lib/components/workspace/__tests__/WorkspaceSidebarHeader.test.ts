@@ -41,7 +41,28 @@ const mocks = vi.hoisted(() => {
       }),
       { select: () => value },
     );
-  return { dispatch, update, clipboardWrite, toastSuccess, toastError, selector, storeState };
+  const liveSelector = <T>(read: () => T) =>
+    Object.assign(
+      () => ({
+        subscribe(run: (v: T) => void) {
+          run(read());
+          return () => {};
+        },
+      }),
+      { select: read },
+    );
+  const role = { hidesOwnerActions: false };
+  return {
+    dispatch,
+    update,
+    clipboardWrite,
+    toastSuccess,
+    toastError,
+    selector,
+    liveSelector,
+    role,
+    storeState,
+  };
 });
 
 vi.mock('$lib/components/patterns/notify', () => ({
@@ -97,6 +118,10 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
     type: 'workspace/setWorkspaceEntity',
     payload: [workspace],
   })),
+}));
+
+vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
+  selectHidesOwnerWorkspaceActions: mocks.liveSelector(() => mocks.role.hidesOwnerActions),
 }));
 
 vi.mock('$store/renderer/slices/workspace/utils/workspace.client', () => ({
@@ -180,6 +205,7 @@ describe('WorkspaceSidebarHeader status message', () => {
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
     mocks.storeState.workspace.pendingTitleMutations = {};
+    mocks.role.hidesOwnerActions = false;
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText: mocks.clipboardWrite },
       configurable: true,
@@ -323,49 +349,27 @@ describe('WorkspaceSidebarHeader status message', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('renders the title editor full-width without JS auto-resize', async () => {
+  it('focuses and selects the current title when editing starts', async () => {
     await renderHeader();
     await fireEvent.click(screen.getByRole('button', { name: 'Status Workspace' }));
     const titleInput = screen.getByRole('textbox') as HTMLInputElement;
 
-    expect(titleInput.className.split(/\s+/)).toContain('w-full');
-    expect(titleInput.style.width).toBe('');
-
-    await fireEvent.input(titleInput, { target: { value: 'A much longer workspace title' } });
-    expect(titleInput.style.width).toBe('');
+    await waitFor(() => expect(document.activeElement).toBe(titleInput));
+    expect(titleInput.selectionStart).toBe(0);
+    expect(titleInput.selectionEnd).toBe(baseWorkspace.title.length);
   });
 
-  it('applies the sidebar title decoration classes in display and edit modes', async () => {
+  it('cancels a changed title on Escape without saving and reopens the original title', async () => {
     await renderHeader();
     const titleButton = screen.getByRole('button', { name: 'Status Workspace' });
-    const decoration = titleButton.parentElement?.querySelector<HTMLElement>(
-      ':scope > [aria-hidden="true"]',
-    );
-
-    expect(decoration).toBeTruthy();
-    expect(decoration!.className.split(/\s+/)).toEqual(
-      expect.arrayContaining([
-        '-inset-x-1',
-        '-inset-y-0.5',
-        'border-transparent',
-        'bg-transparent',
-        'motion-reduce:transition-none',
-        'transition-[inset,border-color,background-color]',
-      ]),
-    );
-
     await fireEvent.click(titleButton);
-
-    expect(decoration!.className.split(/\s+/)).toEqual(
-      expect.arrayContaining([
-        '-inset-x-2',
-        '-inset-y-1.5',
-        'border-ring/60',
-        'bg-sidebar',
-        'motion-reduce:transition-none',
-        'transition-[inset,border-color,background-color]',
-      ]),
-    );
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'Do not save this draft' } });
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(mocks.update).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'Status Workspace' }));
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe(baseWorkspace.title);
   });
 
   it('shows a discoverable add status affordance when empty', async () => {
@@ -524,5 +528,32 @@ describe('WorkspaceSidebarHeader status message', () => {
     await screen.findByRole('menu');
 
     expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+  });
+
+  it('offers Transfer and Delete to the workspace owner', async () => {
+    await renderHeader({ myRole: 'owner' });
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Workspace actions' }), {
+      key: 'Enter',
+    });
+    await screen.findByRole('menu');
+
+    expect(screen.getByRole('button', { name: 'Transfer/Download…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete Workspace…' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Toggle Sidebar' })).toBeTruthy();
+  });
+
+  it('hides Transfer and Delete from a collaborator while keeping the rest of the menu', async () => {
+    mocks.role.hidesOwnerActions = true;
+    await renderHeader({ myRole: 'collaborator' });
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Workspace actions' }), {
+      key: 'Enter',
+    });
+    await screen.findByRole('menu');
+
+    expect(screen.queryByRole('button', { name: 'Transfer/Download…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete Workspace…' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Leave' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Toggle Sidebar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move sidebar to right' })).toBeTruthy();
   });
 });

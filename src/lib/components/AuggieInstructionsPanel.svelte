@@ -55,6 +55,8 @@
     {#if onDismiss}
       <Button
         variant="ghost"
+        size="icon-compact"
+        iconOnly
         type="button"
         class="shrink-0 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
         onclick={onDismiss}

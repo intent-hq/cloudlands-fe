@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import WorkspaceAgentsListGeometryHarness from './mocks/WorkspaceAgentsListGeometryHarness.svelte';
 
 const platformModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -145,9 +145,13 @@ test('keeps narrow 200% Agents-panel rows single-line and collision-free', async
   );
   await expect(longRow.locator('[data-panel-open-state]')).toHaveCount(0);
   await expect(longRow.locator('[data-agent-row-time]')).toHaveCount(1);
-  await expect(
-    component.locator('[data-agent-panel-row="background-active"] [data-agent-background-badge]'),
-  ).toHaveCount(1);
+  const backgroundRow = component.locator('[data-agent-panel-row="background-active"]');
+  await backgroundRow.focus();
+  await backgroundRow.press('Space');
+  await expect(component.locator('[data-selected-agent]')).toHaveAttribute(
+    'data-selected-agent',
+    'background-active',
+  );
 
   await component.locator('[data-agent-search]').fill('delegated search target');
   await expect(component.locator('[data-agent-panel-row="coordinator"]')).toHaveCount(1);
@@ -155,6 +159,11 @@ test('keeps narrow 200% Agents-panel rows single-line and collision-free', async
     1,
   );
   await expect(component.locator('[data-agent-panel-row="long-name"]')).toHaveCount(0);
+  await component.locator('[data-agent-panel-row="delegated-search-target"]').click();
+  await expect(component.locator('[data-selected-agent]')).toHaveAttribute(
+    'data-selected-agent',
+    'delegated-search-target',
+  );
 });
 
 test('keeps every Agents-panel row and disclosure transparent with accessible state cues', async ({

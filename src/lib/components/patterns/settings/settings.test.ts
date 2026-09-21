@@ -88,6 +88,7 @@ describe('settings pattern', () => {
 
   it('publishes valid pattern metadata including the one-object boolean-setting guidance', () => {
     expect(() => parsePatternMetadata(settingsMetadata)).not.toThrow();
+    expect(settingsMetadata.exports).toContain('SettingsControl');
     expect(settingsMetadata.useWhen.join(' ')).toContain('one switch object');
   });
 });

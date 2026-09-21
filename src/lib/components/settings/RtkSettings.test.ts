@@ -57,6 +57,55 @@ describe('RtkSettings', () => {
     cleanup();
   });
 
+  it('shows loading through both settings and availability without exposing or writing a false value', async () => {
+    let resolveSettings!: (value: { path: string; value: boolean }) => void;
+    let resolveAvailability!: (value: { data: { available: boolean } }) => void;
+    mocks.mockSettingsGet.mockReturnValue(new Promise((resolve) => (resolveSettings = resolve)));
+    mocks.mockInvoke.mockReturnValue(new Promise((resolve) => (resolveAvailability = resolve)));
+
+    const { container } = render(RtkSettings);
+    expect(screen.getByRole('status', { name: m.ui_spinner_loading_ariaLabel() })).toBeTruthy();
+    expect(container.querySelector('#rtk-enabled')?.getAttribute('aria-busy')).toBe('true');
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+
+    resolveSettings({ path: 'rtk.enabled', value: true });
+    await waitFor(() =>
+      expect(mocks.mockInvoke).toHaveBeenCalledWith(SYSTEM_CHANNELS.CHECK_RTK, undefined),
+    );
+    expect(screen.getByRole('status', { name: m.ui_spinner_loading_ariaLabel() })).toBeTruthy();
+    expect(screen.queryByRole('switch')).toBeNull();
+
+    resolveAvailability({ data: { available: true } });
+    const toggle = await screen.findByRole('switch', { name: m.settings_rtk_label() });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.hasAttribute('disabled')).toBe(false);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(container.querySelector('#rtk-enabled')?.hasAttribute('aria-busy')).toBe(false);
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('finishes loading with a disabled known value when the availability probe rejects', async () => {
+    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
+    mocks.mockInvoke.mockRejectedValue(new Error('Probe failed'));
+    render(RtkSettings);
+    const toggle = await screen.findByRole('switch');
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('finishes loading with an error and no unknown toggle when the settings request rejects', async () => {
+    mocks.mockSettingsGet.mockRejectedValue(new Error('Settings failed'));
+    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
+    render(RtkSettings);
+    await screen.findByRole('alert');
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+  });
+
   it('loads rtk.enabled from daemon settings catalog on mount', async () => {
     mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: true });
     mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
@@ -183,6 +232,9 @@ describe('RtkSettings', () => {
     await waitFor(() => {
       expect(screen.getByText(m.settings_rtk_loadError())).toBeTruthy();
     });
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
   });
 
   // Review fix (PR #705): a failed daemon-first `terminal.create` must not

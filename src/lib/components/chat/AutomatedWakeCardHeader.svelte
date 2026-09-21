@@ -36,9 +36,18 @@
     controlsId: string;
     workspace?: Workspace | null;
     ontoggle: () => void;
+    /** Pinned controls return to the source instead of navigating or expanding. */
+    onPinnedActivate?: () => void;
   }
 
-  let { presentation, expanded, controlsId, workspace = null, ontoggle }: Props = $props();
+  let {
+    presentation,
+    expanded,
+    controlsId,
+    workspace = null,
+    ontoggle,
+    onPinnedActivate,
+  }: Props = $props();
   const workspaceRepo = $derived(
     workspace?.repositoryOwner && workspace?.repositoryName
       ? `${workspace.repositoryOwner}/${workspace.repositoryName}`
@@ -58,6 +67,10 @@
   function openPr(event: MouseEvent) {
     if (presentation.kind !== 'pr') return;
     event.stopPropagation();
+    if (onPinnedActivate) {
+      onPinnedActivate();
+      return;
+    }
     void handleLink(getPrMonitorWakeUrl(presentation.attribution), {
       workspaceId: workspace?.id ? WorkspaceId(String(workspace.id)) : undefined,
       forceExternal: true,
@@ -67,7 +80,7 @@
   function handleRowClick(event: MouseEvent) {
     // Sibling buttons (PR chip, chevron toggle) own their own clicks.
     if ((event.target as HTMLElement | null)?.closest('button')) return;
-    ontoggle();
+    (onPinnedActivate ?? ontoggle)();
   }
 </script>
 
@@ -106,7 +119,9 @@
         variant="plain"
         class="type-body h-auto! min-w-0 max-w-full justify-start overflow-hidden whitespace-nowrap p-0! text-left font-inherit text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="pr-monitor-wake-chip"
-        title={m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
+        title={onPinnedActivate
+          ? m.chat_stickyMessageHeader_scrollToPrevious_title()
+          : m.chat_prMonitorWakeAttribution_openPrWithLabel_tooltip({ label: chipLabel })}
         onclick={openPr}
       >
         <span class="min-w-0 truncate">
@@ -128,12 +143,14 @@
     size="icon-xs"
     iconOnly
     class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded {SUBSCRIPTION_ICON_BUTTON_CLASS} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    aria-expanded={expanded}
-    aria-controls={controlsId}
-    aria-label={expanded
-      ? m.chat_agentSubscriptions_collapseWatches_ariaLabel()
-      : m.chat_agentSubscriptions_expandWatches_ariaLabel()}
-    onclick={ontoggle}
+    aria-expanded={onPinnedActivate ? undefined : expanded}
+    aria-controls={onPinnedActivate ? undefined : controlsId}
+    aria-label={onPinnedActivate
+      ? m.chat_stickyMessageHeader_scrollToPrevious_title()
+      : expanded
+        ? m.chat_agentSubscriptions_collapseWatches_ariaLabel()
+        : m.chat_agentSubscriptions_expandWatches_ariaLabel()}
+    onclick={onPinnedActivate ?? ontoggle}
     data-testid="automated-wake-toggle"
   >
     <Fa

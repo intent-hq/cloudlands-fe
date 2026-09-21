@@ -273,7 +273,9 @@
       >
         <Button
           variant="ghost"
-          class="w-full h-8 flex items-center justify-center rounded-md transition-colors {isActive
+          size="icon"
+          iconOnly
+          class="w-full rounded-md transition-colors {isActive
             ? 'bg-secondary text-secondary-foreground'
             : 'hover:bg-accent'}"
           title={workspace.title || m.workspace_links_untitled_label()}

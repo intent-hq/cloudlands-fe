@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { getPhosphorIconComponent, type IconDefinition } from '$lib/icons/phosphor-icons';
+  import type { IconWeight } from 'phosphor-svelte';
+  import {
+    getPhosphorIconComponent,
+    getPhosphorIconWeight,
+    type IconDefinition,
+  } from '$lib/icons/phosphor-icons';
 
   type IconSize = 'xs' | 'sm' | 'lg' | `${number}x`;
   type FlipDir = 'horizontal' | 'vertical' | 'both';
@@ -11,6 +16,7 @@
     id?: string;
     style?: string;
     icon: IconDefinition;
+    weight?: IconWeight;
     title?: string;
     size?: number | string | IconSize;
     color?: string;
@@ -35,6 +41,7 @@
     id,
     style,
     icon,
+    weight,
     title,
     size,
     color,
@@ -71,7 +78,10 @@
   const normalizedSize = $derived(normalizeSize(size as any));
   const Icon = $derived(getPhosphorIconComponent(icon));
   const iconWeight = $derived(
-    secondaryColor || secondaryOpacity || primaryOpacity || swapOpacity ? 'duotone' : 'bold',
+    weight ??
+      (secondaryColor || secondaryOpacity || primaryOpacity || swapOpacity
+        ? 'duotone'
+        : getPhosphorIconWeight(icon)),
   );
   const mirrored = $derived(flip === 'horizontal' || flip === 'both');
   const transform = $derived.by(() => {

@@ -9,7 +9,10 @@ export const settingsSectionMetadata = parseUiComponentMetadata({
   exports: ['SettingsSection'],
   category: 'pattern',
   owner: '008-B',
-  callers: ['src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte'],
+  callers: [
+    'src/lib/component-catalog/renderers/SettingsCatalogPreview.svelte',
+    'src/routes/(app)/settings/+page.svelte',
+  ],
   replacement: null,
   characterizationTest: 'src/lib/components/patterns/settings/settings-section.test.ts',
   removalGate:

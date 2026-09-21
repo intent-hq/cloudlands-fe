@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import Harness from './mocks/BrowserTabTypeHeaderHarness.svelte';
 
-test('browser header owns the agent chip and address hover stays transparent', async ({
+test('browser header owns the agent chip and address hover paints its own surface', async ({
   mount,
   page,
 }, testInfo) => {
@@ -33,8 +33,16 @@ test('browser header owns the agent chip and address hover stays transparent', a
   expect(chipBox!.y + chipBox!.height).toBeLessThanOrEqual(toolbarBox!.y);
 
   const address = component.getByRole('button', { name: 'Edit browser address' });
+  const restPaint = await address.evaluate((node) => getComputedStyle(node).backgroundColor);
   await address.hover();
-  await expect(address).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  // The hover paint lives on the address button itself, never on a second ghost surface.
+  await expect
+    .poll(() => address.evaluate((node) => getComputedStyle(node).backgroundColor))
+    .not.toBe(restPaint);
+  await expect(address.locator('[data-slot="button-surface"]')).toHaveCSS(
+    'background-color',
+    'rgba(0, 0, 0, 0)',
+  );
   await page.evaluate(() => document.fonts.ready);
   await component.screenshot({ path: testInfo.outputPath('embedded-browser-header-wide.png') });
   await address.click();

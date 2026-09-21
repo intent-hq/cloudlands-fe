@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
@@ -266,6 +266,7 @@ test('drag resizing changes the keyboard axis without remounting workspace searc
   }
 
   await dragBy(-108);
+  await expect(component.locator('[data-sidebar-panel]')).toHaveCSS('width', '180px');
   await expect(tablist).toHaveAttribute('aria-orientation', 'vertical');
   await workspaces.focus();
   await workspaces.press('ArrowDown');
@@ -276,6 +277,7 @@ test('drag resizing changes the keyboard axis without remounting workspace searc
   await expect(search).toHaveValue('release');
 
   await dragBy(108);
+  await expect(component.locator('[data-sidebar-panel]')).toHaveCSS('width', '288px');
   await expect(tablist).toHaveAttribute('aria-orientation', 'horizontal');
   await workspaces.focus();
   await workspaces.press('ArrowRight');

@@ -7,8 +7,13 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { store as appStore } from '$store/renderer/store';
-import { openPanel, closePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  openPanel,
+  closePanel,
+  setPanelWidth,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import SidebarPanelHarness from './mocks/SidebarPanelHarness.svelte';
 
 vi.mock('$features/agent/services/active-streams-tracker', () => ({
@@ -61,6 +66,46 @@ describe('SidebarPanel teardown', () => {
     document.body.classList.remove('panel-resizing');
     appStore.dispatch(closePanel());
     vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('does not overwrite the latest pointer width with a queued Redux width echo', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    let nextFrameId = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    requestAnimationFrameSpy.mockImplementation((callback: FrameRequestCallback) => {
+      const id = ++nextFrameId;
+      frames.set(id, callback);
+      return id;
+    });
+    cancelAnimationFrameSpy.mockImplementation((id: number) => frames.delete(id));
+    async function flushFrame() {
+      await vi.advanceTimersByTimeAsync(20);
+      const pending = [...frames.values()];
+      frames.clear();
+      for (const callback of pending) callback(Date.now());
+      await tick();
+    }
+    const { container } = render(SidebarPanelHarness, {
+      setup: () => {
+        appStore.dispatch(setPanelWidth(288));
+        appStore.dispatch(openPanel('all-workspaces'));
+      },
+    });
+    await flushFrame();
+    const handle = container.querySelector('[data-testid="width-resize-handle"]')!;
+    await fireEvent.mouseDown(handle, { clientX: 288 });
+    await fireEvent.mouseMove(window, { clientX: 201 });
+    await flushFrame();
+    await fireEvent.mouseMove(window, { clientX: 180 });
+    // The next frame delivers the cadenced selector echo from the previous move.
+    await flushFrame();
+    await fireEvent.mouseUp(window, { clientX: 180 });
+    await flushFrame();
+    expect(appStore.state.sidebarNav.panelWidth).toBe(180);
+    expect(container.querySelector('[role="tablist"]')?.getAttribute('aria-orientation')).toBe(
+      'vertical',
+    );
   });
 
   it('cleans up tabbed sidebar width-drag listeners and body class on unmount mid-drag', async () => {

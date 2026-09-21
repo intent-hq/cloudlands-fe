@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 test('keeps the complete waiting count before the adaptive avatar stack', async ({ mount }) => {

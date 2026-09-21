@@ -30,7 +30,6 @@ describe('List', () => {
     const list = container.querySelector('[data-slot="list-container"]');
     const selected = getByRole('button', { name: /A long list title/ });
     const active = getByRole('button', { name: /Active row/ });
-    const selectedRow = selected.closest('[data-slot="list-item-row"]');
     expect(list?.className).toContain('gap-px');
     expect(selected.className).toContain('rounded-(--radius-row)');
     expect(selected.className).toContain('border-transparent');
@@ -45,11 +44,8 @@ describe('List', () => {
     expect(selected.style.paddingRight).toBe('8px');
     expect(selected.style.marginLeft).toBe('');
     expect(selected.style.width).toBe('');
-    const title = [...(selectedRow?.querySelectorAll('.type-caption') ?? [])].find((element) =>
-      element.textContent?.includes('A long list title'),
-    );
-    expect(title).not.toBeNull();
-    expect(title?.classList.contains('[--text-caption-weight:500]')).toBe(true);
+    expect(selected.getAttribute('data-selected')).toBe('true');
+    expect(active.getAttribute('aria-current')).toBe('true');
     selected.focus();
     await fireEvent.keyDown(selected, { key: 'Enter' });
     expect(document.activeElement).toBe(selected);

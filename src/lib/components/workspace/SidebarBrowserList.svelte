@@ -86,7 +86,9 @@
     >
       <span class="size-2 shrink-0 rounded-full bg-success" aria-hidden="true"></span>
       <span class="min-w-0 flex-1">
-        <span class="block truncate text-sm font-medium text-foreground">{browserTarget.name}</span>
+        <span class="block truncate type-body font-normal text-foreground"
+          >{browserTarget.name}</span
+        >
       </span>
     </Button>
   {/if}

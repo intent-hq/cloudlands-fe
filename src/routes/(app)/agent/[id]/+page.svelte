@@ -275,15 +275,12 @@
               scrollToBottom(scrollContainer);
             }
           }}
-          class="absolute bottom-24 right-6 p-2 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-all duration-200 shadow-lg"
+          size="icon-lg"
+          iconOnly
+          class="absolute bottom-24 right-6 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none shadow-lg"
           aria-label={m.chat_agentThread_scrollToBottom_ariaLabel()}
         >
-          <svg
-            class="w-5 h-5 text-primary-ink"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
+          <svg class="text-primary-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"

@@ -46,7 +46,6 @@
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import ViewSettingsDropdown from '../components/ViewSettingsDropdown.svelte';
-  import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
   import {
     selectLineWrapping,
     selectDiffIndicators,
@@ -537,13 +536,6 @@
       label={m.layout_fileTab_deleteFile_tooltip()}
       onclick={handleDeleteFile}
       destructive
-    />
-    <OpenComboButton
-      filePath={tab.filePath}
-      {workspaceId}
-      isDirectory={false}
-      embedded
-      workspaceFolderPath={repoPath ?? undefined}
     />
   {/if}
 {/snippet}

@@ -56,12 +56,14 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 
   let { initialTab = 'all-workspaces', width = 288 }: Props = $props();
 
   // Both the named sandbox and CT bootstrap the store without production sagas.
   // A provider-less, loaded empty Intent workspace cannot auto-launch an agent.
+  appStore.dispatch(guestSessionsListUnavailable());
   appStore.dispatch(setActiveProvider(''));
   appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
   appStore.dispatch(setChiefActiveAgentId(null));

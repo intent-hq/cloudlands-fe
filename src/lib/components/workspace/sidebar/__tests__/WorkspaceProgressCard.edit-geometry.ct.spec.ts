@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import type { Locator, Page } from '@playwright/test';
 import WorkspaceProgressCardEditGeometryHost from './mocks/WorkspaceProgressCardEditGeometryHost.svelte';
 
@@ -126,6 +126,23 @@ async function expectValidEditBox(control: Locator) {
   expect(result.hasOverflowAncestor).toBe(true);
   expect(result.clipped).toBe(false);
 }
+
+test('keeps the active workspace card branch label at normal weight, including hover and focus', async ({
+  mount,
+}) => {
+  const component = await mount(WorkspaceProgressCardEditGeometryHost);
+  const branch = component.locator('[data-sidebar-branch-label]');
+  const repository = component.locator('[data-sidebar-repository-label]');
+  const trigger = component.getByRole('button', { name: 'edit-geometry', exact: true });
+
+  await expect(repository).toHaveCSS('font-weight', '400');
+  await expect(branch).toHaveCSS('font-weight', '400');
+  await trigger.hover();
+  await expect(branch).toHaveCSS('font-weight', '400');
+  await trigger.focus();
+  await expect(trigger).toBeFocused();
+  await expect(branch).toHaveCSS('font-weight', '400');
+});
 
 test('keeps the workspace title edit decoration visible, padded, unclipped, and motion-safe', async ({
   mount,

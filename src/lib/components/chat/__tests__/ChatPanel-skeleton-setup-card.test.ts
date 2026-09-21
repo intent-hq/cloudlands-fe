@@ -18,6 +18,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { selectNativeExecutionPlan } from '../workspace-task-fallback';
+import { ensureWorkspaceDetail } from '$features/workspace/workspace-detail-hydration';
 // Load the component during collection, not inside a test's timeout budget.
 // A timed-out dynamic import can otherwise mount after that test's cleanup.
 import ChatPanel from '../ChatPanel.svelte';
@@ -92,6 +93,12 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
   getPanelLayoutManager: () => testState.panelManager,
+}));
+// The on-demand `workspace.get` detail pull reads the real workspace slice,
+// which the store mock above does not carry; the setup card here is driven by
+// the `workspace` prop alone.
+vi.mock('$features/workspace/workspace-detail-hydration', () => ({
+  ensureWorkspaceDetail: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -168,6 +175,10 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () =
     () => testState.workspaceTasksInitialized,
   ),
 }));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentTypingPeople: testState.selector([]),
+  selectPresenceOwnPrincipalId: testState.selector(null),
+}));
 vi.mock('$store/renderer/slices/multi-panel-context/multi-panel-context-selectors', () => ({
   selectCheckedPanels: testState.selector([]),
   selectPanels: testState.selector([]),
@@ -180,6 +191,7 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
   selectWorkspaceNavigationMainPanel: testState.selector({ type: 'empty' }),
 }));
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({
+  selectComposerContextItems: testState.selector([]),
   selectChatDraft: { select: vi.fn(() => '') },
 }));
 vi.mock('$store/renderer/slices/task-agent-associations/task-agent-associations-selectors', () => ({
@@ -213,9 +225,6 @@ vi.mock('../input/SimpleRichInput.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../ChatMessage.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
-}));
-vi.mock('../DateSeparator.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
 vi.mock('../EventWakeupBanner.svelte', async () => ({
@@ -293,10 +302,13 @@ const workspace = {
   branch: 'feature/setup',
 };
 
-async function renderInitialWorkspaceChatPanel(onTaskProgressChange?: (tasks: unknown[]) => void) {
+async function renderInitialWorkspaceChatPanel(
+  onTaskProgressChange?: (tasks: unknown[]) => void,
+  workspaceOverrides: Record<string, unknown> = {},
+) {
   render(ChatPanel, {
     props: {
-      workspace,
+      workspace: { ...workspace, ...workspaceOverrides },
       agentId: 'agent-1',
       isActive: true,
       isInitialWorkspaceAgent: true,
@@ -305,6 +317,14 @@ async function renderInitialWorkspaceChatPanel(onTaskProgressChange?: (tasks: un
   });
   await Promise.resolve();
 }
+
+// Wire shape of `Workspace.setupScript` (PROTOCOL §5.25): a SetupScript record,
+// not the bare string the FE `Workspace` type still declares.
+const wireSetupScript = {
+  script: 'pnpm install',
+  updatedAt: 1_700_000_000_000,
+  generatedBy: 'user',
+};
 
 describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
   beforeEach(() => {
@@ -318,6 +338,7 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
       'ResizeObserver',
       class {
         observe() {}
+        unobserve() {}
         disconnect() {}
       },
     );
@@ -348,6 +369,60 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
 
     await waitFor(() => expect(screen.getByTestId('mock-workspace-setup-card')).toBeTruthy());
     expect(screen.queryByTestId('chat-transcript-skeleton')).toBeNull();
+  });
+
+  describe('setupScript wire shape → setupScriptContent', () => {
+    beforeEach(() => {
+      testState.transcriptHydration = 'settled';
+      testState.transcriptHydratedOnce = true;
+    });
+
+    it('hands the card the script text when the workspace prop carries the wire record', async () => {
+      await renderInitialWorkspaceChatPanel(undefined, { setupScript: wireSetupScript });
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      await waitFor(() =>
+        expect(card.getAttribute('data-setup-script-content')).toBe('pnpm install'),
+      );
+      expect(card.getAttribute('data-setup-script-status')).toBe('done');
+      // The prop already carried the script: no detail pull is needed.
+      expect(vi.mocked(ensureWorkspaceDetail)).not.toHaveBeenCalled();
+    });
+
+    it('hands the card the script text when the on-demand detail read serves the wire record', async () => {
+      vi.mocked(ensureWorkspaceDetail).mockResolvedValueOnce({
+        ...workspace,
+        setupScript: wireSetupScript,
+      } as never);
+
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      expect(vi.mocked(ensureWorkspaceDetail)).toHaveBeenCalledWith('ws-1');
+      await waitFor(() =>
+        expect(card.getAttribute('data-setup-script-content')).toBe('pnpm install'),
+      );
+      expect(card.getAttribute('data-setup-script-status')).toBe('done');
+    });
+
+    it('still accepts the legacy bare-string shape on the workspace prop', async () => {
+      await renderInitialWorkspaceChatPanel(undefined, { setupScript: 'echo legacy' });
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      await waitFor(() =>
+        expect(card.getAttribute('data-setup-script-content')).toBe('echo legacy'),
+      );
+      expect(vi.mocked(ensureWorkspaceDetail)).not.toHaveBeenCalled();
+    });
+
+    it('leaves the card without a script when the detail read serves none', async () => {
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      await waitFor(() => expect(vi.mocked(ensureWorkspaceDetail)).toHaveBeenCalledWith('ws-1'));
+      expect(card.getAttribute('data-setup-script-content')).toBeNull();
+      expect(card.getAttribute('data-setup-script-status')).toBeNull();
+    });
   });
 
   it('routes hydrated fallback progress to the header and gives a native plan precedence', async () => {

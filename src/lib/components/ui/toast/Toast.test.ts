@@ -81,7 +81,8 @@ describe('Toast', () => {
     expect(screen.getByLabelText(/Notifications/)).toBeTruthy();
 
     toast.info('Third notification', { id: 'third', duration: Number.POSITIVE_INFINITY });
-    expect(await screen.findByText('2 more')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Dismiss all 3 notifications' })).toBeTruthy();
+    expect(screen.queryByText(/^\d+ more$/)).toBeNull();
   });
 
   it('keeps stacked toasts collapsed until the stack is hovered', async () => {
@@ -125,6 +126,27 @@ describe('Toast', () => {
     expect(screen.getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
       'Retry',
       'Debug with AI',
+      'Copy',
+      '',
+    ]);
+  });
+
+  it('omits the debug action when the application error carries no onDebug', () => {
+    render(ErrorToast, {
+      props: {
+        error: {
+          id: 'application-error',
+          type: 'error',
+          title: 'Workspace error',
+          message: 'The workspace could not be opened.',
+          timestamp: new Date('2026-09-07T00:00:00Z'),
+          recoverable: false,
+        },
+        onCopy: vi.fn(),
+      },
+    });
+
+    expect(screen.getAllByRole('button').map((button) => button.textContent?.trim())).toEqual([
       'Copy',
       '',
     ]);
@@ -192,8 +214,8 @@ describe('Toast', () => {
     expect(document.activeElement).toBe(clearAll);
     await fireEvent.click(clearAll);
     await waitFor(() => expect(screen.queryByText('Clear all')).toBeNull());
+    await waitFor(() => expect(document.querySelectorAll('[data-sonner-toast]')).toHaveLength(0));
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
     showFailure('Newer failure');
     expect(await screen.findByText('Newer failure')).toBeTruthy();
     expect(screen.queryByText('Clear all')).toBeNull();

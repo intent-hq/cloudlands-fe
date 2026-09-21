@@ -18,6 +18,7 @@ const {
   createSelectorReadable,
   paletteMruEntries,
   paletteFileMru,
+  collaboratorState,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
     subscribe: (fn: (value: TValue) => void) => {
@@ -43,6 +44,7 @@ const {
     createSelectorReadable,
     paletteMruEntries: { value: [] as any[] },
     paletteFileMru: { value: {} as Record<string, number> },
+    collaboratorState: { workspace: false, client: false },
   };
 });
 
@@ -93,6 +95,16 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => ({
     subscribe: (fn: (value: any[]) => void) => {
       fn(workspaceItemsState.value);
+      return () => {};
+    },
+  }),
+  selectIsWorkspaceCollaborator: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectHidesAgentLifecycleActions: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectIsCollaboratorOnlyClient: () => ({
+    subscribe: (fn: (value: boolean) => void) => {
+      fn(collaboratorState.client);
       return () => {};
     },
   }),
@@ -242,6 +254,38 @@ describe('CommandPalette new actions', () => {
     sessionSessions.value = [];
     paletteMruEntries.value = [];
     paletteFileMru.value = {};
+    collaboratorState.workspace = false;
+    collaboratorState.client = false;
+  });
+
+  it('withholds agent-creation, terminal, browser, and workspace-creation commands and results for collaborators', async () => {
+    collaboratorState.workspace = true;
+    collaboratorState.client = true;
+    vi.mocked(terminalManager.loadTerminalMetadata).mockReturnValue([
+      { terminalId: 'term-1', title: 'Owner Shell', createdAt: new Date().toISOString() },
+    ] as any);
+    browserRecentUrls.value = [
+      { url: 'https://example.com', title: 'Example', lastVisited: new Date().toISOString() },
+    ];
+
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+
+    await screen.findByRole('button', { name: 'Note' });
+    expect(screen.queryByRole('button', { name: 'Agent Chat' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Open URL in Browser/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /New Workspace/i })).toBeNull();
+
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'Owner Shell' } });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Owner Shell/ })).toBeNull();
+    });
+    await fireEvent.input(input, { target: { value: 'Example' } });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /example\.com/ })).toBeNull();
+    });
+    expect(reduxDispatchMock).not.toHaveBeenCalledWith(createTerminalRequested('ws-1'));
   });
 
   it('dispatches Redux actions for agent, terminal, note, and file from keyboard', async () => {
@@ -250,8 +294,8 @@ describe('CommandPalette new actions', () => {
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose } });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Agent Chat' }).className).toContain(
-        'bg-foreground/[0.04]',
+      expect(screen.getByRole('button', { name: 'Agent Chat' }).getAttribute('aria-current')).toBe(
+        'true',
       );
     });
 
@@ -367,6 +411,22 @@ describe('CommandPalette new actions', () => {
     }
 
     events.forEach((event, index) => window.removeEventListener(event, listeners[index]));
+  });
+
+  it('keeps current-row state on actionable results through search, arrows, and hover', async () => {
+    render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
+    const input = screen.getByRole('textbox');
+    await fireEvent.input(input, { target: { value: 'attach' } });
+    const context = await screen.findByRole('button', { name: /Attach context/i });
+    const files = await screen.findByRole('button', { name: /Attach files/i });
+    await fireEvent.pointerMove(context);
+    expect(context.getAttribute('aria-current')).toBe('true');
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(files.getAttribute('aria-current')).toBe('true');
+    expect(context.hasAttribute('aria-current')).toBe(false);
+    await fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(context.getAttribute('aria-current')).toBe('true');
+    expect(files.hasAttribute('aria-current')).toBe(false);
   });
 });
 

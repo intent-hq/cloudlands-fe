@@ -365,6 +365,30 @@ describe('GitWorkspaceSettings — default shell select', () => {
     });
   });
 
+  it('opens from the field label without a premature write and restores keyboard focus', async () => {
+    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    render(GitWorkspaceSettings);
+    const trigger = await screen.findByRole('combobox', SHELL_TRIGGER);
+    const label = screen.getByText(m.settings_gitWorkspace_defaultShell_label(), {
+      selector: 'label',
+    });
+    await fireEvent.click(label, { detail: 1 });
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('true'));
+    expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    await fireEvent.keyDown(trigger, { key: 'Escape' });
+    await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
+    expect(document.activeElement).toBe(trigger);
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledExactlyOnceWith([
+        { path: 'workspace.defaultShell', value: '/bin/zsh' },
+      ]),
+    );
+  });
+
   it('resetToDefaults persists the auto shell value', async () => {
     mocks.mockSettingsList.mockResolvedValue(withShell('/bin/zsh'));
     const { component } = render(GitWorkspaceSettings);

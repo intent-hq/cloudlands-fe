@@ -33,6 +33,8 @@
     type AllSpacesViewMode,
     type SidebarNavItem,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-types';
+  import { selectIsGuestWindow } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+  import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
 
   const panelItem$ = selectPanelItem();
@@ -40,6 +42,17 @@
   const onboardingActive$ = selectOnboardingActive();
   const allSpacesViewMode$ = selectAllSpacesViewMode();
   const showArchivedWorkspaces$ = selectShowArchivedWorkspaces();
+  // A collaborator-only client (multiplayer w3) has no Chief: the daemon
+  // answers its `__chief__` calls with not-found, so the card is never
+  // mounted and the workspace list takes the whole panel. The gate is live —
+  // flipping true after mount unmounts the card, whose destroy releases the
+  // Chief workspace (`workspaceUnmounted`).
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  // A guest window (bound to a joined host, multiplayer w4) lists only the
+  // workspaces shared with it, so its list is titled accordingly. Keyed off
+  // the guest-window identity rather than the fail-closed collaborator-only
+  // flag, which reads true on every owner window until identity settles.
+  const isGuestWindow$ = selectIsGuestWindow();
 
   const allSpacesViewModes = [
     { value: 'recent', label: m.layout_allCard_recent_label() },
@@ -89,7 +102,9 @@
   const isCombinedWorkspace = $derived(
     displayedPanelItem !== null && isCombinedWorkspacePanelItem(displayedPanelItem),
   );
-  const workspaceTab = $derived(displayedPanelItem === 'chief' ? 'chief' : 'all-workspaces');
+  const workspaceTab = $derived(
+    displayedPanelItem === 'chief' && !$isCollaboratorOnlyClient$ ? 'chief' : 'all-workspaces',
+  );
   let pointerTabChange = false;
   let animateTabContent = $state(false);
 
@@ -161,9 +176,10 @@
     };
   });
 
-  // Keep liveWidth in sync when panelWidth changes from Redux
+  // During a drag the pointer owns liveWidth. Cadenced Redux echoes can still
+  // contain an earlier position, so only accept external widths while idle.
   $effect(() => {
-    liveWidth = $panelWidth$;
+    if (!isResizing) liveWidth = $panelWidth$;
   });
 
   // Hoisted cleanup references for width resize drag
@@ -258,7 +274,9 @@
           <div class="shrink-0 px-2 pt-2 pb-1">
             <Tabs.List
               aria-label={m.layout_sidebarPanel_tabs_ariaLabel()}
-              class="sidebar-view-tabs grid w-full grid-cols-2 rounded-lg bg-muted/60 p-1"
+              class="sidebar-view-tabs grid w-full rounded-lg bg-muted/60 p-1 {$isCollaboratorOnlyClient$
+                ? 'grid-cols-1'
+                : 'grid-cols-2'}"
             >
               <Tabs.Trigger
                 value="all-workspaces"
@@ -266,12 +284,14 @@
               >
                 <span class="truncate">{m.layout_sidebarPanel_workspacesTab_label()}</span>
               </Tabs.Trigger>
-              <Tabs.Trigger
-                value="chief"
-                class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
-              >
-                <span class="truncate">{m.layout_chiefCard_title()}</span>
-              </Tabs.Trigger>
+              {#if !$isCollaboratorOnlyClient$}
+                <Tabs.Trigger
+                  value="chief"
+                  class="min-w-0 px-2 font-medium focus-visible:outline-none focus-visible:ring-0"
+                >
+                  <span class="truncate">{m.layout_chiefCard_title()}</span>
+                </Tabs.Trigger>
+              {/if}
             </Tabs.List>
           </div>
           <!-- Tabs.Content hides rather than unmounts: keep search, scroll and drafts. -->
@@ -285,7 +305,9 @@
             <div class="panel-header shrink-0">
               <div class="min-w-0 flex-1">
                 <h2 class="panel-title text-ui font-medium text-foreground truncate">
-                  {m.layout_sidebarNav_allWorkspaces_title()}
+                  {$isGuestWindow$
+                    ? m.layout_sidebarNav_allSharedWorkspaces_title()
+                    : m.layout_sidebarNav_allWorkspaces_title()}
                 </h2>
               </div>
               <div class="flex items-center gap-0.5 shrink-0">
@@ -393,22 +415,24 @@
             </div>
           </Tabs.Content>
 
-          <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
+          {#if !$isCollaboratorOnlyClient$}
+            <!-- overflow-clip with an 8px clip margin (instead of overflow-hidden)
                lets the Intent composer's streaming aurora bleed across the app
                frame's pl-2/pb-2 window inset to the window edges. -->
-          <Tabs.Content
-            value="chief"
-            class="mt-0 min-h-0 flex-1 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col data-[state=inactive]:hidden"
-            inert={workspaceTab !== 'chief' ? true : undefined}
-            data-combined-panel-chief
-            data-tab-motion={animateTabContent}
-          >
-            <ChiefCard
-              expanded={true}
-              embedded={true}
-              isActive={isOpen && workspaceTab === 'chief'}
-            />
-          </Tabs.Content>
+            <Tabs.Content
+              value="chief"
+              class="mt-0 min-h-0 flex-1 overflow-clip [overflow-clip-margin:0.5rem] flex flex-col data-[state=inactive]:hidden"
+              inert={workspaceTab !== 'chief' ? true : undefined}
+              data-combined-panel-chief
+              data-tab-motion={animateTabContent}
+            >
+              <ChiefCard
+                expanded={true}
+                embedded={true}
+                isActive={isOpen && workspaceTab === 'chief'}
+              />
+            </Tabs.Content>
+          {/if}
         </Tabs.Root>
       {:else}
         <!-- Header -->
@@ -424,7 +448,9 @@
           <div class="flex items-center gap-0.5 shrink-0">
             <Button
               variant="ghost"
-              class="w-6 h-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+              size="icon-compact"
+              iconOnly
+              class="text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
               onclick={() => appStore.dispatch(closePanel())}
               aria-label={m.layout_sidebarPanel_close_ariaLabel()}
             >

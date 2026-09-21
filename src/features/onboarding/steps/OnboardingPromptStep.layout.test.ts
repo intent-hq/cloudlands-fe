@@ -116,6 +116,23 @@ function expectRowContract(row: HTMLElement) {
 afterEach(cleanup);
 
 describe('OnboardingPromptStep rendered metadata layout', () => {
+  it('selects a suggestion and shuffles through the standalone rows', async () => {
+    const callbacks = { onPromptSelect: vi.fn(), onShuffleSuggestions: vi.fn() };
+    const result = render(OnboardingPromptStep, {
+      props: props({
+        ...callbacks,
+        onboardingInputValue: '',
+        visibleSuggestions: ['Build a test dashboard', 'Review error handling'],
+      }),
+    });
+    await fireEvent.click(result.getByRole('option', { name: 'Build a test dashboard' }));
+    expect(callbacks.onPromptSelect).toHaveBeenCalledExactlyOnceWith('Build a test dashboard');
+    await fireEvent.click(
+      result.getByRole('option', { name: m.onboarding_promptStep_shuffleSuggestions_ariaLabel() }),
+    );
+    expect(callbacks.onShuffleSuggestions).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ['local', local, 'Branch off of'],
     [

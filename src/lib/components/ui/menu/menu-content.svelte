@@ -61,10 +61,14 @@
     onOpenAutoFocus?.(event);
     if (event.defaultPrevented) return;
     // Focus the content first so Bits initializes keyboard entry before our tab stop.
+    // Skip when focus already moved inside the content: re-focusing the container
+    // makes Bits focus the first item again and resets keyboard navigation.
     event.preventDefault();
     const content = ref;
     requestAnimationFrame(() => {
-      if (content && ref === content && content.dataset.state === 'open') content.focus();
+      if (!content || ref !== content || content.dataset.state !== 'open') return;
+      if (content.contains(document.activeElement)) return;
+      content.focus();
     });
   }
 

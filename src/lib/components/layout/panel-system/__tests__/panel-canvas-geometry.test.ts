@@ -120,7 +120,7 @@ describe('mounted panel canvas geometry', () => {
     expect(geometryWidth(canvas(result.container))).toBe(720);
   });
 
-  it('resizes to 280px, rehydrates exactly, and resets to the intrinsic width', async () => {
+  it('retains restored widths without exposing an outer resize interaction', async () => {
     const onResizeEnd = vi.fn();
     const explicitProps = {
       ...ordinaryProps,
@@ -132,22 +132,19 @@ describe('mounted panel canvas geometry', () => {
       props: explicitProps,
       context: new Map([[STORE_CONTEXT, storeContext]]),
     });
-    const handle = result.container.querySelector<HTMLButtonElement>(
-      '.panel-canvas-resize-handle',
-    )!;
-
-    fireEvent.mouseDown(handle, { clientX: 600 });
+    expect(result.queryByRole('button')).toBeNull();
+    fireEvent.mouseDown(canvas(result.container), { clientX: 600 });
     fireEvent.mouseMove(document, { clientX: 200 });
     fireEvent.mouseUp(document, { clientX: 200 });
     await tick();
-    expect(geometryWidth(canvas(result.container))).toBe(280);
-    expect(onResizeEnd).toHaveBeenLastCalledWith(600, 280);
+    expect(geometryWidth(canvas(result.container))).toBe(600);
+    expect(onResizeEnd).not.toHaveBeenCalled();
 
     await result.rerender({ ...explicitProps, canvasWidth: 280 });
     expect(geometryWidth(canvas(result.container))).toBe(280);
 
-    await fireEvent.dblClick(handle);
-    expect(onResizeEnd).toHaveBeenLastCalledWith(280, 500);
+    await fireEvent.dblClick(canvas(result.container));
+    expect(onResizeEnd).not.toHaveBeenCalled();
     await result.rerender(ordinaryProps);
     expect(geometryWidth(canvas(result.container))).toBe(1600);
   });

@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/experimental-ct-svelte';
+import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import StickyScrollStabilityHost from './StickyScrollStabilityHost.svelte';
 import type { AgentMessage } from '$shared/types';
 
@@ -130,7 +131,7 @@ test('pins automated triggers without shifting the transcript and returns to eac
       expect((await geometry(scroll, anchor, source)).scrollTop).toBeCloseTo(entry, 1);
       await component.screenshot({ path: testInfo.outputPath('sticky-subscription.png') });
     }
-    if (index % 2 === 0) await pinned.press('Enter');
+    if (index % 2 === 0) await pinned.getByRole('button').last().press('Enter');
     else await pinned.click();
     await expect(pinned).toHaveCount(0);
     await expect(source).toBeInViewport();

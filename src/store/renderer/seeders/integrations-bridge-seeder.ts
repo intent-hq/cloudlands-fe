@@ -24,6 +24,7 @@ import type {
   GitHubAuthState,
   GitHubAuthStatus,
   GithubRepo,
+  GithubUserSearchHit,
   StartAuthResult,
 } from '$features/github-auth/types';
 import { LINEAR_AUTH_CHANNELS } from '$features/linear-auth/constants';
@@ -111,6 +112,11 @@ registerMockIpcHandler(
 // "poll" is the event fallback that completes when `github.authStatus`
 // validates, cancel maps to `github.cancelAuth`, and logout to
 // `github.revoke` (token deleted daemon-side; never crosses the wire).
+//
+// A configured token only short-circuits a plain "start"; `{ reconnect: true }`
+// always starts a fresh device flow so an existing connection can be
+// re-authorized for new scopes (intent#5206). The daemon swaps the stored
+// token on authorize, so the old one keeps working until then.
 
 /** `github.connect` success payload (§5.27) — user-facing codes only. */
 interface GitHubConnectWire {
@@ -121,9 +127,10 @@ interface GitHubConnectWire {
   interval?: number;
 }
 
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartAuthResult> => {
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (arg): Promise<StartAuthResult> => {
+  const reconnect = asRecord(arg).reconnect === true;
   const status = await githubAuthStatus();
-  if (status?.isConfigured === true) {
+  if (!reconnect && status?.isConfigured === true) {
     return {
       success: true,
       alreadyAuthenticated: true,
@@ -161,9 +168,14 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartA
   }
 });
 
+// The daemon clears the `deviceFlow` slot only when a flow authorizes; a
+// pending flow means the user has not entered the code yet, and a terminal
+// `expired` / `denied` / `error` flow stays in the slot (§5.27). A reconnect
+// runs on top of a still-valid token, so `isConfigured` alone would report a
+// not-yet-authorized or failed re-authorization as complete (intent#5206).
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN, async () => {
   const status = await githubAuthStatus();
-  const isComplete = status?.isConfigured === true;
+  const isComplete = status?.isConfigured === true && !status.deviceFlow;
   const user = isComplete ? await liveIntegrations.githubUser() : null;
   return { success: true, data: { user, isComplete } };
 });
@@ -249,6 +261,42 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, async (arg) => {
       query,
     });
     return { success: true, data: (result?.repos ?? []).map(toLegacyRepo) };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+});
+
+// ── GitHub user search for the Share dialog's pin typeahead (PROTOCOL §5.27) ──
+
+/** Daemon `github.users.search` hit — `{ id, login, avatarUrl, htmlUrl }`. */
+interface GithubUserSearchHitWire {
+  id: number;
+  login: string;
+  avatarUrl?: string | null;
+  htmlUrl?: string | null;
+}
+
+function toUserSearchHit(user: GithubUserSearchHitWire): GithubUserSearchHit {
+  return {
+    id: user.id,
+    login: user.login,
+    avatarUrl: user.avatarUrl ?? null,
+    htmlUrl: user.htmlUrl ?? null,
+  };
+}
+
+// `limit` is left to the daemon default (8, clamped into [1, 10]).
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_USERS, async (arg) => {
+  const query = asRecord(arg).query;
+  if (typeof query !== 'string' || query.length === 0) {
+    return { success: false, error: 'query is required' };
+  }
+  try {
+    const result = await backendRequest<{ users?: GithubUserSearchHitWire[] }>(
+      'github.users.search',
+      { query },
+    );
+    return { success: true, data: (result?.users ?? []).map(toUserSearchHit) };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

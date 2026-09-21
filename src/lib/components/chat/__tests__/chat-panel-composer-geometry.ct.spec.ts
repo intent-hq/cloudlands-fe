@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
-import { recordCdpLifecycle } from '../../../../test/ct-cdp-lifecycle-recorder';
-import { isolateBrowserContextPerTest } from '../../../../test/ct-isolated-browser-context';
+import { expect, test } from '../../../../test/ct-test';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 import {
   applyAuroraPaintProbe,
@@ -10,15 +8,6 @@ import {
 } from './aurora-panel-pixels';
 
 test.setTimeout(120_000);
-
-// The first mount after the 'regular narrow dark at 200%' cell ('Chief wide dark
-// at 100%') intermittently failed with "Execution context was destroyed" on the
-// merge queue (intent-hq/intent#4783) — the same signature fe#2158 fixed for the
-// operational-geometry spec. Give every cell its own browser context so a heavy
-// zoom-200% teardown never races the next mount, and record the CDP lifecycle so
-// a recurrence reports the real event ordering.
-isolateBrowserContextPerTest(test, 'intent-hq/intent#4783');
-recordCdpLifecycle(test);
 
 const regularStates = (['light', 'dark'] as const).flatMap((theme) =>
   [1, 2].flatMap((zoom) =>
@@ -225,6 +214,34 @@ test('keeps the regular Aurora clipped during reduced-motion streaming transitio
 
   await component.update({ props });
   await expect(aurora).toHaveCount(0);
+});
+
+test('separates suggestions from the composer while resizing into compact mode', async ({
+  mount,
+}) => {
+  const props = { width: 720, height: 960, suggestions: true };
+  const component = await mount(ChatPanelComposerGeometryHost, { props });
+  const suggestions = component.getByTestId('suggested-prompts-surface');
+  const list = component.getByTestId('suggested-prompts-list');
+  const input = component.getByTestId('message-input');
+  const gap = async () => {
+    const [promptsBox, inputBox] = await Promise.all([
+      suggestions.boundingBox(),
+      input.boundingBox(),
+    ]);
+    return inputBox!.y - promptsBox!.y - promptsBox!.height;
+  };
+
+  await expect(suggestions).toBeVisible();
+  await expect(list).toHaveAttribute('data-compact', 'false');
+  await expect.poll(gap).toBeCloseTo(12, 1);
+  await component.update({ props: { ...props, height: 480 } });
+  await expect(list).toHaveAttribute('data-compact', 'true');
+  await expect.poll(gap).toBeCloseTo(8, 1);
+
+  await suggestions.getByRole('button', { name: 'Edit in input' }).first().click();
+  await expect(input.locator('.tiptap-editor')).toContainText('Review the layout.');
+  await expect.poll(gap).toBeCloseTo(8, 1);
 });
 
 test('keeps attachments, controls, tab order, and resize behavior inside the nested surface', async ({

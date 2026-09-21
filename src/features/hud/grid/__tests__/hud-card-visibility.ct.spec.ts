@@ -16,7 +16,7 @@
  * Verified by reintroducing that defect: the gate then reported exactly
  * `ws-0,ws-1,ws-2,ws-3` and these tests fail on ws-4.
  */
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../../test/ct-test';
 
 import HudCardVisibilityHarness from './HudCardVisibilityHarness.svelte';
 

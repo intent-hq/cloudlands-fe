@@ -16,6 +16,24 @@ import type { CatalogRendererId } from './catalog-renderers';
 import { waitForCaptureStability } from './capture-stability';
 import '../../app.css';
 
+// Pin only this suite's absolute timestamps, independent of host TZ and formatter caches (#5200).
+vi.mock(import('$lib/i18n/format'), async (importOriginal) => {
+  const actual = await importOriginal();
+  const { getActiveLocale } = await import('$lib/i18n/locale');
+  return {
+    ...actual,
+    formatDateTime(input: Parameters<typeof actual.formatDateTime>[0]) {
+      const date = input instanceof Date ? input : new Date(input);
+      if (Number.isNaN(date.getTime())) return '';
+      return new Intl.DateTimeFormat(getActiveLocale(), {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'UTC',
+      }).format(date);
+    },
+  };
+});
+
 type ContractCase = {
   key: string;
   kind: 'pattern' | 'primitive' | 'product';

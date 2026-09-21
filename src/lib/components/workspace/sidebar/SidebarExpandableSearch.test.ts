@@ -21,51 +21,28 @@ describe('SidebarExpandableSearch', () => {
     expect(document.activeElement).toBe(view.getByRole('button', { name: 'Search agents...' }));
   });
 
-  it('uses identical 28px targets and 14px glyph boxes for plus, search, and close', () => {
-    const rectSpy = vi
-      .spyOn(Element.prototype, 'getBoundingClientRect')
-      .mockImplementation(function () {
-        if (this instanceof HTMLElement && this.matches('button[data-sidebar-action]')) {
-          const size =
-            this.dataset.slot === 'button' &&
-            this.className.includes('size-(--control-height-compact)')
-              ? 28
-              : 0;
-          return new DOMRect(0, 0, size, size);
-        }
-        if (this instanceof SVGElement && this.matches('[data-sidebar-action-icon]')) {
-          const size = this.getAttribute('class')?.includes('size-3.5') ? 14 : 0;
-          return new DOMRect(0, 0, size, size);
-        }
-        return new DOMRect();
-      });
+  it.each(['plus', 'search', 'close'] as const)(
+    'routes the %s action to its caller',
+    async (icon) => {
+      const onclick = vi.fn();
+      const view = render(SidebarHeaderAction, { props: { icon, label: icon, onclick } });
+      await fireEvent.click(view.getByRole('button', { name: icon }));
+      expect(onclick).toHaveBeenCalledOnce();
+    },
+  );
 
-    const views = (['plus', 'search', 'close'] as const).map((icon) =>
-      render(SidebarHeaderAction, { props: { icon, label: icon } }),
-    );
-    const targets = views.map((view, index) =>
-      view
-        .getByRole('button', { name: ['plus', 'search', 'close'][index] })
-        .getBoundingClientRect(),
-    );
-    const glyphs = views.map((view, index) =>
-      view.container
-        .querySelector<SVGElement>(
-          `[data-sidebar-action-icon="${['plus', 'search', 'close'][index]}"]`,
-        )!
-        .getBoundingClientRect(),
-    );
-
-    expect(targets.map(({ width, height }) => [width, height])).toEqual([
-      [28, 28],
-      [28, 28],
-      [28, 28],
-    ]);
-    expect(glyphs.map(({ width, height }) => [width, height])).toEqual([
-      [14, 14],
-      [14, 14],
-      [14, 14],
-    ]);
-    rectSpy.mockRestore();
+  it('forwards file-search navigation and clears without losing input focus', async () => {
+    const onKeydown = vi.fn();
+    const view = render(SidebarExpandableSearch, {
+      props: { placeholder: 'Search files', scope: 'files', placement: 'toolbar', onKeydown },
+    });
+    await fireEvent.click(view.getByRole('button', { name: 'Search files' }));
+    const input = view.getByRole('searchbox');
+    await fireEvent.input(input, { target: { value: 'README' } });
+    await fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(onKeydown).toHaveBeenCalledWith(expect.objectContaining({ key: 'ArrowDown' }));
+    await fireEvent.click(view.container.querySelector('[data-sidebar-search-clear="files"]')!);
+    expect((input as HTMLInputElement).value).toBe('');
+    expect(document.activeElement).toBe(input);
   });
 });

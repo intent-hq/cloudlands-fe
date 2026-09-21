@@ -109,6 +109,18 @@
     window.removeEventListener('mouseup', handleMouseUp);
   }
 
+  function handleKeyDown(event: KeyboardEvent) {
+    if (isDragging || event.altKey || event.ctrlKey || event.metaKey) return;
+    const previousKey = direction === 'horizontal' ? 'ArrowLeft' : 'ArrowUp';
+    const nextKey = direction === 'horizontal' ? 'ArrowRight' : 'ArrowDown';
+    if (event.key !== previousKey && event.key !== nextKey) return;
+    event.preventDefault();
+    const step = event.shiftKey ? 20 : 10;
+    onResizeStart?.();
+    onResize?.(event.key === previousKey ? -step : step);
+    onResizeEnd?.();
+  }
+
   interface DropZoneInfo {
     position: HandleDropZone;
     insertDirection: 'horizontal' | 'vertical';
@@ -184,6 +196,7 @@
 <Button
   variant="ghost"
   type="button"
+  wrapContent={false}
   bind:ref={handleRef}
   class={cn(
     'app-resize-handle panel-split-handle',
@@ -191,9 +204,11 @@
     isDragging && 'dragging',
   )}
   data-resize-axis={direction === 'horizontal' ? 'x' : 'y'}
+  data-resize-indicator="short"
   data-resizing={isDragging}
   aria-label={m.layout_panelSplitHandle_resize_ariaLabel()}
   onmousedown={handleMouseDown}
+  onkeydown={handleKeyDown}
   ondragover={handleTabDragOver}
   ondragleave={handleTabDragLeave}
   ondrop={handleTabDrop}
@@ -201,6 +216,8 @@
 
 <style>
   :global(.panel-split-handle) {
+    --resize-handle-idle: hsl(var(--muted-foreground));
+    --resize-handle-active: hsl(var(--muted-foreground));
     position: relative;
     flex-shrink: 0;
     z-index: 35;
@@ -219,6 +236,7 @@
      would flip to the right, but all shipped locales are LTR. */
   :global(.panel-split-handle.horizontal) {
     width: 16px;
+    height: 100%;
     margin: 0 -4px;
     clip-path: inset(0 0 0 4px);
   }

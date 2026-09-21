@@ -26,8 +26,14 @@ import {
   stopUnslothRequested,
   stopUnslothSucceeded,
   stopUnslothFailed,
+  agentMemoryBreakdownClosed,
+  agentMemoryUsageRequested,
+  agentMemoryUsageSucceeded,
+  agentMemoryUsageFailed,
 } from './daemon-health-slice';
+import { collaboratorSystemStatusProjection } from './daemon-health.test-fixtures';
 import type {
+  AgentMemoryUsageWirePayload,
   BackendTransportInfo,
   SidecarRunLog,
   SystemStatusWirePayload,
@@ -43,6 +49,8 @@ describe('daemonHealthReducer', () => {
       polling: false,
       transport: null,
       reconnectAttempts: 0,
+      connectionLimited: false,
+      connectionLimitRetryAfterMs: null,
       hostLocality: null,
       sidecarGaveUp: false,
       sidecarGaveUpReason: null,
@@ -61,6 +69,9 @@ describe('daemonHealthReducer', () => {
       unslothPolling: false,
       unslothStopping: false,
       unslothStopError: null,
+      agentMemoryUsage: null,
+      agentMemoryUsageFetching: false,
+      agentMemoryUsageError: false,
     });
   });
 
@@ -229,6 +240,70 @@ describe('daemonHealthReducer', () => {
       const state = { ...initialState, reconnectAttempts: 14 };
       const next = daemonHealthReducer(state, connectionStatusChanged('connected'));
       expect(next.reconnectAttempts).toBe(0);
+    });
+
+    // Multiplayer guest caps: main reports a 503-refused connect as
+    // `connectionLimited`; the posture holds across retries until main
+    // reports otherwise, and a successful connect clears it.
+    it('tracks connectionLimited from the status extras and clears it on connect', () => {
+      const limited = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: true }),
+      );
+      expect(limited.connectionLimited).toBe(true);
+
+      const retrying = daemonHealthReducer(
+        limited,
+        connectionStatusChanged('connecting', undefined, { reconnectAttempts: 1 }),
+      );
+      expect(retrying.connectionLimited).toBe(true);
+
+      const otherFailure = daemonHealthReducer(
+        retrying,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: false }),
+      );
+      expect(otherFailure.connectionLimited).toBe(false);
+
+      const connected = daemonHealthReducer(limited, connectionStatusChanged('connected'));
+      expect(connected.connectionLimited).toBe(false);
+    });
+
+    it('tracks the connection-limit retry wait alongside the posture', () => {
+      const limited = daemonHealthReducer(
+        initialState,
+        connectionStatusChanged('disconnected', undefined, {
+          connectionLimited: true,
+          connectionLimitRetryAfterMs: 45_000,
+        }),
+      );
+      expect(limited.connectionLimitRetryAfterMs).toBe(45_000);
+
+      // A retry broadcast without the field keeps the last known wait.
+      const retrying = daemonHealthReducer(
+        limited,
+        connectionStatusChanged('connecting', undefined, { reconnectAttempts: 1 }),
+      );
+      expect(retrying.connectionLimitRetryAfterMs).toBe(45_000);
+
+      // A refreshed refusal replaces it.
+      const refreshed = daemonHealthReducer(
+        retrying,
+        connectionStatusChanged('disconnected', undefined, {
+          connectionLimited: true,
+          connectionLimitRetryAfterMs: 120_000,
+        }),
+      );
+      expect(refreshed.connectionLimitRetryAfterMs).toBe(120_000);
+
+      // A failure of another kind drops it with the posture.
+      const otherFailure = daemonHealthReducer(
+        refreshed,
+        connectionStatusChanged('disconnected', undefined, { connectionLimited: false }),
+      );
+      expect(otherFailure.connectionLimitRetryAfterMs).toBeNull();
+
+      const connected = daemonHealthReducer(refreshed, connectionStatusChanged('connected'));
+      expect(connected.connectionLimitRetryAfterMs).toBeNull();
     });
 
     it('latches sidecarGaveUp + reason on a give-up disconnect', () => {
@@ -576,6 +651,11 @@ describe('daemonHealthReducer', () => {
         memoryBytes: 104857600,
         workspacesDiskAvailableBytes: 453316378624,
         workspacesDiskTotalBytes: 1099511627776,
+        childProcesses: 9,
+        childMemoryBytes: 3650000000,
+        childMemoryPeakBytes: 6970000000,
+        agentMemoryBytes: 3221225472,
+        agentProcessCount: 2,
         fingerprint: 'abc123',
         hostname: 'studio.local',
         protocolVersion: '2.0',
@@ -606,12 +686,78 @@ describe('daemonHealthReducer', () => {
         workspacesDiskAvailableBytes: 453316378624,
         workspacesDiskTotalBytes: 1099511627776,
         hostname: 'studio.local',
+        childProcesses: 9,
+        childMemoryBytes: 3650000000,
+        childMemoryPeakBytes: 6970000000,
+        agentMemoryBytes: 3221225472,
+        agentProcessCount: 2,
         os: 'macos',
         arch: 'aarch64',
         transport: undefined,
       });
       expect(next.lastUpdated).toBe(receivedAt);
       expect(next.hostLocality).toBe('local');
+    });
+
+    it('keeps counts and telemetry absent for the collaborator projection (intentd #1934)', () => {
+      // Exactly the guest-safe key set a Collaborator caller receives — the
+      // typed literal lives in a check-covered module so a re-required wire
+      // field fails `pnpm run check`, not only this runtime test.
+      const payload = collaboratorSystemStatusProjection;
+      // COLLABORATOR_STATUS_FIELDS / COLLABORATOR_STATUS_HOST_FIELDS @ 60de0618.
+      expect(Object.keys(payload).sort()).toEqual(
+        [
+          'running',
+          'listenMode',
+          'port',
+          'version',
+          'buildCommit',
+          'protocolVersion',
+          'fingerprint',
+          'localIps',
+          'tcAddress',
+          'hostname',
+          'prettyHostname',
+          'host',
+        ].sort(),
+      );
+      expect(Object.keys(payload.host).sort()).toEqual(
+        ['os', 'arch', 'locality', 'deviceKind', 'hardwareModel'].sort(),
+      );
+      expect(payload).not.toHaveProperty('transports');
+      expect(payload).not.toHaveProperty('clients');
+      expect(payload).not.toHaveProperty('agents');
+      expect(payload).not.toHaveProperty('maxAgents');
+      expect(payload.host).not.toHaveProperty('hasDisplay');
+      const state = { ...initialState, polling: true };
+      const receivedAt = '2026-09-16T13:00:00.000Z';
+      const next = daemonHealthReducer(state, systemStatusSuccess(payload, receivedAt, 0));
+
+      expect(next.polling).toBe(false);
+      expect(next.stats).toEqual({
+        listenMode: payload.listenMode,
+        port: payload.port,
+        version: payload.version,
+        buildCommit: payload.buildCommit,
+        protocolVersion: payload.protocolVersion,
+        hostname: payload.hostname,
+        os: payload.host.os,
+        arch: payload.host.arch,
+      });
+      expect(next.stats?.clients).toBeUndefined();
+      expect(next.stats?.agents).toBeUndefined();
+      expect(next.stats?.maxAgents).toBeUndefined();
+      expect(next.stats?.uptimeSeconds).toBeUndefined();
+      expect(next.stats?.cpuPercent).toBeUndefined();
+      expect(next.stats?.memoryBytes).toBeUndefined();
+      expect(next.stats?.workspacesDiskAvailableBytes).toBeUndefined();
+      expect(next.stats?.workspacesDiskTotalBytes).toBeUndefined();
+      // Nothing numeric was coerced from a missing field.
+      for (const value of Object.values(next.stats ?? {})) {
+        expect(Number.isNaN(value)).toBe(false);
+      }
+      expect(next.lastUpdated).toBe(receivedAt);
+      expect(next.hostLocality).toBe('remote');
     });
 
     it('treats new fields as optional (graceful degradation)', () => {
@@ -1154,6 +1300,86 @@ describe('daemonHealthReducer', () => {
       const next = daemonHealthReducer(state, stopUnslothFailed('transport error'));
       expect(next.unslothStopping).toBe(false);
       expect(next.unslothStopError).toBe('transport error');
+    });
+  });
+
+  describe('agent memory breakdown', () => {
+    const usage: AgentMemoryUsageWirePayload = {
+      sampledAt: '2026-09-20T06:00:00.000Z',
+      totalBytes: 3221225472,
+      agents: [
+        {
+          agentId: 'agent-1',
+          agentName: 'Implement dark mode',
+          workspaceId: 'ws-1',
+          provider: 'claude',
+          model: 'claude-sonnet-4',
+          rootPid: 100,
+          processCount: 1,
+          memoryBytes: 3221225472,
+          processes: [
+            {
+              pid: 100,
+              parentPid: 1,
+              name: 'claude-code-acp',
+              cmdline: 'claude-code-acp --stdio',
+              memoryBytes: 3221225472,
+            },
+          ],
+        },
+      ],
+    };
+
+    it('agentMemoryUsageRequested marks a fetch in flight', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageRequested());
+      expect(next.agentMemoryUsageFetching).toBe(true);
+    });
+
+    it('agentMemoryUsageSucceeded stores the wire payload as-is and clears a prior error', () => {
+      const state = {
+        ...initialState,
+        agentMemoryUsageFetching: true,
+        agentMemoryUsageError: true,
+      };
+      const next = daemonHealthReducer(state, agentMemoryUsageSucceeded(usage));
+      expect(next.agentMemoryUsageFetching).toBe(false);
+      expect(next.agentMemoryUsageError).toBe(false);
+      expect(next.agentMemoryUsage).toEqual(usage);
+    });
+
+    it('agentMemoryUsageSucceeded is ignored when no fetch is in flight (late resolve after close)', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageSucceeded(usage));
+      expect(next).toBe(initialState);
+      expect(next.agentMemoryUsage).toBeNull();
+    });
+
+    it('agentMemoryUsageFailed flags the error but keeps the last good usage', () => {
+      const state = { ...initialState, agentMemoryUsageFetching: true, agentMemoryUsage: usage };
+      const next = daemonHealthReducer(state, agentMemoryUsageFailed());
+      expect(next.agentMemoryUsageFetching).toBe(false);
+      expect(next.agentMemoryUsageError).toBe(true);
+      expect(next.agentMemoryUsage).toEqual(usage);
+    });
+
+    it('agentMemoryUsageFailed is ignored when no fetch is in flight', () => {
+      const next = daemonHealthReducer(initialState, agentMemoryUsageFailed());
+      expect(next).toBe(initialState);
+    });
+
+    it('agentMemoryBreakdownClosed drops the usage and cancels an in-flight fetch', () => {
+      const state = {
+        ...initialState,
+        agentMemoryUsageFetching: true,
+        agentMemoryUsageError: true,
+        agentMemoryUsage: usage,
+      };
+      const closed = daemonHealthReducer(state, agentMemoryBreakdownClosed());
+      expect(closed.agentMemoryUsage).toBeNull();
+      expect(closed.agentMemoryUsageFetching).toBe(false);
+      expect(closed.agentMemoryUsageError).toBe(false);
+
+      const late = daemonHealthReducer(closed, agentMemoryUsageSucceeded(usage));
+      expect(late.agentMemoryUsage).toBeNull();
     });
   });
 });

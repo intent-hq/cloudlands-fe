@@ -90,6 +90,35 @@ export const selectIsLoadingRetiredAgents = store.createSelector((state, wsId: s
   return getWorkspaceAgentState(state, wsId).isLoadingRetiredAgents;
 });
 
+/**
+ * Daemon-served per-bin counts (`scopeCounts`, §5.5 row scope) for the
+ * Delegated / Background bin toggles; `null` when the daemon served none
+ * (old daemon — the all-rows read, no lazy bins).
+ */
+export const selectScopeCounts = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).scopeCounts;
+});
+
+/** True once the on-demand `scope: "delegated"` read has hydrated the delegated rows. */
+export const selectDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).delegatedAgentsLoaded;
+});
+
+/** True while the on-demand delegated read is in flight. */
+export const selectIsLoadingDelegatedAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingDelegatedAgents;
+});
+
+/** True once the on-demand `scope: "background"` read has hydrated the background rows. */
+export const selectBackgroundAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).backgroundAgentsLoaded;
+});
+
+/** True while the on-demand background read is in flight. */
+export const selectIsLoadingBackgroundAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingBackgroundAgents;
+});
+
 function byCreatedOrder(left: AgentSession, right: AgentSession): number {
   const leftTime = new Date(left.createdAt).getTime();
   const rightTime = new Date(right.createdAt).getTime();

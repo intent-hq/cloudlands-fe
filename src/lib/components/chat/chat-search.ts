@@ -33,7 +33,12 @@ export interface ChatSearchMatch {
 export const chatSearchBlockPath = (blockIndex: number, childIndex?: number): string =>
   childIndex === undefined ? `b:${blockIndex}` : `b:${blockIndex}:c:${childIndex}`;
 
-function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatSearchBlock[] {
+/** `ownerPrincipalId` (`workspace.ownerPrincipalId`) gates the collaborator preamble strip. */
+function buildMessageSearchBlocks(
+  message: AgentMessage,
+  turnKey: string,
+  ownerPrincipalId: string | null | undefined,
+): ChatSearchBlock[] {
   const contentBlocks = message.contentBlocks;
   if (!contentBlocks?.length) return [];
 
@@ -46,7 +51,8 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
         turnKey,
         blockPath: '',
         disclosurePath: [],
-        text: parseSuggestedPrompts(getPresentedUserMessageText(message)).cleanedContent,
+        text: parseSuggestedPrompts(getPresentedUserMessageText(message, ownerPrincipalId))
+          .cleanedContent,
       },
     ];
   }
@@ -140,14 +146,22 @@ function buildMessageSearchBlocks(message: AgentMessage, turnKey: string): ChatS
 function buildChatSearchIndex(
   messages: AgentMessage[],
   turnKeyByMessageId: ReadonlyMap<string, string>,
+  ownerPrincipalId: string | null | undefined,
 ): ChatSearchBlock[] {
   return messages.flatMap((message) =>
-    buildMessageSearchBlocks(message, turnKeyByMessageId.get(message.id) ?? message.id),
+    buildMessageSearchBlocks(
+      message,
+      turnKeyByMessageId.get(message.id) ?? message.id,
+      ownerPrincipalId,
+    ),
   );
 }
 
-export function extractSearchableContent(message: AgentMessage): string {
-  return buildMessageSearchBlocks(message, message.id)
+export function extractSearchableContent(
+  message: AgentMessage,
+  ownerPrincipalId?: string | null,
+): string {
+  return buildMessageSearchBlocks(message, message.id, ownerPrincipalId)
     .map((block) => block.text)
     .join('');
 }
@@ -156,12 +170,13 @@ export function findChatSearchMatches(
   messages: AgentMessage[],
   query: string,
   turnKeyByMessageId: ReadonlyMap<string, string>,
+  ownerPrincipalId?: string | null,
 ): ChatSearchMatch[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return [];
   const matches: ChatSearchMatch[] = [];
   const occurrenceByMessage = new Map<string, number>();
-  for (const block of buildChatSearchIndex(messages, turnKeyByMessageId)) {
+  for (const block of buildChatSearchIndex(messages, turnKeyByMessageId, ownerPrincipalId)) {
     const content = block.text.toLowerCase();
     let offset = 0;
     let occurrenceInBlock = 0;

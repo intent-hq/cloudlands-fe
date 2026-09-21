@@ -423,7 +423,13 @@ async function ensureCaptureTabMounted(
 
   let listed: Awaited<ReturnType<typeof embeddedBrowserCdp.listAllTabs>>;
   try {
-    listed = await embeddedBrowserCdp.listAllTabs(workspaceId);
+    // Listing alone only hydrates layouts. An explicit navigation also asks
+    // the host to replace a dead guest; passive listing/capture must not
+    // repeatedly reopen a page that closed itself.
+    listed =
+      actionName === 'navigate'
+        ? await embeddedBrowserCdp.listAllTabs(workspaceId, tabId)
+        : await embeddedBrowserCdp.listAllTabs(workspaceId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     const notVisible = getWindowIdForWorkspace(workspaceId) === undefined;
@@ -645,58 +651,80 @@ const OWNERSHIP_ENFORCED_ACTIONS = new Set([
 ]);
 
 /**
- * Per-`executeActions` memo of the `agent.list` owner-name lookup, keyed by
- * workspace and single-flight (a shared in-flight promise), so a multi-action
- * batch costs at most one round-trip instead of one per action.
+ * Per-`executeActions` memo of the owner display-name lookup, keyed by agent
+ * id and single-flight per id (a shared in-flight promise), so a batch with N
+ * distinct owners costs at most N `agent.get` point reads — never a
+ * whole-workspace `agent.list` frame (intent#5531).
  */
-type OwnerNameCache = Map<string, Promise<Map<string, string>>>;
+type OwnerNameCache = Map<string, Promise<string | undefined>>;
 
 /**
- * Best-effort bulk owner display-name lookup via the daemon's `agent.list`
- * (PROTOCOL.md §5.5) — one request resolves every owner in a tab list.
- * Dynamic import (mirroring browser-exec-reverse) avoids a static
- * main-process dependency cycle and keeps the executor unit-testable; any
- * failure resolves an empty map — callers still carry the owner ids.
+ * Dynamic import of the backend client (mirroring browser-exec-reverse)
+ * avoids a static main-process dependency cycle and keeps the executor
+ * unit-testable. Memoized so the concurrent per-owner reads of one tab list
+ * share a single module load instead of racing separate `import()` calls.
  */
-async function resolveAgentDisplayNames(
-  workspaceId?: string,
-  cache?: OwnerNameCache,
-): Promise<Map<string, string>> {
-  if (!workspaceId) return new Map();
-  const cached = cache?.get(workspaceId);
-  if (cached) return cached;
-  const pending = fetchAgentDisplayNames(workspaceId);
-  cache?.set(workspaceId, pending);
-  return pending;
-}
-
-async function fetchAgentDisplayNames(workspaceId: string): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  try {
-    const { getBackendClient } = await import('../../backend/main/backend.ipc');
-    const result = (await getBackendClient().request('agent.list', { workspaceId })) as
-      { agents?: Array<{ id?: string; name?: string }> } | undefined;
-    for (const agent of result?.agents ?? []) {
-      if (typeof agent.id === 'string' && typeof agent.name === 'string' && agent.name.length > 0) {
-        names.set(agent.id, agent.name);
-      }
-    }
-  } catch {
-    // best-effort — fall through with whatever resolved
-  }
-  return names;
+type BackendIpcModule = typeof import('../../backend/main/backend.ipc');
+let backendIpcModule: Promise<BackendIpcModule> | undefined;
+function loadBackendIpc(): Promise<BackendIpcModule> {
+  backendIpcModule ??= import('../../backend/main/backend.ipc').catch((error: unknown) => {
+    backendIpcModule = undefined;
+    throw error;
+  });
+  return backendIpcModule;
 }
 
 /**
- * Best-effort owner display-name lookup for a single agent, so ownership
- * errors can name the owner.
+ * Best-effort owner display-name lookup for a single agent via the daemon's
+ * `agent.get` (PROTOCOL.md §5.5), so ownership errors can name the owner.
+ * Any failure resolves `undefined` — callers still carry the owner id.
  */
 async function resolveAgentDisplayName(
   agentId: string,
   workspaceId?: string,
   cache?: OwnerNameCache,
 ): Promise<string | undefined> {
-  return (await resolveAgentDisplayNames(workspaceId, cache)).get(agentId);
+  if (!workspaceId) return undefined;
+  const cached = cache?.get(agentId);
+  if (cached) return cached;
+  const pending = fetchAgentDisplayName(agentId, workspaceId);
+  cache?.set(agentId, pending);
+  return pending;
+}
+
+async function fetchAgentDisplayName(
+  agentId: string,
+  workspaceId: string,
+): Promise<string | undefined> {
+  try {
+    const { getBackendClient } = await loadBackendIpc();
+    const result = (await getBackendClient().request('agent.get', { agentId, workspaceId })) as
+      { agent?: { name?: unknown } } | undefined;
+    const name = result?.agent?.name;
+    return typeof name === 'string' && name.length > 0 ? name : undefined;
+  } catch {
+    // best-effort — the owner keeps its id
+    return undefined;
+  }
+}
+
+/**
+ * Best-effort owner display names for a set of owner ids — one memoized
+ * `agent.get` per distinct id; owners that fail to resolve are absent.
+ */
+async function resolveAgentDisplayNames(
+  agentIds: Iterable<string>,
+  workspaceId?: string,
+  cache?: OwnerNameCache,
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  await Promise.all(
+    [...new Set(agentIds)].map(async (agentId) => {
+      const name = await resolveAgentDisplayName(agentId, workspaceId, cache);
+      if (name !== undefined) names.set(agentId, name);
+    }),
+  );
+  return names;
 }
 
 /**
@@ -803,11 +831,14 @@ async function executeAction(
               : tabs;
         // Owner display info + effective sizing per §5.9: ownerAgentId is
         // nullable (null = unowned), fit user tabs are native, and fixed or
-        // owned tabs are emulated. One bulk agent.list resolves every owner's
-        // display name; best-effort — unresolvable owners keep their id.
-        const ownerNames = scoped.some((t) => t.ownerAgentId)
-          ? await resolveAgentDisplayNames(workspaceId, ownerNameCache)
-          : new Map<string, string>();
+        // owned tabs are emulated. One memoized agent.get per distinct owner
+        // resolves the display names; best-effort — unresolvable owners keep
+        // their id.
+        const ownerNames = await resolveAgentDisplayNames(
+          scoped.flatMap((t) => (t.ownerAgentId ? [t.ownerAgentId] : [])),
+          workspaceId,
+          ownerNameCache,
+        );
         const result = scoped.map(({ emulatedSize, viewport, hidden, active, ...tab }) => {
           const ownerAgentId = tab.ownerAgentId ?? null;
           const ownerAgentName = ownerAgentId ? ownerNames.get(ownerAgentId) : undefined;
@@ -1733,8 +1764,9 @@ export async function executeActions(
 
   const { actions, tabId: defaultTabId } = parseResult.data;
   const results: ActionResult[] = [];
-  // Owner display names are resolved at most once per batch — a multi-action
-  // sequence (e.g. N openTabs) shares one agent.list round-trip.
+  // Owner display names are resolved at most once per owner id per batch — a
+  // multi-action sequence (e.g. N openTabs by one agent) shares one agent.get
+  // round-trip per distinct owner (intent#5531).
   const ownerNameCache: OwnerNameCache = new Map();
 
   for (const action of actions) {

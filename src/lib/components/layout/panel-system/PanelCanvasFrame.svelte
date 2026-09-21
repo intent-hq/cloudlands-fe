@@ -65,8 +65,7 @@
   resizeScrollContainer={scrollContainer}
   syncWithDefaultWidth={true}
   disableWidthTransition={true}
-  showHandleIndicator={true}
-  handleClassName="panel-canvas-resize-handle"
+  resizable={false}
   lockRenderedWidthDuringResize={sizing === 'viewport'}
   {onWidthChange}
   {onResizeStart}

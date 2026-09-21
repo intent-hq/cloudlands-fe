@@ -20,15 +20,22 @@
     // Scripts are invoked via package.json scripts, CI workflows (.github/workflows),
     // and electron-builder hooks (notarize/sign) — not via imports
     "scripts/*.{js,cjs,mjs,ts}",
-    // Referenced from e2e/playwright.config.e2e.ts, which knip cannot load (see "playwright" below)
-    "e2e/global-setup.ts",
-    "e2e/global-teardown.ts",
+    // Spawned by path from the build-smoke specs (MOCK_AGENT_SCRIPT_PATH), not imported
     "e2e/mock-acp-agent.js",
     // $app alias stubs wired in playwright-ct.config.ts ctViteConfig (alias resolution
     // is not followed by knip); playwright/index.ts is listed under "playwright-ct" below
     "playwright/app-stubs/*.ts",
     // Loaded via <script src> in operate-patterns.visual.html (visual test harness)
     "src/lib/components/ui/card/operate-patterns.visual.ts",
+    // Loaded via <script type="module"> in test/fixtures/browser-lifetime/index.html
+    // (test/electron-browser-lifetime.spec.ts); knip does not parse HTML
+    "test/fixtures/browser-lifetime/Harness.svelte",
+    // Substituted for production components through Vite alias/resolveId plugins inside
+    // the specs' createServer() config (electron-browser-lifetime.spec.ts,
+    // sidebar-shell-background.spec.ts); alias resolution is not followed by knip
+    "test/fixtures/browser-lifetime/BrowserContent.svelte",
+    "test/fixtures/browser-lifetime/Empty.svelte",
+    "test/fixtures/SidebarShellChiefStub.svelte",
     // Dynamically imported as import('$lib/dev-tools') in src/routes/(app)/+layout.svelte
     // (DEV-only); knip does not follow this aliased dynamic import inside .svelte
     "src/lib/dev-tools.ts",
@@ -104,6 +111,9 @@
     // agent-subscription-contracts.test.ts — knip cannot trace importActual usage
     "src/lib/electron-bridge.ts",
     "src/main/browser-ipc-broadcast-adapter.ts",
+    // Orphaned fixture: no spec has loaded it since #1702 removed its harness. Surfaced by
+    // extending knip to test/**/*.svelte; deleting fixtures is a separate follow-up.
+    "test/fixtures/PanelPristineBackgroundHost.svelte",
   ],
   "project": [
     "src/**/*.{js,cjs,mjs,ts,svelte,css}",
@@ -115,6 +125,8 @@
     "!cdp-mcp-server/dist/**",
     "eslint-rules/**/*.js",
     "test/**/*.ts",
+    // Browser-loaded fixtures (import('/test/fixtures/<Name>.svelte') inside page.evaluate)
+    "test/**/*.svelte",
     "tests/**/*.ts",
     "e2e/**/*.{js,ts}",
     "playwright/**/*.ts",
@@ -130,7 +142,6 @@
     "entry": [
       "playwright.config.ts",
       "playwright-ct.config.ts",
-      "e2e/playwright.config.e2e.ts",
       "e2e/build-smoke.config.ts",
       "src/lib/components/ui/card/operate-patterns.playwright.config.ts",
       // playwright.config.ts: testDir ./test, testMatch **/*.spec.ts
@@ -139,7 +150,7 @@
       "src/**/*.ct.spec.ts",
       // operate-patterns.playwright.config.ts: testMatch operate-patterns.visual.spec.ts
       "src/**/*.visual.spec.ts",
-      // e2e/playwright.config.e2e.ts + e2e/build-smoke.config.ts: testMatch **/*.e2e.ts
+      // e2e/build-smoke.config.ts: testMatch **/build-smoke*.e2e.ts
       "e2e/**/*.e2e.ts",
     ],
   },
@@ -170,7 +181,15 @@
     // Loaded by the inlang CLI through project.inlang/settings.json "modules"
     "@inlang/plugin-message-format",
   ],
-  // Vite dev-server URL specifiers (/@id/..., /src/..., /test/fixtures/...) imported inside
-  // page.evaluate() in browser-based playwright specs — runtime URLs, not module specifiers
-  "ignoreUnresolved": ["^/(@id|src|test)/.+"],
+  // Vite dev-server URL specifiers (/src/..., /test/fixtures/...) imported inside
+  // page.evaluate() in browser-based playwright specs map back to source files so knip
+  // follows them into the fixtures (cloudlands-fe#2695: a fixture importing a deleted
+  // component passed every gate because knip never reached test/**/*.svelte)
+  "paths": {
+    "/src/*": ["./src/*"],
+    "/test/*": ["./test/*"],
+  },
+  // Vite dev-server /@id/<package> specifiers imported the same way — runtime URLs for
+  // bare packages, not module specifiers
+  "ignoreUnresolved": ["^/@id/.+"],
 }

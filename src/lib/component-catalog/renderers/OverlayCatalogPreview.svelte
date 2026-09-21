@@ -77,11 +77,12 @@
               <Menu.RadioItem value="compact" closeOnSelect={false}>Compact</Menu.RadioItem>
               <Menu.RadioItem value="comfortable" closeOnSelect={false}>Comfortable</Menu.RadioItem>
             </Menu.RadioGroup>
-            <Menu.Sub
-              ><Menu.SubTrigger icon={faPaperclip}>More actions</Menu.SubTrigger><Menu.SubContent
-                portal={false}><Menu.Item>Archive</Menu.Item></Menu.SubContent
-              ></Menu.Sub
-            >
+            <Menu.Sub>
+              <Menu.SubTrigger icon={faPaperclip}>More actions</Menu.SubTrigger>
+              <Menu.SubContent portalProps={{ to: `#${portalTargetId}` }}>
+                <Menu.Item>Archive</Menu.Item>
+              </Menu.SubContent>
+            </Menu.Sub>
           </Menu.Group>
         </Menu.Content>
       </Menu.Root>

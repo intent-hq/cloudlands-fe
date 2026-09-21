@@ -26,6 +26,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { settingsChangesReceived } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { selectCurrentWorkspaceTabId } from '../../tab-state/tab-state-selectors';
 import { CURRENT_WORKSPACE_TAB_SELECTION_ACTIONS } from '../../tab-state/tab-state-slice';
+import { daemonEventsSubscribed } from '../workspace-events-slice';
 
 const logger = createLogger('DaemonEventsSaga');
 
@@ -97,6 +98,15 @@ async function subscribeLease(
 
 function subscribeFirehose(lease: SubscriptionLease): Promise<void> {
   return subscribeLease(lease, { eventTypes: [...DAEMON_EVENTS_SUBSCRIBE_TYPES] });
+}
+
+/**
+ * Publish firehose readiness once the server-assigned id is held: sagas that
+ * seed state from a snapshot (presence rosters) read it only after this, so
+ * every later change is guaranteed to arrive as an event.
+ */
+function* announceFirehoseSubscribed(lease: SubscriptionLease) {
+  if (lease.subscriptionId) yield* put(daemonEventsSubscribed());
 }
 
 function subscribeScopedFileEvents(lease: SubscriptionLease, workspaceId: string): Promise<void> {
@@ -241,6 +251,7 @@ export function* daemonEventsSaga() {
     // Listener-first closes the subscribe/fetch race; the expanding channel
     // retains every notification until the server-assigned id is available.
     yield* join(firehoseTask);
+    yield* announceFirehoseSubscribed(leases.firehose);
     while (true) {
       const message: DaemonChannelMessage = yield* take(channel);
       if (message === (END as unknown as DaemonChannelMessage)) break;
@@ -271,6 +282,7 @@ export function* daemonEventsSaga() {
       const ack = sagaChannel<ScopedLeaseReconnectResult>();
       yield* put(reconnectSignals, { ack });
       yield* call(subscribeFirehose, leases.firehose);
+      yield* announceFirehoseSubscribed(leases.firehose);
       const { workspaceId } = yield* take(ack);
       yield* call(refreshDaemonEventsAfterReconnect, workspaceId);
     }

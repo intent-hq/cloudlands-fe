@@ -10,6 +10,7 @@ import {
   removeSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import ChiefCard from '../cards/ChiefCard.svelte';
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
@@ -40,6 +41,8 @@ function makeChiefSession(): AgentSession {
 describe('ChiefCard combined header', () => {
   beforeEach(() => {
     appStore.init();
+    // A settled owner window (no joined host), so the new-thread action is offered.
+    appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(setChiefCollapsed(true));
     appStore.dispatch(bulkUpsertSessions([makeChiefSession()]));
   });

@@ -290,6 +290,68 @@ describe('hud-takeover-triggers', () => {
     ).toBeNull();
   });
 
+  it('ignores every agent family for a muted agent (payload stamp or mute resolver)', () => {
+    // §5.5 `notificationsMuted` rides on agent:attention-requested only.
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:attention-requested', {
+          agentId: AGENT_UUID,
+          agentName: 'Verifier',
+          kind: 'blocker',
+          reason: 'Blocked',
+          notificationsMuted: true,
+        }),
+      ),
+    ).toBeNull();
+    // The other families consult the store-backed mute resolver.
+    const muted = (agentId: string) => agentId === AGENT_UUID;
+    const otherAgent = 'agent-579724c1-fe68-450e-8188-43b7afb96400';
+    expect(
+      mapEventToTakeoverTrigger(event('agent:created', { agentId: AGENT_UUID }), undefined, muted),
+    ).toBeNull();
+    expect(
+      mapEventToTakeoverTrigger(event('agent:started', { agentId: AGENT_UUID }), undefined, muted),
+    ).toBeNull();
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:failed', { agentId: AGENT_UUID, error: 'boom' }),
+        undefined,
+        muted,
+      ),
+    ).toBeNull();
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:stream:end', {
+          agentId: AGENT_UUID,
+          messageId: 'msg-1',
+          trailingBlocks: [questionBlock('Rebuild or repin?')],
+        }),
+        undefined,
+        muted,
+      ),
+    ).toBeNull();
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:attention-requested', {
+          agentId: AGENT_UUID,
+          agentName: 'Verifier',
+          kind: 'blocker',
+          reason: 'Blocked',
+        }),
+        undefined,
+        muted,
+      ),
+    ).toBeNull();
+    // An unmuted agent still fires through the same resolver.
+    expect(
+      mapEventToTakeoverTrigger(
+        event('agent:failed', { agentId: otherAgent, error: 'boom' }),
+        undefined,
+        muted,
+      ),
+    ).toMatchObject({ kind: 'agent_failed' });
+  });
+
   it('ignores agent:stream:end without question trailingBlocks', () => {
     expect(
       mapEventToTakeoverTrigger(event('agent:stream:end', { agentId: AGENT_UUID })),

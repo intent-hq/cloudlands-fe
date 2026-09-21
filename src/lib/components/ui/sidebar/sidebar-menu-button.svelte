@@ -166,28 +166,21 @@
         </span>
       {/if}
       {#if label}
-        <span class="inline-grid min-w-0 flex-1 text-left">
-          <span
-            class="invisible col-start-1 row-start-1 truncate"
-            style="font-variation-settings: 'wght' 500"
-            aria-hidden="true">{label}</span
-          >
+        <span class="inline-grid min-w-0 flex-1 text-left font-normal">
+          <span class="invisible col-start-1 row-start-1 truncate" aria-hidden="true">{label}</span>
           <span
             class={cn(
-              'text-muted-foreground col-start-1 row-start-1 truncate transition-[color,font-variation-settings] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+              'text-muted-foreground col-start-1 row-start-1 truncate transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
               lit && 'text-foreground',
-            )}
-            style:font-variation-settings={effectiveActive ? "'wght' 500" : "'wght' 400"}
-            >{label}</span
+            )}>{label}</span
           >
         </span>
         {@render children?.()}
       {:else}
         <span
           class={cn(
-            'text-muted-foreground flex min-w-0 flex-1 items-center gap-2 truncate transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+            'text-muted-foreground flex min-w-0 flex-1 items-center gap-2 truncate font-normal transition-colors duration-spring-fast ease-spring-fast motion-reduce:transition-none',
             lit && 'text-foreground',
-            effectiveActive && 'font-medium',
           )}>{@render children?.()}</span
         >
       {/if}

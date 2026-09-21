@@ -200,7 +200,8 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await vi.dynamicImportSettled();
   setDraggedPane(null);
   cleanup();
   vi.unstubAllGlobals();
@@ -413,6 +414,42 @@ describe('mounted panel header actions menu', () => {
       expect(separators[0].compareDocumentPosition(actionsSection)).toBe(
         Node.DOCUMENT_POSITION_FOLLOWING,
       );
+    },
+  );
+
+  it.each([true, false])(
+    'routes the file through the shared Open in section only on a local host (local=%s)',
+    async (isLocal) => {
+      mocks.workspaceHostLocal = isLocal;
+      const fileTab: PanelTab = {
+        id: 'file-tab',
+        type: 'file',
+        title: 'main.ts',
+        filePath: 'src/main.ts',
+        closable: true,
+      };
+      const { container } = renderHeader('note', {
+        tabs: [fileTab],
+        activeTabId: fileTab.id,
+      });
+      const trigger = panelTrigger(container);
+      await fireEvent.click(trigger);
+
+      const menu = await screen.findByRole('menu');
+      if (!isLocal) {
+        expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
+        expect(within(menu).queryByRole('menuitem', { name: 'Open in mock editor' })).toBeNull();
+        return;
+      }
+
+      await vi.dynamicImportSettled();
+      const section = menu.querySelector<HTMLElement>('[data-panel-actions-section="open-in"]')!;
+      const openIn = await within(section).findByText('Open in mock editor');
+      expect(within(menu).getAllByText('Open in mock editor')).toHaveLength(1);
+      expect(openIn.getAttribute('data-file-path')).toBe('src/main.ts');
+      expect(openIn.getAttribute('data-workspace-id')).toBe('workspace-1');
+      await fireEvent.click(openIn);
+      await waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'));
     },
   );
 

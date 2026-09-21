@@ -115,13 +115,6 @@
 
 <div class="hud-left-column" data-testid="hud-left-column">
   <HudPanel title={m.hud_system_title()}>
-    {#snippet meta()}
-      <span class="hud-system-meta">
-        {$workspaceBars$.attention > 0 || $workspaceBars$.failed > 0 || $agentCounts$.failed > 0
-          ? m.hud_system_fail_label()
-          : m.hud_system_pass_label()}
-      </span>
-    {/snippet}
     <HudSystemPanel {agentTotal} workspaceTotal={$workspaceBars$.total} {nowMs} />
   </HudPanel>
 
@@ -145,12 +138,6 @@
     flex-direction: column;
     gap: 14px;
     min-height: 0;
-  }
-  .hud-system-meta {
-    font:
-      500 9px 'JetBrains Mono',
-      monospace;
-    color: hsl(var(--muted-foreground) / 0.65);
   }
   .hud-attention-slot {
     flex: 1;

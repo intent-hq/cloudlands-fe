@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeCommandForDisplay } from '../sanitize-credentials';
+import { describeUrlForLog, sanitizeCommandForDisplay } from '../sanitize-credentials';
 
 describe('sanitizeCommandForDisplay', () => {
   // --- Environment variable assignments ---
@@ -192,5 +192,26 @@ describe('sanitizeCommandForDisplay', () => {
     expect(sanitizeCommandForDisplay('echo hi && export MY_PASSWORD=secret')).toBe(
       'echo hi && export MY_PASSWORD=***',
     );
+  });
+});
+
+describe('describeUrlForLog', () => {
+  it('keeps only origin and path, dropping userinfo, query and fragment', () => {
+    expect(
+      describeUrlForLog(
+        'https://u:pw@auth.example.com/cb?code=SECRETCODE&state=s1#access_token=TOK',
+      ),
+    ).toBe('https://auth.example.com/cb');
+  });
+
+  it('truncates an over-long origin + path to 100 characters', () => {
+    const described = describeUrlForLog('https://auth.example.com/' + 'p'.repeat(200) + '?code=X');
+    expect(described).toHaveLength(100);
+    expect(described.startsWith('https://auth.example.com/')).toBe(true);
+    expect(described).not.toContain('code=');
+  });
+
+  it('returns an empty string for an unparseable URL', () => {
+    expect(describeUrlForLog('not a url')).toBe('');
   });
 });

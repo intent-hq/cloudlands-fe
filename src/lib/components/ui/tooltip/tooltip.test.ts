@@ -7,6 +7,12 @@ import TooltipHarness from './TooltipHarness.svelte';
 import { tooltipFixtures } from './tooltip.fixtures';
 import * as tooltipApi from './index';
 
+function expectTooltipRelationship(trigger: HTMLElement, tooltip: HTMLElement) {
+  expect(tooltip.id).toMatch(/^\S+$/);
+  expect(trigger.getAttribute('aria-describedby')?.split(/\s+/)).toContain(tooltip.id);
+  expect(document.getElementById(tooltip.id)).toBe(tooltip);
+}
+
 const originalResizeObserver = window.ResizeObserver;
 
 beforeEach(() => {
@@ -71,7 +77,7 @@ describe('Tooltip', () => {
       name: 'Wrapped button help',
       hidden: true,
     });
-    await waitFor(() => expect(simpleTrigger.getAttribute('aria-describedby')).toBe(tooltip.id));
+    await waitFor(() => expectTooltipRelationship(simpleTrigger, tooltip));
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByText('Wrapped button help')).toBeNull());
     expect(document.activeElement).toBe(simpleTrigger);
@@ -114,16 +120,23 @@ describe('Tooltip', () => {
     const passiveTrigger = screen.getByRole('button', { name: 'Passive status' });
     passiveTrigger.focus();
     await fireEvent.focus(passiveTrigger);
-    expect(
-      await screen.findByRole('tooltip', { name: 'Passive status help', hidden: true }),
-    ).not.toBeNull();
+    const passiveTooltip = await screen.findByRole('tooltip', {
+      name: 'Passive status help',
+      hidden: true,
+    });
+    await waitFor(() => expectTooltipRelationship(passiveTrigger, passiveTooltip));
     await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('Passive status help')).toBeNull());
+    expect(passiveTrigger.hasAttribute('aria-describedby')).toBe(false);
 
     const wrappedTrigger = screen.getByRole('button', { name: 'Show wrapped help' });
     await fireEvent.pointerMove(wrappedTrigger, { pointerType: 'mouse' });
-    expect(
-      await screen.findByRole('tooltip', { name: 'Wrapped button help', hidden: true }),
-    ).not.toBeNull();
+    const wrappedTooltip = await screen.findByRole('tooltip', {
+      name: 'Wrapped button help',
+      hidden: true,
+    });
+    await waitFor(() => expectTooltipRelationship(wrappedTrigger, wrappedTooltip));
+    expect(wrappedTooltip.id).not.toBe(passiveTooltip.id);
   });
 
   it('renders shortcut keycaps through the shared semantic chip', async () => {
@@ -168,6 +181,28 @@ describe('Tooltip', () => {
       window.getComputedStyle = originalGetComputedStyle;
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
     }
+  });
+
+  it('updates a secondary shortcut while open and removes it without disturbing trigger focus', async () => {
+    const { rerender } = render(TooltipHarness);
+    const trigger = screen.getByRole('button', { name: 'Show shortcut help' });
+    trigger.focus();
+    await fireEvent.focus(trigger);
+    const tooltip = await screen.findByRole('tooltip', { hidden: true });
+    const keys = () => [...tooltip.querySelectorAll('kbd')].map((chip) => chip.textContent);
+
+    await rerender({ secondary: { label: 'Send immediately', shortcut: 'mod+enter' } });
+    expect(keys()).toEqual(['Ctrl', 'K', 'Ctrl', '↵']);
+    expect(trigger.getAttribute('aria-describedby')).toBe(tooltip.id);
+    expect(document.activeElement).toBe(trigger);
+
+    await rerender({ secondary: { label: 'Send immediately', shortcut: ['alt', 's'] } });
+    expect(keys()).toEqual(['Ctrl', 'K', 'Alt', 'S']);
+    await rerender({ secondary: undefined });
+    expect(keys()).toEqual(['Ctrl', 'K']);
+    await fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('publishes parseable metadata and the complete production public barrel', () => {

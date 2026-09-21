@@ -22,6 +22,7 @@
     activeTab,
     onSelect,
     agentsNavigation,
+    hiddenTabs = [],
     sidebarHeader,
     sidebarFooter,
     children,
@@ -36,6 +37,8 @@
     activeTab: SettingsTab;
     onSelect: (tab: SettingsTab) => void;
     agentsNavigation: Snippet;
+    /** Tabs withheld from this client (e.g. administrator-only sections for a collaborator). */
+    hiddenTabs?: readonly SettingsTab[];
     sidebarHeader?: Snippet;
     sidebarFooter?: Snippet;
     children?: Snippet;
@@ -47,7 +50,7 @@
     class="flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar dark:border-border"
   >
     {@render sidebarHeader?.()}
-    <SettingsSidebarNav {activeTab} {onSelect} {agentsNavigation} />
+    <SettingsSidebarNav {activeTab} {onSelect} {agentsNavigation} {hiddenTabs} />
     {@render sidebarFooter?.()}
   </aside>
 
@@ -67,7 +70,7 @@
             {/if}
           </div>
         {/snippet}
-        <SettingsForm {schema} {searchQuery} {custom} {descriptions} />
+        <SettingsForm {schema} {searchQuery} {custom} {descriptions} compact={false} />
       </SettingsPageShell>
     </div>
   {/if}

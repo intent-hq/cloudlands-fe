@@ -109,7 +109,7 @@
       >
         {retrying ? m.ui_agentFailureToast_retrying_label() : retryLabel}
       </Button>
-      <Button variant="ghost" size="compact" class="toast-action px-1" onclick={onSwitchTo}>
+      <Button variant="ghost" size="compact" class="toast-action" onclick={onSwitchTo}>
         {m.agent_failureToast_switchTo_label()}
       </Button>
     </div>
@@ -164,7 +164,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0;
+    gap: var(--space-2);
     margin-top: 0.75rem;
   }
 

@@ -11,6 +11,7 @@ import { initAppStore, store as appStore } from '$store/renderer/store';
 import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import { selectGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-selectors';
+import { guestSessionsListUnavailable } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { setGitHubAuthError } from '$store/renderer/slices/github-auth/github-auth-slice';
 import { selectBundledSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
 import {
@@ -165,6 +166,9 @@ beforeEach(() => {
     configurable: true,
   });
   appStore.dispatch(simulateSetState({ status: 'idle' }));
+  // No sagas run here: settle the window's guest/owner identity as an owner
+  // (multiplayer w4) so the administrator-only tabs are rendered.
+  appStore.dispatch(guestSessionsListUnavailable());
 });
 
 afterEach(() => {
@@ -793,6 +797,19 @@ describe('settings back and footer behavior', () => {
 });
 
 describe('settings hash target integration', () => {
+  it('opens General and scrolls to Licenses from its deep link', async () => {
+    renderSettings('/settings#licenses');
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe(
+        'page',
+      ),
+    );
+    const section = screen.getByRole('region', { name: 'Licenses' });
+    const container = section.closest('.overflow-auto') as HTMLElement;
+    await waitFor(() => expect(container.scrollTo).toHaveBeenCalled());
+  });
+
   it.each([
     ['default-model', 'utility-default-model', 'Providers', 'page'],
     ['quickActions.defaultModel', 'utility-default-model', 'Providers', 'page'],

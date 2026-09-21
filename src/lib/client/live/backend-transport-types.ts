@@ -51,6 +51,23 @@ export function isDaemonErrorResponse(error: unknown): boolean {
   return typeof (error as { rpcCode?: unknown }).rpcCode === 'number';
 }
 
+/** JSON-RPC code the daemon answers owner-/administrator-only methods with when the bound caller lacks the capability. */
+const FORBIDDEN_RPC_CODE = -32003;
+
+/**
+ * Whether a request failure is the daemon's `-32003 Forbidden` capability
+ * refusal (multiplayer w3): the caller is a collaborator on a method reserved
+ * for the workspace owner / administrator (terminals, browser tabs, port
+ * forwarding, host exec). Not transient — a retry gets the same answer until
+ * the client reconnects under a different credential — so read paths treat it
+ * as an empty state rather than an error. Duck-typed like
+ * {@link isDaemonErrorResponse}.
+ */
+export function isForbiddenErrorResponse(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  return (error as { rpcCode?: unknown }).rpcCode === FORBIDDEN_RPC_CODE;
+}
+
 /** Daemon JSON-RPC notification delivered to `onNotification` handlers. */
 export interface BackendNotification {
   method: string;

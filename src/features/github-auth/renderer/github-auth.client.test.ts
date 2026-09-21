@@ -23,3 +23,36 @@ describe('githubAuthClient repository search', () => {
     });
   });
 });
+
+describe('githubAuthClient user search', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('sends the exact search IPC request and returns the protocol-shaped envelope', async () => {
+    const response = {
+      success: true,
+      data: [
+        {
+          id: 1,
+          login: 'octocat',
+          avatarUrl: 'https://avatars.githubusercontent.com/u/1',
+          htmlUrl: 'https://github.com/octocat',
+        },
+      ],
+    };
+    mocks.invoke.mockResolvedValueOnce(response);
+
+    await expect(githubAuthClient.searchUsers('octo')).resolves.toEqual(response);
+    expect(mocks.invoke).toHaveBeenCalledWith(GITHUB_AUTH_CHANNELS.SEARCH_USERS, {
+      query: 'octo',
+    });
+  });
+
+  it('normalizes a thrown transport error into an unsuccessful envelope', async () => {
+    mocks.invoke.mockRejectedValueOnce(new Error('ipc down'));
+
+    await expect(githubAuthClient.searchUsers('octo')).resolves.toEqual({
+      success: false,
+      error: 'ipc down',
+    });
+  });
+});

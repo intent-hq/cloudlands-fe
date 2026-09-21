@@ -98,7 +98,7 @@
       bind:ref={triggerRef}
       icon="search"
       label={placeholder}
-      class="focus-visible:outline-solid"
+      class="focus-visible:outline-solid {scope === 'files' ? 'text-muted-foreground!' : ''}"
       onclick={expand}
     />
   {/if}
@@ -117,6 +117,10 @@
     transform: translateY(-50%);
     color: hsl(var(--muted-foreground));
     pointer-events: none;
+  }
+
+  [data-sidebar-search='files'] [data-sidebar-search-expanded] > :global(svg) {
+    left: calc((var(--control-height-compact) - 0.875rem) / 2);
   }
 
   :global([data-sidebar-search-input]::-webkit-search-cancel-button) {

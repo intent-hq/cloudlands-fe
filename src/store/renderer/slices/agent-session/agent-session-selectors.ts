@@ -151,6 +151,16 @@ export const selectAgentSession = store.createSelector(
 );
 
 /**
+ * True once `agentId`'s detail projection (`agent.get` / `agent.getSession`)
+ * has been read this session (`AgentSessionState.detailHydrated`). Until then
+ * a stored row seeded from the `agent.list` projection (PROTOCOL §5.5) has
+ * ambiguous detail-only fields: absent may mean "not loaded yet".
+ */
+export const selectAgentDetailHydrated = store.createSelector((state, agentId?: string): boolean =>
+  Boolean(agentId && state.agentSessions?.detailHydrated?.[agentId]),
+);
+
+/**
  * FE-owned `tailCapPruned` latch (see StoredAgentSession): true once the
  * client-side message cap dropped rows from the live tail. Scrollback
  * triggers OR it into their `tailTruncated` input because the chat-init

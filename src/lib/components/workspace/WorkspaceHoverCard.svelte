@@ -335,9 +335,9 @@
         <Skeleton class="h-4 w-40" />
         <Skeleton class="mt-2 h-10 w-full" />
       </div>
-      <div class="my-4 border-t border-border" data-workspace-hover-card-divider></div>
+      <div class="my-3 border-t border-border" data-workspace-hover-card-divider></div>
       <div
-        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-4 px-5 pb-4"
+        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-3 px-5 pb-4"
         data-workspace-hover-card-columns
       >
         <div class="grid" data-workspace-hover-card-activity>
@@ -381,11 +381,11 @@
       </div>
     </header>
     {#if hasBodyContent}<div
-        class="my-4 border-t border-border"
+        class="my-3 border-t border-border"
         data-workspace-hover-card-divider
       ></div>
       <div
-        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-4 px-5 pb-4"
+        class="body-grid grid min-w-0 grid-cols-1 items-stretch gap-3 px-5 pb-4"
         data-workspace-hover-card-columns
       >
         {#if hasAgentRows}<section
@@ -394,24 +394,26 @@
             data-workspace-hover-card-activity
             data-workspace-hover-card-agent-table
           >
-            <div class="grid gap-3" role="list">
+            <div class="grid gap-2" role="list">
               {#each visibleRows as row (row.id)}<div
-                  class="agent-row grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] gap-x-2.5"
+                  class="agent-row grid min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto] gap-x-2"
                   role="listitem"
                   aria-label={rowAccessibleLabel(row)}
                   data-workspace-hover-card-agent-row
                   data-agent-group-row={row.group}
                   data-attention-kind={row.attentionKind}
                 >
-                  <span class="row-span-2 grid h-8 w-8 place-items-center" aria-hidden="true"
+                  <span
+                    class="row-span-2 flex h-(--text-caption-line-height) items-center"
+                    aria-hidden="true"
                     ><AgentAvatarWithState
                       agentId={row.id}
-                      variant="emphasized"
+                      variant="compact"
                       state={row.avatarState}
                       specialist={row.specialist ?? null}
                     /></span
                   ><span
-                    class="type-body min-w-0 truncate text-foreground"
+                    class="type-caption min-w-0 truncate text-foreground"
                     data-workspace-hover-card-agent-name>{row.name}</span
                   ><time
                     class="type-caption whitespace-nowrap text-muted-foreground"
@@ -436,7 +438,7 @@
                 </div>{/each}
             </div>
             {#if hiddenCount}<div
-                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
+                class="type-caption mt-3 flex items-center justify-between text-muted-foreground"
                 data-workspace-hover-card-overflow
               >
                 <span
@@ -453,14 +455,14 @@
             data-workspace-hover-card-pr-column
           >
             <div
-              class="grid min-w-0 gap-3"
+              class="grid min-w-0 gap-2"
               aria-label={m.workspace_hoverCard_pullRequests_label()}
               role="list"
               data-workspace-hover-card-pr-list
             >
               {#each visiblePrRows as pr (pr.identity)}
                 <div
-                  class="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto_auto] items-center gap-x-2.5"
+                  class="grid min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto_auto] items-center gap-x-2"
                   aria-label={getWorkspacePrLabel(pr)}
                   role="listitem"
                   data-workspace-hover-card-pr-row
@@ -469,11 +471,11 @@
                 >
                   <Fa
                     icon={pr.statusIcon}
-                    size={18}
-                    class="shrink-0 justify-self-center {pr.foregroundClass}"
+                    size={16}
+                    class="shrink-0 justify-self-start {pr.foregroundClass}"
                   />
                   <span
-                    class="type-body min-w-0 truncate text-foreground"
+                    class="type-caption min-w-0 truncate text-foreground"
                     data-workspace-hover-card-pr-title
                   >
                     {pr.title || m.workspace_hoverCard_pullRequest_label()}
@@ -492,7 +494,7 @@
               {/each}
             </div>
             {#if hiddenPrCount}<div
-                class="type-body mt-4 flex items-center justify-between text-muted-foreground"
+                class="type-caption mt-3 flex items-center justify-between text-muted-foreground"
                 data-workspace-hover-card-pr-overflow
               >
                 <span

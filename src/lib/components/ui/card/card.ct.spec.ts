@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/experimental-ct-svelte';
+import { test, expect } from '../../../../test/ct-test';
 import Harness from './CardGroupHarness.svelte';
 
 test('reflows a card group when columns change and highlights the approached card', async ({
