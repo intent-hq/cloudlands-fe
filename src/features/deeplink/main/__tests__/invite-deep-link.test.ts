@@ -1394,6 +1394,36 @@ describe('handleInviteDeepLink — sign-in required', () => {
       expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
       expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
     });
+
+    it('native box: a rejected box before the flow ends releases the listener and poll, and a failure is shown', async () => {
+      vi.useFakeTimers();
+      try {
+        const baselineListeners = notificationListeners.size;
+        showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
+        showMessageBox.mockImplementationOnce(() => Promise.reject(new Error('dialog closed')));
+
+        await handleInviteDeepLink(LINK);
+
+        expect(notificationListeners.size).toBe(baselineListeners);
+        expect(openExternal).not.toHaveBeenCalled();
+        expect(showMessageBox).toHaveBeenCalledTimes(2);
+        expect(showMessageBox.mock.calls[0][0]).toMatchObject({
+          type: 'info',
+          message: expect.stringContaining(CONNECT.userCode),
+        });
+        expect(showMessageBox.mock.calls[1][0]).toMatchObject({ type: 'error' });
+
+        // Neither a late event nor the poll revives the flow.
+        emitAuthChanged('authorized');
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(localCalls('github.authStatus')).toEqual([]);
+        expect(localCalls('github.identityProof.create')).toEqual([]);
+        expect(guestAdd).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('a refused verification URL never reaches the modal or the browser', async () => {

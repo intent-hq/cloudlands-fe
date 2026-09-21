@@ -586,79 +586,82 @@ async function signInToGitHub(
   // The flow is awaited from the moment the code is shown: the user may enter
   // it on another device and never click "Open GitHub". Its end is raced
   // against the user's first decision, then against a cancel while waiting.
+  // The wait's listener and timers are released on every exit, including a
+  // rejected dialog, so nothing polls the daemon after this returns.
   const wait = waitForSignIn(
     client,
     start.expiresIn * 1000 + WAIT_MARGIN_MS,
     Math.max((start.interval ?? 0) * 1000, SIGN_IN_POLL_FLOOR_MS),
   );
-  const settled = wait.status.then((status) => ({ status }));
-  const cancelSignal = consent.cancelledWhileWaiting.then(() => 'cancelled' as const);
-  let outcome: { status: SignInStatus | 'timeout' } | 'cancelled' | 'launch-failed';
-  let decision = await Promise.race([settled, consent.decision]);
-  // No renderer to show the modal (cold start / no ack): native box, closed
-  // through its signal when the flow ends first (on macOS a parentless box
-  // ignores the signal — it then waits for the click, as before).
-  if (decision === null) {
-    const closeBox = new AbortController();
-    void wait.status.then(() => closeBox.abort());
-    const box = showDeviceCode(
-      start.userCode,
-      start.verificationUri,
-      labels.workspaceTitle,
-      closeBox.signal,
-    ).then((open) => (open ? ('open' as const) : ('cancel' as const)));
-    decision = await Promise.race([settled, box]);
-    if (decision === 'cancel' && closeBox.signal.aborted) decision = await settled;
-  }
-  if (decision === 'cancel') {
-    wait.stop();
-    consent.dismiss('cancelled');
-    cancelSignIn();
-    logger.info('User cancelled the GitHub sign-in the invite needs');
-    return { kind: 'cancelled' };
-  }
-  if (decision === 'open') {
-    // From here the modal stays up in its waiting state. Cancel and the
-    // flow's end are raced from the browser launch onwards — whichever
-    // settles first decides — so a cancel still aborts even if the launch
-    // never settles. The OS error text is dropped (bounded code only): it
-    // may echo the URL.
-    const launch = (async () => {
-      try {
-        await shell.openExternal(start.verificationUri);
-        return 'launched' as const;
-      } catch {
-        return 'launch-failed' as const;
-      }
-    })();
-    const first = await Promise.race([cancelSignal, settled, launch]);
-    outcome = first === 'launched' ? await Promise.race([cancelSignal, settled]) : first;
-  } else {
-    outcome = decision;
-  }
-  if (outcome === 'cancelled') {
-    wait.stop();
-    consent.dismiss('cancelled');
-    cancelSignIn();
-    logger.info('User cancelled the invite while waiting for the GitHub sign-in');
-    return { kind: 'cancelled' };
-  }
-  if (outcome === 'launch-failed') {
-    wait.stop();
-    cancelSignIn();
-    throw new InviteFlowError('verification-launch-failed');
-  }
-  switch (outcome.status) {
-    case 'denied':
-      throw new InviteFlowError('sign-in-denied');
-    case 'expired':
-    case 'timeout':
+  try {
+    const settled = wait.status.then((status) => ({ status }));
+    const cancelSignal = consent.cancelledWhileWaiting.then(() => 'cancelled' as const);
+    let outcome: { status: SignInStatus | 'timeout' } | 'cancelled' | 'launch-failed';
+    let decision = await Promise.race([settled, consent.decision]);
+    // No renderer to show the modal (cold start / no ack): native box, closed
+    // through its signal when the flow ends first (on macOS a parentless box
+    // ignores the signal — it then waits for the click, as before).
+    if (decision === null) {
+      const closeBox = new AbortController();
+      void wait.status.then(() => closeBox.abort());
+      const box = showDeviceCode(
+        start.userCode,
+        start.verificationUri,
+        labels.workspaceTitle,
+        closeBox.signal,
+      ).then((open) => (open ? ('open' as const) : ('cancel' as const)));
+      decision = await Promise.race([settled, box]);
+      if (decision === 'cancel' && closeBox.signal.aborted) decision = await settled;
+    }
+    if (decision === 'cancel') {
+      consent.dismiss('cancelled');
       cancelSignIn();
-      throw new InviteFlowError('sign-in-expired');
-    case 'error':
-      throw new InviteFlowError('sign-in-failed');
-    case 'authorized':
-      break;
+      logger.info('User cancelled the GitHub sign-in the invite needs');
+      return { kind: 'cancelled' };
+    }
+    if (decision === 'open') {
+      // From here the modal stays up in its waiting state. Cancel and the
+      // flow's end are raced from the browser launch onwards — whichever
+      // settles first decides — so a cancel still aborts even if the launch
+      // never settles. The OS error text is dropped (bounded code only): it
+      // may echo the URL.
+      const launch = (async () => {
+        try {
+          await shell.openExternal(start.verificationUri);
+          return 'launched' as const;
+        } catch {
+          return 'launch-failed' as const;
+        }
+      })();
+      const first = await Promise.race([cancelSignal, settled, launch]);
+      outcome = first === 'launched' ? await Promise.race([cancelSignal, settled]) : first;
+    } else {
+      outcome = decision;
+    }
+    if (outcome === 'cancelled') {
+      consent.dismiss('cancelled');
+      cancelSignIn();
+      logger.info('User cancelled the invite while waiting for the GitHub sign-in');
+      return { kind: 'cancelled' };
+    }
+    if (outcome === 'launch-failed') {
+      cancelSignIn();
+      throw new InviteFlowError('verification-launch-failed');
+    }
+    switch (outcome.status) {
+      case 'denied':
+        throw new InviteFlowError('sign-in-denied');
+      case 'expired':
+      case 'timeout':
+        cancelSignIn();
+        throw new InviteFlowError('sign-in-expired');
+      case 'error':
+        throw new InviteFlowError('sign-in-failed');
+      case 'authorized':
+        break;
+    }
+  } finally {
+    wait.stop();
   }
   const login = await readLocalLogin(client);
   if (login === null) throw new InviteFlowError('sign-in-failed');
