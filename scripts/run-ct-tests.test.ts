@@ -156,13 +156,18 @@ describe('buildChildEnv', () => {
     expect(env.NODE_OPTIONS).toBe(`${preset} --max-old-space-size=8192`);
   });
 
-  it('keeps a pre-set NODE_OPTIONS that already chooses a heap size', () => {
+  it.each([
+    ['canonical flag', '--max-old-space-size=2048'],
+    ['V8 underscore alias', '--max_old_space_size=2048'],
+    ['double-quoted token', '"--max-old-space-size=2048"'],
+    ['flag after other options', '--require /x/dd-trace/init --max_old_space_size=2048'],
+  ])('keeps a pre-set NODE_OPTIONS that already chooses a heap size (%s)', (_label, preset) => {
     const { env } = buildChildEnv({
-      env: { ...baseEnv, NODE_OPTIONS: '--max-old-space-size=2048' },
+      env: { ...baseEnv, NODE_OPTIONS: preset },
       isTTY: false,
       root: '/repo',
     });
-    expect(env.NODE_OPTIONS).toBe('--max-old-space-size=2048');
+    expect(env.NODE_OPTIONS).toBe(preset);
   });
 });
 

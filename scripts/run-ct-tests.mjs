@@ -20,7 +20,8 @@
  * NODE_OPTIONS gets the flag, a pre-set one without a --max-old-space-size flag
  * (e.g. a host-injected `--require` such as Datadog's dd-trace; see
  * intent-hq/intent#4565) keeps its options with the flag appended, and one that
- * already carries --max-old-space-size is left untouched.
+ * already carries --max-old-space-size (or its V8 underscore alias) is left
+ * untouched.
  * CI keeps its per-step limits: 8 GB for building, 4 GB for cached test runs,
  * so the larger build allowance does not leak into its long-lived test phase.
  * Playwright rebuilds in-process when sources change between dependency
@@ -323,7 +324,9 @@ export function resolveCtAlignedPlaywrightCli() {
 
 /** Heap cap applied to the Playwright child unless the caller chose one. */
 const CT_HEAP_FLAG = '--max-old-space-size=8192';
-const HEAP_FLAG_RE = /(^|\s)--max-old-space-size(=|\s|$)/;
+// NODE_OPTIONS accepts the V8 underscore alias (`--max_old_space_size=`, as
+// scripts/vite-build.mjs also honours) and double-quoted option tokens.
+const HEAP_FLAG_RE = /(^|[\s"])--max[-_]old[-_]space[-_]size=/;
 
 /**
  * Build the child environment: project-local transform cache, the heap
