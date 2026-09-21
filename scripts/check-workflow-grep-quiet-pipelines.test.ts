@@ -31,8 +31,15 @@ const COMMAND_TERMINATOR = /\||;|\(|\)|(?<![<>])&/;
 const TOKEN_BOUNDARY = /[\s<>]+/;
 const COMMENT_START = /[\s;|&(]/;
 const LINE_CONTINUATION = /\s*\\\s*$/;
-const SHORT_QUIET_FLAG = /^-[A-Za-z]*q[A-Za-z]*$/;
+const SHORT_OPTION_CLUSTER = /^-([A-Za-z]+)$/;
 const LONG_QUIET_FLAGS = new Set(['--quiet', '--silent']);
+// Options whose operand is the next word (or the rest of a short cluster), so
+// `grep -e -q` reads `-q` as a pattern, not as a flag.
+const SHORT_OPERAND_OPTIONS = new Set(['e', 'f']);
+const LONG_OPERAND_OPTIONS = new Set(['--regexp', '--file']);
+// Stands in for quoted and escaped text: a word character, so a quoted operand
+// still occupies its position (`grep -e '-q' -q` keeps two words after `-e`).
+const QUOTED_PLACEHOLDER = 'x';
 
 const REWRITE_GUIDANCE = [
   'Under pipefail, `producer | grep -q pattern` fails on a large matched input: grep quits at the first match and the producer dies of SIGPIPE (cloudlands-fe#2709). Rewrite as:',
@@ -66,10 +73,23 @@ const codeLines = (workflow: string): WorkflowLine[] => {
 };
 
 const hasQuietFlag = (grepArgs: string): boolean => {
-  const command = grepArgs.split(COMMAND_TERMINATOR, 1)[0];
-  for (const token of command.split(TOKEN_BOUNDARY)) {
+  const tokens = grepArgs.split(COMMAND_TERMINATOR, 1)[0].split(TOKEN_BOUNDARY);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
     if (token === '--') return false;
-    if (SHORT_QUIET_FLAG.test(token) || LONG_QUIET_FLAGS.has(token)) return true;
+    if (LONG_QUIET_FLAGS.has(token)) return true;
+    if (LONG_OPERAND_OPTIONS.has(token)) {
+      i++;
+      continue;
+    }
+    const cluster = SHORT_OPTION_CLUSTER.exec(token)?.[1] ?? '';
+    for (let j = 0; j < cluster.length; j++) {
+      if (cluster[j] === 'q') return true;
+      if (SHORT_OPERAND_OPTIONS.has(cluster[j])) {
+        if (j === cluster.length - 1) i++;
+        break;
+      }
+    }
   }
   return false;
 };
@@ -77,10 +97,11 @@ const hasQuietFlag = (grepArgs: string): boolean => {
 type ShellContext = { kind: 'exec'; parens: number; closer?: ')' | '`' } | { kind: 'double' };
 
 // The executable part of a logical line: single-quoted text and the literal
-// parts of double-quoted text are blanked out, the body of a `$(…)` or `` `…` ``
-// substitution inside double quotes is kept (it still runs), escaped characters
-// are blanked, and an inline `#` comment ends the text. A quote with no closing
-// mate on the line is kept verbatim so a multi-line string cannot hide a pipeline.
+// parts of double-quoted text are replaced by a placeholder word, the body of a
+// `$(…)` or `` `…` `` substitution inside double quotes is kept (it still runs),
+// escaped characters are replaced, and an inline `#` comment ends the text. A
+// quote with no closing mate on the line is kept verbatim so a multi-line string
+// cannot hide a pipeline.
 const executableText = (text: string): string => {
   const stack: ShellContext[] = [{ kind: 'exec', parens: 0 }];
   let out = '';
@@ -88,21 +109,21 @@ const executableText = (text: string): string => {
     const ch = text[i];
     const top = stack[stack.length - 1];
     if (ch === '\\') {
-      out += '  ';
+      out += QUOTED_PLACEHOLDER.repeat(2);
       i++;
     } else if (top.kind === 'double') {
       if (ch === '"') {
         stack.pop();
-        out += ' ';
+        out += QUOTED_PLACEHOLDER;
       } else if (ch === '$' && text[i + 1] === '(') {
         stack.push({ kind: 'exec', parens: 0, closer: ')' });
         out += '$(';
         i++;
       } else if (ch === '`' && text.indexOf('`', i + 1) !== -1) {
         stack.push({ kind: 'exec', parens: 0, closer: '`' });
-        out += ' ';
+        out += QUOTED_PLACEHOLDER;
       } else {
-        out += ' ';
+        out += QUOTED_PLACEHOLDER;
       }
     } else if (ch === '#' && (i === 0 || COMMENT_START.test(text[i - 1]))) {
       break;
@@ -111,18 +132,18 @@ const executableText = (text: string): string => {
       if (close === -1) {
         out += ch;
       } else if (ch === "'") {
-        out += ' '.repeat(close - i + 1);
+        out += QUOTED_PLACEHOLDER.repeat(close - i + 1);
         i = close;
       } else {
         stack.push({ kind: 'double' });
-        out += ' ';
+        out += QUOTED_PLACEHOLDER;
       }
     } else if (
       (ch === ')' && top.closer === ')' && top.parens === 0) ||
       (ch === '`' && top.closer === '`')
     ) {
       stack.pop();
-      out += ' ';
+      out += QUOTED_PLACEHOLDER;
     } else {
       if (ch === '(') top.parens++;
       else if (ch === ')' && top.parens > 0) top.parens--;
@@ -179,6 +200,11 @@ describe('workflow grep -q pipeline detector', () => {
     ['echo "$OUT" | grep 2>/dev/null -q x'],
     ['echo ${#OUT} | grep -q x'],
     ['echo "$OUT" | grep -q x # comment'],
+    ["printf '%s\\n' --quiet | grep -e --quiet -q"],
+    ['echo "$OUT" | grep -e \'-q\' -q'],
+    ['echo "$OUT" | grep --regexp -q --quiet'],
+    ['echo "$OUT" | grep -f patterns -q'],
+    ['echo "$OUT" | grep -ie x -q'],
   ])('flags %s', (line) => {
     expect(lineNumbers(run('echo start', line))).toEqual([4]);
   });
@@ -210,6 +236,12 @@ describe('workflow grep -q pipeline detector', () => {
     ['echo "$OUT" | grep -E \'has -q word\' >/dev/null'],
     ['echo "$(printf x | grep x)" | grep y'],
     ['echo \\"$OUT\\" | grep x'],
+    ["printf '%s\\n' -q | grep -e '-q' >/dev/null"],
+    ["printf '%s\\n' --quiet | grep -e --quiet >/dev/null"],
+    ['echo "$OUT" | grep --regexp -q >/dev/null'],
+    ['echo "$OUT" | grep --file -q >/dev/null'],
+    ['echo "$OUT" | grep -eq x >/dev/null'],
+    ['echo "$OUT" | grep -ie -q >/dev/null'],
   ])('does not flag %s', (line) => {
     expect(lineNumbers(run('echo start', line))).toEqual([]);
   });
