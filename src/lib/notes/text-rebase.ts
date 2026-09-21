@@ -61,6 +61,20 @@ function mapOffset(spans: Hunk[], offset: number): number {
   return offset + delta;
 }
 
+/** The same alignment read `to → from`: every span with its sides swapped. */
+function invertHunks(spans: Hunk[]): Hunk[] {
+  return spans.map((h) => ({
+    fromStart: h.toStart,
+    fromEnd: h.toEnd,
+    toStart: h.fromStart,
+    toEnd: h.fromEnd,
+  }));
+}
+
+function offsetMapper(spans: Hunk[], fromLength: number): (offset: number) => number {
+  return (offset) => mapOffset(spans, Math.max(0, Math.min(offset, fromLength)));
+}
+
 /**
  * Map a UTF-16 offset in `from` to the corresponding offset in `to`. Offsets
  * before a change are unchanged, offsets strictly inside a replaced/deleted
@@ -78,8 +92,26 @@ export function mapOffsetThroughDiff(from: string, to: string, offset: number): 
  * mapping many offsets between the same two texts (remote cursors).
  */
 export function createOffsetMapper(from: string, to: string): (offset: number) => number {
-  const spans = hunks(from, to);
-  return (offset) => mapOffset(spans, Math.max(0, Math.min(offset, from.length)));
+  return offsetMapper(hunks(from, to), from.length);
+}
+
+interface BidirectionalOffsetMapper {
+  aToB: (offset: number) => number;
+  bToA: (offset: number) => number;
+}
+
+/**
+ * Both directions of `createOffsetMapper` from ONE `a → b` alignment: `bToA`
+ * reads the same spans with their sides swapped instead of diffing again, so
+ * it agrees with `createOffsetMapper(b, a)` outside changed spans and clamps
+ * to the span's end in `a` inside them.
+ */
+export function createBidirectionalOffsetMapper(a: string, b: string): BidirectionalOffsetMapper {
+  const spans = hunks(a, b);
+  return {
+    aToB: offsetMapper(spans, a.length),
+    bToA: offsetMapper(invertHunks(spans), b.length),
+  };
 }
 
 /**

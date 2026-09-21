@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapOffsetThroughDiff, rebaseText } from './text-rebase';
+import {
+  createBidirectionalOffsetMapper,
+  createOffsetMapper,
+  mapOffsetThroughDiff,
+  rebaseText,
+} from './text-rebase';
 
 describe('mapOffsetThroughDiff', () => {
   it('leaves offsets before a change unchanged', () => {
@@ -31,6 +36,63 @@ describe('mapOffsetThroughDiff', () => {
   it('clamps out-of-range offsets to the text bounds', () => {
     expect(mapOffsetThroughDiff('abc', 'abXc', 99)).toBe(4);
     expect(mapOffsetThroughDiff('abc', 'xabc', -1)).toBe(0);
+  });
+});
+
+describe('createBidirectionalOffsetMapper', () => {
+  const pairs: Array<[string, string]> = [
+    ['abcdef', 'abcXYZdef'],
+    ['abcXYZdef', 'abc12def'],
+    ['body', 'AGENT\nbody'],
+    ['a😀b', 'a😀😀b'],
+    ['Body bold tail', 'Body **bold** tail'],
+    ['Title\nBody', '# Title\n\nBody'],
+  ];
+
+  it('maps a → b exactly like createOffsetMapper(a, b)', () => {
+    for (const [a, b] of pairs) {
+      const forward = createOffsetMapper(a, b);
+      const { aToB } = createBidirectionalOffsetMapper(a, b);
+      for (let offset = -1; offset <= a.length + 1; offset += 1) {
+        expect(aToB(offset), `${JSON.stringify([a, b])} @ ${offset}`).toBe(forward(offset));
+      }
+    }
+  });
+
+  it('inverts to agree with createOffsetMapper(b, a) outside changed spans', () => {
+    for (const [a, b] of pairs) {
+      const reverse = createOffsetMapper(b, a);
+      const { aToB, bToA } = createBidirectionalOffsetMapper(a, b);
+      // Offsets in `b` that some offset in `a` maps onto sit on shared text
+      // or at a span edge, so the direct b → a diff and the inversion agree.
+      const reachable = new Set<number>();
+      for (let offset = 0; offset <= a.length; offset += 1) reachable.add(aToB(offset));
+      for (const offset of reachable) {
+        expect(bToA(offset), `${JSON.stringify([a, b])} @ ${offset}`).toBe(reverse(offset));
+      }
+    }
+  });
+
+  it('clamps offsets inside a changed span to the span end on the other side', () => {
+    const { bToA } = createBidirectionalOffsetMapper('abcdef', 'abcXYZdef');
+    expect(bToA(4)).toBe(3);
+    expect(bToA(5)).toBe(3);
+    expect(bToA(6)).toBe(3);
+    expect(bToA(7)).toBe(4);
+
+    const replaced = createBidirectionalOffsetMapper('abcXYZdef', 'abc12def');
+    expect(replaced.aToB(4)).toBe(5);
+    expect(replaced.bToA(4)).toBe(6);
+    expect(replaced.bToA(5)).toBe(6);
+    expect(replaced.bToA(6)).toBe(7);
+  });
+
+  it('clamps out-of-range offsets to each side of the pair', () => {
+    const { aToB, bToA } = createBidirectionalOffsetMapper('abc', 'abXc');
+    expect(aToB(99)).toBe(4);
+    expect(aToB(-1)).toBe(0);
+    expect(bToA(99)).toBe(3);
+    expect(bToA(-1)).toBe(0);
   });
 });
 
