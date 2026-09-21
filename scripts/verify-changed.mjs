@@ -10,6 +10,7 @@ import {
   hasCtSpecSuffix,
   isCtSpec,
 } from '../playwright/ct-spec-pattern.mjs';
+import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
@@ -60,13 +61,11 @@ const FORMAT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
-// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore)
-// and the runner-owned excludes in vitest.config.ts /
-// tests/integration/vitest.integration.config.ts. The CT pattern is not mirrored:
-// `isCtSpec` and playwright-ct.config.ts both read playwright/ct-spec-pattern.mjs.
-const PLAYWRIGHT_TEST_RE = /^test\/.*\.spec\.ts$/;
-const PLAYWRIGHT_MANUAL_RE =
-  /(?:^|\/)(?:catalog-manual-review\.capture|current-main-baseline)\.spec\.ts$/;
+// Mirrors the runner-owned excludes in vitest.config.ts /
+// tests/integration/vitest.integration.config.ts. Neither Playwright pattern is
+// mirrored: `isCtSpec` and playwright-ct.config.ts both read
+// playwright/ct-spec-pattern.mjs; `isRootSpec` / `isIgnoredRootSpec` and
+// playwright.config.ts both read playwright/root-spec-pattern.mjs.
 const VISUAL_TEST_RE = /\.visual\.spec\.ts$/;
 const INTEGRATION_TEST_RE = /^tests\/integration\/.*\.test\.ts$/;
 const VITEST_EXCLUDED_RE = /(?:^|\/)remote-(?:env|git)\.test\.ts$/;
@@ -287,14 +286,14 @@ function isExisting(file, root) {
 }
 
 export function testRunner(file) {
-  // Before UNIT_TEST_RE: Playwright discovers CT specs case-insensitively, so a
-  // `.CT.SPEC.TS` under src/ is a CT spec although no unit-test pattern sees it.
+  // Before UNIT_TEST_RE: Playwright discovers specs case-insensitively, so a
+  // `.CT.SPEC.TS` under src/ or a `.SPEC.ts` under test/ is a Playwright spec
+  // although no unit-test pattern sees it.
   if (isCtSpec(file)) return 'ct';
+  if (isRootSpec(file)) return 'playwright';
+  if (isIgnoredRootSpec(file)) return 'manual';
   if (!UNIT_TEST_RE.test(file)) return null;
-  if (file.startsWith('test/')) {
-    if (!PLAYWRIGHT_TEST_RE.test(file) || PLAYWRIGHT_MANUAL_RE.test(file)) return 'manual';
-    return 'playwright';
-  }
+  if (file.startsWith(`${ROOT_TEST_DIR}/`)) return 'manual';
   if (file.startsWith('tests/integration/')) {
     return INTEGRATION_TEST_RE.test(file) ? 'integration' : 'manual';
   }

@@ -747,8 +747,15 @@ describe('verification planning', () => {
   it('classifies test paths by the runner that owns them', () => {
     expect(testRunner('test/splash-loader.spec.ts')).toBe('playwright');
     expect(testRunner('test/nested/geometry.spec.ts')).toBe('playwright');
+    // playwright.config.ts `testIgnore` names (playwright/root-spec-pattern.mjs) run
+    // only through playwright.manual.config.ts, so they are not the Playwright lane.
     expect(testRunner('test/current-main-baseline.spec.ts')).toBe('manual');
     expect(testRunner('test/catalog-manual-review.capture.spec.ts')).toBe('manual');
+    expect(testRunner('test/electron-browser-lifetime.spec.ts')).toBe('manual');
+    expect(testRunner('test/nested/electron-browser-lifetime.spec.ts')).toBe('manual');
+    // Playwright matches testMatch with nocase + dot, so these are root specs too.
+    expect(testRunner('test/Foo.SPEC.ts')).toBe('playwright');
+    expect(testRunner('test/.hidden/x.spec.ts')).toBe('playwright');
     expect(testRunner('test/actions-status-visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.ct.spec.ts')).toBe('playwright');

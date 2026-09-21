@@ -8,6 +8,7 @@ import {
   isCtSpec,
   normalizeCtPath,
 } from '../playwright/ct-spec-pattern.mjs';
+import { isRootSpec, ROOT_TEST_DIR, ROOT_TEST_MATCH } from '../playwright/root-spec-pattern.mjs';
 
 // Pixel snapshots render text, so a spec that captures one before the bundled Inter
 // Variable face is loaded regenerates its goldens against the host fallback font and
@@ -25,10 +26,6 @@ export const HELPER_MODULE = 'test/test-fonts';
 export const HELPER_EXPORT = 'loadBundledInterFont';
 export const CT_HARNESS = 'playwright/index.ts';
 export const CT_FONT_IMPORT = '@fontsource-variable/inter';
-// `playwright.config.ts`: `testDir: './test'`, `testMatch: '**/*.spec.ts'`.
-export const ROOT_TEST_DIR = 'test';
-export const ROOT_SPEC_SUFFIX = '.spec.ts';
-export const ROOT_SPEC_GLOB = `${ROOT_TEST_DIR}/**/*${ROOT_SPEC_SUFFIX}`;
 export const CT_SPEC_GLOB = `${CT_TEST_DIR}/${CT_TEST_MATCH}`;
 export const INCIDENTS = Object.freeze([
   'https://github.com/intent-hq/cloudlands-fe/pull/2709',
@@ -38,7 +35,7 @@ export const REMEDIATION_HINT = [
   `Pixel snapshots (${SNAPSHOT_MATCHERS.map((m) => `\`${m}\``).join(' / ')}) render text, so the bundled Inter Variable face must be loaded first;`,
   'otherwise goldens regenerate against the host fallback font and fail on CI',
   `(cloudlands-fe#2709 ${INCIDENTS[0]}, intent-hq/intent#5033 ${INCIDENTS[1]}).`,
-  `Root specs (${ROOT_SPEC_GLOB}): add \`import { ${HELPER_EXPORT} } from './test-fonts';\``,
+  `Root specs (${ROOT_TEST_DIR}/${ROOT_TEST_MATCH}): add \`import { ${HELPER_EXPORT} } from './test-fonts';\``,
   `and call \`await ${HELPER_EXPORT}(page, { baseUrl });\` before the first snapshot`,
   '(the gate checks import + call; the helper throws at runtime when the face is not loaded).',
   `CT specs (${CT_SPEC_GLOB}): keep \`import '${CT_FONT_IMPORT}';\` in ${CT_HARNESS}.`,
@@ -58,16 +55,9 @@ export const createEscapePattern = (token) =>
 const ESCAPE_PATTERN = createEscapePattern(ESCAPE_TOKEN);
 
 const normalize = (value) => normalizeCtPath(value);
-// Playwright's `createFileMatcher` compares `testMatch` case-insensitively with dot
-// segments included (see playwright/ct-spec-pattern.mjs), so the root suite is matched
-// the same way as the shared CT classifier rather than with `path.matchesGlob`.
-export const isRootSpec = (filePath) => {
-  const normalized = normalize(filePath);
-  return (
-    normalized.startsWith(`${ROOT_TEST_DIR}/`) &&
-    normalized.toLowerCase().endsWith(ROOT_SPEC_SUFFIX.toLowerCase())
-  );
-};
+// Both suites are classified by the shared Playwright classifiers, so the scan sees
+// exactly the files each config discovers: `isRootSpec` excludes the config's
+// `testIgnore` names, which only `playwright.manual.config.ts` runs.
 export { isCtSpec };
 
 const parse = (filePath, content) =>
