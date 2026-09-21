@@ -1142,11 +1142,9 @@
   remains after "continue anyway" dismisses this.
 -->
 {#if $protocolMismatchModal$}
-  <Portal target="body" zIndex={100}>
-    <ProtocolMismatchModal
-      event={$protocolMismatchModal$}
-      onOpenLocal={openLocalFromProtocolMismatch}
-      onContinue={continueWithProtocolMismatch}
-    />
-  </Portal>
+  <ProtocolMismatchModal
+    event={$protocolMismatchModal$}
+    onOpenLocal={openLocalFromProtocolMismatch}
+    onContinue={continueWithProtocolMismatch}
+  />
 {/if}
