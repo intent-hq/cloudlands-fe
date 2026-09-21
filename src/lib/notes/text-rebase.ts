@@ -89,7 +89,9 @@ const PIECE_SEARCH_SLACK = 1024;
 /**
  * A region left between anchors that is longer than this on either side is
  * emitted as one replaced span: nothing inside it anchored, so a token diff
- * of it would spend the whole budget on carets that clamp anyway.
+ * of it would spend the whole budget on carets that clamp anyway. A region
+ * that holds an unanchorable line (see `maskHidden`) is exempt: its text was
+ * declined, not missing, and the deadline alone bounds its diff.
  */
 const MAX_REFINE_LENGTH = 8192;
 
@@ -153,6 +155,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
     let anchor = cursor;
     let whole = false;
     let beyond = false;
+    let declined = false;
     // Among the probes tried, the hit that skips the least markdown wins, so
     // a probe is only looked for short of the hit found so far.
     const consider = (start: number, end: number) => {
@@ -165,7 +168,10 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
       // holds before the hit (see `LineWalk`); a hit on a line the mask did
       // not account for is declined.
       const hit = findAnchor(to, from.slice(start, end), toPos, limit, (candidate) => {
-        if (overlaps(unanchorable, candidate, candidate + (end - start))) return false;
+        if (overlaps(unanchorable, candidate, candidate + (end - start))) {
+          if (end === lineEnd) declined = true;
+          return false;
+        }
         skipped.advanceTo(candidate);
         return skipped.lines >= run.lines && skipped.letters === run.letters;
       });
@@ -189,7 +195,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
     }
     if (at !== -1) {
       const length = commonRun(from, anchor, to, at);
-      refine(out, from, to, fromPos, anchor, toPos, at, deadline);
+      refine(out, from, to, fromPos, anchor, toPos, at, deadline, unanchorable);
       fromPos = anchor + length;
       toPos = at + length;
       cursor = fromPos;
@@ -208,10 +214,14 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
       run = new LineWalk(from, fromPos);
       nextHardBreak = -1;
     } else {
-      cursor = pieces ? cursor + tokenLength(from, cursor) : lineEnd + 1;
+      // The rest of a line found whole on an unanchorable markdown line is
+      // that line's text: none of its pieces anchor, so it is not walked in
+      // pieces — for a long code span that walk is quadratic — and it reaches
+      // the diff whole instead.
+      cursor = pieces && !declined ? cursor + tokenLength(from, cursor) : lineEnd + 1;
     }
   }
-  refine(out, from, to, fromPos, from.length, toPos, to.length, deadline);
+  refine(out, from, to, fromPos, from.length, toPos, to.length, deadline, unanchorable);
   return out;
 }
 
@@ -390,13 +400,19 @@ interface TextMap {
 /** Every hidden run — link destination, image, definition — sits after one of these. */
 const HIDEABLE = /\]\(|\]\[|\]:/;
 const HIDEABLE_ALL = /\]\(|\]\[|\]:/g;
-/** Every math token starts with one of these; without them the math tokenizers are inert. */
+/**
+ * Every math token starts with one of these: `mathInline` and `mathDisplay`
+ * match nothing else, their `start` hooks find nothing else, and
+ * `mathHtmlParagraph` stands down without an inline math token. A source
+ * with none lexes to the same tokens with the math tokenizers or without.
+ */
 const MATH_DELIMITER = /\$|\\[([]/;
 /**
  * Longest markdown lexed with the math tokenizers, whose `start` hooks make
  * the lexer quadratic in the token count: 10k one-line paragraphs of 128 KB
  * lex in ~85 ms, of 256 KB in ~300 ms — past the alignment budget — while
- * without them a 1 MB note lexes in under 100 ms.
+ * without them a 1 MB note lexes in under 100 ms. A longer source that holds
+ * a math delimiter is not masked at all.
  */
 const MAX_MATH_LEXED_LENGTH = 128 * 1024;
 /** A comment anchor; the editor renders it where `normalizeAnchorPositions` moves it. */
@@ -448,18 +464,22 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * an opener (`HIDEABLE`) not followed by a masked run — or by the closer of
  * an empty destination — is link syntax the lexer read as something else: a
  * code span, an escape, an unresolved reference, an HTML block whose text
- * the editor shows as written, or a construct it has no token for. Its line
- * is `unanchorable` (`unanchorableLines`): the anchor search declines every
- * hit on it and the line's text reaches the bounded diff instead, which
- * costs a longer diff on a visible code span, never a caret in a URL.
+ * the editor shows as written, a link in a source that was not lexed, or a
+ * construct it has no token for. Its line is `unanchorable`
+ * (`unanchorableLines`): the anchor search declines every hit on it and the
+ * line's text reaches the diff instead (`refine`, whose length cap the line
+ * lifts), which costs a longer diff on a visible code span, never a caret in
+ * a URL.
  *
- * Lexing counts against the alignment budget (`anchoredHunks` starts its
- * deadline before it) and is memoised for the last markdown: a source with
- * nothing hideable in it (`HIDEABLE`) is not lexed at all, one
- * without a math delimiter is lexed without the math tokenizers (same
- * tokens, linear time), and one with a delimiter is lexed as the renderer
- * does up to `MAX_MATH_LEXED_LENGTH` and without the math tokenizers beyond
- * it — the same links, at the cost of masking link syntax inside a formula.
+ * The lexer is the renderer's or its tokens are the renderer's: a source
+ * without a math delimiter (`MATH_DELIMITER`) is lexed without the math
+ * tokenizers, which is the same token stream in linear time, and one with a
+ * delimiter is lexed as the renderer does up to `MAX_MATH_LEXED_LENGTH` and
+ * not at all beyond it — a formula is displayed as written, so no other
+ * lexer may decide what a `](` inside one is. Lexing counts against the
+ * alignment budget (`anchoredHunks` starts its deadline before it) and is
+ * memoised for the last markdown; a source with nothing hideable in it
+ * (`HIDEABLE`) is not lexed either.
  */
 function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
@@ -471,7 +491,8 @@ function maskHidden(markdown: string): Mask {
 
 function computeHiddenMask(markdown: string): string {
   if (!HIDEABLE.test(markdown)) return markdown;
-  const math = MATH_DELIMITER.test(markdown) && markdown.length <= MAX_MATH_LEXED_LENGTH;
+  const math = MATH_DELIMITER.test(markdown);
+  if (math && markdown.length > MAX_MATH_LEXED_LENGTH) return markdown;
   let source = markdown;
   if (markdown.includes(COMMENT_ANCHOR)) {
     const normalized = normalizeAnchorPositions(markdown);
@@ -505,7 +526,10 @@ function computeHiddenMask(markdown: string): string {
 
 /**
  * The lines of `masked` that hold an opener the mask did not account for
- * (see `maskHidden`), as sorted, flattened `[start, end)` ranges.
+ * (see `maskHidden`), as sorted, flattened `[start, end)` ranges. One pass:
+ * a line is bounded once, at its first such opener, and the scan resumes
+ * past its end, so the cost is linear in `masked` however many openers a
+ * line holds.
  */
 function unanchorableLines(masked: string): number[] {
   const lines: number[] = [];
@@ -516,11 +540,10 @@ function unanchorableLines(masked: string): number[] {
     const closer = opener[0] === '](' ? 41 : opener[0] === '][' ? 93 : -1;
     if (next !== 0 && next !== closer) {
       const start = masked.lastIndexOf('\n', opener.index) + 1;
-      if (lines[lines.length - 2] !== start) {
-        let end = masked.indexOf('\n', opener.index);
-        if (end === -1) end = masked.length;
-        lines.push(start, end);
-      }
+      let end = masked.indexOf('\n', opener.index);
+      if (end === -1) end = masked.length;
+      lines.push(start, end);
+      HIDEABLE_ALL.lastIndex = end;
     }
     opener = HIDEABLE_ALL.exec(masked);
   }
@@ -744,8 +767,9 @@ function hide(
  * word is a pure insertion apart from the syntax around it, and `diffChars`
  * alone would happily match its letters one by one inside `](https://…)`.
  * Two spans that only whitespace keeps apart are diffed as one (see
- * `mergeAcrossWhitespace`). Any diff past the budget emits its input as one
- * replaced span instead.
+ * `mergeAcrossWhitespace`). A region longer than `MAX_REFINE_LENGTH` is not
+ * diffed unless it meets an `unanchorable` line of `to`, and any diff past
+ * the budget emits its input as one replaced span instead.
  */
 function refine(
   out: Hunk[],
@@ -756,6 +780,7 @@ function refine(
   toStart: number,
   toEnd: number,
   deadline: number,
+  unanchorable: number[],
 ): void {
   let prefix = 0;
   const maxPrefix = Math.min(fromEnd - fromStart, toEnd - toStart);
@@ -786,24 +811,30 @@ function refine(
     out.push(whole);
     return;
   }
-  // Nothing inside a long region anchored, and nothing is searched once the
-  // budget is spent: either way the region is emitted as is.
-  if (
-    fromEnd - fromStart > MAX_REFINE_LENGTH ||
-    toEnd - toStart > MAX_REFINE_LENGTH ||
-    performance.now() >= deadline
-  ) {
+  // Nothing is searched once the budget is spent: the region is emitted as is.
+  if (performance.now() >= deadline) {
     out.push(whole);
     return;
   }
   // A `from` region that survives whole inside the `to` region — text between
-  // two pieces of inline syntax — is a pure insertion around it; the diff
-  // would say the same, at a cost per gap.
+  // two pieces of inline syntax, or a code span between its backticks — is a
+  // pure insertion around it; the diff would say the same, at a cost per gap.
+  // One linear search, however long the region.
   const inside = findAnchor(to, from.slice(fromStart, fromEnd), toStart, toEnd, () => true);
   if (inside !== -1) {
     if (inside > toStart) out.push({ fromStart, fromEnd: fromStart, toStart, toEnd: inside });
     const after = inside + (fromEnd - fromStart);
     if (after < toEnd) out.push({ fromStart: fromEnd, fromEnd, toStart: after, toEnd });
+    return;
+  }
+  // Nothing inside a long region anchored — unless its anchors were declined
+  // (an unanchorable line), in which case the deadline alone bounds its diff
+  // — so the region is emitted as is.
+  if (
+    (fromEnd - fromStart > MAX_REFINE_LENGTH || toEnd - toStart > MAX_REFINE_LENGTH) &&
+    !overlaps(unanchorable, toStart, toEnd)
+  ) {
+    out.push(whole);
     return;
   }
   const words = withinBudget(deadline, (timeout) =>

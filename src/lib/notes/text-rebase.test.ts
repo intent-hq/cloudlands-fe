@@ -896,6 +896,46 @@ describe('alignment of link syntax the lexer does not account for', () => {
     return at;
   }
 
+  /**
+   * The text of `plain` from the line break before `plainNeedle` up to
+   * `until` — a run of lines left to the diff between two anchors — maps into
+   * the markdown from the first line break before `markdownNeedle` up to its
+   * `until`, and back, never moving backwards: a caret in it lands between
+   * the anchors around it, whatever the diff pairs inside.
+   */
+  function expectBetweenAnchors(
+    plain: string,
+    markdown: string,
+    map: ReturnType<typeof createBidirectionalOffsetMapper>,
+    plainNeedle: string,
+    markdownNeedle: string,
+    until: string,
+  ) {
+    const region = (text: string, needle: string): [number, number] => {
+      const at = text.indexOf(needle);
+      const end = text.indexOf(until, at);
+      expect(at, needle).toBeGreaterThanOrEqual(0);
+      expect(end, until).toBeGreaterThan(at);
+      let start = at;
+      while (start > 0 && text.charCodeAt(start - 1) === 10) start -= 1;
+      return [start, end];
+    };
+    const [pStart, pEnd] = region(plain, plainNeedle);
+    const [mStart, mEnd] = region(markdown, markdownNeedle);
+    for (const [from, to, start, end, tStart, tEnd] of [
+      [map.aToB, 'aToB', pStart, pEnd, mStart, mEnd],
+      [map.bToA, 'bToA', mStart, mEnd, pStart, pEnd],
+    ] as const) {
+      let previous = tStart;
+      for (let offset = start; offset <= end; offset += 1) {
+        const mapped = from(offset);
+        expect(mapped, `${to}(${offset})`).toBeGreaterThanOrEqual(previous);
+        expect(mapped, `${to}(${offset})`).toBeLessThanOrEqual(tEnd);
+        previous = mapped;
+      }
+    }
+  }
+
   it('hides the destination of a link on a heading a comment anchor precedes', async () => {
     // As written the anchor makes the line an HTML block with no link token;
     // the editor renders the heading (the anchor moved after its marker) and
@@ -931,6 +971,10 @@ describe('alignment of link syntax the lexer does not account for', () => {
     expectExactRun(plain, markdown, map, 'daemon', 0, 0);
   });
 
+  // A note past the cap the math tokenizers are lexed up to, with math in
+  // it, is not lexed at all — no lexer but the renderer's may say what a
+  // `](` next to a formula is — so its link line is unanchorable and left to
+  // the diff: everything else is exact, and a caret on the line stays on it.
   it.each<[string, (link: string) => string]>([
     [
       'at its start',
@@ -941,7 +985,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
       (link) => `${FILLER.repeat(PAST_CAP)}caret ${link} sync\n\n**sel**ection daemon\n\n$x$\n\n`,
     ],
   ])(
-    'hides the destination of a link %s in a note with math past the lexing cap',
+    'leaves the line of a link %s to the diff in a note with math past the lexing cap',
     async (_where, note) => {
       const markdown = note(LINK);
       expect(markdown.length).toBeGreaterThan(128 * 1024);
@@ -954,9 +998,8 @@ describe('alignment of link syntax the lexer does not account for', () => {
       const elapsed = performance.now() - started;
       // Generous CI bound; the alignment itself takes tens of milliseconds.
       expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
-      expectExactRun(plain, markdown, map, 'sync', 0, 1);
-      expectExactRun(plain, markdown, map, 'render', 0, 0);
-      expectExactRun(plain, markdown, map, 'daemon', 0, 0);
+      expectBetweenAnchors(plain, markdown, map, 'caret render', 'caret [render', '$x$');
+      expectExactRun(plain, markdown, map, '$x$', 0, 0);
       expectExactRun(plain, markdown, map, 'unchanged prose', 100, 100);
       expectExactRun(plain, markdown, map, 'unchanged prose', PAST_CAP - 1, PAST_CAP - 1);
     },
@@ -966,7 +1009,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
   // The reviewer's minimal repro of the unmasked note past the cap, with its
   // two controls: the same filler below the cap, and above it without math.
   it.each<[string, string, number]>([
-    ['math, past the cap', '$x$\n\n', 129 * 1024],
     ['math, below the cap', '$x$\n\n', 127 * 1024],
     ['no math, past the cap', '', 129 * 1024],
   ])('hides the destination of a link in a note with %s', async (_case, math, filler) => {
@@ -980,6 +1022,92 @@ describe('alignment of link syntax the lexer does not account for', () => {
     expectExactRun(plain, markdown, map, 'render', 0, 0);
     expectExactRun(plain, markdown, map, 'daemon', 0, 0);
   });
+
+  it('leaves the line of a link to the diff in a note with math past the cap', async () => {
+    const markdown = `caret ${LINK} sync\n\n**sel**ection daemon\n\n$x$\n\n${'q'.repeat(129 * 1024)}`;
+    const plain = await projectWithEditor(markdown, true);
+    expect(plain).not.toContain('](');
+    const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    expectBetweenAnchors(plain, markdown, map, 'caret render', 'caret [render', '$x$');
+    expectExactRun(plain, markdown, map, '$x$', 0, 0);
+    expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+  });
+
+  // A formula is displayed as written, link-shaped text inside it included;
+  // past the cap, a lexer without the math tokenizers would read it as a link
+  // and mask a destination the editor shows.
+  it.each([127, 129])(
+    'shows link-shaped text inside a formula as written at %i KiB',
+    async (kilobytes) => {
+      const formula = '$[label](https://sync/selection/editor)$';
+      const head = `before ${formula} sync after`;
+      const markdown = `${head}\n\n${'q'.repeat(kilobytes * 1024)}`;
+      const plain = await projectWithEditor(markdown, true);
+      expect(plain.startsWith(`${head}\n`)).toBe(true);
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      // Offset 30 is inside the visible `selection`.
+      expect([map.aToB(30), map.bToA(30)]).toEqual([30, 30]);
+      expectExactRun(plain, markdown, map, formula, 0, 0);
+      expectExactRun(plain, markdown, map, 'before', 0, 0);
+      expectExactRun(plain, markdown, map, ' sync after', 0, 0);
+    },
+    60_000,
+  );
+
+  // Link syntax the lexer read as a code span leaves its line unanchorable:
+  // the line is aligned by the diff, exactly, however long it is — the
+  // length cap on a region nothing anchored inside does not apply to one
+  // whose anchors were declined. A line of many words is not walked word by
+  // word once its rest was found whole on the unanchorable markdown line:
+  // that walk, every hit declined, was quadratic and spent the budget.
+  it.each([
+    ['one', 9_000],
+    ['one', 50_000],
+    ['many', 9_000],
+    ['many', 50_000],
+  ])(
+    'aligns a %s-word %i-character visible code line exactly, well inside the deadline',
+    async (words, length) => {
+      const visible =
+        words === 'one'
+          ? `${'a'.repeat(length)} [x](u)`
+          : 'alpha [x](u) beta '.repeat(Math.ceil(length / 18)).trimEnd();
+      const markdown = `\`${visible}\``;
+      const plain = await projectWithEditor(markdown, true);
+      expect(plain).toBe(visible);
+      const started = performance.now();
+      const map = createBidirectionalOffsetMapper(plain, markdown);
+      const elapsed = performance.now() - started;
+      expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(100);
+      expect([map.aToB(100), map.bToA(101)]).toEqual([101, 100]);
+      for (let offset = 1; offset < plain.length; offset += 97) {
+        expect([map.aToB(offset), map.bToA(offset + 1)], `@ ${offset}`).toEqual([
+          offset + 1,
+          offset,
+        ]);
+      }
+    },
+    60_000,
+  );
+
+  it('aligns a 300 KiB visible code line of residual link syntax exactly, mask included', async () => {
+    // Every opener on the line is residual (a code span masks nothing): the
+    // lines are bounded in one pass, not once per opener — the mask alone
+    // took over a second when it rescanned the line for every opener — and
+    // the line, declined whole, reaches the diff whole rather than token by
+    // token, so it is found inside its backticks in one search.
+    const visible = '[x](u) '.repeat(Math.ceil((300 * 1024) / 7)).trimEnd();
+    const markdown = `\`${visible}\``;
+    const plain = await projectWithEditor(markdown, true);
+    expect(plain).toBe(visible);
+    const started = performance.now();
+    const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
+    const elapsed = performance.now() - started;
+    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(100);
+    for (let offset = 1; offset < plain.length; offset += 1009) {
+      expect([aToB(offset), bToA(offset + 1)], `@ ${offset}`).toEqual([offset + 1, offset]);
+    }
+  }, 120_000);
 });
 
 describe('alignment of blocks that never anchor', () => {
