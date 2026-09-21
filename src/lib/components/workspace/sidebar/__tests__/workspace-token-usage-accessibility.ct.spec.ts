@@ -188,7 +188,27 @@ test('exposes compact values and keeps summary text readable on hover', async ({
     await disclosure.hover();
     const textColors = await disclosure
       .locator('span[aria-hidden="true"]')
-      .evaluateAll((elements) => {
+      .evaluateAll(async (elements) => {
+        // Reduced motion still transitions inherited colors when the theme changes.
+        // Settle the sampled paint from ancestors to text, not unrelated animations.
+        for (const element of elements) {
+          const ancestors: Element[] = [];
+          for (let node: Element | null = element; node; node = node.parentElement) {
+            ancestors.unshift(node);
+          }
+          for (const node of ancestors) {
+            await Promise.all(
+              node
+                .getAnimations()
+                .filter(
+                  (animation) =>
+                    animation instanceof CSSTransition &&
+                    ['color', 'background-color'].includes(animation.transitionProperty),
+                )
+                .map((animation) => animation.finished),
+            );
+          }
+        }
         const paint = (values: string[]): [number, number, number, number] => {
           const canvas = document.createElement('canvas');
           canvas.width = 1;
@@ -392,15 +412,23 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     const currentAgentAlpha = agentSection.locator('.breakdown-item-control').first();
     await currentAgentAlpha.focus();
     await expect(currentAgentAlpha).toBeFocused();
+    // Reduced motion still gives the focus outline a nonzero CSS transition.
+    // DOM focus alone does not guarantee that its final width has settled.
+    await expect(agentSection.locator('.breakdown-stack:focus-within')).toHaveCSS(
+      'outline-width',
+      '2px',
+    );
     const focus = await currentAgentAlpha.evaluate((element) => {
       const stack = element.closest<HTMLElement>('.breakdown-stack')!;
       return {
+        focused: document.activeElement === element,
         outlineColor: getComputedStyle(stack).outlineColor,
         outlineStyle: getComputedStyle(stack).outlineStyle,
         outlineWidth: getComputedStyle(stack).outlineWidth,
       };
     });
     expect(focus).toEqual({
+      focused: true,
       outlineColor: navigatorColors.neutralFocusColor,
       outlineStyle: 'solid',
       outlineWidth: '2px',
