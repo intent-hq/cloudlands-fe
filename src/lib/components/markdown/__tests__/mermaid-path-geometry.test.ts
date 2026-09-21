@@ -922,7 +922,10 @@ describe('Mermaid path terminal geometry', () => {
           (element) => element.dataset.id === edge.id,
         )!;
         expect(path.dataset.manhattanPoints).toBeTruthy();
-        const values = path.getAttribute('d')!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+        const values = path
+          .getAttribute('d')!
+          .match(/-?\d+(?:\.\d+)?/g)!
+          .map(Number);
         boundary(edge.start, { x: values[0], y: values[1] });
         const target = boundary(edge.end, { x: values.at(-2)!, y: values.at(-1)! });
         expect(path.dataset.terminalTarget).toBe(target.id);
@@ -1022,15 +1025,12 @@ describe('Mermaid path terminal geometry', () => {
       ['extra edge', `${source}\nComplete --> Idle: Reset`],
       ['parallel edge', `${source}\nStarting --> Streaming: Again`],
       ['horizontal direction', `${source}\ndirection LR`],
-    ])(
-      'does not mutate unsupported %s topology in compact mode',
-      async (_name, authoredSource) => {
-        const { svg, data } = await fixture(authoredSource);
-        const before = svg.outerHTML;
-        expect(rewriteStateRoutes(svg, true, data)).toBeUndefined();
-        expect(svg.outerHTML).toBe(before);
-      },
-    );
+    ])('does not mutate unsupported %s topology in compact mode', async (_name, authoredSource) => {
+      const { svg, data } = await fixture(authoredSource);
+      const before = svg.outerHTML;
+      expect(rewriteStateRoutes(svg, true, data)).toBeUndefined();
+      expect(svg.outerHTML).toBe(before);
+    });
 
     it.each([
       'missing parse',
