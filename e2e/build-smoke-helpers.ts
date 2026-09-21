@@ -75,13 +75,9 @@ function findPackagedApp(): string {
  * Kill every process of the packaged "Intent" app (main process and Chromium
  * helpers) on the current platform.
  *
- * Specs call this from `afterAll` after `electronApp.exit(0)`: on Linux the
- * helper processes can outlive the main process and keep the worker's stdout
- * pipe open, which stalls Playwright's worker teardown until its timeout.
- *
  * @param force - send SIGKILL (`pkill -9` / `taskkill /F`) instead of SIGTERM.
  */
-export function killPackagedAppProcesses(force = false): void {
+function killPackagedAppProcesses(force = false): void {
   if (process.platform === 'win32') {
     try {
       execSync('taskkill /F /IM "Intent.exe"', { stdio: 'ignore', windowsHide: true });
@@ -100,6 +96,25 @@ export function killPackagedAppProcesses(force = false): void {
   } catch {
     // No matching processes — that's fine
   }
+}
+
+/**
+ * Terminate a packaged app launched by a spec (call from `afterAll`).
+ *
+ * `app.exit(0)` is used instead of `app.close()`: `close()` fires Electron's
+ * `before-quit`, whose native "Quit anyway?" dialog blocks forever while
+ * agents are still running. The `evaluate` is raced against a grace period
+ * rather than awaited: Playwright launches Electron with `--inspect` and keeps
+ * that session attached, so Node parks the exiting process on "Waiting for
+ * the debugger to disconnect..." and the call never resolves (observed on
+ * Linux). The remaining process tree is then force-killed, which also
+ * releases the single-instance lock for the next spec.
+ */
+export async function exitPackagedApp(app: ElectronApplication | null | undefined): Promise<void> {
+  if (!app) return;
+  const exited = app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => undefined);
+  await Promise.race([exited, new Promise((r) => setTimeout(r, 2_000))]);
+  killPackagedAppProcesses(true);
 }
 
 /**
@@ -165,7 +180,9 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
   const rendererLogPath = join(logDir, 'electron-renderer.log');
 
   const proc = app.process();
-  const logStream = createWriteStream(mainProcessLogPath, { flags: 'w' });
+  // Append (like the renderer log) so every instance a run launches is kept,
+  // not just the last one.
+  const logStream = createWriteStream(mainProcessLogPath, { flags: 'a' });
   if (proc.stdout) {
     proc.stdout.pipe(logStream);
   }

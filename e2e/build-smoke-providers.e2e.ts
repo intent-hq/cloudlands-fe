@@ -29,6 +29,7 @@ import {
   startPermissionAutoApprover,
   startChatNudgeMonitor,
   setMockAgentBehavior,
+  exitPackagedApp,
 } from './build-smoke-helpers';
 import { join } from 'path';
 
@@ -122,34 +123,7 @@ test.describe('Build Smoke — Provider Verification', () => {
     }
     console.log('================================\n');
 
-    // Close app — app.close() triggers Electron's before-quit handler which
-    // shows a native "Quit anyway?" dialog when agents are still running.
-    // That dialog blocks the close forever.  Instead, use app.exit(0) via
-    // Playwright's evaluate() which immediately terminates the Node process
-    // without firing before-quit.  Fall back to pkill if that fails.
-    if (app) {
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.exit(0));
-      } catch {
-        // evaluate may fail if the app already crashed — force-kill
-      }
-      // Give the OS a moment to release the single-instance lock file
-      await new Promise((r) => setTimeout(r, 2_000));
-      // Belt-and-suspenders: kill any stragglers (e.g. helper processes)
-      try {
-        const { execSync } = await import('child_process');
-        if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent.exe"', {
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-        } else {
-          execSync('pkill -9 -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
-        }
-      } catch {
-        // No matching processes — already exited cleanly
-      }
-    }
+    await exitPackagedApp(app);
 
     // Clean up temp repo
     if (repoCleanup) {

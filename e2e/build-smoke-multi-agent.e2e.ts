@@ -24,7 +24,7 @@ import {
   waitForAgentCompletion,
   archiveAndGoHome,
   setMockAgentBehavior,
-  killPackagedAppProcesses,
+  exitPackagedApp,
 } from './build-smoke-helpers';
 
 const SCREENSHOT_DIR = path.join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -61,15 +61,7 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
   });
 
   test.afterAll(async () => {
-    if (app) {
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.exit(0));
-      } catch {
-        // app may already be closed
-      }
-      await new Promise((r) => setTimeout(r, 2_000));
-      killPackagedAppProcesses();
-    }
+    await exitPackagedApp(app);
     if (repoCleanup) {
       try {
         repoCleanup();

@@ -22,7 +22,7 @@ import {
   createWorkspaceWithPrompt,
   waitForAgentCompletion,
   archiveAndGoHome,
-  killPackagedAppProcesses,
+  exitPackagedApp,
 } from './build-smoke-helpers';
 
 const TEST_TIMEOUT = 3 * 60 * 1000;
@@ -62,15 +62,7 @@ test.describe('Build Smoke — Local Commit', () => {
   });
 
   test.afterAll(async () => {
-    if (app) {
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.exit(0));
-      } catch {
-        // app may have already exited
-      }
-      await new Promise((r) => setTimeout(r, 2_000));
-      killPackagedAppProcesses();
-    }
+    await exitPackagedApp(app);
     if (repoCleanup) {
       try {
         repoCleanup();
