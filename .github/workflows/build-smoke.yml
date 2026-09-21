@@ -120,6 +120,10 @@ jobs:
           pnpm run test:build-smoke
           ${{ inputs.grep && format('--grep {0}', inputs.grep) || '' }}
 
+      # e2e-reports/build-smoke/: Electron main/renderer logs + spec screenshots
+      # (written relative to the repo root). e2e/e2e-reports/: Playwright's
+      # outputDir/HTML report (resolved from e2e/build-smoke.config.ts) with
+      # per-failure traces, screenshots and error-context.md.
       - name: Upload build-smoke reports
         if: ${{ !cancelled() && failure() }}
         uses: actions/upload-artifact@v7
@@ -127,5 +131,6 @@ jobs:
           name: build-smoke-reports
           path: |
             e2e-reports/
+            e2e/e2e-reports/
           if-no-files-found: warn
           retention-days: 7
