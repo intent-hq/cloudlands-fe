@@ -17,8 +17,8 @@
  * forwarded args appended, as pnpm does) — by naming the config (`--config=X`,
  * `--config X`, `-c X`), by running the runner on its default config (`vitest`
  * → `vitest.config.*`, `playwright test` → `playwright.config.*`), or by
- * launching a local script (`node|tsx scripts/<file>`) whose source names the
- * config by path or basename. Only the word in executable position counts — past leading
+ * launching a local script (`node|tsx scripts/<file>`) whose code — comments
+ * excluded — names the config by path or basename. Only the word in executable position counts — past leading
  * `VAR=value`s and wrappers such as `cross-env` / `xvfb-run`, unwrapped from
  * `pnpm exec` / `npx` — so a script or runner named inside a quoted string or a
  * shell comment (`echo "run pnpm run test:x later"`) is data, not a command;
@@ -359,13 +359,34 @@ const defaultConfig = (runner: Runner, suites: readonly string[]) =>
   suites.find((suite) => new RegExp(`^${runner}\\.config\\.[^/]+$`).test(suite)) ??
   `${runner}.config.ts`;
 
-// A mention of the suite in a launcher's source — its repo path or bare
-// basename — bounded by non-path characters, so `playwright-ct.config.ts` never
-// stands in for `playwright.config.ts` and `other/vitest.config.ts` never for
-// the root one.
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/** `source` with its comments replaced by a space; strings and every other token stay intact. */
+const withoutComments = (source: string) => {
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    false,
+    ts.LanguageVariant.Standard,
+    source,
+  );
+  let code = '';
+  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) {
+    code +=
+      kind === ts.SyntaxKind.SingleLineCommentTrivia ||
+      kind === ts.SyntaxKind.MultiLineCommentTrivia
+        ? ' '
+        : scanner.getTokenText();
+  }
+  return code;
+};
+
+// A mention of the suite in a launcher's code — its repo path or bare basename,
+// comments excluded — bounded by non-path characters, so `playwright-ct.config.ts`
+// never stands in for `playwright.config.ts`, `other/vitest.config.ts` never for
+// the root one, and `e2e/x.config.ts/y.config.ts` never for `e2e/x.config.ts`.
 const mentionsSuite = (source: string, suite: string) => {
-  const names = [...new Set([suite, basename(suite)])].map((name) => name.replaceAll('.', '\\.'));
-  return new RegExp(`(?:^|[^\\w./-])(?:${names.join('|')})(?![\\w.-])`).test(source);
+  const names = [...new Set([suite, basename(suite)])].map(escapeRegExp);
+  return new RegExp(`(?:^|[^\\w./-])(?:${names.join('|')})(?![\\w./-])`).test(source);
 };
 
 /** The `scripts/<file>` a `node|tsx [flags] <file>` command launches. */
@@ -399,7 +420,8 @@ function suitesReferencedBy(
     const launcher = launcherFile(words);
     const source = launcher === undefined ? undefined : readLauncher(launcher);
     if (source === undefined) continue;
-    for (const suite of suites) if (mentionsSuite(source, suite)) reached.add(suite);
+    const code = withoutComments(source);
+    for (const suite of suites) if (mentionsSuite(code, suite)) reached.add(suite);
   }
   return reached;
 }
@@ -808,6 +830,39 @@ describe('test-suite CI coverage detector', () => {
     expect(suitesReferencedBy('node scripts/x.mjs', suites, nested).has('vitest.config.ts')).toBe(
       false,
     );
+  });
+
+  it('does not let a launcher mention of a suite path with a trailing segment stand in for it', () => {
+    const longer: Reader = () => "['--config=e2e/build-smoke.config.ts/other.config.ts']";
+    expect([...suitesReferencedBy('node scripts/x.mjs', suites, longer)]).toEqual([]);
+  });
+
+  it('ignores suites a launcher names only in comments', () => {
+    const reached = (source: string) => [
+      ...suitesReferencedBy('node scripts/x.mjs', suites, () => source),
+    ];
+    expect(reached('// Related: e2e/build-smoke.config.ts\nexport {};')).toEqual([]);
+    expect(
+      reached('/* see vitest.config.ts and\n   e2e/build-smoke.config.ts */\nexport {};'),
+    ).toEqual([]);
+    expect(
+      reached(
+        "// Related: e2e/build-smoke.config.ts\nargs = ['test', '-c', 'playwright-ct.config.ts'];",
+      ),
+    ).toEqual(['playwright-ct.config.ts']);
+    expect(reached("const config = 'vitest.config.ts'; // e2e/build-smoke.config.ts")).toEqual([
+      'vitest.config.ts',
+    ]);
+  });
+
+  it('matches launcher mentions of suite paths containing regex metacharacters exactly', () => {
+    const odd = ['src/routes/[id]/foo.config.ts', 'src/routes/(group)/foo.config.ts'];
+    const reached = (source: string) => [
+      ...suitesReferencedBy('node scripts/x.mjs', odd, () => source),
+    ];
+    expect(reached("['--config', 'src/routes/[id]/foo.config.ts']")).toEqual([odd[0]]);
+    expect(reached("['--config', 'src/routes/(group)/foo.config.ts']")).toEqual([odd[1]]);
+    expect(reached("['--config', 'src/routes/id/foo.config.ts']")).toEqual([]);
   });
 
   it('covers every suite a workflow reaches directly or through the scripts graph', () => {
