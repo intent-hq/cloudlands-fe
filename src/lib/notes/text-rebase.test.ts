@@ -4,7 +4,6 @@ import StarterKit from '@tiptap/starter-kit';
 
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
 import { createEditorConfig } from '$lib/utils/editor-config';
-import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { docTextOffsets } from './doc-text-offsets';
 import {
@@ -862,7 +861,7 @@ describe('alignment of link-shaped text the editor shows', () => {
 describe('alignment of link syntax the lexer does not account for', () => {
   const LINK = '[render](https://sync/selection/editor)';
   const FILLER = 'unchanged prose lines.\n\n';
-  /** The 128 KB the math tokenizers are lexed up to, comfortably exceeded. */
+  /** The 128 KB the mask lexes up to, comfortably exceeded. */
   const PAST_CAP = 6700;
 
   /**
@@ -972,15 +971,13 @@ describe('alignment of link syntax the lexer does not account for', () => {
     expectExactRun(plain, markdown, map, 'daemon', 0, 0);
   });
 
-  // A note past the cap the math tokenizers are lexed up to, with math in
-  // it, is not lexed at all — no lexer but the renderer's may say what a
-  // `](` next to a formula is — so nothing is masked, and what the alignment
-  // then guarantees is: no anchor lands on a line that holds link syntax; the
-  // link line alone is left to the diff, so a caret on it stays on it but may
-  // sit off by the hidden destination; every other line is exact — the
-  // paragraphs beside the link line included, anchored by their pieces so
-  // that their words are never diffed against the destination (`selection`
-  // below occurs verbatim only inside the URL).
+  // A note past the cap the mask lexes up to is not lexed at all, so nothing
+  // is masked, and what the alignment then guarantees is: no anchor lands on
+  // a line that holds link syntax; the link line alone is left to the diff,
+  // bounded by its own line, so a caret on it stays on it but may sit off by
+  // the hidden destination; every other line is exact — the paragraphs beside
+  // the link line included, whose words are never diffed against the
+  // destination (`selection` below occurs verbatim only inside the URL).
   it.each<[string, (link: string) => string]>([
     [
       'at its start',
@@ -991,7 +988,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
       (link) => `${FILLER.repeat(PAST_CAP)}caret ${link} sync\n\n**sel**ection daemon\n\n$x$\n\n`,
     ],
   ])(
-    'leaves the line of a link %s to the diff in a note with math past the lexing cap',
+    'leaves the line of a link %s to the diff in a note past the lexing cap',
     async (_where, note) => {
       const markdown = note(LINK);
       expect(markdown.length).toBeGreaterThan(128 * 1024);
@@ -1014,26 +1011,37 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
-  // The reviewer's repro: the formatted paragraph after the unmasked link
-  // line shares no whole line with the markdown, and its `selection` occurs
-  // verbatim only inside the URL — diffed together with the link line it
-  // would be matched there. Each math delimiter, in both projections.
-  it.each<[string, string, boolean]>([
-    ['$5', 'StarterKit', false],
-    ['$5', 'the note editor', true],
-    ['\\(x\\)', 'StarterKit', false],
-    ['\\(x\\)', 'the note editor', true],
-    ['\\[x\\]', 'StarterKit', false],
-    ['\\[x\\]', 'the note editor', true],
+  // The reviewer's repro: the formatted paragraph after the link line shares
+  // no whole line with the markdown, and its `selection` occurs verbatim only
+  // inside the URL — diffed together with the unmasked link line it would be
+  // matched there. Below the cap the link line is masked and exact; past it
+  // the line is diffed alone and every other run is exact. Both projections,
+  // with and without a math delimiter past the cap: no content is masked
+  // there.
+  it.each<[string, string, string, boolean]>([
+    ['below the cap', '$5', 'StarterKit', false],
+    ['below the cap', '$5', 'the note editor', true],
+    ['past the cap', '$5', 'StarterKit', false],
+    ['past the cap', '$5', 'the note editor', true],
+    ['past the cap', 'no', 'StarterKit', false],
+    ['past the cap', 'no', 'the note editor', true],
   ])(
-    'keeps the paragraph after a link line exact in a note with %s past the cap projected by %s',
-    async (delimiter, _projection, production) => {
-      const markdown = `intro ${delimiter} ordinary\n\ncaret ${LINK} sync\n\n**sel**ection daemon\n\nend marker\n\n${'q'.repeat(129 * 1024)}`;
+    'keeps every run beside a link line exact in a note %s with %s math projected by %s',
+    async (where, math, _projection, production) => {
+      const filler = 'q'.repeat((where === 'below the cap' ? 127 : 129) * 1024);
+      const intro = math === 'no' ? 'intro ordinary' : `intro ${math} ordinary`;
+      const markdown = `${intro}\n\ncaret ${LINK} sync\n\n**sel**ection daemon\n\nend marker\n\n${filler}`;
       const plain = await projectWithEditor(markdown, production);
       expect(plain).not.toContain('](');
       expect(plain).toContain('\nselection daemon\n');
       const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
-      expectBetweenAnchors(plain, markdown, map, 'caret render', 'caret [render', '\n');
+      if (where === 'below the cap') {
+        expectExactRun(plain, markdown, map, 'caret', 0, 0);
+        expectExactRun(plain, markdown, map, 'render', 0, 0);
+        expectExactRun(plain, markdown, map, 'sync', 0, 1);
+      } else {
+        expectBetweenAnchors(plain, markdown, map, 'caret render', 'caret [render', '\n');
+      }
       expectExactRun(plain, markdown, map, 'ordinary', 0, 0);
       expectExactRun(plain, markdown, map, 'sel', 0, 1);
       expectExactRun(plain, markdown, map, 'ection daemon', 0, 0);
@@ -1043,13 +1051,40 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
-  // The reviewer's minimal repro of the unmasked note past the cap, with its
-  // two controls: the same filler below the cap, and above it without math.
-  it.each<[string, string, number]>([
-    ['math, below the cap', '$x$\n\n', 127 * 1024],
-    ['no math, past the cap', '', 129 * 1024],
-  ])('hides the destination of a link in a note with %s', async (_case, math, filler) => {
-    const markdown = `caret ${LINK} sync\n\n**sel**ection daemon\n\n${math}${'q'.repeat(filler)}`;
+  // A paragraph beside the link line no piece of which anchors — no four
+  // characters of it occur in its markdown, while its words occur in order
+  // inside the URL — is still diffed on its own line: the line breaks around
+  // the link line bound its diff, so `selection editor` is never paired with
+  // the URL's (`aToB(18)` landed at 28, inside the destination, when the two
+  // lines were diffed as one region).
+  it.each<[string, boolean]>([
+    ['StarterKit', false],
+    ['the note editor', true],
+  ])(
+    'keeps a paragraph no piece of which anchors on its own line beside a link line past the cap projected by %s',
+    async (_projection, production) => {
+      const spelled = '**se**le**ct**io**n** **ed**it**or**';
+      const markdown = `caret ${LINK} sync\n\n${spelled}\n\nend marker\n\n${'q'.repeat(129 * 1024)}`;
+      const plain = await projectWithEditor(markdown, production);
+      expect(plain).toContain('\nselection editor\n');
+      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+      expectBetweenAnchors(plain, markdown, map, 'caret render', 'caret [render', '\n');
+      expectBetweenAnchors(plain, markdown, map, 'selection editor', spelled, '\n');
+      const inUrl = markdown.indexOf('selection') + 4;
+      expect(map.bToA(inUrl)).toBeLessThanOrEqual(plain.indexOf('\n'));
+      expectExactRun(plain, markdown, map, 'end marker', 0, 0);
+      expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+    },
+    60_000,
+  );
+
+  // The reviewer's minimal repro, below the cap: the mask hides the
+  // destination whether or not the note holds a math delimiter.
+  it.each<[string, string]>([
+    ['math', '$x$\n\n'],
+    ['no math', ''],
+  ])('hides the destination of a link in a note below the cap with %s', async (_case, math) => {
+    const markdown = `caret ${LINK} sync\n\n**sel**ection daemon\n\n${math}${'q'.repeat(127 * 1024)}`;
     const plain = await projectWithEditor(markdown, true);
     expect(plain).not.toContain('](');
     const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
@@ -1060,7 +1095,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
     expectExactRun(plain, markdown, map, 'daemon', 0, 0);
   });
 
-  it('leaves the line of a link to the diff in a note with math past the cap', async () => {
+  it('leaves the line of a link to the diff in a note past the cap', async () => {
     const markdown = `caret ${LINK} sync\n\n**sel**ection daemon\n\n$x$\n\n${'q'.repeat(129 * 1024)}`;
     const plain = await projectWithEditor(markdown, true);
     expect(plain).not.toContain('](');
@@ -1072,10 +1107,10 @@ describe('alignment of link syntax the lexer does not account for', () => {
     expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
   });
 
-  // A formula is displayed as written, link-shaped text inside it included;
-  // past the cap, a lexer without the math tokenizers would read it as a link
-  // and mask a destination the editor shows. The reviewer's repro, in both
-  // projections the binding sees.
+  // A formula is displayed as written, link-shaped text inside it included:
+  // below the cap the renderer's own lexer reads it as math and masks
+  // nothing in it; past the cap nothing is masked, and its line is diffed
+  // alone. The reviewer's repro, in both projections the binding sees.
   it.each<[number, string, boolean]>([
     [127, 'StarterKit', false],
     [127, 'the note editor', true],
@@ -1135,12 +1170,13 @@ describe('alignment of link syntax the lexer does not account for', () => {
     60_000,
   );
 
-  it('aligns a 300 KiB visible code line of residual link syntax exactly, mask included', async () => {
-    // Every opener on the line is residual (a code span masks nothing): the
-    // lines are bounded in one pass, not once per opener — the mask alone
-    // took over a second when it rescanned the line for every opener — and
-    // the line, declined whole, reaches the diff whole rather than token by
-    // token, so it is found inside its backticks in one search.
+  it('aligns a 300 KiB visible code line of residual link syntax exactly', async () => {
+    // Every opener on the line is residual (past the cap nothing is masked;
+    // below it a code span masks nothing either): the lines are bounded in
+    // one pass, not once per opener — the mask alone took over a second when
+    // it rescanned the line for every opener — and the line, declined whole,
+    // reaches the diff whole rather than token by token, so it is found
+    // inside its backticks in one search.
     const visible = '[x](u) '.repeat(Math.ceil((300 * 1024) / 7)).trimEnd();
     const markdown = `\`${visible}\``;
     const plain = await projectWithEditor(markdown, true);
@@ -1153,80 +1189,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
       expect([aToB(offset), bToA(offset + 1)], `@ ${offset}`).toEqual([offset + 1, offset]);
     }
   }, 120_000);
-});
-
-/**
- * The mask is only ever read off the renderer's own token stream. The
- * alignment lexes a source without a math delimiter (`$`, `\(`, `\[`) with
- * the math tokenizers left out, which is the same stream in linear time: the
- * guard for that shortcut. Should it ever fail, the shortcut has to go.
- */
-describe('lexing without the math tokenizers', () => {
-  const MATH_DELIMITER = /\$|\\[([]/;
-  const renderer = createTiptapTaskListMarked();
-  const withoutMath = createTiptapTaskListMarked({ math: false });
-  /** Each top-level token with the source offset it starts at (its raws add up to the source). */
-  function lexed(lexer: typeof renderer, source: string) {
-    let offset = 0;
-    return lexer.lexer(source).map((token) => {
-      const start = offset;
-      offset += token.raw.length;
-      return { start, token };
-    });
-  }
-
-  const corpus: Array<[string, string]> = [
-    [
-      'prose and links',
-      'Before [label](https://sync/selection/editor "title") sync after.\n\nAn <https://auto.link> and [a][r] and ![alt](https://img/src).\n\n[r]: https://sync/reference "ref"\n',
-    ],
-    [
-      'lists and tasks',
-      '- one [x](https://one) sync\n- two\n  - nested [y][r]\n1. ordered\n2. [z](https://z)\n- [ ] task [t](https://t)\n- [x] done\n\n[r]: https://r\n',
-    ],
-    [
-      'fences and code spans',
-      '```ts\nconst a = "[x](https://y)";\n```\n\nspan `[x](https://y)` and ``a`[b](c)`d``\n\n    indented [code](https://y)\n',
-    ],
-    [
-      'escapes and unresolved references',
-      'not [a\\](https://b) link, \\*not em\\*, [none][missing] either, [c]\n(https://d) split\n',
-    ],
-    [
-      'html anchors and blocks',
-      '<!--anchor:c:start-->## a [b](https://c)<!--anchor:c:end-->\n\n<div>\n[x](https://y)\n</div>\n\n<!--anchor:d:start-->before [label](https://sync) after<!--anchor:d:end-->\n',
-    ],
-    [
-      'tables',
-      '| one | two |\n| --- | --- |\n| [a](https://b) | `[c](d)` |\n| **bold** | _em_ |\n',
-    ],
-    [
-      'block quotes and headings',
-      '> quoted [a](https://b)\n> > nested\n\n# h1 [x](https://y)\n\nSetext\n---\n\n***\n',
-    ],
-    ...[1, 2, 3].map((seed): [string, string] => [
-      `generated note, seed ${seed}`,
-      generateLargeNote(64 * 1024, seed).markdown,
-    ]),
-  ];
-
-  it.each(corpus)('lexes %s to the same token stream', (_name, source) => {
-    expect(source).not.toMatch(MATH_DELIMITER);
-    const expected = lexed(renderer, source);
-    expect(expected.length).toBeGreaterThan(0);
-    expect(expected.reduce((n, { token }) => n + token.raw.length, 0)).toBe(source.length);
-    expect(lexed(withoutMath, source)).toEqual(expected);
-  });
-
-  it.each([
-    ['inline dollars', 'before $x$ after'],
-    ['inline parentheses', 'before \\(x\\) after'],
-    ['display brackets', 'before\n\n\\[x\\]\n\nafter'],
-    ['display dollars', 'before\n\n$$\nx\n$$\n\nafter'],
-  ])('lexes a formula in %s differently', (_name, source) => {
-    expect(source).toMatch(MATH_DELIMITER);
-    expect(lexed(withoutMath, source)).not.toEqual(lexed(renderer, source));
-  });
 });
 
 describe('alignment of blocks that never anchor', () => {
@@ -1264,22 +1226,29 @@ describe('alignment of blocks that never anchor', () => {
     expect(aToB(0)).toBe(0);
   });
 
-  it('gives up on a 150 KB line of one-letter links inside the budget, mask included', () => {
-    // No four code units of the projection occur in the markdown, and its
-    // mask is the most expensive one a note this size has: a link per word.
-    // The projection is modelled: the editor's own takes a minute on this
-    // many links, and only the word of each survives it.
-    const links = Math.ceil((150 * 1024) / 7);
-    const markdown = '[x](u) '.repeat(links);
-    const plain = 'x '.repeat(links).trimEnd();
-    const started = performance.now();
-    const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
-    expect(aToB(0)).toBe(0);
-    const elapsed = performance.now() - started;
-    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(400);
-    expectMonotonic(aToB, plain.length, markdown.length, 1009);
-    expectMonotonic(bToA, markdown.length, plain.length, 1009);
-  }, 60_000);
+  it.each([120, 150, 1024])(
+    'gives up on a %i KB line of one-letter links inside the budget',
+    (kilobytes) => {
+      // No four code units of the projection occur in the markdown, and a
+      // link per word is the most expensive source a note this size has: the
+      // 120 KB one is masked (the lexer's cost counts against the budget),
+      // the longer ones are past the cap and not lexed — the lexer alone took
+      // over half a second on the 1 MB one. The projection is modelled: the
+      // editor's own takes a minute on this many links, and only the word of
+      // each survives it.
+      const links = Math.ceil((kilobytes * 1024) / 7);
+      const markdown = '[x](u) '.repeat(links);
+      const plain = 'x '.repeat(links).trimEnd();
+      const started = performance.now();
+      const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
+      expect(aToB(0)).toBe(0);
+      const elapsed = performance.now() - started;
+      expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(400);
+      expectMonotonic(aToB, plain.length, markdown.length, 1009);
+      expectMonotonic(bToA, markdown.length, plain.length, 1009);
+    },
+    60_000,
+  );
 
   it('still anchors the blocks that do match after a run that does not', () => {
     const [a, b] = unanchorable(20 * 1024);
@@ -1532,9 +1501,9 @@ describe('alignment over a corpus of small notes', () => {
     expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
   }, 240_000);
 
-  it('maps every interior offset exactly on a note with math past the lexing cap', async () => {
-    // Two generated notes around enough prose to pass the 128 KB the math
-    // tokenizers are lexed up to, with inline math so that they would be.
+  it('maps every interior offset exactly on a note past the lexing cap', async () => {
+    // Two generated notes around enough prose to pass the 128 KB the mask
+    // lexes up to: nothing in them is masked.
     const atoms: Atom[] = [...generateSmallNote(1000), ['\n\n', '\n'], ['$x$', '$x$']];
     while (atoms.reduce((n, [md]) => n + md.length, 0) <= 130 * 1024) {
       atoms.push(['\n\n', '\n'], ['unchanged prose lines.', 'unchanged prose lines.']);

@@ -81,16 +81,9 @@ function extractAgentAnchor(content: string): { content: string; agentId: string
  * 5. Handles choice blocks (```choice) for interactive multiple-choice questions
  * 6. Handles agent anchors (<!--agent:id-->) to preserve delegated agent assignments
  *
- * @param options.math - Register the math tokenizers (default true). Their
- *   `start` hooks scan the rest of the source for a delimiter on every block
- *   and inline token, so lexing grows quadratically with the token count; a
- *   caller that has checked the source holds no `$`, `\(` or `\[` gets the
- *   same tokens without them.
  * @returns A configured marked instance that outputs Tiptap-compatible HTML
  */
-export const createTiptapTaskListMarked = (
-  options: { renderMath?: boolean; math?: boolean } = {},
-) => {
+export const createTiptapTaskListMarked = (options: { renderMath?: boolean } = {}) => {
   const markedInstance = new Marked();
 
   // Helper function to escape HTML entities in code blocks
@@ -330,7 +323,7 @@ export const createTiptapTaskListMarked = (
   // Restrict strikethrough to the double-tilde form (~~text~~)
   markedInstance.use(strikethroughDoubleTilde);
 
-  if (options.math !== false) addMathSupport(markedInstance, options.renderMath === true);
+  addMathSupport(markedInstance, options.renderMath === true);
 
   // Add choice block support
   // TODO: Re-enable after fixing renderer registration

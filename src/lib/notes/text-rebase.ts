@@ -119,7 +119,9 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * The markdown the editor does not show — link destinations, images, link
  * definitions — is masked first (`maskHidden`) so that no search or diff
  * matches it, and a markdown line with link syntax the mask did not account
- * for is never anchored (`Mask.unanchorable`): its text reaches a diff only.
+ * for — every link line of a source too long to lex — is never anchored
+ * (`Mask.unanchorable`): its text reaches a diff only, and that diff is
+ * bounded by the line (`refineByLine`).
  * The mask, the anchor loop and every diff share one deadline: past it, the
  * remaining text is emitted as one replaced span. A surrogate pair never straddles a
  * span boundary: anchors, trimmed prefixes and tokens stop outside pairs and
@@ -413,25 +415,18 @@ interface TextMap {
 const HIDEABLE = /\]\(|\]\[|\]:/;
 const HIDEABLE_ALL = /\]\(|\]\[|\]:/g;
 /**
- * Every math token starts with one of these: `mathInline` and `mathDisplay`
- * match nothing else, their `start` hooks find nothing else, and
- * `mathHtmlParagraph` stands down without an inline math token. A source
- * with none lexes to the same tokens with the math tokenizers or without.
+ * Longest markdown the mask lexes. The renderer's lexer is quadratic in the
+ * token count (the `start` hooks of its math tokenizers scan the rest of the
+ * source on every token): 16k one-link paragraphs of 128 KB lex in ~170 ms,
+ * one 128 KB paragraph of 18k links in ~60 ms, and a 1 MB note of dense
+ * links takes over half a second with the math tokenizers or without. A
+ * longer source is not masked at all; see `maskHidden` for what holds then.
  */
-const MATH_DELIMITER = /\$|\\[([]/;
-/**
- * Longest markdown lexed with the math tokenizers, whose `start` hooks make
- * the lexer quadratic in the token count: 10k one-line paragraphs of 128 KB
- * lex in ~85 ms, of 256 KB in ~300 ms — past the alignment budget — while
- * without them a 1 MB note lexes in under 100 ms. A longer source that holds
- * a math delimiter is not masked at all.
- */
-const MAX_MATH_LEXED_LENGTH = 128 * 1024;
+const MAX_LEXED_LENGTH = 128 * 1024;
 /** A comment anchor; the editor renders it where `normalizeAnchorPositions` moves it. */
 const COMMENT_ANCHOR = '<!--anchor:';
 
-type HiddenTextLexer = ReturnType<typeof createTiptapTaskListMarked>;
-const hiddenTextLexers: { math?: HiddenTextLexer; plain?: HiddenTextLexer } = {};
+let hiddenTextLexer: ReturnType<typeof createTiptapTaskListMarked> | undefined;
 
 /**
  * The markdown as the alignment reads it: `text` with the hidden runs masked,
@@ -483,15 +478,16 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * lifts), which costs a longer diff on a visible code span, never a caret in
  * a URL.
  *
- * The lexer is the renderer's or its tokens are the renderer's: a source
- * without a math delimiter (`MATH_DELIMITER`) is lexed without the math
- * tokenizers, which is the same token stream in linear time, and one with a
- * delimiter is lexed as the renderer does up to `MAX_MATH_LEXED_LENGTH` and
- * not at all beyond it — a formula is displayed as written, so no other
- * lexer may decide what a `](` inside one is. Lexing counts against the
- * alignment budget (`anchoredHunks` starts its deadline before it) and is
- * memoised for the last markdown; a source with nothing hideable in it
- * (`HIDEABLE`) is not lexed either.
+ * The lexer is the renderer's own, configured as the renderer configures it,
+ * up to `MAX_LEXED_LENGTH`; a longer source is not lexed and nothing in it
+ * is masked, so every line of it that holds link syntax is unanchorable and
+ * reaches the diff alone, bounded by its own line (`refine` pairs the lines
+ * of such a region one to one): a caret on a line without link syntax is
+ * exact, and one on a link line stays on that line, off by at most its
+ * hidden destination. Lexing counts against the alignment budget
+ * (`anchoredHunks` starts its deadline before it) and is memoised for the
+ * last markdown; a source with nothing hideable in it (`HIDEABLE`) is not
+ * lexed either.
  */
 function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
@@ -502,9 +498,7 @@ function maskHidden(markdown: string): Mask {
 }
 
 function computeHiddenMask(markdown: string): string {
-  if (!HIDEABLE.test(markdown)) return markdown;
-  const math = MATH_DELIMITER.test(markdown);
-  if (math && markdown.length > MAX_MATH_LEXED_LENGTH) return markdown;
+  if (!HIDEABLE.test(markdown) || markdown.length > MAX_LEXED_LENGTH) return markdown;
   let source = markdown;
   if (markdown.includes(COMMENT_ANCHOR)) {
     const normalized = normalizeAnchorPositions(markdown);
@@ -512,10 +506,8 @@ function computeHiddenMask(markdown: string): string {
   }
   let tokens: LexedToken[];
   try {
-    const lexer = math
-      ? (hiddenTextLexers.math ??= createTiptapTaskListMarked())
-      : (hiddenTextLexers.plain ??= createTiptapTaskListMarked({ math: false }));
-    tokens = lexer.lexer(source) as unknown as LexedToken[];
+    hiddenTextLexer ??= createTiptapTaskListMarked();
+    tokens = hiddenTextLexer.lexer(source) as unknown as LexedToken[];
   } catch {
     return markdown;
   }
@@ -779,9 +771,10 @@ function hide(
  * word is a pure insertion apart from the syntax around it, and `diffChars`
  * alone would happily match its letters one by one inside `](https://…)`.
  * Two spans that only whitespace keeps apart are diffed as one (see
- * `mergeAcrossWhitespace`). A region longer than `MAX_REFINE_LENGTH` is not
- * diffed unless it meets an `unanchorable` line of `to`, and any diff past
- * the budget emits its input as one replaced span instead.
+ * `mergeAcrossWhitespace`). A region that meets an `unanchorable` line of
+ * `to` is diffed line by line (`refineByLine`), and one longer than
+ * `MAX_REFINE_LENGTH` is not diffed unless it meets such a line; any diff
+ * past the budget emits its input as one replaced span instead.
  */
 function refine(
   out: Hunk[],
@@ -794,6 +787,12 @@ function refine(
   deadline: number,
   unanchorable: number[],
 ): void {
+  if (
+    overlaps(unanchorable, toStart, toEnd) &&
+    refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable)
+  ) {
+    return;
+  }
   let prefix = 0;
   const maxPrefix = Math.min(fromEnd - fromStart, toEnd - toStart);
   while (
@@ -886,6 +885,67 @@ function refine(
     if (chars) out.push(...groupChanges(chars, span.fromStart, span.toStart));
     else out.push(span);
   }
+}
+
+/**
+ * `refine` a region that holds an unanchorable line of `to` — one with link
+ * syntax the mask did not account for, every line of a source past
+ * `MAX_LEXED_LENGTH` included — one line at a time. Each plain-text line ends
+ * a markdown line of its own, so when the region holds as many lines of text
+ * on each side they pair up in order, and each pair is diffed alone with the
+ * line breaks and blank lines between them as the boundaries: a word of the
+ * next paragraph is never matched inside the destination on the link line
+ * (`**sel**ection daemon` after `[render](https://sync/selection/editor)`),
+ * whichever pairing the diff of the whole region would have chosen. Blank
+ * lines are not lines of text; a region whose sides hold a different number
+ * of lines — a fence, a setext underline or an HTML comment is a markdown
+ * line with no plain-text line of its own — is not paired, and `false` is
+ * returned for `refine` to diff it whole.
+ */
+function refineByLine(
+  out: Hunk[],
+  from: string,
+  to: string,
+  fromStart: number,
+  fromEnd: number,
+  toStart: number,
+  toEnd: number,
+  deadline: number,
+  unanchorable: number[],
+): boolean {
+  const fromLines = textLines(from, fromStart, fromEnd);
+  const toLines = textLines(to, toStart, toEnd);
+  if (fromLines.length === 0 || fromLines.length !== toLines.length) return false;
+  if (fromLines.length === 1) {
+    // One line each: the pair is the region itself unless a break bounds it.
+    const lineBreak = to.indexOf('\n', toStart);
+    if (lineBreak === -1 || lineBreak >= toEnd) return false;
+  }
+  let fromPos = fromStart;
+  let toPos = toStart;
+  for (let k = 0; k < fromLines.length; k += 1) {
+    const [lineFrom, lineFromEnd] = fromLines[k];
+    const [lineTo, lineToEnd] = toLines[k];
+    refine(out, from, to, fromPos, lineFrom, toPos, lineTo, deadline, unanchorable);
+    refine(out, from, to, lineFrom, lineFromEnd, lineTo, lineToEnd, deadline, unanchorable);
+    fromPos = lineFromEnd;
+    toPos = lineToEnd;
+  }
+  refine(out, from, to, fromPos, fromEnd, toPos, toEnd, deadline, unanchorable);
+  return true;
+}
+
+/** The `[start, end)` of each line of `text[start, end)` that is not blank, without its line break. */
+function textLines(text: string, start: number, end: number): Array<[number, number]> {
+  const lines: Array<[number, number]> = [];
+  let pos = start;
+  while (pos < end) {
+    let lineEnd = text.indexOf('\n', pos);
+    if (lineEnd === -1 || lineEnd > end) lineEnd = end;
+    if (lineEnd > pos && !BLANK.test(text.slice(pos, lineEnd))) lines.push([pos, lineEnd]);
+    pos = lineEnd + 1;
+  }
+  return lines;
 }
 
 /** Run `diff` with the time left before `deadline`; `undefined` once it is spent or the diff aborts. */
