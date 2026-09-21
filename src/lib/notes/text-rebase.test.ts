@@ -1,8 +1,10 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Editor } from '@tiptap/core';
+import { Editor, type EditorOptions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 
 import { processMarkdownToHTML } from '$lib/utils/markdown-processor';
+import { createEditorConfig } from '$lib/utils/editor-config';
+import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
 import { docTextOffsets } from './doc-text-offsets';
 import {
   createBidirectionalOffsetMapper,
@@ -175,15 +177,28 @@ function generateLargeNote(minMarkdownLength: number, seed = 1): LargeNote {
 /**
  * The plain text the remote-cursors binding maps against: the markdown parsed
  * the way the note editor does it, then projected by production
- * `docTextOffsets`.
+ * `docTextOffsets`. With `production`, the document is the note editor's own
+ * (`createEditorConfig`) plus its comment-anchor node — the one part of
+ * `enableComments` the projection sees; the rest is a decorations plugin over
+ * the app store — so a comment anchor is an inline leaf, not dropped markup.
  */
-async function projectWithEditor(markdown: string): Promise<string> {
+async function projectWithEditor(markdown: string, production = false): Promise<string> {
   const html = await processMarkdownToHTML(markdown, { preserveAnchors: true });
-  const editor = new Editor({
-    element: document.createElement('div'),
-    extensions: [StarterKit],
-    content: html,
-  });
+  const element = document.createElement('div');
+  let options: Partial<EditorOptions>;
+  if (production) {
+    options = createEditorConfig({
+      element,
+      content: html,
+      editable: true,
+      onUpdate: () => {},
+      useMarkdown: true,
+    });
+    options.extensions = [...(options.extensions ?? []), CommentAnchor];
+  } else {
+    options = { element, extensions: [StarterKit], content: html };
+  }
+  const editor = new Editor(options);
   try {
     return docTextOffsets(editor.state.doc).text;
   } finally {
@@ -843,6 +858,130 @@ describe('alignment of link-shaped text the editor shows', () => {
   });
 });
 
+describe('alignment of link syntax the lexer does not account for', () => {
+  const LINK = '[render](https://sync/selection/editor)';
+  const FILLER = 'unchanged prose lines.\n\n';
+  /** The 128 KB the math tokenizers are lexed up to, comfortably exceeded. */
+  const PAST_CAP = 6700;
+
+  /**
+   * Every offset strictly inside the `plainIndex`-th occurrence of `needle` in
+   * `plain` maps to the same offset inside its `markdownIndex`-th occurrence in
+   * `markdown`, and back.
+   */
+  function expectExactRun(
+    plain: string,
+    markdown: string,
+    map: ReturnType<typeof createBidirectionalOffsetMapper>,
+    needle: string,
+    plainIndex: number,
+    markdownIndex: number,
+  ) {
+    const p = nthIndexOf(plain, needle, plainIndex);
+    const m = nthIndexOf(markdown, needle, markdownIndex);
+    expect(p, `${needle} in plain`).toBeGreaterThanOrEqual(0);
+    expect(m, `${needle} in markdown`).toBeGreaterThanOrEqual(0);
+    for (let into = 1; into < needle.length; into += 1) {
+      expect(map.aToB(p + into), `${needle}[${into}] →`).toBe(m + into);
+      expect(map.bToA(m + into), `${needle}[${into}] ←`).toBe(p + into);
+    }
+  }
+
+  function nthIndexOf(text: string, needle: string, n: number): number {
+    let at = -1;
+    for (let k = 0; k <= n; k += 1) {
+      at = text.indexOf(needle, at + 1);
+      if (at === -1) return -1;
+    }
+    return at;
+  }
+
+  it('hides the destination of a link on a heading a comment anchor precedes', async () => {
+    // As written the anchor makes the line an HTML block with no link token;
+    // the editor renders the heading (the anchor moved after its marker) and
+    // hides the destination.
+    const markdown = `intro\n\n<!--anchor:c:start-->## caret ${LINK} sync\n\n**sel**ection daemon<!--anchor:c:end-->`;
+    const plain = await projectWithEditor(markdown, true);
+    expect(plain).toBe('intro\n\uFFFCcaret render sync\nselection daemon\uFFFC');
+    const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    expectExactRun(plain, markdown, map, 'sync', 0, 1);
+    expectExactRun(plain, markdown, map, 'render', 0, 0);
+    expectExactRun(plain, markdown, map, 'daemon', 0, 0);
+  });
+
+  it('shows a link on a list item a comment anchor precedes as written', async () => {
+    // The anchor moves after the list marker, where it opens an HTML block
+    // the editor shows as written, link syntax included.
+    const markdown = `<!--anchor:c:start-->- caret ${LINK} sync\n- **sel**ection daemon<!--anchor:c:end-->`;
+    const plain = await projectWithEditor(markdown, true);
+    expect(plain).toBe(`\uFFFCcaret ${LINK} sync\nselection daemon\uFFFC`);
+    const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    expectExactRun(plain, markdown, map, LINK, 0, 0);
+    expectExactRun(plain, markdown, map, 'sync', 1, 1);
+    expectExactRun(plain, markdown, map, 'daemon', 0, 0);
+  });
+
+  it('shows a link inside an HTML block as written', async () => {
+    const markdown = `<div>caret ${LINK} sync</div>\n\n**sel**ection daemon`;
+    const plain = await projectWithEditor(markdown, true);
+    expect(plain).toBe(`caret ${LINK} sync\n **sel**ection daemon`);
+    const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    expectExactRun(plain, markdown, map, LINK, 0, 0);
+    expectExactRun(plain, markdown, map, 'sync', 1, 1);
+    expectExactRun(plain, markdown, map, 'daemon', 0, 0);
+  });
+
+  it.each<[string, (link: string) => string]>([
+    [
+      'at its start',
+      (link) => `caret ${link} sync\n\n**sel**ection daemon\n\n$x$\n\n${FILLER.repeat(PAST_CAP)}`,
+    ],
+    [
+      'past the cap',
+      (link) => `${FILLER.repeat(PAST_CAP)}caret ${link} sync\n\n**sel**ection daemon\n\n$x$\n\n`,
+    ],
+  ])(
+    'hides the destination of a link %s in a note with math past the lexing cap',
+    async (_where, note) => {
+      const markdown = note(LINK);
+      expect(markdown.length).toBeGreaterThan(128 * 1024);
+      const plain = await projectWithEditor(markdown, true);
+      expect(plain).not.toContain('](');
+      expect(plain).toContain('$x$');
+      const started = performance.now();
+      const map = createBidirectionalOffsetMapper(plain, markdown);
+      expect(map.aToB(1)).toBe(1);
+      const elapsed = performance.now() - started;
+      // Generous CI bound; the alignment itself takes tens of milliseconds.
+      expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
+      expectExactRun(plain, markdown, map, 'sync', 0, 1);
+      expectExactRun(plain, markdown, map, 'render', 0, 0);
+      expectExactRun(plain, markdown, map, 'daemon', 0, 0);
+      expectExactRun(plain, markdown, map, 'unchanged prose', 100, 100);
+      expectExactRun(plain, markdown, map, 'unchanged prose', PAST_CAP - 1, PAST_CAP - 1);
+    },
+    60_000,
+  );
+
+  // The reviewer's minimal repro of the unmasked note past the cap, with its
+  // two controls: the same filler below the cap, and above it without math.
+  it.each<[string, string, number]>([
+    ['math, past the cap', '$x$\n\n', 129 * 1024],
+    ['math, below the cap', '$x$\n\n', 127 * 1024],
+    ['no math, past the cap', '', 129 * 1024],
+  ])('hides the destination of a link in a note with %s', async (_case, math, filler) => {
+    const markdown = `caret ${LINK} sync\n\n**sel**ection daemon\n\n${math}${'q'.repeat(filler)}`;
+    const plain = await projectWithEditor(markdown, true);
+    expect(plain).not.toContain('](');
+    const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    expect([map.aToB(15), map.bToA(48)]).toEqual([48, 15]);
+    expect([map.aToB(20), map.bToA(56)]).toEqual([56, 20]);
+    expectExactRun(plain, markdown, map, 'sync', 0, 1);
+    expectExactRun(plain, markdown, map, 'render', 0, 0);
+    expectExactRun(plain, markdown, map, 'daemon', 0, 0);
+  });
+});
+
 describe('alignment of blocks that never anchor', () => {
   /** Every block of `a` is long enough to anchor, yet not four code units of it occur in `b`. */
   const unanchorable = (size: number): [string, string] => {
@@ -878,6 +1017,23 @@ describe('alignment of blocks that never anchor', () => {
     expect(aToB(0)).toBe(0);
   });
 
+  it('gives up on a 150 KB line of one-letter links inside the budget, mask included', () => {
+    // No four code units of the projection occur in the markdown, and its
+    // mask is the most expensive one a note this size has: a link per word.
+    // The projection is modelled: the editor's own takes a minute on this
+    // many links, and only the word of each survives it.
+    const links = Math.ceil((150 * 1024) / 7);
+    const markdown = '[x](u) '.repeat(links);
+    const plain = 'x '.repeat(links).trimEnd();
+    const started = performance.now();
+    const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
+    expect(aToB(0)).toBe(0);
+    const elapsed = performance.now() - started;
+    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(400);
+    expectMonotonic(aToB, plain.length, markdown.length, 1009);
+    expectMonotonic(bToA, markdown.length, plain.length, 1009);
+  }, 60_000);
+
   it('still anchors the blocks that do match after a run that does not', () => {
     const [a, b] = unanchorable(20 * 1024);
     const tail = 'A closing paragraph that both sides share verbatim.';
@@ -900,9 +1056,10 @@ describe('alignment over a corpus of small notes', () => {
    * formatting, URLs, fenced code, blank-line runs, soft wraps, unicode,
    * link-shaped text the editor shows (code spans, escapes, unresolved
    * references), text it hides (images, comment anchors, link definitions),
-   * and paragraphs repeated verbatim (formatted first, plain later). The
-   * atoms are the oracle: an offset strictly inside an atom shared by both
-   * sides must map to the same offset inside the same atom.
+   * inline math, comment anchors written before a block marker, and
+   * paragraphs repeated verbatim (formatted first, plain later). The atoms
+   * are the oracle: an offset strictly inside an atom shared by both sides
+   * must map to the same offset inside the same atom.
    */
   function generateSmallNote(seed: number): Atom[] {
     const rng = mulberry32(seed);
@@ -981,6 +1138,8 @@ describe('alignment over a corpus of small notes', () => {
         syntax(`<!--agent:${pick()}-${Math.floor(rng() * 1000)}-->`),
         shared(` ${pick()}`),
       ],
+      // Inline math is shown as written.
+      () => [shared(`${pick()} $${pick()}_${1 + Math.floor(rng() * 9)}$ ${pick()}`)],
       // A bare URL, and a link whose label is its own URL, show the URL once.
       () => [shared(`${pick()} ${url()} ${pick()}`)],
       () => {
@@ -1000,6 +1159,11 @@ describe('alignment over a corpus of small notes', () => {
       ...(rng() < 0.5 ? [shared('. '), ...sentence()] : []),
     ];
 
+    // A comment anchor written before a block marker; the editor renders the
+    // block with the anchor moved after the marker.
+    const anchorBefore = () =>
+      rng() < 0.3 ? `<!--anchor:c${Math.floor(rng() * 1000)}:start-->` : '';
+
     const blocks: Atom[][] = [];
     const plainParagraphs: string[] = [];
     const count = 3 + Math.floor(rng() * 6);
@@ -1007,8 +1171,16 @@ describe('alignment over a corpus of small notes', () => {
       const roll = rng();
       let block: Atom[];
       if (roll < 0.12)
-        block = [syntax('#'.repeat(1 + Math.floor(rng() * 3)) + ' '), shared(words(3))];
-      else if (roll < 0.22) {
+        block = [
+          syntax(anchorBefore() + '#'.repeat(1 + Math.floor(rng() * 3)) + ' '),
+          shared(words(3)),
+        ];
+      else if (roll < 0.17) {
+        // Behind the moved anchor, the item's line is an HTML block shown as
+        // written, so it holds plain words only.
+        block = [syntax(`<!--anchor:c${Math.floor(rng() * 1000)}:start-->- `), shared(words(3))];
+        block.push(['\n', '\n'], syntax('- '), ...paragraph());
+      } else if (roll < 0.22) {
         const lines = Array.from(
           { length: 1 + Math.floor(rng() * 3) },
           () => `${pick()} = ${pick()};`,
@@ -1027,7 +1199,7 @@ describe('alignment over a corpus of small notes', () => {
       const plain = block.map(([, p]) => p).join('');
       // A single-line paragraph's projection is itself valid markdown, as
       // long as the editor showed no `[` or `*` that would now be syntax.
-      if (!/[\n\uFFFC[*]/.test(plain) && !block[0][0].startsWith('#')) plainParagraphs.push(plain);
+      if (!/[\n\uFFFC[*]/.test(plain) && !/#+ $/.test(block[0][0])) plainParagraphs.push(plain);
       blocks.push(block);
     }
 
@@ -1035,8 +1207,13 @@ describe('alignment over a corpus of small notes', () => {
     blocks.forEach((block, index) => {
       if (index > 0) {
         const extra = rng() < 0.2 ? 1 + Math.floor(rng() * 2) : 0;
-        // Blank lines between two lists only make one loose list.
-        const listRun = block[0][0] === '- ' && blocks[index - 1][0][0] === '- ';
+        // Blank lines between two lists only make one loose list — unless
+        // more than one of them precedes a list a comment anchor is written
+        // before, which the editor renders as a list of its own.
+        const listRun =
+          block[0][0].endsWith('- ') &&
+          blocks[index - 1][0][0].endsWith('- ') &&
+          !(extra > 0 && block[0][0].startsWith('<!--anchor:'));
         atoms.push(['\n\n' + '\n'.repeat(extra), '\n' + (listRun ? '' : '\n'.repeat(extra))]);
       }
       atoms.push(...block);
@@ -1107,6 +1284,31 @@ describe('alignment over a corpus of small notes', () => {
     expect(checked).toBeGreaterThan(20_000);
     expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
   }, 240_000);
+
+  it('maps every interior offset exactly on a note with math past the lexing cap', async () => {
+    // Two generated notes around enough prose to pass the 128 KB the math
+    // tokenizers are lexed up to, with inline math so that they would be.
+    const atoms: Atom[] = [...generateSmallNote(1000), ['\n\n', '\n'], ['$x$', '$x$']];
+    while (atoms.reduce((n, [md]) => n + md.length, 0) <= 130 * 1024) {
+      atoms.push(['\n\n', '\n'], ['unchanged prose lines.', 'unchanged prose lines.']);
+    }
+    atoms.push(['\n\n', '\n'], ...generateSmallNote(1001));
+    const markdown = atoms.map(([md]) => md).join('');
+    const plain = await projectWithEditor(markdown);
+    expect(plain).toBe(atoms.map(([, p]) => p).join(''));
+    const started = performance.now();
+    const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
+    expect(aToB(1)).toBe(1);
+    const elapsed = performance.now() - started;
+    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
+    const failures: string[] = [];
+    for (const [p, m] of interiorPairs(atoms)) {
+      if (aToB(p) !== m || bToA(m) !== p) {
+        failures.push(`plain ${p}→${aToB(p)} (want ${m}), markdown ${m}→${bToA(m)} (want ${p})`);
+      }
+    }
+    expect(failures, failures.slice(0, 20).join('\n')).toEqual([]);
+  }, 120_000);
 });
 
 describe('alignment when the diff budget is exhausted', () => {

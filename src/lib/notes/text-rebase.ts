@@ -1,4 +1,5 @@
 import { diffArrays, diffChars } from 'diff';
+import { normalizeAnchorPositions } from '$lib/utils/anchor-normalization';
 import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
 
 /**
@@ -115,9 +116,10 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * next block matches only beyond textblocks the run does not account for.
  * The markdown the editor does not show — link destinations, images, link
  * definitions — is masked first (`maskHidden`) so that no search or diff
- * matches it.
- * The anchor loop and every diff share one deadline: past it, the remaining
- * text is emitted as one replaced span. A surrogate pair never straddles a
+ * matches it, and a markdown line with link syntax the mask did not account
+ * for is never anchored (`Mask.unanchorable`): its text reaches a diff only.
+ * The mask, the anchor loop and every diff share one deadline: past it, the
+ * remaining text is emitted as one replaced span. A surrogate pair never straddles a
  * span boundary: anchors, trimmed prefixes and tokens stop outside pairs and
  * jsdiff's `diffChars` treats a pair as one character.
  *
@@ -127,8 +129,8 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
 function anchoredHunks(from: string, markdown: string): Hunk[] {
   const out: Hunk[] = [];
   if (from === markdown) return out;
-  const to = maskHidden(markdown);
   const deadline = performance.now() + ALIGNMENT_BUDGET_MS;
+  const { text: to, unanchorable } = maskHidden(markdown);
   let fromPos = 0;
   let toPos = 0;
   let cursor = 0;
@@ -160,8 +162,10 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
       const skipped = new LineWalk(to, toPos);
       // The run's text lines are all ended before the text at `start`, and
       // its line holds the same letters before `start` as the markdown line
-      // holds before the hit (see `LineWalk`).
+      // holds before the hit (see `LineWalk`); a hit on a line the mask did
+      // not account for is declined.
       const hit = findAnchor(to, from.slice(start, end), toPos, limit, (candidate) => {
+        if (overlaps(unanchorable, candidate, candidate + (end - start))) return false;
         skipped.advanceTo(candidate);
         return skipped.lines >= run.lines && skipped.letters === run.letters;
       });
@@ -385,6 +389,7 @@ interface TextMap {
 
 /** Every hidden run — link destination, image, definition — sits after one of these. */
 const HIDEABLE = /\]\(|\]\[|\]:/;
+const HIDEABLE_ALL = /\]\(|\]\[|\]:/g;
 /** Every math token starts with one of these; without them the math tokenizers are inert. */
 const MATH_DELIMITER = /\$|\\[([]/;
 /**
@@ -394,11 +399,24 @@ const MATH_DELIMITER = /\$|\\[([]/;
  * without them a 1 MB note lexes in under 100 ms.
  */
 const MAX_MATH_LEXED_LENGTH = 128 * 1024;
+/** A comment anchor; the editor renders it where `normalizeAnchorPositions` moves it. */
+const COMMENT_ANCHOR = '<!--anchor:';
 
 type HiddenTextLexer = ReturnType<typeof createTiptapTaskListMarked>;
 const hiddenTextLexers: { math?: HiddenTextLexer; plain?: HiddenTextLexer } = {};
+
+/**
+ * The markdown as the alignment reads it: `text` with the hidden runs masked,
+ * and `unanchorable` the sorted, flattened `[start, end)` ranges of the lines
+ * of `text` that no anchor may land on.
+ */
+interface Mask {
+  text: string;
+  unanchorable: number[];
+}
+
 /** The last mask: the base text is aligned again each time the editor text changes. */
-let lastMask: { markdown: string; masked: string } | undefined;
+let lastMask: { markdown: string; mask: Mask } | undefined;
 
 /**
  * `markdown` with the text the editor does not show — the destination and
@@ -420,35 +438,57 @@ let lastMask: { markdown: string; masked: string } | undefined;
  * unmasked, and every range is checked against the source before it is
  * masked — a gap in the mapping costs a mask, never a visible character.
  *
- * Lexing is outside the alignment budget and memoised for the last markdown:
- * a source with nothing hideable in it (`HIDEABLE`) is not lexed at all, one
+ * The renderer parses the markdown with its comment anchors moved off the
+ * block markers they precede (`normalizeAnchorPositions`; a line keeps its
+ * length, so every offset after the swapped prefix stays put), and so does
+ * the lexer here: as written, `<!--anchor:…-->## a [b](c)` is an HTML block
+ * that holds no link token.
+ *
+ * The mask must never fall through to a visible destination. Once masked,
+ * an opener (`HIDEABLE`) not followed by a masked run — or by the closer of
+ * an empty destination — is link syntax the lexer read as something else: a
+ * code span, an escape, an unresolved reference, an HTML block whose text
+ * the editor shows as written, or a construct it has no token for. Its line
+ * is `unanchorable` (`unanchorableLines`): the anchor search declines every
+ * hit on it and the line's text reaches the bounded diff instead, which
+ * costs a longer diff on a visible code span, never a caret in a URL.
+ *
+ * Lexing counts against the alignment budget (`anchoredHunks` starts its
+ * deadline before it) and is memoised for the last markdown: a source with
+ * nothing hideable in it (`HIDEABLE`) is not lexed at all, one
  * without a math delimiter is lexed without the math tokenizers (same
  * tokens, linear time), and one with a delimiter is lexed as the renderer
- * does up to `MAX_MATH_LEXED_LENGTH` and left unmasked beyond it.
+ * does up to `MAX_MATH_LEXED_LENGTH` and without the math tokenizers beyond
+ * it — the same links, at the cost of masking link syntax inside a formula.
  */
-function maskHidden(markdown: string): string {
-  if (lastMask?.markdown === markdown) return lastMask.masked;
-  const masked = computeHiddenMask(markdown);
-  lastMask = { markdown, masked };
-  return masked;
+function maskHidden(markdown: string): Mask {
+  if (lastMask?.markdown === markdown) return lastMask.mask;
+  const text = computeHiddenMask(markdown);
+  const mask = { text, unanchorable: unanchorableLines(text) };
+  lastMask = { markdown, mask };
+  return mask;
 }
 
 function computeHiddenMask(markdown: string): string {
   if (!HIDEABLE.test(markdown)) return markdown;
-  const math = MATH_DELIMITER.test(markdown);
-  if (math && markdown.length > MAX_MATH_LEXED_LENGTH) return markdown;
+  const math = MATH_DELIMITER.test(markdown) && markdown.length <= MAX_MATH_LEXED_LENGTH;
+  let source = markdown;
+  if (markdown.includes(COMMENT_ANCHOR)) {
+    const normalized = normalizeAnchorPositions(markdown);
+    if (normalized.length === markdown.length) source = normalized;
+  }
   let tokens: LexedToken[];
   try {
     const lexer = math
       ? (hiddenTextLexers.math ??= createTiptapTaskListMarked())
       : (hiddenTextLexers.plain ??= createTiptapTaskListMarked({ math: false }));
-    tokens = lexer.lexer(markdown) as unknown as LexedToken[];
+    tokens = lexer.lexer(source) as unknown as LexedToken[];
   } catch {
     return markdown;
   }
   const top: TextMap = { text: joinRaw(tokens), lineStarts: [0], sourceStarts: [0] };
   // marked normalises line endings; a source it rewrote has no exact offsets.
-  if (top.text !== markdown) return markdown;
+  if (top.text !== source) return markdown;
   const ranges: Array<[number, number]> = [];
   collectHidden(tokens, top, 0, markdown, ranges);
   if (ranges.length === 0) return markdown;
@@ -461,6 +501,43 @@ function computeHiddenMask(markdown: string): string {
     pos = end;
   }
   return out + markdown.slice(pos);
+}
+
+/**
+ * The lines of `masked` that hold an opener the mask did not account for
+ * (see `maskHidden`), as sorted, flattened `[start, end)` ranges.
+ */
+function unanchorableLines(masked: string): number[] {
+  const lines: number[] = [];
+  HIDEABLE_ALL.lastIndex = 0;
+  let opener = HIDEABLE_ALL.exec(masked);
+  while (opener) {
+    const next = masked.charCodeAt(opener.index + 2);
+    const closer = opener[0] === '](' ? 41 : opener[0] === '][' ? 93 : -1;
+    if (next !== 0 && next !== closer) {
+      const start = masked.lastIndexOf('\n', opener.index) + 1;
+      if (lines[lines.length - 2] !== start) {
+        let end = masked.indexOf('\n', opener.index);
+        if (end === -1) end = masked.length;
+        lines.push(start, end);
+      }
+    }
+    opener = HIDEABLE_ALL.exec(masked);
+  }
+  return lines;
+}
+
+/** Whether `[start, end)` meets one of the flattened `ranges`. */
+function overlaps(ranges: number[], start: number, end: number): boolean {
+  let low = 0;
+  let high = ranges.length >> 1;
+  // The first range that ends after `start`.
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (ranges[2 * mid + 1] <= start) low = mid + 1;
+    else high = mid;
+  }
+  return low < ranges.length >> 1 && ranges[2 * low] < end;
 }
 
 function joinRaw(tokens: LexedToken[]): string {
