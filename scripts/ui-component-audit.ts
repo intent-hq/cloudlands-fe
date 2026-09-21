@@ -320,15 +320,28 @@ function buttonOpaqueBackgrounds(component: AST.Component): string[] {
   return [...classes].sort(sortText);
 }
 
+// `file:line:column: svelte parse error (code): diagnostic` for a `svelte/compiler` parse failure,
+// so an unparseable file fails the audit like any other finding instead of crashing the run.
+function parseFailure(file: string, error: unknown): string {
+  const compileError = error as {
+    message?: unknown;
+    code?: unknown;
+    start?: { line?: unknown; column?: unknown };
+  } | null;
+  const message = typeof compileError?.message === 'string' ? compileError.message : String(error);
+  const diagnostic = message.split('\n')[0] || 'unknown error';
+  const code = typeof compileError?.code === 'string' ? ` (${compileError.code})` : '';
+  const line = compileError?.start?.line;
+  const column = compileError?.start?.column;
+  const location =
+    typeof line === 'number' ? `:${line}${typeof column === 'number' ? `:${column + 1}` : ''}` : '';
+  return `${file}${location}: svelte parse error${code}: ${diagnostic}`;
+}
+
 // Every rendered `<Button>` component node in a Svelte file. Parsing (rather than regex over the
 // raw source) keeps HTML comments, `<script>`/`<style>` bodies, and string contents out of scope.
 function buttonComponents(file: string, source: string): AST.Component[] {
-  let root: AST.Root;
-  try {
-    root = parse(source, { modern: true, filename: file });
-  } catch (error) {
-    throw new Error(`${file}: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  const root: AST.Root = parse(source, { modern: true, filename: file });
   const components: AST.Component[] = [];
   const stack: unknown[] = [root.fragment];
   while (stack.length) {
@@ -351,11 +364,20 @@ function buttonComponents(file: string, source: string): AST.Component[] {
 
 export function buildButtonBackgroundAudit(root = projectRoot): ButtonBackgroundAudit {
   const findings: ButtonBackgroundFinding[] = [];
+  // A file the parser rejects cannot be audited, so it fails closed rather than being skipped.
+  const parseFailures: string[] = [];
   for (const absolute of walk(path.join(root, 'src')).filter(productionSvelteSource)) {
     const file = normalizedRelative(root, absolute);
     const source = fs.readFileSync(absolute, 'utf8');
     if (!source.includes('<Button')) continue;
-    for (const component of buttonComponents(file, source)) {
+    let components: AST.Component[];
+    try {
+      components = buttonComponents(file, source);
+    } catch (error) {
+      parseFailures.push(parseFailure(file, error));
+      continue;
+    }
+    for (const component of components) {
       const classes = buttonOpaqueBackgrounds(component);
       if (!classes.length) continue;
       const line = source.slice(0, component.start).split('\n').length;
@@ -363,13 +385,15 @@ export function buildButtonBackgroundAudit(root = projectRoot): ButtonBackground
     }
   }
   const ceiling = uiComponentGuardrails.buttonBackgroundOverrides;
-  const failures =
-    findings.length > ceiling
+  const failures = [
+    ...parseFailures,
+    ...(findings.length > ceiling
       ? findings.map(
           (finding) =>
             `${finding.file}:${finding.line}: <Button> without variant sets ${finding.classes.join(' ')}; Button paints its surface on an inner span that covers class-level backgrounds, so use variant="primary" (or another buttonVariants entry) instead of bg-* on Button`,
         )
-      : [];
+      : []),
+  ];
   return { count: findings.length, ceiling, findings, failures };
 }
 

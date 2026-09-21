@@ -410,6 +410,41 @@ describe('Button background override guard', () => {
     );
   });
 
+  it('fails closed on a Svelte file the parser rejects, naming the file and diagnostic instead of throwing', () => {
+    withFixtures(
+      {
+        'src/features/example/Broken.svelte': '<div>\n<Button class={>',
+        'src/features/example/Accept.svelte': '<Button class="bg-primary">Apply</Button>',
+      },
+      (root) => {
+        const audit = buildButtonBackgroundAudit(root);
+        expect(audit.findings).toEqual([
+          { file: 'src/features/example/Accept.svelte', line: 1, classes: ['bg-primary'] },
+        ]);
+        expect(audit.failures).toHaveLength(2);
+        expect(audit.failures[0]).toMatch(
+          /^src\/features\/example\/Broken\.svelte:2:16: svelte parse error \(js_parse_error\): Unexpected token$/,
+        );
+        expect(audit.failures[1]).toMatch(
+          /^src\/features\/example\/Accept\.svelte:1: <Button> without variant sets bg-primary/,
+        );
+
+        const report = runUiComponentAudit('button-backgrounds', root);
+        expect(report.exitCode).toBe(0);
+        expect(JSON.parse(report.stdout)).toMatchObject({ count: 1, failures: audit.failures });
+
+        const result = runUiComponentAudit('check', root);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(
+          'Broken.svelte:2:16: svelte parse error (js_parse_error): Unexpected token',
+        );
+        expect(result.stderr).toContain(
+          'Accept.svelte:1: <Button> without variant sets bg-primary',
+        );
+      },
+    );
+  });
+
   it('keeps the checked-in tree at the zero ceiling', () => {
     expect(buildButtonBackgroundAudit()).toMatchObject({ count: 0, ceiling: 0, failures: [] });
   });
