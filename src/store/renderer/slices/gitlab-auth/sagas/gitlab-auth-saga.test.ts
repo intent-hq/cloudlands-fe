@@ -93,6 +93,54 @@ function harness(seed = initialState) {
 describe('gitlabAuthSaga', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('verifier: a rejected stale authorized read cannot run completion fallback on a newer host', async () => {
+    let rejectOld!: (reason: Error) => void;
+    mocks.getStatus.mockImplementation((_provider: string, host?: string) =>
+      host === OTHER_HOST
+        ? new Promise((_resolve, reject) => {
+            rejectOld = reject;
+          })
+        : Promise.resolve({ ...UNCONFIGURED_STATUS, host: HOST }),
+    );
+    const run = harness();
+    try {
+      run.channel.put(gitlabAuthChanged('authorized', OTHER_HOST));
+      await settle();
+      run.channel.put(initializeGitLabAuth(HOST));
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false });
+      rejectOld(new Error('status unavailable'));
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
+  it('verifier: an old-host event during the new host read cannot cancel the requested selection', async () => {
+    let resolveNew!: (value: unknown) => void;
+    mocks.getStatus.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveNew = resolve;
+        }),
+    );
+    const run = harness();
+    try {
+      run.channel.put(initializeGitLabAuth(HOST));
+      await settle();
+      run.channel.put(gitlabAuthChanged('revoked', OTHER_HOST));
+      await settle();
+      resolveNew({ ...UNCONFIGURED_STATUS, host: HOST });
+      await settle();
+      expect(run.state()).toMatchObject({ host: HOST, isConfigured: false, user: null });
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it('initialize reads sourceControl.authStatus for the host and hydrates field by field', async () => {
     mocks.getStatus.mockResolvedValue(CONFIGURED_STATUS);
     const run = harness();

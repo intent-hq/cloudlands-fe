@@ -103,8 +103,13 @@ function* readStatus(host?: string): SagaGenerator<ForgeAuthStatus | null> {
  * drops its result when a newer intent has bumped it since — the slice then
  * belongs to that intent, and host comparison alone cannot tell a stale read
  * from a fresh one when both concern the same host.
+ *
+ * `host` is the instance the latest intent targets. It is recorded before the
+ * intent's daemon round trip, because the slice only learns a newly selected
+ * host once that read resolves — until then a daemon event for the previous
+ * host would still look like one for the selected host.
  */
-type IntentFence = { generation: number };
+type IntentFence = { generation: number; host: string | null };
 
 function bumpIntent(fence: IntentFence): number {
   fence.generation += 1;
@@ -113,6 +118,10 @@ function bumpIntent(fence: IntentFence): number {
 
 function superseded(fence: IntentFence, generation: number): boolean {
   return fence.generation !== generation;
+}
+
+function* intentHost(fence: IntentFence): SagaGenerator<string> {
+  return fence.host ?? (yield* selectGitLabAuthHost.effect());
 }
 
 type CompletionCheck = 'completed' | 'pending' | 'superseded';
@@ -139,6 +148,9 @@ function* checkAuthComplete(
     }
   } catch (error) {
     logger.error('GitLab auth completion check failed', error);
+    // A failed probe for a superseded intent must not trigger the caller's
+    // completion fallback on behalf of the newer one.
+    if (superseded(fence, generation)) return 'superseded';
   }
   return 'pending';
 }
@@ -211,10 +223,13 @@ function* initialize(
   generation: number,
 ): SagaGenerator<void> {
   try {
-    const target = host ?? (yield* selectGitLabAuthHost.effect());
+    const target = host ?? (yield* intentHost(fence));
+    fence.host = target;
     const status = yield* call(readStatus, host);
     if (!status || superseded(fence, generation)) return;
-    yield* put(setGitLabAuthStatus(statusPayload(status, target)));
+    const payload = statusPayload(status, target);
+    fence.host = payload.host;
+    yield* put(setGitLabAuthStatus(payload));
     // A pending grant is resumed so a settings remount or client refresh does
     // not drop the in-flight code.
     if (validPendingFlow(status.deviceFlow)) {
@@ -244,6 +259,7 @@ function* startDeviceAuth(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<void> {
+  fence.host = host;
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
@@ -304,6 +320,7 @@ function* connectWithToken(
   fence: IntentFence,
   generation: number,
 ): SagaGenerator<void> {
+  fence.host = host;
   yield* put(setGitLabHost(host));
   yield* put(setGitLabAuthenticating(true));
   try {
@@ -381,8 +398,10 @@ function* authChanged(
   status: ReturnType<typeof gitlabAuthChanged>['payload'][0],
   eventHost: string | undefined,
 ): SagaGenerator<void> {
-  const host = yield* selectGitLabAuthHost.effect();
-  // The daemon emits for every instance; only the selected one is reflected here.
+  const host = yield* intentHost(fence);
+  // The daemon emits for every instance; only the one the current intent
+  // targets is reflected here — an event for the host being left must not
+  // cancel a pending selection of the next one.
   if (!eventForHost(eventHost, host)) return;
   // A transition for the selected host outdates every read begun before it.
   const generation = bumpIntent(fence);
@@ -433,7 +452,7 @@ function* checkGitLabAuthStatusWorker(
   _action: ReturnType<typeof checkGitLabAuthStatus>,
 ): SagaGenerator<void> {
   // A focus re-check reads on behalf of the current intent; it is not a new one.
-  yield* call(checkAuthComplete, yield* selectGitLabAuthHost.effect(), fence, fence.generation);
+  yield* call(checkAuthComplete, yield* intentHost(fence), fence, fence.generation);
 }
 
 function* cancelGitLabAuthWorker(
@@ -459,7 +478,7 @@ function* gitlabAuthChangedWorker(
 }
 
 export function* gitlabAuthSaga(): SagaGenerator<void> {
-  const fence: IntentFence = { generation: 0 };
+  const fence: IntentFence = { generation: 0, host: null };
   // Only the latest initialize may hydrate: an older read (mount-time default
   // host) that resolved after a newer one would otherwise overwrite it.
   yield* takeLatest(initializeGitLabAuth, initializeGitLabAuthWorker, fence);
