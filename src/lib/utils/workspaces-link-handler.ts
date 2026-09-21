@@ -39,7 +39,7 @@ function invalidFormatError(): string {
 }
 
 export interface WorkspacesLinkInfo {
-  type: 'note' | 'task' | 'file' | 'message' | 'unknown';
+  type: 'note' | 'task' | 'file' | 'agent' | 'message' | 'unknown';
   orgId: string; // Reserved for future, currently "local"
   workspaceId?: string; // Target workspace ID (undefined = current workspace)
   resourceId: string; // noteId, messageId, or decoded workspace-relative file path
@@ -135,6 +135,16 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       resourceType = 'message';
       agentId = pathSegments[2];
       resourceId = pathSegments[4];
+    } else if (
+      rawSegments.length === 3 &&
+      rawSegments[1] === 'agent' &&
+      isValidRawIdSegment(rawSegments[0]) &&
+      isValidRawIdSegment(rawSegments[2])
+    ) {
+      workspaceId = decodeURIComponent(rawSegments[0]);
+      resourceType = 'agent';
+      agentId = decodeURIComponent(rawSegments[2]);
+      resourceId = agentId;
     } else if (pathSegments[0] === 'note' || pathSegments[0] === 'task') {
       // Short format: note/{note-id} or task/{note-id}
       resourceType = pathSegments[0];
@@ -206,9 +216,9 @@ export function parseIntentLink(url: string): WorkspacesLinkInfo {
       };
     }
 
-    if (resourceType === 'message' && workspaceId && agentId) {
+    if ((resourceType === 'message' || resourceType === 'agent') && workspaceId && agentId) {
       return {
-        type: 'message',
+        type: resourceType,
         orgId,
         workspaceId,
         resourceId,
@@ -319,6 +329,29 @@ export async function handleIntentLink(
           agentId: info.agentId!,
           messageId: info.resourceId,
         });
+        break;
+      }
+      case 'agent': {
+        const { workspaceId, agentId } = info;
+        if (!workspaceId || !agentId) break;
+        const { CHIEF_WORKSPACE_ID } = await import('$shared/types/branded-ids');
+        if (workspaceId === CHIEF_WORKSPACE_ID) {
+          const { setChiefActiveAgentId, openPanel } =
+            await import('$store/renderer/slices/sidebar-nav/sidebar-nav-slice');
+          const { setActiveAgentId } =
+            await import('$store/renderer/slices/workspace-agents/workspace-agents-slice');
+          appStore.dispatch(setChiefActiveAgentId(agentId));
+          appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
+          appStore.dispatch(openPanel('chief'));
+        } else {
+          if (workspaceId !== options.workspaceId) {
+            const { navigateToRoute } = await import('./navigation.client');
+            await navigateToRoute(`/workspace/${encodeURIComponent(workspaceId)}`);
+          }
+          const { openAgentTabRequested } =
+            await import('$store/renderer/slices/app-layout/app-layout-slice');
+          appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
+        }
         break;
       }
       default:

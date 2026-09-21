@@ -113,7 +113,6 @@ describe('parseIntentLink', () => {
     });
 
     it.each([
-      'intent://local/__chief__/agent/agent-chief-1',
       'intent://local/__chief__/agent/agent-chief-1/message',
       'intent://local/__chief__/agent/agent-chief-1/message/msg-source-1/extra',
     ])('rejects incomplete or malformed message link %s', (link) => {

@@ -1,5 +1,11 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "content_export_downloadMarkdown_label": "Descargar Markdown",
+  "content_export_copyInAppLink_label": "Copiar enlace interno de la aplicación",
+  "content_export_downloadFailed_error": "No se pudo descargar el Markdown",
+  "content_export_copyLoadedConversation_label": "Copiar el texto cargado de la conversación",
+  "content_export_downloadLoadedConversation_label": "Descargar el texto cargado como Markdown",
+  "content_export_copyLoadedDiagnostic_label": "Copiar la transcripción de diagnóstico cargada (sin procesar)",
   "sandbox_catalogScene_allStates_label": "Todos",
   "sandbox_catalogScene_stateHeading_title": "Estado: {state}",
   "error_page_title": "Algo salió mal",

@@ -108,6 +108,18 @@ describe('RawNoteCodeEditor', () => {
     });
   });
 
+  it('exposes the immediate unsaved draft only for its owning note', async () => {
+    const { component, rerender } = render(RawNoteCodeEditor, {
+      props: { workspaceId: 'ws-1', noteId: 'note-1', content: '# Heading' },
+    });
+    await fireEvent.input(screen.getByTestId('code-editor'), { target: { value: '# Draft\n' } });
+    expect(mockState.updateNoteContent).not.toHaveBeenCalled();
+    expect(component.getCurrentMarkdown('ws-1', 'note-1')).toBe('# Draft\n');
+    expect(component.getCurrentMarkdown('ws-2', 'note-1')).toBeUndefined();
+    await rerender({ workspaceId: 'ws-1', noteId: 'note-2', content: '# Second' });
+    expect(component.getCurrentMarkdown('ws-1', 'note-2')).toBeUndefined();
+  });
+
   // The draft is saved against the rev of the text it was typed on. A
   // note:updated refetch during the 1 s debounce advances the store; without
   // the base rev the write-service would send the refetched rev and the daemon

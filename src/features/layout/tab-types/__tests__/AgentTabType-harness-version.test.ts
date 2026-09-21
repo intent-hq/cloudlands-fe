@@ -13,6 +13,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import * as conversationExport from '$features/export/conversation-markdown';
 
 const mockState = vi.hoisted(() => {
   type Subscriber<T> = (value: T) => void;
@@ -39,11 +41,21 @@ const mockState = vi.hoisted(() => {
     presencePeople: store<unknown[]>([]),
     defaultModel: store('auggie:default'),
     dispatch: vi.fn(),
+    copy: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    download: vi.fn(),
     agents: store<Record<string, any>>({}),
     panels: {} as Record<string, any>,
     hiddenTabs: [] as any[],
   };
 });
+
+vi.mock('$lib/utils/clipboard', () => ({ writeTextToClipboard: mockState.copy }));
+vi.mock('$features/export/download-markdown', () => ({ downloadMarkdown: mockState.download }));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { success: mockState.success, error: mockState.error },
+}));
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
   default: (await import('$lib/components/chat/__tests__/mocks/SlotOnly.svelte')).default,
@@ -126,10 +138,8 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
   },
 }));
 vi.mock('$features/agent/browser', () => ({
-  subscribeToAgent: (agentId: string, run: (session: any) => void) => {
-    run(mockState.agents.get()[agentId]);
-    return () => {};
-  },
+  subscribeToAgent: (agentId: string, run: (session: any) => void) =>
+    mockState.agents.subscribe((agents) => run(agents[agentId])),
 }));
 vi.mock('$lib/utils/workspace-navigation', () => ({ navigateToNote: vi.fn() }));
 vi.mock('$lib/utils/clipboard-formatters', () => ({
@@ -155,13 +165,14 @@ function seedSession(overrides: Record<string, unknown> = {}) {
   });
 }
 
-function renderTab() {
+function renderTab(renderPrimary = false) {
   render(MockTabTypeHeaderHarness, {
     props: {
       component: AgentTabType,
       tab: { id: 'tab-1', type: 'agent', title: 'Agent', agentId: 'agent-1' },
       workspaceId: 'ws-1',
       isActive: true,
+      renderPrimary,
     },
   });
 }
@@ -171,6 +182,103 @@ async function openPanelActionsMenu() {
   await fireEvent.click(trigger);
   await screen.findByRole('menu');
 }
+
+describe('AgentTabType loaded conversation actions', () => {
+  beforeEach(() => {
+    mockState.copy.mockReset().mockResolvedValue(undefined);
+    mockState.download.mockReset();
+    mockState.success.mockClear();
+    mockState.error.mockClear();
+    mockState.agents.set({});
+  });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+  const messages = [
+    {
+      id: 'a',
+      role: 'assistant',
+      timestamp: '2026-09-21',
+      contentBlocks: [{ type: 'text', text: '## Answer\n\nHello' }],
+    },
+  ];
+
+  it('copies readable loaded text through the primary button and reports failures', async () => {
+    seedSession({ messages });
+    renderTab(true);
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Copy loaded conversation text' }),
+    );
+    await waitFor(() =>
+      expect(mockState.copy).toHaveBeenCalledWith('## Assistant\n\n## Answer\n\nHello'),
+    );
+    expect(mockState.success).toHaveBeenCalledOnce();
+    mockState.copy.mockRejectedValueOnce(new Error('denied'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy loaded conversation text' }));
+    await waitFor(() => expect(mockState.error).toHaveBeenCalledOnce());
+    expect(mockState.success).toHaveBeenCalledOnce();
+  });
+
+  it('serializes only on demand and copies the latest streamed text', async () => {
+    const serialize = vi.spyOn(conversationExport, 'conversationMarkdown');
+    seedSession({ messages });
+    renderTab(true);
+    const button = await screen.findByRole('button', { name: 'Copy loaded conversation text' });
+    expect(serialize).not.toHaveBeenCalled();
+    seedSession({
+      messages: [{ ...messages[0], contentBlocks: [{ type: 'text', text: 'Updated answer' }] }],
+    });
+    await tick();
+    expect(serialize).not.toHaveBeenCalled();
+    await fireEvent.click(button);
+    await waitFor(() =>
+      expect(mockState.copy).toHaveBeenCalledWith('## Assistant\n\nUpdated answer'),
+    );
+    expect(serialize).toHaveBeenCalledOnce();
+  });
+
+  it('copies an agent link and exports the same readable Markdown with an explicit loaded filename', async () => {
+    seedSession({ messages });
+    renderTab();
+    await openPanelActionsMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy in-app link' }));
+    await waitFor(() =>
+      expect(mockState.copy).toHaveBeenCalledWith('intent://local/ws-1/agent/agent-1'),
+    );
+    await openPanelActionsMenu();
+    await fireEvent.click(
+      screen.getByRole('menuitem', { name: 'Download loaded text as Markdown' }),
+    );
+    expect(mockState.download).toHaveBeenCalledWith(
+      '## Assistant\n\n## Answer\n\nHello',
+      'Harnessed Agent-loaded',
+    );
+  });
+
+  it.each(['loading', 'empty', 'system-only'])(
+    'disables content actions for %s history',
+    async (state) => {
+      if (state !== 'loading')
+        seedSession({ messages: state === 'empty' ? [] : [{ ...messages[0], role: 'system' }] });
+      renderTab(true);
+      expect(
+        (
+          (await screen.findByRole('button', {
+            name: 'Copy loaded conversation text',
+          })) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      await openPanelActionsMenu();
+      expect(
+        screen
+          .getByRole('menuitem', { name: 'Download loaded text as Markdown' })
+          .getAttribute('aria-disabled'),
+      ).toBe('true');
+      expect(mockState.copy).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe('AgentTabType harness version panel-actions menu item', () => {
   beforeEach(() => {

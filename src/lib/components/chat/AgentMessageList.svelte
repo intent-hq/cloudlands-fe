@@ -100,7 +100,7 @@
   }
 
   function handleCopy(content: string) {
-    navigator.clipboard.writeText(content);
+    // ChatMessage owns the clipboard write and feedback. This is notification only.
     onCopy?.(content);
   }
 

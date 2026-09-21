@@ -34,7 +34,11 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import SpecWritingOnboarding from '$lib/components/workspace/SpecWritingOnboarding.svelte';
   import { Button } from '$lib/components/ui/button';
-  import { withToastCountdown } from '$lib/components/patterns/notify';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import { notify, withToastCountdown } from '$lib/components/patterns/notify';
+  import { writeTextToClipboard } from '$lib/utils/clipboard';
+  import { noteUrl } from '$shared/constants/intent-links';
+  import { downloadMarkdown } from '$features/export/download-markdown';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Menu from '$lib/components/ui/menu';
   import OpenComboButton from '$features/external-editors/components/OpenComboButton.svelte';
@@ -45,7 +49,14 @@
   import { saveScrollPosition } from '$store/renderer/slices/tab-state/tab-state-slice';
 
   import Fa from 'svelte-fa';
-  import { faCheck, faCopy, faNoteSticky, faTrash } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faCheck,
+    faCopy,
+    faDownload,
+    faLink,
+    faNoteSticky,
+    faTrash,
+  } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
   import NoteContentSurface, { type NoteContentState } from './NoteContentSurface.svelte';
@@ -62,16 +73,14 @@
   const scrollPositions = selectAllScrollPositions();
   const scrollPosition = $derived($scrollPositions[tab.id]);
 
-  // svelte-ignore state_referenced_locally
-  const note = selectNoteById(workspaceId, tab.noteId);
-  // svelte-ignore state_referenced_locally
-  const notesState = selectWorkspaceNotesState(workspaceId);
   // svelte-ignore state_referenced_locally - initial selector target; effects below retarget on prop changes
   const noteViewWorkspaceIdStore = writable(workspaceId);
   // svelte-ignore state_referenced_locally - initial selector target; effects below retarget on prop changes
   const noteViewNoteIdStore = writable(tab.noteId ?? '');
   $effect(() => noteViewWorkspaceIdStore.set(workspaceId));
   $effect(() => noteViewNoteIdStore.set(tab.noteId ?? ''));
+  const note = selectNoteById(noteViewWorkspaceIdStore, noteViewNoteIdStore);
+  const notesState = selectWorkspaceNotesState(noteViewWorkspaceIdStore);
   const noteViewModeStore = selectNoteViewMode(noteViewWorkspaceIdStore, noteViewNoteIdStore);
   const noteViewMode = $derived($noteViewModeStore);
 
@@ -82,6 +91,12 @@
   let noteCopyFeedback = $state<string | null>(null);
   let noteCopyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let isNoteDeleting = $state(false);
+  let noteEditorRef = $state<{
+    getCurrentMarkdown?: (workspaceId: string, noteId: string) => string | undefined;
+  } | null>(null);
+  const canExportNote = $derived(
+    !!$note && $note.id === tab.noteId && $note.workspaceId === workspaceId && !noteContentStale,
+  );
 
   onDestroy(() => {
     if (noteCopyTimeoutId) {
@@ -191,10 +206,11 @@
   }
 
   async function handleCopyNote() {
-    if (!$note) return;
+    if (!canExportNote) return;
     try {
-      await navigator.clipboard.writeText($note.content || '');
+      await writeTextToClipboard(currentMarkdown());
       noteCopyFeedback = m.layout_noteTab_copiedFullNote_label();
+      notify.success(noteCopyFeedback);
       if (noteCopyTimeoutId) clearTimeout(noteCopyTimeoutId);
       noteCopyTimeoutId = setTimeout(() => {
         noteCopyFeedback = null;
@@ -202,6 +218,31 @@
       }, 2000);
     } catch (error) {
       logger.error('Failed to copy note', error);
+      noteCopyFeedback = null;
+      notify.error(m.layout_panelTabBar_copyFailed_error());
+    }
+  }
+
+  function currentMarkdown(): string {
+    return noteEditorRef?.getCurrentMarkdown?.(workspaceId, tab.noteId!) ?? $note?.content ?? '';
+  }
+
+  async function handleCopyNoteLink() {
+    if (!tab.noteId) return;
+    try {
+      await writeTextToClipboard(noteUrl(tab.noteId, workspaceId));
+      notify.success(m.layout_panelTabBar_copied_label());
+    } catch {
+      notify.error(m.layout_panelTabBar_copyFailed_error());
+    }
+  }
+
+  function handleDownloadNote() {
+    if (!canExportNote) return;
+    try {
+      downloadMarkdown(currentMarkdown(), $note!.title);
+    } catch {
+      notify.error(m.content_export_downloadFailed_error());
     }
   }
 
@@ -269,7 +310,7 @@
   $effect(() => {
     if (!headerContext || !isActive) return;
     headerContext.registerActions({
-      primary: showPresenceStack ? notePrimaryActions : undefined,
+      primary: notePrimaryActions,
       display: noteDisplayActions,
       actions: noteActions,
     });
@@ -277,9 +318,20 @@
 </script>
 
 {#snippet notePrimaryActions()}
-  {#if tab.noteId}
+  {#if showPresenceStack && tab.noteId}
     <NotePresenceAvatarStack {workspaceId} noteId={tab.noteId} />
   {/if}
+  <Tooltip content={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()} side="bottom">
+    <Button
+      variant="ghost"
+      size="icon-compact"
+      aria-label={m.layout_noteTab_copyFullNote_tooltip()}
+      disabled={!canExportNote}
+      onclick={handleCopyNote}
+    >
+      <Fa icon={noteCopyFeedback ? faCheck : faCopy} />
+    </Button>
+  </Tooltip>
 {/snippet}
 
 {#snippet noteDisplayActions()}
@@ -293,6 +345,19 @@
     icon={noteCopyFeedback ? faCheck : faCopy}
     label={noteCopyFeedback || m.layout_noteTab_copyFullNote_tooltip()}
     onclick={handleCopyNote}
+    disabled={!canExportNote}
+  />
+  <Menu.CommandItem
+    icon={faLink}
+    label={m.content_export_copyInAppLink_label()}
+    onclick={handleCopyNoteLink}
+    disabled={!tab.noteId}
+  />
+  <Menu.CommandItem
+    icon={faDownload}
+    label={m.content_export_downloadMarkdown_label()}
+    onclick={handleDownloadNote}
+    disabled={!canExportNote}
   />
   {#if noteFilePath}
     <OpenComboButton filePath={noteFilePath} {workspaceId} isDirectory={false} embedded />
@@ -348,6 +413,7 @@
       />
     {:else if $workspace}
       <NoteWithComments
+        bind:this={noteEditorRef}
         workspace={$workspace}
         noteId={tab.noteId}
         editable={noteEditable}

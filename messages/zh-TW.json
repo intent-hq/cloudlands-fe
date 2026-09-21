@@ -1,5 +1,11 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
+  "content_export_downloadMarkdown_label": "下載 Markdown",
+  "content_export_copyInAppLink_label": "複製應用程式內連結",
+  "content_export_downloadFailed_error": "無法下載 Markdown",
+  "content_export_copyLoadedConversation_label": "複製已載入的對話文字",
+  "content_export_downloadLoadedConversation_label": "將已載入的文字下載為 Markdown",
+  "content_export_copyLoadedDiagnostic_label": "複製已載入的診斷對話記錄（原始內容）",
   "sandbox_catalogScene_allStates_label": "全部",
   "sandbox_catalogScene_stateHeading_title": "狀態：{state}",
   "error_page_title": "出錯了",

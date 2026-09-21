@@ -613,6 +613,34 @@ describe('NoteWithComments task conversion regression', () => {
     await tick();
   }
 
+  it('exports current rich-editor text before debounce without leaking it into another note', async () => {
+    replaceNotes([createNote('baseline', 'Baseline', 'Baseline content')]);
+    const view = await renderInitializedNote();
+    const editor = (view.container.querySelector('.ProseMirror') as any).editor;
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(1200);
+    mockUpdateNoteContent.mockClear();
+    editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
+    expect(view.component.getCurrentMarkdown(WORKSPACE_ID, 'baseline')).toBe(
+      'Baseline content local',
+    );
+    expect(mockUpdateNoteContent).not.toHaveBeenCalled();
+    expect(view.component.getCurrentMarkdown('another-workspace', 'baseline')).toBeUndefined();
+
+    const pending = deferMarkdownConversion('Next note');
+    replaceNotes([createNote('next', 'Next', 'Next note')]);
+    await view.rerender({
+      workspace: { id: WORKSPACE_ID } as any,
+      noteId: 'next',
+      content: 'Next note',
+      editable: true,
+    });
+    expect(view.component.getCurrentMarkdown(WORKSPACE_ID, 'next')).toBe('Next note');
+    expect(view.component.getCurrentMarkdown(WORKSPACE_ID, 'baseline')).toBeUndefined();
+    pending.resolve('<p>Next note</p>');
+    await flushConversionCompletion();
+  });
+
   it('keeps the newest note when conversions complete in reverse order', async () => {
     const view = await renderInitializedNote();
     const editorElement = view.container.querySelector('.ProseMirror') as HTMLElement;
