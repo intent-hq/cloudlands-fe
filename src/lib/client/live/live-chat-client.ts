@@ -28,6 +28,10 @@
  * subscribe reply are buffered pre-ack and replayed. The §6.9 invariant: the
  * seq-0 snapshot reduced with every delta — honoring `removedIds` — equals a
  * fresh `agent.getConversation` snapshot.
+ * Empty terminal marker rows are the §7.1 exception: there is no block to
+ * carry their seq/metadata. An observed `agent:stream:end` for such a row
+ * requests a full snapshot through the same recovery path, never a fabricated
+ * block or timestamp-derived ordering.
  */
 import {
   MESSAGE_ROLES,
@@ -720,6 +724,9 @@ export class LiveChatClient implements ChatClient {
     let sawSnapshot = false;
     // Gap seen: deltas are ignored until the recovery snapshot lands.
     let awaitingResnapshot = false;
+    // Terminal markers arriving during a snapshot read coalesce into one
+    // trailing refresh: that in-flight read may predate their persistence.
+    let markerRefreshPending = false;
     // Pre-ack buffer: pushes that raced the subscribe reply are held and
     // replayed once the registration resolves to their id.
     let buffered: ChatPush[] = [];
@@ -802,6 +809,10 @@ export class LiveChatClient implements ChatClient {
             reconcilerResult: 'duplicate',
             callbackResult: 'not-invoked',
           });
+        }
+        if (markerRefreshPending) {
+          markerRefreshPending = false;
+          resnapshot();
         }
       } else if (!awaitingResnapshot) {
         const outcome = reconciler.applyDelta(
@@ -948,13 +959,56 @@ export class LiveChatClient implements ChatClient {
     };
 
     const resnapshot = (): void => {
-      if (awaitingResnapshot) return;
+      if (disposed || awaitingResnapshot) return;
       restartRegistration();
     };
 
     const off = onBackendNotification((n) => {
       const push = parseChatPush(n.method, n.params);
-      if (push) processPush(push);
+      if (push) {
+        processPush(push);
+        return;
+      }
+      // The app's firehose already subscribes to these events. Read only the
+      // persisted message identity here; the snapshot remains the sole writer
+      // of canonical content, sequence, metadata and liveness.
+      // Unlike the app's event router, this invalidation-only listener owns no
+      // events lease: any delivery for this agent on the shared connection is
+      // a hint. Overlapping leases coalesce during recovery; once canonical,
+      // the row guard below ignores their duplicate terminal notifications.
+      if (disposed || n.method !== 'events.event' || !isRecord(n.params)) return;
+      const event = isRecord(n.params.event) ? n.params.event : n.params;
+      if (event.type !== 'agent:stream:end' || !isRecord(event.data)) return;
+      const data = event.data;
+      if (
+        data.agentId !== agentId ||
+        typeof data.messageId !== 'string' ||
+        data.messageId.length === 0 ||
+        (data.stopReason !== 'interrupted' && typeof data.finishReason !== 'string')
+      )
+        return;
+      const message = reconciler.transcript().messages.find((row) => row.id === data.messageId);
+      // Content-bearing turns reconcile normally. A sequenced, settled empty
+      // row has already arrived in a snapshot, including duplicate fan-out.
+      if (
+        message &&
+        ((message.contentBlocks?.length ?? 0) > 0 ||
+          (message.seq !== undefined &&
+            message.isStreaming !== true &&
+            message.streamingComplete !== false))
+      )
+        return;
+      if (
+        !sawSnapshot ||
+        awaitingResnapshot ||
+        subscriptionId === undefined ||
+        snapshotTimer !== undefined ||
+        retrying
+      ) {
+        markerRefreshPending = true;
+      } else {
+        resnapshot();
+      }
     });
 
     // Reconnect: the daemon dropped its subscription registry on restart, so
