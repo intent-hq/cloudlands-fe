@@ -2189,6 +2189,7 @@
   "chat_modelPicker_defaultModel_label": "기본 모델",
   "chat_modelPicker_effort_label": "노력 수준: {levels}",
   "chat_modelPicker_groupModels_ariaLabel": "{group} 모델",
+  "chat_modelPicker_guestLocked_title": "워크스페이스 소유자만 모델을 변경할 수 있습니다.",
   "chat_modelPicker_installAuggieHint_label": "\"npm install -g @augmentcode/auggie\"로 설치하거나 Auggie 설정 흐름을 사용하세요.",
   "chat_modelPicker_installCliHint_label": "{provider} CLI를 설치하고 \"{command}\"가 PATH에 있는지 확인하세요.",
   "chat_modelPicker_installCodex_description": "Codex CLI를 설치하면 사용 가능한 모든 모델을 볼 수 있습니다.",

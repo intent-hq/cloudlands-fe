@@ -72,9 +72,10 @@
   />
   <Button
     type="button"
+    variant="primary"
     onclick={handleSend}
     disabled={!message.trim() || isSending}
-    class="h-8 w-8 flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    class="h-8 w-8 p-0"
   >
     {#if isSending}
       <IntentMarkLoader size={14} />
