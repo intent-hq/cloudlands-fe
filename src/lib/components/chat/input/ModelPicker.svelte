@@ -796,6 +796,9 @@
         // rejecting cross-provider picks.
         const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
         const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
+        // The role may have changed while the RPC was in flight; the reasoning
+        // reconciliation below issues further mutations, so stop here if locked.
+        if (isGuestLocked) return;
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
           const targetOption = flatModelOptions.find(

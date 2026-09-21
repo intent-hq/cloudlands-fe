@@ -666,6 +666,40 @@ describe('ModelPicker guest / collaborator lock', () => {
 
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
   });
+
+  it('role flips to collaborator while setModel is in flight: reasoning reconciliation does not run', async () => {
+    const { agentClient } = await import('$features/agent/agent.client');
+    withWorkspaceRole('owner');
+    twoModelCatalog();
+    let resolveSetModel!: (result: { ok: true; data: { success: true } }) => void;
+    vi.mocked(agentClient.setModel).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveSetModel = resolve)),
+    );
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'auggie:sonnet4.6',
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        updateGlobalStore: true,
+        portal: false,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(await screen.findByRole('option', { name: /Opus 4\.7/ }));
+    await waitFor(() => {
+      expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledTimes(1);
+    });
+
+    await flipToCollaborator();
+
+    resolveSetModel({ ok: true, data: { success: true } });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(reconcileAgentReasoningEffortMock).not.toHaveBeenCalled();
+    expect(vi.mocked(agentClient.setModel)).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('ModelPicker legacy Auggie models', () => {
