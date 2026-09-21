@@ -1,5 +1,5 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, cancelled, put, race, take, takeEvery } from 'typed-redux-saga';
+import { all, call, cancelled, delay, fork, put, race, take, takeEvery } from 'typed-redux-saga';
 
 import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import { staleRuntimeFlagClearUpsertOptions } from '$features/agent/utils/stale-runtime-flag-clear';
@@ -122,8 +122,15 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '../../workspace/workspace-slice';
-import { selectWorkspaceById } from '../../workspace/workspace-selectors';
-import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
+import {
+  selectWorkspaceById,
+  selectWorkspaceListLoadedForBackend,
+} from '../../workspace/workspace-selectors';
+import {
+  backendReconnected,
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 import {
   createWorkspaceReadScheduler,
   type WorkspaceReadScheduler,
@@ -139,6 +146,20 @@ const logger = createLogger('LifecycleReadSaga');
 const PR_STATUS_REFRESH_TTL_MS = 60_000;
 /** Initial/latest page size; pages arrive newest→oldest and are stored oldest→newest. */
 const EVENTS_PAGE_LIMIT = 100;
+/**
+ * Backoff for a `workspace.list` that fails before the list has ever loaded
+ * for the active backend (e.g. the guest's tailcat tunnel is not up at boot).
+ * Later attempts wait `WORKSPACE_LIST_RETRY_CAP_MS`.
+ */
+const WORKSPACE_LIST_RETRY_DELAYS_MS = [1_000, 2_000, 5_000];
+const WORKSPACE_LIST_RETRY_CAP_MS = 15_000;
+/**
+ * Message of the daemon's `-32003 Forbidden` envelope. The workspace IPC
+ * bridge flattens daemon errors to their message string, so this is the only
+ * field the renderer can key the refusal off when it arrives via
+ * `workspaceClient`.
+ */
+const FORBIDDEN_ERROR_MESSAGE = 'Forbidden';
 
 function matchesWorkspaceCleanup(workspaceId: string) {
   return (action: { type: string; payload?: unknown }) =>
@@ -746,11 +767,55 @@ function* refreshTerminals(workspaceId: string): SagaGenerator<void> {
   );
 }
 
+/**
+ * A `-32003 Forbidden` refusal is a stable answer: retrying gets the same
+ * response until the client reconnects under a different credential.
+ */
+function isStableWorkspaceListFailure(error: unknown): boolean {
+  if (isForbiddenErrorResponse(error)) return true;
+  return error instanceof Error && error.message === FORBIDDEN_ERROR_MESSAGE;
+}
+
+/**
+ * Until the list has loaded for the active backend, a failed `workspace.list`
+ * is retried with bounded backoff from inside the single-flight worker, so
+ * the trailing-coalesce guarantee holds and reads never fan out. A
+ * `backendReconnected` during the wait ends the loop early: the reconnect
+ * watcher re-puts `loadWorkspacesRequested`, which either queues as this
+ * worker's trailing rerun or starts a fresh one — one immediate read either
+ * way. Once loaded, a later failure is logged only.
+ */
 function* loadWorkspacesWorker() {
-  try {
-    yield* refreshWorkspaces();
-  } catch (error) {
-    logger.error('Refresh failed for workspaces', error);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      yield* refreshWorkspaces();
+      return;
+    } catch (error) {
+      const backendId = yield* selectActiveBackendId();
+      const loaded = yield* selectWorkspaceListLoadedForBackend.effect(backendId);
+      if (loaded || isStableWorkspaceListFailure(error)) {
+        logger.error('Refresh failed for workspaces', error);
+        return;
+      }
+      const delayMs = WORKSPACE_LIST_RETRY_DELAYS_MS[attempt] ?? WORKSPACE_LIST_RETRY_CAP_MS;
+      logger.warn('Refresh failed for workspaces; retrying', { attempt, delayMs, error });
+      const { reconnected } = yield* race({
+        timeout: delay(delayMs),
+        reconnected: take(backendReconnected),
+      });
+      if (reconnected) return;
+    }
+  }
+}
+
+/**
+ * A transport that was down at boot (guest tunnel) or dropped mid-session
+ * re-requests the list once it is back; the single-flight worker coalesces it.
+ */
+function* backendReconnectWorkspacesWatcher(): SagaGenerator<void> {
+  while (true) {
+    yield* take(backendReconnected);
+    yield* put(loadWorkspacesRequested());
   }
 }
 
@@ -1000,6 +1065,7 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
       // acquisition both re-request the list (coalesced by the worker above).
       takeEveryFromWindowEvent('focus', windowFocusReconcileWorker),
       takeEvery(consoleOwnerChanged, consoleOwnerReconcileWorker),
+      fork(backendReconnectWorkspacesWatcher),
       takeSingleFlightInContext(
         [ensureWorkspaceTasksLoaded, loadWorkspaceTasksRequested, workspaceUnmounted],
         (action) => tasksReadContext(pendingForcedTaskReads, action),

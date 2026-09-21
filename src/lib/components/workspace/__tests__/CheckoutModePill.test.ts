@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   diskUsage: vi.fn(),
   settingsGet: vi.fn(),
   selectWorkspaceItems: vi.fn(() => [] as Array<{ cowSupported?: boolean }>),
+  hidesAgentLifecycleActions: false,
 }));
 
 vi.mock('../shrink-workspace-action', () => ({
@@ -66,6 +67,12 @@ vi.mock('$store/renderer/store', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: { select: mocks.selectWorkspaceItems },
+  selectHidesAgentLifecycleActions: () => ({
+    subscribe: (fn: (v: boolean) => void) => {
+      fn(mocks.hidesAgentLifecycleActions);
+      return () => {};
+    },
+  }),
 }));
 
 /** Flush the on-open fetch: dynamic import + client promise + re-render. */
@@ -714,5 +721,22 @@ describe('CheckoutModePill', () => {
 
     expect(mocks.runShrinkWorkspaceAction).toHaveBeenCalledOnce();
     expect(mocks.runShrinkWorkspaceAction).toHaveBeenCalledWith(workspace);
+  });
+
+  it('withholds the shrink link (it launches an agent) when agent lifecycle actions are hidden', async () => {
+    mocks.hidesAgentLifecycleActions = true;
+    try {
+      const workspace = { ...baseWorkspace, checkoutMode: 'cow' } as Workspace;
+      const { container } = await renderPill({ workspace });
+      await flushFetch();
+
+      expect(container.querySelector('[data-checkout-mode-details]')?.textContent).toContain(
+        'Total size: 2.17Gi',
+      );
+      expect(screen.queryByRole('button', { name: 'Try to shrink this workspace' })).toBeNull();
+      expect(mocks.runShrinkWorkspaceAction).not.toHaveBeenCalled();
+    } finally {
+      mocks.hidesAgentLifecycleActions = false;
+    }
   });
 });

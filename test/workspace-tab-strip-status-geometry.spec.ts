@@ -21,7 +21,8 @@ const virtualModules: Record<string, string> = {
   '$lib/components/ui/tooltip': `
     import Tooltip from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceTooltipRich.svelte';
     export const TooltipRich = Tooltip;
-    export const TooltipShortcut = Tooltip;`,
+    export const TooltipShortcut = Tooltip;
+    export { Tooltip };`,
   '$lib/components/workspace/WorkspaceHoverCard.svelte': `
     export { default } from '/src/lib/components/layout/__tests__/mocks/MockWorkspaceHoverCard.svelte';`,
   '$lib/components/workspace/utils/workspace-tab-status-presentation': `
@@ -67,6 +68,15 @@ const virtualModules: Record<string, string> = {
     export const selectWorkspaceItems = Object.assign(
       () => readable(() => globalThis.__workspaceTabScenario.workspaces),
       { select: () => globalThis.__workspaceTabScenario.workspaces },
+    );`,
+  '$store/renderer/slices/presence/presence-selectors': `
+    const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
+    export const selectPresenceRosters = () => readable(() => ({}));
+    export const selectPresenceMembers = () => readable(() => ({}));
+    export const selectPresenceOwnPrincipalId = () => readable(() => null);
+    export const selectWorkspacePresencePeople = Object.assign(
+      () => readable(() => []),
+      { select: () => [] },
     );`,
   '$store/renderer/slices/hud/hud-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });

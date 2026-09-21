@@ -104,6 +104,7 @@ import {
 // Import consolidated AgentMessage type
 import type {
   AgentMessage,
+  MessageAuthor,
   MessageMetadata,
   MessageRole,
   ProviderMessage,
@@ -203,7 +204,15 @@ export {
   toProviderMessage,
   MESSAGE_ROLES,
 };
-export type { AgentMessage, MessageMetadata, MessageRole, ProviderMessage, ToolCall, ToolResult };
+export type {
+  AgentMessage,
+  MessageAuthor,
+  MessageMetadata,
+  MessageRole,
+  ProviderMessage,
+  ToolCall,
+  ToolResult,
+};
 
 // Re-export SuggestedPrompt types and helpers
 export type { SuggestedPrompt, SuggestedPromptsEvent } from './types/suggested-prompt';

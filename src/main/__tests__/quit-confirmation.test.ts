@@ -72,8 +72,14 @@ const fake = vi.hoisted(() => {
     }
 
     async request(method: string): Promise<unknown> {
-      if (method === 'workspace.list') return { workspaces: [{ id: 'ws-9' }] };
-      return { agents: [{ id: 'agent-9', name: 'Probe worker', isResponding: true }] };
+      if (method === 'agent.listActive') {
+        return {
+          streams: [
+            { agentId: 'agent-9', sessionId: 'agent-9', workspaceId: 'ws-9', startTime: 0 },
+          ],
+        };
+      }
+      return { agent: { id: 'agent-9', name: 'Probe worker', isResponding: true } };
     }
 
     dispose(): void {

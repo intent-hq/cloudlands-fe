@@ -750,6 +750,13 @@ export function setupSystemIPC() {
     ),
   );
 
+  // Closes the SENDER's window (a renderer action such as the guest-offline
+  // overlay's "Close window"), not whichever window happens to be focused.
+  // When it is the app's last live window a local window is opened first —
+  // the same guard the forget / leave-host paths use — so closing a remote
+  // window never enters the window-all-closed / quit path. The pooled client
+  // for a backend whose last window closed is disposed by the registered
+  // last-window-closed handler (main/window.ts), not here.
   ipcMain.handle(
     WINDOW_CHANNELS.CLOSE,
     createSafeValidatedHandler(
@@ -757,7 +764,18 @@ export function setupSystemIPC() {
       async (event) => {
         const window =
           BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
-        if (window) {
+        if (!window || window.isDestroyed()) {
+          return { success: true };
+        }
+        const { ensureLocalWindowBeforeClosingBackend, getBackendIdForWindow } =
+          await import('../../../main/window');
+        const survivors = BrowserWindow.getAllWindows().filter(
+          (other) => other !== window && !other.isDestroyed(),
+        );
+        if (survivors.length === 0) {
+          await ensureLocalWindowBeforeClosingBackend(getBackendIdForWindow(window));
+        }
+        if (!window.isDestroyed()) {
           window.close();
         }
         return { success: true };

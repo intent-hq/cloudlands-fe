@@ -6,16 +6,6 @@
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-  import {
-    selectShareDialogOpen,
-    selectShareWorkspaceId,
-    selectWorkspaceRosterMembers,
-    selectWorkspaceRosterRemovingPrincipalId,
-  } from '$store/renderer/slices/workspace-share/workspace-share-selectors';
-  import {
-    shareRosterLoaded,
-    shareRosterRequested,
-  } from '$store/renderer/slices/workspace-share/workspace-share-slice';
 
   let { scenario = 'default' }: { scenario?: string } = $props();
 
@@ -40,51 +30,14 @@
     memberCount: 2,
   };
   appStore.dispatch(setWorkspaceEntity(workspace));
-  appStore.dispatch(shareRosterRequested({ workspaceId }));
-  appStore.dispatch(
-    shareRosterLoaded({
-      workspaceId,
-      members: [
-        {
-          principalId: 'p-alice',
-          login: 'alice',
-          displayName: 'Alice',
-          avatarUrl: null,
-          role: 'owner',
-          addedAt: '2026-09-01T00:00:00Z',
-        },
-        {
-          principalId: 'p-bob',
-          login: 'bob',
-          displayName: null,
-          avatarUrl: null,
-          role: 'collaborator',
-          addedAt: '2026-09-02T00:00:00Z',
-        },
-      ],
-    }),
-  );
-
-  const dialogOpen$ = selectShareDialogOpen();
-  const dialogWorkspaceId$ = selectShareWorkspaceId();
-  const members$ = selectWorkspaceRosterMembers(workspaceId);
-  const removingPrincipalId$ = selectWorkspaceRosterRemovingPrincipalId(workspaceId);
 </script>
 
-<output
-  data-share-hover-state
-  data-dialog-open={String($dialogOpen$)}
-  data-dialog-workspace-id={$dialogWorkspaceId$ ?? ''}
-  data-member-count={$members$.length}
-  data-removing-principal-id={$removingPrincipalId$ ?? ''}
-></output>
 <div
   class="flex items-start bg-sidebar p-6 text-sidebar-foreground"
   style:width="900px"
   style:height="400px"
 >
-  <!-- First in DOM order so Tab from the row still reaches the portaled card;
-       laid out top-right, away from the pointer parking spot. -->
+  <!-- Laid out top-right, away from the row and the pointer parking spot. -->
   <!-- i18n-ignore (test fixture) -->
   <button type="button" class="order-last ml-auto self-start" data-share-hover-outside>
     Elsewhere

@@ -21,6 +21,7 @@ import {
   agentMemoryBreakdownOpened,
   agentMemoryUsageFailed,
   agentMemoryUsageSucceeded,
+  closeWindowRequested,
   connectionStatusChanged,
   daemonHealthReducer,
   fetchSidecarRunLogRequested,
@@ -498,6 +499,33 @@ describe('daemonHealthSaga', () => {
     await task.toPromise();
   });
 
+  it('passes connectionLimited from the status payload into the action extras', async () => {
+    const { dispatched, task } = startHealthSaga();
+    await settle();
+    statusHandler!({
+      status: 'disconnected',
+      transport: { mode: 'external-ws', target: 'wss:192.168.1.20:5181' },
+      reconnectAttempts: 1,
+      connectionLimited: true,
+      connectionLimitRetryAfterMs: 45_000,
+    });
+    await settle();
+
+    const actions = statusActions(dispatched) as Array<{
+      payload: [
+        string,
+        unknown,
+        { connectionLimited?: boolean; connectionLimitRetryAfterMs?: number | null } | undefined,
+      ];
+    }>;
+    const disconnected = actions.find(({ payload: [status] }) => status === 'disconnected');
+    expect(disconnected).toBeDefined();
+    expect(disconnected!.payload[2]?.connectionLimited).toBe(true);
+    expect(disconnected!.payload[2]?.connectionLimitRetryAfterMs).toBe(45_000);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('forwards daemonUpdateDisconnectedAt from the status payload into the action extras', async () => {
     const transport = { mode: 'external-uds' as const, target: '/tmp/intentd.sock' };
     const disconnectedAt = new Date('2026-09-04T10:00:00.000Z').getTime();
@@ -928,6 +956,35 @@ describe('daemonHealthSaga', () => {
     // The initiating window keeps its own (dead) backend, so no 'connected'
     // status event ever clears the pending flag — the success action must.
     expect(dispatched).toContainEqual(openLocalAndSpawnSucceeded());
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('asks main to close this window over window:close and keeps running when the bridge fails', async () => {
+    let closeCalls = 0;
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === BACKEND.GET_STATUS) return { status: 'connected' };
+      if (channel === IPC_CHANNELS.WINDOW.CLOSE) {
+        closeCalls += 1;
+        if (closeCalls === 1) throw new Error('bridge down');
+        return { success: true };
+      }
+      return undefined;
+    });
+    const { input, dispatched, task } = startHealthSaga();
+    await settle();
+    const dispatchedBefore = dispatched.length;
+
+    input.put(closeWindowRequested());
+    await settle();
+    input.put(closeWindowRequested());
+    await settle();
+
+    expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.WINDOW.CLOSE);
+    expect(closeCalls).toBe(2);
+    // Main owns the close: nothing to reflect in state, and a failed first
+    // attempt does not surface a spawn error or stop later requests.
+    expect(dispatched.slice(dispatchedBefore)).toEqual([]);
     task.cancel();
     await task.toPromise();
   });

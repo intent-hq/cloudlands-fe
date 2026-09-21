@@ -11,7 +11,7 @@
  * `main/notification.service.ts#handleAgentIdle`:
  *   - `notifications.enabled` off → skip (read from the renderer store, which
  *     the settings saga keeps in sync with the daemon catalog).
- *   - background agents (event fast path or `agent.list` metadata) → skip.
+ *   - background agents (event fast path or `agent.get` metadata) → skip.
  *   - archived workspace (`workspaceArchived` event fast path) → skip.
  *   - agent idle while waiting on other agents, active background hooks
  *     (§3.1), or active PR monitors (§5.42) → skip (event fast path).
@@ -43,6 +43,7 @@ import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/ta
 import { m } from '$shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { AgentIdleEvent } from '$features/events/types';
+import { readIdleNotificationGate } from './utils/idle-gate';
 import { buildNotificationContent, type NotificationContent } from './utils/notification-content';
 import { handleNotificationNavigate } from './notification-navigation';
 import { playNotificationSoundPerSettings } from './notification-sound-gate';
@@ -161,17 +162,6 @@ async function fetchNotificationPrefs(): Promise<NotificationPrefs> {
   }
 }
 
-/** `agent.list` response subset consulted for suppression (PROTOCOL §5.5). */
-interface AgentListResult {
-  agents?: Array<{
-    id?: string;
-    isStreaming?: boolean;
-    isResponding?: boolean;
-    notificationsMuted?: boolean;
-    metadata?: { isBackground?: boolean; specialist?: string };
-  }>;
-}
-
 /** Fetch the workspace title for notification context; absence is fine. */
 async function fetchWorkspaceTitle(workspaceId: string): Promise<string | undefined> {
   try {
@@ -278,7 +268,7 @@ export async function handleWebAgentIdle(
 
     // Fast path: per-agent mute stamped on the payload (§5.5
     // `notificationsMuted`, present only when true). Absent on older daemons,
-    // in which case the agent.list gate below still applies.
+    // in which case the agent.get gate below still applies.
     if (event.data.notificationsMuted === true) {
       logger.debug('Skipping notification for muted agent', {
         workspaceId,
@@ -300,7 +290,8 @@ export async function handleWebAgentIdle(
     // Fast path: the agent ended its turn while awaiting delegated
     // sub-agents (pending completion watches) — the workspace isn't truly
     // quiet even if the children haven't started responding yet. Absent on
-    // older daemons, in which case the agent.list gate below still applies.
+    // older daemons, in which case the agent.listActive gate below still
+    // applies.
     if (event.data.isWaitingForOtherAgents === true) {
       logger.debug('Skipping notification for agent waiting on other agents', {
         workspaceId,
@@ -328,19 +319,20 @@ export async function handleWebAgentIdle(
       return;
     }
 
-    // `agent.list` (PROTOCOL §5.5) serves two purposes: AgentLite `metadata`
-    // carries `isBackground`/`specialist` (absent from the daemon idle
-    // payload), and `isStreaming`/`isResponding` feed the other-agents-active
-    // suppression gate below (parity with main/notification.service.ts).
-    // Deliberately unscoped (§5.5 row scope): the idle agent may be delegated
-    // or background, and the gate counts activity across every bin.
-    const agentList = (await backendRequest('agent.list', { workspaceId })) as
-      AgentListResult | undefined;
-    const agents = agentList?.agents ?? [];
-    const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
+    // Bounded wire gate (utils/idle-gate.ts, intent#5531 — never the unscoped
+    // `agent.list`; parity with main/notification.service.ts): `agent.get`
+    // for the idle agent's own `metadata` (`isBackground`/`specialist`,
+    // absent from the daemon idle payload) / `notificationsMuted`, then
+    // `agent.listActive` + per-active-sibling `agent.get` for the
+    // other-agents-active suppression.
+    const verdict = await readIdleNotificationGate(backendRequest, {
+      workspaceId,
+      agentId: event.data.agentId,
+    });
+    const idleAgent = verdict.idleAgent;
 
     // Skip background agents — delegated child completions stay quiet.
-    if (idleAgent?.metadata?.isBackground === true) {
+    if (verdict.kind === 'background') {
       logger.debug('Skipping notification for background agent (metadata)', {
         workspaceId,
         agentName: event.data.agentName,
@@ -350,27 +342,19 @@ export async function handleWebAgentIdle(
 
     // Skip muted agents (AgentLite top-level `notificationsMuted`) — parity
     // with the payload fast path for idle events that predate the stamp.
-    if (idleAgent?.notificationsMuted === true) {
-      logger.debug('Skipping notification for muted agent (agent.list)', {
+    if (verdict.kind === 'muted') {
+      logger.debug('Skipping notification for muted agent (agent.get)', {
         workspaceId,
         agentName: event.data.agentName,
       });
       return;
     }
 
-    // Muted siblings never hold the gate: a running muted agent's own idle is
-    // suppressed, so counting it here would leave the workspace silent.
-    const otherActiveAgents = agents.filter(
-      (agent) =>
-        (agent.isStreaming === true || agent.isResponding === true) &&
-        agent.id !== event.data.agentId &&
-        agent.notificationsMuted !== true,
-    );
-    if (otherActiveAgents.length > 0) {
+    if (verdict.kind === 'others-active') {
       logger.debug('Other agents still active, skipping notification', {
         workspaceId,
         agentName: event.data.agentName,
-        otherActiveCount: otherActiveAgents.length,
+        otherActiveCount: verdict.otherActiveCount,
       });
       return;
     }

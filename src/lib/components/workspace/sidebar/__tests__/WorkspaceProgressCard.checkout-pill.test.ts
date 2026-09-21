@@ -65,6 +65,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
   selectWorkspaceProgressHeadline: mocks.selector(() => ({ headline: '', subtext: '' })),
   selectWorkspaceProgressActions: mocks.selector(() => []),
+  selectHidesOwnerWorkspaceActions: mocks.selector(() => false),
+  selectHidesAgentLifecycleActions: mocks.selector(() => false),
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -86,6 +88,11 @@ vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-selectors'
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: mocks.selector(() => []),
+}));
+
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectWorkspacePresencePeople: mocks.selector(() => []),
+  selectWorkspacePresenceFocusTargets: mocks.selector(() => ({})),
 }));
 
 vi.mock('$store/renderer/slices/git/git-selectors', () => ({

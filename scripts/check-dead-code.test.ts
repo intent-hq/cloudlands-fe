@@ -1,12 +1,24 @@
+// @verify-changed-triggers: tsconfig*.json
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
   CANARY_DIR,
   CANARY_PATHS,
+  CANARY_TSCONFIG_EXCLUDE,
   decideExitCode,
   findMissingCanaries,
   formatCanaryFailure,
@@ -17,6 +29,7 @@ import {
   stripJsonc,
 } from './check-dead-code-lib.mjs';
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const [CANARY_SVELTE, CANARY_TS] = CANARY_PATHS;
 const RULES = { duplicates: 'warn' };
 
@@ -150,6 +163,140 @@ describe('stripCanaryIssues + exit decision', () => {
     const report = renderIssues(rows, RULES);
     expect(report).toContain('Unused exports (1)');
     expect(report).toContain('src/a.ts  foo:3:14');
+  });
+});
+
+// The gate writes and deletes the canary files while it runs. A `tsc` overlapping that
+// window (`pnpm run type-check` next to `pnpm run lint:dead-code`) enumerates the files
+// on startup and fails with TS6053 when they are gone by the time it reads them, so every
+// root tsconfig that would pick them up has to exclude them (cloudlands-fe#2724).
+//
+// TypeScript's own config parser is the oracle: generic glob matchers disagree with tsc on
+// brace/extglob patterns, single-star depth and how inherited patterns are rebased, so the
+// checks below resolve each config exactly the way `tsc` / `svelte-check` do.
+describe('tsconfig excludes the canary directory', () => {
+  // svelte-check registers `.svelte` like this before asking TypeScript for the file list, so
+  // the resolved set is what svelte-check compiles (a superset of what `tsc` compiles).
+  const SVELTE_EXTENSION: ts.FileExtensionInfo = {
+    extension: 'svelte',
+    isMixedContent: true,
+    scriptKind: ts.ScriptKind.Deferred,
+  };
+  // TS18003 "No inputs were found" is the expected outcome when nothing but the canaries exists.
+  const NO_INPUTS_FOUND = 18003;
+
+  type ConfigFiles = Record<string, string | object>;
+  const BOTH_CANARIES = [...CANARY_PATHS].sort();
+
+  // Resolves `entry` with TypeScript's config parser inside a throwaway root whose only source
+  // files are the two canaries, and returns the canary paths TypeScript would compile.
+  function resolveCanaries(configs: ConfigFiles, entry: string): string[] {
+    const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'canary-tsconfig-')));
+    try {
+      for (const canary of CANARY_PATHS) {
+        mkdirSync(path.join(root, path.dirname(canary)), { recursive: true });
+        writeFileSync(path.join(root, canary), '');
+      }
+      for (const [name, content] of Object.entries(configs)) {
+        mkdirSync(path.join(root, path.dirname(name)), { recursive: true });
+        writeFileSync(
+          path.join(root, name),
+          typeof content === 'string' ? content : JSON.stringify(content),
+        );
+      }
+      const configPath = path.join(root, entry);
+      const { config, error } = ts.readConfigFile(configPath, ts.sys.readFile);
+      if (error) throw new Error(ts.flattenDiagnosticMessageText(error.messageText, '\n'));
+      const parsed = ts.parseJsonConfigFileContent(
+        config,
+        ts.sys,
+        path.dirname(configPath),
+        undefined,
+        configPath,
+        undefined,
+        [SVELTE_EXTENSION],
+      );
+      const problems = parsed.errors
+        .filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND)
+        .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
+      if (problems.length > 0) {
+        throw new Error(`${entry} did not parse cleanly:\n${problems.join('\n')}`);
+      }
+      return parsed.fileNames
+        .map((file) => path.relative(root, file))
+        .filter((file) => CANARY_PATHS.includes(file))
+        .sort();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  function withInclude(include: string[], exclude?: string[]): string[] {
+    return resolveCanaries({ 'tsconfig.json': { include, exclude } }, 'tsconfig.json');
+  }
+
+  const rootConfigs = readdirSync(REPO_ROOT)
+    .filter((name) => /^tsconfig.*\.json$/.test(name))
+    .sort();
+  // Copied together so `extends` between root configs keeps resolving inside the throwaway root.
+  const rootConfigFiles: ConfigFiles = Object.fromEntries(
+    rootConfigs.map((name) => [name, readFileSync(path.join(REPO_ROOT, name), 'utf8')]),
+  );
+
+  it('the shared exclude glob removes both canaries from a config that compiles src', () => {
+    expect(withInclude(['src/**/*'])).toEqual(BOTH_CANARIES);
+    expect(withInclude(['src/**/*'], [CANARY_TSCONFIG_EXCLUDE])).toEqual([]);
+  });
+
+  it('the renderer tsconfig would otherwise include the canary, so the exclude is load-bearing', () => {
+    expect(rootConfigs).toContain('tsconfig.json');
+    const config = JSON.parse(stripJsonc(rootConfigFiles['tsconfig.json'] as string));
+    expect(config.exclude).toContain(CANARY_TSCONFIG_EXCLUDE);
+    config.exclude = config.exclude.filter((entry: string) => entry !== CANARY_TSCONFIG_EXCLUDE);
+    expect(
+      resolveCanaries({ ...rootConfigFiles, 'tsconfig.json': config }, 'tsconfig.json'),
+    ).toEqual(BOTH_CANARIES);
+  });
+
+  it.each(rootConfigs)('%s does not compile any canary file', (name) => {
+    expect(
+      resolveCanaries(rootConfigFiles, name),
+      `${name} compiles the canary; add ${JSON.stringify(CANARY_TSCONFIG_EXCLUDE)} to its "exclude"`,
+    ).toEqual([]);
+  });
+
+  // Patterns a generic glob matcher accepts but TypeScript reads literally: the canaries stay
+  // included, so an exclude written this way must fail the checks above.
+  it.each([
+    ['brace expansion', `${CANARY_DIR}/*.{ts,svelte}`],
+    ['extglob', `${CANARY_DIR}/*.@(ts|svelte)`],
+  ])('an exclude using %s does not cover the canaries', (_syntax, exclude) => {
+    expect(withInclude(['src/**/*'], [exclude])).toEqual(BOTH_CANARIES);
+  });
+
+  it('a single-star include is not recursive', () => {
+    expect(withInclude(['src/*'])).toEqual([]);
+    expect(withInclude([`${CANARY_DIR}/*`])).toEqual(BOTH_CANARIES);
+  });
+
+  it('inherited patterns are relative to the config that declares them', () => {
+    const child = { extends: './config/base.json', include: ['src/**/*'] };
+    const withBaseExclude = (exclude: string) =>
+      resolveCanaries(
+        { 'tsconfig.json': child, 'config/base.json': { exclude: [exclude] } },
+        'tsconfig.json',
+      );
+    expect(withBaseExclude(CANARY_TSCONFIG_EXCLUDE)).toEqual(BOTH_CANARIES);
+    expect(withBaseExclude(`../${CANARY_TSCONFIG_EXCLUDE}`)).toEqual([]);
+  });
+
+  it('a config that fails to parse fails the check instead of passing silently', () => {
+    expect(() =>
+      resolveCanaries(
+        { 'tsconfig.json': { extends: './missing.json', include: ['src/**/*'] } },
+        'tsconfig.json',
+      ),
+    ).toThrow(/missing\.json/);
   });
 });
 

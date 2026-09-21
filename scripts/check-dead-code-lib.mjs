@@ -11,6 +11,10 @@
 
 // Under src/lib/components so a re-introduced catalog glob over that tree masks it.
 export const CANARY_DIR = 'src/lib/components/__knip-canary__';
+// The tsconfig.json `exclude` entry keeping the canary out of every tsc program, so a
+// type-check overlapping the gate never fails with TS6053 when the files vanish mid-run.
+// scripts/check-dead-code.test.ts asserts the root tsconfigs honour it.
+export const CANARY_TSCONFIG_EXCLUDE = `${CANARY_DIR}/**/*`;
 // ≥4 hyphens so a re-introduced unanchored `*-*-*-*-*/` gitignore rule hides it.
 const CANARY_STEM = 'knip-canary-unused-a-b';
 

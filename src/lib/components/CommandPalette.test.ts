@@ -100,6 +100,8 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   }),
   selectIsWorkspaceCollaborator: (workspaceIdArg: any) =>
     createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
+  selectHidesAgentLifecycleActions: (workspaceIdArg: any) =>
+    createSelectorReadable(workspaceIdArg, () => collaboratorState.workspace),
   selectIsCollaboratorOnlyClient: () => ({
     subscribe: (fn: (value: boolean) => void) => {
       fn(collaboratorState.client);
@@ -256,7 +258,7 @@ describe('CommandPalette new actions', () => {
     collaboratorState.client = false;
   });
 
-  it('withholds terminal, browser, and workspace-creation commands and results for collaborators', async () => {
+  it('withholds agent-creation, terminal, browser, and workspace-creation commands and results for collaborators', async () => {
     collaboratorState.workspace = true;
     collaboratorState.client = true;
     vi.mocked(terminalManager.loadTerminalMetadata).mockReturnValue([
@@ -268,7 +270,8 @@ describe('CommandPalette new actions', () => {
 
     render(CommandPalette, { props: { isOpen: true, workspaceId: 'ws-1', onClose: vi.fn() } });
 
-    await screen.findByRole('button', { name: 'Agent Chat' });
+    await screen.findByRole('button', { name: 'Note' });
+    expect(screen.queryByRole('button', { name: 'Agent Chat' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Open URL in Browser/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /New Workspace/i })).toBeNull();

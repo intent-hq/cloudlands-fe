@@ -21,7 +21,11 @@ import {
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import { createAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
-import type { WorkspaceInvite, WorkspaceMember } from '$features/workspace-sharing/types';
+import type {
+  HostPrincipal,
+  WorkspaceInvite,
+  WorkspaceMember,
+} from '$features/workspace-sharing/types';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 
 /**
@@ -37,14 +41,13 @@ export interface WorkspaceShareTarget {
 }
 
 /**
- * The one-time link, by reference only: the url (which carries the invite
- * secret) is parked in `invite-link-vault` and the store keeps the opaque
- * `linkHandle`. `inviteId` ties the link to its `workspace.invite.list` row so
- * a revoke — local or daemon-side — retires it.
+ * The link the last `workspace.invite.create` of this session returned, by
+ * reference only: the url (a capability carrying the invite secret) is parked
+ * in `invite-link-vault` under `inviteId`, which also ties the panel to its
+ * `workspace.invite.list` row so a revoke — local or daemon-side — retires it.
  */
 export interface WorkspaceShareCreatedLink {
   inviteId: string;
-  linkHandle: string;
   pinLogin?: string;
 }
 
@@ -82,14 +85,32 @@ export interface WorkspaceShareState {
   members: Collection<WorkspaceMember, 'principalId'>;
   /** Open invites in daemon order. */
   invites: Collection<WorkspaceInvite, 'id'>;
+  /**
+   * Guests already authed on this host (`principal.list`, in daemon order),
+   * offered for direct member add; the dialog filters out the current roster
+   * at render time. Empty until read or when the daemon cannot list them.
+   */
+  principals: Collection<HostPrincipal, 'principalId'>;
+  /**
+   * Guest cap of the dialog's workspace as `workspace.members.list` reports
+   * it (intent-hq/intentd#1917): `guestCount` collaborators plus open invites
+   * spent against `guestLimit`. `null` until read, or when the daemon omits
+   * the fields; the dialog gates Create only on a known cap.
+   */
+  guestCount: number | null;
+  guestLimit: number | null;
   loadStatus: 'idle' | 'loading' | 'loaded' | 'error';
   loadError: string | null;
   /**
-   * Advances on every local mutation of this session (invite created, revoke /
-   * remove succeeded). A read snapshot must echo the generation it was taken
-   * under: a pre-mutation snapshot settling late is stale and dropped, so the
-   * trailing post-mutation read stays authoritative (it would otherwise
-   * retire a `createdLink` its list predates).
+   * Advances on every local mutation of this session that the saga follows
+   * with its own re-read (invite created, revoke / remove succeeded). A read
+   * snapshot must echo the generation it was taken under: a pre-mutation
+   * snapshot settling late is stale and dropped, so the trailing
+   * post-mutation read stays authoritative (it would otherwise retire a
+   * `createdLink` its list predates). A successful member add does NOT
+   * advance it: its roster is reconciled by the daemon's `workspace:updated`
+   * members event, whose read may already be in flight when the add reply
+   * lands (the daemon commits before it emits) and must not be dropped.
    */
   mutationGeneration: number;
   /**
@@ -105,6 +126,8 @@ export interface WorkspaceShareState {
   createdLink: WorkspaceShareCreatedLink | null;
   revokingInviteId: string | null;
   removingPrincipalId: string | null;
+  /** `workspace.members.add` in flight for this host principal. */
+  addingPrincipalId: string | null;
   actionError: string | null;
 }
 
@@ -116,6 +139,9 @@ export const initialState: WorkspaceShareState = {
   session: 0,
   members: createCollection<WorkspaceMember, 'principalId'>('principalId'),
   invites: createCollection<WorkspaceInvite, 'id'>('id'),
+  principals: createCollection<HostPrincipal, 'principalId'>('principalId'),
+  guestCount: null,
+  guestLimit: null,
   loadStatus: 'idle',
   loadError: null,
   mutationGeneration: 0,
@@ -126,6 +152,7 @@ export const initialState: WorkspaceShareState = {
   createdLink: null,
   revokingInviteId: null,
   removingPrincipalId: null,
+  addingPrincipalId: null,
   actionError: null,
 };
 
@@ -160,9 +187,19 @@ export const shareDataLoaded = createAction<
       generation: number;
       members: WorkspaceMember[];
       invites: WorkspaceInvite[];
+      guestCount: number | null;
+      guestLimit: number | null;
     },
   ]
 >('workspaceShare/dataLoaded');
+
+/**
+ * Saga: the host's credentialed guests (`principal.list`) arrived for
+ * `target`. Read beside the roster; a failed read leaves the previous rows.
+ */
+export const sharePrincipalsLoaded = createAction<
+  [payload: { target: WorkspaceShareTarget; principals: HostPrincipal[] }]
+>('workspaceShare/principalsLoaded');
 
 /** Saga: the roster/invite read failed (`error` already localized). */
 export const shareDataFailed = createAction<
@@ -199,9 +236,14 @@ export const shareMemberRemoveRequested = createAction<[principalId: string]>(
   'workspaceShare/memberRemoveRequested',
 );
 
+/** Attach a `principal.list` guest as a collaborator (`workspace.members.add`). */
+export const shareMemberAddRequested = createAction<[principalId: string]>(
+  'workspaceShare/memberAddRequested',
+);
+
 /**
- * Saga: a revoke/remove settled (`error` null on success). A successful revoke
- * names `revokedInviteId` so the matching one-time link retires at once.
+ * Saga: a revoke/remove/add settled (`error` null on success). A successful
+ * revoke names `revokedInviteId` so the matching one-time link retires at once.
  */
 export const shareActionSettled = createAction<
   [payload: { target: WorkspaceShareTarget; error: string | null; revokedInviteId?: string }]
@@ -246,13 +288,26 @@ function withoutRows(state: WorkspaceShareState): WorkspaceShareState {
     ...state,
     members: initialState.members,
     invites: initialState.invites,
+    principals: initialState.principals,
+    guestCount: null,
+    guestLimit: null,
     creating: false,
     createError: null,
     createdLink: null,
     revokingInviteId: null,
     removingPrincipalId: null,
+    addingPrincipalId: null,
     actionError: null,
   };
+}
+
+/** A dialog mutation (revoke / remove / add) is in flight; one at a time. */
+function mutating(state: WorkspaceShareState): boolean {
+  return (
+    state.revokingInviteId !== null ||
+    state.removingPrincipalId !== null ||
+    state.addingPrincipalId !== null
+  );
 }
 
 const { getWorkspaceState: getRosterState, setWorkspaceState: setRosterState } =
@@ -334,7 +389,7 @@ workspaceShareReducer.with(shareDataRequested, (state) => {
 });
 workspaceShareReducer.with(
   shareDataLoaded,
-  (state, { payload: [{ target, generation, members, invites }] }) => {
+  (state, { payload: [{ target, generation, members, invites, guestCount, guestLimit }] }) => {
     if (!targets(state, target) || state.withheld || state.mutationGeneration !== generation) {
       return state;
     }
@@ -347,10 +402,19 @@ workspaceShareReducer.with(
       ...state,
       members: createCollection('principalId', members),
       invites: invitesById,
+      guestCount,
+      guestLimit,
       createdLink,
       loadStatus: 'loaded',
       loadError: null,
     };
+  },
+);
+workspaceShareReducer.with(
+  sharePrincipalsLoaded,
+  (state, { payload: [{ target, principals }] }) => {
+    if (!targets(state, target) || state.withheld) return state;
+    return { ...state, principals: createCollection('principalId', principals) };
   },
 );
 workspaceShareReducer.with(shareDataFailed, (state, { payload: [{ target, error }] }) => {
@@ -391,16 +455,16 @@ workspaceShareReducer.with(
   },
 );
 workspaceShareReducer.with(shareInviteRevokeRequested, (state, { payload: [inviteId] }) => {
-  if (!state.open || state.withheld || state.revokingInviteId || state.removingPrincipalId) {
-    return state;
-  }
+  if (!state.open || state.withheld || mutating(state)) return state;
   return { ...state, revokingInviteId: inviteId, actionError: null };
 });
 workspaceShareReducer.with(shareMemberRemoveRequested, (state, { payload: [principalId] }) => {
-  if (!state.open || state.withheld || state.revokingInviteId || state.removingPrincipalId) {
-    return state;
-  }
+  if (!state.open || state.withheld || mutating(state)) return state;
   return { ...state, removingPrincipalId: principalId, actionError: null };
+});
+workspaceShareReducer.with(shareMemberAddRequested, (state, { payload: [principalId] }) => {
+  if (!state.open || state.withheld || mutating(state)) return state;
+  return { ...state, addingPrincipalId: principalId, actionError: null };
 });
 workspaceShareReducer.with(
   shareActionSettled,
@@ -408,12 +472,15 @@ workspaceShareReducer.with(
     if (!targets(state, target) || state.withheld) return state;
     const createdLink =
       revokedInviteId && state.createdLink?.inviteId === revokedInviteId ? null : state.createdLink;
+    // One mutation at a time (`mutating`): an in-flight add is the one settling.
+    const advances = error === null && state.addingPrincipalId === null;
     return {
       ...state,
       createdLink,
-      mutationGeneration: error === null ? state.mutationGeneration + 1 : state.mutationGeneration,
+      mutationGeneration: advances ? state.mutationGeneration + 1 : state.mutationGeneration,
       revokingInviteId: null,
       removingPrincipalId: null,
+      addingPrincipalId: null,
       actionError: error,
     };
   },

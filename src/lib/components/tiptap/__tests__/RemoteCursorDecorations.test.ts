@@ -112,6 +112,27 @@ describe('RemoteCursorDecorations', () => {
     expect(editor.state.doc.textContent).toBe('hello world');
     expect(remoteCursorsPluginKey.getState(editor.state)!.find()).toHaveLength(1);
   });
+
+  it('labels the tag with the complete name and gives every widget its own anchor', () => {
+    const longName = 'Clement Pang-Winterbottom (personal account)';
+    setRemoteCursors(editor.view, [
+      cursor({ label: longName }),
+      cursor({ principalId: 'principal-c', label: 'Cy' }),
+    ]);
+
+    const widgets = Array.from(element.querySelectorAll<HTMLElement>('.remote-cursor'));
+    expect(widgets.map((w) => w.querySelector('.remote-cursor__name')?.textContent)).toEqual([
+      longName,
+      'Cy',
+    ]);
+    const anchors = widgets.map((w) => w.style.getPropertyValue('--remote-cursor-anchor'));
+    expect(anchors.every((name) => /^--remote-cursor-\d+$/.test(name))).toBe(true);
+    expect(new Set(anchors).size).toBe(2);
+    for (const widget of widgets) {
+      expect(widget.querySelector('.remote-cursor__tag')?.parentElement).toBe(widget);
+      expect(widget.querySelector('.remote-cursor__bar')?.parentElement).toBe(widget);
+    }
+  });
 });
 
 describe('remoteCursorColor', () => {

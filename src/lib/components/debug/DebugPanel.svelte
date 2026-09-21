@@ -322,11 +322,12 @@
 
           <Button
             type="button"
-            class="w-full h-7 px-2 rounded-md text-xs font-medium {isSimulatingCreation
-              ? 'bg-danger hover:bg-danger/90 text-danger-background'
+            variant={isSimulatingCreation
+              ? 'destructive'
               : isOnCreationPage
-                ? 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                : 'bg-primary text-primary-foreground hover:bg-primary/90'} transition-colors flex items-center justify-center gap-1.5"
+                ? 'secondary'
+                : 'primary'}
+            class="w-full h-7 px-2 text-xs font-medium gap-1.5"
             onclick={() => {
               logger.info('[Debug] Button clicked!');
               toggleCreationSimulation();

@@ -154,6 +154,12 @@
   import { appClient } from '$lib/client';
   import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import {
+    presenceTypingPulse,
+    presenceTypingStopped,
+  } from '$store/renderer/slices/presence/presence-slice';
+  import { selectPresenceOwnPrincipalId } from '$store/renderer/slices/presence/presence-selectors';
+  import PresenceTypingIndicator from '$features/presence/components/PresenceTypingIndicator.svelte';
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
@@ -395,6 +401,7 @@
     isUserQueuedMessage,
     omitDrainedQueuedMessages,
   } from '$lib/utils/queued-message-visibility';
+  import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import {
     findPreviousUserMessage,
     isAutomatedChatMessage,
@@ -729,7 +736,7 @@
   const userMessageNavigationItems = $derived(
     mergeUserMessageNavigationItems(
       userMessageIndexItems ?? [],
-      getUserMessageNavigationItems($agentMessages$),
+      getUserMessageNavigationItems($agentMessages$, workspace?.ownerPrincipalId),
     ),
   );
 
@@ -1107,6 +1114,16 @@
     omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$),
   );
 
+  // Queue-surface attribution (multiplayer w2): on only once the workspace
+  // has more than one member. Entries carry their own `author` projection;
+  // the transcript's projections are the fallback for daemons that stamp
+  // `fromPrincipalId` only.
+  const queuedMessageAuthors = $derived(
+    getQueueSurfaceAuthors(workspace?.memberCount, $agentMessages$),
+  );
+  // The viewer's own rows carry no author identity (transcript and queue).
+  const presenceOwnPrincipalId$ = selectPresenceOwnPrincipalId();
+
   // Queue visibility around the wizard: hidden while the wizard is expanded,
   // shown while Ignore-collapsed. Derivation shared with the regression suite.
   const queuedMessagesVisibility = $derived(
@@ -1318,7 +1335,12 @@
   // current-match turn (and its neighbors) can be force-rendered through the
   // LazyTurn virtualization while searching.
   const allSearchMatches = $derived.by(() => {
-    return findChatSearchMatches($agentMessages$, debouncedSearchQuery, messageIdToTurnKey);
+    return findChatSearchMatches(
+      $agentMessages$,
+      debouncedSearchQuery,
+      messageIdToTurnKey,
+      workspace?.ownerPrincipalId,
+    );
   });
 
   // Derive the match count from allSearchMatches
@@ -1767,6 +1789,14 @@
     const workspaceId = workspace?.id;
     if (!workspaceId || !agentId) return;
     pendingDraftWrite = { workspaceId, agentId, draft };
+  }
+
+  // Presence typing (multiplayer w5): each user edit is a pulse for this
+  // agent; an emptied composer ends the episode at once (the saga throttles
+  // the wire sends and ends an idle episode on its own).
+  function reportTypingActivity(value: string): void {
+    if (!agentId) return;
+    appStore.dispatch(value.trim() ? presenceTypingPulse(agentId) : presenceTypingStopped());
   }
 
   // svelte-ignore state_referenced_locally -- identity snapshot is refreshed by the effect below.
@@ -4697,7 +4727,9 @@
     const lastAgentMessage = [...messages].reverse().find((m) => m.role === 'assistant');
 
     onChatUpdate({
-      lastUserMessage: lastUserMessage ? getPresentedUserMessageText(lastUserMessage) : undefined,
+      lastUserMessage: lastUserMessage
+        ? getPresentedUserMessageText(lastUserMessage, workspace?.ownerPrincipalId)
+        : undefined,
       lastAgentResponse: lastAgentMessage ? extractAllContent(lastAgentMessage) : undefined,
       isProcessing: $agentIsResponding$,
       messageCount: messages.length,
@@ -4900,6 +4932,7 @@
       inputValue = '';
       inputComponent?.clear();
       commitDraftWrite('');
+      appStore.dispatch(presenceTypingStopped());
       // Clear draft from backend when message is sent
       if (workspace && agentId) {
         await appClient.drafts.clear(workspace.id, agentId);
@@ -5809,6 +5842,7 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
+                      ownPrincipalId={$presenceOwnPrincipalId$}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -5827,6 +5861,7 @@
                         {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         isStreaming={isCurrentlyStreaming}
                         isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
@@ -5927,6 +5962,7 @@
                     <ChatMessage
                       message={pendingMessage}
                       {workspace}
+                      ownPrincipalId={$presenceOwnPrincipalId$}
                       backendSessionId={auggieSessionId}
                     />
                   </div>
@@ -5945,6 +5981,7 @@
                         {messageId}
                         ownsMessageIdentity={false}
                         {workspace}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         isStreaming={isCurrentlyStreaming}
                         isLastConversationMessage={isLastMessage}
                         backendSessionId={auggieSessionId}
@@ -6357,6 +6394,7 @@
                                 messageId={message.id}
                                 ownsMessageIdentity={false}
                                 {workspace}
+                                ownPrincipalId={$presenceOwnPrincipalId$}
                                 onEditSubmit={isRetiredSession
                                   ? undefined
                                   : (newText, model, blocks) =>
@@ -6465,6 +6503,7 @@
                               messageId={message.id}
                               ownsMessageIdentity={false}
                               {workspace}
+                              ownPrincipalId={$presenceOwnPrincipalId$}
                               isStreaming={isCurrentlyStreaming}
                               isLastConversationMessage={isLastMessage}
                               onEditSubmit={isRetiredSession
@@ -6795,12 +6834,20 @@
                 {#if draftManager.gateVisible}
                   <ChatDraftLoadingGate />
                 {/if}
+                {#if workspace && agentId}
+                  <PresenceTypingIndicator
+                    workspaceId={workspace.id}
+                    {agentId}
+                    class={isChiefWorkspace ? 'px-3 pb-1' : 'regular-composer-content-inset pb-1'}
+                  />
+                {/if}
                 <SimpleRichInput
                   bind:this={inputComponent}
                   bind:contextItems={getContextItems, setContextItems}
                   bind:value={inputValue}
                   onvaluechange={(value) => {
                     scheduleDraftWrite(value);
+                    reportTypingActivity(value);
                   }}
                   onsubmit={handleSend}
                   onforcesubmit={handleForceSubmit}
@@ -6829,6 +6876,8 @@
                       <QueuedMessageList
                         bind:this={queuedMessageListRef}
                         messages={visibleQueuedMessages}
+                        authors={queuedMessageAuthors}
+                        ownPrincipalId={$presenceOwnPrincipalId$}
                         onedit={handleEditQueuedMessage}
                         onremove={handleRemoveQueuedMessage}
                         onsendnow={handleSendQueuedMessageNow}

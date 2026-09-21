@@ -35,6 +35,8 @@ const mockState = vi.hoisted(() => {
 
   return {
     workspace: store({ id: 'ws-1', path: '/tmp/ws-1', branchName: 'main' }),
+    hidesAgentLifecycleActions: store(false),
+    presencePeople: store<unknown[]>([]),
     defaultModel: store('auggie:default'),
     dispatch: vi.fn(),
     agents: store<Record<string, any>>({}),
@@ -57,6 +59,10 @@ vi.mock('$store/renderer/store', async () => {
 });
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: () => mockState.workspace,
+  selectHidesAgentLifecycleActions: () => mockState.hidesAgentLifecycleActions,
+}));
+vi.mock('$store/renderer/slices/presence/presence-selectors', () => ({
+  selectAgentPresencePeople: () => mockState.presencePeople,
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectInitialAgentId: () => ({
@@ -247,6 +253,20 @@ describe('AgentTabType harness version panel-actions menu item', () => {
     // Menu is open (Delete agent present) but no harness entry.
     expect(await screen.findByText('Delete agent')).toBeTruthy();
     expect(screen.queryByText(/^Harness v/)).toBeNull();
+  });
+
+  it('withholds the Delete agent item in a guest / collaborator window', async () => {
+    mockState.hidesAgentLifecycleActions.set(true);
+    try {
+      seedSession({ harnessVersion: '2.3' });
+      renderTab();
+      await openPanelActionsMenu();
+
+      expect(await screen.findByText('Harness v2.3')).toBeTruthy();
+      expect(screen.queryByText('Delete agent')).toBeNull();
+    } finally {
+      mockState.hidesAgentLifecycleActions.set(false);
+    }
   });
 
   it('dismisses the modal with Escape', async () => {

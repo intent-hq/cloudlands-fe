@@ -2,18 +2,31 @@
  * Invite redemption client (main process) — the guest side of multiplayer
  * invites (intentd #1872).
  *
- * The daemon serves exactly one method on its UNAUTHENTICATED `/invite`
- * WebSocket endpoint: `invite.redeem`, in two phases on the same name:
+ * The daemon serves four methods on its UNAUTHENTICATED `/invite`
+ * WebSocket endpoint. The first join on a host is the gist identity proof
+ * (intentd #1967), in two steps:
  *
- * 1. `{ inviteId, secret }` starts an identity-only GitHub device flow and
- *    answers `{ flowId, userCode, verificationUri, expiresIn, interval,
- *    workspaceId, workspaceTitle }` — the UI shows the code + URL.
- * 2. `{ flowId }` blocks until the grant settles and answers the collaborator
- *    credential exactly once: `{ status: "authorized", token, principalId,
- *    login, workspaceId }`.
+ * 1. `invite.challenge { inviteId, secret }` validates the invite and answers
+ *    its decoration plus a short-lived single-use nonce: `{ workspaceId,
+ *    workspaceTitle, hostname, prettyHostname, nonce, nonceExpiresAt }`.
+ * 2. `invite.prove { inviteId, secret, nonce, gistId, login }` joins once the
+ *    host has read a gist owned by `login` whose proof file starts with that
+ *    nonce (the guest publishes it through its own daemon's
+ *    `github.identityProof.create`), answering the collaborator credential
+ *    exactly once: `{ status: "authorized", token, principalId, login,
+ *    workspaceId }`.
+ *
+ * A guest that already holds a credential for the host skips the proof:
+ * `invite.inspect { inviteId, secret }` is the challenge's validation and
+ * decoration with no nonce issued (`{ workspaceId, workspaceTitle, hostname,
+ * prettyHostname }`), and `invite.accept { inviteId, secret, credential }`
+ * joins with the stored credential and answers the same credential shape as
+ * `invite.prove`. An unknown or revoked credential is refused with
+ * `credential-invalid`, on which the caller falls back to the proof.
  *
  * Refusals carry `error.data.code` (`invite-expired`, `invite-pin-mismatch`,
- * `invite-flow-denied`, …) so the flow routes on a code, never on prose.
+ * `proof-invalid`, `workspace-full`, …) so the flow routes on a code, never
+ * on prose.
  *
  * Trust: the link's `fp` pins the daemon's self-signed cert and every
  * candidate is dialed through {@link pinnedTlsConnect}, so the invite secret
@@ -52,25 +65,57 @@ const { WebSocket: NodeWebSocket } = nodeRequire('ws') as {
 /** Overall bound on the multi-host `/invite` race. */
 const INVITE_CONNECT_TIMEOUT_MS = 10_000;
 
-/** Bound on phase-1 (`{ inviteId, secret }`): the daemon talks to GitHub once. */
-const INVITE_START_TIMEOUT_MS = 30_000;
+/**
+ * Bound on the local-only requests (`invite.challenge`, `invite.inspect`,
+ * `invite.accept`): the daemon answers from its own store.
+ */
+const INVITE_REQUEST_TIMEOUT_MS = 30_000;
 
-/** Method name for both redeem phases. */
+/** Bound on `invite.prove`: the daemon reads the proof gist from GitHub once. */
+const INVITE_PROVE_TIMEOUT_MS = 60_000;
+
+/** Method name for the flow-less preview of an invite. */
 // i18n-ignore (wire method name)
-const INVITE_REDEEM_METHOD = 'invite.redeem';
+const INVITE_INSPECT_METHOD = 'invite.inspect';
+/** Method name for the returning-guest join with a stored credential. */
+// i18n-ignore (wire method name)
+const INVITE_ACCEPT_METHOD = 'invite.accept';
+/** Method name for the proof step 1: the preview plus a single-use nonce. */
+// i18n-ignore (wire method name)
+const INVITE_CHALLENGE_METHOD = 'invite.challenge';
+/** Method name for the proof step 2: join with the published proof gist. */
+// i18n-ignore (wire method name)
+const INVITE_PROVE_METHOD = 'invite.prove';
 
-/** Phase-1 result: the device-flow prompt. */
-interface InviteRedeemStart {
-  flowId: string;
-  userCode: string;
-  verificationUri: string;
-  expiresIn: number;
-  interval: number;
+/**
+ * `invite.inspect` result: the invite's decoration with nothing issued.
+ * `hostname` / `prettyHostname` name the host machine for the consent
+ * prompt; older daemons omit both, in which case the dialed address is shown
+ * instead.
+ */
+export interface InviteInspection {
   workspaceId: string;
   workspaceTitle: string;
+  hostname?: string;
+  prettyHostname?: string;
 }
 
-/** Phase-2 result: the collaborator credential (returned exactly once). */
+/** `invite.challenge` result: the inspection plus the nonce the proof gist must carry. */
+export interface InviteChallenge extends InviteInspection {
+  /** Single-use nonce; the first line of the proof gist. */
+  nonce: string;
+  /** RFC 3339 instant after which the host refuses the nonce (`proof-expired`). */
+  nonceExpiresAt: string;
+}
+
+/** The guest's published identity proof, as `invite.prove` names it. */
+interface InviteProof {
+  nonce: string;
+  gistId: string;
+  login: string;
+}
+
+/** Join result (`invite.prove` / `invite.accept`): the collaborator credential, returned exactly once. */
 interface InviteCredential {
   status: 'authorized';
   token: string;
@@ -80,9 +125,17 @@ interface InviteCredential {
 }
 
 /**
- * The daemon's documented `error.data.code` values for `invite.redeem`
- * (intentd #1872). The closed set is the ONLY server-authored text that ever
- * leaves {@link InviteRpcError}: a code outside it maps to `null`.
+ * The daemon's documented `error.data.code` values for the `/invite` methods
+ * (intentd #1872; `workspace-full` — the guest cap is spent at join time —
+ * from intentd #1917; `credential-invalid` — `invite.accept` with an unknown
+ * or revoked credential — from the returning-guest join; `proof-invalid` /
+ * `proof-expired` / `github-unreachable` — `invite.prove` could not verify
+ * the gist, the nonce is spent or past `nonceExpiresAt`, or the host could
+ * not reach GitHub — from intentd #1967; `owner-self-join` — the proven or
+ * presented identity is the host owner's own account, which never joins its
+ * own host as a guest — from intentd #1986). The closed set is the ONLY
+ * server-authored text that ever leaves {@link InviteRpcError}: a code
+ * outside it maps to `null`.
  */
 const INVITE_ERROR_CODES = [
   'invite-not-found',
@@ -91,11 +144,12 @@ const INVITE_ERROR_CODES = [
   'invite-redeemed',
   'invite-pin-mismatch',
   'invite-pin-unknown',
-  'invite-flow-busy',
-  'invite-flow-denied',
-  'invite-flow-error',
-  'invite-flow-expired',
-  'invite-flow-not-found',
+  'workspace-full',
+  'credential-invalid',
+  'proof-invalid',
+  'proof-expired',
+  'github-unreachable',
+  'owner-self-join',
 ] as const;
 
 export type InviteErrorCode = (typeof INVITE_ERROR_CODES)[number];
@@ -128,6 +182,72 @@ export class InviteRpcError extends Error {
   }
 }
 
+/**
+ * Why the transport failed, as a closed set the failure dialog and the log
+ * route on (the underlying socket/library error text is dropped: it can echo
+ * addresses or argv, including the tc address's pre-shared key):
+ * - `tailcat-unavailable`: no direct host answered (or none was given) and
+ *   the bundled tailcat client binary is missing, so the tunnel cannot be
+ *   dialed at all.
+ * - `tunnel-failed`: the local tailcat forwarder could not start, or the
+ *   tunneled dial broke before the handshake completed (e.g. the tailcat
+ *   child exited immediately).
+ * - `host-unreachable`: no candidate answered within the connect bound, or
+ *   the daemon never answered an invite request within its bound.
+ * - `host-refused`: a candidate answered but refused the connection
+ *   (ECONNREFUSED, or a non-101 answer to the `/invite` upgrade).
+ * - `connection-closed`: the socket closed (or reset) before the invite flow
+ *   completed.
+ */
+export type InviteTransportCode =
+  | 'tailcat-unavailable'
+  | 'tunnel-failed'
+  | 'host-unreachable'
+  | 'host-refused'
+  | 'connection-closed';
+
+/** A transport-level failure of the `/invite` connection, identified by a bounded code. */
+export class InviteTransportError extends Error {
+  /**
+   * @param fromPeer the failure was answered by the pin-verified daemon
+   *   itself (a non-101 answer to the upgrade), as opposed to a socket-level
+   *   failure on the way there — through the tunnel that distinction decides
+   *   whether the code stands or the forwarder is what failed.
+   */
+  constructor(
+    readonly transportCode: InviteTransportCode,
+    readonly fromPeer = false,
+  ) {
+    // i18n-ignore (internal error, fixed text + local code literal)
+    super(`invite transport failed: ${transportCode}`);
+    this.name = 'InviteTransportError';
+  }
+}
+
+/** Node `SystemError` codes meaning the peer never answered (as opposed to refusing). */
+const UNREACHABLE_SOCKET_CODES = new Set([
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+]);
+
+/**
+ * Reduce a socket/library error to an {@link InviteTransportError}: only the
+ * Node error `code` is inspected, never the message. An unrecognized error
+ * (reset, EOF mid-handshake, …) counts as `connection-closed`.
+ */
+function toTransportError(error: unknown): InviteTransportError {
+  if (error instanceof InviteTransportError) return error;
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  if (code === 'ECONNREFUSED') return new InviteTransportError('host-refused');
+  if (typeof code === 'string' && UNREACHABLE_SOCKET_CODES.has(code)) {
+    return new InviteTransportError('host-unreachable');
+  }
+  return new InviteTransportError('connection-closed');
+}
+
 /** Where to dial: the invite link's envelope. */
 export interface InviteTarget {
   /** Direct candidate hosts (`host=`); may be empty when `tcAddress` is set. */
@@ -149,14 +269,26 @@ export interface InviteConnection {
   readonly host: string;
   /** Whether the tunnel carried the connection. */
   readonly via: 'direct' | 'tunnel';
-  /** Phase 1: start the device flow for this invite. */
-  redeemStart(inviteId: string, secret: string): Promise<InviteRedeemStart>;
+  /** Proof step 1: preview the invite and obtain the single-use nonce. */
+  challenge(inviteId: string, secret: string): Promise<InviteChallenge>;
   /**
-   * Phase 2: wait for the grant. Blocks for as long as the device flow is
-   * open; `timeoutMs` (default: `expiresIn` + margin, supplied by the caller)
-   * bounds the wait locally.
+   * Proof step 2: join with the published proof gist. The host reads the
+   * gist from GitHub, so this is the one host round-trip that talks to a
+   * third party; `timeoutMs` bounds the wait locally.
    */
-  redeemWait(flowId: string, timeoutMs: number): Promise<InviteCredential>;
+  prove(
+    inviteId: string,
+    secret: string,
+    proof: InviteProof,
+    timeoutMs?: number,
+  ): Promise<InviteCredential>;
+  /** Preview the invite (workspace + host names) without issuing a nonce. */
+  inspect(inviteId: string, secret: string): Promise<InviteInspection>;
+  /**
+   * Join with a credential this guest already holds for the host; refused
+   * with `credential-invalid` when the host no longer recognizes it.
+   */
+  accept(inviteId: string, secret: string, credential: string): Promise<InviteCredential>;
   /** Tear the socket down; every pending request rejects. */
   close(): void;
 }
@@ -194,9 +326,10 @@ interface InviteDial {
 /**
  * Dial one candidate's `/invite` endpoint with the pin enforced at the TLS
  * handshake. The promise resolves with the open socket or rejects with the
- * transport error ({@link PinMismatchError} for a foreign cert); `cancel()`
- * tears the socket down at whatever stage it is (a still-connecting
- * handshake is aborted, an open socket terminated) and rejects the promise.
+ * transport error ({@link PinMismatchError} for a foreign cert, else an
+ * {@link InviteTransportError}); `cancel()` tears the socket down at whatever
+ * stage it is (a still-connecting handshake is aborted, an open socket
+ * terminated) and rejects the promise.
  */
 function dialInvite(host: string, port: number, expected: string): InviteDial {
   let cancel: () => void = () => {};
@@ -236,10 +369,13 @@ function dialInvite(host: string, port: number, expected: string): InviteDial {
         fail(new PinMismatchError(expected, actual));
         return;
       }
-      fail(new Error(`Unexpected server response: ${response.statusCode ?? 0}`));
+      fail(new InviteTransportError('host-refused', true));
     });
-    ws.on('error', (error: Error) => fail(error));
-    ws.on('close', () => fail(new Error('invite socket closed before open')));
+    ws.on('error', (error: Error) => {
+      // pinnedTlsConnect rejects a foreign cert by erroring the socket.
+      fail(error instanceof PinMismatchError ? error : toTransportError(error));
+    });
+    ws.on('close', () => fail(new InviteTransportError('connection-closed')));
     ws.on('open', () => {
       if (settled) return;
       settled = true;
@@ -256,7 +392,8 @@ function dialInvite(host: string, port: number, expected: string): InviteDial {
  * destroyed the moment the race settles (winner, all-failed, or the overall
  * deadline), so no stray TLS session outlives the outcome. Rejects with a
  * {@link PinMismatchError} over generic failures (the user must learn the
- * cert changed), else the last transport error, else a timeout.
+ * cert changed), else the last candidate's {@link InviteTransportError},
+ * else `host-unreachable` (the deadline hit with nothing answering).
  */
 function raceDirectHosts(
   hosts: string[],
@@ -268,7 +405,7 @@ function raceDirectHosts(
     let settled = false;
     let pending = hosts.length;
     let mismatch: PinMismatchError | null = null;
-    let lastError: Error | null = null;
+    let lastError: InviteTransportError | null = null;
     const dials = new Map<string, InviteDial>();
     const settle = (winner: string | null, error?: Error): void => {
       if (settled) return;
@@ -280,7 +417,7 @@ function raceDirectHosts(
       if (error) reject(error);
     };
     const timer = setTimeout(() => {
-      settle(null, mismatch ?? lastError ?? new Error('invite connect timed out'));
+      settle(null, mismatch ?? lastError ?? new InviteTransportError('host-unreachable'));
     }, timeoutMs);
     for (const host of hosts) {
       const dial = dialInvite(host, port, expected);
@@ -297,11 +434,11 @@ function raceDirectHosts(
             mismatch ??= error;
             logger.warn('invite candidate presented a foreign certificate', { host });
           } else {
-            lastError = error;
+            lastError = toTransportError(error);
           }
           pending -= 1;
           if (pending === 0) {
-            settle(null, mismatch ?? lastError ?? new Error('invite connect failed'));
+            settle(null, mismatch ?? lastError ?? new InviteTransportError('host-unreachable'));
           }
         },
       );
@@ -314,6 +451,16 @@ function raceDirectHosts(
  * the forwarder's port, pin enforced exactly like a direct dial). Returns
  * the open socket plus the tunnel that carries it; the tunnel is closed on
  * any failure so no forwarder or tailcat child is left behind.
+ *
+ * Failure codes: a missing binary is `tailcat-unavailable`; a forwarder that
+ * cannot start, or a tunneled dial that breaks before the handshake completes
+ * (the loopback forwarder itself always accepts, so a reset or early close
+ * means the tailcat child died — e.g. a bad tc address), is `tunnel-failed`;
+ * a connect that hits the bound stays `host-unreachable` (the daemon behind
+ * the tunnel never answered); a `host-refused` answered by the pin-verified
+ * daemon itself (a non-101 answer to the `/invite` upgrade) stands, since the
+ * tunnel evidently carried the request; a {@link PinMismatchError} passes
+ * through.
  */
 async function dialThroughTunnel(
   tcAddress: string,
@@ -323,19 +470,28 @@ async function dialThroughTunnel(
   spawn?: TailcatSpawn,
 ): Promise<{ ws: WsWebSocket; tunnel: TailcatTunnel }> {
   const binaryPath = resolveTailcatBinaryPath();
-  if (!binaryPath) throw new Error('tailcat binary unavailable; cannot dial the invite tunnel');
+  if (!binaryPath) throw new InviteTransportError('tailcat-unavailable');
   const tunnel = await createTailcatTunnel({
     tcAddress: tcAddress.trim(),
     remotePort: port,
     binaryPath,
     ...(spawn ? { spawn } : {}),
+  }).catch(() => {
+    throw new InviteTransportError('tunnel-failed');
   });
   try {
     const { ws } = await raceDirectHosts(['127.0.0.1'], tunnel.localPort, expected, timeoutMs);
     return { ws, tunnel };
   } catch (error) {
     tunnel.close();
-    throw error;
+    if (error instanceof PinMismatchError) throw error;
+    if (
+      error instanceof InviteTransportError &&
+      (error.transportCode === 'host-unreachable' || error.fromPeer)
+    ) {
+      throw error;
+    }
+    throw new InviteTransportError('tunnel-failed');
   }
 }
 
@@ -344,7 +500,9 @@ async function dialThroughTunnel(
  * first; when none answers (or the link has none) and the envelope carries a
  * tc address, the tunnel is tried next. Rejects when everything fails: a
  * {@link PinMismatchError} from any candidate wins over generic failures
- * (the user must learn the cert changed), else the last transport error.
+ * (the user must learn the cert changed), else the last attempt's
+ * {@link InviteTransportError} (the tunnel's when it was tried; the direct
+ * race's code is logged when the flow falls through to the tunnel).
  */
 export async function openInviteConnection(
   target: InviteTarget,
@@ -365,8 +523,13 @@ export async function openInviteConnection(
       const winner = await raceDirectHosts(hosts, target.port, expected, timeoutMs);
       return attachRpc(winner.host, 'direct', winner.ws);
     } catch (error) {
-      directError = error instanceof Error ? error : new Error(String(error));
+      directError = error instanceof PinMismatchError ? error : toTransportError(error);
       if (tcAddress === null) throw directError;
+      if (directError instanceof InviteTransportError) {
+        logger.debug('no direct invite candidate answered; trying the tunnel', {
+          transportCode: directError.transportCode,
+        });
+      }
     }
   }
 
@@ -388,7 +551,11 @@ export async function openInviteConnection(
 
 /**
  * Minimal JSON-RPC 2.0 request/response over an open `/invite` socket. A
- * `tunnel` that carried the socket is closed together with it.
+ * `tunnel` that carried the socket is closed together with it. Requests
+ * reject with an {@link InviteRpcError} on a daemon error frame, else an
+ * {@link InviteTransportError}: `connection-closed` when the socket ends
+ * (or `close()` is called) with the request outstanding, `host-unreachable`
+ * when the daemon never answers within the request's bound.
  */
 function attachRpc(
   host: string,
@@ -434,17 +601,21 @@ function attachRpc(
     }
     p.resolve(frame.result);
   });
-  ws.on('error', (error: Error) => failAll(error));
+  ws.on('error', (error: Error) => failAll(toTransportError(error)));
   ws.on('close', () => {
     closed = true;
-    failAll(new Error('invite connection closed'));
+    failAll(new InviteTransportError('connection-closed'));
     closeTunnel();
   });
 
-  const request = (params: Record<string, string>, timeoutMs: number): Promise<unknown> =>
+  const request = (
+    method: string,
+    params: Record<string, string>,
+    timeoutMs: number,
+  ): Promise<unknown> =>
     new Promise<unknown>((resolve, reject) => {
       if (closed) {
-        reject(new Error('invite connection closed'));
+        reject(new InviteTransportError('connection-closed'));
         return;
       }
       const id = nextId++;
@@ -452,31 +623,49 @@ function attachRpc(
         timeoutMs > 0
           ? setTimeout(() => {
               pending.delete(id);
-              reject(new Error(`${INVITE_REDEEM_METHOD} timed out`));
+              reject(new InviteTransportError('host-unreachable'));
             }, timeoutMs)
           : null;
       pending.set(id, { resolve, reject, timer });
-      ws.send(
-        JSON.stringify({ jsonrpc: '2.0', id, method: INVITE_REDEEM_METHOD, params }),
-        (err) => {
-          if (!err) return;
-          pending.delete(id);
-          if (timer) clearTimeout(timer);
-          reject(err);
-        },
-      );
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }), (err) => {
+        if (!err) return;
+        pending.delete(id);
+        if (timer) clearTimeout(timer);
+        reject(toTransportError(err));
+      });
     });
 
   return {
     host,
     via,
-    redeemStart: (inviteId, secret) =>
-      request({ inviteId, secret }, INVITE_START_TIMEOUT_MS) as Promise<InviteRedeemStart>,
-    redeemWait: (flowId, timeoutMs) => request({ flowId }, timeoutMs) as Promise<InviteCredential>,
+    challenge: (inviteId, secret) =>
+      request(
+        INVITE_CHALLENGE_METHOD,
+        { inviteId, secret },
+        INVITE_REQUEST_TIMEOUT_MS,
+      ) as Promise<InviteChallenge>,
+    prove: (inviteId, secret, proof, timeoutMs = INVITE_PROVE_TIMEOUT_MS) =>
+      request(
+        INVITE_PROVE_METHOD,
+        { inviteId, secret, nonce: proof.nonce, gistId: proof.gistId, login: proof.login },
+        timeoutMs,
+      ) as Promise<InviteCredential>,
+    inspect: (inviteId, secret) =>
+      request(
+        INVITE_INSPECT_METHOD,
+        { inviteId, secret },
+        INVITE_REQUEST_TIMEOUT_MS,
+      ) as Promise<InviteInspection>,
+    accept: (inviteId, secret, credential) =>
+      request(
+        INVITE_ACCEPT_METHOD,
+        { inviteId, secret, credential },
+        INVITE_REQUEST_TIMEOUT_MS,
+      ) as Promise<InviteCredential>,
     close: () => {
       if (closed) return;
       closed = true;
-      failAll(new Error('invite connection closed'));
+      failAll(new InviteTransportError('connection-closed'));
       ws.removeAllListeners('error');
       ws.on('error', () => {});
       ws.close();

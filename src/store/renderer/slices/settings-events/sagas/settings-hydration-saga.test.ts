@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   apply: vi.fn(),
   error: vi.fn(),
+  info: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
@@ -24,11 +25,26 @@ vi.mock('$features/settings/settings-hydration-service', () => ({
   applySettingsChanges: mocks.apply,
 }));
 vi.mock('$lib/utils/client-logger', () => ({
-  createLogger: () => ({ error: mocks.error }),
+  createLogger: () => ({ error: mocks.error, info: mocks.info }),
 }));
 
 import { BackendError } from '$lib/client/live/backend-transport-types';
+import type { Workspace, WorkspaceId } from '$shared/types';
+import { WorkspaceStatusEnum } from '$shared/types';
 
+import type { StoreState } from '../../../types';
+import { initialState as connectionsInitialState } from '../../connections/connections-slice';
+import {
+  guestSessionsListReceived,
+  guestSessionsReducer,
+  initialState as guestSessionsInitialState,
+} from '../../guest-sessions/guest-sessions-slice';
+import {
+  initialState as workspaceInitialState,
+  replaceWorkspaceList,
+  setWorkspaceHasLoaded,
+  workspaceReducer,
+} from '../../workspace/workspace-slice';
 import { settingsChangesReceived } from '../settings-events-slice';
 import { backendReconnected } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -43,10 +59,51 @@ const settle = async () => {
   await Promise.resolve();
 };
 
+/** Boot-time store: window identity unsettled, workspace list unloaded. */
+const BOOT_STATE = {
+  workspace: workspaceInitialState,
+  connections: connectionsInitialState,
+  guestSessions: guestSessionsInitialState,
+} as StoreState;
+
+/** Settled owner window whose loaded list reports `myRole` per workspace. */
+function settledState(roles: Array<Workspace['myRole']>): StoreState {
+  const workspaces = roles.map(
+    (myRole, index) =>
+      ({
+        id: `ws-${index}` as WorkspaceId,
+        title: `Workspace ${index}`,
+        branch: 'main',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        status: WorkspaceStatusEnum.Active,
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        myRole,
+      }) as Workspace,
+  );
+  return {
+    workspace: workspaceReducer(
+      workspaceReducer(workspaceInitialState, replaceWorkspaceList(workspaces)),
+      setWorkspaceHasLoaded(true),
+    ),
+    connections: connectionsInitialState,
+    guestSessions: guestSessionsReducer(
+      guestSessionsInitialState,
+      guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }),
+    ),
+  } as StoreState;
+}
+
+let storeState: StoreState = BOOT_STATE;
+const sagaIO = { dispatch: vi.fn(), getState: () => storeState };
+
 describe('settingsHydrationSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listSnapshot = undefined;
+    storeState = BOOT_STATE;
   });
 
   it('hydrates once in source order without issuing a persistence write', async () => {
@@ -67,7 +124,7 @@ describe('settingsHydrationSaga', () => {
       },
     ]);
 
-    await runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga).toPromise();
+    await runSaga(sagaIO, hydrateSettingsOnceSaga).toPromise();
 
     expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(mocks.list).toHaveBeenCalledWith();
@@ -87,7 +144,7 @@ describe('settingsHydrationSaga', () => {
         .mockResolvedValue([
           { path: 'providers.enabled', value: { 'claude-code': true }, label: '', description: '' },
         ]);
-      const task = runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga);
+      const task = runSaga(sagaIO, hydrateSettingsOnceSaga);
       await vi.advanceTimersByTimeAsync(0);
       expect(mocks.list).toHaveBeenCalledTimes(1);
       expect(mocks.apply).not.toHaveBeenCalled();
@@ -111,7 +168,7 @@ describe('settingsHydrationSaga', () => {
         .mockResolvedValue([
           { path: 'providers.enabled', value: { 'claude-code': true }, label: '', description: '' },
         ]);
-      const task = runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga);
+      const task = runSaga(sagaIO, hydrateSettingsOnceSaga);
       await vi.advanceTimersByTimeAsync(0);
       expect(mocks.list).toHaveBeenCalledTimes(1);
       expect(mocks.apply).not.toHaveBeenCalled();
@@ -129,14 +186,70 @@ describe('settingsHydrationSaga', () => {
     }
   });
 
-  it('does not retry a structured daemon error response', async () => {
-    mocks.list.mockRejectedValue(
-      new BackendError({ code: 'INVALID_PARAMS', message: 'invalid', rpcCode: -32602 }),
-    );
-    await runSaga({ dispatch: vi.fn() }, hydrateSettingsOnceSaga).toPromise();
+  it.each([
+    ['INVALID_PARAMS', -32602],
+    ['FORBIDDEN', -32003],
+  ])('does not retry a structured daemon error response (%s)', async (code, rpcCode) => {
+    mocks.list.mockRejectedValue(new BackendError({ code, message: code, rpcCode }));
+    await runSaga(sagaIO, hydrateSettingsOnceSaga).toPromise();
     expect(mocks.list).toHaveBeenCalledTimes(1);
     expect(mocks.apply).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalled();
+  });
+
+  it('treats an empty snapshot as final on a known collaborator-only client (multiplayer w3)', async () => {
+    vi.useFakeTimers();
+    try {
+      storeState = settledState(['collaborator', 'collaborator']);
+      mocks.list.mockResolvedValue([]);
+      const task = runSaga(sagaIO, hydrateSettingsOnceSaga);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS.at(-1)! * 2);
+      expect(mocks.list).toHaveBeenCalledTimes(1);
+      expect(mocks.apply).not.toHaveBeenCalled();
+      expect(mocks.error).not.toHaveBeenCalled();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps retrying an empty snapshot on a settled owner client', async () => {
+    vi.useFakeTimers();
+    try {
+      storeState = settledState(['collaborator', 'owner']);
+      mocks.list
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([{ path: 'boot', value: 1, label: '', description: '' }]);
+      const task = runSaga(sagaIO, hydrateSettingsOnceSaga);
+      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[0]);
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      expect(mocks.apply).toHaveBeenCalledWith([{ path: 'boot', value: 1 }]);
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps retrying an empty snapshot until the client is known to be collaborator-only', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.list.mockResolvedValue([]);
+      const task = runSaga(sagaIO, hydrateSettingsOnceSaga);
+      // Boot: identity unsettled reads as collaborator-only, but is not an answer yet.
+      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[0]);
+      expect(mocks.list).toHaveBeenCalledTimes(2);
+      storeState = settledState(['collaborator']);
+      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS[1]);
+      expect(mocks.list).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(SETTINGS_HYDRATION_RETRY_DELAYS_MS.at(-1)! * 2);
+      expect(mocks.list).toHaveBeenCalledTimes(3);
+      expect(mocks.apply).not.toHaveBeenCalled();
+      await task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not apply a boot read that settles after cancellation', async () => {
@@ -146,7 +259,7 @@ describe('settingsHydrationSaga', () => {
         resolveList = resolve;
       }),
     );
-    const task = runSaga({ dispatch: vi.fn() }, settingsHydrationSaga);
+    const task = runSaga(sagaIO, settingsHydrationSaga);
     task.cancel();
     await task.toPromise();
     resolveList([{ path: 'model.defaultProvider', value: 'late' }]);
@@ -165,7 +278,7 @@ describe('settingsHydrationSaga', () => {
       )
       .mockResolvedValueOnce({ settings: [{ path: 'backend', value: 'new' }], revision: 1 });
     const input = stdChannel();
-    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
     await settle();
 
     input.put({
@@ -193,7 +306,7 @@ describe('settingsHydrationSaga', () => {
       }),
     );
     const input = stdChannel();
-    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
     input.put(settingsChangesReceived([{ path: 'first', value: 1 }]));
     input.put(
       settingsChangesReceived([
@@ -227,7 +340,7 @@ describe('settingsHydrationSaga', () => {
       .mockResolvedValueOnce({ settings: [{ path: 'boot', value: 5 }], revision: 5 })
       .mockResolvedValueOnce({ settings: [{ path: 'remote', value: 1 }], revision: 1 });
     const input = stdChannel();
-    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
     await settle();
 
     input.put(settingsChangesReceived([{ path: 'stale', value: 4 }], 4));
@@ -255,7 +368,7 @@ describe('settingsHydrationSaga', () => {
       .mockResolvedValueOnce({ settings: [{ path: 'boot', value: 10 }], revision: 10 })
       .mockResolvedValueOnce({ settings: [{ path: 'restarted', value: 0 }], revision: 0 });
     const input = stdChannel();
-    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
     await settle();
 
     input.put(settingsChangesReceived([{ path: 'before-restart', value: 11 }], 11));
@@ -282,7 +395,7 @@ describe('settingsHydrationSaga', () => {
       .mockResolvedValueOnce({ settings: [{ path: 'boot', value: 5 }], revision: 5 })
       .mockResolvedValueOnce({ settings: [{ path: 'reconnected', value: 7 }], revision: 7 });
     const input = stdChannel();
-    const task = runSaga({ channel: input, dispatch: vi.fn() }, settingsHydrationSaga);
+    const task = runSaga({ ...sagaIO, channel: input }, settingsHydrationSaga);
     await settle();
 
     input.put(backendReconnected());

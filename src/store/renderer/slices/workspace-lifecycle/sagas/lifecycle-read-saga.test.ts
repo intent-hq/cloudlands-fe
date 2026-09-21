@@ -93,7 +93,11 @@ import { consoleOwnerChanged } from '../../hardware-console/hardware-console-sli
 import { bulkUpsertSessions } from '../../agent-session/agent-session-slice';
 import { selectAgentSessionsById } from '../../agent-session/agent-session-selectors';
 import { store as appStore } from '../../../store';
-import { workspaceDeleted, workspaceUnmounted } from '../workspace-lifecycle-slice';
+import {
+  backendReconnected,
+  workspaceDeleted,
+  workspaceUnmounted,
+} from '../workspace-lifecycle-slice';
 import { gitReadSaga } from '../../git/sagas/git-read-saga';
 import { lifecycleReadSaga } from './lifecycle-read-saga';
 import { MAX_CONCURRENT_WORKSPACE_READS } from './workspace-read-scheduler';
@@ -135,6 +139,32 @@ function start(current = state()) {
     lifecycleReadSaga,
   );
   return { channel, actions, task };
+}
+
+// Flows that dispatch loadWorkspacesRequested from inside the saga, or that
+// branch on the loaded flag, need dispatched actions looped back into the
+// channel (the default start() only records them) and the real
+// workspaceReducer applied to observe store convergence.
+function startWithLoopback() {
+  const channel = stdChannel();
+  const actions: { type: string }[] = [];
+  let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
+  const dispatch = (action: { type: string }) => {
+    actions.push(action);
+    workspaceState = workspaceReducer(workspaceState, action);
+    channel.put(action);
+    return action;
+  };
+  const current = state();
+  const task = runSaga(
+    {
+      channel,
+      dispatch,
+      getState: () => ({ ...current, workspace: workspaceState }),
+    },
+    lifecycleReadSaga,
+  );
+  return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
 }
 
 async function stop(task: ReturnType<typeof runSaga>) {
@@ -261,35 +291,204 @@ describe('lifecycleReadSaga', () => {
     await stop(run.task);
   });
 
+  describe('workspace list retry until the daemon transport connects', () => {
+    const TRANSPORT_DOWN = {
+      ok: false as const,
+      error: 'tailcat tunnel did not connect within 3000ms',
+    };
+    const listActions = (actions: { type: string }[], type: string) =>
+      actions.filter((action) => action.type === type);
+
+    it('retries a boot workspace.list that failed before the list loaded and loads it exactly once', async () => {
+      const workspace = { id: WS, branch: 'main' };
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce(TRANSPORT_DOWN)
+        .mockResolvedValueOnce({ ok: true, data: [workspace] });
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([]);
+      expect(run.getWorkspaceState().hasLoaded).toBe(false);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+
+      // One bounded retry delay, then the list lands once the transport is up.
+      await vi.advanceTimersByTimeAsync(999);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([
+        { type: 'workspace/replaceWorkspaceList', payload: [[workspace]] },
+      ]);
+      expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toEqual([
+        { type: 'workspace/setWorkspaceHasLoaded', payload: [true, 'local'] },
+      ]);
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      // Retries stop once loaded: no further reads on any later tick.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    });
+
+    it('backs off 1s, 2s, 5s and then holds at the 15s cap while the transport stays down', async () => {
+      mocks.workspaceServiceList.mockResolvedValue(TRANSPORT_DOWN);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      let calls = 1;
+      for (const delayMs of [1_000, 2_000, 5_000, 15_000, 15_000]) {
+        await vi.advanceTimersByTimeAsync(delayMs - 1);
+        expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(calls);
+        await vi.advanceTimersByTimeAsync(1);
+        await settle();
+        calls += 1;
+        expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(calls);
+      }
+      // Every attempt so far was one sequential read — never a concurrent fan-out.
+      expect(listActions(run.actions, 'workspace/replaceWorkspaceList')).toEqual([]);
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+      await stop(run.task);
+    });
+
+    it('re-requests the workspace list on backendReconnected', async () => {
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      run.channel.put(backendReconnected());
+      await settle();
+      expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }], [{ lite: true }]]);
+      expect(listActions(run.actions, 'workspace/setWorkspaceHasLoaded')).toHaveLength(2);
+      await stop(run.task);
+    });
+
+    it('reads immediately on backendReconnected during a retry wait, exactly once', async () => {
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce(TRANSPORT_DOWN)
+        .mockResolvedValue({ ok: true, data: [] });
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+
+      // No timer advance: the reconnect itself drives the read.
+      run.channel.put(backendReconnected());
+      await settle();
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      // Neither the abandoned backoff timer nor a trailing rerun adds a read.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      await stop(run.task);
+    });
+
+    it.each(['backoff', 'reconnect'] as const)(
+      'resumes workspace listing via %s without reviving an unmounted retired-agent read',
+      async (resume) => {
+        let resolveRetired!: (value: AgentSession[]) => void;
+        mocks.agents.list.mockReturnValueOnce(
+          new Promise<AgentSession[]>((resolve) => {
+            resolveRetired = resolve;
+          }),
+        );
+        mocks.workspaceServiceList
+          .mockResolvedValueOnce(TRANSPORT_DOWN)
+          .mockResolvedValue({ ok: true, data: [{ id: WS, branch: 'main' }] });
+        const run = startWithLoopback();
+        try {
+          run.channel.put(fetchRetiredAgentsRequested(WS));
+          run.channel.put(loadWorkspacesRequested());
+          await settle();
+          expect(mocks.agents.list.mock.calls).toEqual([[WS, { retiredOnly: true }]]);
+          expect(mocks.workspaceServiceList.mock.calls).toEqual([[{ lite: true }]]);
+          expect(run.getWorkspaceState().hasLoaded).toBe(false);
+
+          run.actions.length = 0;
+          run.channel.put(workspaceUnmounted(WS));
+          await settle();
+          resolveRetired([agent('agent-late', { retiredAt: NOW.toISOString() })]);
+          await settle();
+          expect(run.actions).toEqual([]);
+
+          if (resume === 'backoff') await vi.advanceTimersByTimeAsync(1_000);
+          else run.channel.put(backendReconnected());
+          await settle();
+          await settle();
+          expect(mocks.workspaceServiceList.mock.calls).toEqual([
+            [{ lite: true }],
+            [{ lite: true }],
+          ]);
+          expect(run.getWorkspaceState().hasLoaded).toBe(true);
+          expect(getItem(run.getWorkspaceState().workspaces, WS)?.id).toBe(WS);
+
+          await vi.advanceTimersByTimeAsync(60_000);
+          expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+          expect(mocks.agents.list).toHaveBeenCalledTimes(1);
+          expect(
+            run.actions.filter(
+              ({ type }) =>
+                type.startsWith('workspaceAgents/') || type.startsWith('agentSessions/'),
+            ),
+          ).toEqual([]);
+        } finally {
+          await stop(run.task);
+        }
+      },
+    );
+
+    it('does not retry a failed refresh once the list has loaded (log only)', async () => {
+      mocks.workspaceServiceList
+        .mockResolvedValueOnce({ ok: true, data: [] })
+        .mockResolvedValueOnce(TRANSPORT_DOWN);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(run.getWorkspaceState().hasLoaded).toBe(true);
+
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error.mock.calls[0]?.[0]).toBe('Refresh failed for workspaces');
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(2);
+      await stop(run.task);
+    });
+
+    it.each([
+      ['the IPC-flattened -32003 envelope message', { ok: false as const, error: 'Forbidden' }],
+      [
+        'a structured -32003 daemon error response',
+        Object.assign(new Error('capability refused'), { rpcCode: -32003 }),
+      ],
+    ])('does not retry %s', async (_label, refusal) => {
+      if (refusal instanceof Error) mocks.workspaceServiceList.mockRejectedValueOnce(refusal);
+      else mocks.workspaceServiceList.mockResolvedValueOnce(refusal);
+      const run = startWithLoopback();
+      run.channel.put(loadWorkspacesRequested());
+      await settle();
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(mocks.logger.error).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(mocks.workspaceServiceList).toHaveBeenCalledTimes(1);
+      expect(run.getWorkspaceState().hasLoaded).toBe(false);
+      await stop(run.task);
+    });
+  });
+
   describe('attention reconciliation on focus / console-owner acquisition', () => {
     const wireWorkspace = (attention: 'none' | 'unread') =>
       ({ id: WS, branch: 'main', attention }) as unknown as import('$shared/types').Workspace;
-
-    // These triggers dispatch loadWorkspacesRequested from inside the saga, so
-    // the harness must loop dispatched actions back into the channel (the
-    // default start() only records them) and apply the real workspaceReducer
-    // to observe store convergence.
-    function startWithLoopback() {
-      const channel = stdChannel();
-      const actions: { type: string }[] = [];
-      let workspaceState = workspaceReducer(undefined, { type: '@@INIT' });
-      const dispatch = (action: { type: string }) => {
-        actions.push(action);
-        workspaceState = workspaceReducer(workspaceState, action);
-        channel.put(action);
-        return action;
-      };
-      const current = state();
-      const task = runSaga(
-        {
-          channel,
-          dispatch,
-          getState: () => ({ ...current, workspace: workspaceState }),
-        },
-        lifecycleReadSaga,
-      );
-      return { channel, actions, task, dispatch, getWorkspaceState: () => workspaceState };
-    }
 
     it('refetches the workspace list when the window regains focus and converges stale attention', async () => {
       const run = startWithLoopback();
