@@ -335,8 +335,9 @@ interface CheckSingleEnvelope {
  * `{ success, data }` envelope; otherwise keep main's default-deny
  * `{ available: false }`. The gate is `isElectronPlatform()`, not bridge
  * presence: the dev browser mock and the CT host bridge both install a
- * `window.electronAPI` (sentinel electron version) whose `invoke` routes back
- * into this mock router, so forwarding to them would recurse. A rejected
+ * `window.electronAPI` carrying the sentinel electron version — the CT
+ * bridge's `invoke` routes back into this mock router (so forwarding would
+ * recurse) and the dev mock's private router never reaches main. A rejected
  * invoke is also a deny — the aggregate must not lose the other providers'
  * verdicts over the mock slot.
  */

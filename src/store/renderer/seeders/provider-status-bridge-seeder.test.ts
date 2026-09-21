@@ -1261,8 +1261,9 @@ describe('provider-status-bridge-seeder', () => {
     });
 
     it('does not forward to the dev/CT browser-mock bridge (sentinel electron version)', async () => {
-      // Both the dev browser mock and the CT host bridge route `invoke` back
-      // into this mock router, so forwarding to them would recurse.
+      // Both the dev browser mock and the CT host bridge carry the sentinel;
+      // the CT bridge routes `invoke` back into this mock router (recursion)
+      // and the dev mock's private router never reaches main either way.
       const invokeSpy = bridgeWith(MOCK_ENVELOPE, { electron: '0.0.0-browser' });
       routeDaemon({
         'host.checkAuggie': { available: false },
