@@ -40,17 +40,29 @@ describe('mapOffsetThroughDiff', () => {
 });
 
 describe('createBidirectionalOffsetMapper', () => {
-  const pairs: Array<[string, string]> = [
+  // The shared runs of these pairs match in exactly one way, so `a → b` and
+  // `b → a` have the same minimal alignment and an independent reverse diff
+  // is a valid oracle for the inversion.
+  const unambiguousPairs: Array<[string, string]> = [
     ['abcdef', 'abcXYZdef'],
     ['abcXYZdef', 'abc12def'],
     ['body', 'AGENT\nbody'],
-    ['a😀b', 'a😀😀b'],
     ['Body bold tail', 'Body **bold** tail'],
-    ['Title\nBody', '# Title\n\nBody'],
   ];
+  // A repeated character next to a change (the doubled emoji, the doubled
+  // newline, the moved "ab") admits several equally short alignments; the two
+  // directions must still be one alignment, but not necessarily the one a
+  // reverse diff would pick.
+  const ambiguousPairs: Array<[string, string]> = [
+    ['a😀b', 'a😀😀b'],
+    ['Title\nBody', '# Title\n\nBody'],
+    ['abXY', 'XYab'],
+    ['aaa', 'aa'],
+  ];
+  const allPairs = [...unambiguousPairs, ...ambiguousPairs];
 
   it('maps a → b exactly like createOffsetMapper(a, b)', () => {
-    for (const [a, b] of pairs) {
+    for (const [a, b] of allPairs) {
       const forward = createOffsetMapper(a, b);
       const { aToB } = createBidirectionalOffsetMapper(a, b);
       for (let offset = -1; offset <= a.length + 1; offset += 1) {
@@ -59,18 +71,55 @@ describe('createBidirectionalOffsetMapper', () => {
     }
   });
 
-  it('inverts to agree with createOffsetMapper(b, a) outside changed spans', () => {
-    for (const [a, b] of pairs) {
+  it('is idempotent: a → b → a lands on a fixed point of the one alignment', () => {
+    for (const [a, b] of allPairs) {
+      const { aToB, bToA } = createBidirectionalOffsetMapper(a, b);
+      // An offset strictly inside a common run survives a → b → a unchanged.
+      // One inside a changed span, or on a run boundary whose affinity points
+      // the other way, is moved to a span edge in `a` — whose own image in `b`
+      // is the point it was moved to, so a second pass changes nothing.
+      const label = JSON.stringify([a, b]);
+      let roundTripped = 0;
+      for (let offset = 0; offset <= a.length; offset += 1) {
+        const mapped = aToB(offset);
+        const back = bToA(mapped);
+        if (back === offset) roundTripped += 1;
+        expect(aToB(back), `${label} @ ${offset}`).toBe(mapped);
+        expect(bToA(aToB(back)), `${label} @ ${offset}`).toBe(back);
+      }
+      expect(roundTripped, label).toBeGreaterThanOrEqual(1);
+      expect(bToA(aToB(0)), label).toBe(0);
+    }
+  });
+
+  it('agrees with createOffsetMapper(b, a) on unambiguous pairs outside changed spans', () => {
+    for (const [a, b] of unambiguousPairs) {
       const reverse = createOffsetMapper(b, a);
       const { aToB, bToA } = createBidirectionalOffsetMapper(a, b);
-      // Offsets in `b` that some offset in `a` maps onto sit on shared text
-      // or at a span edge, so the direct b → a diff and the inversion agree.
       const reachable = new Set<number>();
       for (let offset = 0; offset <= a.length; offset += 1) reachable.add(aToB(offset));
       for (const offset of reachable) {
         expect(bToA(offset), `${JSON.stringify([a, b])} @ ${offset}`).toBe(reverse(offset));
       }
     }
+  });
+
+  it('keeps one alignment for both directions when the reverse diff would pick another', () => {
+    // a → b: delete "ab", keep "XY", insert "ab". A fresh b → a diff keeps
+    // "ab" instead, so the two would disagree on where "XY" sits.
+    const { aToB, bToA } = createBidirectionalOffsetMapper('abXY', 'XYab');
+    // Shared interior: between X and Y.
+    expect(aToB(3)).toBe(1);
+    expect(bToA(1)).toBe(3);
+    expect(bToA(aToB(3))).toBe(3);
+    // Boundary affinity: the edge of the deleted "ab" is the start of "XY".
+    expect(aToB(2)).toBe(0);
+    expect(bToA(0)).toBe(0);
+    // Inside the inserted "ab" in b: clamp to the span end in a.
+    expect(bToA(3)).toBe(4);
+    expect(bToA(4)).toBe(4);
+    // Inside the deleted "ab" in a: clamp to the span end in b.
+    expect(aToB(1)).toBe(0);
   });
 
   it('clamps offsets inside a changed span to the span end on the other side', () => {

@@ -101,10 +101,18 @@ interface BidirectionalOffsetMapper {
 }
 
 /**
- * Both directions of `createOffsetMapper` from ONE `a → b` alignment: `bToA`
+ * Both directions of `createOffsetMapper` from ONE `a → b` alignment. `bToA`
  * reads the same spans with their sides swapped instead of diffing again, so
- * it agrees with `createOffsetMapper(b, a)` outside changed spans and clamps
- * to the span's end in `a` inside them.
+ * the two directions always describe the same alignment: strictly inside a
+ * common run `bToA` is the exact inverse of `aToB` (offsets round-trip); on a
+ * run boundary each direction keeps `mapOffset`'s start affinity (the edge of
+ * a change maps to the change's start, so it need not round-trip); and an
+ * offset strictly inside a changed span clamps to that span's end in `a`.
+ *
+ * This is NOT always `createOffsetMapper(b, a)`: when repeated characters
+ * admit several equally short alignments (`abXY` ↔ `XYab`), a fresh `b → a`
+ * diff may pick a different one and disagree even on shared text. Callers
+ * mapping in both directions want the single consistent alignment.
  */
 export function createBidirectionalOffsetMapper(a: string, b: string): BidirectionalOffsetMapper {
   const spans = hunks(a, b);
