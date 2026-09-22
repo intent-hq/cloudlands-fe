@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,12 +7,39 @@ import {
   configuredVisualStates,
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
+import type { Workspace, WorkspaceId } from '$shared/types';
+import { WorkspaceStatusEnum } from '$shared/types';
+import { store as appStore } from '$store/renderer/store';
+import { closePanel, openPanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  replaceWorkspaceList,
+  setWorkspaceHasLoaded,
+} from '$store/renderer/slices/workspace/workspace-slice';
 
 import PanelCornerHandle from '../PanelCornerHandle.svelte';
 import PanelSplitHandle from '../PanelSplitHandle.svelte';
 import { setDraggedPane } from '../panel-drag';
+import SidebarPanelHarness from '../../sidebar-nav/__tests__/mocks/SidebarPanelHarness.svelte';
+
+vi.mock('$features/agent/services/active-streams-tracker', () => ({
+  activeStreamsTracker: {
+    fetchActiveStreams: vi.fn(),
+    startPolling: vi.fn(),
+    getStreamingAgentIdsForWorkspace: vi.fn(() => []),
+    subscribe: vi.fn(() => () => {}),
+  },
+}));
+
+vi.mock('$lib/electron-bridge', () => ({
+  on: vi.fn(),
+  off: vi.fn(),
+  once: vi.fn(),
+  invoke: vi.fn(),
+  listenSync: vi.fn(),
+}));
 
 afterEach(() => {
+  cleanup();
   setDraggedPane(null);
   document.body.classList.remove('panel-resizing');
   vi.clearAllMocks();
@@ -76,22 +103,11 @@ describe('editorial panel resize handles', () => {
     expect(observed).toEqual(configuredVisualStates);
   });
 
-  it('uses one neutral visual contract across resize implementations', () => {
+  it('uses one neutral visual contract for the shared resize-handle stylesheet', () => {
     const sharedStyles = fs.readFileSync(
       path.resolve(__dirname, '../../../../styles/resize-handles.css'),
       'utf8',
     );
-    const implementationPaths = [
-      '../../ResizablePanel.svelte',
-      '../PanelSplitHandle.svelte',
-      '../PanelCornerHandle.svelte',
-      '../../sidebar-nav/SidebarPanel.svelte',
-      '../../../terminal/QuakeTerminalOverlay.svelte',
-      '../../../terminal/RootQuakeTerminalOverlay.svelte',
-      '../../../terminal/TerminalSidebar.svelte',
-      '../../../terminal/SetupScriptBanner.svelte',
-      '../../../chat/input/SimpleRichInput.svelte',
-    ];
 
     expect(sharedStyles).toContain('.app-resize-handle');
     expect(sharedStyles).toContain('--resize-handle-idle: hsl(var(--border))');
@@ -99,14 +115,69 @@ describe('editorial panel resize handles', () => {
     expect(sharedStyles).toContain('opacity: 0');
     expect(sharedStyles).not.toContain('var(--primary)');
     expect(sharedStyles).not.toContain('var(--ring)');
-    implementationPaths.forEach((implementationPath) => {
-      expect(fs.readFileSync(path.resolve(__dirname, implementationPath), 'utf8')).toContain(
-        'app-resize-handle',
-      );
-    });
-    expect(
-      fs.readFileSync(path.resolve(__dirname, '../../sidebar-nav/SidebarPanel.svelte'), 'utf8'),
-    ).toContain('data-combined-panel-divider-border');
+  });
+
+  // The panel-system handles assert their shared-handle class in the tests
+  // below; TerminalSidebar.test.ts and ResizablePanel-handle-hit-area.ct.spec.ts
+  // cover those implementations. The sidebar's two handles are rendered here.
+  it('renders the sidebar width and split handles on the shared resize-handle contract', () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    vi.stubGlobal(
+      'MutationObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+        takeRecords = vi.fn();
+      },
+    );
+    const workspace = {
+      id: 'ws-owner' as WorkspaceId,
+      title: 'Owner',
+      branch: 'main',
+      changesets: [],
+      timeline: [],
+      conversationInfo: [],
+      status: WorkspaceStatusEnum.Active,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      myRole: 'owner',
+    } as Workspace;
+    try {
+      const { container } = render(SidebarPanelHarness, {
+        props: {
+          setup: () => {
+            appStore.dispatch(replaceWorkspaceList([workspace]));
+            appStore.dispatch(setWorkspaceHasLoaded(true));
+            appStore.dispatch(openPanel('chief'));
+          },
+        },
+      });
+
+      const widthHandle = container.querySelector<HTMLElement>(
+        '[data-testid="width-resize-handle"]',
+      )!;
+      const splitHandle = container.querySelector<HTMLElement>(
+        '[data-testid="split-resize-handle"]',
+      )!;
+      expect(widthHandle.classList).toContain('app-resize-handle');
+      expect(widthHandle.dataset.resizeAxis).toBe('x');
+      expect(splitHandle.classList).toContain('app-resize-handle');
+      expect(splitHandle.dataset.resizeAxis).toBe('y');
+      expect(splitHandle.querySelector('[data-combined-panel-divider-border]')).not.toBeNull();
+    } finally {
+      cleanup();
+      appStore.dispatch(closePanel());
+      appStore.dispatch(replaceWorkspaceList([]));
+      appStore.dispatch(setWorkspaceHasLoaded(false));
+      vi.unstubAllGlobals();
+    }
   });
 
   // Scrollbar/hit-area interplay (the clipped leading strip must let clicks

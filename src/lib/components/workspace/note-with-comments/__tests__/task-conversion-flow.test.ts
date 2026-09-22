@@ -1763,4 +1763,59 @@ a<b>c
       );
     });
   });
+
+  describe('panel focus-content routing', () => {
+    // ProseMirror scrolls the new selection into view through Range client
+    // rects, which jsdom does not implement.
+    const zeroRect = { x: 0, y: 0, left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
+    beforeEach(() => {
+      Object.defineProperty(Range.prototype, 'getClientRects', {
+        configurable: true,
+        value: () => [zeroRect],
+      });
+      Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => zeroRect,
+      });
+    });
+    afterEach(() => {
+      delete (Range.prototype as Partial<Range>).getClientRects;
+      delete (Range.prototype as Partial<Range>).getBoundingClientRect;
+    });
+
+    function dispatchPanelFocusContent(noteId: string) {
+      window.dispatchEvent(
+        new CustomEvent('panel:focus-content', {
+          detail: { panelId: 'panel-1', tabId: 'tab-1', tabType: 'note', noteId },
+        }),
+      );
+    }
+
+    it('places the caret at the start of a revealed note instead of its end', async () => {
+      await renderInitializedNote('revealed', 'First line\n\nSecond line\n\nThird line');
+      await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+      const editor = editorInstances.at(-1);
+      editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+      const endPosition = editor.state.selection.from;
+      expect(endPosition).toBeGreaterThan(1);
+
+      dispatchPanelFocusContent('revealed');
+      await tick();
+
+      expect(editor.state.selection.from).toBe(1);
+    });
+
+    it('ignores focus-content requests addressed to another note', async () => {
+      await renderInitializedNote('revealed', 'First line\n\nSecond line');
+      await waitFor(() => expect(editorInstances.at(-1)).toBeTruthy());
+      const editor = editorInstances.at(-1);
+      editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+      const endPosition = editor.state.selection.from;
+
+      dispatchPanelFocusContent('someone-else');
+      await tick();
+
+      expect(editor.state.selection.from).toBe(endPosition);
+    });
+  });
 });

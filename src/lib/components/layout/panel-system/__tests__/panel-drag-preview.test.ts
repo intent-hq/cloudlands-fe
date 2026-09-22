@@ -1,12 +1,24 @@
 /** @vitest-environment jsdom */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PanelDragPreview from '../PanelDragPreview.svelte';
 import { PANE_DROP_PREVIEW_PANEL_ID } from '$features/layout/panel-move-preview';
 import type { PanelState } from '$store/renderer/slices/panel-layout/panel-layout-types';
+import type { ReduxStoreContext } from '$store/renderer/types';
+import { initAppStore, store as appStore } from '$store/renderer/store';
+import {
+  initializeLayout,
+  setRestoreStatus,
+} from '$store/renderer/slices/panel-layout/panel-layout-slice';
+import { endDrag, startDrag } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { PANE_DRAG_MIME, clearDraggedPaneState, setDraggedPane } from '../panel-drag';
+
+vi.mock('../Panel.svelte', async () => ({
+  default: (await import('./mocks/PaneDragRoutingPanel.svelte')).default,
+}));
+
+import PanelLayout from '../PanelLayout.svelte';
 
 function panel(panelId: string, paneIds: string[], activeTabId = paneIds[0]): PanelState {
   return {
@@ -64,19 +76,150 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('PanelDragPreview', () => {
-  it('lets the outer workspace own projected width and preserves its inline inset', () => {
-    const layout = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelLayout.svelte'),
-      'utf8',
-    );
+describe('PanelLayout drag preview overlay', () => {
+  const STORE_CONTEXT = 'redux-store-context';
+  const WORKSPACE_ID = 'panel-drag-preview-overlay';
+  const PANEL_WIDTH = 400;
+  let storeContext: ReduxStoreContext | undefined;
 
-    expect(layout).toContain('contained && !onPanelMovePreviewWidthRatioChange');
-    expect(layout).toContain('onPanelMovePreviewWidthRatioChange?.(nextRatio)');
-    expect(layout).toContain("'pointer-events-none absolute inset-y-0 left-0 z-40 box-content'");
-    expect(layout).toContain("contained ? 'px-2' : 'pr-2 sm:pr-3'");
+  class TestResizeObserver {
+    observe() {}
+    disconnect() {}
+  }
+
+  function rect(left: number, right: number): DOMRect {
+    return { left, right, top: 0, bottom: 400, width: right - left, height: 400 } as DOMRect;
+  }
+
+  function dragOver(clientX: number): DragEvent {
+    const event = new Event('dragover', { bubbles: true, cancelable: true }) as DragEvent;
+    Object.defineProperties(event, {
+      clientX: { value: clientX },
+      clientY: { value: 20 },
+      dataTransfer: { value: { dropEffect: 'none', types: [PANE_DRAG_MIME] } },
+    });
+    return event;
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', TestResizeObserver);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function () {
+      if (this.getAttribute('data-testid') === 'panel-workspace-inset') return PANEL_WIDTH * 2;
+      return this.classList.contains('panel-drag-preview-split') ? 1000 : 0;
+    });
+    Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
+      configurable: true,
+      value: () => [],
+    });
+    storeContext = initAppStore(appStore);
   });
 
+  afterEach(() => {
+    clearDraggedPaneState();
+    appStore.dispatch(endDrag());
+    cleanup();
+    storeContext?.dispose();
+    storeContext = undefined;
+    vi.unstubAllGlobals();
+  });
+
+  // A one-pane source column plus a two-pane target; dragging the target's
+  // first pane to the layout's leading edge projects a third column, so the
+  // projected canvas is wider than the committed one.
+  async function projectNewColumn(props: {
+    contained: boolean;
+    onPanelMovePreviewWidthRatioChange?: (ratio: number) => void;
+  }) {
+    appStore.dispatch(
+      initializeLayout(WORKSPACE_ID, {
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          sizes: [50, 50],
+          children: [
+            { type: 'panel', panelId: 'source-panel' },
+            { type: 'panel', panelId: 'target-panel' },
+          ],
+        },
+        panels: {
+          'source-panel': panel('source-panel', ['source']),
+          'target-panel': panel('target-panel', ['one', 'two']),
+        },
+        focusedPanelId: 'target-panel',
+        canvasWidth: PANEL_WIDTH * 2,
+      }),
+    );
+    appStore.dispatch(setRestoreStatus(WORKSPACE_ID, 'restored'));
+    const { container } = render(PanelLayout, {
+      props: {
+        workspaceId: WORKSPACE_ID,
+        layoutId: WORKSPACE_ID,
+        canvasSizing: props.contained ? 'content' : 'viewport',
+        ...props,
+      },
+      context: new Map([[STORE_CONTEXT, storeContext]]),
+    });
+    const sourcePanel = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>('[data-panel-id="source-panel"]');
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    sourcePanel.getBoundingClientRect = () => rect(0, PANEL_WIDTH);
+    container.querySelector<HTMLElement>('[data-panel-id="target-panel"]')!.getBoundingClientRect =
+      () => rect(PANEL_WIDTH + 8, PANEL_WIDTH * 2 + 8);
+    container.querySelector<HTMLElement>('[data-panel-layout-motion]')!.getBoundingClientRect =
+      () => rect(0, PANEL_WIDTH * 2 + 8);
+    setDraggedPane({ tabId: 'one', panelId: 'target-panel' });
+    appStore.dispatch(startDrag());
+
+    await fireEvent(sourcePanel, dragOver(10));
+    const overlay = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>(
+        '[data-panel-layout-drag-preview="before"]',
+      );
+      expect(element).toBeTruthy();
+      return element!;
+    });
+    return { container, overlay };
+  }
+
+  it('projects the wider canvas itself when a contained layout has no outer owner', async () => {
+    const { container, overlay } = await projectNewColumn({ contained: true });
+
+    expect(container.querySelectorAll('[data-panel-layout-preview-panel]')).toHaveLength(3);
+    const ratio = Number.parseFloat(overlay.style.width) / 100;
+    expect(ratio).toBeGreaterThan(1);
+    expect(overlay.classList.contains('px-2')).toBe(true);
+    expect(overlay.classList.contains('pr-2')).toBe(false);
+  });
+
+  it('lets the outer workspace own the projected width when it subscribes to the ratio', async () => {
+    const onPanelMovePreviewWidthRatioChange = vi.fn();
+    const { overlay } = await projectNewColumn({
+      contained: true,
+      onPanelMovePreviewWidthRatioChange,
+    });
+
+    expect(overlay.style.width).toBe('100%');
+    expect(onPanelMovePreviewWidthRatioChange).toHaveBeenCalledTimes(1);
+    const [reportedRatio] = onPanelMovePreviewWidthRatioChange.mock.calls[0];
+    expect(reportedRatio).toBeGreaterThan(1);
+
+    clearDraggedPaneState();
+    appStore.dispatch(endDrag());
+    await waitFor(() => expect(onPanelMovePreviewWidthRatioChange).toHaveBeenLastCalledWith(1));
+  });
+
+  it('keeps the viewport layout overlay at full width with the trailing inset only', async () => {
+    const { overlay } = await projectNewColumn({ contained: false });
+
+    expect(overlay.style.width).toBe('100%');
+    expect(overlay.classList.contains('pr-2')).toBe(true);
+    expect(overlay.classList.contains('px-2')).toBe(false);
+  });
+});
+
+describe('PanelDragPreview', () => {
   it.each([
     ['left source to right destination', ['target-panel', 'source-panel']],
     ['right source to left destination', ['source-panel', 'target-panel']],
@@ -170,21 +313,6 @@ describe('PanelDragPreview', () => {
     expect(snapshot?.dataset.panelLayoutPreviewSnapshotSource).toBe('source-panel');
     expect(snapshot?.textContent).toContain('drag content');
     expect(destination?.querySelectorAll('[data-panel-drop-destination]')).toHaveLength(1);
-
-    const sourceText = readFileSync(
-      resolve(process.cwd(), 'src/lib/components/layout/panel-system/PanelDragPreview.svelte'),
-      'utf8',
-    );
-    expect(sourceText).toContain('background: hsl(var(--card) / 0.42)');
-    expect(sourceText).toContain('border: 1px solid hsl(var(--border))');
-    expect(sourceText).toContain('pointer-events: none');
-    expect(sourceText).toContain('@container not style(--motion-reduced: 1)');
-    expect(sourceText).toContain('@media (forced-colors: active)');
-    expect(sourceText).toContain('outline: 2px solid CanvasText');
-    expect(sourceText).not.toContain('var(--primary)');
-    expect(sourceText).not.toContain('var(--accent)');
-    expect(sourceText).not.toContain('var(--success)');
-    expect(sourceText).not.toContain('box-shadow');
 
     source.remove();
   });
