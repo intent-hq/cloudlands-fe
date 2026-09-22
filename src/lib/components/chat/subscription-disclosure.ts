@@ -9,14 +9,14 @@ export const SUBSCRIPTION_CARD_SURFACE_CLASS =
 export const EVENT_WAKEUP_IN_THREAD_SPACING_CLASS = 'mt-8';
 export const SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS = 'mt-5';
 export const SUBSCRIPTION_ROW_TYPOGRAPHY_CLASS = 'type-body font-normal text-muted-foreground!'; // i18n-ignore (Tailwind class constants)
-/** Shared summary-row recipe: 20px lead, 8px gap, 12px inset, and 36px minimum height. */
+/** Shared summary row: 20px lead, 8px gap, lane-bounded inset, and 36px minimum height. */
 export const SUBSCRIPTION_ROW_GEOMETRY_CLASS =
-  'flex h-9! min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden border-0! px-3! py-2!';
+  'flex h-9! min-h-9 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden border-0! subscription-card-row-inset py-2!';
 export const SUBSCRIPTION_LEADING_COLUMN_CLASS =
   'inline-flex h-(--agent-avatar-standard-surface-size) w-(--agent-avatar-standard-surface-size) shrink-0 items-center justify-center leading-none';
 export const SUBSCRIPTION_LEADING_CONTENT_CLASS = 'inline-flex min-w-0 items-center gap-2';
-/** Expanded wake content aligns with the label after the 12px inset, 20px lead, and 8px gap. */
-export const SUBSCRIPTION_WAKE_BODY_PADDING_CLASS = 'py-2 pr-3 pl-10';
+/** Expanded wake content follows the lane-bounded inset, 20px lead, and 8px gap. */
+export const SUBSCRIPTION_WAKE_BODY_PADDING_CLASS = 'py-2 subscription-card-body-inset';
 export const SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS =
   "relative before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-border before:content-['']";
 export const SUBSCRIPTION_INSET_ROW_DIVIDER_CLASS = `${SUBSCRIPTION_INSET_TOP_DIVIDER_CLASS} first:before:hidden`;
