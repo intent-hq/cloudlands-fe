@@ -36,6 +36,15 @@ async function expectDisclosureSettled(
   else await expect(body).toHaveCount(0);
 }
 
+/**
+ * The shared Button base transitions `color` and `opacity`, so a theme flip or a
+ * hover/focus change leaves the toggle mid-transition for one spring-fast beat;
+ * wait for its own animations to finish before reading a computed style.
+ */
+async function expectTransitionsSettled(target: Locator): Promise<void> {
+  await expect.poll(() => target.evaluate((node) => node.getAnimations().length)).toBe(0);
+}
+
 // One test() per (theme, width, zoom) group so each group is its own retry unit
 // and timeout budget (intent-hq/intent#5561); the finished-variant × label-length
 // × expanded cells of a group share one mount.
@@ -46,7 +55,9 @@ for (const theme of ['light', 'dark'] as const) {
         mount,
       }) => {
         const panelId = `geometry-${theme}-${width}-${zoom}`;
-        const component = await mount(ChatEventGeometryHost, { props: { panelId } });
+        const component = await mount(ChatEventGeometryHost, {
+          props: { panelId, theme, width, zoom },
+        });
         const summary = component.getByTestId('event-wakeup-summary');
         const details = component.getByTestId('event-wakeup-details');
         let measuredStates = 0;
@@ -122,7 +133,9 @@ for (const theme of ['light', 'dark'] as const) {
         mount,
       }) => {
         const panelId = `parity-${theme}-${width}-${zoom}`;
-        const component = await mount(ChatEventGeometryHost, { props: { panelId } });
+        const component = await mount(ChatEventGeometryHost, {
+          props: { panelId, theme, width, zoom },
+        });
         const senderButton = component.getByTestId('agent-message-attribution');
         const agentToggle = component.getByTestId('agent-message-disclosure-toggle');
         const agentBody = component.getByTestId('agent-message-expanded-body');
@@ -297,6 +310,7 @@ for (const theme of ['light', 'dark'] as const) {
           const interactionStyle = async (state: 'hover' | 'focus', target: typeof agentToggle) => {
             if (state === 'hover') await target.hover();
             else await target.focus();
+            await expectTransitionsSettled(target);
             return target.evaluate((node) => {
               const computed = getComputedStyle(node);
               return {
