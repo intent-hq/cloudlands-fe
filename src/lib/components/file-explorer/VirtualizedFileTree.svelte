@@ -24,7 +24,11 @@
   import LineChangesBadge from '../shared/LineChangesBadge.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import { invoke } from '$lib/electron-bridge';
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
@@ -438,6 +442,11 @@
     // Don't handle if we're editing or creating
     if (editingPath || creatingInDir) return;
 
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      handleContextMenu(e, focusedNode?.node ?? null);
+      return;
+    }
+
     const nodeCount = effectiveNodes.length;
     if (nodeCount === 0) return;
 
@@ -707,22 +716,65 @@
   }
 
   // Context menu state
-  let contextMenu: { x: number; y: number; node: FileNode | null } | null = $state(null);
+  let contextMenu:
+    | (SidebarContextPosition & { node: FileNode | null; workspaceId: string; rootPath: string })
+    | null = $state(null);
 
-  function handleContextMenu(e: MouseEvent, node: FileNode) {
-    e.preventDefault();
-    e.stopPropagation();
-    contextMenu = { x: e.clientX, y: e.clientY, node };
+  function handleContextMenu(e: MouseEvent | KeyboardEvent, node: FileNode | null) {
+    const position = getSidebarContextPosition(e);
+    if (!position) return;
+    contextMenu = {
+      ...position,
+      returnFocus: treeContainer ?? null,
+      node,
+      workspaceId,
+      rootPath: $fileExplorerWorkspacePath,
+    };
   }
 
   function handleBackgroundContextMenu(e: MouseEvent) {
     // Only show if click target is the tree container or scroll area (not a file item)
-    e.preventDefault();
-    contextMenu = { x: e.clientX, y: e.clientY, node: null };
+    handleContextMenu(e, null);
   }
 
   function closeContextMenu() {
     contextMenu = null;
+  }
+
+  function isContextTargetCurrent(target: typeof contextMenu): boolean {
+    return (
+      !!target &&
+      target.workspaceId === workspaceId &&
+      target.rootPath === $fileExplorerWorkspacePath &&
+      (!target.node ||
+        flattenedNodes.some(
+          ({ node }) => node.path === target.node?.path && node.type === target.node?.type,
+        ))
+    );
+  }
+
+  $effect(() => {
+    if (contextMenu && !isContextTargetCurrent(contextMenu)) closeContextMenu();
+  });
+
+  function guardContextItems(items: SidebarMenuEntry[]): SidebarMenuEntry[] {
+    const target = contextMenu;
+    return items.map((item) =>
+      'onClick' in item
+        ? {
+            ...item,
+            onClick: () => {
+              if (contextMenu !== target || !isContextTargetCurrent(target)) return;
+              if (
+                (item.id === 'download' || item.id === 'reveal') &&
+                !selectIsWorkspaceHostLocal.select(appStore.state, workspaceId)
+              )
+                return;
+              item.onClick();
+            },
+          }
+        : item,
+    );
   }
 
   // TODO(redux-remove): explorer file-tree CRUD (delete/read/write-for-undo here, plus
@@ -802,7 +854,7 @@
         },
       });
     }
-    return items;
+    return guardContextItems(items);
   }
 
   function getContextMenuItems(node: FileNode): SidebarMenuEntry[] {
@@ -870,10 +922,12 @@
     }
 
     if (node.type === 'file') {
+      items.push({ type: 'separator' });
       items.push({
         id: 'delete',
         label: m.fileExplorer_tree_delete_label(),
         icon: faTrash,
+        destructive: true,
         onClick: () => {
           handleDeleteFile(node.path);
           closeContextMenu();
@@ -909,7 +963,7 @@
       });
     }
 
-    return items;
+    return guardContextItems(items);
   }
 
   // Start editing a file/folder name
@@ -1321,9 +1375,11 @@
 
 {#if contextMenu}
   <SidebarContextMenu
-    x={contextMenu.x}
-    y={contextMenu.y}
-    items={contextMenu.node
+    x={contextMenu?.x ?? 0}
+    y={contextMenu?.y ?? 0}
+    ariaLabel={contextMenu?.node?.path || m.fileExplorer_tree_fileExplorer_ariaLabel()}
+    returnFocus={contextMenu?.returnFocus}
+    items={contextMenu?.node
       ? getContextMenuItems(contextMenu.node)
       : getBackgroundContextMenuItems()}
     onClickOutside={closeContextMenu}

@@ -190,6 +190,7 @@
             <Button
               variant="ghost"
               type="button"
+              aria-pressed={transport === 'ssh'}
               class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
               'ssh'
                 ? 'bg-primary text-primary-foreground border-primary'
@@ -207,6 +208,7 @@
             <Button
               variant="ghost"
               type="button"
+              aria-pressed={transport === 'websocket'}
               class="flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors {transport ===
               'websocket'
                 ? 'bg-primary text-primary-foreground border-primary'

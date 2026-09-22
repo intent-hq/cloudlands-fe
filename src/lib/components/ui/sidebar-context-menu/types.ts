@@ -23,7 +23,13 @@ export interface SidebarMenuSeparator {
   type: 'separator';
 }
 
-export type SidebarMenuEntry = SidebarMenuItem | SidebarMenuSeparator;
+interface SidebarMenuLabel {
+  type: 'label';
+  label: string;
+  id?: string;
+}
+
+export type SidebarMenuEntry = SidebarMenuItem | SidebarMenuSeparator | SidebarMenuLabel;
 
 export function isSeparator(entry: SidebarMenuEntry): entry is SidebarMenuSeparator {
   return 'type' in entry && entry.type === 'separator';

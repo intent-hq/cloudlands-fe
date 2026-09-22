@@ -138,6 +138,24 @@ describe('Menu keyboard and focus behavior', () => {
 });
 
 describe('Menu command state behavior', () => {
+  it('explains disabled commands and resumes activation once the reason is removed', async () => {
+    const view = render(MenuTestHarness, { props: { commandDisabledReason: 'Requires access' } });
+    await openMenu();
+    const command = screen.getByRole('menuitem', { name: 'Attach files' });
+    expect(command.getAttribute('aria-disabled')).toBe('true');
+    expect(
+      screen.getByRole('menuitem', { name: 'Attach files', description: 'Requires access' }),
+    ).toBe(command);
+    await fireEvent.click(command);
+    expect(screen.getByTestId('selected').textContent).toBe('none');
+    await view.rerender({ commandDisabledReason: undefined });
+    expect(command.getAttribute('aria-disabled')).not.toBe('true');
+    expect(command.hasAttribute('aria-describedby')).toBe(false);
+    await fireEvent.click(command);
+    expect(screen.getByTestId('selected').textContent).toBe('attach');
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
   it.each([
     { iconWeight: undefined, expectedWeight: 'regular' },
     { iconWeight: 'bold' as const, expectedWeight: 'bold' },
@@ -258,12 +276,14 @@ describe('Menu metadata and compatibility', () => {
     expect(menuMetadata.owner).toBe('007-B5');
     expect(menuSemantics.interaction).toBe('command');
     expect(menuSemantics.selectionReplacement).toBe('$lib/components/ui/select');
-    expect(menuMetadata.callers).toHaveLength(16);
-    expect(menuMetadata.callers).toContain(
+    expect(menuMetadata.callers).toHaveLength(11);
+    expect(menuMetadata.callers).not.toContain(
       'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     );
     expect(menuMetadata.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
-    expect(menuMetadata.callers).toContain('src/lib/components/chat/input/SimpleRichInput.svelte');
+    expect(menuMetadata.callers).not.toContain(
+      'src/lib/components/chat/input/SimpleRichInput.svelte',
+    );
   });
 
   async function verifyLegacyTrigger(stopPropagation: boolean) {

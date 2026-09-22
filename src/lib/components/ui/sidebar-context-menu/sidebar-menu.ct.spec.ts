@@ -54,12 +54,10 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(root).toBeVisible();
       const rootStyles = await anatomy(root);
       expect(parseFloat(rootStyles.radius)).toBeGreaterThan(0);
-      await test
-        .info()
-        .attach(`${via}-${theme}-root`, {
-          body: await root.screenshot(),
-          contentType: 'image/png',
-        });
+      await test.info().attach(`${via}-${theme}-root`, {
+        body: await root.screenshot(),
+        contentType: 'image/png',
+      });
       const more = page.getByRole('menuitem', { name: 'More', exact: true });
       await more.hover();
       const child = page.getByRole('menuitem', { name: 'Export', exact: true });
@@ -67,6 +65,10 @@ for (const theme of ['light', 'dark'] as const) {
       const submenu = page.getByRole('menu').filter({ has: child });
       const subStyles = await anatomy(submenu);
       expect(subStyles.radius).toBe(rootStyles.radius);
+      await test.info().attach(`${via}-${theme}-submenu`, {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
       await expect
         .poll(() =>
           child.evaluate((item) => {
@@ -86,14 +88,62 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(page.getByRole('menu')).toHaveCount(0);
     }
     expect(snapshots[1]).toEqual(snapshots[0]);
-    await test
-      .info()
-      .attach(`anatomy-${theme}`, {
-        body: Buffer.from(JSON.stringify(snapshots)),
-        contentType: 'application/json',
-      });
+    await test.info().attach(`anatomy-${theme}`, {
+      body: Buffer.from(JSON.stringify(snapshots)),
+      contentType: 'application/json',
+    });
   });
 }
+
+test('root and child surfaces remain usable when their preferred width exceeds the viewport', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 200, height: 480 });
+  const component = await mount(SidebarMenuHarness, { props: { edge: true } });
+  await component
+    .getByRole('button', { name: 'Workspace', exact: true })
+    .click({ button: 'right' });
+  const root = page.getByRole('menu', { name: 'Workspace actions' });
+  await expect(root).toBeVisible();
+  const fitsViewport = (menu: Locator) =>
+    menu.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.left >= 0 && bounds.right <= innerWidth && bounds.width <= innerWidth - 16;
+    });
+  await expect.poll(() => fitsViewport(root)).toBe(true);
+  await page.getByRole('menuitem', { name: 'More', exact: true }).hover();
+  const child = page.getByRole('menuitem', { name: 'Export', exact: true });
+  await expect(child).toBeVisible();
+  await expect.poll(() => fitsViewport(page.getByRole('menu').filter({ has: child }))).toBe(true);
+  await child.hover();
+  await expect(child).toBeVisible();
+  await page.keyboard.press('Escape');
+  const more = page.getByRole('menuitem', { name: 'More', exact: true });
+  await expect(more).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(child).toBeFocused();
+  await page.setViewportSize({ width: 420, height: 480 });
+  await expect
+    .poll(async () => {
+      const triggerBounds = await more.boundingBox();
+      const childBounds = await page.getByRole('menu').filter({ has: child }).boundingBox();
+      return (
+        !!triggerBounds &&
+        !!childBounds &&
+        (childBounds.x >= triggerBounds.x + triggerBounds.width ||
+          childBounds.x + childBounds.width <= triggerBounds.x)
+      );
+    })
+    .toBe(true);
+  await page.setViewportSize({ width: 200, height: 480 });
+  await expect.poll(() => fitsViewport(page.getByRole('menu').filter({ has: child }))).toBe(true);
+  await expect(child).toBeFocused();
+  await child.click();
+  await expect(component.getByTestId('selection')).toHaveText('export');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+});
 
 test('keyboard context invocation supports paging, nested Escape, focus return and Tab dismissal', async ({
   mount,

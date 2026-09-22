@@ -183,7 +183,9 @@
 {#snippet actionItem(action: ResolvedAction, reserveIcon: boolean)}
   {@const disabled = action.disabled || action.disabledReason !== undefined}
   {@const descriptionId = action.disabledReason ? `${uid}-${action.id}-reason` : undefined}
-  {#if action.kind === 'section'}
+  {#if action.kind === 'label'}
+    <Menu.Group><Menu.Label>{action.label}</Menu.Label></Menu.Group>
+  {:else if action.kind === 'section'}
     <Menu.Group aria-label={action.label}>
       <Menu.Label>{action.label}</Menu.Label>
       {@render actionItems(action.children, disabled)}

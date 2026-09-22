@@ -170,6 +170,9 @@ describe('NoteTabType note view modes', () => {
 
     const trigger = await screen.findByRole('button', { name: 'Panel actions' });
     await fireEvent.click(trigger);
+    const viewMenu = screen.getByRole('menuitem', { name: /Note view/ });
+    viewMenu.focus();
+    await fireEvent.keyDown(viewMenu, { key: 'ArrowRight' });
 
     expect(
       (await screen.findByRole('menuitemradio', { name: 'Editor' })).getAttribute('aria-checked'),
@@ -194,6 +197,18 @@ describe('NoteTabType note view modes', () => {
     expect(mockState.dispatch).toHaveBeenCalledWith({
       type: 'transientUi/setNoteViewMode',
       payload: ['ws-1', 'note-1', 'raw'],
+    });
+
+    mockState.noteViewMode.set('raw');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('menuitemradio', { name: 'Editor' }).getAttribute('aria-checked'),
+      ).toBe('false'),
+    );
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: 'Editor' }));
+    expect(mockState.dispatch).toHaveBeenCalledWith({
+      type: 'transientUi/setNoteViewMode',
+      payload: ['ws-1', 'note-1', 'editor'],
     });
   });
 
@@ -402,13 +417,15 @@ $$\frac{1}{2}$$
     expect(screen.queryByTestId('rendered-note-preview')).toBeNull();
   });
 
-  it('offers font and spellcheck controls in the Display section', async () => {
+  it('changes font in a submenu and keeps spellcheck independently toggleable', async () => {
     render(NoteTabTypeHeaderHarness, {
       props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
     });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
-    expect(screen.getByRole('group', { name: /Font Style/i })).toBeTruthy();
+    const fontMenu = screen.getByRole('menuitem', { name: /Font Style/i });
+    fontMenu.focus();
+    await fireEvent.keyDown(fontMenu, { key: 'ArrowRight' });
 
     expect(
       screen.getByRole('menuitemradio', { name: /Sans-serif/ }).getAttribute('aria-checked'),
@@ -418,6 +435,9 @@ $$\frac{1}{2}$$
       type: 'fontSettings/setNoteFontStyle',
       payload: ['serif'],
     });
+    await fireEvent.keyDown(screen.getByRole('menuitemradio', { name: 'Serif' }), {
+      key: 'ArrowLeft',
+    });
 
     const spellcheck = screen.getByRole('menuitemcheckbox', { name: 'Spellcheck' });
     expect(spellcheck.getAttribute('aria-checked')).toBe('true');
@@ -425,6 +445,35 @@ $$\frac{1}{2}$$
     expect(mockState.dispatch).toHaveBeenCalledWith({
       type: 'userPreferences/toggleSpellcheck',
     });
+  });
+
+  it('does not toggle spellcheck from a read-only preview and explains why', async () => {
+    mockState.noteViewMode.set('preview');
+    render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    const spellcheck = screen.getByRole('menuitemcheckbox', { name: 'Spellcheck' });
+    expect(spellcheck.getAttribute('aria-disabled')).toBe('true');
+    const explanation = document.getElementById(spellcheck.getAttribute('aria-describedby')!);
+    expect(explanation?.textContent?.length).toBeGreaterThan(0);
+    await fireEvent.click(spellcheck);
+    expect(mockState.dispatch).not.toHaveBeenCalledWith({
+      type: 'userPreferences/toggleSpellcheck',
+    });
+  });
+
+  it('preserves spec protection while exposing deletion only for ordinary notes', async () => {
+    const { rerender } = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Spec', noteId: 'spec' } },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
+    expect(screen.queryByRole('menuitem', { name: 'Delete note' })).toBeNull();
+    await rerender({ tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } });
+    const deletion = await screen.findByRole('menuitem', { name: 'Delete note' });
+    await fireEvent.click(deletion);
+    const { deleteNote } = await import('$features/notes/notes-write-service');
+    expect(deleteNote).toHaveBeenCalledExactlyOnceWith('ws-1', 'note-1');
   });
 
   it('clears pending copy feedback timer when unmounted', async () => {

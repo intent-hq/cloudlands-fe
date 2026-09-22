@@ -1,17 +1,15 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { flushSync, onDestroy, untrack, type Snippet } from 'svelte';
   import { Combobox as ComboboxPrimitive } from 'bits-ui';
+  import { Button } from '$lib/components/ui/button';
+  import { Indicator } from '$lib/components/ui/menu';
   import { cn } from '$lib/utils';
   import type { ComboboxGroup, ComboboxOption } from './types';
   import { m } from '$shared/paraglide/messages.js';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import { menuItem, menuOverlay } from '../menu/menu-recipes';
-  import { slide } from '$lib/motion';
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
-  import {
-    OPTION_LIST_CONTAINER_CLASS,
-    OPTION_LIST_END_SLOT_CLASS,
-  } from '$lib/styles/option-list-row';
+  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
   import { textEntryControlClasses, textEntryHeight } from '../text-entry';
 
@@ -31,11 +29,16 @@
     staticPosition?: boolean;
     side?: 'top' | 'bottom';
     ariaLabel: string;
+    ariaLabelledby?: string;
+    ariaDescribedby?: string;
     placeholder?: string;
     searchPlaceholder?: string;
     emptyText?: string;
+    errorText?: string;
+    retryText?: string;
     class?: string;
     inputClass?: string;
+    inputRef?: HTMLInputElement | null;
     contentClass?: string;
     displayValue?: string;
     allowCustom?: boolean;
@@ -50,7 +53,10 @@
       query: string,
     ) => ComboboxOption[] | ComboboxGroup[] | Promise<ComboboxOption[] | ComboboxGroup[]>;
     onquerychange?: (query: string) => void;
-    onchange?: (value: string | string[]) => void;
+    onsearcherror?: (error: unknown, query: string) => void;
+    onchange?: (value: string | string[], option?: ComboboxOption) => void;
+    /** Accepted user activation, including reselecting the current single value. */
+    oncommit?: (value: string | string[], option: ComboboxOption) => void;
     onopenchange?: (open: boolean) => void;
   }
 
@@ -74,11 +80,16 @@
     staticPosition = false,
     side = 'bottom',
     ariaLabel,
+    ariaLabelledby,
+    ariaDescribedby,
     placeholder = m.ui_combobox_selectOption_placeholder(),
     searchPlaceholder = m.ui_combobox_searchOptions_placeholder(),
     emptyText = m.ui_combobox_noOptions_message(),
+    errorText = m.ui_combobox_searchFailed_error(),
+    retryText = m.ui_combobox_retry_label(),
     class: className = '',
     inputClass = '',
+    inputRef = $bindable(null),
     contentClass = '',
     displayValue,
     allowCustom = false,
@@ -91,7 +102,9 @@
     groupAction,
     onsearch,
     onquerychange,
+    onsearcherror,
     onchange,
+    oncommit,
     onopenchange,
   }: Props = $props();
 
@@ -102,22 +115,36 @@
   const inputId = `${uid}-input`;
   const labelId = `${uid}-label`;
   const listboxId = `${uid}-listbox`;
+  const accessibleLabelId = $derived(ariaLabelledby || labelId);
 
+  let retryRef = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
+  let viewportRef = $state<HTMLDivElement | null>(null);
   let query = $state('');
   let singleValue = $state('');
   let multipleValue = $state<string[]>([]);
   let searchedGroups = $state<ComboboxGroup[] | null>(null);
   let searching = $state(false);
+  let searchFailed = $state(false);
+  let selectedLabels = $state<Record<string, string>>({});
+  let highlightedOption: ComboboxOption | null = null;
+  let touchReselection: ComboboxOption | null = null;
   let searchGeneration = 0;
+  onDestroy(() => {
+    searchGeneration += 1;
+  });
   const baseGroups = $derived(
     groups.length > 0 ? groups : [{ key: 'options', label: '', options }],
   );
   const customOption = $derived.by<ComboboxOption | null>(() => {
     const customValue = query.trim();
     if (!allowCustom || !customValue) return null;
-    const exists = baseGroups
+    const exists = [...baseGroups, ...(searchedGroups ?? [])]
       .flatMap((group) => group.options)
-      .some((option) => option.value === customValue || option.label === customValue);
+      .some(
+        (option) =>
+          option.value.toLowerCase() === customValue.toLowerCase() ||
+          option.label.toLowerCase() === customValue.toLowerCase(),
+      );
     return exists ? null : { value: customValue, label: customValue };
   });
   const normalizedGroups = $derived.by(() => {
@@ -138,11 +165,12 @@
       })),
   );
   const filteredGroups = $derived.by(() => {
-    if (!query.trim()) return normalizedGroups;
-    return normalizedGroups.map((group) => ({
-      ...group,
-      options: group.options.filter((option) => optionMatchesQuery(option)),
-    }));
+    return normalizedGroups
+      .map((group) => ({
+        ...group,
+        options: group.options.filter((option) => optionMatchesQuery(option)),
+      }))
+      .filter((group) => group.options.length > 0);
   });
   const hasOptions = $derived(filteredGroups.some((group) => group.options.length > 0));
   const selectedInputValue = $derived.by(() => {
@@ -153,31 +181,62 @@
         (selectedValue) =>
           baseGroups
             .flatMap((group) => group.options)
-            .find((option) => option.value === selectedValue)?.label ?? selectedValue,
+            .find((option) => option.value === selectedValue)?.label ??
+          selectedLabels[selectedValue] ??
+          selectedValue,
       )
       .filter(Boolean)
       .join(', ');
   });
   const visibleInputValue = $derived(open ? query : selectedInputValue);
   $effect(() => {
-    if (typeof value === 'string' && value !== singleValue) singleValue = value;
+    const nextValue = typeof value === 'string' ? value : '';
+    if (nextValue !== singleValue) singleValue = nextValue;
   });
 
   $effect(() => {
+    const nextValue = Array.isArray(value) ? value : [];
     if (
-      Array.isArray(value) &&
-      (value.length !== multipleValue.length ||
-        value.some((item, index) => item !== multipleValue[index]))
+      nextValue.length !== multipleValue.length ||
+      nextValue.some((item, index) => item !== multipleValue[index])
     ) {
-      multipleValue = [...value];
+      multipleValue = [...nextValue];
     }
   });
 
-  function handleFocus() {
-    if (disabled) return;
+  $effect(() => {
+    const selectedValues = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+    const available = [...baseGroups, ...(searchedGroups ?? [])].flatMap((group) => group.options);
+    const previous = untrack(() => selectedLabels);
+    selectedLabels = Object.fromEntries(
+      selectedValues.map((selectedValue) => [
+        selectedValue,
+        available.find((option) => option.value === selectedValue)?.label ??
+          previous[selectedValue] ??
+          selectedValue,
+      ]),
+    );
+  });
+
+  $effect(() => {
+    if (!open) untrack(resetSearch);
+  });
+
+  function resetSearch() {
+    searchGeneration += 1;
+    const hadQuery = query !== '';
     query = '';
     searchedGroups = null;
+    searching = false;
+    searchFailed = false;
+    if (hadQuery) onquerychange?.('');
+  }
+
+  function handleFocus() {
+    touchReselection = null;
+    if (disabled) return;
     if (!open) {
+      resetSearch();
       open = true;
       onopenchange?.(true);
     }
@@ -192,48 +251,159 @@
   }
 
   function handleInput(event: Event) {
+    touchReselection = null;
     query = (event.currentTarget as HTMLInputElement).value;
     open = true;
     onquerychange?.(query);
     void runSearch(query);
+    // Bits chooses its highlighted DOM candidate after this handler. Render the
+    // filtered rows first so immediate Enter cannot accept the previous result.
+    flushSync();
+    // A previously scrolled viewport can briefly exclude every filtered row
+    // from Bits' fully-visible candidate scan. A new query starts at the top.
+    if (viewportRef) viewportRef.scrollTop = 0;
   }
 
   async function runSearch(nextQuery: string) {
     const generation = ++searchGeneration;
-    if (!onsearch || !nextQuery) {
-      searchedGroups = null;
+    searchFailed = false;
+    searchedGroups = null;
+    if (!onsearch || !nextQuery.trim()) {
       searching = false;
       return;
     }
     searching = true;
-    const results = await Promise.resolve(onsearch(nextQuery));
-    if (generation !== searchGeneration) return;
-    searchedGroups =
-      results.length > 0 && 'options' in results[0]
-        ? (results as ComboboxGroup[])
-        : [{ key: 'search-results', label: '', options: results as ComboboxOption[] }];
-    searching = false;
+    try {
+      const results = await onsearch(nextQuery);
+      if (generation !== searchGeneration) return;
+      searchedGroups =
+        results.length > 0 && 'options' in results[0]
+          ? (results as ComboboxGroup[])
+          : [{ key: 'search-results', label: '', options: results as ComboboxOption[] }];
+    } catch (error) {
+      if (generation !== searchGeneration) return;
+      searchFailed = true;
+      onsearcherror?.(error, nextQuery);
+    } finally {
+      if (generation === searchGeneration) searching = false;
+    }
+  }
+
+  function retrySearch() {
+    inputRef?.focus();
+    void runSearch(query);
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (!open || event.isComposing) return;
+    if (searchFailed && event.key === 'Tab' && !event.shiftKey && retryRef) {
+      event.preventDefault();
+      retryRef.focus();
+    } else if (event.key === 'Enter' && searchFailed) {
+      event.preventDefault();
+      retrySearch();
+    } else if (event.key === 'Enter') {
+      const activeId = inputRef?.getAttribute('aria-activedescendant');
+      const activeOption = activeId ? inputRef?.ownerDocument.getElementById(activeId) : null;
+      if (
+        loading ||
+        searching ||
+        !hasOptions ||
+        !activeOption ||
+        !viewportRef?.contains(activeOption) ||
+        activeOption.getAttribute('aria-disabled') === 'true'
+      ) {
+        // Bits otherwise closes a single picker even when nothing was accepted.
+        event.preventDefault();
+      }
+    }
+  }
+
+  function handleRetryKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') inputRef?.focus();
+    if (event.key !== 'Tab') return;
+    inputRef?.focus();
+    if (event.shiftKey) event.preventDefault();
+    else {
+      open = false;
+      handleOpenChange(false);
+    }
+  }
+
+  function reselectedOption(option: ComboboxOption | null) {
+    return open && !multiple && !disabled && option && !option.disabled && value === option.value
+      ? option
+      : null;
+  }
+
+  function handleInputKeydown(event: KeyboardEvent, primitiveHandler: unknown) {
+    touchReselection = null;
+    const reselected =
+      event.key === 'Enter' && !event.isComposing && !loading && !searching && !searchFailed
+        ? reselectedOption(highlightedOption)
+        : null;
+    if (typeof primitiveHandler === 'function') primitiveHandler(event);
+    if (reselected && !open) oncommit?.(reselected.value, reselected);
+  }
+
+  function handleOptionPointerUp(
+    event: PointerEvent,
+    option: ComboboxOption,
+    primitiveHandler: unknown,
+  ) {
+    const reselected = !event.defaultPrevented ? reselectedOption(option) : null;
+    touchReselection = null;
+    if (typeof primitiveHandler === 'function') primitiveHandler(event);
+    if (!reselected) return;
+    if (!open) oncommit?.(reselected.value, reselected);
+    // Bits defers non-iOS touch acceptance until the following native click.
+    else if (event.pointerType === 'touch') touchReselection = reselected;
+  }
+
+  function handleOptionClick(option: ComboboxOption) {
+    const reselected = touchReselection;
+    touchReselection = null;
+    if (reselected === option && !open) oncommit?.(reselected.value, reselected);
+  }
+
+  function rememberSelection(nextValue: string | string[]) {
+    const selectedValues = Array.isArray(nextValue) ? nextValue : [nextValue];
+    const available = normalizedGroups.flatMap((group) => group.options);
+    selectedLabels = Object.fromEntries(
+      selectedValues.map((selectedValue) => [
+        selectedValue,
+        available.find((option) => option.value === selectedValue)?.label ??
+          selectedLabels[selectedValue] ??
+          selectedValue,
+      ]),
+    );
   }
 
   function handleSingleChange(nextValue: string) {
+    const option = normalizedGroups
+      .flatMap((group) => group.options)
+      .find((option) => option.value === nextValue);
+    rememberSelection(nextValue);
     value = nextValue;
-    query = '';
-    onchange?.(nextValue);
+    resetSearch();
+    onchange?.(nextValue, option);
+    if (option) oncommit?.(nextValue, option);
   }
 
   function handleMultipleChange(nextValue: string[]) {
+    const previous = Array.isArray(value) ? value : [];
+    const option = normalizedGroups
+      .flatMap((group) => group.options)
+      .find((option) => previous.includes(option.value) !== nextValue.includes(option.value));
+    rememberSelection(nextValue);
     value = nextValue;
-    query = '';
+    resetSearch();
     onchange?.(nextValue);
+    if (option) oncommit?.(nextValue, option);
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen) {
-      query = '';
-      searchedGroups = null;
-      searching = false;
-      searchGeneration += 1;
-    }
+    if (!nextOpen) resetSearch();
     onopenchange?.(nextOpen);
   }
 
@@ -266,6 +436,7 @@
   {:else}
     <ComboboxPrimitive.Root
       type="single"
+      allowDeselect={false}
       bind:value={singleValue}
       {items}
       {disabled}
@@ -281,13 +452,17 @@
 
 {#snippet comboboxContent()}
   <ComboboxPrimitive.Input
+    bind:ref={inputRef}
     id={inputId}
-    aria-labelledby={labelId}
+    aria-labelledby={accessibleLabelId}
+    aria-describedby={ariaDescribedby}
+    aria-busy={loading || searching}
     aria-controls={open ? listboxId : undefined}
     aria-invalid={invalid || undefined}
     placeholder={open ? searchPlaceholder : placeholder}
     onfocus={handleFocus}
     oninput={handleInput}
+    onkeydown={handleKeydown}
     data-size={resolvedSize}
     class={cn(
       'type-caption text-foreground placeholder:text-muted-foreground w-full min-w-0 rounded-(--radius-medium) border px-3',
@@ -297,7 +472,15 @@
       invalid && 'border-danger ring-1 ring-danger/25',
       inputClass,
     )}
-  />
+  >
+    {#snippet child({ props })}
+      <input
+        {...props}
+        value={visibleInputValue}
+        onkeydown={(event) => handleInputKeydown(event, props.onkeydown)}
+      />
+    {/snippet}
+  </ComboboxPrimitive.Input>
   {#snippet contentBody()}
     {#if header || headerAction}
       <div class="flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-3 py-2">
@@ -307,41 +490,42 @@
         {#if headerAction}<div class="ml-auto">{@render headerAction()}</div>{/if}
       </div>
     {/if}
+    {#if loading || searching}
+      <div class="type-body px-3 py-2 text-muted-foreground" role="status">
+        {m.ui_combobox_loadingOptions_message()}
+      </div>
+    {:else if searchFailed}
+      <div class="flex items-center gap-2 px-3 py-2">
+        <span class="type-body text-muted-foreground" role="status">{errorText}</span>
+        <Button
+          bind:ref={retryRef}
+          variant="ghost"
+          size="sm"
+          onclick={retrySearch}
+          onkeydown={handleRetryKeydown}>{retryText}</Button
+        >
+      </div>
+    {:else if !hasOptions}
+      <div class="type-body px-3 py-2 text-muted-foreground" role="status">{emptyText}</div>
+    {/if}
     <ComboboxPrimitive.Viewport
       class="{OPTION_LIST_CONTAINER_CLASS} max-h-72 overscroll-contain overflow-y-auto"
     >
       {#snippet child({ props: viewportProps })}
         <div
           {...viewportProps}
+          bind:this={viewportRef}
           id={listboxId}
           role="listbox"
           aria-multiselectable={multiple || undefined}
-          aria-labelledby={labelId}
+          aria-labelledby={accessibleLabelId}
+          aria-busy={loading || searching}
           tabindex="0"
         >
           <ListHighlight />
-          {#if loading}
-            <div class="type-body px-3 py-2 text-muted-foreground" role="status">
-              {m.ui_combobox_loadingOptions_message()}
-            </div>
-          {:else}
-            {#if searching}
-              <div class="type-body px-3 py-2 text-muted-foreground" role="status">
-                {m.ui_combobox_loadingOptions_message()}
-              </div>
-            {/if}
-            {#if !hasOptions && groups.length === 0 && !searching}
-              <div
-                class={cn(menuItem(), 'type-body text-muted-foreground')}
-                role="option"
-                aria-disabled="true"
-                aria-selected="false"
-              >
-                {emptyText}
-              </div>
-            {/if}
-            {#each filteredGroups as group (group.key)}
-              {#if group.separatorBefore && group.options.length > 0}
+          {#if !loading}
+            {#each filteredGroups as group, groupIndex (group.key)}
+              {#if group.separatorBefore && groupIndex > 0}
                 <ComboboxPrimitive.Separator decorative class="my-1 border-t border-border" />
               {/if}
               <ComboboxPrimitive.Group>
@@ -354,14 +538,21 @@
                     {#if groupAction}{@render groupAction(group)}{/if}
                   </ComboboxPrimitive.GroupHeading>
                 {/if}
-                {#each group.options as option (option.value)}
+                {#each group.collapsed && !query.trim() ? [] : group.options as option (option.value)}
                   {#snippet optionChild({ props, selected }: OptionChildProps)}
                     <div
                       {...props}
+                      onpointerup={(event) =>
+                        handleOptionPointerUp(event, option, props.onpointerup)}
+                      onclick={() => handleOptionClick(option)}
+                      aria-disabled={option.disabled || undefined}
                       data-slot="combobox-option-motion"
-                      transition:slide={{ tier: 'fast' }}
                     >
-                      <span class="min-w-0 flex-1 truncate">{option.label}</span>
+                      <span class="min-w-0 flex-1 truncate">
+                        {option === customOption
+                          ? m.ui_combobox_useCustom_label({ value: option.label })
+                          : option.label}
+                      </span>
                       {#if optionDescription}
                         {@render optionDescription(option)}
                       {:else if option.description}
@@ -371,15 +562,11 @@
                           {option.description}
                         </span>
                       {/if}
-                      <span
+                      <Indicator
+                        state={selected ? 'checked' : 'empty'}
                         data-slot="combobox-item-check"
-                        class={cn(
-                          OPTION_LIST_END_SLOT_CLASS,
-                          'text-primary-ink font-medium',
-                          selected ? 'opacity-100' : 'opacity-0',
-                        )}
-                        aria-hidden="true">✓</span
-                      >
+                        class={selected ? 'opacity-100' : 'opacity-0'}
+                      />
                       {#if optionActions}{@render optionActions(option)}{/if}
                     </div>
                   {/snippet}
@@ -390,6 +577,10 @@
                     data-menu-item
                     class={cn(menuItem(), option.class)}
                     child={optionChild}
+                    onHighlight={() => (highlightedOption = option)}
+                    onUnhighlight={() => {
+                      if (highlightedOption === option) highlightedOption = null;
+                    }}
                   />
                 {/each}
               </ComboboxPrimitive.Group>

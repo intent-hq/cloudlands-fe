@@ -214,6 +214,12 @@
   const hasOpenCapableAction = $derived(
     actions.some((a) => a.id !== 'copy' && a.id !== 'copy-branch'),
   );
+  const openActions = $derived(
+    actions.filter((action) => action.id !== 'copy' && action.id !== 'copy-branch'),
+  );
+  const copyActions = $derived(
+    actions.filter((action) => action.id === 'copy' || action.id === 'copy-branch'),
+  );
 
   const currentAction = $derived.by(() => {
     if (!hasOpenCapableAction) {
@@ -350,38 +356,58 @@
   // to prevent duplicate toasts when multiple OpenComboButton instances exist
 </script>
 
-{#if embedded}
-  <Menu.Sub>
-    <Menu.SubTrigger>
-      <Fa icon={faArrowUpRightFromSquare} size="xs" class="w-4 text-muted-foreground opacity-70" />
-      <span>{m.ui_openCombo_openInApp_tooltip()}</span>
-    </Menu.SubTrigger>
-    <Menu.SubContent class="w-60">
-      {#each actions as action (action.id)}
-        <Menu.Item onclick={() => handleActionClick(action.id)}>
+{#snippet actionRows(items: ActionConfig[])}
+  <Menu.RadioGroup value={currentAction.id}>
+    {#each items as action (action.id)}
+      <Menu.RadioItem
+        value={action.id}
+        closeOnSelect
+        disabled={!filePath}
+        onSelect={() => handleActionClick(action.id)}
+        textValue={action.label}
+      >
+        <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
           {#if action.iconBase64}
             <img src="data:image/png;base64,{action.iconBase64}" alt="" class="size-4" />
           {:else if action.icon}
             {@const Icon = action.icon}
             <Icon size={16} />
-          {:else if action.faIcon}
-            <Fa icon={action.faIcon} class="size-4 text-muted-foreground opacity-70" />
           {:else}
             <Fa
-              icon={resolveEditorFallbackIcon(action.category)}
-              class="size-4 text-muted-foreground opacity-70"
+              icon={action.faIcon ?? resolveEditorFallbackIcon(action.category)}
+              class="size-4 text-muted-foreground"
             />
           {/if}
-          <span class="min-w-0 flex-1 truncate">{action.label}</span>
-          {#if action.shortcut}
-            <kbd class="type-caption ml-4 text-muted-foreground" aria-hidden="true">
-              {action.shortcut}
-            </kbd>
-          {/if}
-        </Menu.Item>
-      {/each}
-    </Menu.SubContent>
-  </Menu.Sub>
+        </span>
+        <span class="min-w-0 flex-1 truncate">{action.label}</span>
+        {#if action.shortcut}
+          <kbd class="type-caption ml-4 text-muted-foreground" aria-hidden="true"
+            >{action.shortcut}</kbd
+          >
+        {/if}
+      </Menu.RadioItem>
+    {/each}
+  </Menu.RadioGroup>
+{/snippet}
+
+{#if embedded}
+  {#if openActions.length}
+    <Menu.Sub>
+      <Menu.SubTrigger>
+        <Fa
+          icon={faArrowUpRightFromSquare}
+          size="xs"
+          class="w-4 text-muted-foreground opacity-70"
+        />
+        <span>{m.ui_openCombo_openInApp_tooltip()}</span>
+      </Menu.SubTrigger>
+      <Menu.SubContent class="w-60">
+        {@render actionRows(openActions)}
+      </Menu.SubContent>
+    </Menu.Sub>
+    <Menu.Separator />
+  {/if}
+  {@render actionRows(copyActions)}
 {:else}
   <div class="{inline && children ? 'contents' : 'inline-flex items-center'} {className}">
     <DropdownMenu
@@ -491,38 +517,11 @@
               {headerText}
             </div>
           {/if}
-          {#each actions as action (action.id)}
-            <Menu.Item onSelect={() => handleActionClick(action.id)} textValue={action.label}>
-              {#snippet leading()}
-                {#if action.iconBase64}
-                  <img src="data:image/png;base64,{action.iconBase64}" alt="" class="size-4" />
-                {:else if action.icon}
-                  {@const Icon = action.icon}
-                  <Icon size={16} />
-                {:else if action.faIcon}
-                  <Fa icon={action.faIcon} class="size-4 text-muted-foreground" />
-                {:else}
-                  <Fa
-                    icon={resolveEditorFallbackIcon(action.category)}
-                    class="size-4 text-muted-foreground"
-                  />
-                {/if}
-              {/snippet}
-              <span class="min-w-0 flex-1">
-                <span class="block truncate">{action.label}</span>
-                {#if action.description}
-                  <span class="type-caption block truncate text-subtle" title={action.description}>
-                    {action.description}
-                  </span>
-                {/if}
-              </span>
-              {#if action.shortcut}
-                <kbd class="type-caption ml-4 shrink-0 text-muted-foreground" aria-hidden="true">
-                  {action.shortcut}
-                </kbd>
-              {/if}
-            </Menu.Item>
-          {/each}
+          {#if openActions.length}
+            {@render actionRows(openActions)}
+            <Menu.Separator />
+          {/if}
+          {@render actionRows(copyActions)}
         </div>
       {/snippet}
     </DropdownMenu>

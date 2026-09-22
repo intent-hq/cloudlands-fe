@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
-  import { tick } from 'svelte';
+  import { getContext, tick } from 'svelte';
   import { cn } from '$lib/utils.js';
   import ListHighlight from './menu-list-highlight.svelte';
   import { menuOverlay } from './menu-recipes';
@@ -8,6 +8,8 @@
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
+  import { SUBMENU_CONTEXT, type SubmenuContext } from './submenu-context';
+  import { resolveSubmenuSide } from './submenu-placement';
 
   const uid = $props.id();
 
@@ -18,7 +20,10 @@
     portal = true,
     portalProps,
     staticPosition,
+    side = 'right',
     sideOffset = 4,
+    avoidCollisions = true,
+    collisionPadding = 8,
     onkeydown,
     onfocusin,
     children,
@@ -35,6 +40,47 @@
   const maxHeight = 'var(--bits-menu-content-available-height, calc(100dvh - 1rem))';
   const rootStaticPosition = useStaticOverlay();
   const isStatic = $derived(staticPosition ?? rootStaticPosition());
+  const submenu = getContext<SubmenuContext | undefined>(SUBMENU_CONTEXT);
+  let verticalFallback = $state(false);
+  const resolvedSide = $derived(verticalFallback ? 'bottom' : side);
+
+  $effect(() => {
+    const content = ref;
+    const trigger = submenu?.trigger;
+    if (!content || !trigger || isStatic || !avoidCollisions) {
+      verticalFallback = false;
+      return;
+    }
+    const padding =
+      typeof collisionPadding === 'number'
+        ? { left: collisionPadding, right: collisionPadding }
+        : { left: collisionPadding.left ?? 0, right: collisionPadding.right ?? 0 };
+    const preferred = side;
+    const gap = sideOffset;
+    function updatePlacement() {
+      verticalFallback =
+        resolveSubmenuSide(
+          preferred,
+          trigger!.getBoundingClientRect(),
+          content!.offsetWidth,
+          window.innerWidth,
+          gap,
+          padding,
+        ) !== preferred;
+    }
+    updatePlacement();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePlacement);
+    observer?.observe(content);
+    observer?.observe(trigger);
+    window.addEventListener('resize', updatePlacement);
+    window.addEventListener('scroll', updatePlacement, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updatePlacement);
+      window.removeEventListener('scroll', updatePlacement, true);
+    };
+  });
 
   const surface = clampSurface(useSurface() + 2);
   setSurface(surface);
@@ -91,7 +137,10 @@
       data-slot="menu-sub-content"
       data-surface-level={surface}
       class={contentClass}
+      side={resolvedSide}
       {sideOffset}
+      {avoidCollisions}
+      {collisionPadding}
       style="max-height: {maxHeight}"
       onkeydown={handleKeydown}
       onfocusin={handleFocusin}
@@ -108,7 +157,10 @@
     data-slot="menu-sub-content"
     data-surface-level={surface}
     class={contentClass}
+    side={resolvedSide}
     {sideOffset}
+    {avoidCollisions}
+    {collisionPadding}
     style="max-height: {maxHeight}"
     onkeydown={handleKeydown}
     onfocusin={handleFocusin}

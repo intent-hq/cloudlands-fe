@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ActionMenu } from '$lib/components/patterns/action-menu';
   import * as m from '$shared/paraglide/messages.js';
-  import type { SidebarMenuEntry } from './types';
+  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { toSidebarActions, findSidebarItem } from './actions';
 
   interface Props {

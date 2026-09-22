@@ -1,5 +1,9 @@
 import type { ActionDefinition, RadioAction } from '$lib/components/patterns/action-menu';
-import { isSeparator, type SidebarMenuEntry, type SidebarMenuItem } from './types';
+import {
+  isSeparator,
+  type SidebarMenuEntry,
+  type SidebarMenuItem,
+} from '$lib/components/ui/sidebar-context-menu/types';
 
 /** Both invocation paths use this adapter; callbacks stay with the caller. */
 export function toSidebarActions(
@@ -9,9 +13,18 @@ export function toSidebarActions(
 ): ActionDefinition[] {
   let group = 0;
   const actions: ActionDefinition[] = [];
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
     if (isSeparator(entry)) {
       group += 1;
+      continue;
+    }
+    if ('type' in entry && entry.type === 'label') {
+      actions.push({
+        kind: 'label',
+        id: entry.id ?? `sidebar-label-${index}`,
+        label: entry.label,
+        group: String(group),
+      });
       continue;
     }
     const base = {
@@ -91,7 +104,7 @@ export function findSidebarItem(
   id: string,
 ): SidebarMenuItem | undefined {
   for (const entry of entries) {
-    if (isSeparator(entry)) continue;
+    if ('type' in entry) continue;
     if (entry.id === id) return entry;
     const child = entry.submenu ? findSidebarItem(entry.submenu, id) : undefined;
     if (child) return child;

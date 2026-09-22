@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type AST, parse } from 'svelte/compiler';
-import type { UiComponentInventory } from '../src/lib/components/ui/component-metadata';
+import type {
+  UiComponentInventory,
+  UiComponentMetadata,
+} from '../src/lib/components/ui/component-metadata';
 import { canonicalComponentManifest } from '../src/lib/components/ui/manifest';
 import {
   buildUiInternalImportLedger,
@@ -556,6 +559,30 @@ function unresolvedUiImports(root: string, inventory: UiComponentInventory): str
   return [...new Set(failures)].sort(sortText);
 }
 
+export function legacyUiCallerFailures(
+  inventory: UiComponentInventory,
+  manifest: readonly UiComponentMetadata[],
+): string[] {
+  const failures: string[] = [];
+  for (const metadata of manifest) {
+    const legacyImports =
+      metadata.category === 'deprecated-wrapper'
+        ? [metadata.publicImport, ...metadata.legacyImports]
+        : metadata.legacyImports;
+    for (const legacyImport of legacyImports) {
+      const component = inventory.components.find((entry) => entry.publicImport === legacyImport);
+      if (!component) continue;
+      for (const caller of new Set([...component.callers, ...component.dynamicImports])) {
+        if (metadata.callers.includes(caller)) continue;
+        failures.push(
+          `${caller}: new legacy caller of ${legacyImport}; use ${metadata.replacement ?? metadata.publicImport}; do not expand ${metadata.source} caller ledger`,
+        );
+      }
+    }
+  }
+  return [...new Set(failures)].sort(sortText);
+}
+
 function checkFailures(
   root: string,
   inventory: UiComponentInventory,
@@ -622,6 +649,7 @@ function checkFailures(
   }
   return [
     ...failures,
+    ...(usesProjectManifest ? legacyUiCallerFailures(inventory, canonicalComponentManifest) : []),
     ...unresolvedUiImports(root, inventory),
     ...boundaryFailures(root, inventory),
     ...(usesProjectManifest ? structuralGuardrailFailures(root) : []),

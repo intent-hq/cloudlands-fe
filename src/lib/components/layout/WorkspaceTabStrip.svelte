@@ -53,7 +53,11 @@
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
   import SidebarContextMenu from '$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte';
-  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
+  import {
+    getSidebarContextPosition,
+    type SidebarContextPosition,
+    type SidebarMenuEntry,
+  } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
   import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
@@ -165,7 +169,11 @@
   let layoutTracking = false;
   let dragTracking = false;
   let scrollTracking = false;
-  let tabContextMenu = $state<{ workspaceId: string; x: number; y: number } | null>(null);
+  let tabContextMenu = $state<(SidebarContextPosition & { workspaceId: string }) | null>(null);
+  $effect(() => {
+    if (tabContextMenu && !visibleTabIds.includes(tabContextMenu.workspaceId))
+      tabContextMenu = null;
+  });
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     if (!tabContextMenu) return [];
     const { workspaceId } = tabContextMenu;
@@ -569,11 +577,11 @@
     );
   }
 
-  function handleWorkspaceTabContextMenu(event: MouseEvent, workspaceId: string) {
-    event.preventDefault();
-    event.stopPropagation();
+  function handleWorkspaceTabContextMenu(event: MouseEvent | KeyboardEvent, workspaceId: string) {
+    const position = getSidebarContextPosition(event);
+    if (!position) return;
     cancelPointerDrag();
-    tabContextMenu = { workspaceId, x: event.clientX, y: event.clientY };
+    tabContextMenu = { ...position, workspaceId, returnFocus: tabButtons[workspaceId] ?? null };
   }
 
   function moveWorkspaceTab(workspaceId: string, direction: -1 | 1) {
@@ -606,6 +614,8 @@
   }
 
   function handleTabKeydown(event: KeyboardEvent, workspaceId: string) {
+    handleWorkspaceTabContextMenu(event, workspaceId);
+    if (event.defaultPrevented) return;
     if (
       event.altKey &&
       event.shiftKey &&
@@ -1138,8 +1148,10 @@
 
 {#if tabContextMenu}
   <SidebarContextMenu
-    x={tabContextMenu.x}
-    y={tabContextMenu.y}
+    x={tabContextMenu?.x ?? 0}
+    y={tabContextMenu?.y ?? 0}
+    returnFocus={tabContextMenu?.returnFocus}
+    ariaLabel={m.workspace_progressCard_actions_ariaLabel()}
     items={tabContextMenuItems}
     onClickOutside={() => (tabContextMenu = null)}
   />

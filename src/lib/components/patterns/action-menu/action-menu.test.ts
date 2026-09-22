@@ -68,6 +68,15 @@ describe('declarative action data', () => {
 });
 
 describe('ActionMenu', () => {
+  it('keeps metadata non-actionable when the same model is used by an action bar', async () => {
+    render(ActionMenuHarness, { props: { bar: true, metadata: true, visibleCount: 10 } });
+    expect(screen.queryByRole('button', { name: 'Document metadata' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(screen.queryByRole('menuitem', { name: 'Document metadata' })).toBeNull();
+    await fireEvent.click(screen.getByText('Document metadata'));
+    expect(screen.getByTestId('selected').textContent).toBe('none');
+  });
+
   it('renders visible actions, disabled reasons, and shortcuts', async () => {
     render(ActionMenuHarness);
     await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));

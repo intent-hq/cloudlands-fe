@@ -702,6 +702,20 @@ describe('ShareWorkspaceDialog — invite an existing GitHub user', () => {
     expect(onAddMember).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the invitation target through an in-flight refresh and gates submission until settled', async () => {
+    const onAddMember = vi.fn();
+    const { rerender } = renderDialog({ principals: [erin, frank], onAddMember });
+    await pick('@erin');
+    await rerender({ ...baseProps, principals: [], loading: true, onAddMember });
+    const invite = screen.getByTestId('share-existing-guest-invite') as HTMLButtonElement;
+    expect(invite.disabled).toBe(true);
+    await fireEvent.click(invite);
+    expect(onAddMember).not.toHaveBeenCalled();
+    await rerender({ ...baseProps, principals: [frank, erin], loading: false, onAddMember });
+    await fireEvent.click(screen.getByTestId('share-existing-guest-invite'));
+    expect(onAddMember).toHaveBeenCalledExactlyOnceWith('p-erin');
+  });
+
   // The host forwards `selectShareInvitablePrincipals`; after the daemon's
   // `workspace:updated` members event re-reads the roster with erin on it,
   // that selector drops her entry and the dialog clears its pick.

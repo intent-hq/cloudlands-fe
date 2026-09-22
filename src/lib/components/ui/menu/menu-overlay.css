@@ -1,0 +1,5 @@
+@layer components {
+  .menu-overlay {
+    max-width: calc(100dvw - 1rem);
+  }
+}

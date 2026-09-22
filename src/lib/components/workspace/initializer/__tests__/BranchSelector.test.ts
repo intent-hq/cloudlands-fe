@@ -8,7 +8,7 @@
  * fabricated ['main','master',...] fallback.
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest';
 
 const {
   mockGetBranches,
@@ -99,12 +99,18 @@ vi.mock('$lib/utils/performance', () => ({
 
 import { m } from '$shared/paraglide/messages.js';
 import BranchSelector from '../BranchSelector.svelte';
+import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 /** Open the dropdown by clicking the select trigger (first button rendered). */
 async function openDropdown(container: HTMLElement) {
   const trigger = container.querySelector('button');
   expect(trigger).toBeTruthy();
   await fireEvent.click(trigger!);
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('combobox')));
 }
 
 /** A promise the test resolves manually (to hold the fresh GitHub API list open). */
@@ -151,7 +157,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
 
     const manualInput = screen.getByPlaceholderText('Search or enter branch name...');
     await fireEvent.input(manualInput, { target: { value: 'manual-recovery' } });
-    await fireEvent.click(screen.getByRole('button', { name: /Use branch: manual-recovery/ }));
+    await fireEvent.keyDown(manualInput, { key: 'Enter' });
     expect(onchange).toHaveBeenCalledOnce();
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'manual-recovery' });
   });
@@ -172,6 +178,27 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/non-main-repo', true));
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     expect(onchange.mock.calls[0][0].detail).toEqual({ branch: 'master' });
+  });
+
+  it('Escape dismisses the whole picker without dismissing its parent or accepting composition', async () => {
+    mockGetBranches.mockResolvedValue({ branches: ['main'], currentBranch: 'main' });
+    const closeParent = vi.fn();
+    const release = pushEscapeLayer(closeParent);
+    try {
+      const { container } = render(BranchSelector, {
+        props: { repoPath: '/tmp/repo', repoType: 'local' },
+      });
+      await openDropdown(container);
+      const input = screen.getByRole('combobox');
+      await fireEvent.keyDown(input, { key: 'Escape', isComposing: true });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      await fireEvent.keyDown(input, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(closeParent).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(container.querySelector('button'));
+    } finally {
+      release();
+    }
   });
 
   it('local repo: a branch listing that settles after typing keeps the filter so Enter commits it', async () => {
@@ -230,7 +257,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
     await openDropdown(container);
     const trigger = container.querySelector('button')!;
-    const toggle = await screen.findByRole('button', {
+    const toggle = await screen.findByRole('checkbox', {
       name: m.workspace_branchSelector_workDirectlyOnBranch_label({ branch: 'main' }),
     });
     toggle.focus();
@@ -532,12 +559,8 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
       await waitFor(() => expect(onchange).toHaveBeenCalled());
       await rerender({ value: onchange.mock.lastCall![0].detail.branch });
       await openDropdown(container);
-      // The selected branch also appears in the trigger; choose the menu's
-      // button, which is portaled outside the render container.
-      const choices = await screen.findAllByRole('button', { name: pickedBranch, exact: true });
-      const choice = choices.find((button) => !container.contains(button));
-      expect(choice).toBeTruthy();
-      await fireEvent.click(choice!);
+      const choice = await screen.findByRole('option', { name: new RegExp(pickedBranch) });
+      await fireEvent.pointerUp(choice, { pointerType: 'mouse' });
       expect(onchange.mock.lastCall![0].detail.branch).toBe(pickedBranch);
       await rerender({ value: onchange.mock.lastCall![0].detail.branch });
 
@@ -697,8 +720,9 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
       expect(onchange.mock.lastCall![0].detail.branch).toBe('aaa-feature');
       await rerender({ value: onchange.mock.lastCall![0].detail.branch });
       await openDropdown(container);
-      const searchInput = await screen.findByPlaceholderText('Search or enter branch name...');
-      const refreshButton = searchInput.closest('.flex.gap-2')?.querySelector('button');
+      const refreshButton = await screen.findByRole('button', {
+        name: m.workspace_branchSelector_refreshBranches_ariaLabel(),
+      });
       expect(refreshButton).toBeTruthy();
       await fireEvent.click(refreshButton!);
       await waitFor(() => expect(mockGithubBranches).toHaveBeenCalledTimes(2));
@@ -735,10 +759,9 @@ describe('BranchSelector (cached-first GitHub load, github.branches.listCached Â
     // authoritative request is still in flight.
     await waitFor(() => expect(onchange).toHaveBeenCalled());
     await openDropdown(container);
-    // The dropdown content is portaled to document.body; the refresh button
-    // sits next to the search input in the dropdown header.
-    const searchInput = await screen.findByPlaceholderText('Search or enter branch name...');
-    const refreshButton = searchInput.closest('.flex.gap-2')?.querySelector('button');
+    const refreshButton = await screen.findByRole('button', {
+      name: m.workspace_branchSelector_refreshBranches_ariaLabel(),
+    });
     expect(refreshButton).toBeTruthy();
     await fireEvent.click(refreshButton!);
     await waitFor(() => expect(mockGithubBranches).toHaveBeenCalledTimes(2));
@@ -921,7 +944,7 @@ describe('BranchSelector (server-side prefix search, github.branches.list prefix
     // 'main' rendering proves the debounced 'feat' filter is gone; a single
     // 'feat/beyond-page' occurrence is the trigger's selected-branch label â€”
     // the search-result list entry must be dropped.
-    await fireEvent.click(match);
+    await fireEvent.pointerUp(match, { pointerType: 'mouse' });
     await openDropdown(container);
     await waitFor(() => expect(screen.getByText('main')).toBeTruthy());
     expect(screen.getAllByText('feat/beyond-page')).toHaveLength(1);

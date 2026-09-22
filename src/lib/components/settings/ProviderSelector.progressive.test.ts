@@ -289,7 +289,8 @@ describe('ProviderSelector progressive rendering', () => {
     await fireEvent.click(
       result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
     );
-    expect(result.getByRole('menuitem', { name: 'Logged in' })).toBeTruthy();
+    expect(result.getByText('Logged in').getAttribute('role')).toBe('status');
+    expect(result.queryByRole('menuitem', { name: 'Logged in' })).toBeNull();
     expect(result.queryByRole('menuitem', { name: 'Enable' })).toBeNull();
 
     await fireEvent.click(result.getByRole('button', { name: 'Provider actions for OpenCode' }));

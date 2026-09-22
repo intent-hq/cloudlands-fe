@@ -192,7 +192,7 @@
 
   // A pick that left the list (added to the roster, or revoked itself) is cleared.
   $effect(() => {
-    if (selectedPrincipalId && !selectedPrincipal) selectedPrincipalId = '';
+    if (!loading && !busy && selectedPrincipalId && !selectedPrincipal) selectedPrincipalId = '';
   });
 
   const pinQuery = $derived(normalizeGithubUserQuery(pinLogin));
@@ -298,7 +298,7 @@
   }
 
   function inviteExistingGuest() {
-    if (!workspaceId || !canManage || busy || atGuestCap || !selectedPrincipal) return;
+    if (!workspaceId || !canManage || loading || busy || atGuestCap || !selectedPrincipal) return;
     onAddMember?.(selectedPrincipal.principalId);
   }
 
@@ -457,7 +457,7 @@
             {m.workspace_share_dialog_description({ title: workspaceTitle })}
           </p>
 
-          {#if principals.length > 0}
+          {#if principals.length > 0 || loading || selectedPrincipalId}
             <section
               class="space-y-2"
               aria-labelledby="share-existing-guest-label"
@@ -472,10 +472,11 @@
                     bind:open={existingGuestMenuOpen}
                     bind:value={selectedPrincipalId}
                     items={principalItems}
-                    disabled={busy}
+                    disabled={busy || loading}
                   >
                     <Select.Trigger
                       id="share-existing-guest"
+                      aria-busy={loading || busy}
                       data-testid="share-existing-guest-trigger"
                     >
                       <Select.Value placeholder={m.workspace_share_existingGuest_placeholder()} />
@@ -505,7 +506,7 @@
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!selectedPrincipal || busy || atGuestCap}
+                  disabled={!selectedPrincipal || loading || busy || atGuestCap}
                   title={atGuestCap ? m.workspace_share_guestLimitReached_notice() : undefined}
                   onclick={inviteExistingGuest}
                   data-testid="share-existing-guest-invite"
@@ -517,7 +518,14 @@
                 </Button>
               </div>
               <p class="text-xs text-subtle">{m.workspace_share_existingGuest_description()}</p>
+              {#if loading}<p role="status" class="text-xs text-subtle">
+                  {m.workspace_share_loading_label()}
+                </p>{/if}
             </section>
+          {:else}
+            <p role="status" class="text-xs text-subtle">
+              {m.workspace_share_existingGuest_empty()}
+            </p>
           {/if}
 
           <form

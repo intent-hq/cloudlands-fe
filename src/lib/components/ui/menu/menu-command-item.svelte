@@ -12,6 +12,9 @@
     label,
     shortcut,
     destructive = false,
+    disabled = false,
+    disabledReason,
+    'aria-describedby': describedBy,
     ...restProps
   }: Omit<MenuPrimitive.ItemProps, 'children'> & {
     icon?: IconDefinition;
@@ -19,7 +22,10 @@
     label: string;
     shortcut?: string;
     destructive?: boolean;
+    disabledReason?: string;
   } = $props();
+  const uid = $props.id();
+  const reasonId = `${uid}-reason`;
 </script>
 
 {#snippet leading()}
@@ -32,9 +38,20 @@
   {destructive}
   leading={icon ? leading : undefined}
   {...restProps}
+  disabled={disabled || disabledReason !== undefined}
+  aria-describedby={[describedBy, disabledReason ? reasonId : undefined]
+    .filter(Boolean)
+    .join(' ') || undefined}
   data-slot="menu-command-item"
 >
-  <span class="min-w-0 flex-1 truncate">{label}</span>
+  <span class="min-w-0 flex-1">
+    <span class="block truncate">{label}</span>
+    {#if disabledReason}
+      <span id={reasonId} class="block text-muted-foreground" aria-hidden="true"
+        >{disabledReason}</span
+      >
+    {/if}
+  </span>
   {#if shortcut}
     <span class="ml-5" aria-hidden="true"><ShortcutChip>{shortcut}</ShortcutChip></span>
   {/if}

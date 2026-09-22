@@ -23,9 +23,11 @@
   } = $props();
 
   const split = $derived(splitActions(actions, visibleCount));
-  const visibleActions = $derived(split.visible.filter((action) => !action.children?.length));
+  const visibleActions = $derived(
+    split.visible.filter((action) => action.kind !== 'label' && !action.children?.length),
+  );
   const overflowActions = $derived([
-    ...split.visible.filter((action) => action.children?.length),
+    ...split.visible.filter((action) => action.kind === 'label' || action.children?.length),
     ...split.overflow,
   ]);
 </script>

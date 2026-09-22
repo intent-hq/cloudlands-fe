@@ -11,7 +11,9 @@
     value?: string;
     selectSearch?: (query: string) => Promise<Option[]>;
     searchableSearch?: (query: string) => Promise<Option[]> | Option[];
-    groupedSearch?: (query: string) => OptionGroup[];
+    groupedSearch?: (query: string) => OptionGroup[] | Promise<OptionGroup[]>;
+    ariaLabel?: string;
+    onSearchError?: (error: unknown, query: string) => void;
     onChange?: (value: string) => void;
     onOpen?: () => void;
     onClose?: () => void;
@@ -27,6 +29,8 @@
     selectSearch,
     searchableSearch,
     groupedSearch,
+    ariaLabel,
+    onSearchError,
     onChange,
     onOpen,
     onClose,
@@ -76,6 +80,8 @@
     {options}
     allowCustom
     onSearch={selectSearch}
+    {ariaLabel}
+    {onSearchError}
     {onChange}
     loading={false}
     searchPlaceholder="Find a person"
@@ -85,6 +91,8 @@
     bind:value
     {options}
     onSearch={searchableSearch}
+    {ariaLabel}
+    {onSearchError}
     {onChange}
     {onOpen}
     {onClose}
@@ -105,6 +113,8 @@
     bind:value
     {groups}
     onSearch={groupedSearch}
+    {ariaLabel}
+    {onSearchError}
     {onChange}
     {onOpen}
     {onClose}

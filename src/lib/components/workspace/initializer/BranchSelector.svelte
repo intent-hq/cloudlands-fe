@@ -4,8 +4,8 @@
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Checkbox from '$lib/components/ui/checkbox/checkbox.svelte';
-  import Input from '$lib/components/ui/input/input.svelte';
-  import { Select } from '$lib/components/ui/select';
+  import * as Popover from '$lib/components/ui/popover';
+  import { Combobox, type ComboboxGroup } from '$lib/components/ui/combobox';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { toast } from '$lib/components/ui/toast';
   import { debugConfig } from '$lib/config/debug';
@@ -13,6 +13,7 @@
   import { appClient } from '$lib/client';
   import { performanceMonitor } from '$lib/utils/performance';
   import { parseGitHubUrl } from '$lib/utils/workspace-validation';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
 
   import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerBranchByRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
@@ -25,10 +26,7 @@
   import { isWorkspaceSlug } from '$shared/services/workspace-slug';
   import { m } from '$shared/paraglide/messages.js';
   import {
-    faCheck,
     faChevronDown,
-    faChevronLeft,
-    faCloud,
     faExclamationTriangle,
     faRotate,
   } from '@fortawesome/free-solid-svg-icons';
@@ -131,7 +129,6 @@
   let currentBranch = $state(''); // Track the current branch separately
   let isLoading = $state(false);
   let error: string | null = $state(null);
-  let searchValue = $state('');
   let debouncedSearchValue = $state('');
   let searchDebounceTimer: NodeJS.Timeout | null = null;
   // Server-side prefix search (GitHub repos only): branches matching the
@@ -153,13 +150,18 @@
     savedBranchBeforePaint: string;
     explicitSelectionRevision: number;
   } | null = null;
-  // Using 'any' because this binds to a Svelte Input component, not a native HTMLInputElement
-  // The Input component exports focus() and select() methods that we use
-  let searchInputElement: any = $state(null);
+  let searchInputElement = $state<HTMLInputElement | null>(null);
   let isOpen = $state(false); // Track dropdown open state
-  let isDropdownMounting = $state(false); // Show skeleton while dropdown content mounts
   let containerEl: HTMLDivElement | undefined = $state(); // Container for positioning
   let triggerEl: HTMLButtonElement | null = $state(null); // Focus target after a selection closes the content
+
+  $effect(() => {
+    if (!isOpen) return;
+    // Search results are part of this dialog, not another dismissal step.
+    return pushEscapeLayer((event) => {
+      if (!event.isComposing) closeMenu();
+    });
+  });
 
   // GitHub auth state for private repos
   type GitHubAuthNeeded = 'none' | 'not-authenticated' | 'no-access';
@@ -1073,7 +1075,6 @@
   }
 
   function handleManualInput(value: string) {
-    searchValue = value;
     // Don't auto-select, let the user choose from dropdown or press enter
 
     // Debounce the search value for filtering
@@ -1091,7 +1092,6 @@
    * (and the server-side prefix results) active behind a blank search field.
    */
   function clearSearch() {
-    searchValue = '';
     if (searchDebounceTimer) {
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
@@ -1173,32 +1173,11 @@
   let workspaceBranchesCollapsed = $state(true);
   let dependabotBranchesCollapsed = $state(true);
 
-  // Track previous open state to detect transitions
-  let prevIsOpen = false;
-
-  // Pre-effect runs BEFORE DOM updates - set skeleton state before render
-  $effect.pre(() => {
-    // When transitioning from closed to open with many branches, show skeleton
-    if (isOpen && !prevIsOpen && branches.length > 10) {
-      isDropdownMounting = true;
-    }
-    prevIsOpen = isOpen;
-  });
-
   // Track previous open state for detecting open transitions in the regular effect
   let prevIsOpenForEffect = false;
 
-  // Regular effect runs after render - clear skeleton and focus input
+  // Regular effect runs after render to focus input and expand matching groups.
   $effect(() => {
-    if (isDropdownMounting) {
-      // Clear skeleton after a couple frames to allow content to render smoothly
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          isDropdownMounting = false;
-        });
-      });
-    }
-
     if (isOpen) {
       // Detect open transition to avoid re-running on every dependency change
       const justOpened = !prevIsOpenForEffect;
@@ -1446,6 +1425,43 @@
       .filter((b) => b.toLowerCase().includes(debouncedSearchValue.toLowerCase()))
       .sort((a, b) => a.localeCompare(b)),
   );
+
+  const branchGroups = $derived.by<ComboboxGroup[]>(() => {
+    const options = (values: string[]) =>
+      values.map((branch) => ({
+        value: branch,
+        label: branch,
+        description:
+          branch === defaultBranch
+            ? m.workspace_branchSelector_default_label()
+            : branch === currentBranch
+              ? m.workspace_branchSelector_current_label()
+              : undefined,
+      }));
+    return [
+      { key: 'regular', label: '', options: options(regularBranches) },
+      {
+        key: 'dependabot',
+        label: m.workspace_branchSelector_dependabotUpdates_label({
+          count: dependabotBranches.length,
+        }),
+        options: options(dependabotBranches),
+        collapsed: dependabotBranchesCollapsed,
+      },
+      {
+        key: 'workspace',
+        label: m.workspace_branchSelector_workspaceBranches_label(),
+        options: options(workspaceBranches),
+        collapsed: workspaceBranchesCollapsed,
+      },
+      {
+        key: 'remote',
+        label: m.workspace_branchSelector_remoteBranches_label(),
+        options: options(filteredRemoteBranches),
+        collapsed: !showRemoteBranches,
+      },
+    ];
+  });
 </script>
 
 {#if disabled}
@@ -1460,61 +1476,78 @@
   </div>
 {:else}
   <div class="relative min-w-0" bind:this={containerEl}>
-    <Select.Root bind:value={internalSelectedBranch} bind:open={isOpen}>
-      <Select.Trigger
-        bind:ref={triggerEl}
-        {variant}
-        class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary-ink rounded-sm' : ''}`}
-      >
-        <div class={`flex items-center truncate min-w-0 ${triggerContentClass}`}>
-          {#if githubAuthNeeded === 'not-authenticated'}
-            <Fa icon={faExclamationTriangle} class="text-orange-500" size="xs" />
-          {:else if hasTriggerIcon}
-            <GitBranchIcon size={12} class={'text-ghost'} />
-          {/if}
-          <span class="flex-1 text-left truncate min-w-0">
-            {#if githubAuthNeeded === 'not-authenticated'}
-              <span class="text-orange-500">{m.workspace_branchSelector_connectGithub_label()}</span
-              >
-            {:else if skipIsolation && selectedBranch}
-              <span>{selectedBranch}</span>
-              <span class="text-sm opacity-75 ml-1"
-                >{m.workspace_branchSelector_noIsolation_label({ isolationLabel })}</span
-              >
-            {:else if selectedBranch}
-              <span>{selectedBranch}</span>
-            {:else if !repoPath}
-              <span>{m.workspace_branchSelector_selectRepoFirst_label()}</span>
-            {:else if isLoading}
-              <IntentMarkLoader size={14} class="text-ghost" />
-              <span class="sr-only"
-                >{m.workspace_compactInitializer_waitingBranchSelection_label()}</span
-              >
-            {:else}
-              <span>{m.workspace_branchSelector_selectBranch_label()}</span>
-            {/if}
-          </span>
-          <!-- Branch status indicators -->
-          {#if showUncommittedIndicator && !skipIsolation && selectedBranch && repoType === 'local' && !branchStatusIsLoading && branchStatusHasUncommittedChanges && isCurrentBranch}
-            <div class="flex-0 flex flex-col" transition:slide={{ axis: 'x', tier: 'moderate' }}>
-              <Tooltip
-                content={m.workspace_branchSelector_uncommittedChanges_tooltip()}
-                side="bottom"
-                delayDuration={200}
-              >
-                <span class="w-1.5 h-1.5 ml-0.5 rounded-full bg-warning cursor-help"></span>
-              </Tooltip>
+    <Popover.Root bind:open={isOpen}>
+      <Popover.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            bind:ref={triggerEl}
+            {variant}
+            aria-label={`${m.workspace_branchSelector_selectBranch_label()}: ${selectedBranch || value}`}
+            class={`w-full text-muted-foreground ${triggerClass} ${githubAuthNeeded === 'not-authenticated' ? 'ring-1 ring-orange-400 rounded-sm' : suggestedBranch && suggestedBranch !== internalSelectedBranch ? 'ring-1 ring-primary-ink rounded-sm' : ''}`}
+          >
+            <div class={`flex items-center truncate min-w-0 ${triggerContentClass}`}>
+              {#if githubAuthNeeded === 'not-authenticated'}
+                <Fa icon={faExclamationTriangle} class="text-orange-500" size="xs" />
+              {:else if hasTriggerIcon}
+                <GitBranchIcon size={12} class={'text-ghost'} />
+              {/if}
+              <span class="flex-1 text-left truncate min-w-0">
+                {#if githubAuthNeeded === 'not-authenticated'}
+                  <span class="text-orange-500"
+                    >{m.workspace_branchSelector_connectGithub_label()}</span
+                  >
+                {:else if skipIsolation && selectedBranch}
+                  <span>{selectedBranch}</span>
+                  <span class="text-sm opacity-75 ml-1"
+                    >{m.workspace_branchSelector_noIsolation_label({ isolationLabel })}</span
+                  >
+                {:else if selectedBranch}
+                  <span>{selectedBranch}</span>
+                {:else if !repoPath}
+                  <span>{m.workspace_branchSelector_selectRepoFirst_label()}</span>
+                {:else if isLoading}
+                  <IntentMarkLoader size={14} class="text-ghost" />
+                  <span class="sr-only"
+                    >{m.workspace_compactInitializer_waitingBranchSelection_label()}</span
+                  >
+                {:else}
+                  <span>{m.workspace_branchSelector_selectBranch_label()}</span>
+                {/if}
+              </span>
+              <!-- Branch status indicators -->
+              {#if showUncommittedIndicator && !skipIsolation && selectedBranch && repoType === 'local' && !branchStatusIsLoading && branchStatusHasUncommittedChanges && isCurrentBranch}
+                <div
+                  class="flex-0 flex flex-col"
+                  transition:slide={{ axis: 'x', tier: 'moderate' }}
+                >
+                  <Tooltip
+                    content={m.workspace_branchSelector_uncommittedChanges_tooltip()}
+                    side="bottom"
+                    delayDuration={200}
+                  >
+                    <span class="w-1.5 h-1.5 ml-0.5 rounded-full bg-warning cursor-help"></span>
+                  </Tooltip>
+                </div>
+              {/if}
+              {#if showTriggerChevron}
+                <Fa icon={faChevronDown} size={10} class={triggerChevronClass} />
+              {/if}
             </div>
-          {/if}
-          {#if showTriggerChevron}
-            <Fa icon={faChevronDown} size={10} class={triggerChevronClass} />
-          {/if}
-        </div>
-      </Select.Trigger>
-      <Select.Content
-        class="w-[400px] min-w-0 max-h-[min(600px,calc(var(--bits-select-content-available-height,100dvh)-8px))] overflow-hidden flex flex-col"
-        wrapperClass="flex flex-col"
-        {dropUp}
+          </Button>
+        {/snippet}
+      </Popover.Trigger>
+      <Popover.Content
+        role="dialog"
+        aria-label={m.workspace_branchSelector_whichBranch_label()}
+        class="w-[400px] max-w-[calc(100vw-16px)] min-w-0 max-h-[min(600px,var(--bits-popover-content-available-height,100dvh))] overflow-y-auto flex flex-col"
+        side={dropUp ? 'top' : 'bottom'}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          void tick().then(() => {
+            if (isOpen) searchInputElement?.focus();
+          });
+        }}
         {portal}
       >
         <!-- Header -->
@@ -1562,34 +1595,46 @@
           </div>
         {/if}
 
-        <div class="shrink-0 px-3 pb-2">
-          <div class="flex gap-2">
-            <Input
-              bind:this={searchInputElement}
-              bind:value={searchValue}
-              autofocus
-              placeholder={m.workspace_branchSelector_search_placeholder()}
-              oninput={(e) => handleManualInput(e.currentTarget.value)}
-              onkeydown={(e) => {
-                if (e.key === 'Enter' && searchValue) {
-                  e.preventDefault();
-                  selectBranch(searchValue);
-                }
-              }}
-              class="flex-1 min-w-0 border-0 bg-background text-sm"
-              noFocusStyle
-            />
+        <div class="shrink-0 flex flex-wrap items-center gap-1 px-3 pb-2">
+          {#if dependabotBranches.length > 0}
             <Button
-              onclick={handleRefresh}
-              variant="ghost-light"
-              size="icon"
-              class="shrink-0"
-              disabled={isLoading}
-              aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+              variant="ghost"
+              aria-expanded={!dependabotBranchesCollapsed}
+              onclick={() => (dependabotBranchesCollapsed = !dependabotBranchesCollapsed)}
             >
-              <Fa icon={faRotate} class="size-4!" />
+              {m.workspace_branchSelector_dependabotUpdates_label({
+                count: dependabotBranches.length,
+              })}
             </Button>
-          </div>
+          {/if}
+          {#if workspaceBranches.length > 0}
+            <Button
+              variant="ghost"
+              aria-expanded={!workspaceBranchesCollapsed}
+              onclick={() => (workspaceBranchesCollapsed = !workspaceBranchesCollapsed)}
+            >
+              {m.workspace_branchSelector_workspaceBranches_label()}
+            </Button>
+          {/if}
+          {#if repoType === 'local'}
+            <Button
+              variant="ghost"
+              aria-expanded={showRemoteBranches}
+              onclick={toggleRemoteBranches}
+            >
+              {m.workspace_branchSelector_remoteBranches_label()}
+            </Button>
+          {/if}
+          <Button
+            onclick={handleRefresh}
+            variant="ghost-light"
+            size="icon"
+            class="shrink-0"
+            disabled={isLoading}
+            aria-label={m.workspace_branchSelector_refreshBranches_ariaLabel()}
+          >
+            <Fa icon={faRotate} class="size-4!" />
+          </Button>
         </div>
 
         <div class="min-h-16 overflow-y-auto flex-1" data-testid="branch-results">
@@ -1639,7 +1684,7 @@
               </div>
             </div>
           {:else if error}
-            <div class="px-2 py-2 border-l-2 border-danger bg-danger-background/10">
+            <div role="alert" class="px-2 py-2 border-l-2 border-danger bg-danger-background/10">
               <div class="text-sm text-danger">{error}</div>
               {#if repoType === 'github'}
                 <div class="text-sm text-subtle mt-1">
@@ -1649,217 +1694,31 @@
             </div>
           {/if}
 
-          {#if isDropdownMounting || (isLoading && branches.length === 0)}
-            <div class="px-4 py-3">
-              <div class="space-y-3">
-                {#each [1, 2, 3, 4, 5] as { }}
-                  <div class="flex items-center gap-2">
-                    <div class="w-4 h-4 bg-muted rounded animate-pulse"></div>
-                    <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
-                  </div>
-                {/each}
-              </div>
+          <Combobox
+            value={internalSelectedBranch}
+            groups={branchGroups}
+            bind:inputRef={searchInputElement}
+            ariaLabel={m.workspace_branchSelector_selectBranch_label()}
+            placeholder={m.workspace_branchSelector_search_placeholder()}
+            searchPlaceholder={m.workspace_branchSelector_search_placeholder()}
+            emptyText={m.workspace_branchSelector_noBranchesFound_label()}
+            loading={isLoading && branches.length === 0}
+            staticPosition
+            allowCustom
+            onquerychange={handleManualInput}
+            oncommit={(branch) => {
+              if (typeof branch === 'string') selectBranch(branch);
+            }}
+            class="px-3 pb-2"
+            contentClass="border-0 shadow-none"
+          />
+          {#if isLoadingRemote}
+            <div role="status" class="px-3 py-2 text-subtle">
+              {m.ui_combobox_loadingOptions_message()}
             </div>
-          {:else if regularBranches.length > 0 || dependabotBranches.length > 0 || workspaceBranches.length > 0 || filteredRemoteBranches.length > 0}
-            <div class="px-2 pb-1">
-              <!-- Regular branches -->
-              {#if regularBranches.length > 0}
-                <!-- <div class="text-sm text-subtle mb-1 ml-2">
-              Available branches
-              {#if regularBranches.length > 0}
-                ({regularBranches.length})
-              {/if}
-            </div> -->
-
-                {#each regularBranches as branch (branch)}
-                  <Button
-                    variant="ghost"
-                    onclick={() => selectBranch(branch)}
-                    class="w-full justify-start text-left"
-                  >
-                    <GitBranchIcon size={14} class="text-ghost shrink-0" />
-                    <span class="text-sm truncate flex-1">{branch}</span>
-                    <div class="flex items-center gap-1 ml-2 shrink-0">
-                      {#if branch === currentBranch && branch !== defaultBranch}
-                        <span class="text-sm text-subtle"
-                          >{m.workspace_branchSelector_current_label()}</span
-                        >
-                      {/if}
-                      {#if branch === defaultBranch}
-                        <span class="text-sm text-subtle"
-                          >{m.workspace_branchSelector_default_label()}</span
-                        >
-                      {/if}
-                      {#if branch === selectedBranch}
-                        <Fa icon={faCheck} class="text-primary-ink" size="sm" />
-                      {/if}
-                    </div>
-                  </Button>
-                {/each}
-              {/if}
-
-              <!-- Dependabot branches (collapsible) -->
-              {#if dependabotBranches.length > 0}
-                <div class="">
-                  <Button
-                    variant="ghost"
-                    onclick={() => (dependabotBranchesCollapsed = !dependabotBranchesCollapsed)}
-                    class="w-full justify-start text-left text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <Fa
-                      icon={dependabotBranchesCollapsed ? faChevronLeft : faChevronDown}
-                      size="xs"
-                      class="mr-1"
-                    />
-                    {m.workspace_branchSelector_dependabotUpdates_label({
-                      count: dependabotBranches.length,
-                    })}
-                  </Button>
-
-                  {#if !dependabotBranchesCollapsed}
-                    <div class="ml-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-                      {#each dependabotBranches as branch (branch)}
-                        <Button
-                          variant="ghost"
-                          onclick={() => selectBranch(branch)}
-                          class="w-full justify-start text-left opacity-75 hover:opacity-100"
-                        >
-                          <GitBranchIcon size={14} class="text-ghost shrink-0" />
-                          <span class="text-sm truncate flex-1"
-                            >{branch.replace('dependabot/', '')}</span
-                          >
-                          {#if branch === selectedBranch}
-                            <Fa icon={faCheck} class="text-primary-ink" size="sm" />
-                          {/if}
-                        </Button>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-
-              <!-- Workspace branches (collapsible) -->
-              {#if workspaceBranches.length > 0}
-                <div class="">
-                  <Button
-                    variant="ghost"
-                    onclick={() => (workspaceBranchesCollapsed = !workspaceBranchesCollapsed)}
-                    class="w-full justify-start text-left text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <Fa
-                      icon={faChevronDown}
-                      size={10}
-                      class="mr-1 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {workspaceBranchesCollapsed
-                        ? 'rotate-90'
-                        : ''}"
-                    />
-                    {m.workspace_branchSelector_workspaceBranches_label()}
-                    {#if workspaceBranches.length > 0}
-                      <span class="ml-auto text-sm text-subtle">
-                        {workspaceBranches.length}
-                      </span>
-                    {/if}
-                  </Button>
-
-                  {#if !workspaceBranchesCollapsed}
-                    <div class="ml-6" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-                      {#each workspaceBranches as branch (branch)}
-                        <Button
-                          variant="ghost"
-                          onclick={() => selectBranch(branch)}
-                          class="w-full justify-start text-left opacity-75 hover:opacity-100"
-                        >
-                          <GitBranchIcon size={14} class="text-ghost shrink-0" />
-                          <span class="text-sm truncate flex-1">{branch}</span>
-                          {#if branch === selectedBranch}
-                            <Fa icon={faCheck} class="text-primary-ink" size="sm" />
-                          {/if}
-                        </Button>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-
-              <!-- Remote branches (for local repos only) -->
-              {#if repoType === 'local'}
-                <div class="">
-                  <Button
-                    variant="ghost"
-                    onclick={toggleRemoteBranches}
-                    class="w-full justify-start text-left text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <Fa
-                      icon={faChevronDown}
-                      size={10}
-                      class="mr-1 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {showRemoteBranches
-                        ? ''
-                        : 'rotate-90'}"
-                    />
-                    <Fa icon={faCloud} size={10} class="mr-1 opacity-50" />
-                    {m.workspace_branchSelector_remoteBranches_label()}
-                    {#if isLoadingRemote}
-                      <span class="inline-block w-6 h-3 bg-muted rounded animate-pulse ml-1"></span>
-                    {:else if filteredRemoteBranches.length > 0}
-                      ({filteredRemoteBranches.length})
-                    {/if}
-                  </Button>
-
-                  {#if showRemoteBranches}
-                    <div class="ml-4" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-                      {#if isLoadingRemote}
-                        <div class="px-2 py-2 space-y-2">
-                          {#each [1, 2, 3] as { }}
-                            <div class="flex items-center gap-2">
-                              <div class="w-3.5 h-3.5 bg-muted rounded animate-pulse"></div>
-                              <div class="h-4 bg-muted rounded flex-1 animate-pulse"></div>
-                            </div>
-                          {/each}
-                        </div>
-                      {:else if filteredRemoteBranches.length > 0}
-                        {#each filteredRemoteBranches as branch (branch)}
-                          <Button
-                            variant="ghost"
-                            onclick={() => selectBranch(branch)}
-                            class="w-full justify-start text-left opacity-75 hover:opacity-100"
-                          >
-                            <GitBranchIcon size={14} class="text-ghost shrink-0" />
-                            <!-- Display without origin/ prefix for cleaner UI, but keep full name in value -->
-                            <span class="text-sm truncate flex-1"
-                              >{branch.replace(/^origin\//, '')}</span
-                            >
-                            {#if branch === selectedBranch}
-                              <Fa icon={faCheck} class="text-primary-ink" size="sm" />
-                            {/if}
-                          </Button>
-                        {/each}
-                      {:else}
-                        <div class="px-3 text-sm text-subtle">
-                          {m.workspace_branchSelector_noRemoteBranches_label()}
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-          {:else if searchValue && !isLoading}
-            <div class="px-2 pb-1">
-              <Button
-                variant="ghost"
-                onclick={() => selectBranch(searchValue)}
-                class="w-full justify-start"
-              >
-                <GitBranchIcon size={14} class="text-ghost" />
-                <span class="text-sm"
-                  >{m.workspace_branchSelector_useBranch_label()}
-                  <strong>{searchValue}</strong></span
-                >
-              </Button>
-            </div>
-          {:else if !isLoading && !error}
-            <div class="px-2 py-2 text-sm text-subtle">
-              {m.workspace_branchSelector_noBranchesFound_label()}
+          {:else if showRemoteBranches && filteredRemoteBranches.length === 0}
+            <div role="status" class="px-3 py-2 text-subtle">
+              {m.workspace_branchSelector_noRemoteBranches_label()}
             </div>
           {/if}
         </div>
@@ -1867,26 +1726,12 @@
         <!-- Use current branch option (no isolated checkout) -->
         {#if typeof onSkipIsolationChange === 'function' && currentBranch}
           <div class="shrink-0 px-2 pt-2 pb-3 border-t border-border bg-popover">
-            <Button
-              variant="ghost"
-              onclick={() => {
-                const enabling = !skipIsolation;
-                try {
-                  onSkipIsolationChange(enabling);
-                } catch (e) {
-                  logger.error('Error in onSkipIsolationChange callback', e);
-                }
-                if (enabling) {
-                  // When enabling skip isolation, select current branch (keep skipIsolation on)
-                  selectBranch(currentBranch, true);
-                }
-                closeMenu();
-              }}
-              wrapContent={false}
-              class="w-full h-auto flex items-start gap-3 px-2 py-1 rounded-md text-left whitespace-normal cursor-pointer"
-            >
+            <label class="w-full flex items-start gap-3 px-2 py-1 text-left cursor-pointer">
               <Checkbox
                 checked={skipIsolation}
+                ariaLabel={m.workspace_branchSelector_workDirectlyOnBranch_label({
+                  branch: currentBranch,
+                })}
                 class="-mb-1"
                 onCheckedChange={() => {
                   const enabling = !skipIsolation;
@@ -1905,13 +1750,13 @@
                 {workDirectlyParts[0]}<span class="font-medium">{currentBranch}</span
                 >{workDirectlyParts[1]}
               </div>
-            </Button>
+            </label>
             <div class="ml-9 text-sm text-subtle">
               {m.workspace_branchSelector_stayInFolder_description({ isolationLabel })}
             </div>
           </div>
         {/if}
-      </Select.Content>
-    </Select.Root>
+      </Popover.Content>
+    </Popover.Root>
   </div>
 {/if}

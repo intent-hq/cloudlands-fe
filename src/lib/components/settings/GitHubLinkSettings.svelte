@@ -8,16 +8,15 @@
   import { store as appStore } from '$store/renderer/store';
 
   const defaultAction = selectGithubLinkDefaultAction();
-  const options: { value: GithubLinkDefaultAction; label: string }[] = [
+  const options: { value: GithubLinkDefaultAction; label: string }[] = $derived([
     { value: 'show-choices', label: m.settings_githubLinks_showChoices_option() },
     { value: 'open-in-browser', label: m.settings_githubLinks_openInBrowser_option() },
     { value: 'open-in-app', label: m.settings_githubLinks_openInApp_option() },
     { value: 'copy-link', label: m.settings_githubLinks_copyLink_option() },
     { value: 'start-workspace', label: m.settings_githubLinks_startWorkspace_option() },
-  ];
+  ]);
   const selectedLabel = $derived(
-    options.find((option) => option.value === $defaultAction)?.label ??
-      m.settings_githubLinks_showChoices_option(),
+    options.find((option) => option.value === $defaultAction)?.label ?? $defaultAction,
   );
 
   function handleChange(value: string) {
@@ -30,14 +29,18 @@
   label={m.settings_githubLinks_defaultAction_label()}
   description={m.settings_githubLinks_defaultAction_description()}
 >
-  <div class="w-[180px] flex-shrink-0">
-    <Select.Root value={$defaultAction} onchange={handleChange}>
-      <Select.Trigger><span class="truncate">{selectedLabel}</span></Select.Trigger>
-      <Select.Content portal class="w-[180px]">
-        {#each options as option (option.value)}
-          <Select.Item value={option.value}>{option.label}</Select.Item>
-        {/each}
-      </Select.Content>
-    </Select.Root>
-  </div>
+  {#snippet control({ labelId, descriptionId })}
+    <div class="w-[180px] flex-shrink-0">
+      <Select.Root value={$defaultAction} onchange={handleChange}>
+        <Select.Trigger aria-labelledby={labelId} aria-describedby={descriptionId}
+          ><span class="truncate">{selectedLabel}</span></Select.Trigger
+        >
+        <Select.Content portal class="w-[180px]">
+          {#each options as option (option.value)}
+            <Select.Item value={option.value}>{option.label}</Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    </div>
+  {/snippet}
 </SettingsFieldRow>

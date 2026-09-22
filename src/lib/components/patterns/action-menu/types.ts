@@ -52,6 +52,13 @@ interface ContainerAction extends ActionBase {
   destructive?: never;
 }
 
+interface LabelAction extends ActionBase {
+  kind: 'label';
+  checked?: never;
+  destructive?: never;
+  children?: never;
+}
+
 /** Compatibility for existing command arrays. New definitions should specify kind. */
 interface LegacyAction extends ActionBase {
   kind?: undefined;
@@ -61,7 +68,7 @@ interface LegacyAction extends ActionBase {
 }
 
 export type ActionDefinition =
-  CommandAction | CheckboxAction | RadioGroupAction | ContainerAction | LegacyAction;
+  CommandAction | CheckboxAction | RadioGroupAction | ContainerAction | LabelAction | LegacyAction;
 
 export type ResolvedAction = ActionDefinition | RadioAction;
 

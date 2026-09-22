@@ -62,6 +62,7 @@
         onClose={() => (open = false)}
         additionalActions={[
           {
+            id: 'transfer-to-host',
             label: 'Transfer to host',
             icon: faArrowRightArrowLeft,
             onClick: () => (lastAction = 'transfer'),

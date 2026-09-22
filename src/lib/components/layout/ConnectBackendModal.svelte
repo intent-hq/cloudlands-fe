@@ -430,10 +430,15 @@
       </div>
 
       <!-- Content -->
-      <div class="p-6 space-y-4">
+      <div class="p-6 space-y-4" aria-busy={busy}>
+        <p class="text-sm text-subtle" role="status" aria-live="polite">
+          {step === 'details'
+            ? m.modals_connect_details_description()
+            : step === 'confirm'
+              ? m.modals_connect_confirmStep_description()
+              : m.modals_connect_enableSync_description()}
+        </p>
         {#if step === 'details'}
-          <p class="text-sm text-subtle">{m.modals_connect_details_description()}</p>
-
           <div class="space-y-1">
             <label class="text-xs text-subtle" for="connect-name"
               >{m.modals_connect_name_label()}</label
@@ -561,18 +566,15 @@
             {m.modals_connect_headless_after()}
           </p>
         {:else if step === 'confirm'}
-          <p class="text-sm text-subtle">{m.modals_connect_confirmStep_description()}</p>
           <div class="space-y-1">
             <span class="text-xs text-subtle">{m.modals_connect_fingerprint_label()}</span>
             <!-- i18n-ignore (cert fingerprint hex, not translatable copy) -->
             <p class="font-mono text-xs break-all bg-muted/50 rounded p-2">{fingerprint}</p>
           </div>
-        {:else}
-          <p class="text-sm text-subtle">{m.modals_connect_enableSync_description()}</p>
         {/if}
 
         {#if error}
-          <p class="text-xs text-danger">{error}</p>
+          <p class="text-xs text-danger" role="alert">{error}</p>
         {/if}
       </div>
 

@@ -137,9 +137,7 @@ warmImport(() => import('./mocks/MockComponent.svelte'));
 // The dropdown content is portalled to <body>, so suggestions are queried globally.
 const suggestions = () =>
   Array.from(
-    document.body.querySelectorAll<HTMLButtonElement>(
-      '#repo-selector-github-suggestions button[role="option"]',
-    ),
+    document.body.querySelectorAll<HTMLButtonElement>('[role="listbox"] button[role="option"]'),
   );
 
 const rowText = (button: HTMLButtonElement) => button.textContent?.replace(/\s+/g, ' ').trim();
@@ -297,6 +295,20 @@ describe('RepoSelector "Pick a repo" autocomplete', () => {
     await waitFor(() => expect(screen.queryByText(DROPDOWN_HEADING)).toBeFalsy());
   });
 
+  it('does not navigate or accept suggestions during IME composition', async () => {
+    const onchange = vi.fn();
+    const { input } = await openGithubTab({ onchange });
+    await waitFor(() => expect(suggestions()).toHaveLength(2));
+    await fireEvent.keyDown(input, { key: 'ArrowDown', isComposing: true });
+    expect(input.getAttribute('aria-activedescendant')).toBeNull();
+    await fireEvent.input(input, { target: { value: 'someone/elsewhere' } });
+    await fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(onchange).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onchange.mock.calls[0][0].detail.path).toBe('someone/elsewhere');
+  });
+
   it('Enter on free text that is not a valid owner/repo neither commits nor closes', async () => {
     const onchange = vi.fn();
     const { input } = await openGithubTab({ onchange });
@@ -440,7 +452,9 @@ describe('RepoSelector trigger avatar', () => {
 
     const trigger = container.querySelector('button')!;
     expect(triggerAvatar(container)!.getAttribute('aria-hidden')).toBe('true');
-    expect(within(container).getByRole('combobox', { name: 'intent-hq/intent' })).toBe(trigger);
+    expect(
+      within(container).getByRole('button', { name: 'Select a repository: intent-hq/intent' }),
+    ).toBe(trigger);
   });
 
   it('drops a confirmed pick when the value prop moves to another repo', async () => {

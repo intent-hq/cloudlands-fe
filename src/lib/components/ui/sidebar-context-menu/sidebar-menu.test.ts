@@ -1,10 +1,32 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import SidebarMenuHarness from './SidebarMenuHarness.svelte';
 import SidebarContextMenu from './SidebarContextMenu.svelte';
-import { toSidebarActions } from './actions';
+import { findSidebarItem, toSidebarActions } from './actions';
+import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 
 afterEach(cleanup);
+
+it('keeps metadata labels out of command roles, navigation and dispatch', async () => {
+  const onClick = vi.fn();
+  const items: SidebarMenuEntry[] = [
+    { type: 'label', label: 'Specialist metadata' },
+    { id: 'open', label: 'Open agent', onClick },
+  ];
+  const actions = toSidebarActions(items);
+  expect(findSidebarItem(items, actions[0].id)).toBeUndefined();
+  render(SidebarContextMenu, { props: { x: 10, y: 10, items, ariaLabel: 'Agent actions' } });
+  const command = await screen.findByRole('menuitem', { name: 'Open agent' });
+  expect(screen.getAllByRole('menuitem')).toEqual([command]);
+  await fireEvent.click(screen.getByText('Specialist metadata'));
+  expect(onClick).not.toHaveBeenCalled();
+  expect(screen.getByRole('menu')).toBeTruthy();
+  command.focus();
+  await fireEvent.keyDown(command, { key: 'Home' });
+  expect(document.activeElement).toBe(command);
+  await fireEvent.click(command);
+  expect(onClick).toHaveBeenCalledOnce();
+});
 
 it('groups root exclusive choices without converting the clear command', () => {
   const actions = toSidebarActions(

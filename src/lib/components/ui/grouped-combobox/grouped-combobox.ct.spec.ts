@@ -21,7 +21,7 @@ test('portals grouped options beyond a clipping parent and keeps header actions 
       { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 },
     ),
   ).toBe(true);
-  const toggle = page.getByRole('option', { name: /Toggle.*Projects/i });
+  const toggle = page.getByRole('button', { name: /Toggle.*Projects/i });
   await toggle.hover();
   await expect
     .poll(() =>

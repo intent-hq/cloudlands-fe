@@ -2,7 +2,7 @@
   import { ActionMenu } from '$lib/components/patterns/action-menu';
   import { Button } from '$lib/components/ui/button';
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
-  import type { SidebarMenuEntry } from './types';
+  import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { toSidebarActions, findSidebarItem } from './actions';
 
   let {
@@ -35,7 +35,7 @@
     <Button
       {...props}
       variant="plain"
-      size="icon-xs"
+      size="icon-compact"
       iconOnly
       type="button"
       class={className}

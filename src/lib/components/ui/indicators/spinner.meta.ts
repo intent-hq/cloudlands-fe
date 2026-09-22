@@ -24,7 +24,6 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/features/onboarding/steps/OnboardingGitHubStep.svelte',
     'src/features/onboarding/steps/OnboardingPromptStep.svelte',
     'src/features/onboarding/steps/OnboardingRequirementsStep.svelte',
-    'src/features/workspace/components/WorkspaceActionsMenu.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/component-catalog/renderers/ScreenStatesCatalogPreview.svelte',
     'src/lib/components/AuggieSetupGate.svelte',

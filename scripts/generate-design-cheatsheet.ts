@@ -77,6 +77,22 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 - **Overlay recipe:** \`.overlay-surface\` uses the 8px medium radius and two-layer \`--elevation-overlay\`; its boundary is 0px in light themes and a 1px semantic border in dark themes.
 - **States:** use \`bg-hover\`, \`bg-active\`, \`bg-selected\`, and \`bg-danger-background\` rather than physical colors.
 
+## Menus and choices
+
+- **Commands:** \`ActionMenu\` and \`defineActions\` from \`$lib/components/patterns/action-menu\`; use one readonly action model for overflow and right-click. Only the trigger/\`contextMenu\` anchor differs.
+- **Kinds:** \`action\`, \`checkbox\`, \`radio-group\` with \`radio\` children, \`submenu\`, \`section\`, and passive \`label\`. Use \`when\` for visibility, \`disabledReason\` for an unavailable command's explanation, and \`closeOnSelect\` to override the command-close / choice-stay-open default. Labels render as \`Menu.Label\`, never inline ActionBar buttons; sidebar adapters accept \`{ type: 'label', label, id? }\`.
+- **Composition:** \`Menu.Content\`, \`Menu.Item\`, \`Menu.CheckboxItem\`, \`Menu.RadioItem\`, and \`Menu.Sub\` from \`$lib/components/ui/menu\`. Do not make decorative checkmarks stand in for checked semantics.
+- **Indicators:** \`Menu.Indicator\` owns glyph, trailing slot, and \`aria-hidden\`; set \`state="checked" | "mixed" | "submenu" | "empty"\`. Render empty to reserve spacing; the row still owns \`aria-checked\` or \`aria-selected\`.
+- **Adapter recipes:** public \`menuOverlay()\` and \`menuItem()\` from \`$lib/components/ui/menu\` supply canonical shell/row styling, not interaction behavior. Feature code should prefer semantic Menu components.
+- **Unavailable commands:** \`Menu.CommandItem disabledReason\` accepts localized explanatory text, disables activation, and appends its reason to \`aria-describedby\`; preserve the command rather than silently hiding it when its unavailability needs explanation.
+- **Context invocation:** \`getSidebarContextPosition(event)\` from \`$lib/components/ui/sidebar-context-menu/types\` supports pointer and Shift+F10/context-menu-key invocation. Preserve \`returnFocus\`; existing context/overflow adapters share the action renderer.
+- **Values:** use Select for a closed value set; \`Combobox\` from \`$lib/components/ui/combobox\` for search, remote options, groups, and multiple selection. Supply a purpose-specific \`ariaLabel\`; use \`ariaLabelledby\` / \`ariaDescribedby\` for associated fields.
+- **Async choices:** \`onsearch\` accepts sync or async results; \`errorText\`, \`retryText\`, and \`onsearcherror\` distinguish failure from empty results. Keep status/retry outside options and retain selected identity when results change.
+- **Choice acceptance:** \`onchange\` is change-only; \`oncommit(value, option)\` also reports explicit same-value acceptance without clearing a single selection. Use one acceptance handler to avoid duplicate domain actions.
+- **Embedded choices:** \`staticPosition\` is layout-only. Bind \`inputRef\` for host autofocus; coordinate \`onopenchange(false)\` or the shared Escape layer with the host for one-step dismissal and focus return.
+- **Enforcement:** \`intent/no-raw-menu-surface\` and \`intent/no-raw-menu-row\` verify canonical shell/row bindings and semantics. Legacy callers only shrink; new code uses public canonical subpaths.
+- **Boundaries:** rich forms use Popover/dialog; native Electron menus and the hardware radial selector retain their documented native/spatial contracts. See [menu guidance](DESIGN_SYSTEM.md#compact-command-menus).
+
 ## Typography
 
 - **Roles:** \`type-caption\` for compact controls, navigation and short metadata; \`type-body\` for messages, documents, explanatory copy and expanded form content; \`type-title\` / \`type-display\` for section / page headings. Use \`SettingsFieldRow\` for label-and-control rows.

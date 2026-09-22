@@ -93,6 +93,39 @@ Import `ActionBar` and `defineActions` from `$lib/components/patterns/action-men
 <ActionBar {actions} visibleCount={1} onAction={runAction} />
 ```
 
+Use `ActionMenu` from the same public subpath for a complete menu. `actions` is a
+readonly `ActionDefinition[]`; `ariaLabel` names the menu, `trigger` renders its trigger,
+and `onAction(id, event)` dispatches the selected leaf. For pointer-anchored invocation,
+pass `contextMenu: { x, y, returnFocus }` instead of a trigger. Build the action model
+once for both invocation paths; do not maintain separate right-click and overflow trees.
+
+### …choose a value or search options
+
+Use `Select` for a short, closed set of values and `Combobox` from
+`$lib/components/ui/combobox` for searchable, grouped, remote, or multiple choices.
+Give the trigger a purpose-specific accessible name; the selected value and search
+placeholder are not substitutes for that name. `Combobox` requires `ariaLabel` and also
+accepts `ariaLabelledby` and `ariaDescribedby` for field integration.
+
+`onsearch(query)` may return options or groups synchronously or asynchronously. Supply
+localized `emptyText`, `errorText`, and `retryText` where the default is insufficient;
+`onsearcherror(error, query)` reports a rejected request without turning it into an empty
+result. Status messages and retry controls live outside the option collection. Closing,
+clearing, or selecting invalidates pending searches; selected labels survive filtering.
+Single selection closes, multiple selection stays open. Preserve each option's stable
+`value` and optional metadata, rather than looking up a selected option in filtered results.
+`onchange(value, option?)` reports value changes; `oncommit(value, option)` reports accepted
+user activation, including explicit reselection of the current single value. Reselection
+does not clear that value. Use `oncommit` instead of a second `onchange` handler when a
+domain action must run once for both changed and unchanged acceptance.
+For a compact Popover-hosted picker, use `staticPosition` and `bind:inputRef` so the Popover's
+open-focus handler can focus the shared search input. Binding the reference does not change
+the default focus behavior. `staticPosition` changes layout only; the host still owns
+dismissal. Coordinate `onopenchange(false)` or the existing shared Escape layer with the
+host so one Escape closes the picker and returns focus without dismissing its parent.
+Keep group actions outside selectable options; use
+`ComboboxGroup.collapsed` to hide options without discarding their selected identities.
+
 ### …show empty, loading, or error state
 
 Import `EmptyState`, `LoadingState`, and `ErrorState` from `$lib/components/patterns/screen`; inspect
@@ -129,7 +162,9 @@ Import shared transitions from `$lib/motion`; inspect the live motion examples i
 
 - Never add raw `<button>`, `<input>`, `<select>`, or `<textarea>` controls; use their UI primitives.
 - Never render an icon-only `Button` (icon child only, or `iconOnly`) without an icon size (`size="icon"`, `icon-compact`, `icon-sm`, `icon-lg`); `intent/icon-only-button-size` enforces this.
-- Never hand-roll a menu or listbox row; apply the shared `menuItem()` recipe.
+- Never hand-roll a command-menu shell or row; use canonical `Menu.Content` and semantic
+  `Menu.Item`, `Menu.CheckboxItem`, or `Menu.RadioItem`. Internal adapters must apply the
+  shared `menuOverlay()` and `menuItem()` recipes; decorative checks do not provide semantics.
 - Never import `svelte-sonner` directly; route transient feedback through `notify`.
 - Never call `window.alert`, `window.confirm`, or `window.prompt`; use the Confirm pattern.
 - Never import `svelte/motion` or `svelte/transition` outside `$lib/motion`.
@@ -276,6 +311,69 @@ with an optional trailing keyboard shortcut. Keep labels short and verb-led, gro
 with `Menu.Separator`, and use canonical `Menu.Root`, `Menu.Trigger`, and `Menu.Content` rather than
 the deprecated dropdown compatibility wrapper in new callers.
 
+For an unavailable command, `Menu.CommandItem` accepts a localized `disabledReason`.
+Providing it disables activation and renders explanatory text linked by `aria-describedby`;
+an existing description reference is preserved. Do not rely on color alone to explain why
+a command is unavailable.
+
+The public `menuOverlay()` recipe from `$lib/components/ui/menu` supplies the same shell
+for adapters that cannot use `Menu.Content`; `menuItem()` supplies row anatomy. Prefer
+the semantic components in feature code. Recipes provide styling, not keyboard, focus,
+checked-state, or dismissal behavior.
+
+`Menu.Indicator` owns the trailing glyph, slot, and decorative `aria-hidden` contract for
+menus and value pickers. Its `state` is `checked`, `mixed`, `submenu`, or `empty`; keep the
+empty state rendered to reserve the same trailing space. It accepts optional `data-slot`,
+`class`, and span attributes. It is decoration only: the host still owns `aria-checked`
+or `aria-selected`. Do not recreate check/minus/chevron glyphs in feature rows.
+
+#### One action model, two invocation paths
+
+The [ActionMenu renderer](../src/lib/components/patterns/action-menu/ActionMenu.svelte)
+owns both trigger- and pointer-anchored menus. Its action kinds are `action`, `checkbox`,
+`radio-group` (with `radio` children), `submenu`, `section`, and `label`. Use a checkbox for an
+independent setting and a radio group for one choice among alternatives. Commands close
+by default; checkbox and radio choices remain open unless `closeOnSelect` requests otherwise.
+`when` controls visibility; `disabled` and localized `disabledReason` retain unavailable
+commands without invoking them. Stable IDs and optional `commandId` distinguish action
+identity from translated labels. Keep IDs unique and never duplicate a command in one scope.
+
+Use `kind: 'label'` for passive metadata, not a disabled command. It renders as `Menu.Label`
+and is excluded from ActionBar inline buttons. The sidebar compatibility model accepts
+`{ type: 'label', label, id? }` for the same non-actionable content.
+
+Existing `SidebarContextMenu` and `SidebarOverflowMenu` adapters translate the same
+`SidebarMenuEntry[]` into that renderer. Checked compatibility entries become checkbox
+items; a submenu with `selection: 'single'` becomes an exclusive radio group. Use
+`getSidebarContextPosition(event)` from `$lib/components/ui/sidebar-context-menu/types` for
+both `contextmenu` and keyboard events: it recognizes Shift+F10 and the context-menu key
+and records the invoking element. Pass that `returnFocus` through to the context adapter.
+Do not call `stopImmediatePropagation()` or replace the shared keyboard handling locally.
+
+Both paths must have the same labels, order, grouping, shortcuts, checked state, disabled
+reasons, destructive placement, submenus, and handlers. Only the anchor differs. Keep
+appearance controls separate from tab and panel operations; “Move tab” and “Move panel”
+are distinct capabilities, not duplicate commands. Menus must fit the viewport, scroll
+internally, support keyboard/typeahead navigation, and return focus without stealing it
+from a dialog or destination opened by a command. Verify parity with the same domain model
+under both invocations, including viewport edges and reduced motion.
+
+#### Deliberate non-menu boundaries
+
+Rich forms and status panels use `Popover` or a dialog, not a `role="menu"` shell. Search
+suggestions and value pickers retain listbox semantics, including `aria-selected`; do not
+turn them into command menus to reuse styling. New callers must use public canonical
+subpaths rather than the `dropdown`, `dropdown-menu`, `searchable-select`,
+`searchable-combobox`, or `grouped-combobox` compatibility layers.
+
+The native application menus in `src/main/index.ts` and window entries in
+`src/main/window-menu-entries.ts` remain Electron-native to preserve OS menu roles,
+accelerators, and native window routing. The spatial hardware selector at
+`src/features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svelte` remains a
+radial interaction rather than a linear command list. These exact paths do not justify
+new feature-owned menu systems; keyboard and assistive-technology behavior still need
+their own tests. Native behavior requires Electron verification, not browser-only evidence.
+
 | Family                                           | Verification/migration owner |
 | ------------------------------------------------ | ---------------------------- |
 | Button, ButtonGroup, Badge, Skeleton, feedback   | `007-B1`                     |
@@ -349,22 +447,36 @@ exceptions with an owner and reason; remove files as callers migrate, and never 
 file. The baseline test fails when a rule finds a file outside that checked-in set, and CI compares the
 file with the PR base revision to reject baseline additions while allowing removals.
 
-| Rule                                     | Replace with                                      |
-| ---------------------------------------- | ------------------------------------------------- |
-| `intent/no-raw-controls`                 | `Button`, `Input`, `Select`, or `Textarea`        |
-| `intent/no-direct-toast`                 | `notify` from the Notify pattern                  |
-| `intent/no-native-dialogs`               | `confirm()` from the Confirm pattern              |
-| `intent/no-adhoc-transitions`            | shared motion tiers from `$lib/motion`            |
-| `intent/no-arbitrary-motion-or-color`    | semantic color and spring motion tokens           |
-| `intent/no-dialog-root-outside-patterns` | `FormDialog` (or the imperative Confirm service)  |
-| `intent/no-uppercase`                    | sentence-case labels without extra letter spacing |
-| `intent/no-legacy-spinner`               | `IntentMarkLoader` from the indicators module     |
-| `intent/settings-use-schema`             | `defineSettings` rendered through `SettingsForm`  |
+| Rule                                     | Replace with                                         |
+| ---------------------------------------- | ---------------------------------------------------- |
+| `intent/no-raw-controls`                 | `Button`, `Input`, `Select`, or `Textarea`           |
+| `intent/no-raw-menu-surface`             | `Menu.Content` / the internal `menuOverlay()` recipe |
+| `intent/no-raw-menu-row`                 | Semantic Menu rows / the shared `menuItem()` recipe  |
+| `intent/no-direct-toast`                 | `notify` from the Notify pattern                     |
+| `intent/no-native-dialogs`               | `confirm()` from the Confirm pattern                 |
+| `intent/no-adhoc-transitions`            | shared motion tiers from `$lib/motion`               |
+| `intent/no-arbitrary-motion-or-color`    | semantic color and spring motion tokens              |
+| `intent/no-dialog-root-outside-patterns` | `FormDialog` (or the imperative Confirm service)     |
+| `intent/no-uppercase`                    | sentence-case labels without extra letter spacing    |
+| `intent/no-legacy-spinner`               | `IntentMarkLoader` from the indicators module        |
+| `intent/settings-use-schema`             | `defineSettings` rendered through `SettingsForm`     |
 
 `no-raw-controls` shares the narrow exception policy in
 `scripts/ui-component-raw-element-allowlist.json`; do not create a second lint-only exception.
 Direct `svelte-sonner` imports remain valid only inside the Notify pattern and toast primitives, and
 direct `svelte/transition` or `svelte/motion` imports remain valid only inside `$lib/motion`.
+
+Menu rules resolve imports and local recipe wrappers rather than matching function names
+in source text. Aliased imports are valid; comments, string literals, lookalike imports,
+and shadowed names are not exemptions. Raw commands inside a canonical menu still need
+menu semantics, and radio/checkbox roles must expose `aria-checked`. The UI inventory check
+also rejects new static or dynamic legacy callers absent from the owning metadata ledger;
+removing another caller does not make room for a new compatibility import.
+
+The exact selectable host in `patterns/collection/ListView.svelte` remains a collection
+row whose presentation is supplied by `CollectionRow`, not a compact menu option. The
+row rule's exception applies only to that host's `list-view-item` option role; it does
+not permit command-menu roles there or copied raw options in feature components.
 
 Run `pnpm vitest run eslint-rules` when changing a rule or its baseline, then run the full
 `pnpm run lint` gate.

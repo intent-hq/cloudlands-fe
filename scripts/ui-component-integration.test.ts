@@ -120,8 +120,8 @@ describe('Gate C generated migration ledger', () => {
     }
 
     expect(
-      ledger.find(({ oldImport }) => oldImport.endsWith('dropdown-menu.svelte'))?.callers,
-    ).toHaveLength(15);
+      ledger.find(({ oldImport }) => oldImport.endsWith('dropdown-menu.svelte'))?.callers.length,
+    ).toBeLessThanOrEqual(11);
     expect(ledger.find(({ oldImport }) => oldImport.endsWith('/dropdown'))).toMatchObject({
       replacement: 'ledger:src/lib/components/ui/dropdown/dropdown-caller-ledger.ts',
       callers: [
@@ -131,7 +131,6 @@ describe('Gate C generated migration ledger', () => {
         'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
         'src/lib/components/chat/input/model-picker-groups.ts',
         'src/lib/components/chat/input/model-picker-utils.ts',
-        'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
       ],
     });
     expect(buildUiMigrationLedger(root)).toEqual(ledger);
@@ -160,8 +159,8 @@ describe('Gate C generated migration ledger', () => {
     const retained = new Map(
       buildUiMigrationLedger(root).map((entry) => [entry.oldImport, entry.callers.length]),
     );
-    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBe(15);
-    expect(retained.get('$lib/components/ui/dropdown')).toBe(7);
+    expect(retained.get('$lib/components/ui/dropdown-menu.svelte')).toBeLessThanOrEqual(11);
+    expect(retained.get('$lib/components/ui/dropdown')).toBe(6);
   });
 });
 

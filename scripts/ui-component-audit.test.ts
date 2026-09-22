@@ -12,6 +12,7 @@ import {
 import {
   buildButtonBackgroundAudit,
   buildPatternAdoptionAudit,
+  legacyUiCallerFailures,
   runUiComponentAudit,
 } from './ui-component-audit';
 import { buildUiComponentInventory } from './ui-component-inventory';
@@ -82,6 +83,41 @@ describe('UI component metadata schema', () => {
 });
 
 describe('UI component inventory gate', () => {
+  it('rejects new static and dynamic legacy callers without blocking removal or canonical adoption', () => {
+    const inventory = buildUiComponentInventory();
+    const component = inventory.components.find(
+      (entry) => entry.publicImport === '$lib/components/ui/dropdown-menu.svelte',
+    )!;
+    const metadata = parseUiComponentMetadata({
+      ...component,
+      publicImport: '$lib/components/ui/menu',
+      category: 'primitive',
+      legacyImports: [component.publicImport],
+      callers: ['src/features/existing/Actions.svelte'],
+      replacement: null,
+    });
+    const withCallers = (callers: string[], dynamicImports: string[] = []) => ({
+      ...inventory,
+      components: [{ ...component, callers, dynamicImports }],
+    });
+
+    expect(legacyUiCallerFailures(withCallers(metadata.callers), [metadata])).toEqual([]);
+    expect(legacyUiCallerFailures(withCallers([]), [metadata])).toEqual([]);
+    expect(
+      legacyUiCallerFailures(
+        withCallers(
+          [...metadata.callers, 'src/features/new/Overflow.svelte'],
+          ['src/features/new/Context.svelte'],
+        ),
+        [metadata],
+      ),
+    ).toEqual([
+      expect.stringContaining('src/features/new/Context.svelte: new legacy caller'),
+      expect.stringContaining('src/features/new/Overflow.svelte: new legacy caller'),
+    ]);
+    expect(legacyUiCallerFailures({ ...inventory, components: [] }, [metadata])).toEqual([]);
+  });
+
   it('validates the checked-in inventory and its folder template', () => {
     const inventory = buildUiComponentInventory();
     expect(() => parseUiComponentInventory(inventory)).not.toThrow();
@@ -141,15 +177,13 @@ describe('UI component inventory gate', () => {
     );
 
     expect(toggleGroup?.callers).toEqual([
-      'src/features/layout/tab-types/AgentViewSettingsDropdown.svelte',
-      'src/features/layout/tab-types/NoteViewSettingsDropdown.svelte',
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
       'src/lib/components/patterns/settings/custom-controls.ts',
       'src/routes/(app)/settings/+page.svelte',
     ]);
-    expect(dropdownMenu?.callers).toHaveLength(15);
-    expect(dropdownMenu?.callers).toContain('src/lib/components/chat/RegularAgentWelcome.svelte');
+    expect(dropdownMenu?.callers.length).toBeLessThanOrEqual(11);
+    expect(dropdownMenu?.callers).toEqual([...new Set(dropdownMenu?.callers)].sort());
     expect(buildUiComponentInventory().components).toEqual(components);
   });
 

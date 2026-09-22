@@ -1195,6 +1195,7 @@
               >
                 {#each prFiles as file (file.path)}
                   <FileRow
+                    contextKey={`${workspaceId}:${prKey(pr)}`}
                     {file}
                     muted={true}
                     active={activeFilePath === file.path && activeFileStaged === null}

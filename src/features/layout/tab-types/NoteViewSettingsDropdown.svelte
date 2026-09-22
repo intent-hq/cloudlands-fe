@@ -1,10 +1,9 @@
 <script lang="ts">
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
-  import { faCheck, faFont, faSliders } from '@fortawesome/free-solid-svg-icons';
+  import { faFont, faSliders } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
-  import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import {
     setNoteViewMode,
@@ -40,8 +39,21 @@
   const noteViewMode = selectNoteViewMode(workspaceIdStore, noteIdStore);
 
   let open = $state(false);
-  const fontOptionClass =
-    'relative h-auto min-w-0 flex-col gap-1 rounded-md border border-border bg-transparent px-2 pb-2.5 pt-3 font-normal text-muted-foreground shadow-none hover:border-input hover:bg-transparent hover:text-foreground data-[state=on]:border-primary-ink data-[state=on]:bg-transparent data-[state=on]:text-foreground data-[state=on]:shadow-none';
+  const descriptionId = $props.id();
+  const fontLabel = $derived(
+    $noteFontStyle === 'sans'
+      ? m.settings_fontStyle_sans()
+      : $noteFontStyle === 'serif'
+        ? m.settings_fontStyle_serif()
+        : m.settings_fontStyle_mono(),
+  );
+  const viewLabel = $derived(
+    $noteViewMode === 'editor'
+      ? m.ui_viewSettings_editor_label()
+      : $noteViewMode === 'preview'
+        ? m.ui_viewSettings_renderedPreview_label()
+        : m.ui_viewSettings_rawMarkdown_label(),
+  );
 
   function setFontStyle(value: string) {
     if (value !== 'sans' && value !== 'serif' && value !== 'monospace') return;
@@ -54,142 +66,83 @@
   }
 </script>
 
-{#if embedded}
-  <div
-    role="group"
-    aria-label={m.settings_section_fontStyle()}
-    data-menu-stacked-content="font-style"
-  >
-    <div
-      class="type-caption flex items-center gap-2 px-2 pb-1 pt-1.5 font-medium text-muted-foreground"
-    >
-      <Fa icon={faFont} size="xs" class="w-4 opacity-70" />
-      <span>{m.settings_section_fontStyle()}</span>
-    </div>
-    <Menu.RadioGroup value={$noteFontStyle} onValueChange={setFontStyle}>
-      <Menu.RadioItem value="sans" closeOnSelect={false}>
-        {m.settings_fontStyle_sans()}
-      </Menu.RadioItem>
-      <!-- i18n-ignore (font classification name) -->
-      <Menu.RadioItem value="serif" closeOnSelect={false}>Serif</Menu.RadioItem>
-      <Menu.RadioItem value="monospace" closeOnSelect={false}>
-        {m.settings_fontStyle_mono()}
-      </Menu.RadioItem>
-    </Menu.RadioGroup>
-  </div>
-  <Menu.Separator />
+{#snippet settingsItems()}
+  <Menu.Sub>
+    <Menu.SubTrigger icon={faFont}>
+      <span class="min-w-0 flex-1">{m.settings_section_fontStyle()}</span>
+      <span class="type-caption text-muted-foreground">{fontLabel}</span>
+    </Menu.SubTrigger>
+    <Menu.SubContent aria-label={m.settings_section_fontStyle()}>
+      <Menu.RadioGroup value={$noteFontStyle} onValueChange={setFontStyle}>
+        <Menu.RadioItem value="sans" closeOnSelect={false}>
+          {m.settings_fontStyle_sans()}
+        </Menu.RadioItem>
+        <Menu.RadioItem value="serif" closeOnSelect={false}
+          >{m.settings_fontStyle_serif()}</Menu.RadioItem
+        >
+        <Menu.RadioItem value="monospace" closeOnSelect={false}>
+          {m.settings_fontStyle_mono()}
+        </Menu.RadioItem>
+      </Menu.RadioGroup>
+    </Menu.SubContent>
+  </Menu.Sub>
+  <Menu.Sub>
+    <Menu.SubTrigger>
+      <span class="min-w-0 flex-1">{m.ui_viewSettings_noteViewMode_label()}</span>
+      <span class="type-caption text-muted-foreground">{viewLabel}</span>
+    </Menu.SubTrigger>
+    <Menu.SubContent aria-label={m.ui_viewSettings_noteViewMode_label()}>
+      <Menu.RadioGroup value={$noteViewMode} onValueChange={selectViewMode}>
+        <Menu.RadioItem value="editor" closeOnSelect={false}>
+          {m.ui_viewSettings_editor_label()}
+        </Menu.RadioItem>
+        <Menu.RadioItem value="preview" closeOnSelect={false}>
+          {m.ui_viewSettings_renderedPreview_label()}
+        </Menu.RadioItem>
+        <Menu.RadioItem value="raw" closeOnSelect={false}>
+          {m.ui_viewSettings_rawMarkdown_label()}
+        </Menu.RadioItem>
+      </Menu.RadioGroup>
+    </Menu.SubContent>
+  </Menu.Sub>
   <Menu.CheckboxItem
     checked={$spellcheckEnabled}
     closeOnSelect={false}
+    disabled={$noteViewMode === 'preview'}
+    aria-describedby={$noteViewMode === 'preview' ? descriptionId : undefined}
     onCheckedChange={() => appStore.dispatch(toggleSpellcheck())}
   >
     {m.ui_viewSettings_spellcheck_label()}
   </Menu.CheckboxItem>
-  <div
-    role="group"
-    aria-label={m.ui_viewSettings_noteViewMode_label()}
-    data-menu-stacked-content="note-view-mode"
-  >
-    <div class="type-caption px-2 pb-1 pt-1.5 font-medium text-muted-foreground">
-      {m.ui_viewSettings_noteViewMode_label()}
-    </div>
-    <Menu.RadioGroup value={$noteViewMode} onValueChange={selectViewMode}>
-      <Menu.RadioItem value="editor" closeOnSelect={false}>
-        {m.ui_viewSettings_editor_label()}
-      </Menu.RadioItem>
-      <Menu.RadioItem value="preview" closeOnSelect={false}>
-        {m.ui_viewSettings_renderedPreview_label()}
-      </Menu.RadioItem>
-      <Menu.RadioItem value="raw" closeOnSelect={false}>
-        {m.ui_viewSettings_rawMarkdown_label()}
-      </Menu.RadioItem>
-    </Menu.RadioGroup>
-  </div>
+  {#if $noteViewMode === 'preview'}
+    <p id={descriptionId} class="type-caption px-2 py-1 text-muted-foreground">
+      {m.ui_viewSettings_spellcheckPreview_description()}
+    </p>
+  {/if}
+{/snippet}
+
+{#if embedded}
+  {@render settingsItems()}
 {:else}
   <Menu.Root bind:open>
     <Menu.Trigger>
       {#snippet child({ props })}
-        <span class="contents" {...props}>
-          <Button
-            variant="ghost-light"
-            size="icon-xs"
-            tooltip={m.ui_viewSettings_trigger_tooltip()}
-            tooltipSide="bottom"
-            aria-label={m.ui_viewSettings_trigger_tooltip()}
-            aria-expanded={open}
-            data-testid="note-view-settings-trigger"
-          >
-            <Fa icon={faSliders} size="xs" />
-          </Button>
-        </span>
+        <Button
+          {...props}
+          variant="ghost-light"
+          size="icon-xs"
+          tooltip={m.ui_viewSettings_trigger_tooltip()}
+          tooltipSide="bottom"
+          aria-label={m.ui_viewSettings_trigger_tooltip()}
+          aria-expanded={open}
+          data-testid="note-view-settings-trigger"
+        >
+          <Fa icon={faSliders} size="xs" />
+        </Button>
       {/snippet}
     </Menu.Trigger>
-    <Menu.Content align="end" class="w-72 p-3!" aria-label={m.ui_dropdownMenu_ariaLabel()}>
-      <section aria-label={m.settings_section_fontStyle()}>
-        <ToggleGroup.Root
-          type="single"
-          value={$noteFontStyle}
-          onValueChange={setFontStyle}
-          variant="outline"
-          size="sm"
-          class="grid w-full grid-cols-3 gap-2 border-0 bg-transparent p-0"
-        >
-          <ToggleGroup.Item value="sans" class={fontOptionClass}>
-            {#if $noteFontStyle === 'sans'}
-              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary-ink" />
-            {/if}
-            <span class="type-title font-normal leading-none"
-              >{m.notes_fontStyleButton_specimen_label()}</span
-            >
-            <span class="type-caption font-normal">{m.settings_fontStyle_sans()}</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="serif" class={fontOptionClass}>
-            {#if $noteFontStyle === 'serif'}
-              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary-ink" />
-            {/if}
-            <span class="type-title font-serif font-normal leading-none"
-              >{m.notes_fontStyleButton_specimen_label()}</span
-            >
-            <!-- i18n-ignore (font classification name) -->
-            <span class="type-caption font-normal">Serif</span>
-          </ToggleGroup.Item>
-          <ToggleGroup.Item value="monospace" class={fontOptionClass}>
-            {#if $noteFontStyle === 'monospace'}
-              <Fa icon={faCheck} size="xs" class="absolute right-1.5 top-1.5 text-primary-ink" />
-            {/if}
-            <span class="type-title font-mono font-normal leading-none"
-              >{m.notes_fontStyleButton_specimen_label()}</span
-            >
-            <span class="type-caption font-normal">{m.settings_fontStyle_mono()}</span>
-          </ToggleGroup.Item>
-        </ToggleGroup.Root>
-      </section>
-
-      <Menu.Separator class="my-3" />
-      <Menu.CheckboxItem
-        checked={$spellcheckEnabled}
-        closeOnSelect={false}
-        onCheckedChange={() => appStore.dispatch(toggleSpellcheck())}
-        class="data-[state=checked]:bg-transparent"
-      >
-        {m.ui_viewSettings_spellcheck_label()}
-      </Menu.CheckboxItem>
-      <section aria-label={m.ui_viewSettings_noteViewMode_label()}>
-        <div class="type-caption px-2 pb-1 font-medium text-muted-foreground">
-          {m.ui_viewSettings_noteViewMode_label()}
-        </div>
-        <Menu.RadioGroup value={$noteViewMode} onValueChange={selectViewMode}>
-          <Menu.RadioItem value="editor" closeOnSelect={false}>
-            {m.ui_viewSettings_editor_label()}
-          </Menu.RadioItem>
-          <Menu.RadioItem value="preview" closeOnSelect={false}>
-            {m.ui_viewSettings_renderedPreview_label()}
-          </Menu.RadioItem>
-          <Menu.RadioItem value="raw" closeOnSelect={false}>
-            {m.ui_viewSettings_rawMarkdown_label()}
-          </Menu.RadioItem>
-        </Menu.RadioGroup>
-      </section>
+    <Menu.Content align="end" class="w-72" aria-label={m.ui_viewSettings_trigger_tooltip()}>
+      {@render settingsItems()}
     </Menu.Content>
   </Menu.Root>
 {/if}

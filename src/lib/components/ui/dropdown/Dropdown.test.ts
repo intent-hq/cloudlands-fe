@@ -647,7 +647,7 @@ describe('Dropdown caller migration ledger', () => {
     );
     expect(dropdownCallerLedger.map(({ caller }) => caller).sort()).toEqual(inventoryCallers);
     expect([...new Set(dropdownCallerLedger.map(({ replacement }) => replacement))].sort()).toEqual(
-      ['Combobox', 'Select'],
+      ['Combobox'],
     );
     expect(dropdownCallerLedger).toEqual([
       {
@@ -679,11 +679,6 @@ describe('Dropdown caller migration ledger', () => {
         caller: 'src/lib/components/chat/input/model-picker-utils.ts',
         replacement: 'Combobox',
         reason: 'searchable option model for ModelPicker',
-      },
-      {
-        caller: 'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
-        replacement: 'Select',
-        reason: 'non-searchable single-value selection',
       },
     ]);
   });

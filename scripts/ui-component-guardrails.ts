@@ -9,7 +9,7 @@ export const uiComponentGuardrails = {
     '$lib/components/ui/button/index.js': 1,
     '$lib/components/ui/checkbox/checkbox.svelte': 2,
     '$lib/components/ui/input/index.js': 1,
-    '$lib/components/ui/input/input.svelte': 5,
+    '$lib/components/ui/input/input.svelte': 4,
     '$lib/components/ui/label/label.svelte': 1,
     '$lib/components/ui/separator/index.js': 1,
     '$lib/components/ui/sheet/index.js': 1,

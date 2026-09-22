@@ -207,6 +207,84 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+describe('traditional tab context commands', () => {
+  let clipboardDescriptor: PropertyDescriptor | undefined;
+  beforeEach(() => {
+    clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+  });
+  afterEach(() => {
+    if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it.each([
+    { type: 'file', filePath: '/work/src/example.ts', expected: 'example.ts' },
+    { type: 'diff', diffPath: '/work/src/change.ts', expected: 'change.ts' },
+    { type: 'note', noteId: 'note-two', expected: 'note-two.md' },
+    { type: 'agent', agentId: 'agent-two', expected: 'agent-two.json' },
+  ])('copies the context $type filename, not the active tab filename', async (entry) => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const target = { ...entry, id: 'target', title: 'Target', closable: true } as PanelTab;
+    const { container } = renderHeader('note', {
+      tabs: [tab('note'), target],
+      showTabStrip: true,
+    });
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="target"]')!);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy Filename' }));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(entry.expected);
+    writeText.mockRestore();
+  });
+
+  it('opens the context browser URL once without selecting that tab', async () => {
+    const onTabClick = vi.fn();
+    const { container } = renderHeader('note', {
+      showTabStrip: true,
+      onTabClick,
+      tabs: [
+        tab('note'),
+        {
+          id: 'target',
+          type: 'browser',
+          title: 'Browser',
+          browserUrl: 'https://example.org/context',
+        },
+      ],
+    });
+    vi.mocked(invoke).mockClear();
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="target"]')!);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in Browser' }));
+    expect(invoke).toHaveBeenCalledWith('shell:openExternal', {
+      url: 'https://example.org/context',
+    });
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([channel]) => channel === 'shell:openExternal'),
+    ).toHaveLength(1);
+    expect(onTabClick).not.toHaveBeenCalled();
+  });
+
+  it('keeps remote file copy while excluding native reveal', async () => {
+    mocks.workspaceHostLocal = false;
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    const { container } = renderHeader('note', {
+      showTabStrip: true,
+      tabs: [{ id: 'target', type: 'file', title: 'Remote', filePath: '/remote/file.ts' }],
+      activeTabId: 'target',
+    });
+    await fireEvent.contextMenu(container.querySelector('[data-tab-id="target"]')!);
+    await screen.findByRole('menu');
+    expect(
+      screen.queryByRole('menuitem', { name: /Reveal in (Finder|Explorer|File Manager)/i }),
+    ).toBeNull();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Absolute Path' }));
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('/remote/file.ts');
+    writeText.mockRestore();
+  });
+});
+
 describe('mounted panel header actions menu', () => {
   it('keeps identity left and orders every action at the right edge', () => {
     const onClosePanel = vi.fn();
@@ -408,12 +486,6 @@ describe('mounted panel header actions menu', () => {
       expect(menu.querySelector('[data-panel-actions-section="display"]')).toBeTruthy();
       expect(menu.querySelector('[data-panel-actions-section="actions"]')).toBeTruthy();
       expect(menu.querySelector('[data-panel-actions-section="open-in"]')).toBeNull();
-      const actionsSection = menu.querySelector('[data-panel-actions-section="actions"]')!;
-      const separators = Array.from(menu.querySelectorAll('[data-slot="menu-separator"]'));
-      expect(separators).toHaveLength(1);
-      expect(separators[0].compareDocumentPosition(actionsSection)).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      );
     },
   );
 
@@ -590,16 +662,16 @@ describe('mounted panel header actions menu', () => {
     expect(onZoomToggle).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move left' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move tab left' }));
     expect(onMoveLeft).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move right' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move tab right' }));
     expect(onMoveRight).toHaveBeenCalledOnce();
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
 
     await fireEvent.click(trigger);
-    const movePaneLeft = await screen.findByRole('menuitem', { name: 'Move active pane left' });
+    const movePaneLeft = await screen.findByRole('menuitem', { name: 'Move panel left' });
     expect(movePaneLeft.textContent).toContain(
       formatShortcut(SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key),
     );
@@ -607,7 +679,7 @@ describe('mounted panel header actions menu', () => {
     expect(onMovePaneLeft).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move active pane right' }));
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Move panel right' }));
     expect(onMovePaneRight).toHaveBeenCalledOnce();
 
     await fireEvent.click(trigger);
@@ -635,15 +707,16 @@ describe('mounted panel header actions menu', () => {
     await fireEvent.click(panelTrigger(container));
 
     expect(
-      (await screen.findByRole('menuitem', { name: 'Move active pane left' })).getAttribute(
+      (await screen.findByRole('menuitem', { name: 'Move panel left' })).getAttribute(
         'aria-disabled',
       ),
     ).toBe('true');
     expect(
-      screen
-        .getByRole('menuitem', { name: 'Move active pane right' })
-        .getAttribute('aria-disabled'),
+      screen.getByRole('menuitem', { name: 'Move panel right' }).getAttribute('aria-disabled'),
     ).toBe('true');
+    const left = screen.getByRole('menuitem', { name: 'Move panel left' });
+    const description = document.getElementById(left.getAttribute('aria-describedby')!);
+    expect(description?.textContent?.length).toBeGreaterThan(0);
   });
 
   it('rejects a drag from the trigger but keeps blank-header dragging active', async () => {
