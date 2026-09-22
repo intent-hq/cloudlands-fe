@@ -902,6 +902,33 @@ describe('alignment of link-shaped text the editor shows', () => {
       }
     }
   });
+
+  it.each([
+    ['bold', '**]()**', ']()'],
+    ['spaced', '] [] ()', '] []'],
+    ['a code span', '`]()`', ']()'],
+    ['an escape', '\\]()', ']()'],
+    ['a quote', '> **]()**', ']()'],
+    ['a list item', '- **]()**', ']()'],
+  ])('shows a %s of link punctuation as a text line of its own', async (_name, body, shown) => {
+    // The line holds the glyphs of a link's tail and no masked destination:
+    // the editor shows it, so it counts as a text line on both sides — not
+    // counted, the plain side's run is one line short of the markdown's and
+    // the caret of every line after it lands on the line before its own.
+    const markdown =
+      body + '\n\nedit selection offset tk88z  \nedit caret remote tk89z\n\n**offset** sync tk90z';
+    const plain = await projectWithEditor(markdown);
+    expect(plain).toContain(shown);
+    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    for (const word of [shown, 'tk88z', 'edit caret', 'tk89z', 'offset', 'tk90z']) {
+      const p = plain.indexOf(word);
+      const m = markdown.indexOf(word);
+      for (let into = 1; into < word.length; into += 1) {
+        expect(aToB(p + into), `${word}[${into}] →`).toBe(m + into);
+        expect(bToA(m + into), `${word}[${into}] ←`).toBe(p + into);
+      }
+    }
+  });
 });
 
 describe('alignment of link syntax the lexer does not account for', () => {

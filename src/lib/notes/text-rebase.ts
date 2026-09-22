@@ -56,7 +56,7 @@ const NOT_LETTER = /\P{L}+/gu;
 const BLANK = /^\s+$/u;
 /** `-`, `=`, `*`, `_`, `|`, `:` — a line of these alone is a setext underline, a thematic break or a table delimiter row. */
 const RULE = new Set([45, 61, 42, 95, 124, 58]);
-/** Masked text, blanks and `]`, `[`, `(`, `)`: the rest of a link after its label. */
+/** Masked text, blanks and `]`, `[`, `(`, `)`: the rest of a link after its label, see `isTextLine`. */
 const LINK_CLOSE = new Set([0, 9, 32, 40, 41, 91, 93]);
 /** Textblocks at least this long are trusted as verbatim anchors. */
 const MIN_ANCHOR_LENGTH = 12;
@@ -480,9 +480,10 @@ function lowerBound(values: number[], at: number): number {
  * reference definition (`[label]:` with nothing but masked text after it;
  * one that visible text follows continues a paragraph and is shown as
  * written), not the rest of a link an anchor ended inside its label (`](…)`
- * or `][…]` around masked text and nothing visible after — the plain text
- * ends its line where the label does) and not a comment anchor the whole
- * line long. A markdown
+ * or `][…]` around its masked destination and nothing visible after — the
+ * plain text ends its line where the label does; a `]()` with no masked text
+ * in it is punctuation the editor shows, `**]()**` and its plain text alike)
+ * and not a comment anchor the whole line long. A markdown
  * line that is none of a plain-text line's must not count as one: counted, it
  * puts every hit for the rest of the run one text line beyond the run, until
  * a hard break of the plain text (counted on one side only) admits a hit one
@@ -525,8 +526,12 @@ function isTextLine(text: string, start: number, end: number): boolean {
   }
   if (code === 93) {
     let j = i + 1;
-    while (j < end && LINK_CLOSE.has(text.charCodeAt(j))) j += 1;
-    return j < end && text.charCodeAt(j) !== 13;
+    let masked = false;
+    while (j < end && LINK_CLOSE.has(text.charCodeAt(j))) {
+      if (text.charCodeAt(j) === 0) masked = true;
+      j += 1;
+    }
+    return !masked || (j < end && text.charCodeAt(j) !== 13);
   }
   if (code === 91) {
     let close = i + 1;
