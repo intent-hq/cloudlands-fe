@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   RENDERER_OWNED_ACCELERATORS,
   checkMenuAccelerators,
+  findAccelerators,
   findMenuItems,
   readMenuSource,
 } from './check-menu-accelerators.mjs';
@@ -111,6 +112,32 @@ describe('renderer-owned menu accelerators guard', () => {
     );
     expect(checkMenuAccelerators(pageUp)).toEqual([
       expect.stringMatching(/menu_new_window\) claims CmdOrCtrl\+PageUp, which the renderer owns/),
+    ]);
+  });
+
+  it('flags a role-only or otherwise unlabelled item claiming a renderer chord', () => {
+    const roleOnly = validMenu.replace(
+      '];',
+      "  { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' },\n];",
+    );
+    expect(findAccelerators(roleOnly).at(-1)).toEqual({
+      key: null,
+      accelerator: 'CmdOrCtrl+Shift+W',
+      line: validMenu.split('\n').length,
+    });
+    expect(checkMenuAccelerators(roleOnly)).toEqual([
+      expect.stringMatching(
+        /\(unlabelled item\) claims CmdOrCtrl\+Shift\+W, which the renderer owns/,
+      ),
+    ]);
+    const pageDown = validMenu.replace(
+      '];',
+      "  { label: 'Next tab', accelerator: 'CmdOrCtrl+PageDown' },\n];",
+    );
+    expect(checkMenuAccelerators(pageDown)).toEqual([
+      expect.stringMatching(
+        /\(unlabelled item\) claims CmdOrCtrl\+PageDown, which the renderer owns/,
+      ),
     ]);
   });
 

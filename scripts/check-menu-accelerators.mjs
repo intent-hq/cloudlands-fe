@@ -32,7 +32,10 @@ export const FORBIDDEN_ACCELERATORS = Object.freeze([
 
 const LABEL_PATTERN = /label:\s*m\.(\w+)\(\)/g;
 const ACCELERATOR_PATTERN = /accelerator:\s*(['"`])([^'"`]*)\1/;
+const ACCELERATORS_PATTERN = new RegExp(ACCELERATOR_PATTERN.source, 'g');
 const REGISTER_PATTERN = /registerAccelerator:\s*false\b/;
+
+const lineOf = (content, index) => content.slice(0, index).split('\n').length;
 
 // The `{ … }` object literal enclosing `index`: walk back to the unmatched `{`, then
 // forward to its `}`. Menu items never nest another object with a `label:` key, so
@@ -74,17 +77,30 @@ export function findMenuItems(content) {
       key: match[1],
       accelerator: ACCELERATOR_PATTERN.exec(item)?.[2] ?? null,
       registersAccelerator: !REGISTER_PATTERN.test(item),
-      line: content.slice(0, match.index).split('\n').length,
+      line: lineOf(content, match.index),
     });
   }
   return items;
+}
+
+// Every `accelerator: '<chord>'` declaration, whatever item declares it (a role-only
+// item has no `label: m.<key>()`, so `key` is null): `{ key, accelerator, line }`.
+export function findAccelerators(content) {
+  return [...content.matchAll(ACCELERATORS_PATTERN)].map((match) => {
+    const item = enclosingObject(content, match.index);
+    return {
+      key: item ? (new RegExp(LABEL_PATTERN.source).exec(item)?.[1] ?? null) : null,
+      accelerator: match[2],
+      line: lineOf(content, match.index),
+    };
+  });
 }
 
 // Problems with the menu source, one message per violated rule.
 export function checkMenuAccelerators(content) {
   const items = findMenuItems(content);
   const problems = [];
-  const at = (item) => `${MENU_SOURCE}:${item.line} (${item.key})`;
+  const at = (item) => `${MENU_SOURCE}:${item.line} (${item.key ?? 'unlabelled item'})`;
   for (const [key, accelerator] of Object.entries(RENDERER_OWNED_ACCELERATORS)) {
     const item = items.find((candidate) => candidate.key === key);
     if (!item) {
@@ -110,9 +126,9 @@ export function checkMenuAccelerators(content) {
       }
     }
   }
-  for (const item of items) {
-    if (item.accelerator !== null && FORBIDDEN_ACCELERATORS.includes(item.accelerator)) {
-      problems.push(`${at(item)} claims ${item.accelerator}, which the renderer owns`);
+  for (const declared of findAccelerators(content)) {
+    if (FORBIDDEN_ACCELERATORS.includes(declared.accelerator)) {
+      problems.push(`${at(declared)} claims ${declared.accelerator}, which the renderer owns`);
     }
   }
   return problems;

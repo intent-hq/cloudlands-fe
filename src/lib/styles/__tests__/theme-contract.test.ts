@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { store as appStore } from '$store/renderer/store';
@@ -732,7 +733,24 @@ describe('theme color contract', () => {
 describe('theme color contract — rendered surfaces', () => {
   const WORKSPACE_ID = 'workspace-1';
   const originalResizeObserver = window.ResizeObserver;
+  const originalMatchMedia = window.matchMedia;
   let dispose: (() => void) | undefined;
+
+  function stubMatchMedia(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn((media: string) => ({
+        matches,
+        media,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  }
 
   beforeEach(() => {
     Object.defineProperty(window, 'ResizeObserver', {
@@ -753,6 +771,7 @@ describe('theme color contract — rendered surfaces', () => {
       configurable: true,
       value: originalResizeObserver,
     });
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
   });
 
   function classesMatching(root: ParentNode, pattern: RegExp): string[] {
@@ -802,6 +821,33 @@ describe('theme color contract — rendered surfaces', () => {
       expect(classesMatching(root, /^bg-\[#/i)).toEqual([]);
       expect(inlineOverrides(root, '--sidebar')).toEqual([]);
     }
+  });
+
+  it('keeps the fixed and mobile sidebar shells on the shared token', async () => {
+    const fixed = render(SidebarHarness, { props: { open: true, collapsible: 'none' } });
+    const fixedShell = fixed.container.querySelector(
+      '[data-slot="sidebar-wrapper"]',
+    )!.firstElementChild!;
+    expect(fixedShell.classList).toContain('bg-sidebar');
+    expect(fixedShell.classList).toContain('text-sidebar-foreground');
+    expect(fixedShell.classList).not.toContain('bg-background');
+    expect(classesMatching(fixed.container, /^bg-\[#/i)).toEqual([]);
+    expect(inlineOverrides(fixed.container, '--sidebar')).toEqual([]);
+    cleanup();
+
+    stubMatchMedia(true);
+    render(SidebarHarness);
+    await fireEvent.click(screen.getByRole('button', { name: m.ui_sidebar_toggle_label() }));
+    const sheet = await screen.findByRole('dialog', { name: 'Sidebar' });
+    const mobileShell = sheet.matches('[data-mobile="true"]')
+      ? sheet
+      : sheet.querySelector('[data-mobile="true"]');
+    expect(mobileShell).not.toBeNull();
+    expect(mobileShell!.classList).toContain('bg-sidebar');
+    expect(mobileShell!.classList).toContain('text-sidebar-foreground');
+    expect(mobileShell!.classList).not.toContain('bg-background');
+    expect(classesMatching(document.body, /^bg-\[#/i)).toEqual([]);
+    expect(inlineOverrides(document.body, '--sidebar')).toEqual([]);
   });
 
   it('keeps populated panels on the primary canvas and pristine empty panels on the sidebar surface', async () => {
