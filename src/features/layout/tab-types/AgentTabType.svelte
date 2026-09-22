@@ -53,6 +53,7 @@
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
+  import { agentDelegationParentOf } from '$shared/utils/agent-scope';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -133,7 +134,9 @@
   });
 
   // Resolve "Delegated by" reactively once the parent session is loaded into Redux.
-  const parentAgentId = $derived((agentSession?.metadata?.createdByAgentId as string) || null);
+  const parentAgentId = $derived<string | null>(
+    agentSession ? agentDelegationParentOf(agentSession) : null,
+  );
   const parentAgent$ = useAgentSession(() => parentAgentId);
   const delegatedByName = $derived(parentAgentId ? $parentAgent$?.name || null : null);
 

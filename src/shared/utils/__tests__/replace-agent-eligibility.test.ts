@@ -46,18 +46,13 @@ describe('isReplaceAgentEligible', () => {
       ).toBe(false);
     });
 
-    it('is ineligible for child agents (metadata.parentAgentId)', () => {
-      expect(
-        isReplaceAgentEligible(eligibleSession({ metadata: { parentAgentId: 'agent-1' } })),
-      ).toBe(false);
+    it('is ineligible for child agents keyed only by the wire parentAgentId', () => {
+      expect(isReplaceAgentEligible(eligibleSession({ parentAgentId: 'agent-1' }))).toBe(false);
     });
 
-    it('is ineligible when the delegation markers live under agentMetadata', () => {
+    it('is ineligible when the delegation marker lives under agentMetadata', () => {
       expect(
         isReplaceAgentEligible(eligibleSession({ agentMetadata: { createdByAgentId: 'agent-1' } })),
-      ).toBe(false);
-      expect(
-        isReplaceAgentEligible(eligibleSession({ agentMetadata: { parentAgentId: 'agent-1' } })),
       ).toBe(false);
     });
   });

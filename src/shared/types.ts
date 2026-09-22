@@ -37,6 +37,8 @@ import {
 
 // Import consolidated AgentSession type
 import type {
+  AgentDelegatedCounts as NewAgentDelegatedCounts,
+  AgentDelegatedParentCounts as NewAgentDelegatedParentCounts,
   AgentListBin as NewAgentListBin,
   AgentListScope as NewAgentListScope,
   AgentScopeCounts as NewAgentScopeCounts,
@@ -1089,6 +1091,8 @@ export type SessionStats = NewSessionStats;
 export type AgentListScope = NewAgentListScope;
 export type AgentListBin = NewAgentListBin;
 export type AgentScopeCounts = NewAgentScopeCounts;
+export type AgentDelegatedCounts = NewAgentDelegatedCounts;
+export type AgentDelegatedParentCounts = NewAgentDelegatedParentCounts;
 
 // Re-export type guards
 export const isPendingAgentSession = isNewPendingAgentSession;

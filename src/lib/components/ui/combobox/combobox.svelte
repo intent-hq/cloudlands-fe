@@ -55,6 +55,7 @@
   }
 
   type StaticContentChildProps = { props: Record<string, unknown> };
+  type OptionChildProps = StaticContentChildProps & { selected: boolean };
   type ContentChildProps = StaticContentChildProps & {
     wrapperProps: Record<string, unknown>;
   };
@@ -237,7 +238,12 @@
   }
 
   function withoutListboxSemantics(props: Record<string, unknown>) {
-    const { role: _role, tabindex: _tabindex, ...contentProps } = props;
+    const {
+      role: _role,
+      tabindex: _tabindex,
+      'aria-multiselectable': _multi,
+      ...contentProps
+    } = props;
     return contentProps;
   }
 </script>
@@ -309,6 +315,7 @@
           {...viewportProps}
           id={listboxId}
           role="listbox"
+          aria-multiselectable={multiple || undefined}
           aria-labelledby={labelId}
           tabindex="0"
         >
@@ -334,6 +341,9 @@
               </div>
             {/if}
             {#each filteredGroups as group (group.key)}
+              {#if group.separatorBefore && group.options.length > 0}
+                <ComboboxPrimitive.Separator decorative class="my-1 border-t border-border" />
+              {/if}
               <ComboboxPrimitive.Group>
                 {#if group.label}
                   <ComboboxPrimitive.GroupHeading
@@ -345,8 +355,7 @@
                   </ComboboxPrimitive.GroupHeading>
                 {/if}
                 {#each group.options as option (option.value)}
-                  <!-- i18n-ignore (snippet parameter type annotation, not UI text) -->
-                  {#snippet optionChild({ props }: { props: Record<string, unknown> })}
+                  {#snippet optionChild({ props, selected }: OptionChildProps)}
                     <div
                       {...props}
                       data-slot="combobox-option-motion"
@@ -366,7 +375,8 @@
                         data-slot="combobox-item-check"
                         class={cn(
                           OPTION_LIST_END_SLOT_CLASS,
-                          'text-primary-ink font-medium opacity-0 group-data-[selected]:opacity-100',
+                          'text-primary-ink font-medium',
+                          selected ? 'opacity-100' : 'opacity-0',
                         )}
                         aria-hidden="true">✓</span
                       >

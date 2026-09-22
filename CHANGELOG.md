@@ -4,6 +4,28 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.173.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.4...v2.173.0) (2026-09-22)
+
+
+### 🚀 Features
+
+* **agents:** render collapsed delegated bars from daemon counts ([#2738](https://github.com/intent-hq/cloudlands-fe/issues/2738)) ([f621b72](https://github.com/intent-hq/cloudlands-fe/commit/f621b724fae38d2ebae04967807fd6199b2753a4))
+* **settings:** Consolidate local configuration into device settings ([#2617](https://github.com/intent-hq/cloudlands-fe/issues/2617)) ([7f55ecf](https://github.com/intent-hq/cloudlands-fe/commit/7f55ecf7b515807cac4f957b694b9254d3925759))
+* **sidecar:** raise intentd sidecar scheduling priority above agents ([#2737](https://github.com/intent-hq/cloudlands-fe/issues/2737)) ([0c65955](https://github.com/intent-hq/cloudlands-fe/commit/0c65955e462f0176f240219d61eea92ea87f1037))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.9.93 ([#2762](https://github.com/intent-hq/cloudlands-fe/issues/2762)) ([d3281e5](https://github.com/intent-hq/cloudlands-fe/commit/d3281e53555dc3a56a0df555c5680312192a6480))
+* **providers:** forward mock provider availability to the preload bridge ([#2756](https://github.com/intent-hq/cloudlands-fe/issues/2756)) ([ad6234d](https://github.com/intent-hq/cloudlands-fe/commit/ad6234d7f559155cc659f78c6e154616f5bc7738))
+
+## [2.172.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.3...v2.172.4) (2026-09-21)
+
+
+### 🐛 Bug Fixes
+
+* **sharing:** Prevent overlapping workspace sharing menus ([#2752](https://github.com/intent-hq/cloudlands-fe/issues/2752)) ([663e30a](https://github.com/intent-hq/cloudlands-fe/commit/663e30a5ec8054e950db80f29200571f92482faf))
+
 ## [2.172.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.172.2...v2.172.3) (2026-09-21)
 
 

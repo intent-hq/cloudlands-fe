@@ -109,24 +109,28 @@ function gitShow(ref, cwd, file = baselinePath) {
   }
 }
 
-export function readComparisonBaseline({ cwd, env = process.env } = {}) {
+/**
+ * The baseline as committed at the comparison revision — `DESIGN_SYSTEM_BASELINE_BASE_REF`
+ * (the PR / merge-queue base on CI) or `HEAD` locally. `file` selects another
+ * package-relative baseline JSON that follows the same ratchet; `undefined` when the
+ * file did not exist at that revision (a baseline being introduced by this change).
+ */
+export function readComparisonBaseline({ cwd, env = process.env, file = baselinePath } = {}) {
   const configuredBase = env.DESIGN_SYSTEM_BASELINE_BASE_REF;
   const ref = configuredBase || 'HEAD';
-  const contents = gitShow(ref, cwd);
+  const contents = gitShow(ref, cwd, file);
   if (!contents) {
     if (!configuredBase) return undefined;
     const status = execFileSync(
       'git',
-      ['diff', '--name-status', configuredBase, 'HEAD', '--', baselinePath],
+      ['diff', '--name-status', configuredBase, 'HEAD', '--', file],
       {
         cwd,
         encoding: 'utf8',
       },
     ).trim();
-    if (status === `A\t${baselinePath}`) return undefined;
-    throw new Error(
-      `Could not read design-system baseline from CI base revision ${configuredBase}`,
-    );
+    if (status === `A\t${file}`) return undefined;
+    throw new Error(`Could not read ${file} from CI base revision ${configuredBase}`);
   }
   const rulesIndex = gitShow(ref, cwd, rulesIndexPath);
   return {

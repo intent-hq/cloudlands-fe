@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { untrack } from 'svelte';
+  import WebSocketApiSettings from './WebSocketApiSettings.svelte';
   import {
     Button,
     Input,
@@ -173,9 +174,9 @@
           },
         ]
       : []),
+    { id: 'edit', label: m.settings_devices_edit_label(), icon: faPen },
     ...(!device.isLocal
       ? [
-          { id: 'edit', label: m.settings_devices_edit_label(), icon: faPen },
           {
             id: 'remove',
             label: m.settings_devices_remove_label(),
@@ -276,7 +277,8 @@
         void requestDaemonUpdate();
         break;
       case 'edit':
-        onOpenPanel('edit');
+        if (panelMode === 'edit') closePanel();
+        else onOpenPanel('edit');
         break;
       case 'remove':
         onRequestRemove(device);
@@ -311,7 +313,7 @@
 
   function statusClass(status: ConnectionOpenStatus): string {
     return status === 'connected'
-      ? 'bg-green-500'
+      ? 'bg-success'
       : status === 'connecting'
         ? 'bg-warning'
         : 'bg-muted-foreground/50';
@@ -521,7 +523,7 @@
 </script>
 
 <article
-  class="group/collection-row"
+  class={cn('group/collection-row', !device.isLocal && 'border-t border-border')}
   aria-labelledby={`device-${device.id}-name`}
   aria-busy={busy !== null}
 >
@@ -552,24 +554,14 @@
       {/if}
     {/snippet}
     {#snippet trailing()}
-      {#if device.isLocal}
-        <DeviceIconPicker
-          record={device}
-          bind:value={localDeviceIcon}
-          disabled={busy !== null}
-          portal={true}
-          onchange={(value) => void updateLocalDeviceIcon(value)}
-        />
-      {/if}
-      {#if !device.isLocal || canUpdateDaemon}
-        <RowActions
-          actions={rowActions}
-          onAction={handleRowAction}
-          visibleCount={0}
-          overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
-          bind:overflowTriggerRef={actionsButton}
-        />
-      {/if}
+      <RowActions
+        alwaysVisible
+        actions={rowActions}
+        onAction={handleRowAction}
+        visibleCount={0}
+        overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+        bind:overflowTriggerRef={actionsButton}
+      />
     {/snippet}
   </ListRow>
 
@@ -579,7 +571,25 @@
     </p>
   {/if}
 
-  {#if panelMode === 'edit'}
+  {#if device.isLocal}
+    <div class="px-4 pb-4 sm:px-5">
+      <WebSocketApiSettings expanded={panelMode === 'edit'} onEnabled={() => onOpenPanel('edit')}>
+        <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
+          {#snippet control()}
+            <DeviceIconPicker
+              record={device}
+              bind:value={localDeviceIcon}
+              disabled={busy !== null}
+              portal={true}
+              onchange={(value) => void updateLocalDeviceIcon(value)}
+            />
+          {/snippet}
+        </SettingsFieldRow>
+      </WebSocketApiSettings>
+    </div>
+  {/if}
+
+  {#if panelMode === 'edit' && !device.isLocal}
     <form
       class="space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
       aria-label={m.settings_devices_editForm_ariaLabel({ name: displayName })}

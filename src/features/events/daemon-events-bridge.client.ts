@@ -176,12 +176,13 @@ import {
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
+  adjustDelegatedParentCount,
   adjustRetiredCount,
   adjustScopeCount,
-  agentListBinOf,
   hydrateAgentsRequested,
   removeAgent,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { agentDelegationParentOf, classifyAgentScope } from '$shared/utils/agent-scope';
 import { removeWatchedAgent } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   destroyOwnedTabsForWorkspace,
@@ -1340,12 +1341,29 @@ function handleAgentCreatedEvent(event: WorkspaceEvent, workspaceId: string): vo
     const session = appStore.state.agentSessions?.byAgentId[agentId];
     if (!session || session.retiredAt) return;
     if (scopeCountsGenerationOf(workspaceId) !== baselineGeneration) return;
-    appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(session), 1));
+    adjustBinCounts(workspaceId, session, 1);
   });
 }
 
 function scopeCountsGenerationOf(workspaceId: string): number {
   return appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.scopeCountsGeneration ?? 0;
+}
+
+/**
+ * Nudge a non-retired row's `scopeCounts` bin and — for a delegated row — its
+ * parent's `delegatedCounts.byParent` total by the same delta, so
+ * `Σ byParent[*].total` stays in lockstep with `scopeCounts.delegated`
+ * (§5.5). Running counts are not nudged: they re-baseline on the next
+ * hydration read, and loaded rows are authoritative once hydrated.
+ */
+function adjustBinCounts(workspaceId: string, session: StoredAgentSession, delta: 1 | -1): void {
+  const bin = classifyAgentScope(session);
+  appStore.dispatch(adjustScopeCount(workspaceId, bin, delta));
+  if (bin !== 'delegated') return;
+  const parentAgentId = agentDelegationParentOf(session);
+  if (parentAgentId) {
+    appStore.dispatch(adjustDelegatedParentCount(workspaceId, parentAgentId, delta));
+  }
 }
 
 /**
@@ -1366,7 +1384,7 @@ function adjustScopeCountForRetireTransition(
   if (!appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.scopeCounts) return;
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (session) {
-    appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(session), delta));
+    adjustBinCounts(workspaceId, session, delta);
   } else {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
@@ -3710,7 +3728,7 @@ export function routeDaemonEventsNotification(
       if (deletedSession?.retiredAt) {
         appStore.dispatch(adjustRetiredCount(workspaceId, -1));
       } else if (deletedSession) {
-        appStore.dispatch(adjustScopeCount(workspaceId, agentListBinOf(deletedSession), -1));
+        adjustBinCounts(workspaceId, deletedSession, -1);
       } else {
         appStore.dispatch(hydrateAgentsRequested(workspaceId));
       }

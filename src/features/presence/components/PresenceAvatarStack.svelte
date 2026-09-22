@@ -132,7 +132,7 @@
         <Button
           variant="plain"
           wrapContent={false}
-          class="h-auto rounded-full p-0"
+          class="h-auto rounded-full p-0 aria-disabled:opacity-100"
           tooltip={personLabel}
           tooltipSide={side}
           aria-label={personLabel}
