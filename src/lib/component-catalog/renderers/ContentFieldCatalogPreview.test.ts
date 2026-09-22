@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 // @ui-invariant
 import { cleanup, render } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cardMetadata } from '$lib/components/ui/card';
 import { cardFixtures } from '$lib/components/ui/card/card.fixtures';
@@ -125,19 +123,26 @@ describe('ContentFieldCatalogPreview', () => {
     ).toBe('14');
   });
 
-  it('contains no raw controls or physical palette utilities', () => {
-    const source = readFileSync(
-      resolve(
-        process.cwd(),
-        'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
-      ),
-      'utf8',
-    );
-    expect(source).not.toMatch(/<(?:button|input|textarea|select)(?:\s|>)/);
-    expect(source).not.toMatch(
-      /(?:bg|border|text)-(?:white|black|red|blue|green|gray|zinc|slate|neutral|stone|amber|yellow|purple|violet|indigo|sky|cyan|teal|emerald|lime|orange|rose|pink)-/,
-    );
-  });
+  it.each(cases)(
+    'renders %s controls only through canonical components and semantic colors',
+    (componentId, fixture) => {
+      const { container } = render(ContentFieldCatalogPreview, { props: { componentId, fixture } });
+      const controls = Array.from(
+        container.querySelectorAll<HTMLElement>('button, input, textarea, select'),
+      );
+      const rawControls = controls.filter((control) => !control.hasAttribute('data-slot'));
+      expect(rawControls.map((control) => control.outerHTML)).toEqual([]);
+
+      const paletteClasses = Array.from(container.querySelectorAll('[class]'))
+        .flatMap((element) => Array.from(element.classList))
+        .filter((className) =>
+          /(?:bg|border|text)-(?:white|black|red|blue|green|gray|zinc|slate|neutral|stone|amber|yellow|purple|violet|indigo|sky|cyan|teal|emerald|lime|orange|rose|pink)-/.test(
+            className,
+          ),
+        );
+      expect(paletteClasses).toEqual([]);
+    },
+  );
 
   it('keeps public exports, aliases, callers, and dynamic imports aligned to source discovery', () => {
     const inventory = buildUiComponentInventory();
