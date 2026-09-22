@@ -335,8 +335,13 @@ produced — manual install/testing only.
 
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths, it reads
 staged, unstaged, deleted, and untracked frontend files, plus the commits since
-`git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given; an
-empty change set exits 2 instead of passing silently. Add `--dry-run` to inspect the
+`git merge-base <ref> HEAD` when `--base <ref>` (e.g. `--base origin/main`) is given. When
+that working-tree set is empty and `HEAD` is ahead of `origin/main`, it defaults to
+`--base origin/main` (no fetch; it logs the chosen base and verifies the commits since the
+merge-base), so the bare command is correct on a committed PR branch; `--base <ref>` still
+overrides. Only a change set that is empty either way — a clean checkout on or behind
+`origin/main`, or no `origin/main` ref at all — exits 2 instead of passing silently. Add
+`--dry-run` to inspect the
 selected commands without running them. The command runs scoped Prettier and ESLint,
 related Vitest tests, colocated component tests that import the changed file directly or
 through a host `.svelte` they import (one hop, `.svelte` imports only — a change to a `.ts`
