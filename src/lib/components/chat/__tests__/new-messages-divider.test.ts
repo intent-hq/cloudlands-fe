@@ -318,6 +318,24 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
     });
   const batched = (id: string, batchId: string) =>
     message(id, 'user', { metadata: { queueInfo: { batchId } } });
+  const attentionRequest = (id: string) =>
+    message(id, 'user', {
+      metadata: {
+        type: 'event_notification',
+        eventCount: 1,
+        eventTypes: ['agent:attention-requested'],
+        events: [{ type: 'agent:attention-requested', data: { kind: 'discussion' } }],
+      },
+    });
+  const questionAnswers = (id: string, answeredQuestionsMessageId: string) =>
+    message(id, 'user', { metadata: { type: 'question_answers', answeredQuestionsMessageId } });
+  const operationalAssistant = (id: string, extra: { timestamp?: string } = {}): AgentMessage =>
+    ({
+      id,
+      role: 'assistant',
+      timestamp: extra.timestamp ?? DAY_ONE,
+      contentBlocks: [{ type: 'tool_use', id: `${id}-tool`, name: 'read', input: {} }],
+    }) as unknown as AgentMessage;
 
   async function renderTranscript(messages: AgentMessage[], anchorId: string | null) {
     resetScaffold();
@@ -398,7 +416,10 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
     expect(dividers[0].nextElementSibling).toBe(turns[1]);
   });
 
-  it('feeds the seam classification of the two turns into the gap the divider follows', async () => {
+  // One case per seam prop ChatPanel feeds the inter-turn gap: the gap's own
+  // data attributes are the oracle, so a dropped or mis-wired prop shows up
+  // as the seam not being classified.
+  it('feeds the batched-delivery seam of the two turns into the gap the divider follows', async () => {
     const { dividers, gaps } = await renderTranscript(
       [
         batched('user-1', 'batch-1'),
@@ -410,6 +431,46 @@ describe('turn-boundary divider placement (rendered ChatPanel)', () => {
 
     expect(gaps).toHaveLength(1);
     expect(gaps[0].getAttribute('data-batched-seam')).toBe('true');
+    expect(gaps[0].getAttribute('data-attention-answer-seam')).toBeNull();
+    expect(gaps[0].nextElementSibling).toBe(dividers[0]);
+  });
+
+  it('feeds the attention-request → answered-questions seam into the gap the divider follows', async () => {
+    const { dividers, gaps, turns } = await renderTranscript(
+      [
+        attentionRequest('wake-1'),
+        message('assistant-1', 'assistant'),
+        questionAnswers('answer-1', 'assistant-1'),
+        message('assistant-2', 'assistant'),
+      ],
+      'assistant-1',
+    );
+
+    expect(turns).toHaveLength(2);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].getAttribute('data-attention-answer-seam')).toBe('true');
+    expect(gaps[0].getAttribute('data-batched-seam')).toBeNull();
+    expect(turns[0].contains(dividers[0])).toBe(false);
+    expect(gaps[0].nextElementSibling).toBe(dividers[0]);
+    expect(dividers[0].nextElementSibling).toBe(turns[1]);
+  });
+
+  it('feeds the operational seam between tool-only assistant turns into the gap the divider follows', async () => {
+    // The second turn is an orphan assistant turn (a new day, no user row), so
+    // the operational boundary test runs against the first turn's last row.
+    const { dividers, gaps, turns } = await renderTranscript(
+      [
+        message('user-1', 'user'),
+        operationalAssistant('assistant-1'),
+        operationalAssistant('assistant-2', { timestamp: DAY_TWO }),
+      ],
+      'assistant-1',
+    );
+
+    expect(turns).toHaveLength(2);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].getAttribute('data-operational-seam')).toBe('true');
+    expect(gaps[0].getAttribute('data-tool-seam')).toBe('true');
     expect(gaps[0].nextElementSibling).toBe(dividers[0]);
   });
 

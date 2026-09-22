@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
@@ -162,8 +162,10 @@ vi.mock('../MonitoredPrsRow.svelte', async () => ({
 vi.mock('../AgentSubscriptions.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
+// Bindable stand-in: ChatPanel binds the card's `visible` flag into its own
+// composer-layer state, so the mock must be able to drive that binding.
 vi.mock('../EventSubscriptionsCard.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
+  default: (await import('./mocks/BindableVisibleUtility.svelte')).default,
 }));
 vi.mock('../AttentionRequestBanner.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
@@ -288,6 +290,23 @@ describe('chat content column contracts', () => {
     const controls = byTestId(lane, 'chat-composer-controls-inner')!;
     expect(controls.contains(byTestId(container, 'question-composer'))).toBe(true);
     expect(controls.contains(byTestId(container, 'mock-rich-input'))).toBe(true);
+  });
+
+  it('mirrors the transcript utility visibility onto the composer prompt layer', async () => {
+    const container = await renderPanel();
+
+    const layer = byTestId(container, 'composer-prompt-layer')!;
+    const utility = byTestId(container, 'mock-transcript-utility')!;
+    expect(byTestId(container, 'transcript-utility-stack')!.contains(utility)).toBe(true);
+    expect(layer.getAttribute('data-has-transcript-utility')).toBe('false');
+
+    await fireEvent.click(utility);
+    expect(utility.getAttribute('data-visible')).toBe('true');
+    expect(layer.getAttribute('data-has-transcript-utility')).toBe('true');
+
+    await fireEvent.click(utility);
+    expect(utility.getAttribute('data-visible')).toBe('false');
+    expect(layer.getAttribute('data-has-transcript-utility')).toBe('false');
   });
 
   it('caps the pinned prompt lane while its overlay host stays full width', async () => {
