@@ -826,7 +826,10 @@
           </SettingsFieldRow>
 
           {#if enabled}
-            <section class="space-y-3" aria-labelledby="connection-details-heading">
+            <section
+              class="space-y-3 [&_[data-field-label]]:font-normal"
+              aria-labelledby="connection-details-heading"
+            >
               <h3 id="connection-details-heading" class="type-body font-medium text-foreground">
                 {m.settings_wsApi_connectionDetails_label()}
               </h3>
@@ -941,9 +944,6 @@
                   {/snippet}
                 </SettingsFieldRow>
               {/if}
-              <p class="type-body text-warning-ink">
-                {m.settings_wsApi_tokenSecretWarning()}
-              </p>
             </section>
           {/if}
         </div>
