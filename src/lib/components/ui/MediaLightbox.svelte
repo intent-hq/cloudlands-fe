@@ -17,6 +17,7 @@
     actions?: Snippet;
     caption?: string;
     onKeydown?: (event: KeyboardEvent) => void;
+    onCopy?: (event: ClipboardEvent) => void;
   }
 
   let {
@@ -29,6 +30,7 @@
     actions,
     caption,
     onKeydown,
+    onCopy,
   }: Props = $props();
 
   let dialogElement: HTMLDivElement | null = $state(null);
@@ -89,6 +91,7 @@
       style="pointer-events: auto;"
       onclick={handleBackdropClick}
       onkeydown={handleKeydown}
+      oncopy={onCopy}
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}

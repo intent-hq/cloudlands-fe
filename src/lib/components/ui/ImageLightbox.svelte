@@ -33,6 +33,7 @@
   }: Props = $props();
 
   let zoomPanViewport: ZoomPanViewport | undefined = $state();
+  let imageActionsMenu: ImageActionsMenu | undefined = $state();
   let imageActionsOpen = $state(false);
 
   $effect(() => {
@@ -40,7 +41,12 @@
   });
 
   function handleKeydown(e: KeyboardEvent) {
+    handleCopy(e);
     if (!e.defaultPrevented) zoomPanViewport?.handleKeydown(e);
+  }
+
+  function handleCopy(event: KeyboardEvent | ClipboardEvent) {
+    if (open && showActionsMenu) imageActionsMenu?.handleCopy(event);
   }
 
   function handleContextMenu(event: MouseEvent) {
@@ -54,6 +60,7 @@
 {#snippet actions()}
   {#if showActionsMenu}
     <ImageActionsMenu
+      bind:this={imageActionsMenu}
       {imageUrl}
       {imageName}
       bind:open={imageActionsOpen}
@@ -71,6 +78,7 @@
   {openerElement}
   {actions}
   onKeydown={handleKeydown}
+  onCopy={handleCopy}
 >
   {#key imageUrl}
     <ZoomPanViewport bind:this={zoomPanViewport}>

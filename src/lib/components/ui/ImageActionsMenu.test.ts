@@ -18,10 +18,124 @@ async function openMenu() {
 }
 
 afterEach(() => {
+  document.getSelection()?.removeAllRanges();
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+});
+
+function captureImageCopies() {
+  class FakeClipboardItem {
+    constructor(public items: Record<string, Blob>) {}
+  }
+  vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+  const write = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { write }, configurable: true });
+  return write;
+}
+
+describe('ImageActionsMenu copy shortcuts', () => {
+  const imageUrl = 'data:image/png;base64,cGl4ZWxz';
+
+  it.each([{ metaKey: true }, { ctrlKey: true }])(
+    'copies from the focused trigger with %j',
+    async (modifier) => {
+      const write = captureImageCopies();
+      render(ImageActionsMenu, { props: { imageUrl } });
+      const trigger = screen.getByRole('button', { name: /image options/i });
+      trigger.focus();
+      expect(await fireEvent.keyDown(trigger, { key: 'c', ...modifier })).toBe(false);
+      await waitFor(() => expect(write).toHaveBeenCalledOnce());
+      const blob = write.mock.calls[0][0][0].items['image/png'] as Blob;
+      expect(blob.type).toBe('image/png');
+      expect(blob.size).toBe(6);
+      expect(screen.queryByRole('menu')).toBeNull();
+    },
+  );
+
+  it('handles the native Copy event from a portalled menu and restores focus', async () => {
+    const write = captureImageCopies();
+    render(ImageActionsMenu, { props: { imageUrl } });
+    await openMenu();
+    expect(await fireEvent.copy(screen.getByRole('menuitem', { name: /download/i }))).toBe(false);
+    await waitFor(() => expect(write).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /image options/i }));
+  });
+
+  it.each([
+    { key: 'c' },
+    { key: 'c', metaKey: true, shiftKey: true },
+    { key: 'c', ctrlKey: true, altKey: true },
+    { key: 'x', metaKey: true },
+    { key: 'c', metaKey: true, isComposing: true },
+  ])('leaves unrelated shortcuts alone: %j', async (keys) => {
+    const write = captureImageCopies();
+    render(ImageActionsMenu, { props: { imageUrl } });
+    expect(await fireEvent.keyDown(screen.getByRole('button'), keys)).toBe(true);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('does not write again for held-key repeat or an already handled event', async () => {
+    const write = captureImageCopies();
+    render(ImageActionsMenu, { props: { imageUrl } });
+    const trigger = screen.getByRole('button');
+    expect(await fireEvent.keyDown(trigger, { key: 'c', metaKey: true, repeat: true })).toBe(false);
+    const event = new KeyboardEvent('keydown', {
+      key: 'c',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    event.preventDefault();
+    await fireEvent(trigger, event);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('preserves selected text even when the image trigger retains focus', async () => {
+    const write = captureImageCopies();
+    const { container } = render(ImageActionsMenu, { props: { imageUrl } });
+    const text = document.createElement('p');
+    text.textContent = 'Copy this text';
+    container.append(text);
+    const trigger = screen.getByRole('button');
+    trigger.focus();
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    expect(document.getSelection()!.toString()).toBe('Copy this text');
+    expect(await fireEvent.keyDown(trigger, { key: 'c', metaKey: true })).toBe(true);
+    expect(await fireEvent.copy(trigger)).toBe(true);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it.each(['input', 'textarea', 'contenteditable'])(
+    'preserves %s copying inside an image menu',
+    async (kind) => {
+      const write = captureImageCopies();
+      render(ImageActionsMenu, { props: { imageUrl } });
+      await openMenu();
+      const editable = document.createElement(kind === 'contenteditable' ? 'div' : kind);
+      if (kind === 'contenteditable') editable.setAttribute('contenteditable', 'true');
+      screen.getByRole('menu').append(editable);
+      editable.focus();
+      expect(await fireEvent.keyDown(editable, { key: 'c', metaKey: true })).toBe(true);
+      expect(await fireEvent.copy(editable)).toBe(true);
+      expect(write).not.toHaveBeenCalled();
+      expect(screen.getByRole('menu')).toBeTruthy();
+    },
+  );
+
+  it('uses the same failure feedback for shortcuts as the menu action', async () => {
+    const write = captureImageCopies().mockRejectedValue(new Error('permission denied'));
+    render(ImageActionsMenu, { props: { imageUrl } });
+    await fireEvent.keyDown(screen.getByRole('button'), { key: 'c', metaKey: true });
+    await waitFor(() => expect(notify.error).toHaveBeenCalledOnce());
+    expect(write).toHaveBeenCalledOnce();
+    expect(notify.success).not.toHaveBeenCalled();
+  });
 });
 
 describe('ImageActionsMenu source actions', () => {
@@ -134,6 +248,34 @@ describe('ImageActionsMenu source actions', () => {
     await fireEvent.click(screen.getByRole('menuitem', { name: /copy image/i }));
     await waitFor(() => expect(notify.error).toHaveBeenCalledOnce());
     expect(write.mock.calls[0][0][0].items['image/png']).toBe(original);
+    expect(notify.success).not.toHaveBeenCalled();
+  });
+
+  it('releases the temporary SVG URL and reports a failed decode without copying', async () => {
+    const write = captureImageCopies();
+    const createObjectURL = vi.fn(() => 'blob:svg-copy');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = createObjectURL;
+        static revokeObjectURL = revokeObjectURL;
+      },
+    );
+    vi.stubGlobal(
+      'Image',
+      class extends Image {
+        async decode() {
+          throw new Error('invalid SVG');
+        }
+      },
+    );
+    render(ImageActionsMenu, { props: { imageUrl: 'data:image/svg+xml;base64,YmFk' } });
+    await fireEvent.keyDown(screen.getByRole('button'), { key: 'c', metaKey: true });
+    await waitFor(() => expect(notify.error).toHaveBeenCalledOnce());
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:svg-copy');
+    expect(write).not.toHaveBeenCalled();
     expect(notify.success).not.toHaveBeenCalled();
   });
 

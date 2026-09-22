@@ -7,6 +7,7 @@ import ImageActionsMenu from '$lib/components/ui/ImageActionsMenu.svelte';
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // 1x1 transparent PNG
@@ -22,6 +23,45 @@ async function openImageActionsMenu() {
 }
 
 describe('ChatImageBlock', () => {
+  it('copies only the hydrated original through keyboard and native Copy events', async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { write }, configurable: true });
+    class FakeClipboardItem {
+      constructor(public items: Record<string, Blob>) {}
+    }
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+    const view = render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', dataTruncated: true, dataIsThumbnail: true },
+    });
+    const opener = screen.getByRole('button');
+    opener.focus();
+    expect(await fireEvent.keyDown(opener, { key: 'c', metaKey: true })).toBe(true);
+    expect(await fireEvent.copy(opener)).toBe(true);
+    await fireEvent.click(opener);
+    const thumbnailPreview = await screen.findByRole('dialog');
+    expect(await fireEvent.keyDown(thumbnailPreview, { key: 'c', metaKey: true })).toBe(true);
+    expect(await fireEvent.copy(thumbnailPreview)).toBe(true);
+    expect(write).not.toHaveBeenCalled();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    await view.rerender({
+      data: btoa('original pixels'),
+      dataTruncated: false,
+      dataIsThumbnail: false,
+    });
+    expect(await fireEvent.keyDown(opener, { key: 'c', metaKey: true })).toBe(false);
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    expect(write.mock.calls[0][0][0].items['image/png'].size).toBe(15);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await fireEvent.click(opener);
+    const originalPreview = await screen.findByRole('dialog');
+    expect(await fireEvent.copy(originalPreview)).toBe(false);
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+    expect(write.mock.calls[1][0][0].items['image/png'].size).toBe(15);
+    expect(screen.getByRole('dialog')).toBe(originalPreview);
+  });
+
   it('opens the lightbox when the thumbnail is clicked', async () => {
     render(ChatImageBlock, {
       props: { data: pngData, mimeType: 'image/png', alt: 'screenshot.png' },

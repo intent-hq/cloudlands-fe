@@ -99,10 +99,11 @@
     });
   });
 
-  async function getImageBlob(): Promise<Blob> {
-    if (dataUrl) return base64ToBlob(dataUrl.base64, dataUrl.mimeType);
+  async function getImageBlob(source = imageUrl): Promise<Blob> {
+    const data = parseBase64DataUrl(source);
+    if (data) return base64ToBlob(data.base64, data.mimeType);
     // eslint-disable-next-line intent/no-component-async-data-fetch -- reads the already-rendered image's bytes for a local download/copy action, not domain data
-    const response = await fetch(imageUrl);
+    const response = await fetch(source);
     if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
     return await response.blob();
   }
@@ -160,14 +161,26 @@
   }
 
   async function convertToPngBlob(blob: Blob): Promise<Blob> {
-    const bitmap = await createImageBitmap(blob);
+    let bitmap: ImageBitmap | undefined;
+    let objectUrl: string | undefined;
     try {
+      let image: ImageBitmap | HTMLImageElement;
+      if (blob.type.split(';')[0].trim() === 'image/svg+xml') {
+        // Chromium cannot decode SVG Blobs with createImageBitmap directly.
+        objectUrl = URL.createObjectURL(blob);
+        const element = new Image();
+        element.src = objectUrl;
+        await element.decode();
+        image = element;
+      } else {
+        image = bitmap = await createImageBitmap(blob);
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
+      canvas.width = image instanceof HTMLImageElement ? image.naturalWidth : image.width;
+      canvas.height = image instanceof HTMLImageElement ? image.naturalHeight : image.height;
       const context = canvas.getContext('2d');
       if (!context) throw new Error('2d canvas context unavailable');
-      context.drawImage(bitmap, 0, 0);
+      context.drawImage(image, 0, 0);
       return await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob(
           (result) => (result ? resolve(result) : reject(new Error('canvas toBlob failed'))),
@@ -175,14 +188,15 @@
         );
       });
     } finally {
-      bitmap.close();
+      bitmap?.close();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     }
   }
 
-  async function copyImage() {
+  async function copyImage(source = imageUrl) {
     try {
       // eslint-disable-next-line intent/no-component-async-data-fetch -- local blob read feeding the clipboard write, not domain data
-      let blob = await getImageBlob();
+      let blob = await getImageBlob(source);
       // Clipboard image writes only accept PNG.
       if (blob.type !== 'image/png') blob = await convertToPngBlob(blob);
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
@@ -190,6 +204,37 @@
     } catch {
       notify.error(m.ui_imageActionsMenu_copyFailed_error());
     }
+  }
+
+  /** Hosts forward only image-scoped events; portals handle their own events below. */
+  export function handleCopy(event: KeyboardEvent | ClipboardEvent, source = imageUrl): boolean {
+    if (event.defaultPrevented || !supportsImageActions(source)) return false;
+    if (
+      event instanceof KeyboardEvent &&
+      (event.key.toLowerCase() !== 'c' ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        event.isComposing)
+    )
+      return false;
+    const target = event.target;
+    if (
+      (target instanceof Element &&
+        (target.closest(
+          'input, textarea, select, [role="textbox"], [contenteditable]:not([contenteditable="false"])',
+        ) ||
+          (target instanceof HTMLElement && target.isContentEditable))) ||
+      document.getSelection()?.toString()
+    )
+      return false;
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (event instanceof KeyboardEvent && event.repeat) return true;
+    void copyImage(source);
+    open = false;
+    return true;
   }
 </script>
 
@@ -202,6 +247,8 @@
         triggerClass,
       )}
       onclick={(event: MouseEvent) => event.stopPropagation()}
+      onkeydown={(event) => handleCopy(event)}
+      oncopy={(event) => handleCopy(event)}
     >
       {#snippet child({ props })}
         <Button
@@ -216,7 +263,12 @@
         </Button>
       {/snippet}
     </Menu.Trigger>
-    <Menu.Content class={contentClass} align="end">
+    <Menu.Content
+      class={contentClass}
+      align="end"
+      onkeydown={(event) => handleCopy(event)}
+      oncopy={(event) => handleCopy(event)}
+    >
       <Menu.Item onSelect={() => void download()}>
         {m.ui_imageActionsMenu_download_label()}
       </Menu.Item>

@@ -34,6 +34,7 @@
   }: Props = $props();
   let lightboxOpen = $state(false);
   let imageActionsOpen = $state(false);
+  let imageActionsMenu: ImageActionsMenu | undefined = $state();
   let openerElement: HTMLButtonElement | null = $state(null);
   let failedImageUrl = $state<string | null>(null);
 
@@ -59,6 +60,10 @@
     event.stopPropagation();
     imageActionsOpen = true;
   }
+
+  function handleCopy(event: KeyboardEvent | ClipboardEvent) {
+    if (hasOriginal && !imageUnavailable) imageActionsMenu?.handleCopy(event);
+  }
 </script>
 
 <div class="my-2 min-w-0 max-w-2xl" data-chat-image>
@@ -74,6 +79,8 @@
           : ''}"
         onclick={handleClick}
         oncontextmenu={handleContextMenu}
+        onkeydown={handleCopy}
+        oncopy={handleCopy}
         aria-label={needsHydration
           ? m.chat_imageBlock_loadFullImage_ariaLabel({ alt })
           : m.chat_imageBlock_viewFullSize_ariaLabel({ alt })}
@@ -97,6 +104,7 @@
              hydrates the original, after which the menu (and the lightbox's)
              acts on the real image. -->
         <ImageActionsMenu
+          bind:this={imageActionsMenu}
           {imageUrl}
           imageName={alt}
           bind:open={imageActionsOpen}

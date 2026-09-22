@@ -175,6 +175,7 @@
   let hoveredImage = $state<HTMLImageElement | null>(null);
   let hoveredImagePosition = $state({ top: 0, right: 0 });
   let imageActionsOpen = $state(false);
+  let imageActionsMenu: ImageActionsMenu | undefined = $state();
   let imageActionsOverlayElement = $state<HTMLElement | null>(null);
 
   function isActionableImage(image: HTMLImageElement): boolean {
@@ -200,6 +201,8 @@
   }
 
   function handleImageInteraction(event: MouseEvent | FocusEvent): void {
+    // Pointer movement must not replace the keyboard-focused image's actions.
+    if (event.type === 'mouseover' && imageActionsHaveFocus()) return;
     const target = event.target;
     const image = imageAtTarget(target);
     if (image && isActionableImage(image)) {
@@ -215,7 +218,6 @@
     } else if (hoveredImage && !imageActionsOpen) {
       // Keep the overlay while the pointer is on the trigger itself.
       if (target instanceof Node && imageActionsOverlayElement?.contains(target)) return;
-      if (event.type === 'mouseover' && imageActionsHaveFocus()) return;
       hoveredImage = null;
     }
   }
@@ -423,6 +425,8 @@
   }
 
   function handleLinkKeydown(event: KeyboardEvent): void {
+    handleImageCopy(event);
+    if (event.defaultPrevented) return;
     if (
       event.target instanceof HTMLImageElement &&
       isActionableImage(event.target) &&
@@ -433,6 +437,12 @@
     }
     if (event.key !== 'Enter' || !isCmdClickModifier({ event })) return;
     handleLinkClick(event);
+  }
+
+  function handleImageCopy(event: KeyboardEvent | ClipboardEvent): void {
+    const image = imageAtTarget(event.target);
+    if (!image || !isActionableImage(image)) return;
+    imageActionsMenu?.handleCopy(event, image.getAttribute('src') || '');
   }
 
   function getSourcePanelId(event: MouseEvent | KeyboardEvent): string | undefined {
@@ -460,6 +470,7 @@
       data-testid="markdown-image-actions-overlay"
     >
       <ImageActionsMenu
+        bind:this={imageActionsMenu}
         imageUrl={hoveredImage.getAttribute('src') || ''}
         imageName={hoveredImage.getAttribute('alt') || undefined}
         bind:open={imageActionsOpen}
@@ -497,6 +508,7 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    oncopy={handleImageCopy}
     oncontextmenu={handleImageContextMenu}
     onmouseover={handleImageInteraction}
     onfocusin={handleImageInteraction}
@@ -522,6 +534,7 @@
     use:mediaFallbacks
     onclick={handleLinkClick}
     onkeydown={handleLinkKeydown}
+    oncopy={handleImageCopy}
     oncontextmenu={handleImageContextMenu}
     onmouseover={handleImageInteraction}
     onfocusin={handleImageInteraction}

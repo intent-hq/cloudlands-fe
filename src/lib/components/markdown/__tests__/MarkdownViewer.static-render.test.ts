@@ -194,6 +194,45 @@ describe('MarkdownViewer static rendering', () => {
   );
 
   it.each([false, true])(
+    'copies the focused image rather than a hovered neighbor with streaming=%s',
+    async (isStreaming) => {
+      const write = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { write }, configurable: true });
+      class FakeClipboardItem {
+        constructor(public items: Record<string, Blob>) {}
+      }
+      vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+      const { container } = render(MarkdownViewer, {
+        props: {
+          content:
+            '![focused](data:image/png;base64,cGl4ZWxz)\n\n![neighbor](data:image/png;base64,bmVpZ2hib3I=)\n\nOther content.',
+          isStreaming,
+        },
+      });
+      const focused = await screen.findByRole('button', { name: 'focused' });
+      const neighbor = await screen.findByRole('button', { name: 'neighbor' });
+      await fireEvent.mouseOver(focused);
+      expect(
+        await fireEvent.keyDown(screen.getByText('Other content.'), { key: 'c', metaKey: true }),
+      ).toBe(true);
+      expect(write).not.toHaveBeenCalled();
+      focused.focus();
+      await screen.findByRole('button', { name: /image options/i });
+      await fireEvent.mouseOver(neighbor);
+      await fireEvent.mouseLeave(container.querySelector('.markdown-viewer')!);
+      expect(await fireEvent.keyDown(focused, { key: 'c', metaKey: true })).toBe(false);
+      await waitFor(() => expect(write).toHaveBeenCalledOnce());
+      expect(write.mock.calls[0][0][0].items['image/png'].size).toBe(6);
+      expect(screen.queryByRole('dialog')).toBeNull();
+      neighbor.focus();
+      await fireEvent.focusIn(neighbor);
+      expect(await fireEvent.copy(neighbor)).toBe(false);
+      await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+      expect(write.mock.calls[1][0][0].items['image/png'].size).toBe(8);
+    },
+  );
+
+  it.each([false, true])(
     'opens image actions on right-click with streaming=%s',
     async (isStreaming) => {
       render(MarkdownViewer, {
