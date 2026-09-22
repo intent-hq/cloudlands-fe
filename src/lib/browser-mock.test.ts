@@ -783,4 +783,36 @@ describe('browser-mock daemon health with BrowserWebSocketTransport (dev:web)', 
     expect(state.health).toBe('healthy');
     expect(state.hasEverConnected).toBe(true);
   });
+
+  it('answers the system.status poll a connected snapshot starts, so mock-only boot never degrades', async () => {
+    vi.stubEnv('VITE_INTENTD_WS_URL', '');
+    delete (window as any).electronAPI;
+    await importBrowserMock();
+    api = (window as any).electronAPI;
+    const snapshot = await api.invoke('backend:get-status');
+
+    // pollSystemStatusSaga issues `backendRequest('system.status')`; with no
+    // WS URL and the mock bridge installed the factory resolves the
+    // Electron-IPC transport, which routes the call to the browser mock.
+    // Before the fix the mock answered NOT_IMPLEMENTED, the request rejected,
+    // and the saga put systemStatusFailure → health 'degraded'. (The saga is
+    // not imported here: it pulls in the whole renderer store graph.)
+    const { resolveBackendTransport } = await import('./client/live/backend-transport-factory');
+    const payload = await resolveBackendTransport().request<{ running?: boolean }>('system.status');
+    expect(payload.running).toBe(true);
+
+    const { connectionStatusChanged, daemonHealthReducer, initialState, systemStatusSuccess } =
+      await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+    let state = daemonHealthReducer(
+      initialState,
+      connectionStatusChanged(snapshot.status, snapshot.transport),
+    );
+    state = daemonHealthReducer(
+      state,
+      systemStatusSuccess(payload as any, new Date().toISOString(), state.connectionGeneration),
+    );
+    expect(state.health).toBe('healthy');
+    expect(state.statusCheckFailure).toBeNull();
+    expect(state.hostLocality).toBe('local');
+  });
 });

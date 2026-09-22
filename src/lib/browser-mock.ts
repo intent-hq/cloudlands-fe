@@ -281,6 +281,18 @@ function mockBackendMethodResult(method: string, params?: Record<string, unknown
   }
   if (method === 'host.providerAuthStatus') return { providers: [] };
   if (method === 'host.providerDiscovery') return { providers: [] };
+  // `system.status` (§5.7): the daemon-health saga polls it as soon as the
+  // boot snapshot reports `connected`; an unanswered poll would mark the
+  // mock-only preview `degraded` on every boot (intent-hq/intent#5582).
+  if (method === 'system.status') {
+    return {
+      running: true,
+      listenMode: 'browser-mock',
+      version: '0.0.0-browser',
+      protocolVersion: '0.0.0-browser',
+      host: { os: 'browser', arch: 'browser', locality: 'local' },
+    };
+  }
   if (method === 'agent.list') return { agents: [], retiredCount: 0 };
   if (method === 'agent.listInterrupted') return { agents: [] };
   if (method === 'models.list') return { models: [] };
