@@ -55,7 +55,7 @@ export const sharingNote: Note = {
   rev: 1,
 };
 
-export const sharingMessages: AgentMessage[] = [
+const sharingMessages: AgentMessage[] = [
   {
     id: 'preview-user',
     role: 'user',

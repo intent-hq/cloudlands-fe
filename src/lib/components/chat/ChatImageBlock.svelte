@@ -57,6 +57,7 @@
     <div class="group relative size-40">
       <Button
         variant="plain"
+        wrapContent={false}
         bind:ref={openerElement}
         type="button"
         class="block size-40 cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/30 p-0 shadow-(--elevation-raised) transition-opacity hover:opacity-90 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 {hydrationLoading

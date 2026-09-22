@@ -173,7 +173,7 @@
   // The images live in {@html}-managed DOM, so a single Svelte-rendered
   // trigger is positioned over whichever image is hovered or focused.
   let hoveredImage = $state<HTMLImageElement | null>(null);
-  let hoveredImagePosition = $state({ top: 0, left: 0 });
+  let hoveredImagePosition = $state({ top: 0, right: 0 });
   let imageActionsOpen = $state(false);
   let imageActionsOverlayElement = $state<HTMLElement | null>(null);
 
@@ -207,7 +207,7 @@
       hoveredImage = image;
       hoveredImagePosition = {
         top: imageRect.top - containerRect.top + 6,
-        left: imageRect.right - containerRect.left - 34,
+        right: containerRect.right - imageRect.right + 6,
       };
     } else if (hoveredImage && !imageActionsOpen) {
       // Keep the overlay while the pointer is on the trigger itself.
@@ -443,8 +443,8 @@
   {#if hoveredImage}
     <div
       bind:this={imageActionsOverlayElement}
-      class="absolute z-10"
-      style="top: {hoveredImagePosition.top}px; left: {hoveredImagePosition.left}px;"
+      class="image-actions-overlay absolute z-10"
+      style="top: {hoveredImagePosition.top}px; right: {hoveredImagePosition.right}px;"
       data-testid="markdown-image-actions-overlay"
     >
       <ImageActionsMenu
@@ -559,13 +559,13 @@
     contain: layout style;
   }
 
-  /* Apply same spacing to static content children */
-  .markdown-viewer.static-content > :global(* + *) {
+  /* Paragraph spacing must not offset the positioned image controls. */
+  .markdown-viewer.static-content > :global(* + :not(.image-actions-overlay)) {
     margin-top: 0.75rem;
   }
 
   /* PERF: Apply same styles to streaming content (direct children) */
-  .markdown-viewer.streaming-content > :global(* + *) {
+  .markdown-viewer.streaming-content > :global(* + :not(.image-actions-overlay)) {
     margin-top: 0.75rem;
   }
 
