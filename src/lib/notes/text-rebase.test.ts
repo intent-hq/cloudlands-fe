@@ -2458,41 +2458,81 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // the note editor shows cells of their own; past the deadline the lines
     // are paired greedily, a row cell by cell — the cells of a row are as
     // alike as the rows, so a run over the row would stop at the first the
-    // next row fits too.)
-    const DUPLICATE_RUNS: Array<[string, (count: number) => string, Array<[string, boolean]>]> = [
-      ['list items', (count) => '- same item\n'.repeat(count), PROJECTIONS],
+    // next row fits too — and within the budget the pairing searched pairs
+    // the cells each with their own fragment too: a row of linked cells is
+    // a subsequence of any three fragments however they are dealt out among
+    // the rows, its letters never those of a run, so only the count of pairs
+    // decides. A row without the optional leading `|` is a row on its cells
+    // alone; an escaped `\|` splits no cell; formatting is syntax like any.)
+    const DUPLICATE_RUNS: Array<
+      [string, (count: number) => string, Array<[string, boolean]>, string, RegExp]
+    > = [
       [
-        'table cells',
-        (count) =>
-          `| same item | same item | same item |\n|---|---|---|\n${'| same item | same item | same item |\n'.repeat(count / 3 - 1)}`,
-        PROJECTIONS.filter(([, production]) => production),
+        'list items',
+        (count) => '- same item\n'.repeat(count),
+        PROJECTIONS,
+        'same item',
+        /same item/g,
       ],
+      ...(
+        [
+          ['table cells', 'same item', true, 'same item', /same item/g],
+          [
+            'linked table cells',
+            '[same item](https://sync/same/item)',
+            true,
+            'same item',
+            /\[same item\]\(https:\/\/sync\/same\/item\)/g,
+          ],
+          ['table cells without a leading pipe', 'same item', false, 'same item', /same item/g],
+          [
+            'table cells with an escaped pipe',
+            'same \\| item',
+            true,
+            'same | item',
+            /same \\\| item/g,
+          ],
+          ['formatted table cells', '**same** item', true, 'same item', /\*\*same\*\* item/g],
+        ] as Array<[string, string, boolean, string, RegExp]>
+      ).map(([kind, cell, leadingPipe, needle, pattern]): (typeof DUPLICATE_RUNS)[number] => {
+        const row = `${leadingPipe ? '| ' : ''}${cell} | ${cell} | ${cell} |\n`;
+        return [
+          kind,
+          (count) => `${row}${leadingPipe ? '|' : ''}---|---|---|\n${row.repeat(count / 3 - 1)}`,
+          PROJECTIONS.filter(([, production]) => production),
+          needle,
+          pattern,
+        ];
+      }),
     ];
-    const DUPLICATE_RUN_CELLS = DUPLICATE_RUNS.flatMap(([kind, run, projections]) =>
-      [9, 51].flatMap((count) =>
-        projections.flatMap(([projection, production]) =>
-          CLOCKS.map(
-            ([when, clock]): [
-              number,
-              string,
-              string,
-              string,
-              (count: number) => string,
-              boolean,
-              Clock,
-            ] => [count, kind, projection, when, run, production, clock],
+    const DUPLICATE_RUN_CELLS = DUPLICATE_RUNS.flatMap(
+      ([kind, run, projections, needle, pattern]) =>
+        [9, 51].flatMap((count) =>
+          projections.flatMap(([projection, production]) =>
+            CLOCKS.map(
+              ([when, clock]): [
+                number,
+                string,
+                string,
+                string,
+                (count: number) => string,
+                boolean,
+                Clock,
+                string,
+                RegExp,
+              ] => [count, kind, projection, when, run, production, clock, needle, pattern],
+            ),
           ),
         ),
-      ),
     );
 
     it.each(DUPLICATE_RUN_CELLS)(
       'pairs each of %i duplicate %s with its own plain-text line, and a link line after them, projected by %s %s',
-      async (count, _kind, _projection, _when, run, production, clock) => {
+      async (count, _kind, _projection, _when, run, production, clock, needle, pattern) => {
         const markdown = `${'q'.repeat(129 * 1024)}\n\nedit one\n\n${run(count)}\n[ab](https://sync/ab)\n\n**cd** two`;
         const plain = await projectWithEditor(markdown, production);
         expect(plain).not.toContain('https');
-        const plainLines = linesHolding(plain, 'same item', /\n|\uFFFC/g);
+        const plainLines = linesHolding(plain, needle, /\n|\uFFFC/g);
         expect(plainLines).toHaveLength(count);
         const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
         expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
@@ -2500,7 +2540,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expectLinesBounded(
           map,
           plainLines,
-          [...markdown.matchAll(/same item/g)].map((m) => [m.index, m.index + m[0].length]),
+          [...markdown.matchAll(pattern)].map((m) => [m.index, m.index + m[0].length]),
         );
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         expectSameLine(plain, markdown, map, 'cd two', '**cd** two');

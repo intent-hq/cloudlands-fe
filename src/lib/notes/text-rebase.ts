@@ -1952,7 +1952,10 @@ function diffRegion(
  * its markdown up to the end of its last sealed line is deleted against
  * nothing, and its plain text replaces what follows — so a position of its
  * plain text maps to the gap's end and a position of the sealed line to the
- * end of the plain text before it, neither into the other.
+ * end of the plain text before it, neither into the other. A sealed table
+ * row paired cell by cell (`tableCells`) is the exception: the syntax of the
+ * row before a cell is inserted before the cell's fragment, so a position on
+ * the row stays on the row's own plain-text lines.
  */
 function refineByLine(
   out: Hunk[],
@@ -1976,7 +1979,19 @@ function refineByLine(
       diffRegion(out, from, to, fromA, fromB, toA, toB, deadline, unanchorable, false);
       return;
     }
-    const sealedEnd = Math.min(lastOverlapEnd(unanchorable, toA, toB), toB);
+    const lastEnd = lastOverlapEnd(unanchorable, toA, toB);
+    const rowStart = lastEnd > toB ? rangeStartAt(unanchorable, toB - 1) : toA;
+    if (rowStart > toA) {
+      // The gap ends at the first cell of a sealed row (the ranges are whole
+      // lines): the row's syntax before the cell is inserted before the
+      // cell's fragment, so a position on it stays on the row; the gap
+      // before the row is a gap like any. (A gap between two cells lies on
+      // the row whole and is deleted against the fragment before it.)
+      gap(fromA, fromB, toA, rowStart);
+      out.push({ fromStart: fromB, fromEnd: fromB, toStart: rowStart, toEnd: toB });
+      return;
+    }
+    const sealedEnd = Math.min(lastEnd, toB);
     out.push({ fromStart: fromA, fromEnd: fromA, toStart: toA, toEnd: sealedEnd });
     if (fromA < fromB || sealedEnd < toB) {
       out.push({ fromStart: fromA, fromEnd: fromB, toStart: sealedEnd, toEnd: toB });
@@ -1997,6 +2012,18 @@ function refineByLine(
     toPos = line.end;
   }
   gap(fromPos, fromEnd, toPos, toEnd);
+}
+
+/** The start of the one of the sorted, flattened `ranges` that holds `at`, or `at`. */
+function rangeStartAt(ranges: number[], at: number): number {
+  let low = 0;
+  let high = ranges.length >> 1;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (ranges[2 * mid + 1] <= at) low = mid + 1;
+    else high = mid;
+  }
+  return low < ranges.length >> 1 && ranges[2 * low] <= at ? ranges[2 * low] : at;
 }
 
 /** The end of the last of the sorted, flattened `ranges` that overlaps `[start, end)`, or `start`. */
@@ -2037,17 +2064,21 @@ function isBlank(code: number): boolean {
 /**
  * The cells of the table row `line` of `text` — the text between its
  * unescaped `|`, each without the blanks around it, that holds a letter or a
- * digit — when the line opens with `|` and holds two or more; `undefined`
- * otherwise. The note editor shows each cell as a plain-text line of its own
- * (see `LineWalk`), so a run of them is paired cell by cell (`pairGreedily`).
+ * digit — when the line holds two or more; `undefined` otherwise. The
+ * leading `|` is optional (GFM), so a line is a row on its cells alone: a
+ * paragraph that holds a `|` has cells too, and is paired as one line
+ * because no run of plain-text lines is the text of its cells in turn. The
+ * note editor shows each cell as a plain-text line of its own (see
+ * `LineWalk`), so a run of them is paired cell by cell (`pairLines`,
+ * `pairGreedily`).
  */
 function tableCells(text: string, line: TextLine): TextLine[] | undefined {
   let i = line.start;
   while (i < line.end && isBlank(text.charCodeAt(i))) i += 1;
-  if (i >= line.end || text.charCodeAt(i) !== 124) return undefined;
+  if (i >= line.end) return undefined;
   const cells: TextLine[] = [];
-  let cellStart = i + 1;
-  for (let j = i + 1; j <= line.end; j += 1) {
+  let cellStart = text.charCodeAt(i) === 124 ? i + 1 : i;
+  for (let j = cellStart; j <= line.end; j += 1) {
     if (j < line.end && (text.charCodeAt(j) !== 124 || text.charCodeAt(j - 1) === 92)) continue;
     let start = cellStart;
     let end = j;
@@ -2135,7 +2166,13 @@ const MAX_PAIRING_CELLS = 1 << 18;
  * line when it has a line of its own — and among pairings equal in all that,
  * one of more pairs: each fragment on a line of its own rather than in a run
  * on the line before, whose hidden destination may repeat its letters
- * (`[xy](https://ab/xy)` fits `xy` twice). A dynamic programme over the two
+ * (`[xy](https://ab/xy)` fits `xy` twice) — and the fragments a table row's
+ * cells are each the text of in turn each with its own cell (`tableCells`)
+ * rather than in one run over the row, whose cells are as alike as the rows
+ * of the table (a run of three `[same](https://sync/same)` cells is a
+ * subsequence of the row however the fragments are dealt out among the
+ * rows; the letters of a linked cell are never those of its fragment, so
+ * the rank alone does not decide). A dynamic programme over the two
  * sequences; `undefined` once the search would exceed `MAX_PAIRING_CELLS`
  * or the `deadline`, which the caller pairs greedily instead.
  */
@@ -2153,7 +2190,8 @@ function pairLines(
   const best = new Int32Array((n + 1) * width).fill(-1);
   // The pairs of the best.
   const count = new Int32Array((n + 1) * width);
-  // How the best was reached: -1 skipped a fragment, -2 skipped a line, r ≥ 0 paired a run of r + 1 fragments.
+  // How the best was reached: -1 skipped a fragment, -2 skipped a line, -3
+  // paired the line's cells each with a fragment, r ≥ 0 paired a run of r + 1 fragments.
   const via = new Int8Array((n + 1) * width);
   const better = (score: number, pairs: number, cell: number) =>
     score > best[cell] || (score === best[cell] && pairs > count[cell]);
@@ -2174,6 +2212,23 @@ function pairLines(
       }
       if (best[cell] < 0 || i === n || k === m) continue;
       const line = lines[k];
+      const cells = line.cells;
+      if (
+        cells &&
+        i + cells.length <= n &&
+        cells.every((c, d) => subsequenceEnd(c.letters, fragments[i + d].letters, 0) !== -1)
+      ) {
+        let letters = 0;
+        for (let d = 0; d < cells.length; d += 1) letters += fragments[i + d].letters.length;
+        const rank = letters === line.letters.length ? 2 : line.sealed ? 0 : 1;
+        const score = best[cell] + 3 * letters + rank;
+        const target = (i + cells.length) * width + k + 1;
+        if (better(score, count[cell] + cells.length, target)) {
+          best[target] = score;
+          count[target] = count[cell] + cells.length;
+          via[target] = -3;
+        }
+      }
       let at = 0;
       let letters = 0;
       for (let j = i; j < n && j - i < MAX_RUN_LENGTH; j += 1) {
@@ -2198,7 +2253,14 @@ function pairLines(
     const step = via[i * width + k];
     if (step === -1) i -= 1;
     else if (step === -2) k -= 1;
-    else {
+    else if (step === -3) {
+      const cells = lines[k - 1].cells ?? [];
+      for (let d = cells.length - 1; d >= 0; d -= 1) {
+        pairs.push([i - cells.length + d, i - cells.length + d, cells[d]]);
+      }
+      i -= cells.length;
+      k -= 1;
+    } else {
       pairs.push([i - step - 1, i - 1, lines[k - 1]]);
       i -= step + 1;
       k -= 1;
