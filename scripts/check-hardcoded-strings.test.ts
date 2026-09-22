@@ -158,6 +158,59 @@ describe('hardcoded user-facing string gate', () => {
     );
   });
 
+  it('passes on equality-comparison operands inside expression-valued attributes', () => {
+    withFixture(
+      {
+        'Example.svelte': [
+          '<script lang="ts">',
+          "  import { m } from '$lib/paraglide/messages';",
+          "  let kind = $state('blocker');",
+          '</script>',
+          '',
+          "<div title={kind === 'blocker' ? m.blocker_title() : m.discussion_title()}>a</div>",
+          "<div title={kind !== 'blocker' ? m.discussion_title() : m.blocker_title()}>b</div>",
+          "<div aria-label={kind == 'blocker' ? m.blocker_title() : m.discussion_title()}>c</div>",
+          "<div aria-label={kind != 'blocker' ? m.discussion_title() : m.blocker_title()}>d</div>",
+          "<div title={'blocker' === kind ? m.blocker_title() : m.discussion_title()}>e</div>",
+          "<div title={kind==='blocker' ? m.blocker_title() : m.discussion_title()}>f</div>",
+        ].join('\n'),
+      },
+      (dir) => {
+        const result = runGate([dir]);
+        expect(result.output).not.toContain('[attribute title] "blocker"');
+        expect(result.output).not.toContain('[attribute aria-label] "blocker"');
+        expect(result.exitCode).toBe(0);
+      },
+    );
+  });
+
+  it('still flags rendered literals next to comparison operands in expression-valued attributes', () => {
+    withFixture(
+      {
+        'Example.svelte': [
+          '<script lang="ts">',
+          "  import { m } from '$lib/paraglide/messages';",
+          "  let kind = $state('blocker');",
+          "  let x = $state('');",
+          '</script>',
+          '',
+          "<div title={kind === 'blocker' ? 'Blocker raised' : m.discussion_title()}>a</div>",
+          "<div title={'Hello world'}>b</div>",
+          '<div aria-label={`Hello ${x}`}>c</div>',
+        ].join('\n'),
+      },
+      (dir) => {
+        const result = runGate([dir]);
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain('[attribute title] "Blocker raised"');
+        expect(result.output).not.toContain('[attribute title] "blocker"');
+        expect(result.output).toContain('[attribute title] "Hello world"');
+        expect(result.output).toContain('[attribute aria-label] "Hello');
+        expect(result.output).toMatch(/Found 3 new/);
+      },
+    );
+  });
+
   it('flags || fallback literals in template expressions but not m.* usage', () => {
     withFixture(
       {
