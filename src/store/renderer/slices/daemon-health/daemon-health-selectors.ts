@@ -123,7 +123,7 @@ export const selectDaemonSupportsSourceControlAuth = store.createSelector((state
  * `workspace.invite.create`, and `sourceControl.identityProof.*` with the
  * `provider` / `host` / `proofId` params of `invite.prove`.
  */
-const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 6 } as const;
+const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 8 } as const;
 
 /**
  * True when a daemon reporting `protocolVersion` serves the identity seam

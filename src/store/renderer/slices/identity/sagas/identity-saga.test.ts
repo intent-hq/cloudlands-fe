@@ -55,8 +55,8 @@ function principalMe(identity: typeof gitlabTriple | null, login: string | null)
 }
 
 /** The `system.status` stats the capability gate reads; the seam ships within the 10.x line. */
-const SEAM_VERSION = '10.6'; // protocol-version-ok: fixture for the capability gate under test
-const PRE_SEAM_VERSION = '10.5'; // protocol-version-ok: fixture for the capability gate under test
+const SEAM_VERSION = '10.8'; // protocol-version-ok: fixture for the capability gate under test
+const PRE_SEAM_VERSION = '10.7'; // protocol-version-ok: fixture for the capability gate under test
 
 function daemonHealth(protocolVersion: string) {
   return {

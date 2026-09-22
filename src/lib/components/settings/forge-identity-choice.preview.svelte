@@ -35,7 +35,7 @@
         {
           running: true,
           listenMode: 'local',
-          protocolVersion: '10.6',
+          protocolVersion: '10.8',
           host: { os: 'linux', arch: 'x86_64', locality: 'local' },
         },
         new Date().toISOString(),

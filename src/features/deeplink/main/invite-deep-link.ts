@@ -849,7 +849,7 @@ interface ForgeAuthStatusResult {
  * daemon must serve it — the proof is made there — so the probe is gated on
  * the local sidecar's hello, never on the host's.
  */
-const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 6 } as const;
+const IDENTITY_SEAM_MIN_PROTOCOL = { major: 10, minor: 8 } as const;
 
 /**
  * The forge account the guest's own daemon is signed in as: GitHub when it

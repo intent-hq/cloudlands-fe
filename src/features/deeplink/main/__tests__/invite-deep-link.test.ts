@@ -108,7 +108,7 @@ function emitAuthChanged(status: string): void {
  * `getConnectedDaemonProtocolVersion('local')`. Defaults to a daemon that
  * serves the identity seam; a test sets an older one to exercise the gate.
  */
-const localProtocolVersion = vi.fn<() => string | null>(() => '10.6'); // protocol-version-ok: fixture hello
+const localProtocolVersion = vi.fn<() => string | null>(() => '10.8'); // protocol-version-ok: fixture hello
 
 const openBackendWindow = vi.fn();
 vi.mock('../../../backend/main/backend.ipc', () => ({
@@ -2619,12 +2619,12 @@ describe('handleInviteDeepLink — GitLab identity', () => {
 
   beforeEach(() => {
     gitlabOnlyDaemon();
-    localProtocolVersion.mockReturnValue('10.6'); // protocol-version-ok: fixture hello
+    localProtocolVersion.mockReturnValue('10.8'); // protocol-version-ok: fixture hello
     prove.mockResolvedValue({ ...CREDENTIAL, principalId: 'gl:4711', login: 'gl-user' });
   });
 
   it('never probes GitLab on a local daemon that predates the identity seam: connect-first, then sign-in-required, no snippet', async () => {
-    localProtocolVersion.mockReturnValue('10.5'); // protocol-version-ok: pre-seam fixture hello
+    localProtocolVersion.mockReturnValue('10.7'); // protocol-version-ok: pre-seam fixture hello
     onLocal('github.connect', () => CONNECT);
     onLocal('github.cancelAuth', () => ({ ok: true }));
     connectFirst();
