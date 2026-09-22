@@ -5922,6 +5922,8 @@
   "hardwareConsole_actionKey_switchWindowLayouts_notApplicable_hint": "このレイアウトに表示できるものがありません",
   "hardwareConsole_actionKey_cycleOpenWindows_label": "開いているウィンドウを切り替え",
   "hardwareConsole_actionKey_noOtherOpenWindows_message": "他に開いているウィンドウはありません",
+  "hardwareConsole_actionKey_closeTab_label": "閉じる",
+  "hardwareConsole_actionKey_closeTab_nothingToClose_hint": "閉じるものがありません",
   "hardwareConsole_actionKey_pushToTalk_label": "プッシュトゥトーク",
   "hardwareConsole_ptt_listening_label": "聞き取り中…",
   "hardwareConsole_ptt_unavailable_message": "このシステムでは音声録音を利用できません",
