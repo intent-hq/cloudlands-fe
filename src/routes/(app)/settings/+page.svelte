@@ -31,7 +31,6 @@
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
-  import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
@@ -216,6 +215,7 @@
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
+  let localSettingsRequested = $state(0);
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -408,6 +408,7 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
+    if (resolveHashToTarget(targetId)?.id === 'websocket-api') localSettingsRequested += 1;
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -571,7 +572,9 @@
         <!-- Devices -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
-            <DevicesSettings />
+            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+              <DevicesSettings bind:localSettingsRequested />
+            </div>
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
@@ -582,23 +585,6 @@
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section data-slot="settings-section-body" class="px-6 py-4">
                 <BackendSyncSettings />
-              </section>
-            </div>
-          </div>
-
-          <!-- Remote Access (WebSocket API) -->
-          <div
-            id="websocket-api"
-            data-highlight-id="websocket-api"
-            use:highlightTarget
-            class="scroll-mt-20"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_remoteAccess()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <WebSocketApiSettings />
               </section>
             </div>
           </div>
