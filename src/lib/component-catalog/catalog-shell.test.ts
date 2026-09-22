@@ -12,7 +12,7 @@
 //   src/routes/(app)/workspace/[id]/terminal-test/+page.svelte,
 //   src/routes/(app)/workspace/creating/+page.svelte
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -58,6 +58,61 @@ const movedAsyncDataBaselinePaths = [
   ],
   ['src/routes/workspace/[id]/+page.svelte', 'src/routes/(app)/workspace/[id]/+page.svelte'],
 ] as const;
+
+const hostBoundSpecifierPrefixes = String.raw`\$store\/|\$features\/|\$lib\/client|\$lib\/electron-bridge|electron`;
+const forbiddenImportLine = new RegExp(
+  `from ['"](?:${hostBoundSpecifierPrefixes})|import ['"]\\$store\\/`,
+);
+const hostBoundSpecifier = new RegExp(`^(?:${hostBoundSpecifierPrefixes})`);
+
+// Presentational feature components may back catalog fixtures: the axe gate has to cover the exact
+// production DOM (tooltip trigger + sr-only label) and only the feature component renders it. Each
+// (file, specifier) pair below is exempt from the line guard solely because the closure test proves
+// the module — and everything it imports at runtime inside its feature family — carries no store,
+// host, or cross-feature dependency; a type-only import is erased and pulls nothing into the bundle.
+const presentationalFeatureImports: Record<string, readonly string[]> = {
+  'src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte': [
+    '$features/notes/note-presence/NotePresenceAvatars.svelte',
+    '$features/notes/note-presence/note-presence-service',
+    '$features/presence/components/PresenceAvatarStack.svelte',
+    '$features/presence/components/presence-person',
+  ],
+};
+
+interface ParsedImport {
+  specifier: string;
+  typeOnly: boolean;
+  line: number;
+}
+
+function parseImports(source: string): ParsedImport[] {
+  const pattern = /\b(?:import|export)\s+(type\s+)?(?:[^'";:=()]*?\bfrom\s+)?(['"])([^'"]+)\2/g;
+  return [...source.matchAll(pattern)].map((match) => ({
+    specifier: match[3],
+    typeOnly: match[1] !== undefined,
+    line: source.slice(0, match.index).split('\n').length,
+  }));
+}
+
+function resolveModule(fromFile: string, specifier: string): string | undefined {
+  const base = specifier.startsWith('$features/')
+    ? path.join(root, 'src/features', specifier.slice('$features/'.length))
+    : specifier.startsWith('.')
+      ? path.resolve(path.dirname(fromFile), specifier)
+      : undefined;
+  if (!base) return undefined;
+  return [
+    base,
+    `${base}.ts`,
+    `${base}.svelte`,
+    `${base}.svelte.ts`,
+    path.join(base, 'index.ts'),
+  ].find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
+}
+
+function importsSpecifier(line: string, specifier: string): boolean {
+  return line.includes(`'${specifier}'`) || line.includes(`"${specifier}"`);
+}
 
 function publicRoute(relativeFile: string): string {
   const segments = relativeFile
@@ -120,8 +175,6 @@ describe('catalog route shell', () => {
       path.join(routesRoot, 'sandbox/[slug]/+page.svelte'),
       ...sourceFiles(path.join(root, 'src/lib/component-catalog')),
     ];
-    const forbidden =
-      /from ['"](?:\$store\/|\$features\/|\$lib\/client|\$lib\/electron-bridge|electron)|import ['"]\$store\//;
     const violations = files.flatMap((file) => {
       const relativeFile = path.relative(root, file);
       const isStoreSeededSubscriptionFixture =
@@ -129,9 +182,14 @@ describe('catalog route shell', () => {
           'src/lib/component-catalog/renderers/SubscriptionRowsCatalogPreview.svelte' ||
         relativeFile === 'src/lib/component-catalog/subscription-rows/subscription-row-fixtures.ts';
       if (isStoreSeededSubscriptionFixture) return [];
+      const allowlisted = presentationalFeatureImports[relativeFile] ?? [];
       return readFileSync(file, 'utf8')
         .split('\n')
-        .flatMap((line, index) => (forbidden.test(line) ? [`${relativeFile}:${index + 1}`] : []));
+        .flatMap((line, index) => {
+          if (!forbiddenImportLine.test(line)) return [];
+          if (allowlisted.some((specifier) => importsSpecifier(line, specifier))) return [];
+          return [`${relativeFile}:${index + 1}`];
+        });
     });
     expect(violations).toEqual([]);
 
@@ -140,6 +198,47 @@ describe('catalog route shell', () => {
     expect(clientHooks).toMatch(
       /if \([\s\S]*!isCatalogRoute[\s\S]*VITE_ENABLE_BROWSER_MOCK[\s\S]*\) \{/,
     );
+  });
+
+  it('keeps allowlisted presentational feature modules free of runtime host dependencies', () => {
+    const violations: string[] = [];
+    for (const [relativeFile, specifiers] of Object.entries(presentationalFeatureImports)) {
+      const importingFile = path.join(root, relativeFile);
+      const imports = parseImports(readFileSync(importingFile, 'utf8'));
+      const allowedFamilies = specifiers.map((specifier) => `${path.posix.dirname(specifier)}/`);
+      const queue: string[] = [];
+      for (const specifier of specifiers) {
+        const uses = imports.filter((entry) => entry.specifier === specifier);
+        expect(uses, `${relativeFile} no longer imports allowlisted ${specifier}`).not.toEqual([]);
+        if (uses.every((entry) => entry.typeOnly)) continue;
+        const resolved = resolveModule(importingFile, specifier);
+        expect(resolved, `${specifier} does not resolve to a source file`).toBeDefined();
+        queue.push(resolved!);
+      }
+
+      const visited = new Set<string>();
+      while (queue.length > 0) {
+        const file = queue.shift()!;
+        if (visited.has(file)) continue;
+        visited.add(file);
+        const moduleFile = path.relative(root, file);
+        for (const entry of parseImports(readFileSync(file, 'utf8'))) {
+          if (entry.typeOnly) continue;
+          const location = `${moduleFile}:${entry.line} (${entry.specifier})`;
+          const staysInFamily =
+            entry.specifier.startsWith('.') ||
+            allowedFamilies.some((family) => entry.specifier.startsWith(family));
+          if (staysInFamily) {
+            const next = resolveModule(file, entry.specifier);
+            if (next) queue.push(next);
+            else violations.push(`${location} unresolvable`);
+          } else if (hostBoundSpecifier.test(entry.specifier)) {
+            violations.push(location);
+          }
+        }
+      }
+    }
+    expect(violations).toEqual([]);
   });
 
   it('uses canonical controls throughout the catalog workspace and previews', () => {

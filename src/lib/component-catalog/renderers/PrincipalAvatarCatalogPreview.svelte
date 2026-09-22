@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  // Presentational feature components, allowlisted in catalog-shell.test.ts, which also
+  // proves they stay free of runtime store/host imports.
   import NotePresenceAvatars from '$features/notes/note-presence/NotePresenceAvatars.svelte';
   import type { RemoteNoteViewer } from '$features/notes/note-presence/note-presence-service';
   import PresenceAvatarStack from '$features/presence/components/PresenceAvatarStack.svelte';
