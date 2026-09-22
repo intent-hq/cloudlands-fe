@@ -2548,20 +2548,38 @@ describe('alignment of link syntax the lexer does not account for', () => {
       60_000,
     );
 
-    // A cell that holds no letter or digit — punctuation, emoji — between
+    // A cell that shows no letter or digit — punctuation, emoji — between
     // two linked cells of a sealed row. The note editor shows it as a
-    // plain-text line of its own; keyed by its text without blanks it pairs
-    // with its own cell, within the budget and past the deadline alike, and
-    // the linked cells with theirs. (Dropped as holding no letters, the cell
-    // and its plain-text line were the gap between the linked cells, deleted
-    // against nothing: a position on the plain-text line mapped to the start
-    // of the next cell, a position in the cell to the end of the plain-text
-    // line before.)
+    // plain-text line of its own; keyed by its shown text without blanks it
+    // pairs with its own cell, within the budget and past the deadline alike,
+    // and the linked cells with theirs. (Dropped as holding no letters, the
+    // cell and its plain-text line were the gap between the linked cells,
+    // deleted against nothing: a position on the plain-text line mapped to
+    // the start of the next cell, a position in the cell to the end of the
+    // plain-text line before.) A cell whose letters are all in its syntax —
+    // a linked `!?`, whose letters are its destination's; `&amp;&amp;`, whose
+    // are the entity's name — shows none either: keyed by the letters of its
+    // source it was no letterless cell, and its plain-text line the text of
+    // no cell of the row, so the row was paired as one line and its cells
+    // dealt out among the rows alike.
     const LETTERLESS_CELLS = (
       [
         ['punctuation', '!?', '!?', /!\?/g],
         ['emoji', '🙂🙂', '🙂🙂', /🙂🙂/g],
         ['formatted punctuation', '**!?**', '!?', /\*\*!\?\*\*/g],
+        [
+          'linked punctuation',
+          '[!?](https://sync/punctuation)',
+          '!?',
+          /\[!\?\]\(https:\/\/sync\/punctuation\)/g,
+        ],
+        [
+          'linked emoji',
+          '[🙂🙂](https://sync/emoji)',
+          '🙂🙂',
+          /\[🙂🙂\]\(https:\/\/sync\/emoji\)/g,
+        ],
+        ['entity', '&amp;&amp;', '&&', /&amp;&amp;/g],
       ] as Array<[string, string, string, RegExp]>
     ).flatMap(([kind, cell, needle, pattern]) =>
       CLOCKS.map(([when, clock]): [string, string, string, string, RegExp, Clock] => [

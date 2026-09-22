@@ -2059,7 +2059,9 @@ function refineByLine(
   const lines = textLines(to, toStart, toEnd, false, unanchorable).filter((line) =>
     isTextLine(to, line.start, line.end),
   );
-  for (const line of lines) line.cells = tableCells(to, line);
+  let tokenizer: Tokenizer | undefined | null = null;
+  const cellTokenizer = () => (tokenizer === null ? (tokenizer = scanTokenizer()) : tokenizer);
+  for (const line of lines) line.cells = tableCells(to, line, cellTokenizer);
   const gap = (fromA: number, fromB: number, toA: number, toB: number) => {
     if (fromA === fromB && toA === toB) return;
     if (!overlaps(unanchorable, toA, toB)) {
@@ -2130,8 +2132,9 @@ function lastOverlapEnd(ranges: number[], start: number, end: number): number {
 }
 
 /**
- * A line of text without its break, its `letters` (`lineLetters`), whether it
- * is sealed, and — a table row's — its `cells` (`tableCells`).
+ * A line of text without its break, its `letters` (`lineLetters`; a cell's,
+ * of the text it shows), whether it is sealed, and — a table row's — its
+ * `cells` (`tableCells`).
  */
 interface TextLine {
   start: number;
@@ -2169,9 +2172,16 @@ function isBlank(code: number): boolean {
  * because no run of plain-text lines is the text of its cells in turn. The
  * note editor shows each cell as a plain-text line of its own (see
  * `LineWalk`), so a run of them is paired cell by cell (`pairLines`,
- * `pairGreedily`).
+ * `pairGreedily`), each fragment with the cell at its own position — a cell
+ * is keyed by the letters of the text it shows (`shownText`), not of its
+ * source, so a cell whose letters are all in its syntax (`[!?](https://…)`,
+ * `&amp;&amp;`) is the letterless cell its plain-text line is.
  */
-function tableCells(text: string, line: TextLine): TextLine[] | undefined {
+function tableCells(
+  text: string,
+  line: TextLine,
+  tokenizer: () => Tokenizer | undefined,
+): TextLine[] | undefined {
   let i = line.start;
   while (i < line.end && isBlank(text.charCodeAt(i))) i += 1;
   if (i >= line.end) return undefined;
@@ -2184,12 +2194,73 @@ function tableCells(text: string, line: TextLine): TextLine[] | undefined {
     while (start < end && isBlank(text.charCodeAt(start))) start += 1;
     while (end > start && isBlank(text.charCodeAt(end - 1))) end -= 1;
     if (start < end) {
-      const letters = lineLetters(text.slice(start, end));
+      const letters = lineLetters(shownText(text.slice(start, end), tokenizer));
       if (letters !== '') cells.push({ start, end, letters, sealed: line.sealed });
     }
     cellStart = j + 1;
   }
   return cells.length > 1 ? cells : undefined;
+}
+
+/** A character reference the note editor shows as its character: one of HTML's own five, `&nbsp;`, or a numeric one. */
+const CHARACTER_REFERENCE = /&(?:(amp|lt|gt|quot|apos|nbsp)|#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6}));/g;
+const NAMED_CHARACTERS: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00A0',
+};
+
+/**
+ * The text the note editor shows of the table cell `cell`, as far as its
+ * letters go: a link read by the renderer's own `tokenizer` (the inline form,
+ * then a reference every label resolves in, as `imageAt` reads an image)
+ * stands as its label, an image as nothing, a character reference as its
+ * character. The rest is kept as written — formatting is letterless, and a
+ * reference the note leaves undefined shows its letters either way. `cell`
+ * itself when the tokenizer could not be made.
+ */
+function shownText(cell: string, tokenizer: () => Tokenizer | undefined): string {
+  let out = '';
+  let pos = 0;
+  for (let i = cell.indexOf('['); i !== -1; i = cell.indexOf('[', i + 1)) {
+    if (i < pos || (i > 0 && cell.charCodeAt(i - 1) === 92)) continue;
+    const at = i > pos && cell.charCodeAt(i - 1) === 33 ? i - 1 : i;
+    const reader = tokenizer();
+    if (!reader) return cell;
+    const link = linkAt(reader, cell.slice(at));
+    if (!link) continue;
+    out += cell.slice(pos, at) + link.text;
+    pos = at + link.length;
+  }
+  out += cell.slice(pos);
+  return out.replace(
+    CHARACTER_REFERENCE,
+    (_reference, name?: string, decimal?: string, hex?: string) => {
+      if (name !== undefined) return NAMED_CHARACTERS[name];
+      const code = decimal !== undefined ? parseInt(decimal, 10) : parseInt(hex ?? '', 16);
+      return code > 0x10ffff ? '\uFFFD' : String.fromCodePoint(code);
+    },
+  );
+}
+
+/** Definitions every label resolves in. */
+const ANY_LINKS: Links = new Proxy({} as Links, {
+  get: (_links, name) => (typeof name === 'string' ? ANY_LINK : undefined),
+});
+
+/**
+ * The link or image `text` opens with as marked reads it — its `length` and
+ * the `text` it shows, a link's label and an image's nothing — or
+ * `undefined` when `text` opens with neither. Read as `imageAt` reads an
+ * image: the inline form first, then a reference every label resolves in.
+ */
+function linkAt(tokenizer: Tokenizer, text: string): { length: number; text: string } | undefined {
+  const token = tokenizer.link(text) ?? tokenizer.reflink(text, ANY_LINKS);
+  if (!token) return undefined;
+  return { length: token.raw.length, text: token.type === 'image' ? '' : token.text };
 }
 
 /**
