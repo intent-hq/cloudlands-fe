@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
+import type { InviteProgressAction } from '../shared/ipc/invite-progress';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
 import {
@@ -1243,6 +1244,23 @@ export const InviteConsentAckSchema = z.object({
 export const InviteConsentResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
   action: z.enum(['open', 'cancel']),
+});
+
+// ============================================================================
+// Invite Progress Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite progress dialog.
+// The payload contract (all five channels) is documented in
+// `src/shared/ipc/invite-progress.ts`.
+// ============================================================================
+
+export const InviteProgressAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteProgressResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  action: z.literal('cancel' satisfies InviteProgressAction),
 });
 
 // ============================================================================

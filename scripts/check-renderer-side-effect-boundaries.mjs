@@ -33,6 +33,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 28 }],
   ['src/store/renderer/seeders/invite-consent-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-notice-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  ['src/store/renderer/seeders/invite-progress-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   [
     'src/store/renderer/seeders/language-preference-bridge-seeder.ts',
     { registerMockIpcHandler: 1 },

@@ -152,6 +152,30 @@ export default defineConfig(async () => {
           './src/lib/icons/phosphor-icons.ts',
         ),
         'svelte-fa': path.resolve(__dirname, './src/lib/components/shared/icons/fa-proxy.ts'),
+        // Test-only stubs for the `?worker` subpaths imported by src/lib/utils/monaco-workers.ts.
+        // Listed before the bare `monaco-editor` alias: object aliases match in insertion
+        // order and the bare entry also claims `monaco-editor/...` subpaths, which would send
+        // them to non-existent files under the stub (intent-hq/intent#5623).
+        'monaco-editor/editor/editor.worker?worker': path.resolve(
+          __dirname,
+          './src/__mocks__/monaco-editor-worker',
+        ),
+        'monaco-editor/language/json/json.worker?worker': path.resolve(
+          __dirname,
+          './src/__mocks__/monaco-editor-worker',
+        ),
+        'monaco-editor/language/css/css.worker?worker': path.resolve(
+          __dirname,
+          './src/__mocks__/monaco-editor-worker',
+        ),
+        'monaco-editor/language/html/html.worker?worker': path.resolve(
+          __dirname,
+          './src/__mocks__/monaco-editor-worker',
+        ),
+        'monaco-editor/language/typescript/ts.worker?worker': path.resolve(
+          __dirname,
+          './src/__mocks__/monaco-editor-worker',
+        ),
         // Test-only stub: avoid resolving the real monaco-editor (heavy and ESM-export sensitive)
         'monaco-editor': path.resolve(__dirname, './src/__mocks__/monaco-editor'),
         // Test-only stub: avoid resolving protocol-adapter's complex dependency chain
