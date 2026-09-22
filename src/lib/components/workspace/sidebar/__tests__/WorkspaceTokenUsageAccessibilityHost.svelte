@@ -5,6 +5,8 @@
   import { store } from '$store/renderer/store';
   import { tokenUsageReceived } from '$store/renderer/slices/token-usage/token-usage-slice';
   import { applyLanguagePreference, type AppLocale } from '$lib/i18n/locale';
+  import { Button } from '$lib/components/ui/button';
+  import { costOnlyUsage } from './token-usage-cost-fixture';
 
   interface Props {
     theme?: 'light' | 'dark';
@@ -17,6 +19,9 @@
     messageOnly?: boolean;
     selectionMatrix?: boolean;
     scopedCosts?: boolean;
+    costOnly?: 'all' | 'mixed';
+    costAmount?: number;
+    surroundingControls?: boolean;
   }
 
   let {
@@ -30,6 +35,9 @@
     messageOnly = false,
     selectionMatrix = false,
     scopedCosts = true,
+    costOnly,
+    costAmount = 2.5,
+    surroundingControls = false,
   }: Props = $props();
   // svelte-ignore state_referenced_locally -- a mounted test host keeps one locale
   applyLanguagePreference(locale);
@@ -289,6 +297,14 @@
     );
   }
 
+  // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+  if (costOnly) {
+    // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
+    store.dispatch(
+      tokenUsageReceived(workspaceId, costOnlyUsage(costAmount, costOnly === 'mixed')),
+    );
+  }
+
   $effect(() => {
     const root = document.documentElement;
     root.classList.toggle('light', theme === 'light');
@@ -325,6 +341,9 @@
           <div class="sidebar-placement-spacer shrink-0" aria-hidden="true"></div>
         {/if}
         <div class="mt-auto shrink-0 px-6 pb-4 pt-5">
+          {#if surroundingControls}
+            <Button data-testid="preceding-workspace-control">Previous workspace action</Button>
+          {/if}
           <div
             class="relative flex h-24 flex-col justify-end overflow-hidden rounded-lg border border-border bg-sidebar p-2"
             data-testid="token-usage-test-width"
@@ -349,6 +368,12 @@
         class="absolute inset-3 rounded-xl border border-border bg-card"
         aria-hidden="true"
       ></div>
+      {#if surroundingControls}
+        <div class="relative m-8 flex gap-2">
+          <Button data-testid="following-workspace-control">Next workspace action</Button>
+          <Button data-testid="last-workspace-control">Last workspace action</Button>
+        </div>
+      {/if}
     </main>
   </div>
 </section>

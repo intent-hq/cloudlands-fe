@@ -101,7 +101,12 @@
   const crossFilterMessageCount = $derived(
     crossFilterRows.reduce((sum, row) => sum + row.humanMessages + row.agentMessages, 0),
   );
-  const hasData = $derived(processedTokens > 0 || crossFilterMessageCount > 0);
+  const hasData = $derived(
+    processedTokens > 0 ||
+      crossFilterMessageCount > 0 ||
+      totals.cost !== undefined ||
+      crossFilterRows.some((row) => row.totals.cost !== undefined),
+  );
   const isUpdating = $derived($usage$.isStale);
   const detailsId = $derived(`workspace-token-usage-details-${workspaceId}`);
   const titleId = $derived(`workspace-token-usage-title-${workspaceId}`);
@@ -247,7 +252,13 @@
           agentMessages: summary.agentMessages,
         };
       })
-      .filter((row) => row.tokens > 0 || row.humanMessages > 0 || row.agentMessages > 0)
+      .filter(
+        (row) =>
+          row.tokens > 0 ||
+          row.humanMessages > 0 ||
+          row.agentMessages > 0 ||
+          row.totals.cost !== undefined,
+      )
       .sort((a, b) => b.tokens - a.tokens || a.label.localeCompare(b.label));
   }
 
@@ -524,7 +535,7 @@
     expanded = !expanded;
   }
 
-  function handleDocumentPointerDown(event: PointerEvent) {
+  function handleDocumentOutsideInteraction(event: PointerEvent | FocusEvent) {
     if (!expanded || !(event.target instanceof Node)) return;
     if (disclosureElement?.contains(event.target) || detailsElement?.contains(event.target)) {
       return;
@@ -534,20 +545,44 @@
 
   function handleDocumentKeydown(event: KeyboardEvent) {
     suppressTouchFocusPreview = false;
-    if (!expanded || event.key !== 'Escape') return;
-    event.preventDefault();
-    closeOverlay({ restoreFocus: true });
+    if (!expanded) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeOverlay({ restoreFocus: true });
+    } else if (event.key === 'Tab' && detailsElement) {
+      const controls = Array.from(
+        detailsElement.querySelectorAll<HTMLButtonElement>('button:not([disabled])'),
+      ).filter((control) => control.tabIndex >= 0);
+      const first = controls[0];
+      const last = controls.at(-1);
+      const active = document.activeElement;
+      // The body portal must occupy the disclosure's logical place in the tab order.
+      if (active === disclosureElement && !event.shiftKey && first) {
+        event.preventDefault();
+        first.focus();
+      } else if (active === first && event.shiftKey) {
+        event.preventDefault();
+        disclosureElement?.focus();
+      } else if (active === last && !event.shiftKey) {
+        // Let native Tab find the next workspace control, not a portal sibling.
+        // Inert immediately excludes the closing portal before Svelte removes it.
+        detailsElement.inert = true;
+        closeOverlay({ restoreFocus: true });
+      }
+    }
   }
 
   onMount(() => {
-    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+    document.addEventListener('pointerdown', handleDocumentOutsideInteraction, true);
     document.addEventListener('keydown', handleDocumentKeydown);
+    document.addEventListener('focusin', handleDocumentOutsideInteraction);
     window.addEventListener('resize', updateOverlayPosition);
     window.addEventListener('scroll', updateOverlayPosition, true);
 
     return () => {
-      document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+      document.removeEventListener('pointerdown', handleDocumentOutsideInteraction, true);
       document.removeEventListener('keydown', handleDocumentKeydown);
+      document.removeEventListener('focusin', handleDocumentOutsideInteraction);
       window.removeEventListener('resize', updateOverlayPosition);
       window.removeEventListener('scroll', updateOverlayPosition, true);
     };
