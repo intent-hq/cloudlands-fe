@@ -179,11 +179,10 @@ import {
   adjustDelegatedParentCount,
   adjustRetiredCount,
   adjustScopeCount,
-  agentDelegationParentOf,
-  agentListBinOf,
   hydrateAgentsRequested,
   removeAgent,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { agentDelegationParentOf, classifyAgentScope } from '$shared/utils/agent-scope';
 import { removeWatchedAgent } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   destroyOwnedTabsForWorkspace,
@@ -1359,7 +1358,7 @@ function scopeCountsGenerationOf(workspaceId: string): number {
  * hydration read, and loaded rows are authoritative once hydrated.
  */
 function adjustBinCounts(workspaceId: string, session: StoredAgentSession, delta: 1 | -1): void {
-  const bin = agentListBinOf(session);
+  const bin = classifyAgentScope(session);
   appStore.dispatch(adjustScopeCount(workspaceId, bin, delta));
   if (bin !== 'delegated') return;
   const parentAgentId = agentDelegationParentOf(session);

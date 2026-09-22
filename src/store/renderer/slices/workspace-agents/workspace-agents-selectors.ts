@@ -1,5 +1,6 @@
 import { store } from '../../store';
 import type { AgentId, AgentSession } from '$shared/types';
+import { classifyAgentScope } from '$shared/utils/agent-scope';
 import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
@@ -229,6 +230,10 @@ export function resolveEmptyLayoutAgent(
       );
     if (initialAgent) return initialAgent;
   }
+  // The primary candidate must be a top-level row (shared `agent-scope` bin —
+  // neither delegated nor background). Forked sessions (`parentSessionId`) are
+  // excluded as a separate rule: a fork is not delegated, but it is a
+  // continuation of another session rather than the workspace's own primary.
   const orderedPrimaryAgents = agents
     .filter(
       (agent) =>
@@ -239,10 +244,8 @@ export function resolveEmptyLayoutAgent(
         agent.isInitialAgent !== true &&
         agent.metadata?.isInitialAgent !== true &&
         agent.agentMetadata?.isInitialAgent !== true &&
-        agent.isBackground !== true &&
-        agent.metadata?.isBackground !== true &&
-        !agent.parentSessionId &&
-        typeof agent.metadata?.createdByAgentId !== 'string',
+        classifyAgentScope(agent) === 'topLevel' &&
+        !agent.parentSessionId,
     )
     .sort(byCreatedOrder);
   let newestAgent: AgentSession | null = null;
