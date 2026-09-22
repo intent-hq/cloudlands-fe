@@ -900,6 +900,9 @@
     highlightedIndex >= 0 &&
     highlightedIndex < selectableOptions.length &&
     selectableOptions[highlightedIndex]?.value === option.value}
+  {@const submenuOpen =
+    option.type === 'submenu' && !!option.children?.length && openSubmenu === option.value}
+  {@const submenuId = `${uid}-submenu-${option.value}`}
   <!-- Separator type -->
   {#if option.type === 'separator'}
     <div class="my-1 h-px bg-border"></div>
@@ -930,6 +933,7 @@
         aria-expanded={popupRole === 'menu' && option.type === 'submenu'
           ? openSubmenu === option.value
           : undefined}
+        aria-controls={submenuOpen ? submenuId : undefined}
         tabindex={isHighlighted && !option.disabled ? 0 : -1}
       >
         {#if item}
@@ -1000,11 +1004,12 @@
         {/if}
       </Button>
 
-      <!-- Submenu (rendered in portal for proper positioning) -->
+      <!-- Submenu (rendered in portal for proper positioning; owned via the trigger's aria-controls) -->
       {#if option.type === 'submenu' && option.children?.length && openSubmenu === option.value}
         <Portal zIndex={101}>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
+            id={submenuId}
             data-submenu
             in:panelEnter={menuOverlayTransition.enter}
             out:panelExit={menuOverlayTransition.exit}

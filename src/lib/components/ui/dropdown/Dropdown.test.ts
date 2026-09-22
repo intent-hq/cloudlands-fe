@@ -636,6 +636,91 @@ describe('Dropdown compatibility modes', () => {
   });
 });
 
+// Regression for intent-hq/intent#5601: the submenu flyout is portaled outside the
+// dropdown content, so a real pointer's `mousedown` on a leaf closed the dropdown
+// before the `click` could select it.
+describe('Dropdown portaled submenu ownership', () => {
+  beforeEach(setupDropdownEnv);
+  afterEach(cleanupDropdownEnv);
+
+  function submenuOptions(childAction: () => void) {
+    return [
+      { value: 'a', label: 'Alpha' },
+      {
+        value: 'more',
+        label: 'More',
+        type: 'submenu' as const,
+        children: [{ value: 'child', label: 'Child action', onclick: childAction }],
+      },
+    ];
+  }
+
+  async function openWithSubmenu(container: HTMLElement) {
+    await fireEvent.click(container.querySelector('button')!);
+    await fireEvent.mouseOver(screen.getByRole('option', { name: 'More' }));
+    return screen.findByRole('menuitem', { name: 'Child action' });
+  }
+
+  it('selects a portaled submenu leaf on mousedown followed by click', async () => {
+    const childAction = vi.fn();
+    const onopenchange = vi.fn();
+    const { container } = render(Dropdown, {
+      props: {
+        searchable: false,
+        portal: true,
+        onopenchange,
+        options: submenuOptions(childAction),
+      },
+    });
+    const leaf = await openWithSubmenu(container);
+
+    await fireEvent.mouseDown(leaf);
+    await fireEvent.click(leaf);
+
+    expect(childAction).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(onopenchange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('does not treat another dropdown’s open submenu as its own popup', async () => {
+    const first = render(Dropdown, {
+      props: { searchable: false, portal: true, options: submenuOptions(vi.fn()) },
+    });
+    const second = render(Dropdown, {
+      props: { searchable: false, portal: true, options: submenuOptions(vi.fn()) },
+    });
+    await fireEvent.click(first.container.querySelector('button')!);
+    const firstListbox = screen.getByRole('listbox');
+    await fireEvent.click(second.container.querySelector('button')!);
+    const secondListbox = screen.getAllByRole('listbox').find((el) => el !== firstListbox)!;
+    expect(secondListbox).toBeTruthy();
+    const secondMore = screen
+      .getAllByRole('option', { name: 'More' })
+      .find((el) => secondListbox.contains(el))!;
+    await fireEvent.mouseOver(secondMore);
+    const leaf = await screen.findByRole('menuitem', { name: 'Child action' });
+
+    await fireEvent.mouseDown(leaf);
+
+    await waitFor(() => expect(document.body.contains(firstListbox)).toBe(false));
+    expect(document.body.contains(secondListbox)).toBe(true);
+  });
+
+  it('still dismisses on a plain outside mousedown while the submenu is open', async () => {
+    const childAction = vi.fn();
+    const { container } = render(Dropdown, {
+      props: { searchable: false, portal: true, options: submenuOptions(childAction) },
+    });
+    await openWithSubmenu(container);
+
+    await fireEvent.mouseDown(document.body);
+
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(childAction).not.toHaveBeenCalled();
+  });
+});
+
 describe('Dropdown caller migration ledger', () => {
   it('classifies every authoritative caller by its actual behavior', () => {
     const inventoryEntry = buildUiComponentInventory().components.find(
