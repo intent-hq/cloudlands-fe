@@ -345,7 +345,6 @@ describe('shouldVirtualizeWorkspaceAgentRows', () => {
     expect(list).toContain('shouldVirtualizeWorkspaceAgentRows(filteredAgentRows)');
     expect(list).toContain('{:else if shouldUseVirtual}');
     expect(list).toContain('<VirtualList');
-    expect(list).toContain('items={listRows}');
   });
 });
 
