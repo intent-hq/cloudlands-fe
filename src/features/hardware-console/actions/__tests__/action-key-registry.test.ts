@@ -4,10 +4,18 @@ import { m } from '$shared/paraglide/messages.js';
 import type { Workspace } from '$shared/types';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 
-const { loggerWarnMock } = vi.hoisted(() => ({ loggerWarnMock: vi.fn() }));
+const { loggerErrorMock, loggerWarnMock } = vi.hoisted(() => ({
+  loggerErrorMock: vi.fn(),
+  loggerWarnMock: vi.fn(),
+}));
 
 vi.mock('$lib/utils/client-logger', () => ({
-  createLogger: () => ({ error: vi.fn(), warn: loggerWarnMock, info: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({
+    error: loggerErrorMock,
+    warn: loggerWarnMock,
+    info: vi.fn(),
+    debug: vi.fn(),
+  }),
 }));
 
 vi.mock('../../voice/voice-recorder', () => ({
@@ -2162,14 +2170,19 @@ describe('close-tab', () => {
   });
 
   it('catches and logs a throwing cascade without throwing', async () => {
+    const error = new Error('boom');
     cascadeMock.mockImplementationOnce(() => {
-      throw new Error('boom');
+      throw error;
     });
     const { context, showHint } = makeContext(makeState());
     expect(() => definition().execute(context)).not.toThrow();
     await vi.waitFor(() => {
-      expect(cascadeMock).toHaveBeenCalledTimes(1);
+      expect(loggerErrorMock).toHaveBeenCalledExactlyOnceWith(
+        expect.any(String),
+        expect.objectContaining({ error }),
+      );
     });
+    expect(cascadeMock).toHaveBeenCalledTimes(1);
     expect(showHint).not.toHaveBeenCalled();
   });
 });
