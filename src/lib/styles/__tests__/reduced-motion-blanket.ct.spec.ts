@@ -166,3 +166,58 @@ test('catalog overrides keep the token and every blanket surface in agreement', 
   await page.evaluate(() => document.documentElement.classList.remove('catalog-full-motion'));
   expectAll(await readMotion(page), REDUCED);
 });
+
+// app.css's canonical scrollbar rule must not hand every element its own
+// `scrollbar-color` declaration: under the blanket's non-zero duration each restyle
+// of such an element started a `scrollbar-color` transition, so a busy subtree (the
+// diagram workbench rendering 43 cases) paid thousands of live transitions per pass
+// and reduced-motion readiness ran 3× slower than full motion (intent-hq/intent#5687).
+test('reduced motion: restyling descendants starts no scrollbar-color transitions', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // The media flip restyles the whole document once; let everything it started finish.
+  await page.waitForFunction(() => document.getAnimations().length === 0);
+  const result = await page.evaluate(async (id) => {
+    const className = `${id}-restyle`;
+    const style = document.createElement('style');
+    style.textContent = `.${className} { color: rgb(1, 2, 3); }`;
+    document.head.append(style);
+    const host = document.createElement('div');
+    const nodes = Array.from({ length: 40 }, () =>
+      host.appendChild(document.createElement('span')),
+    );
+    document.body.append(host);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    const transitionsOf = (property: string) =>
+      document
+        .getAnimations()
+        .filter((a) => a instanceof CSSTransition && a.transitionProperty === property).length;
+    const settled = document.getAnimations().length;
+    for (const node of nodes) node.classList.add(className);
+    void getComputedStyle(nodes[0]).color;
+    return {
+      settled,
+      color: transitionsOf('color'),
+      scrollbarColor: transitionsOf('scrollbar-color'),
+    };
+  }, PROBE_ID);
+  expect(result.settled).toBe(0);
+  // The blanket shortens transitions rather than removing them, so the restyle is observable.
+  expect(result.color).toBe(40);
+  expect(result.scrollbarColor).toBe(0);
+});
+
+test('the canonical scrollbar-color reaches descendants by inheritance', async ({ page }) => {
+  const result = await page.evaluate((id) => {
+    const wrapper = document.createElement('div');
+    const leaf = wrapper.appendChild(document.createElement('span'));
+    document.getElementById(id)!.append(wrapper);
+    const color = (element: Element) => getComputedStyle(element).scrollbarColor;
+    return { root: color(document.documentElement), leaf: color(leaf) };
+  }, PROBE_ID);
+  expect(result.root).not.toBe('auto');
+  expect(result.leaf).toBe(result.root);
+});
