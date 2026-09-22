@@ -57,6 +57,8 @@ export type UserPreferencesState = {
   shellTransparencyEnabled: boolean;
   /** Whether motion is reduced while the machine runs on battery. */
   reduceMotionOnBattery: boolean;
+  /** Whether the Multiplayer lab (experimental) is enabled. */
+  labsMultiplayerEnabled: boolean;
   agentFontStyle: AgentFontStyle;
   noteFontStyle: NoteFontStyle;
   codeFontFamily: string;
@@ -107,6 +109,7 @@ export const initialState: UserPreferencesState = {
   chatAuroraEnabled: true,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
+  labsMultiplayerEnabled: false,
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   activityLogPresets: [],
@@ -277,6 +280,17 @@ export const setReduceMotionOnBattery = reduceMotionOnBatteryPreference.setActio
 
 export const toggleReduceMotionOnBattery = reduceMotionOnBatteryPreference.toggleAction;
 
+const labsMultiplayerPreference = createBooleanPreference<UserPreferencesState>({
+  sliceName: 'userPreferences',
+  field: 'labsMultiplayerEnabled',
+  setActionName: 'setLabsMultiplayerEnabled',
+  toggleActionName: 'toggleLabsMultiplayer',
+});
+
+export const setLabsMultiplayerEnabled = labsMultiplayerPreference.setAction;
+
+export const toggleLabsMultiplayer = labsMultiplayerPreference.toggleAction;
+
 export const userPreferencesReducer = createReducer<UserPreferencesState>(initialState);
 spellcheckPreference.register(userPreferencesReducer);
 showArchivedPreference.register(userPreferencesReducer);
@@ -286,6 +300,7 @@ showReasoningBlocksPreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);
+labsMultiplayerPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
   updateChannel: channel,

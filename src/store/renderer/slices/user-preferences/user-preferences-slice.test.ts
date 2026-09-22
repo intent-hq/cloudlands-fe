@@ -14,6 +14,7 @@ import {
   setGroupByRepo,
   setGithubLinkDefaultAction,
   setHasCompletedProviderSetup,
+  setLabsMultiplayerEnabled,
   setNotificationEnabled,
   setNoteFontStyle,
   setLanguagePreference,
@@ -32,6 +33,7 @@ import {
   toggleGroupByRepo,
   toggleHasCompletedProviderSetup,
   toggleChatAurora,
+  toggleLabsMultiplayer,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
   toggleShowReasoningBlocks,
@@ -55,6 +57,7 @@ import {
   selectHasCompletedProviderSetup,
   selectIsAgentMonospace,
   selectIsNoteMonospace,
+  selectLabsMultiplayerEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectNoteFontStyleLabel,
@@ -376,6 +379,19 @@ describe('userPreferencesReducer', () => {
     });
   });
 
+  describe('labs preference actions', () => {
+    it('defaults the Multiplayer lab to disabled', () => {
+      expect(initialState.labsMultiplayerEnabled).toBe(false);
+    });
+
+    it('sets and toggles labsMultiplayerEnabled', () => {
+      const enabled = userPreferencesReducer(initialState, setLabsMultiplayerEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsMultiplayer());
+      expect(enabled.labsMultiplayerEnabled).toBe(true);
+      expect(disabled.labsMultiplayerEnabled).toBe(false);
+    });
+  });
+
   describe('language preference actions', () => {
     it('defaults to the system preference', () => {
       expect(initialState.languagePreference).toBe('system');
@@ -459,6 +475,16 @@ describe('userPreferencesReducer', () => {
       expect(selectChatAuroraEnabled.select({} as any)).toBe(true);
       expect(selectShellTransparencyEnabled.select({} as any)).toBe(true);
       expect(selectReduceMotionOnBattery.select({} as any)).toBe(false);
+    });
+
+    it('selects labsMultiplayerEnabled (default false, missing slice safe)', () => {
+      expect(selectLabsMultiplayerEnabled.select(state)).toBe(false);
+      expect(
+        selectLabsMultiplayerEnabled.select({
+          userPreferences: { ...initialState, labsMultiplayerEnabled: true },
+        } as any),
+      ).toBe(true);
+      expect(selectLabsMultiplayerEnabled.select({} as any)).toBe(false);
     });
 
     it('selects font settings from userPreferences', () => {

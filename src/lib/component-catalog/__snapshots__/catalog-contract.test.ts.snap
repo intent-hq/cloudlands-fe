@@ -2689,6 +2689,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -2993,6 +3009,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -3297,6 +3329,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -3530,6 +3578,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -3834,6 +3898,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -4138,6 +4218,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
@@ -4442,6 +4538,22 @@ exports[`catalog DOM, token, and accessibility contracts > 'pattern:settings:sch
                                 <div class="min-w-0 text-foreground truncate type-caption">
                                   <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
                                     "Advanced"
+                  <div>
+                    <button class="[&_svg]:pointer-events-none [&_svg]:shrink-0 [--button-icon-padding:0.75rem] active:bg-active aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:pointer-events-none aria-invalid:ring-1 aria-invalid:ring-danger bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none duration-spring-fast ease-spring-fast font-inherit font-normal gap-1.5 group/button h-auto hover:bg-hover inline-flex isolate items-center justify-start motion-reduce:transition-none p-0 relative rounded-lg shrink-0 text-left text-muted-foreground transition-[color,opacity] type-caption w-full whitespace-nowrap" data-settings-tab="labs" data-slot="button" type="button">
+                      <span aria-hidden="true" class="-z-10 absolute bg-transparent duration-spring-fast ease-spring-fast inset-0 motion-reduce:transition-none pointer-events-none shadow-[0_0_0_1px_transparent] transition-[box-shadow,background-color,filter]" data-slot="button-surface">
+                      <span class="[&_svg]:duration-spring-fast [&_svg]:transition-[stroke-width] flex-1 inline-flex items-center max-w-full min-w-0 motion-reduce:[&_svg]:transition-none relative" data-slot="button-content">
+                        <span class="flex-1 max-w-full min-w-0 truncate" data-slot="button-label">
+                          <div class="flex gap-2 items-center min-h-8 min-w-0 px-3 py-0 w-full" data-density="default" data-slot="list-row">
+                            <div class="flex items-center justify-center shrink-0">
+                              <span class="flex items-center justify-center shrink-0 size-4" data-slot="settings-sidebar-icon">
+                                <svg aria-hidden="true" role="img">
+                                  <rect>
+                                  <path>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex gap-2 items-baseline min-w-0">
+                                <div class="min-w-0 text-foreground truncate type-caption">
+                                  <span class="block font-normal truncate type-body" data-settings-sidebar-label="">
+                                    "Labs"
               <section aria-labelledby="settings-group-agents">
                 <h2 class="font-normal px-3 text-muted-foreground type-caption" id="settings-group-agents">
                   "Agents"
