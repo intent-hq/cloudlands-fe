@@ -127,10 +127,13 @@ import {
   selectWorkspaceTasksLoading,
 } from '../../workspace-tasks/workspace-tasks-selectors';
 import {
+  bulkUpdateWorkspaceEntities,
   loadRecencyData,
   loadWorkspacesRequested,
+  refreshWorkspaceMembershipRequested,
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
+  updateWorkspaceEntity,
 } from '../../workspace/workspace-slice';
 import {
   selectWorkspaceById,
@@ -234,6 +237,31 @@ function* refreshTokenUsage(workspaceId: string): SagaGenerator<void> {
     yield* put(tokenUsageFetchFailed(workspaceId));
     throw error;
   }
+}
+
+/**
+ * Targeted `workspace.get` (§5.1) that merges only the membership summary
+ * onto the stored row. Invite create / revoke deltas carry no counts, and
+ * the archive teardown's per-member `memberCount` frames say nothing about
+ * the invites it revoked, so the row is re-derived from the daemon instead
+ * of patched client-side. Never a per-workspace fan-out: one read per
+ * delta-bearing workspace, coalesced by the watcher.
+ */
+function* refreshMembershipSummary(workspaceId: string): SagaGenerator<void> {
+  const workspace: Awaited<ReturnType<typeof appClient.workspaces.get>> = yield* call(
+    [appClient.workspaces, appClient.workspaces.get],
+    workspaceId,
+  );
+  if (!workspace) return;
+  const changes: Partial<Workspace> = {};
+  if (typeof workspace.memberCount === 'number' && Number.isFinite(workspace.memberCount)) {
+    changes.memberCount = workspace.memberCount;
+  }
+  if (typeof workspace.openInviteCount === 'number' && Number.isFinite(workspace.openInviteCount)) {
+    changes.openInviteCount = workspace.openInviteCount;
+  }
+  if (Object.keys(changes).length === 0) return;
+  yield* put(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
 }
 
 function* refreshPrStatus(workspaceId: string, force: boolean): SagaGenerator<void> {
@@ -1027,6 +1055,19 @@ function* tokenUsageWorker(
   yield* runWorkspaceRead(scheduler, 'tokenUsage', action.payload[0], refreshTokenUsage);
 }
 
+function* membershipSummaryWorker(
+  scheduler: WorkspaceReadScheduler,
+  action: ReturnType<typeof refreshWorkspaceMembershipRequested>,
+) {
+  yield* runWorkspaceRead(
+    scheduler,
+    'membership',
+    action.payload[0],
+    refreshMembershipSummary,
+    false,
+  );
+}
+
 function* taskAgentLinksWorker(
   scheduler: WorkspaceReadScheduler,
   action: ReturnType<typeof hydrateTaskAgentAssociationsRequested>,
@@ -1223,6 +1264,16 @@ export function* lifecycleReadSaga(): SagaGenerator<void> {
         pendingInitialEventReads,
       ),
       takeLeadingByWorkspace(fetchWorkspaceTokenUsage, tokenUsageWorker, scheduler),
+      // Roster / invite deltas arrive in bursts (archive teardown emits one
+      // frame per removed member plus one per revoked invite): single-flight
+      // per workspace with one trailing re-read so the row converges on the
+      // post-burst summary.
+      takeSingleFlightInContext(
+        refreshWorkspaceMembershipRequested,
+        (action) => action.payload[0],
+        membershipSummaryWorker,
+        scheduler,
+      ),
       takeLatestByContext(
         initContextForWorkspace,
         (action) => ({
