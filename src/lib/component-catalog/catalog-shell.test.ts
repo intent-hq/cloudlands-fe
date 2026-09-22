@@ -12,7 +12,17 @@
 //   src/routes/(app)/workspace/[id]/terminal-test/+page.svelte,
 //   src/routes/(app)/workspace/creating/+page.svelte
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -59,17 +69,24 @@ const movedAsyncDataBaselinePaths = [
   ['src/routes/workspace/[id]/+page.svelte', 'src/routes/(app)/workspace/[id]/+page.svelte'],
 ] as const;
 
-const hostBoundSpecifierPrefixes = String.raw`\$store\/|\$features\/|\$lib\/client|\$lib\/electron-bridge|electron`;
-const forbiddenImportLine = new RegExp(
-  `from ['"](?:${hostBoundSpecifierPrefixes})|import ['"]\\$store\\/`,
-);
-const hostBoundSpecifier = new RegExp(`^(?:${hostBoundSpecifierPrefixes})`);
+const srcRoot = path.join(root, 'src');
+const hostBoundSpecifier =
+  /^(?:\$store\/|\$features\/|\$lib\/client|\$lib\/electron-bridge|electron)/;
+const sharedSpecifier = /^\$(?:lib|shared)\//;
+const aliasDirectories: Record<string, string> = {
+  '$features/': 'features',
+  '$lib/': 'lib',
+  '$shared/': 'shared',
+};
+// Compiled from messages/*.json and gitignored; it imports nothing beyond its own output.
+const generatedSpecifierPrefixes = ['$shared/paraglide/'];
 
 // Presentational feature components may back catalog fixtures: the axe gate has to cover the exact
 // production DOM (tooltip trigger + sr-only label) and only the feature component renders it. Each
-// (file, specifier) pair below is exempt from the line guard solely because the closure test proves
-// the module — and everything it imports at runtime inside its feature family — carries no store,
-// host, or cross-feature dependency; a type-only import is erased and pulls nothing into the bundle.
+// (file, specifier) pair below is exempt from the import guard solely because the closure test proves
+// the module — everything it imports at runtime inside its feature family, plus the $lib/$shared
+// modules those import directly — carries no store, host, or cross-feature dependency; a type-only
+// import is erased and pulls nothing into the bundle.
 const presentationalFeatureImports: Record<string, readonly string[]> = {
   'src/lib/component-catalog/renderers/PrincipalAvatarCatalogPreview.svelte': [
     '$features/notes/note-presence/NotePresenceAvatars.svelte',
@@ -94,9 +111,14 @@ function parseImports(source: string): ParsedImport[] {
   }));
 }
 
-function resolveModule(fromFile: string, specifier: string): string | undefined {
-  const base = specifier.startsWith('$features/')
-    ? path.join(root, 'src/features', specifier.slice('$features/'.length))
+function resolveModule(
+  fromFile: string,
+  specifier: string,
+  sourceRoot: string,
+): string | undefined {
+  const alias = Object.keys(aliasDirectories).find((prefix) => specifier.startsWith(prefix));
+  const base = alias
+    ? path.join(sourceRoot, aliasDirectories[alias]!, specifier.slice(alias.length))
     : specifier.startsWith('.')
       ? path.resolve(path.dirname(fromFile), specifier)
       : undefined;
@@ -110,8 +132,70 @@ function resolveModule(fromFile: string, specifier: string): string | undefined 
   ].find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
 }
 
-function importsSpecifier(line: string, specifier: string): boolean {
-  return line.includes(`'${specifier}'`) || line.includes(`"${specifier}"`);
+function boundaryViolations(
+  source: string,
+  relativeFile: string,
+  allowlisted: readonly string[],
+): string[] {
+  return parseImports(source).flatMap(({ specifier, line }) =>
+    hostBoundSpecifier.test(specifier) && !allowlisted.includes(specifier)
+      ? [`${relativeFile}:${line}`]
+      : [],
+  );
+}
+
+// Walks the runtime imports of each allowlisted module: fully within the allowlisted feature
+// families, and one level into the $lib/$shared modules those families import directly.
+function runtimeHostViolations(
+  importingFile: string,
+  specifiers: readonly string[],
+  sourceRoot: string,
+): string[] {
+  const projectRoot = path.dirname(sourceRoot);
+  const violations: string[] = [];
+  const imports = parseImports(readFileSync(importingFile, 'utf8'));
+  const families = specifiers.map((specifier) => `${path.posix.dirname(specifier)}/`);
+  const queue: { file: string; shared: boolean }[] = [];
+  for (const specifier of specifiers) {
+    const uses = imports.filter((entry) => entry.specifier === specifier);
+    if (uses.length === 0) {
+      violations.push(
+        `${path.relative(projectRoot, importingFile)} no longer imports ${specifier}`,
+      );
+      continue;
+    }
+    if (uses.every((entry) => entry.typeOnly)) continue;
+    const resolved = resolveModule(importingFile, specifier, sourceRoot);
+    if (resolved) queue.push({ file: resolved, shared: false });
+    else violations.push(`${specifier} unresolvable`);
+  }
+
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const { file, shared } = queue.shift()!;
+    if (visited.has(file)) continue;
+    visited.add(file);
+    const moduleFile = path.relative(projectRoot, file);
+    for (const entry of parseImports(readFileSync(file, 'utf8'))) {
+      if (entry.typeOnly) continue;
+      const location = `${moduleFile}:${entry.line} (${entry.specifier})`;
+      const staysInFamily =
+        entry.specifier.startsWith('.') ||
+        families.some((family) => entry.specifier.startsWith(family));
+      if (!staysInFamily && hostBoundSpecifier.test(entry.specifier)) {
+        violations.push(location);
+        continue;
+      }
+      if (shared) continue;
+      const crossesToShared = sharedSpecifier.test(entry.specifier);
+      if (!staysInFamily && !crossesToShared) continue;
+      if (generatedSpecifierPrefixes.some((prefix) => entry.specifier.startsWith(prefix))) continue;
+      const next = resolveModule(file, entry.specifier, sourceRoot);
+      if (next) queue.push({ file: next, shared: crossesToShared });
+      else violations.push(`${location} unresolvable`);
+    }
+  }
+  return violations;
 }
 
 function publicRoute(relativeFile: string): string {
@@ -182,14 +266,11 @@ describe('catalog route shell', () => {
           'src/lib/component-catalog/renderers/SubscriptionRowsCatalogPreview.svelte' ||
         relativeFile === 'src/lib/component-catalog/subscription-rows/subscription-row-fixtures.ts';
       if (isStoreSeededSubscriptionFixture) return [];
-      const allowlisted = presentationalFeatureImports[relativeFile] ?? [];
-      return readFileSync(file, 'utf8')
-        .split('\n')
-        .flatMap((line, index) => {
-          if (!forbiddenImportLine.test(line)) return [];
-          if (allowlisted.some((specifier) => importsSpecifier(line, specifier))) return [];
-          return [`${relativeFile}:${index + 1}`];
-        });
+      return boundaryViolations(
+        readFileSync(file, 'utf8'),
+        relativeFile,
+        presentationalFeatureImports[relativeFile] ?? [],
+      );
     });
     expect(violations).toEqual([]);
 
@@ -201,44 +282,63 @@ describe('catalog route shell', () => {
   });
 
   it('keeps allowlisted presentational feature modules free of runtime host dependencies', () => {
-    const violations: string[] = [];
-    for (const [relativeFile, specifiers] of Object.entries(presentationalFeatureImports)) {
-      const importingFile = path.join(root, relativeFile);
-      const imports = parseImports(readFileSync(importingFile, 'utf8'));
-      const allowedFamilies = specifiers.map((specifier) => `${path.posix.dirname(specifier)}/`);
-      const queue: string[] = [];
-      for (const specifier of specifiers) {
-        const uses = imports.filter((entry) => entry.specifier === specifier);
-        expect(uses, `${relativeFile} no longer imports allowlisted ${specifier}`).not.toEqual([]);
-        if (uses.every((entry) => entry.typeOnly)) continue;
-        const resolved = resolveModule(importingFile, specifier);
-        expect(resolved, `${specifier} does not resolve to a source file`).toBeDefined();
-        queue.push(resolved!);
-      }
-
-      const visited = new Set<string>();
-      while (queue.length > 0) {
-        const file = queue.shift()!;
-        if (visited.has(file)) continue;
-        visited.add(file);
-        const moduleFile = path.relative(root, file);
-        for (const entry of parseImports(readFileSync(file, 'utf8'))) {
-          if (entry.typeOnly) continue;
-          const location = `${moduleFile}:${entry.line} (${entry.specifier})`;
-          const staysInFamily =
-            entry.specifier.startsWith('.') ||
-            allowedFamilies.some((family) => entry.specifier.startsWith(family));
-          if (staysInFamily) {
-            const next = resolveModule(file, entry.specifier);
-            if (next) queue.push(next);
-            else violations.push(`${location} unresolvable`);
-          } else if (hostBoundSpecifier.test(entry.specifier)) {
-            violations.push(location);
-          }
-        }
-      }
-    }
+    const violations = Object.entries(presentationalFeatureImports).flatMap(
+      ([relativeFile, specifiers]) =>
+        runtimeHostViolations(path.join(root, relativeFile), specifiers, srcRoot),
+    );
     expect(violations).toEqual([]);
+  });
+
+  it('matches allowlist exemptions on the import specifier, not on line text', () => {
+    const allowlisted = ['$features/presence/components/presence-person'];
+    const source = [
+      '<script lang="ts">',
+      "  import { presencePersonLabel } from '$features/presence/components/presence-person';",
+      "  import PresenceTypingIndicator from '$features/presence/components/PresenceTypingIndicator.svelte'; // follows '$features/presence/components/presence-person'",
+      '</script>',
+    ].join('\n');
+    expect(boundaryViolations(source, 'renderer.svelte', allowlisted)).toEqual([
+      'renderer.svelte:3',
+    ]);
+  });
+
+  it('sees host dependencies one level into the $lib modules an allowlisted module imports', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'catalog-guard-'));
+    try {
+      const tmpSrc = path.join(tmp, 'src');
+      const write = (relativeFile: string, content: string) => {
+        const file = path.join(tmpSrc, relativeFile);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, content);
+        return file;
+      };
+      const renderer = write(
+        'lib/component-catalog/renderers/Preview.svelte',
+        '<script lang="ts">\n  import Stack from \'$features/presence/components/Stack.svelte\';\n</script>',
+      );
+      write(
+        'features/presence/components/Stack.svelte',
+        '<script lang="ts">\n  import { remoteCursorColor } from \'$lib/components/tiptap/RemoteCursorDecorations\';\n</script>',
+      );
+      const decorations = 'lib/components/tiptap/RemoteCursorDecorations.ts';
+      const specifiers = ['$features/presence/components/Stack.svelte'];
+
+      write(
+        decorations,
+        "import { Plugin } from '@tiptap/pm/state';\nexport const remoteCursorColor = 1;\n",
+      );
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([]);
+
+      write(
+        decorations,
+        "import { Plugin } from '@tiptap/pm/state';\nimport { x } from '$store/anything';\n",
+      );
+      expect(runtimeHostViolations(renderer, specifiers, tmpSrc)).toEqual([
+        'src/lib/components/tiptap/RemoteCursorDecorations.ts:2 ($store/anything)',
+      ]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it('uses canonical controls throughout the catalog workspace and previews', () => {
