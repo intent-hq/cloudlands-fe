@@ -90,15 +90,58 @@ describe('createAgentModelMutator — unlocked', () => {
     await expect(mutator.reconcileEffort(AGENT, WORKSPACE, 'high', ['low', 'high'])).resolves.toBe(
       false,
     );
-    expect(mocks.reconcileAgentReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, 'high', [
-      'low',
+    expect(mocks.reconcileAgentReasoningEffort).toHaveBeenCalledWith(
+      AGENT,
+      WORKSPACE,
       'high',
-    ]);
+      ['low', 'high'],
+      { canMutate: expect.any(Function) },
+    );
   });
 
   it('applyEffort forwards the exact arguments and returns the writer result', async () => {
     await expect(mutator.applyEffort(AGENT, WORKSPACE, null, 'high')).resolves.toBe(true);
-    expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, null, 'high');
+    expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, null, 'high', {
+      canMutate: expect.any(Function),
+    });
+  });
+});
+
+describe('createAgentModelMutator — canMutate handed to the effort writers', () => {
+  function canMutateOf(mock: ReturnType<typeof vi.fn>): () => boolean {
+    const options = mock.mock.calls.at(-1)?.at(-1) as { canMutate?: () => boolean } | undefined;
+    if (!options?.canMutate) throw new Error('writer was not given canMutate');
+    return options.canMutate;
+  }
+
+  it('applyEffort passes a canMutate that reflects the live lock, not the entry check', async () => {
+    let locked = false;
+    const mutator = createAgentModelMutator({ isLocked: () => locked });
+    let canMutateDuringRpc: boolean | undefined;
+    let canMutateAfterFlip: boolean | undefined;
+    mocks.applyReasoningEffort.mockImplementationOnce(async () => {
+      const canMutate = canMutateOf(mocks.applyReasoningEffort);
+      canMutateDuringRpc = canMutate();
+      // The role flips while the mocked RPC is still pending.
+      locked = true;
+      canMutateAfterFlip = canMutate();
+      return false;
+    });
+
+    await expect(mutator.applyEffort(AGENT, WORKSPACE, 'low', 'high')).resolves.toBe(false);
+    expect(canMutateDuringRpc).toBe(true);
+    expect(canMutateAfterFlip).toBe(false);
+  });
+
+  it('reconcileEffort passes a canMutate that reflects the live lock', async () => {
+    let locked = false;
+    const mutator = createAgentModelMutator({ isLocked: () => locked });
+
+    await mutator.reconcileEffort(AGENT, WORKSPACE, 'high', ['low']);
+    const canMutate = canMutateOf(mocks.reconcileAgentReasoningEffort);
+    expect(canMutate()).toBe(true);
+    locked = true;
+    expect(canMutate()).toBe(false);
   });
 });
 
@@ -135,6 +178,8 @@ describe('createAgentModelMutator — call-time lock evaluation', () => {
 
     locked = false;
     await expect(mutator.applyEffort(AGENT, WORKSPACE, 'low', 'high')).resolves.toBe(true);
-    expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, 'low', 'high');
+    expect(mocks.applyReasoningEffort).toHaveBeenCalledWith(AGENT, WORKSPACE, 'low', 'high', {
+      canMutate: expect.any(Function),
+    });
   });
 });

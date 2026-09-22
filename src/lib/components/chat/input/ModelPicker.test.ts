@@ -1142,7 +1142,9 @@ describe('ModelPicker combined reasoning mode', () => {
     await selectEffort(effortListbox, 'High');
 
     await waitFor(() => {
-      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium');
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'high', 'medium', {
+        canMutate: expect.any(Function),
+      });
     });
   });
 
@@ -1752,7 +1754,9 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
 
     await waitFor(() => {
-      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none');
+      expect(applyReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', null, 'none', {
+        canMutate: expect.any(Function),
+      });
     });
   });
 });
@@ -3192,10 +3196,13 @@ describe('ModelPicker global-default vs per-agent dispatch gating', () => {
     await pickModelOne();
 
     await waitFor(() => {
-      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith('agent-1', 'ws-1', 'xhigh', [
-        'low',
-        'high',
-      ]);
+      expect(reconcileAgentReasoningEffortMock).toHaveBeenCalledWith(
+        'agent-1',
+        'ws-1',
+        'xhigh',
+        ['low', 'high'],
+        { canMutate: expect.any(Function) },
+      );
     });
   });
 

@@ -8,8 +8,10 @@
  * is what makes a caller's stale continuation safe: after any `await`, the
  * next mutation re-evaluates the live lock inside the mutator, so a role flip
  * mid-flight (owner → guest) cannot leak a write through a per-call-site
- * re-check that was forgotten. ModelPicker must reach these APIs only through
- * this module (lint-enforced).
+ * re-check that was forgotten. The reasoning-effort writers also receive the
+ * live lock as `canMutate`, so their own post-await failure rollback re-reads
+ * it too. ModelPicker must reach these APIs only through this module
+ * (lint-enforced).
  */
 import { agentClient } from '$features/agent/agent.client';
 import {
@@ -62,6 +64,7 @@ export function isSkippedMutation(value: unknown): value is SkippedMutation {
 }
 
 export function createAgentModelMutator({ isLocked }: AgentModelMutatorOptions): AgentModelMutator {
+  const writeOptions = { canMutate: () => !isLocked() };
   return {
     setSessionModel(agentId, model) {
       if (isLocked()) return false;
@@ -76,12 +79,18 @@ export function createAgentModelMutator({ isLocked }: AgentModelMutatorOptions):
 
     async reconcileEffort(agentId, workspaceId, currentEffort, supportedEfforts) {
       if (isLocked()) return false;
-      return reconcileAgentReasoningEffort(agentId, workspaceId, currentEffort, supportedEfforts);
+      return reconcileAgentReasoningEffort(
+        agentId,
+        workspaceId,
+        currentEffort,
+        supportedEfforts,
+        writeOptions,
+      );
     },
 
     async applyEffort(agentId, workspaceId, effort, previousEffort) {
       if (isLocked()) return false;
-      return applyReasoningEffort(agentId, workspaceId, effort, previousEffort);
+      return applyReasoningEffort(agentId, workspaceId, effort, previousEffort, writeOptions);
     },
   };
 }
