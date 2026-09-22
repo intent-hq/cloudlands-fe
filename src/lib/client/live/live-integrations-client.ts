@@ -58,8 +58,8 @@ interface GithubPullWire {
   baseRef: string;
   merged: boolean;
   draft: boolean;
-  /** GitHub REST `mergeable_state`; `"queued"` while the PR sits in the merge queue. */
-  mergeableState?: string;
+  /** `true` while the PR sits in the merge queue (GraphQL `isInMergeQueue`); absent when unknown. */
+  isInMergeQueue?: boolean;
 }
 
 /** Daemon `GithubIssue` (§5.27 DTO schemas — subset the preview consumes). */
@@ -74,7 +74,7 @@ interface GithubIssueWire {
 }
 
 /**
- * Collapse the wire's `state` + `merged` + `draft` + `mergeableState` into the
+ * Collapse the wire's `state` + `merged` + `draft` + `isInMergeQueue` into the
  * FE's single state. GitHub keeps `draft: true` on a closed draft PR, so
  * `closed` wins over `draft`; `queued` applies only to an open, non-draft PR.
  */
@@ -82,7 +82,7 @@ function pullRequestState(pull: GithubPullWire): GitHubPullRequestState {
   if (pull.merged === true) return 'merged';
   if (pull.state === 'closed') return 'closed';
   if (pull.draft === true) return 'draft';
-  if (pull.mergeableState === 'queued') return 'queued';
+  if (pull.isInMergeQueue === true) return 'queued';
   return 'open';
 }
 
