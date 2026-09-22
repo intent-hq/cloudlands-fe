@@ -14,6 +14,7 @@
   import Header from '$lib/components/ui/Header.svelte';
   import { formatInteger } from '$lib/i18n/format';
   import {
+    buildWorkspaceAgentListRows,
     filterWorkspaceAgentRows,
     getFlatWorkspaceAgentRows,
     isBackgroundAgentSession as isBackgroundAgent,
@@ -21,7 +22,9 @@
     isRetiredAgentSession as isRetiredAgent,
     shouldVirtualizeWorkspaceAgentRows,
     WORKSPACE_AGENT_ROW_HEIGHT,
+    WORKSPACE_AGENT_ROW_INDENT,
     WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
+    type WorkspaceAgentListRow,
   } from './workspace-agents-list-utils';
   import { m } from '$shared/paraglide/messages.js';
   import { agentListBinOf } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
@@ -180,26 +183,20 @@
       .filter((agent) => !isBackgroundRowRendered(agent))
       .flatMap((agent) => directChildrenByAgentId.get(agent.id) ?? []),
   ]);
-  // Fall back to the regular list when delegations exist (tree heights are variable)
-  // or a coordinator is present (its section headers need the regular rendering).
-  // A daemon-served per-parent delegated group is a delegation too: its bar
-  // renders only through the tree, and it is not a flat 40px row.
-  const hasCountedDelegatedGroup = $derived(
-    hasDelegatedCounts &&
-      topLevelForegroundAgents.some(
-        (agent) => (delegatedCounts?.byParent[agent.id]?.total ?? 0) > 0,
-      ),
-  );
-  const shouldUseVirtual = $derived(
-    !hasCountedDelegatedGroup && shouldVirtualizeWorkspaceAgentRows(filteredAgentRows),
-  );
+  // Both render paths below consume the same row model, so virtualization is a
+  // pure size decision: large lists use the flat VirtualList (group bars,
+  // skeletons and children included), coordinator workspaces keep the nested
+  // list for their section layout.
+  const shouldUseVirtual = $derived(shouldVirtualizeWorkspaceAgentRows(filteredAgentRows));
   // The retired bin is always flat with uniform-height rows, so a length check suffices.
   const shouldVirtualizeRetired = $derived(
     retiredAgents.length > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
   );
-  // The selectable row and lazy placeholder share this exact single-line height.
+  // Every row kind — selectable row, lazy placeholder, group bar, skeleton —
+  // shares this exact single-line height so the virtual slots stay uniform.
   const itemHeight = WORKSPACE_AGENT_ROW_HEIGHT;
   const containerHeight = 600;
+  const indentFor = (depth: number) => `${depth * WORKSPACE_AGENT_ROW_INDENT}px`;
   // Per-parent delegation groups the user toggled AWAY from their default state.
   // The default is collapsed, except while the workspace-level Delegated bin is
   // expanded (lazy-bin mode): expanding it must reveal the rows it just loaded.
@@ -358,99 +355,162 @@
   function handleAgentClick(agentId: string, event: MouseEvent | KeyboardEvent) {
     onSelect?.({ agentId, event });
   }
+
+  // The single row model both render paths consume (see the `listRow` snippet).
+  // Per-parent mode keeps each group (and its loaded children) addressable while
+  // the workspace-level bin is collapsed: the group renders from the daemon
+  // count and expands on its own. Otherwise the rows hide delegated children
+  // until the bin is expanded, as before.
+  function buildRows(agentList: AgentSession[]): WorkspaceAgentListRow[] {
+    return buildWorkspaceAgentListRows(agentList, {
+      getChildren: (agentId) =>
+        delegatedRowsVisible || hasDelegatedCounts
+          ? (directChildrenByAgentId.get(agentId) ?? [])
+          : [],
+      // Daemon-served `{ total, running }` until this parent's children are
+      // hydrated; the loaded rows are authoritative after that.
+      getCountedChildren: (agentId) =>
+        hasDelegatedCounts && !isDelegatedParentLoaded(agentId)
+          ? delegatedCounts?.byParent[agentId]
+          : undefined,
+      isExpanded: isDelegationExpanded,
+      isRunning: isAgentRunning,
+      binSkeletonShown: showDelegatedSkeleton,
+    });
+  }
+
+  const listRows = $derived.by((): WorkspaceAgentListRow[] => {
+    if (!hasCoordinator) return buildRows(topLevelForegroundAgents);
+    const coordinatorAgents = topLevelForegroundAgents.filter(isCoordinator);
+    const otherAgents = topLevelForegroundAgents.filter((agent) => !isCoordinator(agent));
+    const rows: WorkspaceAgentListRow[] = [
+      { kind: 'header', key: 'header:coordinator', depth: 0, section: 'coordinator' },
+      ...buildRows(coordinatorAgents),
+    ];
+    if (otherAgents.length > 0) {
+      rows.push(
+        { kind: 'header', key: 'header:yourAgents', depth: 0, section: 'yourAgents' },
+        ...buildRows(otherAgents),
+      );
+    }
+    return rows;
+  });
+  const delegatedSectionRows = $derived(buildRows(delegatedSectionAgents));
 </script>
 
-{#snippet agentTree(agentList: AgentSession[])}
-  {#each agentList as agent (agent.id)}
-    <LazyAgentCard
-      cacheKey={agent.id}
-      agentId={agent.id}
-      agentName={agent.name}
-      isBackground={isBackgroundAgent(agent)}
-      selected={agent.id === selectedAgentId}
-      updatedAt={agent.updatedAt}
-      hidePreview
-      panelRow
-      onclick={(event) => handleAgentClick(agent.id, event)}
-    />
+<!-- The one row renderer. Both the nested list (`rowList`) and the flat
+     VirtualList render every row kind through it; `lazy` picks the
+     IntersectionObserver-deferred card for the nested path (the virtual path
+     already bounds the mounted rows). Each row root is exactly one row tall. -->
+{#snippet listRow(row: WorkspaceAgentListRow, lazy: boolean)}
+  {#if row.kind === 'header'}
+    <div
+      class={row.section === 'coordinator' ? 'w-full pt-1 pb-0.5' : 'w-full pt-2.5 pb-0.5'}
+      data-agent-list-row="header"
+    >
+      <Header size={6}>
+        {row.section === 'coordinator'
+          ? m.workspace_agentsList_coordinator_label()
+          : m.workspace_overviewTimeline_yourAgents_label()}
+      </Header>
+    </div>
+  {:else if row.kind === 'agent'}
+    {@const agent = row.agent}
+    <div class="w-full" style:padding-left={indentFor(row.depth)} data-agent-list-row="agent">
+      {#if lazy}
+        <LazyAgentCard
+          cacheKey={agent.id}
+          agentId={agent.id}
+          agentName={agent.name}
+          isBackground={isBackgroundAgent(agent)}
+          selected={agent.id === selectedAgentId}
+          updatedAt={agent.updatedAt}
+          hidePreview
+          panelRow
+          onclick={(event) => handleAgentClick(agent.id, event)}
+        />
+      {:else}
+        <AgentCard
+          agentId={agent.id}
+          agentName={agent.name}
+          isBackground={isBackgroundAgent(agent)}
+          selected={agent.id === selectedAgentId}
+          updatedAt={agent.updatedAt}
+          hidePreview
+          panelRow
+          onclick={(event) => handleAgentClick(agent.id, event)}
+        />
+      {/if}
+    </div>
+  {:else if row.kind === 'delegatedGroup'}
+    {@const agent = row.parent}
+    {@const isExpanded = row.expanded}
+    <!-- Align the toggle text with the parent avatar + gap; the vertical
+         padding pads the h-7 bar out to the shared row height. -->
+    <div
+      class="w-full py-1.5"
+      style:padding-left={indentFor(row.depth)}
+      data-agent-list-row="delegatedGroup"
+    >
+      <Button
+        variant="ghost-light"
+        size="sm"
+        class="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
+        style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 0.5rem);"
+        onclick={(event) => {
+          event.stopPropagation();
+          toggleDelegation(agent.id);
+        }}
+        aria-expanded={isExpanded}
+        aria-label={isExpanded
+          ? m.ui_vscodePanel_collapse_ariaLabel()
+          : m.ui_vscodePanel_expand_ariaLabel()}
+        data-agent-delegation-toggle={agent.id}
+      >
+        <span class="truncate text-left">
+          {#if !isExpanded && row.running > 0}
+            {m.workspace_agentsList_delegatedRunning_label({
+              running: formatInteger(row.running),
+              total: formatInteger(row.total),
+            })}
+          {:else}
+            {m.workspace_agentsList_delegated_label({ count: formatInteger(row.total) })}
+          {/if}
+        </span>
+        <Fa
+          icon={faChevronDown}
+          size="xs"
+          class="ml-auto shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
+            ? ''
+            : 'rotate-90'}"
+        />
+      </Button>
+    </div>
+  {:else}
+    <!-- Per-parent read in flight (or about to start): skeleton rows under the
+         parent. The whole-bin read shows the bin's skeleton below instead. -->
+    <div
+      class="flex h-10 w-full items-center gap-2 rounded-md px-2"
+      style:padding-left={indentFor(row.depth)}
+      data-agent-list-row="delegatedSkeleton"
+      data-agent-delegation-loading={row.parentId}
+    >
+      <Skeleton class="size-6 shrink-0 rounded-md" />
+      <Skeleton class="h-3.5 w-24" />
+    </div>
+  {/if}
+{/snippet}
 
-    <!-- Per-parent mode keeps the group (and its loaded children) addressable
-         while the workspace-level bin is collapsed: the group renders from the
-         daemon count and expands on its own. Otherwise the tree hides delegated
-         rows until the bin is expanded, as before. -->
-    {@const children =
-      delegatedRowsVisible || hasDelegatedCounts
-        ? (directChildrenByAgentId.get(agent.id) ?? [])
-        : []}
-    <!-- Daemon-served `{ total, running }` until this parent's children are
-         hydrated; the loaded rows are authoritative after that. -->
-    {@const countedChildren =
-      hasDelegatedCounts && !isDelegatedParentLoaded(agent.id)
-        ? delegatedCounts?.byParent[agent.id]
-        : undefined}
-    {@const childTotal = Math.max(countedChildren?.total ?? 0, children.length)}
-    {#if childTotal > 0}
-      {@const isExpanded = isDelegationExpanded(agent.id)}
-      {@const runningChildren = children.filter((child) => isAgentRunning(child.id))}
-      {@const childRunning = countedChildren?.running ?? runningChildren.length}
-      {@const showChildrenSkeleton =
-        countedChildren !== undefined && children.length === 0 && !showDelegatedSkeleton}
-      <!-- Keep child indentation; align the toggle with the parent avatar + gap. -->
-      <div class="mb-2" style="padding-left: 26px;">
-        <Button
-          variant="ghost-light"
-          size="sm"
-          class="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground active:bg-transparent focus-visible:-outline-offset-2 focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-0"
-          style="padding-left: calc(var(--agent-avatar-emphasized-surface-size) + 0.5rem - 26px);"
-          onclick={(event) => {
-            event.stopPropagation();
-            toggleDelegation(agent.id);
-          }}
-          aria-expanded={isExpanded}
-          aria-label={isExpanded
-            ? m.ui_vscodePanel_collapse_ariaLabel()
-            : m.ui_vscodePanel_expand_ariaLabel()}
-          data-agent-delegation-toggle={agent.id}
-        >
-          <span class="truncate text-left">
-            {#if !isExpanded && childRunning > 0}
-              {m.workspace_agentsList_delegatedRunning_label({
-                running: formatInteger(childRunning),
-                total: formatInteger(childTotal),
-              })}
-            {:else}
-              {m.workspace_agentsList_delegated_label({ count: formatInteger(childTotal) })}
-            {/if}
-          </span>
-          <Fa
-            icon={faChevronDown}
-            size="xs"
-            class="ml-auto shrink-0 opacity-50 transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {isExpanded
-              ? ''
-              : 'rotate-90'}"
-          />
-        </Button>
-
-        {#if isExpanded}
-          <div class="flex flex-col gap-0.5" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-            {#if showChildrenSkeleton}
-              <!-- Per-parent read in flight (or about to start): skeleton rows
-                   under the parent. The whole-bin read shows the bin's skeleton
-                   below instead. -->
-              <div class="space-y-2 py-2" data-agent-delegation-loading={agent.id}>
-                {#each [1, 2] as { }}
-                  <div class="flex h-10 items-center gap-2 rounded-md px-2">
-                    <Skeleton class="size-6 shrink-0 rounded-md" />
-                    <Skeleton class="h-3.5 w-24" />
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              {@render agentTree(children)}
-            {/if}
-          </div>
-        {/if}
+<!-- Nested (non-virtual) list over the shared rows. Nested rows slide in and
+     out as their group expands or collapses; top-level rows stay static. -->
+{#snippet rowList(rows: WorkspaceAgentListRow[])}
+  {#each rows as row (row.key)}
+    {#if row.depth > 0}
+      <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
+        {@render listRow(row, true)}
       </div>
+    {:else}
+      {@render listRow(row, true)}
     {/if}
   {/each}
 {/snippet}
@@ -480,50 +540,23 @@
     aria-live="polite"
   />
 {:else if shouldUseVirtual}
-  <!-- Virtual scrolling fallback (flat, no delegations, no coordinator) -->
+  <!-- Virtual scrolling over the same rows the nested list renders (flat,
+       uniform-height slots; large lists without a coordinator). -->
   <div class="h-full max-h-150 overflow-hidden">
     <VirtualList
-      items={topLevelForegroundAgents}
+      items={listRows}
       {itemHeight}
       {containerHeight}
-      getKey={(agent: AgentSession) => agent.id}
+      getKey={(row: WorkspaceAgentListRow) => row.key}
     >
-      {#snippet children({ item: agent }: { item: AgentSession })}
-        <div class="w-full">
-          <AgentCard
-            agentId={agent.id}
-            agentName={agent.name}
-            isBackground={false}
-            selected={agent.id === selectedAgentId}
-            updatedAt={agent.updatedAt}
-            hidePreview
-            panelRow
-            onclick={(event) => handleAgentClick(agent.id, event)}
-          />
-        </div>
+      {#snippet children({ item: row }: { item: WorkspaceAgentListRow })}
+        {@render listRow(row, false)}
       {/snippet}
     </VirtualList>
   </div>
 {:else}
   <div class="flex flex-col gap-0.5">
-    {#if topLevelForegroundAgents.length > 0}
-      {#if hasCoordinator}
-        <div class="pt-1 pb-0.5">
-          <Header size={6}>{m.workspace_agentsList_coordinator_label()}</Header>
-        </div>
-      {/if}
-      {@const coordinatorAgents = topLevelForegroundAgents.filter(isCoordinator)}
-      {@const otherAgents = topLevelForegroundAgents.filter((agent) => !isCoordinator(agent))}
-      {@render agentTree(coordinatorAgents)}
-      {#if otherAgents.length > 0}
-        {#if hasCoordinator}
-          <div class="pt-2.5 pb-0.5">
-            <Header size={6}>{m.workspace_overviewTimeline_yourAgents_label()}</Header>
-          </div>
-        {/if}
-        {@render agentTree(otherAgents)}
-      {/if}
-    {/if}
+    {@render rowList(listRows)}
   </div>
 {/if}
 
@@ -576,7 +609,7 @@
          loaded or its bin collapsed, or a retired parent) list here so the bin
          still holds them; while the parent row renders they nest under it. -->
     <div class="flex flex-col gap-0.5 pt-1" data-agent-delegated-section>
-      {@render agentTree(delegatedSectionAgents)}
+      {@render rowList(delegatedSectionRows)}
     </div>
   {/if}
 {/if}
@@ -627,10 +660,10 @@
   <div class="flex flex-col gap-0.5 pt-1">
     {#each standaloneBackgroundAgents as agent (agent.id)}
       {#if hasActiveSearch || showBackgroundAgents || isAgentRunning(agent.id)}
-        <!-- Rendered through the tree snippet so a background parent's
+        <!-- Rendered through the shared rows so a background parent's
              delegated children nest under it (revealed by the Delegated bin). -->
         <div transition:slide={{ axis: 'y', tier: 'moderate' }}>
-          {@render agentTree([agent])}
+          {@render rowList(buildRows([agent]))}
         </div>
       {/if}
     {/each}
