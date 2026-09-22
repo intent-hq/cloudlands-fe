@@ -159,6 +159,28 @@ export const selectLoadingDelegatedParentIds = store.createSelector((state, wsId
   return getWorkspaceAgentState(state, wsId).loadingDelegatedParentIds;
 });
 
+/**
+ * True once the orphan-only delegated read (`scope: "delegated"` +
+ * `orphanedOnly: true`) has landed — the raw flag, not the whole-bin one;
+ * readers that only need "are the orphans hydrated" check
+ * `selectDelegatedAgentsLoaded` first.
+ */
+export const selectOrphanedDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).orphanedDelegatedAgentsLoaded;
+});
+
+/** The rows the latest orphan-only read served (the Delegated bin's membership). */
+export const selectOrphanedDelegatedAgentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).orphanedDelegatedAgentIds;
+});
+
+/** True while the on-demand orphan-only delegated read is in flight. */
+export const selectIsLoadingOrphanedDelegatedAgents = store.createSelector(
+  (state, wsId: string) => {
+    return getWorkspaceAgentState(state, wsId).isLoadingOrphanedDelegatedAgents;
+  },
+);
+
 /** True once the on-demand `scope: "background"` read has hydrated the background rows. */
 export const selectBackgroundAgentsLoaded = store.createSelector((state, wsId: string) => {
   return getWorkspaceAgentState(state, wsId).backgroundAgentsLoaded;
