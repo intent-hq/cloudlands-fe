@@ -1395,14 +1395,15 @@ function startsBlock(text: string, lineStart: number, blockEnd: number): boolean
 
 /**
  * The `[start, end)` of the text the editor hides of the link reference
- * definition whose label opens at `bracket`: what follows its `]:` — blanks,
- * a destination (on the line, or alone on the next), and a title (`"…"`,
- * `'…'` or `(…)`, on the line or on the next, over line breaks, closed
- * before the next blank line by a quote no `\` precedes, with blanks alone
- * after it on its line) — or `undefined` when the line is no definition: a
- * label not closed on its line, no destination, or text after the
- * destination on its line that is no title. Text on the next line that is
- * no title is a paragraph of its own; the definition ends at its
+ * definition whose label opens at `bracket`: the label — its letters would
+ * otherwise pair with a plain-text line's in a diff — and what follows its
+ * `]:` — blanks, a destination (on the line, or alone on the next), and a
+ * title (`"…"`, `'…'` or `(…)`, on the line or on the next, over line
+ * breaks, closed before the next blank line by a quote no `\` precedes, with
+ * blanks alone after it on its line) — or `undefined` when the line is no
+ * definition: a label not closed on its line, no destination, or text after
+ * the destination on its line that is no title. Text on the next line that
+ * is no title is a paragraph of its own; the definition ends at its
  * destination.
  */
 function definitionHidden(
@@ -1437,10 +1438,10 @@ function definitionHidden(
     const blank = nextBlankLine(title);
     if (close !== -1 && (blank === -1 || close < blank)) {
       const lineEnd = skipBlanks(text, close + 1, false);
-      if (lineEnd >= text.length || isBreak(text.charCodeAt(lineEnd))) return [start, close + 1];
+      if (lineEnd >= text.length || isBreak(text.charCodeAt(lineEnd))) return [bracket, close + 1];
     }
   }
-  return onLine ? undefined : [start, destinationEnd];
+  return onLine ? undefined : [bracket, destinationEnd];
 }
 
 /** Past the blanks of `text` from `at` — and, with `oneBreak`, one line break and the blanks after it. */
@@ -1595,7 +1596,7 @@ function collectHidden(
       collectHiddenInLink(token, map, at, source, ranges);
     } else if (token.type === 'def') {
       const colon = raw.indexOf(']:');
-      if (colon !== -1) hide(map, at + colon + 2, at + raw.trimEnd().length, source, ranges);
+      if (colon !== -1) hide(map, at + raw.indexOf('['), at + raw.trimEnd().length, source, ranges);
     } else if (token.type === 'table') {
       collectHiddenInTable(token, map, at, source, ranges);
     } else if (token.type === 'html') {

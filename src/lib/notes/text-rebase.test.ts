@@ -955,6 +955,28 @@ describe('alignment of link-shaped text the editor shows', () => {
       }
     }
   });
+
+  it.each([
+    ['below the cap', ''],
+    ['past the cap', `\n\n${'q'.repeat(129 * 1024)}`],
+  ])('hides the label of a link reference definition, %s', async (_where, filler) => {
+    // The letters of the label are the plain text of no line: left in the
+    // markdown, the `r` of `[r196]` was the first `r` for the `ren` of
+    // `**ren**der` — too short to anchor on its own — to pair with in the
+    // diff of the region before the anchored `der remote …`, and the caret
+    // after the `r` of `render` landed inside the hidden definition line
+    // (seed 602 of the notes drawn below the cap).
+    const markdown = `[r196]: https://sync/selection/remote\n\n**ren**der remote daemon selection tk198z\n\noffset remote selection sync edit edit tk199z${filler}`;
+    const plain = await projectWithEditor(markdown, true);
+    expect(plain).not.toContain('r196');
+    const { aToB, bToA } = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
+    const p = plain.indexOf('render remote daemon');
+    const m = markdown.indexOf('**ren**der');
+    expect(aToB(p + 1)).toBe(m + 3);
+    expect(aToB(p + 3)).toBe(m + 5);
+    for (let into = 0; into <= 2; into += 1) expect(bToA(m + into), `**[${into}]`).toBe(p);
+    expect(bToA(m + 3)).toBe(p + 1);
+  });
 });
 
 describe('alignment of link syntax the lexer does not account for', () => {
