@@ -16684,6 +16684,9 @@ exports[`catalog DOM, token, and accessibility contracts > 'product:modals:produ
                                   "2 active agents will be stopped"
                                 <p class="font-normal text-muted-foreground type-body">
                                   "1 active background hook will be cancelled"
+                                <p class="font-normal text-muted-foreground type-body">
+                                  "3 guests will be removed from these workspaces"
+                                  "You will need to invite them again after unarchiving."
                             <div class="flex gap-2 items-center justify-end mt-6" data-slot="dialog-footer">
                               <div class="flex gap-3 items-center justify-between" data-size="default" data-slot="form-actions">
                                 <div class="flex items-center" data-slot="form-actions-destructive">
