@@ -10,31 +10,31 @@ import ts from 'typescript';
 // classification, intended owner, and retained-UI rationale). Update this reviewed
 // snapshot only after inspecting that report; the default command fails closed.
 const REVIEWED_INVENTORY_DIGEST =
-  '28bacd5dc5ac315f0ab44bf1f74f9dc96b68ddfa59097c0f60fe8b07db935cdb';
+  'e0f9ecf5da656d054b8dea28053fde1f3f6ee9716a9284d83a58bbaf1019d260';
 const REVIEWED_INVENTORY_COUNTS = {
   'approved lifecycle seam :: async-subscription': 2,
   'approved lifecycle seam :: client-ipc': 3,
   'approved lifecycle seam :: dom-subscription': 8,
-  'approved lifecycle seam :: ipc': 5,
+  'approved lifecycle seam :: ipc': 6,
   'approved lifecycle seam :: timer': 6,
-  'component-local UI behavior :: dom-subscription': 326,
-  'component-local UI behavior :: timer': 300,
+  'component-local UI behavior :: dom-subscription': 327,
+  'component-local UI behavior :: timer': 284,
   'infrastructure adapter :: async-subscription': 16,
-  'infrastructure adapter :: client-ipc': 337,
+  'infrastructure adapter :: client-ipc': 348,
   'infrastructure adapter :: dom-subscription': 5,
-  'infrastructure adapter :: ipc': 87,
-  'infrastructure adapter :: ipc-registration': 142,
+  'infrastructure adapter :: ipc': 93,
+  'infrastructure adapter :: ipc-registration': 150,
   'infrastructure adapter :: service-factory': 5,
   'infrastructure adapter :: timer': 52,
   'saga-owned business logic :: async-subscription': 54,
-  'saga-owned business logic :: client-ipc': 346,
-  'saga-owned business logic :: debounce-retry-poll': 18,
-  'saga-owned business logic :: dom-subscription': 162,
-  'saga-owned business logic :: ipc': 129,
+  'saga-owned business logic :: client-ipc': 392,
+  'saga-owned business logic :: debounce-retry-poll': 22,
+  'saga-owned business logic :: dom-subscription': 164,
+  'saga-owned business logic :: ipc': 146,
   'saga-owned business logic :: ipc-registration': 1,
-  'saga-owned business logic :: network': 4,
-  'saga-owned business logic :: storage': 85,
-  'saga-owned business logic :: timer': 341,
+  'saga-owned business logic :: network': 5,
+  'saga-owned business logic :: storage': 83,
+  'saga-owned business logic :: timer': 353,
 };
 
 const INVENTORY_EXCLUDED_PATH_PARTS = [
