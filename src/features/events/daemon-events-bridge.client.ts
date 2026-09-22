@@ -1356,7 +1356,12 @@ function scopeCountsGenerationOf(workspaceId: string): number {
  * parent's `delegatedCounts.byParent` total by the same delta, so
  * `Σ byParent[*].total` stays in lockstep with `scopeCounts.delegated`
  * (§5.5). Running counts are not nudged: they re-baseline on the next
- * hydration read, and loaded rows are authoritative once hydrated.
+ * hydration read, and loaded rows are authoritative once hydrated. Neither is
+ * `delegatedCounts.orphaned` — whether a row is an orphan is a daemon-side
+ * parent lookup no lifecycle event carries, so it too waits for the next read;
+ * {@link rebaselineOrphanedCounts} requests that read when the row LEAVES the
+ * live set (delete / retire / restore), since that is what can turn its
+ * children into orphans (or back).
  */
 function adjustBinCounts(workspaceId: string, session: StoredAgentSession, delta: 1 | -1): void {
   const bin = classifyAgentScope(session);
@@ -1369,12 +1374,33 @@ function adjustBinCounts(workspaceId: string, session: StoredAgentSession, delta
 }
 
 /**
+ * Re-baseline the daemon-owned `delegatedCounts.orphaned` count and the
+ * Delegated bin's orphan membership after a KNOWN row's liveness changed
+ * (deleted, retired, restored — including each row of a cascading retire). A
+ * row leaving the live set orphans its non-retired children and a restored
+ * row un-orphans them; neither is inferred locally, so ride the single-flight,
+ * trailing-coalesced hydrate (`agent.list`, which serves the fresh count and
+ * re-reads the loaded orphan subset). No-op on a daemon that does not serve
+ * `orphaned` (older daemon): there is no orphan count to keep current, and the
+ * local bin nudges remain the whole story.
+ */
+function rebaselineOrphanedCounts(workspaceId: string): void {
+  if (!appStore.state.workspaceAgents?.byWorkspaceId[workspaceId]?.delegatedCounts?.orphaned) {
+    return;
+  }
+  appStore.dispatch(hydrateAgentsRequested(workspaceId));
+}
+
+/**
  * `agent:retired` / `agent:restored` (§6.5) move a row between its
  * `scopeCounts` bin and the retired bin. A locally held row classifies
  * directly (the bin does not depend on `retiredAt`); an id with no local
  * session is a row of a collapsed bin this client never loaded, so
  * re-baseline both counts from the daemon via a hydrate — the same recovery
- * the `agent:deleted` handler uses for unknown ids. No-op while this
+ * the `agent:deleted` handler uses for unknown ids. A known row's transition
+ * also changes which of its children the daemon counts as orphans, so when
+ * the daemon serves `delegatedCounts.orphaned` that count re-baselines via
+ * the same hydrate ({@link rebaselineOrphanedCounts}). No-op while this
  * workspace holds no `scopeCounts` (older daemon, or not hydrated yet): there
  * is no bin count to keep current.
  */
@@ -1387,6 +1413,7 @@ function adjustScopeCountForRetireTransition(
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (session) {
     adjustBinCounts(workspaceId, session, delta);
+    rebaselineOrphanedCounts(workspaceId);
   } else {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
@@ -3758,12 +3785,16 @@ export function routeDaemonEventsNotification(
       // the local removals below would otherwise change nothing and the
       // count-first toggle would go stale.
       // The same lockstep holds for the `scopeCounts` bins (§5.5 row scope):
-      // a known non-retired row nudges its bin down.
+      // a known non-retired row nudges its bin down. Deleting a live row also
+      // orphans its non-retired children (a daemon-side lookup), so the
+      // daemon-served orphan count + membership re-baseline via a hydrate
+      // when the daemon serves them.
       const deletedSession = appStore.state.agentSessions?.byAgentId[data.agentId];
       if (deletedSession?.retiredAt) {
         appStore.dispatch(adjustRetiredCount(workspaceId, -1));
       } else if (deletedSession) {
         adjustBinCounts(workspaceId, deletedSession, -1);
+        rebaselineOrphanedCounts(workspaceId);
       } else {
         appStore.dispatch(hydrateAgentsRequested(workspaceId));
       }
