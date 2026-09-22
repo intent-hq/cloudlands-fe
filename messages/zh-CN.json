@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "主机（本地）",
+  "settings_wsApi_connectionDetails_label": "连接详情",
+  "settings_wsApi_copyFingerprint_label": "复制 TLS 指纹",
+  "settings_wsApi_fingerprintCopied_label": "已复制 TLS 指纹",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "sandbox_catalogScene_allStates_label": "全部",
   "sandbox_catalogScene_stateHeading_title": "状态：{state}",

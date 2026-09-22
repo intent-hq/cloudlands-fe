@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "主機（本機）",
+  "settings_wsApi_connectionDetails_label": "連線詳細資訊",
+  "settings_wsApi_copyFingerprint_label": "複製 TLS 指紋",
+  "settings_wsApi_fingerprintCopied_label": "已複製 TLS 指紋",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "sandbox_catalogScene_allStates_label": "全部",
   "sandbox_catalogScene_stateHeading_title": "狀態：{state}",

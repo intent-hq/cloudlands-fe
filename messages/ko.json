@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "호스트 컴퓨터(로컬)",
+  "settings_wsApi_connectionDetails_label": "연결 세부 정보",
+  "settings_wsApi_copyFingerprint_label": "TLS 지문 복사",
+  "settings_wsApi_fingerprintCopied_label": "TLS 지문 복사됨",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "sandbox_catalogScene_allStates_label": "모두",
   "sandbox_catalogScene_stateHeading_title": "상태: {state}",

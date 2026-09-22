@@ -16,9 +16,16 @@ const mocks = vi.hoisted(() => ({
   mockSettingsUpdate: vi.fn(),
   mockPairingInfo: vi.fn(),
   mockRotateToken: vi.fn(),
+  localSettingsList: vi.fn(),
+  localSettingsUpdate: vi.fn(),
+  localPairingInfo: vi.fn(),
 }));
 
 vi.mock('$lib/client', () => ({
+  localMachineClient: {
+    settings: { list: mocks.localSettingsList, update: mocks.localSettingsUpdate },
+    server: { pairingInfo: mocks.localPairingInfo, rotateToken: vi.fn() },
+  },
   appClient: {
     settings: {
       list: mocks.mockSettingsList,
@@ -469,115 +476,74 @@ describe('WebSocketApiSettings', () => {
     });
   });
 
-  describe('remote connection (intent-hq/monorepo#1852)', () => {
-    it('renders info-only panel, never calls the daemon, and shows no error toast', async () => {
-      // Arrange: active connection is remote
+  describe('host settings from a remote window', () => {
+    beforeEach(() => {
       connectionState.activeId = 'remote-1';
-
-      await renderExpandedSettings();
-
-      // Assert: info-only panel is rendered
-      await waitFor(() => {
-        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
-      });
-
-      // Assert: no interactive controls (toggle, port input)
-      expect(screen.queryByRole('switch')).toBeNull();
-      expect(screen.queryByText('Port')).toBeNull();
-
-      // Assert: no daemon calls at all — server.pairingInfo is local-only
-      expect(mocks.mockSettingsList).not.toHaveBeenCalled();
-      expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
-
-      // Assert: no error toast
-      expect(mockToast.error).not.toHaveBeenCalled();
-    });
-
-    it('keeps local behavior unchanged: loads settings and pairing info when enabled', async () => {
-      // Arrange: local connection (default), WSS enabled
-      mocks.mockSettingsList.mockResolvedValue([
-        { path: 'server.wsApi.enabled', value: true },
-        { path: 'server.wsApi.port', value: 5181 },
-      ]);
-      mocks.mockPairingInfo.mockResolvedValue({
-        token: 'tok-1234567890',
-        port: 5181,
-        certFingerprint: 'AA:BB',
-        localIps: ['192.168.1.2'],
-        hostname: 'my-mac',
-      });
-
-      await renderExpandedSettings();
-
-      // Assert: toggle rendered and pairing info fetched
-      await waitFor(() => {
-        expect(screen.getByRole('switch')).toBeTruthy();
-        expect(mocks.mockPairingInfo).toHaveBeenCalled();
-      });
-
-      // Assert: no remote info panel, no error toast
-      expect(screen.queryByText(m.settings_wsApi_remoteInfo_description())).toBeNull();
-      expect(mockToast.error).not.toHaveBeenCalled();
-    });
-
-    it('remote→local switch while mounted triggers a fresh status load', async () => {
-      // Arrange: start remote — no daemon calls
-      connectionState.activeId = 'remote-1';
-      mocks.mockSettingsList.mockResolvedValue([
+      mocks.localSettingsList.mockResolvedValue([
         { path: 'server.wsApi.enabled', value: false },
         { path: 'server.wsApi.port', value: 5181 },
       ]);
+      mocks.localSettingsUpdate.mockImplementation(async (changes) => changes);
+    });
 
-      await renderExpandedSettings();
-
-      await waitFor(() => {
-        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
-      });
+    it('loads no settings until Edit expands the panel', async () => {
+      const view = render(WebSocketApiSettings, { expanded: false });
+      expect(screen.queryByRole('switch')).toBeNull();
+      expect(mocks.localSettingsList).not.toHaveBeenCalled();
+      await view.rerender({ expanded: true });
+      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
+      expect(screen.getByRole('switch')).toBeTruthy();
       expect(mocks.mockSettingsList).not.toHaveBeenCalled();
-
-      // Act: switch to local while the component stays mounted
-      connectionState.activeId = 'local';
-      connectionState.emit();
-
-      // Assert: fresh status load ran and the controls rendered
-      await waitFor(() => {
-        expect(mocks.mockSettingsList).toHaveBeenCalled();
-        expect(screen.getByRole('switch')).toBeTruthy();
-      });
-      expect(mockToast.error).not.toHaveBeenCalled();
-    });
-
-    it('local→remote switch mid-loadStatus never calls pairingInfo and shows no toast', async () => {
-      // Arrange: local connection; settings.list resolves only when we say so
-      let resolveSettingsList!: (value: { path: string; value: unknown }[]) => void;
-      mocks.mockSettingsList.mockReturnValue(
-        new Promise<{ path: string; value: unknown }[]>((resolve) => {
-          resolveSettingsList = resolve;
-        }),
-      );
-
-      await renderExpandedSettings();
-
-      await waitFor(() => {
-        expect(mocks.mockSettingsList).toHaveBeenCalled();
-      });
-
-      // Act: switch to remote while settings.list is still in flight, then
-      // resolve it with wsApi enabled (which would normally fetch pairingInfo)
-      connectionState.activeId = 'remote-1';
-      connectionState.emit();
-      resolveSettingsList([
-        { path: 'server.wsApi.enabled', value: true },
-        { path: 'server.wsApi.port', value: 5181 },
-      ]);
-
-      // Assert: info-only panel rendered; the stale load was dropped
-      await waitFor(() => {
-        expect(screen.getByText(m.settings_wsApi_remoteInfo_description())).toBeTruthy();
-      });
       expect(mocks.mockPairingInfo).not.toHaveBeenCalled();
-      expect(mockToast.error).not.toHaveBeenCalled();
     });
+
+    it('saves host port changes using the local client', async () => {
+      await renderExpandedSettings();
+      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
+      await fireEvent.input(screen.getByRole('spinbutton', { name: 'Port' }), {
+        target: { value: '5182' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: m.settings_wsApi_port_save() }));
+      await waitFor(() =>
+        expect(mocks.localSettingsUpdate).toHaveBeenCalledWith([
+          { path: 'server.wsApi.port', value: 5182 },
+        ]),
+      );
+      expect(mocks.mockSettingsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('hides host controls again when Edit closes', async () => {
+      const view = render(WebSocketApiSettings, { expanded: true });
+      await waitFor(() => expect(mocks.localSettingsList).toHaveBeenCalled());
+      await view.rerender({ expanded: false });
+      expect(screen.queryByRole('switch')).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: m.settings_devices_advanced_label() }),
+      ).toBeNull();
+    });
+  });
+
+  it('copies the complete TLS fingerprint', async () => {
+    mocks.mockSettingsList.mockResolvedValue([
+      { path: 'server.wsApi.enabled', value: true },
+      { path: 'server.wsApi.port', value: 5181 },
+    ]);
+    const fingerprint = Array.from({ length: 32 }, () => 'AB').join(':');
+    mocks.mockPairingInfo.mockResolvedValue({
+      token: 'test-token',
+      certFingerprint: fingerprint,
+      port: 5181,
+      path: '/ws',
+      localIps: ['192.0.2.1'],
+      hostname: 'host',
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    await renderExpandedSettings();
+    await fireEvent.click(
+      await screen.findByRole('button', { name: m.settings_wsApi_copyFingerprint_label() }),
+    );
+    expect(writeText).toHaveBeenCalledWith(fingerprint);
   });
 
   describe('auto-publish on WSS toggle-on (opt-out sync, no modal)', () => {

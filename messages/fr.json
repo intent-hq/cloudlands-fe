@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "Machine hôte (locale)",
+  "settings_wsApi_connectionDetails_label": "Détails de connexion",
+  "settings_wsApi_copyFingerprint_label": "Copier l’empreinte TLS",
+  "settings_wsApi_fingerprintCopied_label": "Empreinte TLS copiée",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "sandbox_catalogScene_allStates_label": "Tous",
   "sandbox_catalogScene_stateHeading_title": "État : {state}",

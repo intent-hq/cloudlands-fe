@@ -1,4 +1,8 @@
 {
+  "settings_devices_hostMachine_label": "ホストマシン（ローカル）",
+  "settings_wsApi_connectionDetails_label": "接続情報",
+  "settings_wsApi_copyFingerprint_label": "TLSフィンガープリントをコピー",
+  "settings_wsApi_fingerprintCopied_label": "TLSフィンガープリントをコピーしました",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "sandbox_catalogScene_allStates_label": "すべて",
   "sandbox_catalogScene_stateHeading_title": "状態: {state}",
