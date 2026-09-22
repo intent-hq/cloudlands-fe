@@ -344,6 +344,21 @@ export const IPC_CHANNELS = {
     DISMISS: 'invite-consent:dismiss',
   },
 
+  // Invite progress (renderer-rendered "Connecting…" / "Opening…" dialog of an
+  // invite join). Payload contracts live in src/shared/ipc/invite-progress.ts.
+  INVITE_PROGRESS: {
+    /** Main → renderer: show the invite-progress modal for a request. */
+    SHOW: 'invite-progress:show',
+    /** Main → renderer: update the phase / labels of the request's modal. */
+    UPDATE: 'invite-progress:update',
+    /** Renderer → main (invoke): modal mounted — acknowledges receipt of SHOW. */
+    ACK: 'invite-progress:ack',
+    /** Renderer → main (invoke): the user pressed Cancel. */
+    RESPONSE: 'invite-progress:response',
+    /** Main → renderer: close the modal for a finished/superseded request. */
+    DISMISS: 'invite-progress:dismiss',
+  },
+
   // Invite notice (renderer-rendered failure / plaintext-credential notice of
   // an invite join). Payload contracts live in src/shared/ipc/invite-notice.ts.
   INVITE_NOTICE: {
