@@ -757,6 +757,24 @@ describe('GuestSessionsSettings', () => {
       expect(within(rows[1]).getByTestId('hosted-roster-avatar-fallback').textContent).toBe('G');
     });
 
+    it('falls back to the initial when the avatar image fails to load', async () => {
+      const withAvatar: WorkspaceMember = {
+        ...collaborator,
+        principalId: 'p-pictured',
+        login: 'pictured',
+        displayName: 'Pictured Guest',
+        avatarUrl: 'https://avatars.example/stale.png',
+      };
+      mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, withAvatar] } };
+      render(GuestSessionsSettings);
+      const [row] = within(screen.getByTestId('hosted-workspace-roster')).getAllByRole('listitem');
+
+      await fireEvent.error(within(row).getByTestId('hosted-roster-avatar'));
+
+      expect(within(row).queryByTestId('hosted-roster-avatar')).toBeNull();
+      expect(within(row).getByTestId('hosted-roster-avatar-fallback').textContent).toBe('P');
+    });
+
     it('disables Remove while a removal for that member is in flight', () => {
       mocks.rosters = { 'ws-1': { status: 'loaded', members: [owner, collaborator] } };
       mocks.removingIds = { 'ws-1': ['p-collab'] };

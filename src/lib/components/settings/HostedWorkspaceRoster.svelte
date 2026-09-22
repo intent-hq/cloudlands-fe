@@ -12,6 +12,7 @@
    * the displayed rows are filtered — the sweep still receives the full roster.
    */
   import { onMount } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { ListView } from '$lib/components/patterns/collection';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
@@ -55,8 +56,23 @@
 
   let removeAllDialogOpen = $state(false);
 
+  /**
+   * The avatar URL that failed to load, per collaborator. Keyed by the URL so
+   * a member whose `avatarUrl` changes retries the load instead of staying on
+   * the initial forever (the identity reset in `GitHubAvatar`).
+   */
+  const failedAvatarUrls = new SvelteMap<string, string>();
+
   function memberLabel(member: WorkspaceMember): string {
     return member.displayName ?? member.login ?? member.principalId;
+  }
+
+  function showsAvatar(member: WorkspaceMember): boolean {
+    return !!member.avatarUrl && failedAvatarUrls.get(member.principalId) !== member.avatarUrl;
+  }
+
+  function markAvatarFailed(member: WorkspaceMember) {
+    if (member.avatarUrl) failedAvatarUrls.set(member.principalId, member.avatarUrl);
   }
 
   function removeAllGuests() {
@@ -150,13 +166,14 @@
       {#snippet row({ item: member })}
         <div class="flex items-center justify-between gap-3 py-2">
           <div class="flex min-w-0 items-center gap-2">
-            {#if member.avatarUrl}
+            {#if showsAvatar(member)}
               <img
                 src={member.avatarUrl}
                 alt=""
                 class="h-6 w-6 shrink-0 rounded-full"
                 loading="lazy"
                 data-testid="hosted-roster-avatar"
+                onerror={() => markAvatarFailed(member)}
               />
             {:else}
               <span
