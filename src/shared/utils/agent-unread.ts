@@ -15,13 +15,14 @@
  * delegated child agents (wire `parentAgentId`, or the legacy
  * `metadata.createdByAgentId`) always derive `false` — the unread blue dot
  * (agent avatar + bottom-bar Agents launcher) is reserved for top-level
- * foreground agents. The child check follows the dangling-parent semantics
- * of `isTopLevelAgent` in hud-selectors — a delegated agent stays suppressed
- * even when its parent left the list — which is stricter than the
- * Agents-panel tree's nesting (that additionally requires the parent to be
- * present, so an orphaned child renders as a top-level row yet never shows
- * the dot). Unlike `isTopLevelAgent`, this derivation has no agent-id input,
- * so a (malformed) self-referencing parent id also suppresses the dot.
+ * foreground agents. The child check follows the shared classifier's
+ * dangling-parent semantics (it never checks that the parent exists) — a
+ * delegated agent stays suppressed even when its parent left the list —
+ * which is stricter than the Agents-panel tree's nesting (that additionally
+ * requires the parent to be present, so an orphaned child renders as a
+ * top-level row yet never shows the dot). Unlike the HUD, this derivation
+ * has no agent-id input to drop a self-reference, so a (malformed)
+ * self-referencing parent id also suppresses the dot.
  *
  * Muted agents (`notificationsMuted === true`, the daemon-owned per-agent
  * mute settable via `agent.update`) also always derive `false`: the mute
