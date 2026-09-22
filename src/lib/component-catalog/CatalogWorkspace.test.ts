@@ -1,21 +1,30 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import axe from 'axe-core';
 import { createRawSnippet } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { store as appStore } from '$store/renderer/store';
 import CatalogFoundations from './CatalogFoundations.svelte';
 import CatalogIntroduction from './CatalogIntroduction.svelte';
 import CatalogShell from './CatalogShell.svelte';
+import SandboxLayout from '../../routes/sandbox/+layout.svelte';
 import CatalogSystemPage from './CatalogSystemPage.svelte';
 import { themePresets } from '$lib/utils/theme-presets';
 import { parseVSCodeTheme } from '$lib/utils/vscode-theme-parser';
+
+const { mockPage } = vi.hoisted(() => ({
+  mockPage: { params: {}, url: new URL('http://localhost/sandbox') },
+}));
+
+vi.mock('$app/state', () => ({ page: mockPage }));
 
 const originalResizeObserver = globalThis.ResizeObserver;
 const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 beforeEach(() => {
+  mockPage.url = new URL('http://localhost/sandbox');
   globalThis.ResizeObserver = class ResizeObserverMock {
     observe() {}
     unobserve() {}
@@ -36,6 +45,56 @@ afterEach(() => {
 });
 
 describe('catalog workspace', () => {
+  beforeAll(() => appStore.init());
+
+  it.each([
+    { pathname: '/sandbox', name: 'Introduction' },
+    { pathname: '/sandbox/recipes', name: 'Recipes' },
+  ])(
+    'selects the current navigation link from page.url at $pathname',
+    async ({ pathname, name }) => {
+      mockPage.url = new URL(pathname, 'http://localhost');
+      render(SandboxLayout);
+
+      const navigation = within(screen.getByRole('navigation', { name: 'Component catalog' }));
+      await waitFor(() =>
+        expect(navigation.getAllByRole('link', { current: 'page' })).toEqual([
+          navigation.getByRole('link', { name, exact: true }),
+        ]),
+      );
+    },
+  );
+
+  it('lets the sandbox layout own the bundled UI font across themes and restore it', async () => {
+    const root = document.documentElement;
+    root.style.setProperty('--font-ui', 'Existing UI');
+    root.style.setProperty('--existing-root-token', 'preserved');
+
+    const first = render(SandboxLayout);
+    await waitFor(() =>
+      expect(root.style.getPropertyValue('--font-ui')).toContain('Inter Variable'),
+    );
+    await fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
+    await waitFor(() => {
+      expect(root.classList.contains('dark')).toBe(true);
+      expect(root.style.getPropertyValue('--font-ui')).toContain('Inter Variable');
+    });
+    await fireEvent.click(screen.getByRole('radio', { name: 'Light' }));
+    await waitFor(() =>
+      expect(root.style.getPropertyValue('--font-ui')).toContain('Inter Variable'),
+    );
+    first.unmount();
+    expect(root.style.getPropertyValue('--font-ui')).toBe('Existing UI');
+    expect(root.style.getPropertyValue('--existing-root-token')).toBe('preserved');
+
+    const second = render(SandboxLayout);
+    await waitFor(() =>
+      expect(root.style.getPropertyValue('--font-ui')).toContain('Inter Variable'),
+    );
+    second.unmount();
+    expect(root.style.getPropertyValue('--font-ui')).toBe('Existing UI');
+  });
+
   it('contains navigation, customization, preview, and documentation inside landmarks', async () => {
     const children = createRawSnippet(() => ({
       render: () => '<p>Catalog documentation</p>',
@@ -93,13 +152,15 @@ describe('catalog workspace', () => {
       expect(document.documentElement.classList.contains('light')).toBe(true);
       expect(screen.getByText('Light theme selected')).not.toBeNull();
     });
-    await fireEvent.click(screen.getByRole('radio', { name: 'System' }));
+    await fireEvent.click(
+      within(screen.getByRole('group', { name: 'Theme' })).getByRole('radio', { name: 'System' }),
+    );
     await waitFor(() => {
       expect(first.container.querySelector('[data-catalog-theme="system"]')).not.toBeNull();
       expect(screen.getByText(/System theme selected, currently (light|dark)/)).not.toBeNull();
     });
     await fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
-    await fireEvent.click(screen.getByRole('switch', { name: 'Reduce motion' }));
+    await fireEvent.click(screen.getByRole('radio', { name: 'Reduced' }));
 
     await waitFor(() => {
       expect(first.container.querySelector('[data-catalog-theme="dark"]')).not.toBeNull();
@@ -110,7 +171,7 @@ describe('catalog workspace', () => {
         JSON.stringify({
           theme: 'dark',
           colorTheme: 'dracula',
-          reducedMotion: true,
+          motion: 'reduced',
         }),
       );
     });
@@ -120,16 +181,16 @@ describe('catalog workspace', () => {
       JSON.stringify({
         theme: 'dark',
         colorTheme: 'dracula',
-        reducedMotion: true,
+        motion: 'reduced',
       }),
     );
     const second = render(CatalogShell);
     await waitFor(() => {
       expect(second.container.querySelector('[data-catalog-theme="dark"]')).not.toBeNull();
       expect(second.container.querySelector('[data-catalog-color-theme="dracula"]')).not.toBeNull();
-      expect(
-        screen.getByRole('switch', { name: 'Reduce motion' }).getAttribute('aria-checked'),
-      ).toBe('true');
+      expect(screen.getByRole('radio', { name: 'Reduced' }).getAttribute('aria-checked')).toBe(
+        'true',
+      );
     });
   });
 

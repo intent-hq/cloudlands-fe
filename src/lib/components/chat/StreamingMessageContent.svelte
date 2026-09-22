@@ -30,7 +30,8 @@
   import ChatVideoBlock from './ChatVideoBlock.svelte';
   import ChatReferenceBlock from './ChatReferenceBlock.svelte';
   import { PatchBlockContent } from '$features/file-tracking/components/diff';
-  import DiagramRenderer from '$lib/components/diagrams/DiagramRenderer.svelte';
+  import StreamingDiagramRenderer from '$lib/components/diagrams/StreamingDiagramRenderer.svelte';
+  import DiagramPresentation from '$lib/components/diagrams/DiagramPresentation.svelte';
   import MermaidRenderer from '$lib/components/markdown/MermaidRenderer.svelte';
   import ChatCliBlock from './ChatCliBlock.svelte';
   import ChatAgentActionBlock from './ChatAgentActionBlock.svelte';
@@ -417,7 +418,7 @@
   const MAX_CACHE_SIZE = 100;
 
   function parseTextBlock(text: string): ParsedTextResult {
-    const cacheKey = JSON.stringify([workspaceId ?? null, flatstr(text)]);
+    const cacheKey = JSON.stringify([workspaceId ?? null, isStreaming, flatstr(text)]);
     // Check cache first
     const cached = parsedTextCache.get(cacheKey);
     if (cached) {
@@ -429,7 +430,7 @@
     // Strip suggested prompts (they're rendered separately in ChatPanel)
     const { cleanedContent: contentWithoutSuggestions } = parseSuggestedPrompts(text);
     // Parse the content - this handles digests inline as 'digest' type blocks
-    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId);
+    const parsed = parseAgentMessage(contentWithoutSuggestions, workspaceId, { isStreaming });
     // Group parsed blocks to wrap group_start/group_end markers into GroupedBlock objects
     const grouped = groupParsedBlocks(parsed);
     const result = { blocks: grouped, setupScript };
@@ -643,18 +644,25 @@
         {parsedBlock.content}
       </div>
     </div>
-  {:else if parsedBlock.type === 'diagram' && parsedBlock.metadata?.diagramData}
-    <div class="diagram-block my-2">
-      <DiagramRenderer
-        diagram={parsedBlock.metadata.diagramData as DiagramPrimitive}
-        editable={false}
+  {:else if parsedBlock.type === 'diagram'}
+    <DiagramPresentation kind="custom">
+      <StreamingDiagramRenderer
+        diagram={(parsedBlock.metadata?.diagramData as DiagramPrimitive | null) ?? null}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        source={parsedBlock.metadata?.rawSource ?? parsedBlock.content}
+        sourceError={parsedBlock.metadata?.diagramError}
+        viewResetKey={String(parsedBlock.metadata?.fenceStart ?? '')}
         onBindingClick={handleDiagramBindingClick}
       />
-    </div>
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'mermaid'}
-    <div class="mermaid-block my-8">
-      <MermaidRenderer code={parsedBlock.content || ''} />
-    </div>
+    <DiagramPresentation kind="mermaid" rendererOwnsActions>
+      <MermaidRenderer
+        code={parsedBlock.metadata?.rawSource ?? parsedBlock.content ?? ''}
+        isStreaming={parsedBlock.metadata?.isStreaming ?? false}
+        showExportButton
+      />
+    </DiagramPresentation>
   {:else if parsedBlock.type === 'patch' && parsedBlock.metadata?.patchData}
     {@const patchData = parsedBlock.metadata.patchData}
     <PatchBlockContent
