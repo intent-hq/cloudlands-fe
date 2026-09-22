@@ -192,66 +192,6 @@ export interface LaunchOptions {
  * to log files capturing the Electron main-process stdout/stderr and
  * renderer console output.
  */
-/** The most recently launched packaged app — read by failure diagnostics
- *  that only hold the page (one app per spec file). */
-let lastLaunchedApp: ElectronApplication | undefined;
-
-const CHECK_SINGLE_TRACE_CHANNEL = 'providers:check-single';
-
-/**
- * Record every `providers:check-single` invoke the renderer makes, with the
- * verdict the main process actually returned, so a missing card can be tied
- * to the sweep that produced it. The renderer store is not reachable from
- * the page; wrapping the handler in the main process is the only vantage
- * point the packaged app offers. Handlers registered after launch are
- * wrapped too (`ipcMain.handle` is intercepted). Diagnostics only.
- */
-async function installCheckSingleTrace(app: ElectronApplication): Promise<void> {
-  await app
-    .evaluate(({ ipcMain }, channel) => {
-      type Handler = (...args: unknown[]) => unknown;
-      type TraceEntry = Record<string, unknown>;
-      const g = globalThis as { __buildSmokeCheckSingleTrace?: TraceEntry[] };
-      const trace: TraceEntry[] = (g.__buildSmokeCheckSingleTrace = []);
-      const wrap =
-        (original: Handler): Handler =>
-        async (event, ...args) => {
-          const startedAt = Date.now();
-          const entry: TraceEntry = { at: new Date(startedAt).toISOString(), args };
-          trace.push(entry);
-          try {
-            const result = await original(event, ...args);
-            entry.result = result;
-            return result;
-          } catch (error) {
-            entry.error = (error as Error).message;
-            throw error;
-          } finally {
-            entry.ms = Date.now() - startedAt;
-          }
-        };
-      const internals = ipcMain as unknown as { _invokeHandlers?: Map<string, Handler> };
-      const existing = internals._invokeHandlers?.get(channel);
-      if (existing) {
-        ipcMain.removeHandler(channel);
-        ipcMain.handle(channel, wrap(existing) as Parameters<typeof ipcMain.handle>[1]);
-      } else {
-        trace.push({ note: 'no handler registered at launch' });
-      }
-      const originalHandle = ipcMain.handle.bind(ipcMain);
-      ipcMain.handle = (registeredChannel, listener) =>
-        originalHandle(
-          registeredChannel,
-          registeredChannel === channel
-            ? (wrap(listener as Handler) as Parameters<typeof ipcMain.handle>[1])
-            : listener,
-        );
-    }, CHECK_SINGLE_TRACE_CHANNEL)
-    .catch((error: Error) => {
-      console.log(`⚠️  check-single trace not installed: ${error.message}`);
-    });
-}
-
 export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
   app: ElectronApplication;
   page: Page;
@@ -277,8 +217,6 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
       ...(options.extraEnv || {}),
     },
   });
-  lastLaunchedApp = app;
-  await installCheckSingleTrace(app);
 
   // --- Capture Electron main-process stdout/stderr ---
   const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
@@ -494,73 +432,6 @@ export interface CreateWorkspaceOptions {
 }
 
 /**
- * When a provider card never appears, log what onboarding actually rendered
- * and the main process's availability verdict so a CI failure is diagnosable
- * from the run log alone — the packaged main process logs at WARN, so the
- * availability sweep leaves no trace of its own.
- */
-async function dumpProviderCardDiagnostics(page: Page, providerName: string): Promise<void> {
-  const describe = (e: unknown) => `unavailable: ${(e as Error).message}`;
-  const invoke = (channel: string, ...args: unknown[]) =>
-    page
-      .evaluate(
-        ([channel, args]) =>
-          (
-            window as unknown as {
-              electronAPI: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> };
-            }
-          ).electronAPI.invoke(channel, ...args),
-        [channel, args] as const,
-      )
-      .catch(describe);
-  const ariaLabels = await page
-    .evaluate(() =>
-      [...document.querySelectorAll('[data-onboarding-step] [aria-label]')].map((el) =>
-        el.getAttribute('aria-label'),
-      ),
-    )
-    .catch(describe);
-  const availability = await invoke('providers:get-availability');
-  // The grid renders the daemon's catalog rows, gated by the per-provider
-  // `providers:check-single` verdict — the two inputs the aggregate call
-  // above does not cover.
-  const catalog = await invoke('backend:request', { method: 'providers.catalog' });
-  const rows = (catalog as { result?: { providers?: Array<Record<string, unknown>> } })?.result
-    ?.providers;
-  const row = rows?.find((r) => r.displayName === providerName);
-  // Read the renderer's own sweep trace before issuing a probe of our own.
-  const sweepTrace = await (lastLaunchedApp
-    ?.evaluate(
-      () =>
-        (globalThis as { __buildSmokeCheckSingleTrace?: unknown[] }).__buildSmokeCheckSingleTrace,
-    )
-    .catch(describe) ?? Promise.resolve('no launched app'));
-  const singleCheck = row ? await invoke('providers:check-single', row.id) : 'no catalog row';
-  console.log(`❌ Provider card "Use ${providerName}" not found at ${new Date().toISOString()}.`);
-  console.log(`   ${CHECK_SINGLE_TRACE_CHANNEL} calls seen by main: ${JSON.stringify(sweepTrace)}`);
-  console.log(`   onboarding aria-labels: ${JSON.stringify(ariaLabels)}`);
-  console.log(`   providers:get-availability: ${JSON.stringify(availability)}`);
-  console.log(
-    `   providers.catalog: ${JSON.stringify(
-      rows?.map(({ id, displayName, visible, requiresEnvVar }) => ({
-        id,
-        displayName,
-        visible,
-        requiresEnvVar,
-      })) ?? catalog,
-    )}`,
-  );
-  console.log(`   providers:check-single(${row?.id}): ${JSON.stringify(singleCheck)}`);
-  const shot = join(
-    process.cwd(),
-    'e2e-reports',
-    'build-smoke',
-    `provider-card-missing-${Date.now()}.png`,
-  );
-  await page.screenshot({ path: shot, fullPage: true }).catch(() => undefined);
-}
-
-/**
  * Create a new workspace from the new onboarding flow.
  *
  * Strategy:
@@ -630,12 +501,7 @@ export async function createWorkspaceWithPrompt(
       const providerCard = page
         .locator(`[aria-label="Use ${providerName}"], [aria-label="${providerName} (selected)"]`)
         .first();
-      try {
-        await providerCard.waitFor({ state: 'visible', timeout: 20_000 });
-      } catch (error) {
-        await dumpProviderCardDiagnostics(page, providerName);
-        throw error;
-      }
+      await providerCard.waitFor({ state: 'visible', timeout: 20_000 });
       await providerCard.click();
       console.log(`🔄 Selected provider: ${providerName}`);
     }
