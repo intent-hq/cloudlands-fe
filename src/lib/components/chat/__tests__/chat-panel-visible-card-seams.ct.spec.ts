@@ -48,6 +48,7 @@ const hiddenQuestion = assistant([
 for (const [scenario, between] of [
   ['adjacent', []],
   ['empty assistant', [assistant([])]],
+  ['whitespace-only assistant', [assistant([{ type: 'text', text: ' \n\t ' }])]],
   ['question-only assistant', [hiddenQuestion]],
   [
     'ignored notice',
