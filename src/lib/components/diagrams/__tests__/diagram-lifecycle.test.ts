@@ -92,6 +92,39 @@ async function expectScene(container: HTMLElement, nodeId: string, selected: num
 }
 
 describe('diagram prop lifecycle', () => {
+  it('settles a lane resize across the compact-padding breakpoint without feedback', async () => {
+    let width = 581;
+    let resize!: () => void;
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const input = diagram('resize');
+    input.baseView.layout.direction = 'TB';
+    const result = render(DiagramRenderer, { props: { diagram: input } });
+    await expectScene(result.container, 'resize-one', 0);
+    await fireEvent.click(steps(result.container)[1]);
+    width = 505;
+    resize();
+    await tick();
+    await expectScene(result.container, 'resize-two', 1);
+    await waitFor(async () => {
+      await deliverFrames();
+      expect(
+        result.container.querySelector('.diagram-renderer')?.getAttribute('data-diagram-settled'),
+      ).toBe('true');
+    });
+    await fireEvent.click(steps(result.container)[0]);
+    await expectScene(result.container, 'resize-one', 0);
+  });
+
   it('keeps visible paint through a disjoint scene handoff, including zero-opacity entry', async () => {
     document.documentElement.classList.remove('catalog-reduced-motion');
     // jsdom does not supply the browser's initial opacity or apply WAAPI keyframes.

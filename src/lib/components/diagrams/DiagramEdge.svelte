@@ -73,49 +73,27 @@
 
   type NodeBounds = { x: number; y: number; width: number; height: number };
 
-  function captureNodeMotion(nodeId: string) {
-    const node = rootElement?.ownerSVGElement?.querySelector<SVGForeignObjectElement>(
+  function findNode(nodeId: string) {
+    return rootElement?.ownerSVGElement?.querySelector<SVGForeignObjectElement>(
       `[data-node-id="${CSS.escape(nodeId)}"]`,
     );
+  }
+
+  function sampleNodeBounds(node: SVGForeignObjectElement | null | undefined): NodeBounds | null {
     if (!node) return null;
+    // Geometry properties can start independently (including y-only motion). Read the
+    // painted pose rather than applying one property's or the route's clock to all four.
     const style = getComputedStyle(node);
     const value = (property: string, fallback: number) => {
       const parsed = Number.parseFloat(style.getPropertyValue(property));
       return Number.isFinite(parsed) ? parsed : fallback;
     };
     return {
-      node,
-      from: {
-        x: value('x', node.x.baseVal.value),
-        y: value('y', node.y.baseVal.value),
-        width: value('width', node.width.baseVal.value),
-        height: value('height', node.height.baseVal.value),
-      },
-      to: {
-        x: node.x.baseVal.value,
-        y: node.y.baseVal.value,
-        width: node.width.baseVal.value,
-        height: node.height.baseVal.value,
-      },
+      x: value('x', node.x.baseVal.value),
+      y: value('y', node.y.baseVal.value),
+      width: value('width', node.width.baseVal.value),
+      height: value('height', node.height.baseVal.value),
     };
-  }
-
-  function interpolateNodeMotion(
-    motion: { node: SVGForeignObjectElement; from: NodeBounds; to: NodeBounds } | null,
-    fallbackProgress: number,
-  ) {
-    if (!motion) return null;
-    const transition = motion.node
-      .getAnimations()
-      .find((animation) => (animation as CSSTransition).transitionProperty === 'x');
-    const sampledProgress = transition?.effect?.getComputedTiming().progress;
-    const progress = typeof sampledProgress === 'number' ? sampledProgress : fallbackProgress;
-    return Object.fromEntries(
-      (['x', 'y', 'width', 'height'] as const).map((property) => [
-        property,
-        motion.from[property] + (motion.to[property] - motion.from[property]) * progress,
-      ]),
-    ) as NodeBounds;
   }
 
   function attachToNode(point: { x: number; y: number }, bounds: NodeBounds | null, gap = 0) {
@@ -213,8 +191,8 @@
     const previousEnd = previousPoints[previousPoints.length - 1];
     const targetStart = targetPoints[0];
     const targetEnd = targetPoints[targetPoints.length - 1];
-    const sourceNodeMotion = captureNodeMotion(edge.from);
-    const targetNodeMotion = captureNodeMotion(edge.to);
+    const sourceNode = findNode(edge.from);
+    const targetNode = findNode(edge.to);
     const shiftsLaneWithoutMovingNodes =
       retainsIdentity &&
       Math.abs(targetStart.x - previousStart.x - (targetEnd.x - previousEnd.x)) < 1 &&
@@ -238,10 +216,10 @@
         points[0] = targetPoints[0];
         points[points.length - 1] = targetPoints[targetPoints.length - 1];
       }
-      points[0] = attachToNode(points[0], interpolateNodeMotion(sourceNodeMotion, progress));
+      points[0] = attachToNode(points[0], sampleNodeBounds(sourceNode));
       points[points.length - 1] = attachToNode(
         points[points.length - 1],
-        interpolateNodeMotion(targetNodeMotion, progress),
+        sampleNodeBounds(targetNode),
         terminalGap,
       );
       previousPoints = points;

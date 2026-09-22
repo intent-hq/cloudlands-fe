@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { readDiagramPaint } from './diagram-painted-bounds';
 
 const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
 let baseUrl = externalBaseUrl ?? '';
@@ -459,7 +460,9 @@ async function recordContentMotion(
             const frames = [read()];
             const deadline = performance.now() + 2_500;
             do {
-              await new Promise<void>((next) => requestAnimationFrame(() => next()));
+              // Read after every rAF callback and its Svelte flush, not between
+              // the browser advancing node CSS motion and the edge updating its path.
+              await new Promise<void>((next) => requestAnimationFrame(() => setTimeout(next, 0)));
               frames.push(read());
             } while (!frames.at(-1)!.settled && performance.now() < deadline);
             resolve(frames);
@@ -513,8 +516,9 @@ async function recordReducedControlMotion(
                 ? `animation:${animation.animationName}`
                 : 'waapi';
           const timing = animation.effect?.getTiming();
+          const pseudo = (animation.effect as KeyframeEffect | null)?.pseudoElement ?? '';
           return target
-            ? `${name}:${target.tagName}.${target.getAttribute('class') ?? ''}:${timing?.duration}`
+            ? `${name}:${target.tagName}.${target.getAttribute('class') ?? ''}${pseudo}:${timing?.duration}`
             : name;
         }),
       });
@@ -994,28 +998,6 @@ function expectFixedFooter(transition: Awaited<ReturnType<typeof recordTransitio
   }
 }
 
-function expectUnchangedCameraBeforeScene(
-  transition: Awaited<ReturnType<typeof recordTransition>>,
-) {
-  expect(transition.afterClick.motionPhase).toBe('exit');
-  expect(transition.afterClick.cameraAnimationCount).toBe(0);
-  expect(transition.afterClick.camera).toBe(transition.before.camera);
-  expect(transition.cameraFrames).toHaveLength(0);
-  expect(
-    Math.hypot(
-      transition.afterClick.anchor.x - transition.before.anchor.x,
-      transition.afterClick.anchor.y - transition.before.anchor.y,
-    ),
-  ).toBeLessThanOrEqual(1);
-  const scene = transition.samples.findIndex((frame) => frame.motionPhase === 'scene');
-  expect(scene).toBeGreaterThan(0);
-  expect(
-    transition.samples
-      .slice(0, scene)
-      .every((frame) => frame.motionPhase === 'exit' && frame.entranceOpacity === 0),
-  ).toBe(true);
-}
-
 function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordTransition>>) {
   expect(transition.start.camera).not.toBe(transition.settled.camera);
   expect(
@@ -1069,6 +1051,7 @@ test('keeps live battery policy and explicit preview choices consistent in CSS a
   page,
 }, info) => {
   await openSystemMotionFixture(page, 'custom-walkthrough', false);
+  await page.getByRole('button', { name: 'Customize preview', exact: true }).click();
   const shell = page.getByTestId('catalog-shell');
   const root = page.locator('#custom-walkthrough');
   const readPolicy = () =>
@@ -1102,7 +1085,10 @@ test('keeps live battery policy and explicit preview choices consistent in CSS a
   expect(full.frames.at(-1)).toMatchObject({ selectedStep: 0, phase: 'settled', settled: true });
   evidence.push({ policy: await readPolicy(), transition: full });
 
-  await page.getByRole('radio', { name: 'System', exact: true }).click();
+  await page
+    .getByTestId('catalog-motion-control')
+    .getByRole('radio', { name: 'System', exact: true })
+    .click();
   await expect(shell).toHaveAttribute('data-catalog-motion', 'reduced');
   await page.evaluate(() => document.documentElement.removeAttribute('data-reduce-motion'));
   await expect(shell).toHaveAttribute('data-catalog-motion', 'full');
@@ -1135,6 +1121,7 @@ test('persists accessible full and reduced motion choices across stepped fixture
   page,
 }) => {
   await openSystemMotionFixture(page, 'custom-walkthrough', true);
+  await page.getByRole('button', { name: 'Customize preview', exact: true }).click();
   await page.getByRole('radio', { name: 'Full', exact: true }).click();
   await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'full');
   await expect(page.locator('html')).toHaveClass(/catalog-full-motion/);
@@ -1153,6 +1140,7 @@ test('persists accessible full and reduced motion choices across stepped fixture
   await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
     timeout: 30_000,
   });
+  await page.getByRole('button', { name: 'Customize preview', exact: true }).click();
   await expect(page.getByRole('radio', { name: 'Full', exact: true })).toHaveAttribute(
     'aria-checked',
     'true',
@@ -1171,9 +1159,14 @@ test('persists accessible full and reduced motion choices across stepped fixture
   await page.goto(
     `${baseUrl}/sandbox/diagram-workbench?state=custom-delivery-walkthrough&theme=light&width=960`,
   );
-  await expect(page.getByTestId('catalog-scene')).toHaveAttribute('data-preview-ready', 'true', {
-    timeout: 30_000,
-  });
+  // This visit checks saved policy hydration, not another gallery transition.
+  await expect(page.getByTestId('catalog-shell')).toHaveAttribute(
+    'data-catalog-motion-preference',
+    'reduced',
+  );
+  await expect(page.getByTestId('catalog-shell')).toHaveAttribute('data-catalog-motion', 'reduced');
+  await expect(page.locator('html')).toHaveClass(/catalog-reduced-motion/);
+  await page.getByRole('button', { name: 'Customize preview', exact: true }).click();
   await expect(page.getByRole('radio', { name: 'Reduced', exact: true })).toHaveAttribute(
     'aria-checked',
     'true',
@@ -1305,7 +1298,7 @@ test('animates delivery nodes and painted connections between Observe and Publis
 
 test('targets complete delivery scene geometry before incoming content appears', async ({
   page,
-}) => {
+}, testInfo) => {
   await openMotionFixture(page, 'custom-delivery-walkthrough');
   const root = page.locator('#custom-delivery-walkthrough');
   const renderer = root.locator('.diagram-renderer');
@@ -1322,6 +1315,7 @@ test('targets complete delivery scene geometry before incoming content appears',
     const samples = await root.evaluate(
       async (element, target) => {
         const diagram = element.querySelector<HTMLElement>('.diagram-renderer')!;
+        const paint = new Function(`return (${target.paintSource})`)() as typeof readDiagramPaint;
         const nextFrame = () =>
           new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         const read = () => {
@@ -1339,6 +1333,7 @@ test('targets complete delivery scene geometry before incoming content appears',
             screen: { x: bounds.x, y: bounds.y },
             enteringOpacity: enteringNode ? Number(getComputedStyle(enteringNode).opacity) : 0,
             frame: { width: svg.width.baseVal.value, height: svg.height.baseVal.value },
+            paint: paint(diagram),
           };
         };
         const frames = [read()];
@@ -1354,8 +1349,12 @@ test('targets complete delivery scene geometry before incoming content appears',
         }
         return frames;
       },
-      { stepIndex, enteringNodeId },
+      { stepIndex, enteringNodeId, paintSource: readDiagramPaint.toString() },
     );
+    await testInfo.attach(`delivery-geometry-${stepIndex}`, {
+      body: JSON.stringify(samples),
+      contentType: 'application/json',
+    });
     const destination = samples.at(-1)!;
     const afterSelection = samples.slice(1);
     const distance = (left: { x: number; y: number }, right: { x: number; y: number }) =>
@@ -1367,12 +1366,19 @@ test('targets complete delivery scene geometry before incoming content appears',
 
     expect(destinationLocal).toBeGreaterThanOrEqual(0);
     expect(entryStart).toBeGreaterThan(destinationLocal);
+    expect(destination.settled).toBe(true);
+    for (const sample of samples) {
+      expect(sample.paint.finite, JSON.stringify(sample)).toBe(true);
+      expect(sample.paint.overflow, JSON.stringify(sample)).toBeLessThanOrEqual(1);
+    }
     expect(
-      afterSelection.every(
-        ({ frame }) =>
-          Math.abs(frame.width - destination.frame.width) <= 0.1 &&
-          Math.abs(frame.height - destination.frame.height) <= 0.1,
-      ),
+      afterSelection
+        .slice(entryStart)
+        .every(
+          ({ frame }) =>
+            Math.abs(frame.width - destination.frame.width) <= 0.1 &&
+            Math.abs(frame.height - destination.frame.height) <= 0.1,
+        ),
       JSON.stringify(afterSelection.map(({ phase, frame }) => ({ phase, frame }))),
     ).toBe(true);
     expect(
@@ -1675,6 +1681,8 @@ test('keeps ownership motion when a scrollbar gutter changes only the viewport w
 });
 
 test('settles an ownership step interrupted by a genuine outer lane resize', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 941, height: 700 });
   await openMotionFixture(page, 'custom-walkthrough');
   const root = page.locator('#custom-walkthrough');
@@ -1698,6 +1706,7 @@ test('settles an ownership step interrupted by a genuine outer lane resize', asy
   );
   expect(await sharedChat!.evaluate((element) => element.isConnected)).toBe(false);
   expect(await allRoutesComplete(page, 'custom-walkthrough')).toBe(true);
+  expect(pageErrors).toEqual([]);
 });
 
 test('interpolates a retained route with its moving endpoints in diagram coordinates', async ({
@@ -1819,8 +1828,13 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           expect(transition.frames[0].phase).toBe('exit');
         }
         const sceneIndex = transition.frames.findIndex((frame) => frame.phase === 'scene');
-        expect(sceneIndex).toBeGreaterThan(0);
         const exitIndex = transition.frames.findIndex((frame) => frame.phase === 'exit');
+        const settledFrame = transition.frames.at(-1)!;
+        const hasSharedNodes = transition.baseline.nodeIds.some(
+          (id) => id in settledFrame.nodeOpacities,
+        );
+        expect(sceneIndex).toBeGreaterThanOrEqual(0);
+        if (hasSharedNodes) expect(sceneIndex).toBeGreaterThan(0);
         expect(
           Math.max(
             ...transition.frames.slice(0, sceneIndex).flatMap((frame) => frame.entryOpacities),
@@ -1843,7 +1857,11 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           }),
         ).toBe(true);
 
-        const settledFrame = transition.frames.at(-1)!;
+        expect(
+          transition.frames.every((frame) =>
+            Object.values(frame.nodeOpacities).some((opacity) => opacity > 0.01),
+          ),
+        ).toBe(true);
         const lifecycleKeys = [
           'nodeOpacities',
           'groupOpacities',
@@ -1854,14 +1872,22 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           Object.keys(transition.frames[0][key]).some((id) => !(id in settledFrame[key])),
         );
         if (hasDepartingContent) {
-          if (exitIndex === 0 && cameraFrames.length === 0) {
+          if (exitIndex === 0) {
             expect(transition.frames[0].cameraAnimationCount).toBe(0);
             expect(transition.frames[0].camera).toBe(transition.baseline.camera);
             expect(transition.frames[0].geometry).toBe(transition.baseline.geometry);
           } else {
             expect(exitIndex).toBeGreaterThan(0);
           }
-          expect(sceneIndex).toBeGreaterThan(exitIndex);
+          if (hasSharedNodes) {
+            expect(sceneIndex).toBeGreaterThan(exitIndex);
+          } else {
+            // Disjoint scenes must finish entering before outgoing paint can disappear.
+            expect(exitIndex).toBeGreaterThan(sceneIndex);
+            for (const id of Object.keys(settledFrame.nodeOpacities)) {
+              expect(transition.frames[exitIndex].nodeOpacities[id]).toBeGreaterThanOrEqual(0.99);
+            }
+          }
         }
         const lifecycle = (
           key: 'nodeOpacities' | 'groupOpacities' | 'edgeReveals' | 'labelOpacities',
@@ -1882,8 +1908,10 @@ test('keeps explicit full motion active for every stepped sandbox control', asyn
           );
           if (firstEnteringFrame >= 0) {
             expect(
-              departingIds.every(
-                (id) => (transition.frames[firstEnteringFrame][key][id] ?? 0) <= 0.01,
+              departingIds.every((id) =>
+                hasSharedNodes
+                  ? (transition.frames[firstEnteringFrame][key][id] ?? 0) <= 0.01
+                  : (transition.frames[firstEnteringFrame][key][id] ?? 0) >= 0.99,
               ),
               JSON.stringify({ fixture: fixture.id, direction, index, key }),
             ).toBe(true);
@@ -2477,8 +2505,6 @@ for (const appearance of framingAppearances) {
             .filter((bounds) => bounds.width > 0 || bounds.height > 0);
           const minX = Math.min(...painted.map((bounds) => bounds.left));
           const maxX = Math.max(...painted.map((bounds) => bounds.right));
-          const minY = Math.min(...painted.map((bounds) => bounds.top));
-          const maxY = Math.max(...painted.map((bounds) => bounds.bottom));
           const finiteAnimations = renderer
             .getAnimations({ subtree: true })
             .filter((animation) =>

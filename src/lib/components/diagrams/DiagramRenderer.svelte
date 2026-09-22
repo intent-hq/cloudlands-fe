@@ -79,6 +79,7 @@
   let fitToWidth = $state(false);
   let fitScale = $state(1);
   let layoutWidthLimit = $state(900);
+  let uncompactedLayoutWidth = $state(900);
   let scrollContainerEl = $state<HTMLDivElement | null>(null);
   let scrollContainerWidth = $state<number | null>(null);
   let noteLaneWidth = $state<number | null>(null);
@@ -119,7 +120,7 @@
       : (scrollContainerEl?.clientWidth ?? null),
   );
   let usesCompactPresentation = $derived(
-    layoutWidthLimit < 500 ||
+    uncompactedLayoutWidth < 500 ||
       (automaticallyFitState &&
         (noteLaneWidth ?? presentationWidth ?? 0) > 0 &&
         (noteLaneWidth ?? presentationWidth ?? 0) < 500),
@@ -1251,6 +1252,12 @@
       ['TB', 'BT'].includes(diagram.baseView.layout.direction ?? '')
         ? 500
         : 160;
+    // Classify against fixed padding, not the compact padding selected by this width.
+    // Otherwise widths near the breakpoint alternate between compact and regular layouts.
+    uncompactedLayoutWidth = Math.max(
+      verticalStateWidthFloor,
+      layoutAvailableWidth / readableScale - PADDING * 2,
+    );
     layoutWidthLimit = Math.max(
       verticalStateWidthFloor,
       layoutAvailableWidth / readableScale - canvasPadding * 2,
@@ -2126,7 +2133,9 @@
   }
 
   :global(.catalog-reduced-motion .diagram-renderer),
-  :global(.catalog-reduced-motion .diagram-renderer *) {
+  :global(.catalog-reduced-motion .diagram-renderer *),
+  :global(.catalog-reduced-motion .diagram-renderer *::before),
+  :global(.catalog-reduced-motion .diagram-renderer *::after) {
     transition: none !important;
     animation: none !important;
   }
@@ -2142,7 +2151,9 @@
     }
 
     :global(html:not(.catalog-full-motion) .diagram-renderer),
-    :global(html:not(.catalog-full-motion) .diagram-renderer *) {
+    :global(html:not(.catalog-full-motion) .diagram-renderer *),
+    :global(html:not(.catalog-full-motion) .diagram-renderer *::before),
+    :global(html:not(.catalog-full-motion) .diagram-renderer *::after) {
       transition: none !important;
       animation: none !important;
     }

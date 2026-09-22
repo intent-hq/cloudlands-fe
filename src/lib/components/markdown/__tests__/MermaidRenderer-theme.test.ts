@@ -64,7 +64,10 @@ describe('MermaidRenderer theme updates', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.documentElement.classList.remove('catalog-full-motion', 'catalog-reduced-motion');
     for (const name of Object.keys(tokens)) {
       document.documentElement.style.removeProperty(name);
     }
@@ -244,6 +247,103 @@ describe('MermaidRenderer theme updates', () => {
     expect(view.container.querySelector('[data-obsolete]')).toBeNull();
     expect(view.container.querySelector('svg[aria-roledescription="sequence"]')).toBeTruthy();
     expect(mermaidMocks.mermaidAPI.getDiagramFromText).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { policy: 'catalog reduced', rootClass: 'catalog-reduced-motion', mediaMatches: false },
+    { policy: 'OS reduced', rootClass: '', mediaMatches: true },
+    { policy: 'battery saver', rootClass: '', mediaMatches: false, batterySaver: true },
+  ])(
+    'settles flowchart geometry without transition delays under $policy motion',
+    async (policy) => {
+      const getBBox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+      Object.defineProperty(SVGElement.prototype, 'getBBox', {
+        configurable: true,
+        value: () => ({ x: 0, y: 0, width: 300, height: 180 }),
+      });
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      });
+      vi.stubGlobal('cancelAnimationFrame', vi.fn());
+      vi.spyOn(window, 'matchMedia').mockImplementation(
+        (query) =>
+          ({
+            matches: policy.mediaMatches,
+            media: query,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+          }) as unknown as MediaQueryList,
+      );
+      if (policy.rootClass) document.documentElement.classList.add(policy.rootClass);
+      if (policy.batterySaver) document.documentElement.setAttribute('data-reduce-motion', '');
+      mermaidMocks.render.mockResolvedValueOnce({
+        svg: '<svg aria-roledescription="flowchart-v2" viewBox="0 0 300 180"></svg>',
+      });
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      try {
+        const result = render(MermaidRenderer, { code: 'flowchart TB\nA --> B' });
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(0);
+        await Promise.resolve();
+
+        expect(result.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+          'true',
+        );
+      } finally {
+        document.documentElement.removeAttribute('data-reduce-motion');
+        if (getBBox) Object.defineProperty(SVGElement.prototype, 'getBBox', getBBox);
+        else delete (SVGElement.prototype as SVGElement & { getBBox?: unknown }).getBBox;
+      }
+    },
+  );
+
+  it('keeps transition settlement under an explicit full-motion catalog override', async () => {
+    const getBBox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+    Object.defineProperty(SVGElement.prototype, 'getBBox', {
+      configurable: true,
+      value: () => ({ x: 0, y: 0, width: 300, height: 180 }),
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query) =>
+        ({
+          matches: true,
+          media: query,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+    document.documentElement.classList.add('catalog-full-motion');
+    mermaidMocks.render.mockResolvedValueOnce({
+      svg: '<svg aria-roledescription="flowchart-v2" viewBox="0 0 300 180"></svg>',
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    try {
+      const result = render(MermaidRenderer, { code: 'flowchart TB\nA --> B' });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      expect(result.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+        'false',
+      );
+
+      await vi.runAllTimersAsync();
+      expect(result.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+        'true',
+      );
+    } finally {
+      if (getBBox) Object.defineProperty(SVGElement.prototype, 'getBBox', getBBox);
+      else delete (SVGElement.prototype as SVGElement & { getBBox?: unknown }).getBBox;
+    }
   });
 
   it('joins automatic note wraps without removing authored line breaks or tspan text', async () => {

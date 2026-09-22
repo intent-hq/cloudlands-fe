@@ -25,6 +25,7 @@
     runSerializedMermaidRender,
   } from './mermaid-theme';
   import { splitSemanticLabel } from '$lib/components/diagrams/diagram-label-wrap';
+  import { prefersReducedMotion } from '$lib/utils/reduced-motion';
   import type { SvgBounds } from './mermaid-state-layout';
   import {
     snapshotFlowchartClusterMembership,
@@ -1465,7 +1466,9 @@ ${source}`;
       svg.setAttribute('height', String(height));
     }
     setReadableMermaidWidth(svg, width);
-    await new Promise<void>((resolve) => setTimeout(resolve, 64));
+    if (!prefersReducedMotion(svg.ownerDocument)) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 64));
+    }
     if (generation !== renderGeneration) return false;
     if (!compactFlowchartLayout && svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       routeFlowchartFeedbackLane(svg, true);
@@ -1531,7 +1534,9 @@ ${source}`;
     }
     if (normalizedState) attachStateTerminalArrowheads(svg);
     applyMermaidTerminalGaps(svg);
-    await new Promise<void>((resolve) => setTimeout(resolve, 120));
+    if (!prefersReducedMotion(svg.ownerDocument)) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 120));
+    }
     if (generation !== renderGeneration || fit !== fitGeneration) return false;
     if (svg.getAttribute('aria-roledescription') === 'flowchart-v2') {
       const settledBounds = measureFinalFlowchartBounds(svg);

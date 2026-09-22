@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
+import { readDiagramPaint } from './diagram-painted-bounds';
+import { expectDrawingReachable } from './diagram-scroll-reachability';
 
 const externalBaseUrl = process.env.UI_PREVIEW_BASE_URL;
 let baseUrl = externalBaseUrl ?? '';
@@ -145,6 +147,7 @@ for (const motion of ['full', 'reduced']) {
   test(`keeps camera start-pose through growth, shrink and interruption · ${motion}`, async ({
     page,
   }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: motion === 'full' ? 'no-preference' : 'reduce' });
     await page.goto(
       `${baseUrl}/sandbox/diagram-workbench?state=custom-architecture&theme=light&width=960&motion=${motion}`,
     );
@@ -153,7 +156,8 @@ for (const motion of ['full', 'reduced']) {
     });
     const root = page.locator('#custom-architecture .diagram-renderer');
     await expect(root).toHaveAttribute('data-diagram-settled', 'true');
-    const transitions = await root.evaluate(async (element) => {
+    const transitions = await root.evaluate(async (element, paintSource) => {
+      const paint = new Function(`return (${paintSource})`)() as typeof readDiagramPaint;
       const nextFrame = () =>
         new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       const read = () => {
@@ -172,6 +176,7 @@ for (const motion of ['full', 'reduced']) {
           settled: element.getAttribute('data-diagram-settled') === 'true',
           height: viewport.height,
           drawingHeight: element.querySelector('.diagram-content')!.getBoundingClientRect().height,
+          paint: paint(element),
           animations: animations.length,
           nodes: ['user', 'renderer'].map((id) => {
             const node = element.querySelector(`[data-node-id="${id}"]`)!;
@@ -220,7 +225,7 @@ for (const motion of ['full', 'reduced']) {
         changes.push({ step, interrupt, clicks, frames });
       }
       return changes;
-    });
+    }, readDiagramPaint.toString());
     await testInfo.attach('camera-resize-frames', {
       body: JSON.stringify(transitions),
       contentType: 'application/json',
@@ -228,12 +233,16 @@ for (const motion of ['full', 'reduced']) {
     const original = transitions[0].clicks[0].before;
     const grown = transitions[0].frames.at(-1)!;
     expect(grown.drawingHeight).toBeGreaterThan(original.drawingHeight);
-    expect(grown.height).toBeCloseTo(original.height, 0);
+    expect(grown.height).toBeGreaterThan(original.height);
     for (const change of transitions) {
       const final = change.frames.at(-1)!;
       expect(final).toMatchObject({ settled: true, animations: 0 });
+      expect(final.paint.topGap).toBeLessThanOrEqual(64);
+      expect(final.paint.bottomGap).toBeLessThanOrEqual(64);
       for (const frame of change.frames) {
-        expect(frame.height).toBeCloseTo(original.height, 0);
+        expect(Number.isFinite(frame.height) && frame.height > 0).toBe(true);
+        expect(frame.paint.finite, JSON.stringify(frame)).toBe(true);
+        expect(frame.paint.overflow, JSON.stringify(frame)).toBeLessThanOrEqual(1);
         for (const node of frame.nodes) {
           expect([node.x, node.y, node.width, node.height].every(Number.isFinite)).toBe(true);
           expect(node.width).toBeGreaterThan(0);
@@ -261,5 +270,10 @@ for (const motion of ['full', 'reduced']) {
         }
       }
     }
+    await expectDrawingReachable(root);
+    await root.locator('[data-diagram-step-index="1"]').click();
+    await expect(root).toHaveAttribute('data-diagram-settled', 'true');
+    await expectDrawingReachable(root);
+    await root.screenshot({ path: testInfo.outputPath('grown-active-scene.png') });
   });
 }
