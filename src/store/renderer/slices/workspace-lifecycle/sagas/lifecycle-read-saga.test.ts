@@ -2807,6 +2807,27 @@ describe('lifecycleReadSaga', () => {
     expect(mocks.agents.list).not.toHaveBeenCalled();
     expect(run.actions).toEqual([]);
 
+    // A cached RETIRED standalone background row is not a live parent — the
+    // sidebar drops retired rows before it partitions the bins — so the whole
+    // bin still covers the orphans.
+    const retiredBackground = agent('agent-bg-retired', {
+      isBackground: true,
+      retiredAt: '2026-01-01T00:00:00.000Z',
+    });
+    current.agentSessions.byAgentId['agent-bg-retired'] = retiredBackground;
+    current.workspaceAgents.byWorkspaceId = {
+      [WS]: {
+        agentIds: ['agent-bg-retired'],
+        scopeCounts: { ...COUNTS, background: 0 },
+        delegatedCounts: DELEGATED_WITH_ORPHANS,
+        delegatedAgentsLoaded: true,
+      },
+    } as never;
+    run.channel.put(fetchOrphanedDelegatedAgentsRequested(WS));
+    await settle();
+    expect(mocks.agents.list).not.toHaveBeenCalled();
+    expect(run.actions).toEqual([]);
+
     // A standalone background row a lifecycle event hydrated ahead of the
     // count is a live parent the whole bin does not cover: the daemon is asked.
     const eventBackground = agent('agent-bg-event', { isBackground: true });

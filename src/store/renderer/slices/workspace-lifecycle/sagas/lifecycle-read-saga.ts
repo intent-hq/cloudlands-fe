@@ -743,7 +743,7 @@ function* selectDelegatedParentsCovered(
   const count = backgroundCount ?? (yield* selectScopeCounts.effect(workspaceId))?.background ?? 0;
   if (count > 0) return false;
   const cached = yield* selectAllWorkspaceAgents.effect(workspaceId);
-  return !cached.some((agent) => classifyAgentScope(agent) === 'background');
+  return !cached.some((agent) => !agent.retiredAt && classifyAgentScope(agent) === 'background');
 }
 
 /**
