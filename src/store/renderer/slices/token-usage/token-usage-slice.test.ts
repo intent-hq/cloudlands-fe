@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import {
+  getItem,
+  getItems,
+  isCollection,
+} from '@augmentcode/themis/utils/collections/collection-utils';
 import type { TokenUsage } from '../../../../features/token-usage/token-usage-types';
 import {
   clearWorkspaceTokenUsage,
@@ -90,10 +95,45 @@ describe('token-usage-slice', () => {
       initialState,
       tokenUsageReceived(WS, { ...snapshot, byAgentModel: crossFilterRows }),
     );
-    expect(present.byWorkspaceId[WS].byAgentModel).toBe(crossFilterRows);
+    const collection = present.byWorkspaceId[WS].byAgentModel!;
+    expect(isCollection(collection)).toBe(true);
+    expect(collection.ids).toEqual(['["agent-1","model-a"]']);
+    expect(getItem(collection, '["agent-1","model-a"]')?.row).toBe(crossFilterRows[0]);
+    expect(crossFilterRows[0]).not.toHaveProperty('id');
 
-    const legacy = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
+    const empty = tokenUsageReducer(
+      present,
+      tokenUsageReceived(WS, { ...snapshot, byAgentModel: [] }),
+    );
+    expect(isCollection(empty.byWorkspaceId[WS].byAgentModel!)).toBe(true);
+    expect(getItems(empty.byWorkspaceId[WS].byAgentModel!)).toEqual([]);
+
+    const legacy = tokenUsageReducer(present, tokenUsageReceived(WS, snapshot));
     expect(legacy.byWorkspaceId[WS]).not.toHaveProperty('byAgentModel');
+  });
+
+  it('replaces rather than merges matrix snapshots and keeps cached rows on failure', () => {
+    const present = tokenUsageReducer(
+      initialState,
+      tokenUsageReceived(WS, {
+        ...snapshot,
+        byAgentModel: crossFilterRows,
+      }),
+    );
+    const rows = [{ ...crossFilterRows[0], model: 'model-b', humanMessages: 7 }];
+    const next = tokenUsageReducer(
+      present,
+      tokenUsageReceived(WS, { ...snapshot, byAgentModel: rows }),
+    );
+    const collection = next.byWorkspaceId[WS].byAgentModel!;
+    expect(collection.ids).toEqual(['["agent-1","model-b"]']);
+    expect(getItem(collection, '["agent-1","model-a"]')).toBeUndefined();
+    expect(getItems(collection).map((entry) => entry.row)).toEqual(rows);
+    expect(present.byWorkspaceId[WS].byAgentModel!.ids).toEqual(['["agent-1","model-a"]']);
+    const stale = tokenUsageReducer(next, tokenUsageFetchFailed(WS));
+    expect(stale.byWorkspaceId[WS].isStale).toBe(true);
+    expect(stale.byWorkspaceId[WS].byAgentModel).toBe(collection);
+    expect(JSON.parse(JSON.stringify(next))).toEqual(next);
   });
   it('tokenUsageFetchFailed marks an existing entry stale and keeps numbers', () => {
     const populated = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));

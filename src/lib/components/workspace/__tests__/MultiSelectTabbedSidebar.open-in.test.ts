@@ -168,6 +168,7 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
 }));
 vi.mock('$store/renderer/slices/token-usage/token-usage-selectors', () => ({
   selectWorkspaceTokenUsage: mocks.selectorFrom(() => mocks.tokenUsage),
+  selectWorkspaceTokenUsageCrossFilterRows: mocks.selector(undefined),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsResponding: mocks.selector(false),

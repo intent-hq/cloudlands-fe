@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import type { WorkspaceTokenUsageState } from '$store/renderer/slices/token-usage/token-usage-types';
+import type { TokenUsage } from '$features/token-usage/token-usage-types';
 import { emptyWorkspaceTokenUsageState } from '$store/renderer/slices/token-usage/token-usage-types';
 import { warmImport } from '../../../../../test/warm-import';
 
@@ -36,17 +36,29 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/token-usage/token-usage-selectors', () => ({
   selectWorkspaceTokenUsage: mocks.selector(() => mocks.state.usage),
+  selectWorkspaceTokenUsageCrossFilterRows: mocks.selector(
+    () => (mocks.state.usage as TokenUsage).byAgentModel,
+  ),
 }));
 
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectAllWorkspaceAgents: mocks.selector(() => mocks.state.agents),
 }));
 
-function makeUsage(overrides: Partial<WorkspaceTokenUsageState>): WorkspaceTokenUsageState {
-  return { ...emptyWorkspaceTokenUsageState, ...overrides };
+type TokenUsageFixture = TokenUsage & { isStale: boolean };
+
+function makeUsage(overrides: Partial<TokenUsageFixture>): TokenUsageFixture {
+  return {
+    byAgentId: {},
+    totals: emptyWorkspaceTokenUsageState.totals,
+    byModel: {},
+    lastScanAt: null,
+    isStale: true,
+    ...overrides,
+  };
 }
 
-function makeSelectionMatrixUsage(): WorkspaceTokenUsageState {
+function makeSelectionMatrixUsage(): TokenUsageFixture {
   const totals = (inputTokens: number) => ({
     inputTokens,
     outputTokens: 0,
