@@ -9,20 +9,28 @@ import { internalModuleImportPatterns } from '../eslint-rules/internal-module-im
 // ban in eslint.config.js is a `patterns` group built by
 // eslint-rules/internal-module-import-patterns.js; this scanner loads the
 // effective flat config and fails when an override regresses to a `paths`
-// entry, a bare-string pattern, a partial group, or an `importNames` list.
-// Package bans (`electron`, `child_process`, `@playwright/...`) and `regex`
-// entries are out of scope.
+// entry, a bare-string pattern, a partial group, a negated entry, or an
+// `importNames` list. Package bans (`electron`, `child_process`,
+// `@playwright/...`), SvelteKit virtual modules (`$app/*`, `$env/*`) and
+// `regex` entries are out of scope.
 export const HELPER_PATH = 'eslint-rules/internal-module-import-patterns.js';
 export const RULE_IDS = ['no-restricted-imports', '@typescript-eslint/no-restricted-imports'];
 
-const INTERNAL_SOURCE_PATTERN = /^(?:\$|\.\.?\/|\/|src\/|\*\*\/)/;
+const INTERNAL_SOURCE_PATTERN = /^(?:\.\.?\/|\/|src\/|\*\*\/)/;
+const ALIAS_ROOT_PATTERN = /^(\$[^/]+)/;
 const ALIAS_ENTRY_PATTERN = /^(\$[^/]+)(?:\/(.+))?$/;
 const GLOB_ENTRY_PATTERN = /^\*\*\/(.+)$/;
 const ALIAS_TARGET_PATTERN = /^\.\/src\/(.+?)\/?$/;
 const MODULE_EXTENSION_PATTERN = /\.(?:ts|js)$/;
 
-export const isInternalSource = (source) =>
-  typeof source === 'string' && INTERNAL_SOURCE_PATTERN.test(source);
+// A `$` root is internal only when kit.alias maps it (`$lib`, `$features`, …);
+// `$app/*`, `$env/*` and `$service-worker` are SvelteKit virtual modules and
+// count as packages.
+export const isInternalSource = (source, aliases) => {
+  if (typeof source !== 'string') return false;
+  const root = ALIAS_ROOT_PATTERN.exec(source);
+  return root ? aliases.has(root[1]) : INTERNAL_SOURCE_PATTERN.test(source);
+};
 
 // The `$alias` → `src/`-relative directory map from a svelte.config.js
 // `kit.alias` object: `{ $lib: './src/lib' }` → `Map { '$lib' => 'lib' }`.
@@ -62,14 +70,25 @@ function moduleOf(entry, aliases) {
 
 const describeEntry = (entry) => JSON.stringify(entry);
 
+const isNegated = (entry) => typeof entry === 'string' && entry.startsWith('!');
+
 // Violations for one `patterns` object: the group must be exactly the union of
 // `internalModuleImportPatterns(alias, modulePath)` over the modules it names,
-// and must ban the whole module (an `importNames` list still lets
-// `import * as m` reach the same binding).
+// must ban the whole module (an `importNames` list still lets `import * as m`
+// reach the same binding), and must carry no negated entry (a gitignore-style
+// `!…` subtracts from every earlier entry, so `!**/*.ts` or the negated alias
+// spelling reopens a complete group).
 function checkGroup(pattern, aliases, report) {
   const group = Array.isArray(pattern.group) ? pattern.group : [];
-  const internal = group.filter(isInternalSource);
+  const internal = group.filter((entry) => isInternalSource(entry, aliases));
   if (!internal.length) return;
+  const negated = group.filter(isNegated);
+  if (negated.length) {
+    report(
+      `{ group: [${internal.map(describeEntry).join(', ')}] }`,
+      `carries negated entries [${negated.join(', ')}] that subtract spellings from an internal-module ban; a complete internalModuleImportPatterns group takes no negations`,
+    );
+  }
   if (Array.isArray(pattern.importNames)) {
     report(
       `{ group: [${internal.map(describeEntry).join(', ')}] }`,
@@ -125,6 +144,13 @@ function normalizeOptions(ruleConfig) {
   return { paths, patterns };
 }
 
+// `'off'` / `0`, bare or as the head of `[severity, ...options]`: ESLint ignores
+// the retained options, so there is no ban to guard.
+function isDisabled(ruleConfig) {
+  const severity = Array.isArray(ruleConfig) ? ruleConfig[0] : ruleConfig;
+  return severity === 'off' || severity === 0;
+}
+
 const describeBlock = (block, index) =>
   Array.isArray(block.files) ? `files [${block.files.flat().join(', ')}]` : `block #${index}`;
 
@@ -135,13 +161,13 @@ export function checkRestrictedImportSpellings(config, aliases) {
   config.forEach((block, index) => {
     for (const rule of RULE_IDS) {
       const ruleConfig = block?.rules?.[rule];
-      if (ruleConfig === undefined) continue;
+      if (ruleConfig === undefined || isDisabled(ruleConfig)) continue;
       const blockLabel = describeBlock(block, index);
       const report = (entry, reason) => violations.push({ block: blockLabel, rule, entry, reason });
       const { paths, patterns } = normalizeOptions(ruleConfig);
       for (const entry of paths) {
         const name = typeof entry === 'string' ? entry : entry?.name;
-        if (isInternalSource(name)) {
+        if (isInternalSource(name, aliases)) {
           report(
             `paths entry ${describeEntry(name)}`,
             'bans one spelling of an internal module; use a patterns group built by internalModuleImportPatterns',
@@ -150,7 +176,7 @@ export function checkRestrictedImportSpellings(config, aliases) {
       }
       for (const pattern of patterns) {
         if (typeof pattern === 'string') {
-          if (isInternalSource(pattern)) {
+          if (isInternalSource(pattern, aliases)) {
             report(
               `patterns entry ${describeEntry(pattern)}`,
               'is a bare string; use a { group } built by internalModuleImportPatterns',
