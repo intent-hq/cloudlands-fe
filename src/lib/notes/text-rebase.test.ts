@@ -2715,7 +2715,14 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // drops the blanks after its `<`, so the text it shows may differ from
     // the source (`shown`, the body otherwise): `< not valid>` is shown as
     // `<not valid>`, a tag holding a blank anywhere in the note changes
-    // nothing about the image, and `\<` is shown as `&lt;` spelled out.
+    // nothing about the image, and `\<` is shown as `&lt;` spelled out. The
+    // blank dropped is any the renderer's escaping reads as one — a line
+    // break among them, which then ends no plain-text line: `<` and
+    // ` span>before</span>` on the next line are shown as one line, and the
+    // lines after them pair with their own. (Shown as two lines, the
+    // paragraph took one plain-text line more than the plain text held, and
+    // every item after it paired with the next: the first with the blank
+    // line before the list, the second with the first.)
     type ImageShape = [string, string, string, 'before' | 'after' | 'end', string?];
     const RENDERER_REWRITTEN: ImageShape[] = [
       [
@@ -2733,8 +2740,36 @@ describe('alignment of link syntax the lexer does not account for', () => {
         '![visible tk87z](<not valid>)',
       ],
       [
+        'a destination in angle brackets after a line break',
+        '![visible tk87z](<\n not valid>)',
+        '',
+        'after',
+        '![visible tk87z](<not valid>)',
+      ],
+      [
         'a destination in angle brackets holding a blank, a tag holding a blank before it',
         '< span>before</span>\n\n![visible tk87z](<not valid>)',
+        '',
+        'after',
+        '![visible tk87z](<not valid>)',
+      ],
+      [
+        'a destination in angle brackets holding a blank, a tag broken over two lines before it',
+        '<\n span>before</span>\n\n![visible tk87z](<not valid>)',
+        '',
+        'after',
+        '![visible tk87z](<not valid>)',
+      ],
+      [
+        'a destination in angle brackets holding a blank, a tag holding a no-break space before it',
+        '<\u00a0span>before</span>\n\n![visible tk87z](<not valid>)',
+        '',
+        'after',
+        '![visible tk87z](<not valid>)',
+      ],
+      [
+        'a destination in angle brackets holding a blank, a tag holding a form feed before it',
+        '<\fspan>before</span>\n\n![visible tk87z](<not valid>)',
         '',
         'after',
         '![visible tk87z](<not valid>)',
@@ -2832,6 +2867,13 @@ describe('alignment of link syntax the lexer does not account for', () => {
         'end',
       ],
       ['a destination in angle brackets', '![alt tk87z](<u.png>)', '', 'after'],
+      ['a destination in angle brackets after a blank', '![alt tk87z](< u.png>)', '', 'after'],
+      [
+        'a destination in angle brackets after a line break',
+        '![alt tk87z](<\n u.png>)',
+        '',
+        'after',
+      ],
       ['a destination and a title', '![alt tk87z](u.png "a title")', '', 'after'],
       ['a destination holding balanced parentheses', '![alt tk87z](a(b)c)', '', 'after'],
       ['an empty destination', '![alt tk87z]()', '', 'after'],
@@ -2947,7 +2989,16 @@ describe('alignment of link syntax the lexer does not account for', () => {
           expectExactRun(plain, markdown, map, 'visible tk87z', 0, 0);
           for (let k = 0; k < 2; k += 1) expectExactRun(plain, markdown, map, 'same item', k, k);
         } else {
-          expectSameLine(plain, markdown, map, 'visible tk87z', 'visible tk87z');
+          // The image's line as shown: its source lines, however many a
+          // line break the renderer drops keeps apart.
+          const image = body.slice(body.indexOf('![visible')).replace(/\n/g, eol);
+          const at = markdown.indexOf(image);
+          expect(at, image).toBeGreaterThanOrEqual(0);
+          let imageEnd = markdown.indexOf('\n', at + image.length);
+          if (imageEnd === -1) imageEnd = markdown.length;
+          expectLinesBounded(map, linesHolding(plain, 'visible tk87z', /\n|\uFFFC/g), [
+            [markdown.lastIndexOf('\n', at) + 1, imageEnd],
+          ]);
           expectLinesBounded(
             map,
             linesHolding(plain, 'same item', /\n|\uFFFC/g),

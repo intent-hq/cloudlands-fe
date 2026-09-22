@@ -752,12 +752,14 @@ const LINE_ENDING = /\r\n|\r/g;
 let hiddenTextLexer: ReturnType<typeof createTiptapTaskListMarked> | undefined;
 
 /**
- * The markdown as the alignment reads it: `text` with the hidden runs masked,
- * `unanchorable` the sorted, flattened `[start, end)` ranges of the lines
- * of `text` that no anchor may land on, `spelled` the sorted offsets of the
- * `<` and `>` the renderer shows as `&lt;` and `&gt;` spelled out
- * (`spelledAngles`), and `splits` the sorted offsets of the images (`![`),
- * each of which the editor may split a plain-text line at (see `LineWalk`).
+ * The markdown as the alignment reads it: `text` with the hidden runs masked
+ * — the line breaks the renderer drops among them (`shadowedAngles`), so a
+ * line of `text` is a line of the plain text — `unanchorable` the sorted,
+ * flattened `[start, end)` ranges of the lines of `text` that no anchor may
+ * land on, `spelled` the sorted offsets of the `<` and `>` the renderer
+ * shows as `&lt;` and `&gt;` spelled out (`shadowedAngles`), and `splits`
+ * the sorted offsets of the images (`![`), each of which the editor may
+ * split a plain-text line at (see `LineWalk`).
  */
 interface Mask {
   text: string;
@@ -847,18 +849,25 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * (`anchoredHunks` starts its deadline before it) and is memoised for the
  * last markdown; a source with nothing hideable in it (`HIDEABLE`,
  * `HIDDEN_HTML`, a backtick) is not lexed either.
+ *
+ * A line break the renderer drops (`<` broken from its tag name over two
+ * lines) is masked too: the lines it kept apart are one line of the plain
+ * text, so they are one line of `text`, and the lines pair (`textLines`).
  */
 function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
   const shadow = shadowEscapedTags(markdown);
   const lexed = computeHiddenMask(markdown, shadow);
-  const text = lexed ?? maskHiddenBlocks(markdown, shadow);
+  let text = lexed ?? maskHiddenBlocks(markdown, shadow);
+  const shadowed =
+    shadow === undefined || shadow === markdown ? undefined : shadowedAngles(markdown, shadow);
+  if (shadowed && shadowed.dropped.length > 0) text = maskOffsets(text, shadowed.dropped);
   const splits: number[] = [];
   for (const split of markdown.matchAll(LINE_SPLIT)) splits.push(split.index);
   const mask = {
     text,
     unanchorable: unanchorableLines(text, lexed === undefined),
-    spelled: shadow === undefined || shadow === markdown ? [] : spelledAngles(markdown, shadow),
+    spelled: shadowed?.spelled ?? [],
     splits,
   };
   lastMask = { markdown, mask };
@@ -880,10 +889,11 @@ const DROPPED_BLANK = /\s/;
  * `ESCAPED_ANGLE` instead, and so is each blank the escaping drops between
  * a `<` and its tag name (`< span>` reaches marked as `&lt;span&gt;`, and
  * `![alt](< a>)` as the image `![alt](&lt;a&gt;)` — blanks, a line break
- * among them, that are on the shadow no blank either), so the shadow keeps
- * every offset of the source and what marked makes of it is what the
- * renderer shows — `![alt](<a b>)` an image to marked, text to the renderer
- * and on the shadow. The escaping is quadratic in the tags left open after
+ * among them, that are on the shadow no blank either; the line break the
+ * renderer drops is masked off the shadow in turn, `shadowedAngles`), so
+ * the shadow keeps every offset of the source and what marked makes of it
+ * is what the renderer shows — `![alt](<a b>)` an image to marked, text to
+ * the renderer and on the shadow. The escaping is quadratic in the tags left open after
  * the last `>` of the note, which close nothing, so it runs up to that `>`
  * and the rest is kept as written; a code span or fence the cut splits is
  * protected by the renderer and not here, which differs only inside code,
@@ -915,29 +925,53 @@ function shadowEscapedTags(markdown: string): string | undefined {
 }
 
 /**
- * The sorted offsets of the `<` and `>` of `markdown` the renderer shows
- * spelled out, as `&lt;` and `&gt;`: those it escapes (`ESCAPED_ANGLE` on
- * `shadow`, where `markdown` has the angle bracket) right after a
- * backslash — the escaping leaves the backslash before the `&`, and marked
+ * What the renderer's escaping does to `markdown` beyond reading a `<` or a
+ * `>` as text, read off `shadow` (`ESCAPED_ANGLE` where `markdown` has the
+ * character it rewrote), each as sorted offsets. `spelled`: the `<` and `>`
+ * it shows spelled out, as `&lt;` and `&gt;` — those it escapes right after
+ * a backslash; the escaping leaves the backslash before the `&`, and marked
  * reads `\&lt;` as an escaped `&` followed by `lt;`; a backslash itself
  * escaped (`\\<b>`) escapes nothing. The letters of the spelling are on the
  * plain-text line and on no source line, so a source line is paired by its
- * letters with them (`textLines`).
+ * letters with them (`textLines`). `dropped`: the line breaks it drops
+ * between a `<` and its tag name (`<` then ` span>` on the next line is
+ * shown as `<span>`, one line; the `\r` and the `\n` of a `\r\n` both) —
+ * each ends a source line and no plain-text line, so it is masked
+ * (`maskHidden`) and ends no line of the masked text either.
  */
-function spelledAngles(markdown: string, shadow: string): number[] {
+function shadowedAngles(
+  markdown: string,
+  shadow: string,
+): { spelled: number[]; dropped: number[] } {
   const spelled: number[] = [];
+  const dropped: number[] = [];
   for (
     let at = shadow.indexOf(ESCAPED_ANGLE);
     at !== -1;
     at = shadow.indexOf(ESCAPED_ANGLE, at + 1)
   ) {
     const code = markdown.charCodeAt(at);
+    if (code === 10 || code === 13) {
+      dropped.push(at);
+      continue;
+    }
     if (code !== 60 && code !== 62) continue;
     let backslashes = 0;
     while (markdown.charCodeAt(at - 1 - backslashes) === 92) backslashes += 1;
     if (backslashes % 2 === 1) spelled.push(at);
   }
-  return spelled;
+  return { spelled, dropped };
+}
+
+/** `text` with the code unit at each of the sorted `offsets` masked. */
+function maskOffsets(text: string, offsets: number[]): string {
+  let out = '';
+  let pos = 0;
+  for (const at of offsets) {
+    out += text.slice(pos, at) + '\u0000';
+    pos = at + 1;
+  }
+  return out + text.slice(pos);
 }
 
 /**
