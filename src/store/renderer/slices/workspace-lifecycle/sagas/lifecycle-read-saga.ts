@@ -94,9 +94,10 @@ import {
   setScopeCounts,
   type LazyAgentListBin,
 } from '../../workspace-agents/workspace-agents-slice';
-import { agentDelegationParentOf } from '$shared/utils/agent-scope';
+import { agentDelegationParentOf, classifyAgentScope } from '$shared/utils/agent-scope';
 import {
   selectActiveAgentId,
+  selectAllWorkspaceAgents,
   selectBackgroundAgentsLoaded,
   selectDelegatedAgentsLoaded,
   selectDelegatedCounts,
@@ -408,10 +409,11 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   // the later (fresher) read; the retired-only row is read last since it
   // carries the fresher `retiredAt`. Delegated rows loaded per parent (the
   // by-parent read) are re-read the same way when the whole bin is not
-  // loaded, and the orphan-only subset while the whole bin and the Background
-  // bin are not BOTH loaded — the whole-bin rows alone cannot tell an orphan
-  // from the child of an unloaded live background parent, so its membership
-  // stays authoritative until then. The orphan re-read is gated on the FRESH
+  // loaded, and the orphan-only subset while the delegated parents are not
+  // covered (`selectDelegatedParentsCovered`, against the FRESH background
+  // count) — the whole-bin rows alone cannot tell an orphan from the child of
+  // an unloaded live background parent, so its membership stays authoritative
+  // until then. The orphan re-read is gated on the FRESH
   // `delegatedCounts.orphaned`, not the stored flag alone: a reconnect to a
   // daemon predating it would otherwise send `orphanedOnly` to a daemon that
   // ignores the flag and answers with the whole bin.
@@ -421,7 +423,9 @@ function* hydrateAgents(workspaceId: string): SagaGenerator<void> {
   const backgroundLoadedAtRead = scopeCounts
     ? yield* selectBackgroundAgentsLoaded.effect(workspaceId)
     : false;
-  const delegatedParentsCoveredAtRead = delegatedLoadedAtRead && backgroundLoadedAtRead;
+  const delegatedParentsCoveredAtRead = scopeCounts
+    ? yield* selectDelegatedParentsCovered(workspaceId, scopeCounts.background)
+    : false;
   const loadedParentIdsAtRead =
     scopeCounts && !delegatedLoadedAtRead
       ? Object.keys(yield* selectLoadedDelegatedParentIds.effect(workspaceId))
@@ -720,12 +724,26 @@ function* rebaselineDelegatedCountsFromRows(
   );
 }
 
-/** Both lazy bins loaded: every live delegated parent is in the cache. */
-function* selectDelegatedParentsCovered(workspaceId: string): SagaGenerator<boolean> {
-  return (
-    (yield* selectDelegatedAgentsLoaded.effect(workspaceId)) &&
-    (yield* selectBackgroundAgentsLoaded.effect(workspaceId))
-  );
+/**
+ * Every live delegated parent is in the cache: the whole delegated bin is
+ * loaded and so is the Background bin — or there is no Background bin to
+ * load, the same rule the sidebar applies (`WorkspaceAgentsList`): a zero
+ * `backgroundCount` (the fresh read's, else the stored `scopeCounts`) and no
+ * standalone background row already cached, since a lifecycle event can
+ * hydrate one before the count catches up. Without that exception a
+ * workspace with no background agents would keep the orphan subset
+ * "uncovered" forever — the bin is never requested, so the flag never sets.
+ */
+function* selectDelegatedParentsCovered(
+  workspaceId: string,
+  backgroundCount?: number,
+): SagaGenerator<boolean> {
+  if (!(yield* selectDelegatedAgentsLoaded.effect(workspaceId))) return false;
+  if (yield* selectBackgroundAgentsLoaded.effect(workspaceId)) return true;
+  const count = backgroundCount ?? (yield* selectScopeCounts.effect(workspaceId))?.background ?? 0;
+  if (count > 0) return false;
+  const cached = yield* selectAllWorkspaceAgents.effect(workspaceId);
+  return !cached.some((agent) => classifyAgentScope(agent) === 'background');
 }
 
 /**
@@ -733,9 +751,10 @@ function* selectDelegatedParentsCovered(workspaceId: string): SagaGenerator<bool
  * `orphanedOnly: true`): triggered when the sidebar's Delegated bin — which
  * holds only the orphaned delegated rows — expands. Same contract as
  * `fetchDelegatedAgentsForParent`: loads once (a whole-bin load covers the
- * orphans too, but only together with the Background bin — its rows alone
- * cannot tell an orphan from the child of an unloaded live background
- * parent), a failed read leaves the flag false so the next expand
+ * orphans too, but only once every delegated parent is covered —
+ * `selectDelegatedParentsCovered` — since its rows alone cannot tell an
+ * orphan from the child of an unloaded live background parent), a failed
+ * read leaves the flag false so the next expand
  * retries, rows merge in via `addAgent`. Gated on `delegatedCounts.orphaned`
  * presence — an older daemon ignores `orphanedOnly` and would answer with the
  * whole bin, so there is nothing to load until the daemon serves the count.
