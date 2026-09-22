@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       grep:
-        description: 'Optional Playwright --grep filter (test title regex, no spaces)'
+        description: 'Optional Playwright --grep filter (test title regex)'
         type: string
         required: false
         default: ''
@@ -107,14 +107,22 @@ jobs:
           echo "path=$APP" >> "$GITHUB_OUTPUT"
           echo "Packaged app: $APP"
 
+      # The grep input reaches the shell through env, never through expression
+      # interpolation: a regex such as (a|b) or a|b interpolated into the
+      # command line is parsed by bash (syntax error / command not found).
       - name: Build smoke tests
         env:
           PACKAGED_APP_PATH: ${{ steps.app.outputs.path }}
           PLAYWRIGHT_HTML_OPEN: never
-        run: >
-          xvfb-run -a --server-args="-screen 0 1920x1080x24"
-          pnpm run test:build-smoke
-          ${{ inputs.grep && format('--grep {0}', inputs.grep) || '' }}
+          BUILD_SMOKE_GREP: ${{ inputs.grep }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "${BUILD_SMOKE_GREP:-}" ]; then
+            args+=(--grep "$BUILD_SMOKE_GREP")
+          fi
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+            pnpm run test:build-smoke "${args[@]}"
 
       # e2e-reports/build-smoke/: Electron main/renderer logs + spec screenshots
       # (written relative to the repo root). e2e/e2e-reports/: Playwright's

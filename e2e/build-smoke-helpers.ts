@@ -94,12 +94,6 @@ function killPackagedAppProcesses(force = false): void {
   );
 }
 
-/** Command-line pattern of the intentd sidecar bundled inside the packaged app. */
-const PACKAGED_SIDECAR_PATTERN =
-  process.platform === 'linux'
-    ? 'linux-unpacked/resources/intentd/intentd'
-    : 'Intent\\.app/Contents/Resources/intentd/intentd';
-
 /** `pkill -f` without an intermediate shell whose own command line would match. */
 function pkill(pattern: string, force = false): void {
   try {
@@ -109,17 +103,64 @@ function pkill(pattern: string, force = false): void {
   }
 }
 
-function isRunning(pattern: string): boolean {
+/**
+ * Path of the intentd sidecar bundled with the packaged app binary — the
+ * `process.resourcesPath/intentd/intentd` contract of
+ * `src/features/backend/main/intentd-sidecar.ts::resolveIntentdBinaryPath`.
+ */
+function packagedSidecarPath(executablePath: string): string {
+  return process.platform === 'darwin'
+    ? resolve(executablePath, '..', '..', 'Resources', 'intentd', 'intentd')
+    : resolve(executablePath, '..', 'resources', 'intentd', 'intentd');
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * PIDs of the sidecar processes spawned by the given Electron main process:
+ * direct children (`pgrep -P`) whose command line is exactly the bundled
+ * sidecar binary. A daemon the app adopted instead of spawning, another
+ * worktree's packaged sidecar or a developer's own intentd never match.
+ */
+function ownedSidecarPids(electronPid: number, executablePath: string): number[] {
+  const pattern = `^${escapeRegExp(packagedSidecarPath(executablePath))}( |$)`;
   try {
-    execFileSync('pgrep', ['-f', pattern], { stdio: 'ignore' });
+    const out = execFileSync('pgrep', ['-P', String(electronPid), '-f', pattern], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out
+      .split('\n')
+      .map((line) => Number.parseInt(line, 10))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+  } catch {
+    return [];
+  }
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
     return true;
   } catch {
     return false;
   }
 }
 
+function signal(pids: number[], sig: NodeJS.Signals): void {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, sig);
+    } catch {
+      // Already gone — that's fine
+    }
+  }
+}
+
 /**
- * Stop the intentd sidecar the packaged app spawned.
+ * Stop the intentd sidecar processes the launched app spawned.
  *
  * `app.exit()` skips the app's own shutdown, so the sidecar outlives the
  * Electron process — and it holds the extra stdio pipes Playwright opened on
@@ -129,15 +170,18 @@ function isRunning(pattern: string): boolean {
  * SIGTERM first so intentd shuts down cleanly, SIGKILL if it is still around
  * after the grace period. The next launch spawns a fresh sidecar.
  */
-async function stopPackagedSidecar(): Promise<void> {
-  if (process.platform === 'win32') return;
-  pkill(PACKAGED_SIDECAR_PATTERN);
+async function stopOwnedSidecar(pids: number[]): Promise<void> {
+  if (pids.length === 0) return;
+  signal(pids, 'SIGTERM');
   const deadline = Date.now() + 5_000;
-  while (isRunning(PACKAGED_SIDECAR_PATTERN) && Date.now() < deadline) {
+  while (pids.some(isAlive) && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 250));
   }
-  pkill(PACKAGED_SIDECAR_PATTERN, true);
+  signal(pids.filter(isAlive), 'SIGKILL');
 }
+
+/** Executable each launched app was started from (see `exitPackagedApp`). */
+const launchedExecutables = new WeakMap<ElectronApplication, string>();
 
 /**
  * Terminate a packaged app launched by a spec (call from `afterAll`).
@@ -150,14 +194,21 @@ async function stopPackagedSidecar(): Promise<void> {
  * the debugger to disconnect..." and the call never resolves (observed on
  * Linux). The remaining process tree is then force-killed, which also
  * releases the single-instance lock for the next spec, and the sidecar it
- * spawned is stopped (see `stopPackagedSidecar`).
+ * spawned is stopped (see `stopOwnedSidecar`). The sidecar PIDs are resolved
+ * before the exit: once the Electron process is gone the sidecar is
+ * re-parented and its ownership can no longer be established.
  */
 export async function exitPackagedApp(app: ElectronApplication | null | undefined): Promise<void> {
   if (!app) return;
+  const electronPid = app.process().pid;
+  const sidecarPids =
+    process.platform !== 'win32' && electronPid
+      ? ownedSidecarPids(electronPid, launchedExecutables.get(app) ?? findPackagedApp())
+      : [];
   const exited = app.evaluate(({ app: electronApp }) => electronApp.exit(0)).catch(() => undefined);
   await Promise.race([exited, new Promise((r) => setTimeout(r, 2_000))]);
   killPackagedAppProcesses(true);
-  await stopPackagedSidecar();
+  await stopOwnedSidecar(sidecarPids);
 }
 
 /**
@@ -217,6 +268,7 @@ export async function launchPackagedApp(options: LaunchOptions = {}): Promise<{
       ...(options.extraEnv || {}),
     },
   });
+  launchedExecutables.set(app, executablePath);
 
   // --- Capture Electron main-process stdout/stderr ---
   const logDir = join(process.cwd(), 'e2e-reports', 'build-smoke');
