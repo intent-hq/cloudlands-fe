@@ -611,10 +611,14 @@ export async function createWorkspaceWithPrompt(
   let onboardingStep = await getOnboardingStep();
   if (onboardingStep === 'welcome') {
     // If a specific provider is requested, click its card in the AgentGrid
-    // to select it before proceeding. The card's aria-label is "Use <name>"
-    // when the provider is ready (available + authenticated).
+    // to select it before proceeding. A ready (available + authenticated)
+    // card is labelled "Use <name>", or "<name> (selected)" when onboarding
+    // already auto-selected it as the only available provider. Clicking a
+    // selected card re-selects it (no toggle), so either label is safe.
     if (providerName) {
-      const providerCard = page.locator(`[aria-label="Use ${providerName}"]`).first();
+      const providerCard = page
+        .locator(`[aria-label="Use ${providerName}"], [aria-label="${providerName} (selected)"]`)
+        .first();
       try {
         await providerCard.waitFor({ state: 'visible', timeout: 20_000 });
       } catch (error) {
