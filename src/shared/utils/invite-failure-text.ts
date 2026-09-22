@@ -43,6 +43,8 @@ export function describeInviteFailureReason(reason: InviteFailureReason): string
       return m.deeplink_inviteError_proofGithubUnreachable();
     case 'proof-failed':
       return m.deeplink_inviteError_proofFailed();
+    case 'github-rate-limited':
+      return m.deeplink_inviteError_githubRateLimited();
     case 'cert-mismatch':
       return m.deeplink_inviteError_certMismatch();
     case 'tailcat-unavailable':

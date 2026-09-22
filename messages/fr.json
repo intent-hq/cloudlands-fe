@@ -5793,6 +5793,7 @@
   "deeplink_inviteError_proofScopeMissing": "La connexion GitHub de cet Intent n'a pas la permission gist dont la preuve d'identité a besoin. Reconnectez-vous à GitHub puis rouvrez le lien.",
   "deeplink_inviteError_proofGithubUnreachable": "GitHub n'a pas pu être joint pour publier la preuve d'identité. Vérifiez votre connexion et réessayez.",
   "deeplink_inviteError_proofFailed": "La preuve d'identité n'a pas pu être créée. Rouvrez le lien pour réessayer.",
+  "deeplink_inviteError_githubRateLimited": "La limite de débit de l'API GitHub pour ce compte est atteinte : la preuve d'identité ne peut pas être créée pour le moment. Attendez la réinitialisation de la limite (généralement sous une heure), puis rouvrez le lien.",
   "deeplink_invitePlaintext_title": "Identifiant enregistré sans chiffrement",
   "deeplink_invitePlaintext_message": "Le chiffrement du système est indisponible sur cet ordinateur : l’identifiant invité a donc été enregistré en clair. Si cela compte pour vous, oubliez la session et rejoignez-la à nouveau quand le chiffrement sera disponible.",
   "rules_service_listFailed_error": "Impossible de lister les règles",
