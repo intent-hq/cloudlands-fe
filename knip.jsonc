@@ -9,6 +9,12 @@
   // Mirror the real icon alias: Knip 6.33.0's Vitest plugin cannot read alias arrays.
   "paths": {
     "svelte-fa": ["./src/lib/components/shared/icons/fa-proxy.ts"],
+    // Vite dev-server URL specifiers (/src/..., /test/fixtures/...) imported inside
+    // page.evaluate() in browser-based playwright specs map back to source files so knip
+    // follows them into the fixtures (cloudlands-fe#2695: a fixture importing a deleted
+    // component passed every gate because knip never reached test/**/*.svelte)
+    "/src/*": ["./src/*"],
+    "/test/*": ["./test/*"],
   },
   "entry": [
     // Electron main process (tsconfig.main.json; package.json "main" points at its build output)
@@ -190,14 +196,6 @@
     // Loaded by the inlang CLI through project.inlang/settings.json "modules"
     "@inlang/plugin-message-format",
   ],
-  // Vite dev-server URL specifiers (/src/..., /test/fixtures/...) imported inside
-  // page.evaluate() in browser-based playwright specs map back to source files so knip
-  // follows them into the fixtures (cloudlands-fe#2695: a fixture importing a deleted
-  // component passed every gate because knip never reached test/**/*.svelte)
-  "paths": {
-    "/src/*": ["./src/*"],
-    "/test/*": ["./test/*"],
-  },
   // Vite dev-server /@id/<package> specifiers imported the same way — runtime URLs for
   // bare packages, not module specifiers
   "ignoreUnresolved": ["^/@id/.+"],

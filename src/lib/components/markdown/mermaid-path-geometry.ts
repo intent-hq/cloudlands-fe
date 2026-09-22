@@ -402,6 +402,23 @@ export type StateDiagramRoutingData = {
   edges: { id: string; start: string; end: string; label?: string }[];
 };
 
+/** Copy Mermaid's state identities before the next parse clears its shared database. */
+export function snapshotStateDiagramRoutingData(
+  data: StateDiagramRoutingData,
+): StateDiagramRoutingData {
+  return {
+    direction: data.direction,
+    nodes: data.nodes.map(({ id, domId, shape, isGroup, parentId }) => ({
+      id,
+      domId,
+      shape,
+      isGroup,
+      parentId,
+    })),
+    edges: data.edges.map(({ id, start, end, label }) => ({ id, start, end, label })),
+  };
+}
+
 export function replacePathTerminal(pathData: string, terminal: Point): string | null {
   const numberPattern = '-?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:e[-+]?\\d+)?';
   const match = pathData.match(

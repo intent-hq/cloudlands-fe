@@ -346,6 +346,119 @@ describe('MermaidRenderer theme updates', () => {
     }
   });
 
+  it('releases the global Mermaid queue before instance geometry settles', async () => {
+    const getBBox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+    const pendingFrames: FrameRequestCallback[] = [];
+    const stateData = {
+      direction: 'TB',
+      nodes: [{ id: 'Idle', domId: 'state-Idle', shape: 'rect' }],
+      edges: [{ id: 'edge-1', start: 'root_start', end: 'Idle' }],
+    };
+    Object.defineProperty(SVGElement.prototype, 'getBBox', {
+      configurable: true,
+      value: () => ({ x: 0, y: 0, width: 300, height: 180 }),
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      pendingFrames.push(callback);
+      return pendingFrames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    document.documentElement.classList.add('catalog-reduced-motion');
+    mermaidMocks.render
+      .mockResolvedValueOnce({
+        svg: '<svg class="statediagram" aria-roledescription="stateDiagram" viewBox="0 0 300 180"></svg>',
+      })
+      .mockResolvedValueOnce({
+        svg: '<svg aria-roledescription="flowchart-v2" viewBox="0 0 300 180"><g class="cluster" id="render-workers"><rect width="100" height="80"/></g></svg>',
+      });
+    mermaidMocks.mermaidAPI.getDiagramFromText
+      .mockResolvedValueOnce({ type: 'stateDiagram', db: { getData: () => stateData } })
+      .mockImplementationOnce(async () => {
+        stateData.nodes[0].id = 'reused-by-next-parse';
+        return {
+          type: 'flowchart-v2',
+          db: { getSubGraphs: () => [{ id: 'workers', nodes: ['B'] }] },
+        };
+      });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    try {
+      const first = render(MermaidRenderer, { code: 'stateDiagram-v2\n[*] --> Idle' });
+      const second = render(MermaidRenderer, {
+        code: 'flowchart TB\nsubgraph workers\nB\nend',
+      });
+      await waitFor(() => expect(mermaidMocks.render).toHaveBeenCalledTimes(2));
+      expect(mermaidMocks.mermaidAPI.getDiagramFromText).toHaveBeenCalledTimes(2);
+      expect(first.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+        'false',
+      );
+      expect(second.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+        'false',
+      );
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        pendingFrames.splice(0).forEach((callback) => callback(0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (
+          first.container.querySelector('.mermaid-renderer')?.dataset.renderSettled === 'true' &&
+          second.container.querySelector('.mermaid-renderer')?.dataset.renderSettled === 'true'
+        )
+          break;
+      }
+      expect(first.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+        'true',
+      );
+      expect(second.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+        'true',
+      );
+    } finally {
+      if (getBBox) Object.defineProperty(SVGElement.prototype, 'getBBox', getBBox);
+      else delete (SVGElement.prototype as SVGElement & { getBBox?: unknown }).getBBox;
+    }
+  });
+
+  it('releases the global Mermaid queue after a render error', async () => {
+    const getBBox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
+    Object.defineProperty(SVGElement.prototype, 'getBBox', {
+      configurable: true,
+      value: () => ({ x: 0, y: 0, width: 300, height: 180 }),
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    document.documentElement.classList.add('catalog-reduced-motion');
+    mermaidMocks.render.mockRejectedValueOnce(new Error('invalid source')).mockResolvedValueOnce({
+      svg: '<svg aria-roledescription="flowchart-v2" viewBox="0 0 300 180"></svg>',
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    try {
+      const invalid = render(MermaidRenderer, { code: 'not a diagram' });
+      const current = render(MermaidRenderer, { code: 'flowchart TB\nA --> B' });
+
+      await waitFor(() => expect(mermaidMocks.render).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(invalid.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+          'true',
+        ),
+      );
+      expect(invalid.container.querySelector('[role="alert"]')).toBeTruthy();
+      await waitFor(() =>
+        expect(current.container.querySelector('.mermaid-renderer')?.dataset.renderSettled).toBe(
+          'true',
+        ),
+      );
+      expect(
+        current.container.querySelector('svg[aria-roledescription="flowchart-v2"]'),
+      ).toBeTruthy();
+    } finally {
+      if (getBBox) Object.defineProperty(SVGElement.prototype, 'getBBox', getBBox);
+      else delete (SVGElement.prototype as SVGElement & { getBBox?: unknown }).getBBox;
+    }
+  });
+
   it('joins automatic note wraps without removing authored line breaks or tspan text', async () => {
     const getBBox = Object.getOwnPropertyDescriptor(SVGElement.prototype, 'getBBox');
     const viewBox = Object.getOwnPropertyDescriptor(SVGSVGElement.prototype, 'viewBox');

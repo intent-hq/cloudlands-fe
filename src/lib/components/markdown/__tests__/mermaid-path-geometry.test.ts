@@ -34,6 +34,7 @@ import {
   separateFlowchartVerticalLane,
   simplifyOrthogonalPoints,
   snapOrthogonalTerminals,
+  snapshotStateDiagramRoutingData,
   type StateDiagramRoutingData,
 } from '../mermaid-path-geometry';
 
@@ -771,6 +772,34 @@ describe('Mermaid path terminal geometry', () => {
   });
 
   describe('authored state transition routing', () => {
+    it('snapshots parser identities before Mermaid reuses its state database', () => {
+      const data: StateDiagramRoutingData = {
+        direction: 'TB',
+        nodes: [{ id: 'Idle', domId: 'state-Idle', shape: 'rect' }],
+        edges: [{ id: 'edge-1', start: 'root_start', end: 'Idle', label: 'Begin' }],
+      };
+      const snapshot = snapshotStateDiagramRoutingData(data);
+
+      data.direction = 'LR';
+      data.nodes[0].id = 'Reused';
+      data.nodes.push({ id: 'Extra', shape: 'rect' });
+      data.edges[0].label = 'Changed';
+
+      expect(snapshot).toEqual({
+        direction: 'TB',
+        nodes: [
+          {
+            id: 'Idle',
+            domId: 'state-Idle',
+            shape: 'rect',
+            isGroup: undefined,
+            parentId: undefined,
+          },
+        ],
+        edges: [{ id: 'edge-1', start: 'root_start', end: 'Idle', label: 'Begin' }],
+      });
+    });
+
     const transitions = [
       '[*] --> Idle',
       'Idle --> Starting: User sends message',

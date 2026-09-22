@@ -100,7 +100,6 @@ async function openMotionFixture(page: Page, state: string, reduced = false) {
   const url = `${baseUrl}/sandbox/diagram-workbench?state=${state}&theme=light&width=960&motion=${motion}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const scene = page.getByTestId('catalog-scene');
-  if (!(await scene.isVisible({ timeout: 3_000 }).catch(() => false))) await page.reload();
   await expect(scene).toHaveAttribute('data-preview-ready', 'true', { timeout: 30_000 });
 }
 
@@ -727,7 +726,7 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
           overflow: viewport.scrollWidth - viewport.clientWidth,
           camera: `${getComputedStyle(camera).transform}|${getComputedStyle(geometry).transform}`,
           cameraPose: (() => {
-            const matrix = camera.getScreenCTM()!;
+            const matrix = geometry.getScreenCTM()!;
             const bounds = renderer.getBoundingClientRect();
             return [
               matrix.a,
@@ -787,7 +786,23 @@ async function recordTransition(page: Page, rootId: string, buttonName: string, 
         samples.push(frame());
       }
       const settled = frame();
-      return { before, afterClick, start, afterCamera, settled, samples, cameraFrames };
+      const cameraStages: { before: Frame; frames: Frame[]; after: Frame }[] = [];
+      for (let index = 0; index < samples.length; index += 1) {
+        if (samples[index].motionPhase !== 'camera') continue;
+        const first = index;
+        while (index < samples.length && samples[index].motionPhase === 'camera') index += 1;
+        const frames = samples.slice(first, index);
+        // An unchanged union fit may skip the initial camera; observe the later
+        // destination fit independently instead of treating the whole transition as one arc.
+        if (frames.some((frame) => frame.cameraAnimationCount > 0)) {
+          cameraStages.push({
+            before: first === 0 ? before : samples[first - 1],
+            frames,
+            after: samples[index] ?? settled,
+          });
+        }
+      }
+      return { before, afterClick, start, settled, samples, cameraStages };
     },
     { buttonName, probe },
   );
@@ -914,7 +929,11 @@ test('keeps the bundled sandbox font through theme changes and repeated document
     });
     await expectBundledSandboxFont(page, rootId);
     if (state === 'custom-architecture') {
-      await page.getByRole('radio', { name: 'Dark', exact: true }).click();
+      await page.getByRole('button', { name: 'Customize preview' }).click();
+      await page
+        .getByTestId('catalog-theme-control')
+        .getByRole('radio', { name: 'Dark', exact: true })
+        .click();
       await expect(page.locator('html')).toHaveClass(/dark/);
       await expectBundledSandboxFont(page, rootId);
     }
@@ -943,8 +962,11 @@ function cameraProgress(start: Frame, current: Frame, end: Frame) {
   );
 }
 
-function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTransition>>) {
-  expect(transition.afterClick.motionPhase).toBe('camera');
+function expectCameraBeforeScene(
+  transition: Awaited<ReturnType<typeof recordTransition>>,
+  initialPhase: 'camera' | 'exit' = 'camera',
+) {
+  expect(transition.afterClick.motionPhase).toBe(initialPhase);
   expect(transition.afterClick.entranceOpacity).toBe(0);
   expect(
     Math.hypot(
@@ -952,28 +974,31 @@ function expectCameraBeforeScene(transition: Awaited<ReturnType<typeof recordTra
       transition.afterClick.anchor.y - transition.before.anchor.y,
     ),
   ).toBeLessThanOrEqual(1);
-  expect(transition.cameraFrames.length).toBeGreaterThan(0);
-  expect(
-    transition.cameraFrames.some((frame) =>
-      frame.cameraDurations.some((duration) => duration >= 160 && duration <= 200),
-    ),
-    JSON.stringify(transition.cameraFrames.map((frame) => frame.cameraDurations)),
-  ).toBe(true);
-  expect(
-    Math.max(...transition.cameraFrames.map((frame) => frame.entranceOpacity)),
-    JSON.stringify(
-      transition.cameraFrames.map((frame) => ({
-        phase: frame.motionPhase,
-        node: frame.nodeEntryOpacity,
-        group: frame.groupEntryOpacity,
-        route: frame.routeEntryOpacity,
-        label: frame.labelEntryOpacity,
-      })),
-    ),
-  ).toBe(0);
-  expect(transition.afterCamera.motionPhase).not.toBe('camera');
-  expect(transition.afterCamera.elapsedMs).toBeGreaterThanOrEqual(120);
-  expect(transition.afterCamera.elapsedMs).toBeLessThanOrEqual(450);
+  expect(transition.cameraStages.length).toBeGreaterThan(0);
+  for (const stage of transition.cameraStages) {
+    expect(
+      stage.frames.some((frame) =>
+        frame.cameraDurations.some((duration) => duration >= 160 && duration <= 200),
+      ),
+      JSON.stringify(stage.frames.map((frame) => frame.cameraDurations)),
+    ).toBe(true);
+    expect(
+      Math.max(...stage.frames.map((frame) => frame.entranceOpacity)),
+      JSON.stringify(
+        stage.frames.map((frame) => ({
+          phase: frame.motionPhase,
+          node: frame.nodeEntryOpacity,
+          group: frame.groupEntryOpacity,
+          route: frame.routeEntryOpacity,
+          label: frame.labelEntryOpacity,
+        })),
+      ),
+    ).toBe(0);
+    expect(stage.after.motionPhase).not.toBe('camera');
+    const elapsedMs = stage.after.elapsedMs - stage.before.elapsedMs;
+    expect(elapsedMs).toBeGreaterThanOrEqual(120);
+    expect(elapsedMs).toBeLessThanOrEqual(450);
+  }
   const firstVisibleFrame = (key: keyof Frame) =>
     transition.samples.findIndex((frame) => Number(frame[key]) > 0.01);
   const sceneFrame = Math.max(
@@ -1006,13 +1031,21 @@ function expectCameraInterpolation(transition: Awaited<ReturnType<typeof recordT
         frame.camera !== transition.start.camera && frame.camera !== transition.settled.camera,
     ),
   ).toBe(true);
-  expect(
-    transition.cameraFrames.some((frame) => {
-      // Camera interpolation ends before the scene's content/origin rebase.
-      const progress = cameraProgress(transition.before, frame, transition.afterCamera);
-      return progress > 0.15 && progress < 0.85;
-    }),
-  ).toBe(true);
+  expect(transition.cameraStages.length).toBeGreaterThan(0);
+  for (const stage of transition.cameraStages) {
+    expect(
+      stage.frames.some((frame) => {
+        // Include the geometry-origin rebase and use this camera stage's own endpoints.
+        const progress = cameraProgress(stage.before, frame, stage.after);
+        return progress > 0.15 && progress < 0.85;
+      }),
+      JSON.stringify({
+        before: stage.before.cameraPose,
+        afterCamera: stage.after.cameraPose,
+        cameraFrames: stage.frames.map(({ elapsedMs, cameraPose }) => ({ elapsedMs, cameraPose })),
+      }),
+    ).toBe(true);
+  }
 }
 
 test('animates real clicks by default without a motion query', async ({ page }) => {
@@ -2145,9 +2178,9 @@ test('coordinates architecture and ownership state motion through settled frames
         frame.exitingReveal < 1,
     ),
   ).toBe(true);
-  // The destination scene owns the reverse fit even though the old outgoing union
-  // happened to match the previous camera.
-  expectCameraBeforeScene(architecture31);
+  // The unchanged outgoing union skips the initial camera. The destination fit
+  // still interpolates after exit and before scene entry.
+  expectCameraBeforeScene(architecture31, 'exit');
   expectCameraInterpolation(architecture31);
   expectFixedFooter(architecture31);
 
@@ -2197,9 +2230,9 @@ test('coordinates architecture and ownership state motion through settled frames
     ),
   ).toBe(true);
   expect(ownership23.settled.exitingReveal).toBeNull();
-  // Execute and Render retain local positions, but the destination-only origin still
-  // moves their screen geometry continuously to the final frame.
-  expectCameraBeforeScene(ownership23);
+  // Execute and Render retain the outgoing fit through exit; the destination-only
+  // origin then moves their screen geometry continuously to the final frame.
+  expectCameraBeforeScene(ownership23, 'exit');
   expectCameraInterpolation(ownership23);
   expectFrameGeometry(ownership23.settled);
   expectFixedFooter(ownership23);
@@ -2239,11 +2272,13 @@ test('coordinates architecture and ownership state motion through settled frames
     element.querySelector<HTMLButtonElement>('[data-diagram-step-index="0"]')!.click();
     return interrupted;
   });
+  // Returning inside the existing fitted union begins exit without a camera move.
+  // Interrupt that exit and still require the first state's exact settled geometry.
   expect(interruptedExit).toEqual({
-    phase: 'camera',
+    phase: 'exit',
     settled: 'false',
-    unchangedCamera: false,
-    cameraAnimations: 1,
+    unchangedCamera: true,
+    cameraAnimations: 0,
   });
   await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-settled', 'true');
   await expect(root.locator('.diagram-renderer')).toHaveAttribute('data-diagram-state', 'orient');

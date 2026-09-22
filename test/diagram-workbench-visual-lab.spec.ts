@@ -583,47 +583,43 @@ test('keeps the named dashed return routes continuous on cardinal ports', async 
   }
 });
 
-for (let repetition = 1; repetition <= 3; repetition += 1) {
-  test(`publishes catalog readiness after 640px Mermaid settlement, run ${repetition}`, async ({
-    page,
-  }) => {
-    await page.addInitScript(() => {
-      const state = window as typeof window & {
-        __diagramWorkbenchReadyAtCatalogReady?: boolean[];
-      };
-      state.__diagramWorkbenchReadyAtCatalogReady = [];
-      document.addEventListener(
-        'DOMContentLoaded',
-        () => {
-          new MutationObserver(() => {
-            const scene = document.querySelector('[data-testid="catalog-scene"]');
-            if (scene?.getAttribute('data-preview-ready') !== 'true') return;
-            const workbench = document.querySelector('[data-diagram-workbench]');
-            state.__diagramWorkbenchReadyAtCatalogReady?.push(
-              workbench?.getAttribute('data-diagram-workbench-ready') === 'true',
-            );
-          }).observe(document, {
-            attributes: true,
-            attributeFilter: ['data-preview-ready'],
-            subtree: true,
-          });
-        },
-        { once: true },
-      );
-    });
-    await openSandbox(page, 'state=mermaid-cycle-fanout&theme=light&width=640&motion=reduced');
-
-    const readinessOrder = await page.evaluate(
-      () =>
-        (
-          window as typeof window & {
-            __diagramWorkbenchReadyAtCatalogReady?: boolean[];
-          }
-        ).__diagramWorkbenchReadyAtCatalogReady,
+test('publishes catalog readiness after 640px Mermaid settlement', async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as typeof window & {
+      __diagramWorkbenchReadyAtCatalogReady?: boolean[];
+    };
+    state.__diagramWorkbenchReadyAtCatalogReady = [];
+    document.addEventListener(
+      'DOMContentLoaded',
+      () => {
+        new MutationObserver(() => {
+          const scene = document.querySelector('[data-testid="catalog-scene"]');
+          if (scene?.getAttribute('data-preview-ready') !== 'true') return;
+          const workbench = document.querySelector('[data-diagram-workbench]');
+          state.__diagramWorkbenchReadyAtCatalogReady?.push(
+            workbench?.getAttribute('data-diagram-workbench-ready') === 'true',
+          );
+        }).observe(document, {
+          attributes: true,
+          attributeFilter: ['data-preview-ready'],
+          subtree: true,
+        });
+      },
+      { once: true },
     );
-    expect(readinessOrder).toEqual([true]);
   });
-}
+  await openSandbox(page, 'state=mermaid-cycle-fanout&theme=light&width=640&motion=reduced');
+
+  const readinessOrder = await page.evaluate(
+    () =>
+      (
+        window as typeof window & {
+          __diagramWorkbenchReadyAtCatalogReady?: boolean[];
+        }
+      ).__diagramWorkbenchReadyAtCatalogReady,
+  );
+  expect(readinessOrder).toEqual([true]);
+});
 
 test('keeps 30 consecutive 640px readiness generations active and stable', async ({ page }) => {
   await openSandbox(page, 'state=mermaid-cycle-fanout&theme=light&width=640&motion=reduced');

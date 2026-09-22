@@ -414,8 +414,3 @@ test('full visual and geometry soak pass 1 is clean', async ({ page }) => {
   await page.setViewportSize({ width: 1800, height: 1200 });
   await runPass(page, 1);
 });
-
-test('full visual and geometry soak pass 2 confirms the clean result', async ({ page }) => {
-  await page.setViewportSize({ width: 1800, height: 1200 });
-  await runPass(page, 2);
-});

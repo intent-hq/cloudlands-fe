@@ -65,6 +65,7 @@
     snapFlowchartFanoutPorts,
     snapFlowchartPorts,
     snapFlowchartFeedbackPorts,
+    snapshotStateDiagramRoutingData,
     type StateDiagramRoutingData,
   } from './mermaid-path-geometry';
   import { m } from '$shared/paraglide/messages.js';
@@ -1603,7 +1604,7 @@ ${source}`;
         }
       }
       await document.fonts?.load(`400 ${config.fontSize}px "${MERMAID_PRIMARY_FONT}"`);
-      await runSerializedMermaidRender(
+      const renderResult = await runSerializedMermaidRender(
         async () => {
           mermaid.initialize(config);
           const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
@@ -1620,24 +1621,27 @@ ${source}`;
               );
             }
             if (diagram.type === 'stateDiagram') {
-              stateDiagram = (
-                diagram.db as typeof diagram.db & { getData(): StateDiagramRoutingData }
-              ).getData();
+              stateDiagram = snapshotStateDiagramRoutingData(
+                (
+                  diagram.db as typeof diagram.db & { getData(): StateDiagramRoutingData }
+                ).getData(),
+              );
             }
           }
-          renderedSvg = svg;
-          error = null;
-          // Finish geometry before another diagram dirties the document for measurement.
-          const fitCompleted = await fitRenderedSvg(
-            generation,
-            renderCode,
-            clusterMembership,
-            stateDiagram,
-          );
-          if (fitCompleted && generation === renderGeneration) settledGeneration = generation;
+          return { svg, clusterMembership, stateDiagram };
         },
         () => generation === renderGeneration,
       );
+      if (!renderResult || generation !== renderGeneration) return;
+      renderedSvg = renderResult.svg;
+      error = null;
+      const fitCompleted = await fitRenderedSvg(
+        generation,
+        renderCode,
+        renderResult.clusterMembership,
+        renderResult.stateDiagram,
+      );
+      if (fitCompleted && generation === renderGeneration) settledGeneration = generation;
     } catch (err) {
       if (generation !== renderGeneration) return;
       logger.error('Failed to render mermaid diagram:', err);
