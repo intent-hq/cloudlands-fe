@@ -61,10 +61,13 @@
  * The two silent phases show a progress dialog with Cancel
  * (`main/invite-progress.ts`, `invite-progress:*` channels; no native
  * fallback — without a window the flow simply runs without it): `connecting`
- * from the parsed link up to the first consent prompt (Cancel aborts the
- * join, closes the connection, and shows no notice), and `opening` from the
- * point of no return up to the window (Cancel only skips opening the window;
- * the credential is stored and the membership stands).
+ * from the parsed link up to the first consent prompt (every await in between
+ * — the dial, the stored-session lookups, `inspect`, `challenge`,
+ * `github.getUser`, the initial `github.connect` — is raced against Cancel,
+ * which aborts the join, closes the connection, and shows no notice), and
+ * `opening` from the point of no return up to the window (Cancel closes the
+ * dialog and only skips opening the window; the credential is stored and the
+ * membership stands).
  *
  * Security posture mirrors the pair flow: the invite secret and the minted
  * token are never logged — failures are logged as bounded error kinds and
@@ -421,7 +424,7 @@ async function joinWithIdentityProof(
   };
   Object.assign(noticeLabels, labels);
 
-  let login = await readLocalLogin(client);
+  let login = await connecting.wait(readLocalLogin(client));
   let signInReason: InviteSignInReason | null = login === null ? 'not-connected' : null;
   let signedIn = false;
   let consented = false;
@@ -434,7 +437,7 @@ async function joinWithIdentityProof(
           signInReason === 'scope-missing' ? 'github-scope-missing' : 'github-not-connected',
         );
       }
-      const signIn = await signInToGitHub(client, signInReason, labels, prompts);
+      const signIn = await signInToGitHub(client, signInReason, labels, prompts, connecting);
       if (signIn.kind === 'cancelled') return;
       signedIn = true;
       login = signIn.login;
@@ -613,18 +616,26 @@ type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' }
  * terminal transition is awaited from that moment — the code may be entered
  * on any device, so "Open GitHub" only launches the URL here. Cancel (before
  * or after "Open GitHub") aborts the flow locally (`github.cancelAuth`, best
- * effort). Resolves with the login the daemon is now signed in as.
+ * effort). Resolves with the login the daemon is now signed in as. The
+ * `github.connect` start is raced against the `connecting` dialog's Cancel
+ * while that dialog is still up (a device flow that starts after the cancel
+ * is aborted on arrival); once the dialog was dismissed by the first prompt
+ * its Cancel never settles and the wait is a plain await.
  */
 async function signInToGitHub(
   client: JsonRpcClient,
   reason: InviteSignInReason,
   labels: PromptLabels,
   prompts: ConsentPrompts,
+  connecting: ConnectingProgress,
 ): Promise<SignInResult> {
   let start: GithubConnectResult;
   try {
-    start = await client.request<GithubConnectResult>('github.connect');
-  } catch {
+    start = await connecting.wait(client.request<GithubConnectResult>('github.connect'), () => {
+      void client.request('github.cancelAuth').catch(() => {});
+    });
+  } catch (error) {
+    if (error instanceof InviteCancelledError) throw error;
     throw new InviteFlowError('sign-in-failed');
   }
   if (
@@ -864,11 +875,13 @@ async function joinAsReturningGuest(
   const { hosts, port, fingerprint, inviteId, secret } = envelope;
   // The winning candidate (a direct host, or the tc address standing in as
   // the host) is what the store keyed a tunnel-only session on.
-  const session = await guestSessionsStore.findMatching({
-    hosts: [...new Set([connection.host, ...hosts])],
-    port,
-    fingerprint,
-  });
+  const session = await connecting.wait(
+    guestSessionsStore.findMatching({
+      hosts: [...new Set([connection.host, ...hosts])],
+      port,
+      fingerprint,
+    }),
+  );
   if (!session) return { kind: 'fallback', reason: 'no-session' };
   // Fail closed: the store's host:port fallback can match a record pinned to
   // a different cert at the same address. Only a session pinned to the exact
@@ -878,8 +891,9 @@ async function joinAsReturningGuest(
   }
   let token: string | null;
   try {
-    token = await guestSessionsStore.getDecryptedToken(session.id);
-  } catch {
+    token = await connecting.wait(guestSessionsStore.getDecryptedToken(session.id));
+  } catch (error) {
+    if (error instanceof InviteCancelledError) throw error;
     // Keyring changed: the ciphertext is unreadable. A fresh proof re-mints
     // the credential; the store's upsert then replaces it.
     return { kind: 'fallback', reason: 'token-unavailable' };
@@ -964,8 +978,9 @@ async function joinAsReturningGuest(
  * daemon identity: a returning guest's record keeps its id, takes the fresh
  * token, and gains the workspace) and open the daemon's window, under the
  * `opening` progress dialog. A store failure here surfaces as a failure,
- * never as a cancellation; a Cancel on the dialog only skips opening the
- * window — the credential is stored and the membership stands. `labels` are
+ * never as a cancellation; a Cancel on the dialog closes it at once and only
+ * skips opening the window — the credential is stored, the membership stands,
+ * and a window whose open was already requested still appears. `labels` are
  * the display labels the dialog and the plaintext notice show; `afterStore`
  * runs once the write settled either way (the proof gist's cleanup: it must
  * not delay or fail the join, and the gist outliving a failed write by a
@@ -987,6 +1002,7 @@ async function storeCredentialAndOpen(
   let cancelled = false;
   void opening.cancelled.then(() => {
     cancelled = true;
+    opening.dismiss();
   });
   try {
     let record: Awaited<ReturnType<typeof guestSessionsStore.add>>;

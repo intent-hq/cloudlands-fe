@@ -2696,6 +2696,112 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(openBackendWindow).not.toHaveBeenCalled();
   });
 
+  it('cancel while the local login is read (github.getUser): no prompt, no device flow, connection closed, next link handled', async () => {
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    let releaseGetUser!: () => void;
+    onLocal(
+      'github.getUser',
+      () => new Promise((resolve) => (releaseGetUser = () => resolve({ user: null }))),
+    );
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.getUser')).toHaveLength(1));
+    connecting.cancel();
+    await pending;
+    releaseGetUser();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(localCalls('github.connect')).toEqual([]);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(connecting.handle.dismiss).toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain('User cancelled the invite while connecting');
+    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
+
+    // The in-flight guard was released.
+    signedInDaemon();
+    await handleInviteDeepLink(LINK);
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('cancel while the device flow starts (github.connect): no sign-in prompt, the late flow is cancelled, connection closed', async () => {
+    signedOutDaemon();
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    let releaseConnect!: () => void;
+    onLocal(
+      'github.connect',
+      () => new Promise((resolve) => (releaseConnect = () => resolve(CONNECT))),
+    );
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
+    connecting.cancel();
+    await pending;
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(openExternal).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain('User cancelled the invite while connecting');
+    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
+
+    // A device flow that starts after the cancel is aborted on arrival.
+    releaseConnect();
+    await vi.waitFor(() => expect(localCalls('github.cancelAuth')).toHaveLength(1));
+  });
+
+  it('cancel while the stored session is looked up: nothing inspected or proven, connection closed', async () => {
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    guestFindMatching.mockReturnValueOnce(new Promise(() => {}));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(guestFindMatching).toHaveBeenCalledTimes(1));
+    connecting.cancel();
+    await pending;
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(inspect).not.toHaveBeenCalled();
+    expect(challenge).not.toHaveBeenCalled();
+    expect(localCalls('github.getUser')).toEqual([]);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain('User cancelled the invite while connecting');
+  });
+
+  it('cancel while the stored token is decrypted: nothing inspected or proven, no token-unavailable fallback', async () => {
+    guestFindMatching.mockResolvedValue(RETURNING_SESSION);
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    guestGetDecryptedToken.mockReturnValueOnce(new Promise(() => {}));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(guestGetDecryptedToken).toHaveBeenCalledTimes(1));
+    connecting.cancel();
+    await pending;
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(inspect).not.toHaveBeenCalled();
+    expect(challenge).not.toHaveBeenCalled();
+    expect(localCalls('github.getUser')).toEqual([]);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain('User cancelled the invite while connecting');
+    expect(logLines.join('\n')).not.toContain('token-unavailable');
+  });
+
   it('opening (proof path): shown after the consent is dismissed joined, before the store, dismissed after the window opens', async () => {
     const { prompt } = fakeConsent('open');
     showInviteConsent.mockReturnValue(prompt);
@@ -2838,11 +2944,42 @@ describe('handleInviteDeepLink — progress dialog', () => {
     );
 
     await handleInviteDeepLink(LINK);
+    expect(opening.handle.dismiss).toHaveBeenCalledTimes(1);
     opening.cancel();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    expect(opening.handle.dismiss).toHaveBeenCalledTimes(1);
+    expect(openBackendWindow).toHaveBeenCalledTimes(1);
+    expect(guestAdd).toHaveBeenCalledTimes(1);
+    expect(logLines.join('\n')).not.toContain('window not opened');
+  });
+
+  it('cancel while the window is opening: the dialog closes at once, the window still opens', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    const opening = fakeProgress();
+    showInviteProgress.mockImplementation((payload: { phase: string }) =>
+      payload.phase === 'opening' ? opening.handle : fakeProgress().handle,
+    );
+    let releaseOpen!: () => void;
+    openBackendWindow.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseOpen = () => resolve({ id: 'guest-id' });
+      }),
+    );
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openBackendWindow).toHaveBeenCalledWith('guest-id'));
+    expect(opening.handle.dismiss).not.toHaveBeenCalled();
+    opening.cancel();
+    await vi.waitFor(() => expect(opening.handle.dismiss).toHaveBeenCalled());
+    releaseOpen();
+    await pending;
+
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
+    expect(openBackendWindow).toHaveBeenCalledTimes(1);
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).not.toContain('window not opened');
+    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
   });
 
   it('already a member: connecting is dismissed before the window opens, no opening phase', async () => {
