@@ -6,6 +6,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 let cdpMessageHandler: ((method: string, params: unknown) => void) | undefined;
 
 const electronMocks = vi.hoisted(() => ({ getPath: vi.fn() }));
+const cryptoMocks = vi.hoisted(() => ({ randomUUID: vi.fn<() => string>() }));
+
+// Session ids are `session-<uuid>`; the #5643 regression pins the uuid shape.
+// Both the named export and `default` must carry the mock: the module runner
+// resolves the service's named import of this Node builtin through `default`.
+vi.mock('crypto', async () => {
+  const actual = await vi.importActual<typeof import('crypto')>('crypto');
+  cryptoMocks.randomUUID.mockImplementation(actual.randomUUID);
+  return {
+    ...actual,
+    randomUUID: cryptoMocks.randomUUID,
+    default: { ...actual, randomUUID: cryptoMocks.randomUUID },
+  };
+});
 
 vi.mock('electron', () => ({
   app: { getPath: electronMocks.getPath },
@@ -93,35 +107,43 @@ describe('BrowserCaptureService path boundaries', () => {
     vi.clearAllMocks();
   });
 
-  it('records the real session start time in session.json after a captured step (#5643)', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    const startedAt = new Date('2026-09-22T06:00:00.000Z');
-    const endedAt = new Date('2026-09-22T06:05:00.000Z');
-    vi.setSystemTime(startedAt);
+  it.each([
+    ['hex-leading', 'abcdef00-0000-4000-8000-000000000001'],
+    ['digit-leading', '12345678-0000-4000-8000-000000000002'],
+  ])(
+    'records the real session start time in session.json after a captured step for a %s session id (#5643)',
+    async (_shape, uuid) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const startedAt = new Date('2026-09-22T06:00:00.000Z');
+      const endedAt = new Date('2026-09-22T06:05:00.000Z');
+      vi.setSystemTime(startedAt);
+      cryptoMocks.randomUUID.mockReturnValueOnce(uuid);
 
-    const session = await browserCapture.startSession({
-      workspaceId: 'workspace-a',
-      name: 'start-time-session',
-    });
+      const session = await browserCapture.startSession({
+        workspaceId: 'workspace-a',
+        name: 'start-time-session',
+      });
+      expect(session.id).toBe(`session-${uuid}`);
 
-    await browserCapture.captureStep(session.id, 'workspace-a', 'first-step');
+      await browserCapture.captureStep(session.id, 'workspace-a', 'first-step');
 
-    vi.setSystemTime(endedAt);
-    const result = await browserCapture.endSession(session.id, 'workspace-a');
+      vi.setSystemTime(endedAt);
+      const result = await browserCapture.endSession(session.id, 'workspace-a');
 
-    expect(session.startTime).toBe(startedAt.toISOString());
-    expect(result.metadata.startTime).toBe(startedAt.toISOString());
-    expect(result.metadata.endTime).toBe(endedAt.toISOString());
-    expect(result.metadata.stepCount).toBe(1);
-    const written = JSON.parse(
-      await fs.readFile(path.join(session.outputDir, 'session.json'), 'utf-8'),
-    ) as { startTime: string; endTime: string };
-    expect(written.startTime).toBe(startedAt.toISOString());
-    expect(written.endTime).toBe(endedAt.toISOString());
-    await expect(
-      browserCapture.getSummary('workspace-a', session.captureId),
-    ).resolves.toMatchObject({ url: 'https://example.test/page', title: 'Example' });
-  });
+      expect(result.metadata.startTime).toBe(startedAt.toISOString());
+      expect(result.metadata.endTime).toBe(endedAt.toISOString());
+      expect(result.metadata.stepCount).toBe(1);
+      const written = JSON.parse(
+        await fs.readFile(path.join(session.outputDir, 'session.json'), 'utf-8'),
+      ) as { startTime: string; endTime: string };
+      expect(written.startTime).toBe(startedAt.toISOString());
+      expect(written.endTime).toBe(endedAt.toISOString());
+      expect(session.startTime).toBe(startedAt.toISOString());
+      await expect(
+        browserCapture.getSummary('workspace-a', session.captureId),
+      ).resolves.toMatchObject({ url: 'https://example.test/page', title: 'Example' });
+    },
+  );
 
   it('rejects an empty snapshot screenshot before creating screenshot.jpg', async () => {
     vi.mocked(embeddedBrowserCdp.screenshot).mockResolvedValueOnce({
