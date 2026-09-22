@@ -1823,7 +1823,7 @@
       {/if}
     {:else if role === 'assistant'}
       <!-- Assistant Message -->
-      <div class="type-body text-pretty text-foreground">
+      <div class="type-body min-h-8 text-pretty text-foreground">
         <StreamingMessageContent
           content={combinedContent}
           {isStreaming}
