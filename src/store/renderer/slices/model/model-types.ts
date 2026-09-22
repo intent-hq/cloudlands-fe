@@ -22,7 +22,7 @@ export type ModelFallbackInfo = {
   toModel: string;
 };
 
-export type AgentModelUpdateOperation = {
+type AgentModelUpdateOperation = {
   status: 'idle' | 'loading' | 'success' | 'error';
   requestId: number;
   model: string | null;

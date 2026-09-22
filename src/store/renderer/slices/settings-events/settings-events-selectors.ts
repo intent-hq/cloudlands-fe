@@ -61,12 +61,6 @@ export const selectUserRuleOperation = store.createSelector((state, key: string)
 export const selectUserRuleUpdateOperation = store.createSelector((state, key: string) =>
   selectOperation(state.settingsOperations.ruleWrites, key),
 );
-export const selectServerPairingOperation = store.createSelector((state, key: string) =>
-  selectOperation(state.settingsOperations.pairingReads, key),
-);
-export const selectTokenRotationOperation = store.createSelector((state, key: string) =>
-  selectOperation(state.settingsOperations.tokenRotations, key),
-);
 export const selectSystemCapabilitiesOperation = store.createSelector((state, key: string) =>
   selectOperation(state.settingsOperations.capabilityReads, key),
 );

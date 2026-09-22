@@ -173,18 +173,6 @@ export const selectKeychainSyncWriteOperation = store.createSelector(
   (state) => state.connections.keychainSyncWriteOperation,
 );
 
-export const selectSelfPublishState = store.createSelector((state) => ({
-  state: state.connections.selfPublishedState,
-  stateStatus: state.connections.selfPublishedStateStatus,
-  publishStatus: state.connections.selfPublishStatus,
-  publishError: state.connections.selfPublishError,
-  publishVersion: state.connections.selfPublishVersion,
-  unpublishStatus: state.connections.selfUnpublishStatus,
-  unpublishError: state.connections.selfUnpublishError,
-  unpublishVersion: state.connections.selfUnpublishVersion,
-  unpublishRemoved: state.connections.selfUnpublishRemoved,
-}));
-
 export const selectCaptureFingerprintOperation = store.createSelector(
   (state) => state.connections.captureFingerprintOperation,
 );
@@ -193,9 +181,6 @@ export const selectConnectBackendOperation = store.createSelector(
 );
 export const selectOpenConnectionOperation = store.createSelector(
   (state, id: string) => state.connections.openOperations[id] ?? IDLE_RESULT,
-);
-export const selectOpenConnectionOperations = store.createSelector(
-  (state) => state.connections.openOperations,
 );
 export const selectSaveConnectionOperation = store.createSelector(
   (state, id: string) => state.connections.saveOperations[id] ?? IDLE_RESULT,

@@ -22,7 +22,10 @@
   import { safeDisclosureTransition } from './disclosure-motion';
   import { beforeFollowBottomMutation } from '$lib/utils/smartScroll';
   import type { MessageAuthor, QueuedMessage } from '$shared/types';
-  import type { QueuedMessageSendOutcome } from '$store/renderer/slices/chat-state/chat-state-types';
+  import type {
+    ChatQueuedMessageEditOperation,
+    QueuedMessageSendOutcome,
+  } from '$store/renderer/slices/chat-state/chat-state-types';
   import { getMessageAuthorLabel, getQueuedMessageAuthor } from '$lib/utils/message-authorship';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -46,11 +49,13 @@
   interface Props {
     messages: QueuedMessage[];
     disabled?: boolean;
+    editOperations?: Record<string, ChatQueuedMessageEditOperation>;
     onedit?: (
       messageId: string,
       content: string,
       editing?: boolean,
-    ) => Promise<{ success: boolean; error?: string }>;
+    ) =>
+      void | { success: boolean; error?: string } | Promise<{ success: boolean; error?: string }>;
     onremove?: (messageId: string) => void;
     onsendnow?: (
       messageId: string,
@@ -73,6 +78,7 @@
   let {
     messages = [],
     disabled = false,
+    editOperations,
     onedit,
     onremove,
     onsendnow,
@@ -89,7 +95,18 @@
   let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
   let editTextarea = $state<HTMLTextAreaElement>();
-  let activeEditOperation: { messageId: string } | null = null;
+  let nextEditOperationId = 0;
+  let activeEditOperation: { messageId: string; id: number } | null = null;
+  let pendingEditOutcome = $state<{
+    kind: 'hold' | 'release';
+    messageId: string;
+    content: string;
+    editing: boolean;
+    editedContent: string;
+    originalContent: string;
+    programmatic: boolean;
+    operation: { messageId: string; id: number };
+  } | null>(null);
   let pendingFocusRestore: { messageId: string; textarea: HTMLTextAreaElement } | null = null;
   let expanded = $state(true);
   let previousMessageCount = $state(0);
@@ -172,22 +189,26 @@
   }
 
   function beginEditOperation(messageId: string) {
-    const operation = { messageId };
+    const operation = { messageId, id: ++nextEditOperationId };
     activeEditOperation = operation;
     return operation;
   }
 
-  function ownsEditOperation(operation: { messageId: string }) {
-    return activeEditOperation === operation && editingId === operation.messageId;
+  function ownsEditOperation(operation: { messageId: string; id: number }) {
+    return (
+      activeEditOperation?.id === operation.id &&
+      activeEditOperation.messageId === operation.messageId &&
+      editingId === operation.messageId
+    );
   }
 
-  function finishEditOperation(operation: { messageId: string }) {
+  function finishEditOperation(operation: { messageId: string; id: number }) {
     if (!ownsEditOperation(operation)) return false;
     activeEditOperation = null;
     return true;
   }
 
-  function clearEditState(operation?: { messageId: string }) {
+  function clearEditState(operation?: { messageId: string; id: number }) {
     if (operation && !ownsEditOperation(operation)) return false;
     editingId = null;
     editContent = '';
@@ -198,7 +219,7 @@
     return true;
   }
 
-  async function clearOwnedEditState(operation: { messageId: string }) {
+  async function clearOwnedEditState(operation: { messageId: string; id: number }) {
     if (!ownsEditOperation(operation)) return false;
     let cleared = false;
     await animateRowMutation(operation.messageId, () => {
@@ -217,6 +238,44 @@
 
   $effect(() => {
     if (editingId && !messages.some((message) => message.id === editingId)) clearEditState();
+  });
+
+  $effect(() => {
+    const pending = pendingEditOutcome;
+    if (!pending) return;
+    const outcome = editOperations?.[pending.messageId];
+    if (
+      !outcome ||
+      outcome.content !== pending.content ||
+      outcome.editing !== pending.editing ||
+      outcome.status === 'loading'
+    ) {
+      return;
+    }
+    pendingEditOutcome = null;
+    const failed = outcome.status === 'error' || outcome.result?.success !== true;
+    if (!failed) {
+      if (pending.kind !== 'release') return;
+      void clearOwnedEditState(pending.operation).then((cleared) => {
+        if (cleared && pending.programmatic) ondone?.();
+      });
+      return;
+    }
+    if (pending.kind === 'hold') {
+      if (editingId === pending.messageId) {
+        void animateRowMutation(pending.messageId, () => clearEditState());
+      }
+      return;
+    }
+    if (!ownsEditOperation(pending.operation)) return;
+    finishEditOperation(pending.operation);
+    if (editingId !== null) return;
+    void animateRowMutation(pending.messageId, () => {
+      editingId = pending.messageId;
+      editContent = pending.editedContent;
+      editOriginalContent = pending.originalContent;
+      editStartedProgrammatically = pending.programmatic;
+    });
   });
 
   $effect.pre(() => {
@@ -378,27 +437,37 @@
       editOriginalContent = message.content;
     });
     if (!ownsEditOperation(operation)) return;
+    editTextarea?.focus({ preventScroll: true });
+    editTextarea?.setSelectionRange(editContent.length, editContent.length);
 
     // STAB-27: Engage hold immediately (editing:true) so the message isn't
     // dequeued mid-edit. If the message is already gone (race with drain),
     // the backend will error and we'll handle gracefully.
-    if (onedit) {
+    if (editOperations === undefined) {
       try {
-        const result = await onedit(message.id, message.content, true);
-        if (!result.success) {
-          // Message was already dequeued - clear edit state
-          // TODO STAB-27: Drop content into composer as draft instead of losing it
-          console.warn('Failed to hold queued message for editing:', result.error);
+        const result = await onedit?.(message.id, message.content, true);
+        if (result?.success === false) {
           await clearOwnedEditState(operation);
           return;
         }
-      } catch (error) {
-        // IPC/network failure - clear edit state
-        console.error('Exception while engaging hold for queued message edit:', error);
+      } catch {
         await clearOwnedEditState(operation);
         return;
       }
+      finishEditOperation(operation);
+      return;
     }
+    pendingEditOutcome = {
+      kind: 'hold',
+      messageId: message.id,
+      content: message.content,
+      editing: true,
+      editedContent: message.content,
+      originalContent: message.content,
+      programmatic,
+      operation,
+    };
+    onedit?.(message.id, message.content, true);
     finishEditOperation(operation);
   }
 
@@ -407,30 +476,36 @@
     const wasProgrammatic = editStartedProgrammatically;
     const operation = beginEditOperation(editingId);
     const originalContent = editOriginalContent;
+    const editedContent = editContent;
 
     // STAB-27: Release hold with original content (editing:false) BEFORE clearing edit state
     // so if the release fails, we stay in edit mode and the user can retry
-    if (onedit) {
+    if (editOperations === undefined) {
       try {
-        const result = await onedit(operation.messageId, originalContent, false);
-        if (!result.success) {
-          // Release failed - stay in edit mode
-          console.error('Failed to release queued message hold on cancel:', result.error);
+        const result = await onedit?.(operation.messageId, originalContent, false);
+        if (result?.success === false) {
           finishEditOperation(operation);
           return;
         }
-      } catch (error) {
-        // IPC/network failure - stay in edit mode
-        console.error('Exception while releasing queued message hold on cancel:', error);
+      } catch {
         finishEditOperation(operation);
         return;
       }
+      const cleared = await clearOwnedEditState(operation);
+      if (cleared && wasProgrammatic) ondone?.();
+      return;
     }
-
-    // Only clear edit state after successful release
-    const cleared = await clearOwnedEditState(operation);
-
-    if (cleared && wasProgrammatic) ondone?.();
+    pendingEditOutcome = {
+      kind: 'release',
+      messageId: operation.messageId,
+      content: originalContent,
+      editing: false,
+      editedContent,
+      originalContent,
+      programmatic: wasProgrammatic,
+      operation,
+    };
+    onedit?.(operation.messageId, originalContent, false);
   }
 
   async function saveEdit() {
@@ -439,30 +514,36 @@
       const wasProgrammatic = editStartedProgrammatically;
       const operation = beginEditOperation(editingId);
       const newContent = editContent.trim();
+      const originalContent = editOriginalContent;
 
       // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
       // Do this BEFORE clearing edit state so if it fails, we stay in edit mode
-      if (onedit) {
+      if (editOperations === undefined) {
         try {
-          const result = await onedit(operation.messageId, newContent, false);
-          if (!result.success) {
-            // Save failed - stay in edit mode
-            console.error('Failed to save queued message edit:', result.error);
+          const result = await onedit?.(operation.messageId, newContent, false);
+          if (result?.success === false) {
             finishEditOperation(operation);
             return;
           }
-        } catch (error) {
-          // IPC/network failure - stay in edit mode
-          console.error('Exception while saving queued message edit:', error);
+        } catch {
           finishEditOperation(operation);
           return;
         }
+        const cleared = await clearOwnedEditState(operation);
+        if (cleared && wasProgrammatic) ondone?.();
+        return;
       }
-
-      // Only clear edit state after successful save
-      const cleared = await clearOwnedEditState(operation);
-
-      if (cleared && wasProgrammatic) ondone?.();
+      pendingEditOutcome = {
+        kind: 'release',
+        messageId: operation.messageId,
+        content: newContent,
+        editing: false,
+        editedContent: editContent,
+        originalContent,
+        programmatic: wasProgrammatic,
+        operation,
+      };
+      onedit?.(operation.messageId, newContent, false);
     } else if (editingId) {
       await cancelEdit();
     }
@@ -709,6 +790,7 @@
                     data-testid="queued-message-content"
                     data-mode="display"
                     aria-label={message.content}
+                    onclick={() => startEdit(message)}
                     ondblclick={() => startEdit(message)}
                     onkeydown={(event) => handleDisplayKeydown(event, message)}
                   >

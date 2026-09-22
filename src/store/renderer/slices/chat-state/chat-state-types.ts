@@ -147,13 +147,13 @@ interface UserMessageIndexState {
   error: string | null;
 }
 
-export type ChatDraftSnapshot = {
+type ChatDraftSnapshot = {
   text: string;
   attachments?: DraftAttachment[];
   updatedAt: string;
 } | null;
 
-export type ChatDraftOperation<T> = {
+type ChatDraftOperation<T> = {
   status: 'idle' | 'loading' | 'success' | 'error';
   requestId: number | null;
   data: T | null;

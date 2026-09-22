@@ -12,7 +12,7 @@ import {
   selectAvailableEnabledProviderIds,
 } from '../provider-settings/provider-settings-selectors';
 import { resolveDefaultModel } from './model-selection-utils';
-import type { AgentModelUpdateOperation, ModelLoadingState } from './model-types';
+import type { ModelLoadingState } from './model-types';
 import { selectEffectiveDefaultProviderId } from '../provider-catalog/provider-catalog-selectors';
 
 function getEffectiveProviderId(state: any, providerId?: string): string {
@@ -151,18 +151,6 @@ export const selectAllProviderStaleFlags = store.createSelector(
 
     return stale;
   },
-);
-
-const IDLE_AGENT_MODEL_UPDATE: AgentModelUpdateOperation = {
-  status: 'idle',
-  requestId: 0,
-  model: null,
-  error: null,
-};
-
-export const selectAgentModelUpdate = store.createSelector(
-  (state, agentId?: string): AgentModelUpdateOperation =>
-    (agentId ? state.model.agentModelUpdates?.[agentId] : undefined) ?? IDLE_AGENT_MODEL_UPDATE,
 );
 
 /** Select all provider models */
