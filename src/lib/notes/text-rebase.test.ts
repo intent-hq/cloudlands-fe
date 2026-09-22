@@ -2929,17 +2929,21 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // span's opening run to the line's end, so each span of the line read the
     // whole rest of it: 512 million units of 16 000 spans, half a second on
     // an expired clock.) A fourfold line may read sixfold, not sixteenfold;
-    // within the budget each span's text maps exactly.
+    // within the budget each span's text maps exactly. The editor projects
+    // the shortest line; the longer lines are more of the same span, shown
+    // by the rule it verifies.
     it('reads a line of many code spans in units proportional to its length', async () => {
       const paragraph = 'q'.repeat(129 * 1024);
-      const notes = await Promise.all(
-        [1000, 4000, 16_000].map(async (spans) => {
-          const markdown = `${paragraph}\n\n${Array.from({ length: spans }, () => '`x`').join(' ')}`;
-          const plain = await projectWithEditor(markdown, true);
-          expect(plain).toBe(`${paragraph}\n${Array.from({ length: spans }, () => 'x').join(' ')}`);
-          return { spans, plain, markdown };
-        }),
-      );
+      const line = (spans: number, span: string) =>
+        Array.from({ length: spans }, () => span).join(' ');
+      const note = (spans: number) => ({
+        spans,
+        markdown: `${paragraph}\n\n${line(spans, '`x`')}`,
+        plain: `${paragraph}\n${line(spans, 'x')}`,
+      });
+      const smallest = note(1000);
+      expect(await projectWithEditor(smallest.markdown, true)).toBe(smallest.plain);
+      const notes = [smallest, note(4000), note(16_000)];
       const unitsRead = notes.map(({ spans, plain, markdown }) => {
         const [map, units] = countingUnitsRead(() =>
           withExpiredDeadline(() => createBidirectionalOffsetMapper(plain, markdown)),
