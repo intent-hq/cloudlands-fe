@@ -13,10 +13,6 @@
 name: Build Smoke
 
 on:
-  # TEMPORARY: workflow_dispatch only works once the file is on main; this
-  # exercises the PR branch and is removed before merge.
-  push:
-    branches: [ci/build-smoke-workflow]
   schedule:
     # Nightly at 04:17 UTC, off the :00/:30 crowd.
     - cron: '17 4 * * *'
