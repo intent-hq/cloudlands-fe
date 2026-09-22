@@ -232,6 +232,15 @@
       const assetName = source.split(/[?#]/)[0].split('/').pop();
       if (assetName) return assetName;
     }
+    // Bare workspace-relative paths (`![x](docs/diagram.png)`) are a supported
+    // media-key shape; the path itself is the most useful label.
+    if (source && !/^[a-z][a-z0-9+.-]*:/i.test(source) && !source.startsWith('//')) {
+      try {
+        return decodeURI(source);
+      } catch {
+        return source;
+      }
+    }
     return image.getAttribute('alt') || undefined;
   }
 

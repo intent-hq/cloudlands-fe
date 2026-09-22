@@ -439,6 +439,22 @@ describe('MarkdownViewer static rendering', () => {
       expect(container.querySelector('[data-loaded]')).toBeNull();
     });
 
+    it('labels a sized relative-path image with its source path, not its alt text', async () => {
+      const { container } = render(MarkdownViewer, {
+        props: {
+          content: '![chart](docs/diagram.png)',
+          workspaceId: 'ws-abc',
+          media: { 'docs/diagram.png': { width: 640, height: 360 } },
+        },
+      });
+      await waitFor(() => {
+        expect(container.querySelector('img')?.getAttribute('width')).toBe('640');
+      });
+
+      const placeholder = await screen.findByTestId('media-loading-placeholder');
+      expect(placeholder.textContent).toContain('docs/diagram.png');
+    });
+
     it('renders legacy images without media exactly as before', async () => {
       const { container } = render(MarkdownViewer, {
         props: { content: `![diagram](${src})`, workspaceId: 'ws-abc' },

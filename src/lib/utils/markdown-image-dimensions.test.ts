@@ -91,6 +91,33 @@ describe('stampMarkdownImageDimensions', () => {
     ]);
   });
 
+  it('stamps images whose sanitized alt or title contains a literal ">"', async () => {
+    const markdown =
+      '![chart > baseline](intent://local/file/docs/diagram.png)\n\n' +
+      '![chart](intent://local/file/docs/other.png "chart > baseline")';
+    const html = await processMarkdownToHTML(markdown, { workspaceId: WS, skipIfHTML: false });
+    expect(html).toContain('> baseline');
+
+    const stamped = stampMarkdownImageDimensions(
+      html,
+      {
+        'intent://local/file/docs/diagram.png': { width: 640, height: 360 },
+        'intent://local/file/docs/other.png': { width: 320, height: 180 },
+      },
+      WS,
+    );
+
+    expect(dims(stamped)).toEqual([
+      { width: '640', height: '360' },
+      { width: '320', height: '180' },
+    ]);
+    const container = document.createElement('div');
+    container.innerHTML = stamped;
+    const [first, second] = Array.from(container.querySelectorAll('img'));
+    expect(first.getAttribute('alt')).toBe('chart > baseline');
+    expect(second.getAttribute('title')).toBe('chart > baseline');
+  });
+
   it('leaves images that already declare dimensions and rejects invalid entries', () => {
     const sized = '<p><img src="workspace-asset://ws-abc/a.png" width="1" height="1"></p>';
     expect(

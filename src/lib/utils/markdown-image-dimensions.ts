@@ -78,7 +78,9 @@ export function stampMarkdownImageDimensions(
   const index = renderedSourceIndex(media, workspaceId);
   if (index.size === 0) return html;
 
-  return html.replace(/<img\b[^>]*>/gi, (match) => {
+  // Quote-aware tag scan: sanitized `alt` / `title` values may contain a
+  // literal `>`, so the tag ends at the first `>` outside a quoted value.
+  return html.replace(/<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi, (match) => {
     if (/\s(?:width|height)="/i.test(match)) return match;
     const srcMatch = /\ssrc="([^"]*)"/i.exec(match);
     if (!srcMatch) return match;
