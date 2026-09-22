@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: renders nothing of its own; teleports children to another DOM target -->
+
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';

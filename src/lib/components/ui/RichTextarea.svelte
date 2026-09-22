@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: onboarding-only contenteditable input covered by RichTextarea.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   /**
    * RichTextarea - A simple rich text input for onboarding-style prompts
