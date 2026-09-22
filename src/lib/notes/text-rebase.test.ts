@@ -13,6 +13,7 @@ import {
   mapOffsetThroughDiff,
   rebaseText,
 } from './text-rebase';
+import { decodeCharacterReference, namedCharacterReferences } from './character-references';
 
 /**
  * While `abort` is set, every jsdiff call behaves as if its `timeout` had
@@ -87,6 +88,42 @@ function withExpiredDeadline<T>(fn: () => T): T {
   } finally {
     now.mockRestore();
   }
+}
+
+/**
+ * Run `fn` counting the documents the HTML parser is asked for: the work of
+ * decoding a character reference through the DOM, which the alignment never
+ * does — a cell of 20 000 references was 20 000 parses, 400 ms whatever the
+ * clock read.
+ */
+function countingDomParses<T>(fn: () => T): [result: T, parses: number] {
+  let parses = 0;
+  const parse = DOMParser.prototype.parseFromString;
+  const spy = vi.spyOn(DOMParser.prototype, 'parseFromString').mockImplementation(function (
+    this: DOMParser,
+    ...args
+  ) {
+    parses += 1;
+    return parse.apply(this, args);
+  });
+  try {
+    const result = fn();
+    return [result, parses];
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+/**
+ * The text the HTML parser shows for each of `references`, decoded in one
+ * document, set apart by a private-use character no reference decodes to.
+ */
+function parsedReferences(references: string[]): string[] {
+  const document = new DOMParser().parseFromString(
+    `\uE001${references.join('\uE001')}\uE001`,
+    'text/html',
+  );
+  return (document.documentElement.textContent ?? '').split('\uE001').slice(1, -1);
 }
 
 /** A markdown piece and whether the editor projects it into the plain text. */
@@ -2600,15 +2637,22 @@ describe('alignment of link syntax the lexer does not account for', () => {
         ['entity', '&amp;&amp;', '&&', /&amp;&amp;/g],
         // A character reference beyond HTML's five: the editor's HTML parser
         // shows it as its character, whatever its case, so the cell's key
-        // must be decoded by the same parser. (Decoded from a hand list of
-        // the five, `A&eacute;B` was keyed `AeacuteB` and `&AMP;&AMP;`
-        // `AMPAMP` — letters no plain-text line of the row showed — and the
-        // row was paired as one line.)
+        // must be decoded as that parser decodes — the standard's table of
+        // names, its remapping of a numeric reference — and without it: a
+        // parse per reference was 20 000 parses on a cell of 20 000, past
+        // the deadline too. (Decoded from a hand list of the five,
+        // `A&eacute;B` was keyed `AeacuteB` and `&AMP;&AMP;` `AMPAMP` —
+        // letters no plain-text line of the row showed — and the row was
+        // paired as one line.)
         ['named accented', 'A&eacute;B', 'AéB', /A&eacute;B/g],
         ['copyright between letters', 'A&copy;B', 'A©B', /A&copy;B/g],
         ['copyright with year', '&copy;2026', '©2026', /&copy;2026/g],
         ['registered between letters', 'A&reg;B', 'A®B', /A&reg;B/g],
         ['uppercase entity', '&AMP;&AMP;', '&&', /&AMP;&AMP;/g],
+        ['numeric accented', 'A&#233;&#xE9;B', 'AééB', /A&#233;&#xE9;B/g],
+        ['numeric control remapped', '&#128;&#x80;', '€€', /&#128;&#x80;/g],
+        ['numeric null', '&#0;&#0;', '\uFFFD\uFFFD', /&#0;&#0;/g],
+        ['numeric surrogate', '&#xD800;&#57343;', '\uFFFD\uFFFD', /&#xD800;&#57343;/g],
       ] as Array<[string, string, string, RegExp]>
     ).flatMap(([kind, cell, needle, pattern]) =>
       CLOCKS.map(([when, clock]): [string, string, string, string, RegExp, Clock] => [
@@ -2630,7 +2674,10 @@ describe('alignment of link syntax the lexer does not account for', () => {
         expect(plain).not.toContain('https');
         const cellLines = linesHolding(plain, needle, /\n|\uFFFC/g);
         expect(cellLines).toHaveLength(3);
-        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        const [map, parses] = countingDomParses(() =>
+          clock(() => createBidirectionalOffsetMapper(plain, markdown)),
+        );
+        expect(parses).toBe(0);
         expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
         expectSameLine(plain, markdown, map, 'edit one', 'edit one');
         expectLinesBounded(
@@ -2645,6 +2692,60 @@ describe('alignment of link syntax the lexer does not account for', () => {
         );
         expectSameLine(plain, markdown, map, 'ab', '[ab](');
         expectSameLine(plain, markdown, map, 'cd two', '**cd** two');
+      },
+      60_000,
+    );
+
+    // A line of 20 000 character references and 150 KiB of text in one code
+    // span — with a `|` in it a row of two cells, without one no row — maps
+    // exactly within the budget and asks the HTML parser for nothing, on
+    // every clock. (Decoded reference by reference through the DOM, the line
+    // was 20 000 parses and 400 ms whatever the clock read; without a `|`
+    // its one cell was read and then discarded, so a 300 KiB line paid the
+    // cell path for nothing.) The named references are the table's 2125,
+    // each about ten times.
+    const REFERENCE_LINES = (
+      [
+        ['numeric', (i: number) => `&#${10_000 + i};`],
+        ['named', (i: number) => `&${[...namedCharacterReferences().keys()][i % 2125]};`],
+      ] as Array<[string, (i: number) => string]>
+    ).flatMap(([kind, reference]) =>
+      [
+        ['without', ''],
+        ['with', ' | tail'],
+      ].flatMap(([pipe, tail]) =>
+        CLOCKS.map(
+          ([when, clock]): [string, string, string, (i: number) => string, string, Clock] => [
+            kind,
+            pipe,
+            when,
+            reference,
+            tail,
+            clock,
+          ],
+        ),
+      ),
+    );
+
+    it.each(REFERENCE_LINES)(
+      'maps a code span of 20 000 %s references %s a pipe with no DOM work %s',
+      async (_kind, _pipe, when, reference, tail, clock) => {
+        const visible = `[x](u) ${Array.from({ length: 20_000 }, (_, i) => reference(i)).join(' ')} ${'q'.repeat(150 * 1024)}${tail}`;
+        const markdown = `\`${visible}\``;
+        const plain = await projectWithEditor(markdown, true);
+        expect(plain).toBe(visible);
+        const [[map, reads], parses] = countingDomParses(() =>
+          when === 'within the budget'
+            ? onSteppedClock(() => createBidirectionalOffsetMapper(plain, markdown))
+            : [clock(() => createBidirectionalOffsetMapper(plain, markdown)), 0],
+        );
+        expect(parses).toBe(0);
+        expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
+        if (when !== 'within the budget') return;
+        for (let p = 1; p < plain.length; p += 1009) {
+          expect(map.aToB(p), `plain ${p} forward`).toBe(p + 1);
+          expect(map.bToA(p + 1), `markdown ${p + 1} back`).toBe(p);
+        }
       },
       60_000,
     );
@@ -4178,5 +4279,66 @@ describe('rebaseText', () => {
       }
       expect(checked).toBe(bases.length * 80);
     });
+  });
+});
+
+// The table and arithmetic that decode a character reference stand in for the
+// HTML parser that builds the note editor's document: the parser is the
+// oracle, asked once for every reference in a single document.
+describe('character references', () => {
+  it('decodes every named reference of the standard as the HTML parser does', () => {
+    const names = [...namedCharacterReferences().keys()];
+    expect(names).toHaveLength(2125);
+    const shown = parsedReferences(names.map((name) => `&${name};`));
+    const decoded = names.map((name) => decodeCharacterReference(`&${name};`));
+    expect(decoded).toEqual(shown);
+    expect(shown.filter((text, i) => text === `&${names[i]};`)).toEqual([]);
+  });
+
+  it('decodes a numeric reference as the HTML parser does, remaps and all', () => {
+    const codes = Array.from({ length: 0x300 }, (_, i) => i).concat([
+      0xd7ff, 0xd800, 0xdbff, 0xdc00, 0xdfff, 0xe000, 0xfffd, 0xfffe, 0xffff, 0x10000, 0x1f642,
+      0x10ffff, 0x110000, 9_999_999,
+    ]);
+    const references = codes.flatMap((code) => [
+      `&#${code};`,
+      `&#x${code.toString(16)};`,
+      `&#X${code.toString(16).toUpperCase()};`,
+    ]);
+    const shown = parsedReferences(references);
+    expect(references.map((reference) => decodeCharacterReference(reference))).toEqual(shown);
+  });
+
+  it('reads a name the standard does not give as the HTML parser does: a legacy name it opens with, or as written', () => {
+    const references = [
+      '&bogus;',
+      '&Eacute1;',
+      '&ampx;',
+      '&ltx;',
+      '&notinx;',
+      '&notin;',
+      '&frac12x;',
+      '&AMPERSAND;',
+      '&eacute;',
+      '&Eacute;',
+      '&Eacutex;',
+    ];
+    const shown = parsedReferences(references);
+    expect(shown).toEqual([
+      '&bogus;',
+      'É1;',
+      '&x;',
+      '<x;',
+      '¬inx;',
+      '∉',
+      '½x;',
+      '&ERSAND;',
+      'é',
+      'É',
+      'Éx;',
+    ]);
+    expect(references.map((reference) => decodeCharacterReference(reference) ?? reference)).toEqual(
+      shown,
+    );
   });
 });

@@ -3,6 +3,7 @@ import { Lexer, type Links, type Tokenizer } from 'marked';
 import { normalizeAnchorPositions } from '$lib/utils/anchor-normalization';
 import { escapeHtmlTags } from '$lib/utils/markdown-processor';
 import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
+import { decodeCharacterReference } from './character-references';
 
 /**
  * One-sided text rebase for the note save path: when the daemon echoes a
@@ -2318,10 +2319,15 @@ function tableCells(
   line: TextLine,
   tokenizer: () => Tokenizer | undefined,
 ): TextLine[] | undefined {
+  // A line without a `|` is no row: nothing of it is read before the check.
+  const pipe = text.indexOf('|', line.start);
+  if (pipe === -1 || pipe >= line.end) return undefined;
   let i = line.start;
   while (i < line.end && isBlank(text.charCodeAt(i))) i += 1;
   if (i >= line.end) return undefined;
-  const cells: TextLine[] = [];
+  // The bounds of the cells first, the text they show only once the line
+  // holds two or more: a line's one cell is never read.
+  const bounds: number[] = [];
   let cellStart = text.charCodeAt(i) === 124 ? i + 1 : i;
   for (let j = cellStart; j <= line.end; j += 1) {
     if (j < line.end && (text.charCodeAt(j) !== 124 || text.charCodeAt(j - 1) === 92)) continue;
@@ -2329,39 +2335,26 @@ function tableCells(
     let end = j;
     while (start < end && isBlank(text.charCodeAt(start))) start += 1;
     while (end > start && isBlank(text.charCodeAt(end - 1))) end -= 1;
-    if (start < end) {
-      const letters = lineLetters(shownText(text.slice(start, end), tokenizer));
-      if (letters !== '') cells.push({ start, end, letters, sealed: line.sealed });
-    }
+    if (start < end) bounds.push(start, end);
     cellStart = j + 1;
+  }
+  if (bounds.length < 4) return undefined;
+  const cells: TextLine[] = [];
+  for (let k = 0; k < bounds.length; k += 2) {
+    const start = bounds[k];
+    const end = bounds[k + 1];
+    const letters = lineLetters(shownText(text.slice(start, end), tokenizer));
+    if (letters !== '') cells.push({ start, end, letters, sealed: line.sealed });
   }
   return cells.length > 1 ? cells : undefined;
 }
 
 /** A character reference as the renderer passes one to the note editor's HTML parser: `&name;`, `&#ddd;` or `&#xhh;`. */
 const CHARACTER_REFERENCE = /&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});/g;
-const MAX_DECODED_REFERENCES = 1 << 12;
-const decodedReferences = new Map<string, string>();
-let referenceParser: DOMParser | undefined;
 
-/**
- * The text the note editor shows for the character `reference`: decoded by
- * the HTML parser that builds the editor's document — every name it knows,
- * in the case it knows it, a numeric reference as it remaps it — so that a
- * name it does not know shows as written. Memoised; the reference itself
- * where there is no DOM.
- */
+/** The text the note editor shows for the character `reference`: as its HTML parser decodes it, or as written. */
 function decodeReference(reference: string): string {
-  const known = decodedReferences.get(reference);
-  if (known !== undefined) return known;
-  if (typeof DOMParser === 'undefined') return reference;
-  referenceParser ??= new DOMParser();
-  const shown =
-    referenceParser.parseFromString(reference, 'text/html').documentElement.textContent ??
-    reference;
-  if (decodedReferences.size >= MAX_DECODED_REFERENCES) decodedReferences.clear();
-  decodedReferences.set(reference, shown);
-  return shown;
+  return decodeCharacterReference(reference) ?? reference;
 }
 
 /**
@@ -2369,10 +2362,11 @@ function decodeReference(reference: string): string {
  * letters go: a link read by the renderer's own `tokenizer` (the inline form,
  * then a reference every label resolves in, as `imageAt` reads an image)
  * stands as its label, an image as nothing, a character reference as the
- * editor's HTML parser shows it (`decodeReference`). The rest is kept as
- * written — formatting is letterless, and a reference the note leaves
- * undefined shows its letters either way. `cell` itself when the tokenizer
- * could not be made.
+ * editor's HTML parser shows it (`decodeReference` — the standard's table
+ * and arithmetic, no DOM, so a cell of any length is one pass). The rest is
+ * kept as written — formatting is letterless, and a reference the note
+ * leaves undefined shows its letters either way. `cell` itself when the
+ * tokenizer could not be made.
  */
 function shownText(cell: string, tokenizer: () => Tokenizer | undefined): string {
   let out = '';
@@ -2388,7 +2382,7 @@ function shownText(cell: string, tokenizer: () => Tokenizer | undefined): string
     pos = at + link.length;
   }
   out += cell.slice(pos);
-  return out.replace(CHARACTER_REFERENCE, decodeReference);
+  return out.indexOf('&') === -1 ? out : out.replace(CHARACTER_REFERENCE, decodeReference);
 }
 
 /** Definitions every label resolves in. */
