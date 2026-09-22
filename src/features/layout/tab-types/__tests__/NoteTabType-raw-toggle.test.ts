@@ -36,10 +36,6 @@ const mockState = vi.hoisted(() => {
 
   return {
     dispatch: vi.fn(),
-    copy: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    download: vi.fn(),
     noteViewMode: store<'editor' | 'raw' | 'preview'>('editor'),
     spellcheckEnabled: store(true),
     noteFontStyle: store('sans'),
@@ -52,18 +48,9 @@ const mockState = vi.hoisted(() => {
   };
 });
 
-vi.mock('$lib/utils/clipboard', () => ({ writeTextToClipboard: mockState.copy }));
-vi.mock('$features/export/download-markdown', () => ({ downloadMarkdown: mockState.download }));
-vi.mock('$features/notes/notes-read-service', () => ({
-  ensureNoteContentLoaded: vi.fn(async () => false),
-}));
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { success: mockState.success, error: mockState.error },
-  withToastCountdown: vi.fn(),
-}));
-
 vi.mock('$lib/components/workspace/NoteWithComments.svelte', async () => ({
-  default: (await import('./mocks/MockNoteExportEditor.svelte')).default,
+  default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
+    .default,
 }));
 vi.mock('$lib/components/workspace/NoteVersionHistory.svelte', async () => ({
   default: (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte'))
@@ -161,10 +148,6 @@ import NoteTabTypeHeaderHarness from './mocks/NoteTabTypeHeaderHarness.svelte';
 
 describe('NoteTabType note view modes', () => {
   beforeEach(() => {
-    mockState.copy.mockReset().mockResolvedValue(undefined);
-    mockState.download.mockReset();
-    mockState.success.mockClear();
-    mockState.error.mockClear();
     mockState.dispatch.mockClear();
     mockState.noteViewMode.set('editor');
     mockState.spellcheckEnabled.set(true);
@@ -445,6 +428,8 @@ $$\frac{1}{2}$$
   });
 
   it('clears pending copy feedback timer when unmounted', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 
     const { unmount } = render(NoteTabTypeHeaderHarness, {
@@ -453,87 +438,11 @@ $$\frac{1}{2}$$
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy full note' }));
-    await waitFor(() => expect(mockState.copy).toHaveBeenCalledWith('Note content'));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('Note content'));
     const callsBeforeUnmount = clearTimeoutSpy.mock.calls.length;
 
     unmount();
 
     expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(callsBeforeUnmount);
   });
-
-  it('copies from the visible header and reports success or failure', async () => {
-    render(NoteTabTypeHeaderHarness, {
-      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
-    });
-    await fireEvent.click(await screen.findByRole('button', { name: 'Copy full note' }));
-    await waitFor(() => expect(mockState.copy).toHaveBeenCalledWith('Note content'));
-    expect(mockState.success).toHaveBeenCalledOnce();
-    mockState.copy.mockRejectedValueOnce(new Error('denied'));
-    await fireEvent.click(screen.getByRole('button', { name: 'Copy full note' }));
-    await waitFor(() => expect(mockState.error).toHaveBeenCalledOnce());
-    expect(mockState.success).toHaveBeenCalledOnce();
-  });
-
-  it('uses the live editor draft for copy/download and rejects it after retargeting', async () => {
-    const view = render(NoteTabTypeHeaderHarness, {
-      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
-    });
-    await fireEvent.input(screen.getByRole('textbox', { name: 'Mock note draft' }), {
-      target: { value: '# Unsaved\n' },
-    });
-    await fireEvent.click(screen.getByRole('button', { name: 'Copy full note' }));
-    await waitFor(() => expect(mockState.copy).toHaveBeenLastCalledWith('# Unsaved\n'));
-    await fireEvent.click(screen.getByRole('button', { name: 'Panel actions' }));
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Download Markdown' }));
-    expect(mockState.download).toHaveBeenCalledWith('# Unsaved\n', 'Note 1');
-    mockState.note.set({ ...mockState.defaultNote, id: 'note-2', content: '# Second note' });
-    await view.rerender({ tab: { id: 'tab-2', type: 'note', title: 'Second', noteId: 'note-2' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Copy full note' }));
-    await waitFor(() => expect(mockState.copy).toHaveBeenLastCalledWith('# Second note'));
-  });
-
-  it('copies the canonical note link and downloads exact source from preview', async () => {
-    mockState.noteViewMode.set('preview');
-    mockState.note.set({ ...mockState.defaultNote, title: 'A plan', content: '# Raw\n\nText\n' });
-    render(NoteTabTypeHeaderHarness, {
-      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
-    });
-    await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy in-app link' }));
-    await waitFor(() =>
-      expect(mockState.copy).toHaveBeenCalledWith('intent://local/ws-1/note/note-1'),
-    );
-    await fireEvent.click(screen.getByRole('button', { name: 'Panel actions' }));
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Download Markdown' }));
-    expect(mockState.download).toHaveBeenCalledWith('# Raw\n\nText\n', 'A plan');
-  });
-
-  it.each(['missing', 'stale', 'different-note'])(
-    'disables copy/export for %s content',
-    async (state) => {
-      mockState.note.set(
-        state === 'missing'
-          ? undefined
-          : {
-              ...mockState.defaultNote,
-              ...(state === 'stale' ? { content: '', contentLength: 50 } : { id: 'other-note' }),
-            },
-      );
-      render(NoteTabTypeHeaderHarness, {
-        props: {
-          tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' },
-        },
-      });
-      expect(
-        ((await screen.findByRole('button', { name: 'Copy full note' })) as HTMLButtonElement)
-          .disabled,
-      ).toBe(true);
-      await fireEvent.click(screen.getByRole('button', { name: 'Copy full note' }));
-      expect(mockState.copy).not.toHaveBeenCalled();
-      await fireEvent.click(screen.getByRole('button', { name: 'Panel actions' }));
-      expect(
-        screen.getByRole('menuitem', { name: 'Download Markdown' }).getAttribute('aria-disabled'),
-      ).toBe('true');
-    },
-  );
 });

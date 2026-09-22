@@ -1,14 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
-const clipboardMocks = vi.hoisted(() => ({ copy: vi.fn(), success: vi.fn(), error: vi.fn() }));
-vi.mock('$lib/utils/clipboard', () => ({ writeTextToClipboard: clipboardMocks.copy }));
-vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { success: clipboardMocks.success, error: clipboardMocks.error },
-}));
 import {
   configuredVisualStates,
   exerciseVisualStates,
@@ -68,22 +63,6 @@ function message(
 }
 
 describe('ChatMessage action overlays', () => {
-  it('writes once with shared clipboard feedback and notifies its caller only on success', async () => {
-    clipboardMocks.copy.mockReset().mockResolvedValue(undefined);
-    clipboardMocks.success.mockClear();
-    clipboardMocks.error.mockClear();
-    const onCopy = vi.fn();
-    render(ChatMessage, { props: { message: message('user', '2026-09-21T00:00:00Z'), onCopy } });
-    await fireEvent.click(screen.getByRole('button', { name: /copy/i }));
-    await waitFor(() => expect(clipboardMocks.copy).toHaveBeenCalledWith('user content'));
-    expect(onCopy).toHaveBeenCalledOnce();
-    expect(clipboardMocks.success).toHaveBeenCalledOnce();
-    clipboardMocks.copy.mockRejectedValueOnce(new Error('denied'));
-    await fireEvent.click(screen.getByRole('button', { name: /copy/i }));
-    await waitFor(() => expect(clipboardMocks.error).toHaveBeenCalledOnce());
-    expect(onCopy).toHaveBeenCalledOnce();
-    expect(clipboardMocks.success).toHaveBeenCalledOnce();
-  });
   it('keeps one canonical identity when an outer transcript row owns it', () => {
     const standalone = render(ChatMessage, {
       props: { message: message('user', '2026-06-02T14:35:20.000Z') },

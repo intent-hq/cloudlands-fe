@@ -1,11 +1,5 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "content_export_downloadMarkdown_label": "Markdownをダウンロード",
-  "content_export_copyInAppLink_label": "アプリ内リンクをコピー",
-  "content_export_downloadFailed_error": "Markdownをダウンロードできませんでした",
-  "content_export_copyLoadedConversation_label": "読み込み済みの会話テキストをコピー",
-  "content_export_downloadLoadedConversation_label": "読み込み済みテキストをMarkdownでダウンロード",
-  "content_export_copyLoadedDiagnostic_label": "読み込み済みの診断用会話ログをコピー（未加工）",
   "sandbox_catalogScene_allStates_label": "すべて",
   "sandbox_catalogScene_stateHeading_title": "状態: {state}",
   "error_page_title": "問題が発生しました",

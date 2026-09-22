@@ -31,16 +31,6 @@
   import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
   import * as Menu from '$lib/components/ui/menu';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { Button } from '$lib/components/ui/button';
-  import { notify } from '$lib/components/patterns/notify';
-  import { writeTextToClipboard } from '$lib/utils/clipboard';
-  import { agentUrl } from '$shared/constants/intent-links';
-  import {
-    conversationMarkdown,
-    hasConversationText,
-  } from '$features/export/conversation-markdown';
-  import { downloadMarkdown } from '$features/export/download-markdown';
-  import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import Fa from 'svelte-fa';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
@@ -55,8 +45,6 @@
     faCheck,
     faCircleInfo,
     faCopy,
-    faDownload,
-    faLink,
     faRightLeft,
     faTrash,
     faUserTie,
@@ -64,6 +52,7 @@
   import { faNote } from '$lib/icons/faNote';
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
+  import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
   import { isReplaceAgentEligible } from '$shared/utils/replace-agent-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
@@ -131,11 +120,6 @@
   });
 
   const agentMessages = $derived(agentSession?.messages || []);
-  const canExportConversation = $derived(
-    agentSession?.id === tab.agentId &&
-      agentSession?.workspaceId === workspaceId &&
-      hasConversationText(agentMessages, $workspace?.ownerPrincipalId),
-  );
 
   // Get specialist display name, falling back to the raw id when the
   // lookup misses (parity with AgentCard).
@@ -226,16 +210,12 @@
     navigateToNote(agentTaskNoteId, { openInAdjacentPanel, sourcePanelId });
   }
 
-  async function handleCopyAgentConversation(diagnostic = false) {
-    if (!tab.agentId || !canExportConversation) return;
+  async function handleCopyAgentConversation() {
+    if (!tab.agentId || agentMessages.length === 0) return;
     try {
-      await writeTextToClipboard(
-        diagnostic
-          ? formatAgentMessagesForClipboard(agentMessages)
-          : conversationMarkdown(agentMessages, $workspace?.ownerPrincipalId),
-      );
+      const formattedText = formatAgentMessagesForClipboard(agentMessages);
+      await navigator.clipboard.writeText(formattedText);
       agentCopyFeedback = m.layout_agentTab_copied_label();
-      notify.success(agentCopyFeedback);
       if (agentCopyTimeoutId) clearTimeout(agentCopyTimeoutId);
       agentCopyTimeoutId = setTimeout(() => {
         agentCopyFeedback = null;
@@ -243,30 +223,6 @@
       }, 2000);
     } catch (error) {
       logger.error('Failed to copy conversation', error);
-      agentCopyFeedback = null;
-      notify.error(m.layout_panelTabBar_copyFailed_error());
-    }
-  }
-
-  async function handleCopyAgentLink() {
-    if (!tab.agentId) return;
-    try {
-      await writeTextToClipboard(agentUrl(workspaceId, tab.agentId));
-      notify.success(m.layout_panelTabBar_copied_label());
-    } catch {
-      notify.error(m.layout_panelTabBar_copyFailed_error());
-    }
-  }
-
-  function handleDownloadConversation() {
-    if (!canExportConversation) return;
-    try {
-      downloadMarkdown(
-        conversationMarkdown(agentMessages, $workspace?.ownerPrincipalId),
-        `${agentSession?.name || tab.title}-loaded`,
-      );
-    } catch {
-      notify.error(m.content_export_downloadFailed_error());
     }
   }
 
@@ -346,20 +302,6 @@
       onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
       onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
     />
-    <Tooltip
-      content={agentCopyFeedback || m.content_export_copyLoadedConversation_label()}
-      side="bottom"
-    >
-      <Button
-        variant="ghost"
-        size="icon-compact"
-        aria-label={m.content_export_copyLoadedConversation_label()}
-        disabled={!canExportConversation}
-        onclick={() => handleCopyAgentConversation()}
-      >
-        <Fa icon={agentCopyFeedback ? faCheck : faCopy} />
-      </Button>
-    </Tooltip>
   </div>
 {/snippet}
 
@@ -379,30 +321,9 @@
   <Menu.CommandItem
     icon={agentCopyFeedback ? faCheck : faCopy}
     iconWeight="regular"
-    label={agentCopyFeedback || m.content_export_copyLoadedConversation_label()}
-    onclick={() => handleCopyAgentConversation()}
-    disabled={!canExportConversation}
-  />
-  <Menu.CommandItem
-    icon={faLink}
-    iconWeight="regular"
-    label={m.content_export_copyInAppLink_label()}
-    onclick={handleCopyAgentLink}
-    disabled={!tab.agentId}
-  />
-  <Menu.CommandItem
-    icon={faDownload}
-    iconWeight="regular"
-    label={m.content_export_downloadLoadedConversation_label()}
-    onclick={handleDownloadConversation}
-    disabled={!canExportConversation}
-  />
-  <Menu.CommandItem
-    icon={faCopy}
-    iconWeight="regular"
-    label={m.content_export_copyLoadedDiagnostic_label()}
-    onclick={() => handleCopyAgentConversation(true)}
-    disabled={!canExportConversation}
+    label={agentCopyFeedback || m.layout_agentTab_copyConversation_tooltip()}
+    onclick={handleCopyAgentConversation}
+    disabled={agentMessages.length === 0}
   />
   {#if $agent$}
     <Menu.CommandItem

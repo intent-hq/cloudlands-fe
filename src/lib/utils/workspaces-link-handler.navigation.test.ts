@@ -25,13 +25,6 @@ vi.mock('./navigation.client', () => ({ navigateToRoute: mocks.navigateToRoute }
 vi.mock('./open-message', () => ({ openMessage: mocks.openMessage }));
 
 import { handleIntentLink } from './workspaces-link-handler';
-import { agentUrl } from '$shared/constants/intent-links';
-import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-import {
-  setChiefActiveAgentId,
-  openPanel,
-} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { setActiveAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 describe('handleIntentLink panel navigation', () => {
   beforeEach(() => {
@@ -56,36 +49,6 @@ describe('handleIntentLink panel navigation', () => {
         sourcePanelId: 'panel-chat',
       }),
     );
-    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
-  });
-
-  it.each(['owning-workspace', 'other-workspace'])(
-    'opens a generated agent link in %s',
-    async (workspaceId) => {
-      const link = agentUrl(workspaceId, 'agent-1');
-      expect(link).toBe(`intent://local/${workspaceId}/agent/agent-1`);
-      await handleIntentLink(link, { workspaceId: 'owning-workspace' });
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        openAgentTabRequested(workspaceId, { agentId: 'agent-1' }),
-      );
-      if (workspaceId === 'owning-workspace') expect(mocks.navigateToRoute).not.toHaveBeenCalled();
-      else expect(mocks.navigateToRoute).toHaveBeenCalledWith('/workspace/other-workspace');
-    },
-  );
-
-  it('routes Chief agent links into the Chief panel instead of a workspace page', async () => {
-    await handleIntentLink(agentUrl('__chief__', 'agent-chief'), {
-      workspaceId: 'owning-workspace',
-    });
-    expect(mocks.dispatch).toHaveBeenCalledWith(setChiefActiveAgentId('agent-chief'));
-    expect(mocks.dispatch).toHaveBeenCalledWith(setActiveAgentId('__chief__', 'agent-chief'));
-    expect(mocks.dispatch).toHaveBeenCalledWith(openPanel('chief'));
-    expect(mocks.navigateToRoute).not.toHaveBeenCalled();
-  });
-
-  it.each(['%2F', '%2e%2e', 'agent/other'])('rejects unsafe bare agent segment %s', async (id) => {
-    await handleIntentLink(`intent://local/ws-1/agent/${id}`);
-    expect(mocks.dispatch).not.toHaveBeenCalled();
     expect(mocks.navigateToRoute).not.toHaveBeenCalled();
   });
 

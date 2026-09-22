@@ -10,8 +10,6 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { Button } from '$lib/components/ui/button';
-  import { notify } from '$lib/components/patterns/notify';
-  import { writeTextToClipboard } from '$lib/utils/clipboard';
   import { onDestroy } from 'svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
   import MessageActions from './MessageActions.svelte';
@@ -1240,13 +1238,8 @@
   // Handle copy action
   async function handleCopy() {
     const text = getFullMessageText();
-    try {
-      await writeTextToClipboard(text);
-      notify.success(m.chat_shared_copied_label());
-      onCopy?.();
-    } catch {
-      notify.error(m.layout_panelTabBar_copyFailed_error());
-    }
+    await navigator.clipboard.writeText(text);
+    onCopy?.();
   }
 
   // Handle edit mode

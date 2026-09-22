@@ -1,11 +1,5 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "content_export_downloadMarkdown_label": "Markdown herunterladen",
-  "content_export_copyInAppLink_label": "App-internen Link kopieren",
-  "content_export_downloadFailed_error": "Markdown konnte nicht heruntergeladen werden",
-  "content_export_copyLoadedConversation_label": "Geladenen Unterhaltungstext kopieren",
-  "content_export_downloadLoadedConversation_label": "Geladenen Text als Markdown herunterladen",
-  "content_export_copyLoadedDiagnostic_label": "Geladenes Diagnoseprotokoll kopieren (Rohdaten)",
   "sandbox_catalogScene_allStates_label": "Alle",
   "sandbox_catalogScene_stateHeading_title": "Status: {state}",
   "error_page_title": "Etwas ist schiefgelaufen",

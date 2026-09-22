@@ -56,11 +56,6 @@ export function noteLink(text: string, noteId: string, workspaceId?: string): st
   return `[${text}](${noteUrl(noteId, workspaceId)})`;
 }
 
-/** Generate a workspace-qualified link to an agent conversation. */
-export function agentUrl(workspaceId: string, agentId: string): string {
-  return `${INTENT_BASE_URL}/${encodeURIComponent(workspaceId)}/agent/${encodeURIComponent(agentId)}`;
-}
-
 /**
  * Generate an intent:// URL for one message in an agent conversation.
  */

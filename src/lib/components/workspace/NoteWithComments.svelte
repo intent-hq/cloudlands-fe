@@ -672,32 +672,7 @@
   });
 
   let wasRawNoteViewEnabled = false;
-  let rawNoteEditorRef = $state<{
-    flushPendingSave: () => void;
-    getCurrentMarkdown: (workspaceId: string, noteId: string) => string | undefined;
-  } | null>(null);
-
-  export function getCurrentMarkdown(
-    targetWorkspaceId: string,
-    targetNoteId: string,
-  ): string | undefined {
-    if (workspace?.id !== targetWorkspaceId || noteId !== targetNoteId) return undefined;
-    if (shouldShowRawNoteView)
-      return rawNoteEditorRef?.getCurrentMarkdown(targetWorkspaceId, targetNoteId);
-    // Untouched notes retain their exact source; only serialize a live draft.
-    if (
-      editor &&
-      !editor.isDestroyed &&
-      !isInitializing &&
-      isUserTyping &&
-      hasUserEditedSinceLastSave &&
-      lastWorkspaceId === targetWorkspaceId &&
-      lastNoteId === targetNoteId
-    ) {
-      return processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
-    }
-    return currentNoteContent;
-  }
+  let rawNoteEditorRef = $state<{ flushPendingSave: () => void } | null>(null);
 
   $effect(() => {
     if (!isRawNoteViewEnabled) {

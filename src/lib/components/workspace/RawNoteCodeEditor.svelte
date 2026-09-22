@@ -139,15 +139,6 @@
     });
   }
 
-  export function getCurrentMarkdown(
-    targetWorkspaceId: string,
-    targetNoteId: string,
-  ): string | undefined {
-    if (editorContentWorkspaceId !== targetWorkspaceId || editorContentNoteId !== targetNoteId)
-      return undefined;
-    return editorContent;
-  }
-
   export function flushPendingSave(): void {
     if (saveDebounceTimer) {
       clearTimeout(saveDebounceTimer);
