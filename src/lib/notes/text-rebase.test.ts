@@ -2093,24 +2093,23 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // the most the markdown lacks), so the lines are consumed in order and
     // the k-th duplicate pairs with the k-th; the link line beyond the run is
     // still paired with its own plain-text line, however long the run. (Only
-    // the note editor shows cells of their own, and only within the budget:
-    // past the deadline the lines are paired greedily, a row as one line.)
-    const DUPLICATE_RUNS: Array<
-      [string, (count: number) => string, Array<[string, boolean]>, Array<[string, Clock]>]
-    > = [
-      ['list items', (count) => '- same item\n'.repeat(count), PROJECTIONS, CLOCKS],
+    // the note editor shows cells of their own; past the deadline the lines
+    // are paired greedily, a row cell by cell — the cells of a row are as
+    // alike as the rows, so a run over the row would stop at the first the
+    // next row fits too.)
+    const DUPLICATE_RUNS: Array<[string, (count: number) => string, Array<[string, boolean]>]> = [
+      ['list items', (count) => '- same item\n'.repeat(count), PROJECTIONS],
       [
         'table cells',
         (count) =>
           `| same item | same item | same item |\n|---|---|---|\n${'| same item | same item | same item |\n'.repeat(count / 3 - 1)}`,
         PROJECTIONS.filter(([, production]) => production),
-        CLOCKS.filter(([when]) => when === 'within the budget'),
       ],
     ];
-    const DUPLICATE_RUN_CELLS = DUPLICATE_RUNS.flatMap(([kind, run, projections, clocks]) =>
+    const DUPLICATE_RUN_CELLS = DUPLICATE_RUNS.flatMap(([kind, run, projections]) =>
       [9, 51].flatMap((count) =>
         projections.flatMap(([projection, production]) =>
-          clocks.map(
+          CLOCKS.map(
             ([when, clock]): [
               number,
               string,

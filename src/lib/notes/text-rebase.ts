@@ -1317,6 +1317,7 @@ function refineByLine(
   const lines = textLines(to, toStart, toEnd, false, unanchorable).filter((line) =>
     isTextLine(to, line.start, line.end),
   );
+  for (const line of lines) line.cells = tableCells(to, line);
   const gap = (fromA: number, fromB: number, toA: number, toB: number) => {
     if (fromA === fromB && toA === toB) return;
     if (!overlaps(unanchorable, toA, toB)) {
@@ -1362,15 +1363,52 @@ function lastOverlapEnd(ranges: number[], start: number, end: number): number {
   return last;
 }
 
-/** A line of text without its break, the letters and digits on it, and whether it is sealed. */
+/**
+ * A line of text without its break, the letters and digits on it, whether
+ * it is sealed, and — a table row's — its `cells` (`tableCells`).
+ */
 interface TextLine {
   start: number;
   end: number;
   letters: string;
   sealed: boolean;
+  cells?: TextLine[];
 }
 
 const NOT_LETTER_OR_DIGIT = /[^\p{L}\p{N}]+/gu;
+
+/** Whether `code` is a space or a tab. */
+function isBlank(code: number): boolean {
+  return code === 32 || code === 9;
+}
+
+/**
+ * The cells of the table row `line` of `text` — the text between its
+ * unescaped `|`, each without the blanks around it, that holds a letter or a
+ * digit — when the line opens with `|` and holds two or more; `undefined`
+ * otherwise. The note editor shows each cell as a plain-text line of its own
+ * (see `LineWalk`), so a run of them is paired cell by cell (`pairGreedily`).
+ */
+function tableCells(text: string, line: TextLine): TextLine[] | undefined {
+  let i = line.start;
+  while (i < line.end && isBlank(text.charCodeAt(i))) i += 1;
+  if (i >= line.end || text.charCodeAt(i) !== 124) return undefined;
+  const cells: TextLine[] = [];
+  let cellStart = i + 1;
+  for (let j = i + 1; j <= line.end; j += 1) {
+    if (j < line.end && (text.charCodeAt(j) !== 124 || text.charCodeAt(j - 1) === 92)) continue;
+    let start = cellStart;
+    let end = j;
+    while (start < end && isBlank(text.charCodeAt(start))) start += 1;
+    while (end > start && isBlank(text.charCodeAt(end - 1))) end -= 1;
+    if (start < end) {
+      const letters = text.slice(start, end).replace(NOT_LETTER_OR_DIGIT, '');
+      if (letters !== '') cells.push({ start, end, letters, sealed: line.sealed });
+    }
+    cellStart = j + 1;
+  }
+  return cells.length > 1 ? cells : undefined;
+}
 
 /**
  * The lines of `text[start, end)` that hold a letter or a digit, without
@@ -1536,7 +1574,12 @@ const GREEDY_LOOKAHEAD = 8;
  * text of the line: whichever fit is nearer decides which side is skipped up
  * to it — the lines are text lines only (`refineByLine`), so the lookahead
  * counts none a definition, a comment or an underline is on — and when
- * neither is found within reach one of each is skipped.
+ * neither is found within reach one of each is skipped. A table row whose
+ * cells are each the text of the next fragment in turn is paired cell by
+ * cell, each fragment with its own cell — the note editor shows each cell
+ * as a line, and the cells of a row are as alike as the rows of a table, so
+ * the run over the row would stop at one the next row fits too; a row shown
+ * as one line (the fragment fits no single cell) is paired as one line.
  * Bounded by the letters of both sequences, not their product, so a sealed
  * line among hundreds is still bounded by its own pair.
  */
@@ -1579,6 +1622,17 @@ function pairGreedily(fragments: TextLine[], lines: TextLine[]): LinePair[] {
       fragment.letters !== line.letters &&
       fragment.letters === lines[k + 1].letters
     ) {
+      k += 1;
+      continue;
+    }
+    const cells = line.cells;
+    if (
+      cells &&
+      i + cells.length <= fragments.length &&
+      cells.every((cell, d) => subsequenceEnd(cell.letters, fragments[i + d].letters, 0) !== -1)
+    ) {
+      for (let d = 0; d < cells.length; d += 1) pairs.push([i + d, i + d, cells[d]]);
+      i += cells.length;
       k += 1;
       continue;
     }
