@@ -502,9 +502,14 @@ export interface HudCardAgent {
    */
   treePrefix: string;
   /**
-   * True for delegation-tree roots: no summary `parentAgentId` (§5.1)
-   * and no session `metadata.createdByAgentId` fallback (§5.5). Gates the
-   * workspace-level NEEDS INPUT / BLOCKED derivation.
+   * The shared classifier's `topLevel` bin (`classifyAgentScope`, PROTOCOL
+   * §5.5 row scope): a FOREGROUND agent with no parent reference — no summary
+   * `parentAgentId` (§5.1) and no session `metadata.createdByAgentId` /
+   * `agentMetadata.createdByAgentId` (§5.5). Background roots land in the
+   * `background` bin, so they report false here. A parent reference equal
+   * to the agent's own id is dropped before classification (HUD-side
+   * self-reference guard). Gates the workspace-level NEEDS INPUT / BLOCKED
+   * derivation.
    */
   topLevel: boolean;
   /**
@@ -512,8 +517,8 @@ export interface HudCardAgent {
    * (intent-hq/intent#3789 — served before any session hydration, so a
    * summary-only failed background agent never transiently passes the
    * top-level gating in `selectHudAttentionItems` / `selectHudAttnCount`),
-   * else the tracked session's `isBackground` / `metadata.isBackground`
-   * (§5.5) for pre-#3789 daemons.
+   * else the tracked session's `isBackground` / `metadata.isBackground` /
+   * `agentMetadata.isBackground` (§5.5) for pre-#3789 daemons.
    */
   isBackground: boolean;
   /**

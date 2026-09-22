@@ -351,6 +351,7 @@ describe('HUD agent scope goes through the shared classifier (§5.5 row-scope bi
   it('a summary-row-only child (parentAgentId, nothing on the session) is delegated', () => {
     const noSession = scopeState({ parentAgentId: 'coordinator' }, null, [PARENT]);
     expect(probeRow(noSession)).toMatchObject({ topLevel: false, isBackground: false });
+    expect(gatedRunning(noSession)).toEqual([]);
     const plainSession = scopeState({ parentAgentId: 'coordinator' }, {}, [PARENT]);
     expect(probeRow(plainSession).topLevel).toBe(false);
     expect(gatedRunning(plainSession)).toEqual([]);
