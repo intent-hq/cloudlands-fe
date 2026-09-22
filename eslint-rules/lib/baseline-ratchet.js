@@ -1,7 +1,11 @@
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { ESLint } from 'eslint';
 
 const baselinePath = 'eslint-rules/design-system/baseline.json';
 const rulesIndexPath = 'eslint-rules/design-system/index.js';
+const configPath = 'eslint.config.js';
 
 export function baselineFiles(entries = []) {
   if (entries.every((entry) => typeof entry === 'string')) return entries;
@@ -92,7 +96,7 @@ export function assertBaselineOnlyShrinks(base, current, options) {
   const growth = findBaselineGrowth(base, current, options);
   if (Object.keys(growth).length) {
     throw new Error(
-      `Design-system baseline entries and counts may only shrink:\n${JSON.stringify(growth, null, 2)}`,
+      `Baseline entries and counts may only shrink:\n${JSON.stringify(growth, null, 2)}`,
     );
   }
 }
@@ -110,13 +114,15 @@ function gitShow(ref, cwd, file = baselinePath) {
 }
 
 /**
- * The baseline as committed at the comparison revision — `DESIGN_SYSTEM_BASELINE_BASE_REF`
+ * The baseline as committed at the comparison revision — `LINT_BASELINE_BASE_REF`
  * (the PR / merge-queue base on CI) or `HEAD` locally. `file` selects another
  * package-relative baseline JSON that follows the same ratchet; `undefined` when the
  * file did not exist at that revision (a baseline being introduced by this change).
  */
 export function readComparisonBaseline({ cwd, env = process.env, file = baselinePath } = {}) {
-  const configuredBase = env.DESIGN_SYSTEM_BASELINE_BASE_REF;
+  // DESIGN_SYSTEM_BASELINE_BASE_REF is the pre-rename spelling, honored for one release
+  // so a workflow pinned to it keeps comparing against the PR base; remove afterwards.
+  const configuredBase = env.LINT_BASELINE_BASE_REF || env.DESIGN_SYSTEM_BASELINE_BASE_REF;
   const ref = configuredBase || 'HEAD';
   const contents = gitShow(ref, cwd, file);
   if (!contents) {
@@ -138,4 +144,63 @@ export function readComparisonBaseline({ cwd, env = process.env, file = baseline
     baseline: JSON.parse(contents),
     rules: rulesIndex === undefined ? undefined : parseRegisteredRules(rulesIndex),
   };
+}
+
+function isEnabled(setting) {
+  const severity = Array.isArray(setting) ? setting[0] : setting;
+  return severity !== undefined && severity !== 'off' && severity !== 0;
+}
+
+/**
+ * The config entries that enable `ruleIds`, reduced to their `files` / `ignores` scope
+ * and the rule's own setting with `baseline` reset to `{}` (other options survive).
+ * Appended to the repo config these win over later per-file `'off'` entries, so every
+ * file the rule applies to is linted at zero debt — the scope comes from the config only.
+ */
+export function ruleScopeOverrides(config, ruleIds) {
+  const ids = [ruleIds].flat();
+  return config.flatMap((entry) => {
+    const rules = {};
+    for (const ruleId of ids) {
+      const setting = entry.rules?.[ruleId];
+      if (!isEnabled(setting)) continue;
+      const [severity, options = {}] = Array.isArray(setting) ? setting : [setting];
+      rules[ruleId] = [severity, { ...options, baseline: {} }];
+    }
+    if (!Object.keys(rules).length) return [];
+    return [
+      {
+        ...(entry.files !== undefined && { files: entry.files }),
+        ...(entry.ignores !== undefined && { ignores: entry.ignores }),
+        rules,
+      },
+    ];
+  });
+}
+
+/**
+ * Lint `ruleIds` over the repo's real flat config: file resolution and global ignores
+ * (incl. `.gitignore`) come from `eslint.config.js`, only the rule(s) under ratchet run,
+ * and the result maps each rule id to `{ [packageRelativeFile]: violationCount }`.
+ * `eslintClass` is injectable for tests.
+ */
+export async function lintRuleFromRepoConfig({ cwd, ruleIds, eslintClass = ESLint }) {
+  const ids = [ruleIds].flat();
+  const { default: config } = await import(pathToFileURL(path.join(cwd, configPath)).href);
+  const eslint = new eslintClass({
+    cwd,
+    overrideConfig: ruleScopeOverrides(config, ids),
+    ruleFilter: ({ ruleId }) => ids.includes(ruleId),
+    cache: false,
+  });
+  const results = await eslint.lintFiles(['.']);
+  const counts = Object.fromEntries(ids.map((ruleId) => [ruleId, {}]));
+  for (const result of results) {
+    const file = path.relative(cwd, result.filePath).split(path.sep).join('/');
+    for (const message of result.messages) {
+      const perFile = counts[message.ruleId];
+      if (perFile) perFile[file] = (perFile[file] ?? 0) + 1;
+    }
+  }
+  return counts;
 }

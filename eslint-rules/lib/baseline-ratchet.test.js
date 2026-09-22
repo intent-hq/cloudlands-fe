@@ -1,9 +1,19 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment node
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertBaselineOnlyShrinks,
   findBaselineGrowth,
+  lintRuleFromRepoConfig,
   parseRegisteredRules,
+  readComparisonBaseline,
+  ruleScopeOverrides,
 } from './baseline-ratchet.js';
+import { namedColorAllowlist } from '../design-system/common.js';
+import repoConfig from '../../eslint.config.js';
 
 const original = {
   'no-raw-controls': [
@@ -11,7 +21,7 @@ const original = {
   ],
 };
 
-describe('design-system baseline growth guard', () => {
+describe('baseline growth guard', () => {
   it('accepts removals', () => {
     const smaller = {
       'no-raw-controls': [{ owner: 'ui', reason: 'Legacy controls', files: ['src/B.svelte'] }],
@@ -31,7 +41,7 @@ describe('design-system baseline growth guard', () => {
       ],
     };
     expect(() => assertBaselineOnlyShrinks(original, larger)).toThrow(
-      'Design-system baseline entries and counts may only shrink',
+      'Baseline entries and counts may only shrink',
     );
     expect(findBaselineGrowth(original, larger)).toEqual({
       'no-raw-controls': ['src/C.svelte'],
@@ -66,7 +76,7 @@ describe('design-system baseline growth guard', () => {
       findBaselineGrowth(original, withZeroDebtRule, { newRules: ['no-raw-menu-row'] }),
     ).toEqual({ 'no-native-dialogs': ['src/Dialog.svelte'] });
     expect(() => assertBaselineOnlyShrinks(original, withZeroDebtRule, { newRules: [] })).toThrow(
-      'Design-system baseline entries and counts may only shrink',
+      'Baseline entries and counts may only shrink',
     );
   });
 
@@ -156,7 +166,7 @@ export const designSystemRules = {
       'no-arbitrary-motion-or-color': [{ file: 'src/A.svelte', previous: 3, current: 'uncounted' }],
     });
     expect(() => assertBaselineOnlyShrinks(counted, uncounted)).toThrow(
-      'Design-system baseline entries and counts may only shrink',
+      'Baseline entries and counts may only shrink',
     );
   });
 
@@ -189,11 +199,152 @@ export const designSystemRules = {
       [rule]: [{ file: 'src/B.svelte', previous: 1, current: 'uncounted' }],
     });
     expect(() => assertBaselineOnlyShrinks(counted, mixedDowngrade)).toThrow(
-      'Design-system baseline entries and counts may only shrink',
+      'Baseline entries and counts may only shrink',
     );
     expect(findBaselineGrowth(counted, mixedNewFile)).toEqual({
       [rule]: [{ file: 'src/C.svelte', previous: 0, current: 'uncounted' }],
     });
     expect(findBaselineGrowth(mixedDowngrade, mixedConverted)).toEqual({});
+  });
+});
+
+describe('readComparisonBaseline base ref', () => {
+  const tmpDirs = [];
+  afterEach(() => {
+    for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // A throwaway repo whose two commits differ in the baseline file, so which ref the
+  // env selects is observable through the parsed contents.
+  function makeRepo() {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'baseline-ratchet-'));
+    tmpDirs.push(cwd);
+    const git = (...args) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const file = 'baseline.json';
+    const write = (value) => fs.writeFileSync(path.join(cwd, file), JSON.stringify(value));
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.email', 'ratchet@example.com');
+    git('config', 'user.name', 'ratchet');
+    write({ ref: 'base' });
+    git('add', file);
+    git('commit', '-q', '-m', 'base');
+    git('branch', 'base');
+    write({ ref: 'head' });
+    git('commit', '-q', '-am', 'head');
+    return { cwd, file };
+  }
+
+  it('reads LINT_BASELINE_BASE_REF, falling back to HEAD when unset', () => {
+    const { cwd, file } = makeRepo();
+    expect(readComparisonBaseline({ cwd, file, env: {} })).toMatchObject({
+      ref: 'HEAD',
+      baseline: { ref: 'head' },
+    });
+    expect(
+      readComparisonBaseline({ cwd, file, env: { LINT_BASELINE_BASE_REF: 'base' } }),
+    ).toMatchObject({ ref: 'base', baseline: { ref: 'base' } });
+  });
+
+  it('honors the pre-rename DESIGN_SYSTEM_BASELINE_BASE_REF, with the new name winning', () => {
+    const { cwd, file } = makeRepo();
+    expect(
+      readComparisonBaseline({ cwd, file, env: { DESIGN_SYSTEM_BASELINE_BASE_REF: 'base' } }),
+    ).toMatchObject({ ref: 'base', baseline: { ref: 'base' } });
+    expect(
+      readComparisonBaseline({
+        cwd,
+        file,
+        env: { LINT_BASELINE_BASE_REF: 'HEAD', DESIGN_SYSTEM_BASELINE_BASE_REF: 'base' },
+      }),
+    ).toMatchObject({ ref: 'HEAD', baseline: { ref: 'head' } });
+  });
+});
+
+describe('ruleScopeOverrides', () => {
+  it('derives the source-literal rule scope from its config entry with the baseline reset', () => {
+    expect(ruleScopeOverrides(repoConfig, 'intent/no-source-literal-assertions-in-tests')).toEqual([
+      {
+        files: ['**/*.{test,spec}.{js,ts}'],
+        rules: { 'intent/no-source-literal-assertions-in-tests': ['error', { baseline: {} }] },
+      },
+    ]);
+  });
+
+  it('keeps the allowlist option while resetting the motion/color baseline', () => {
+    const ruleId = 'intent/no-arbitrary-motion-or-color';
+    const overrides = ruleScopeOverrides(repoConfig, [ruleId]);
+    expect(overrides).toHaveLength(1);
+    const [entry] = overrides;
+    expect(entry.files).toEqual(['src/**/*.{js,mjs,ts,tsx,svelte}']);
+    expect(entry.ignores).toEqual(expect.arrayContaining(['**/*.test.{js,jsx,ts,tsx,svelte}']));
+    expect(entry.rules[ruleId]).toEqual([
+      'error',
+      { allowlist: namedColorAllowlist, baseline: {} },
+    ]);
+    expect(Object.keys(entry)).toEqual(['files', 'ignores', 'rules']);
+  });
+
+  it('skips entries that disable the rule, so per-file off overrides never widen the scope', () => {
+    // A rule whose baseline lists `files`, so the repo config carries a per-file 'off' entry.
+    const ruleId = 'intent/no-dialog-root-outside-patterns';
+    const disabling = repoConfig.filter((entry) => entry.rules?.[ruleId] === 'off');
+    expect(disabling.length).toBeGreaterThan(0);
+    const overrides = ruleScopeOverrides(repoConfig, ruleId);
+    expect(overrides).toHaveLength(1);
+    expect(overrides[0].files).toEqual(['src/**/*.{js,mjs,ts,tsx,svelte}']);
+    expect(
+      ruleScopeOverrides(
+        [
+          { files: ['a/**'], rules: { [ruleId]: 0 } },
+          { files: ['b/**'], rules: { [ruleId]: ['warn', { x: 1 }] } },
+          { rules: { other: 'error' } },
+        ],
+        ruleId,
+      ),
+    ).toEqual([{ files: ['b/**'], rules: { [ruleId]: ['warn', { x: 1, baseline: {} }] } }]);
+  });
+});
+
+describe('lintRuleFromRepoConfig', () => {
+  it('builds ESLint on the repo config (no overrideConfigFile), filtered to the ratcheted rules', async () => {
+    const ruleIds = ['intent/no-raw-controls', 'intent/no-native-dialogs'];
+    const seen = {};
+    class FakeESLint {
+      constructor(options) {
+        seen.options = options;
+      }
+      async lintFiles(patterns) {
+        seen.patterns = patterns;
+        return [
+          {
+            filePath: path.join(process.cwd(), 'src', 'a.svelte'),
+            messages: [
+              { ruleId: 'intent/no-raw-controls' },
+              { ruleId: 'intent/no-raw-controls' },
+              { ruleId: 'intent/no-raw-typography' },
+            ],
+          },
+          { filePath: path.join(process.cwd(), 'src', 'b.svelte'), messages: [] },
+        ];
+      }
+    }
+
+    const counts = await lintRuleFromRepoConfig({
+      cwd: process.cwd(),
+      ruleIds,
+      eslintClass: FakeESLint,
+    });
+
+    expect(seen.options).not.toHaveProperty('overrideConfigFile');
+    expect(seen.options.cwd).toBe(process.cwd());
+    expect(seen.options.overrideConfig).toEqual(ruleScopeOverrides(repoConfig, ruleIds));
+    expect(seen.options.ruleFilter({ ruleId: 'intent/no-raw-controls' })).toBe(true);
+    expect(seen.options.ruleFilter({ ruleId: 'intent/no-raw-typography' })).toBe(false);
+    expect(seen.patterns).toEqual(['.']);
+    expect(counts).toEqual({
+      'intent/no-raw-controls': { 'src/a.svelte': 2 },
+      'intent/no-native-dialogs': {},
+    });
   });
 });

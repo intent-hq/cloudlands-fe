@@ -10,7 +10,7 @@ import {
   baselineCounts,
   baselineFiles,
   readComparisonBaseline,
-} from './baseline-ratchet.js';
+} from '../lib/baseline-ratchet.js';
 import { namedColorAllowlist } from './common.js';
 import { designSystemRules } from './index.js';
 

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { ESLint, RuleTester } from 'eslint';
 import typescriptParser from '@typescript-eslint/parser';
 import { describe, expect, it } from 'vitest';
-import { findBaselineGrowth, readComparisonBaseline } from './design-system/baseline-ratchet.js';
+import { findBaselineGrowth, readComparisonBaseline } from './lib/baseline-ratchet.js';
 import rule from './no-source-literal-assertions-in-tests.js';
 
 const root = process.cwd();
