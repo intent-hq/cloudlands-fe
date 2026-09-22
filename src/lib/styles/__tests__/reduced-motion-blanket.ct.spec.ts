@@ -141,3 +141,28 @@ test('--motion-reduced mirrors both sources on the root', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   expect(await flag()).toBe('1');
 });
+
+test('catalog overrides keep the token and every blanket surface in agreement', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await setBatteryAttribute(page, true);
+  const flag = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--motion-reduced').trim(),
+    );
+  await page.evaluate(() => document.documentElement.classList.add('catalog-full-motion'));
+  expect(await flag()).toBe('0');
+  expectAll(await readMotion(page), AUTHORED);
+  await page.evaluate(() => document.documentElement.classList.add('catalog-reduced-motion'));
+  expect(await flag()).toBe('1');
+  expectAll(await readMotion(page), REDUCED);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await setBatteryAttribute(page, false);
+  expectAll(await readMotion(page), REDUCED);
+  await page.evaluate(() => document.documentElement.classList.remove('catalog-reduced-motion'));
+  expectAll(await readMotion(page), AUTHORED);
+  await setBatteryAttribute(page, true);
+  await page.evaluate(() => document.documentElement.classList.remove('catalog-full-motion'));
+  expectAll(await readMotion(page), REDUCED);
+});

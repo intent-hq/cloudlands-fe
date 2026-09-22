@@ -3,13 +3,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import { agentClient } from '$features/agent/agent.client';
-  import {
-    applyReasoningEffort,
-    reconcileAgentReasoningEffort,
-  } from '$features/agent/reasoning-effort';
   import { useAgentSession } from '$lib/hooks/useAgentSession.svelte';
-  import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentReasoningEffort } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   import Button from '$lib/components/ui/button/button.svelte';
@@ -33,6 +27,7 @@
     type ProviderWarningNotice,
   } from './ModelPickerProviderNotice.svelte';
   import ModelProviderErrorItem from './ModelProviderErrorItem.svelte';
+  import { createAgentModelMutator, isSkippedMutation } from './agent-model-mutator';
 
   import {
     selectSelectedModel,
@@ -226,7 +221,7 @@
     // model is selected (e.g. "Default ({model})" for the specialist editor's
     // inherit state). Also applies to the catalog-default fallback.
     formatDefaultModelLabel?: (modelLabel: string) => string;
-    // Gates agent-session updates (updateAgentSessionFields, agent.setModel).
+    // Gates agent-session updates (session model write, agent.setModel).
     updateGlobalStore?: boolean;
     // Gates the global selectModel dispatch (persisted default); Settings default picker only.
     updateGlobalDefault?: boolean;
@@ -323,6 +318,9 @@
   });
   const isGuestLocked = $derived(!!agentId && !!workspaceId && $isWorkspaceCollaborator$);
   const effectiveLocked = $derived(isLocked || isGuestLocked);
+  // Every agent-session mutation goes through this funnel; it re-reads the
+  // live lock on each call, so no call site needs to re-check after an await.
+  const mutate = createAgentModelMutator({ isLocked: () => isGuestLocked });
 
   let agentProviderModels = $state<
     import('$features/auggie/auggie-models.client').AuggieModel[] | null
@@ -741,7 +739,7 @@
   });
 
   $effect(() => {
-    if (!deferUpdate && pendingModelUpdate && !isGuestLocked) {
+    if (!deferUpdate && pendingModelUpdate) {
       const model = pendingModelUpdate;
       pendingModelUpdate = null;
       logger.info('Applying deferred model update:', { model, agentId });
@@ -787,7 +785,6 @@
   }
 
   async function applyBackendModelUpdate(model: string) {
-    if (isGuestLocked) return;
     if (agentId && workspaceId) {
       try {
         // Send the picked model's provider explicitly: the owning catalog
@@ -795,10 +792,9 @@
         // daemon resolves a bare id against the session's current provider,
         // rejecting cross-provider picks.
         const pickedProviderId = resolvePickedTriple(model).providerId || undefined;
-        const result = await agentClient.setModel(agentId, model, workspaceId, pickedProviderId);
-        // The role may have changed while the RPC was in flight; the reasoning
-        // reconciliation below issues further mutations, so stop here if locked.
-        if (isGuestLocked) return;
+        const result = await mutate.setModel(agentId, model, workspaceId, pickedProviderId);
+        // A locked skip is not an RPC failure: nothing to toast or warn about.
+        if (isSkippedMutation(result)) return;
         if (result.ok && result.data.success) {
           logger.info('Updated agent model via IPC:', { agentId, model });
           const targetOption = flatModelOptions.find(
@@ -806,12 +802,7 @@
           );
           const supportedEfforts = targetOption?.data?.effortLevels as string[] | undefined;
           const currentEffort = selectAgentReasoningEffort.select(appStore.state, agentId);
-          await reconcileAgentReasoningEffort(
-            agentId,
-            workspaceId,
-            currentEffort,
-            supportedEfforts,
-          );
+          await mutate.reconcileEffort(agentId, workspaceId, currentEffort, supportedEfforts);
         } else {
           const errorMsg = result.ok ? result.data.error : result.error;
           logger.warn('Failed to update agent model:', {
@@ -864,15 +855,11 @@
 
     await tick();
 
-    // The role may have changed while yielding; never mutate session state
-    // from a picker that is now guest-locked.
-    if (isGuestLocked) return;
-
     if (updateGlobalDefault) appStore.dispatch(selectModel(pickedModelId, pickedProviderId));
     if (!updateGlobalStore) return;
 
     if (agentId && workspaceId) {
-      appStore.dispatch(updateAgentSessionFields(agentId, { model }));
+      if (!mutate.setSessionModel(agentId, model)) return;
       logger.debug('Updated local session model:', { agentId, model });
 
       if (deferUpdate) {
@@ -1524,7 +1511,7 @@
         return (await onReasoningChange(value)) !== false;
       }
       if (!agentId || !workspaceId) return false;
-      return await applyReasoningEffort(agentId, workspaceId, value, previous);
+      return await mutate.applyEffort(agentId, workspaceId, value, previous);
     } finally {
       updatingReasoningEffort = false;
     }
@@ -1610,9 +1597,9 @@
     if (!isSelectedModelUnavailable) return;
     if (flatModelOptions.length === 0) return;
 
-    // Guard against transient unavailability. This effect dispatches
-    // updateAgentSessionFields(agentId, { model }), which PERMANENTLY overwrites
-    // the persisted model on the agent session — including across restarts.
+    // Guard against transient unavailability. This effect writes the session
+    // model (via handleModelSelect), which PERMANENTLY overwrites the
+    // persisted model on the agent session — including across restarts.
     // Only proceed once we're confident the user's provider has truly settled;
     // otherwise a slow/empty per-provider fetch during boot or refresh would
     // silently replace the user's picked model (e.g. Sonnet 4.6 → GPT 5.4).
@@ -1816,9 +1803,7 @@
         localModel,
         modelValue === USE_DEFAULT_VALUE ? null : modelValue,
       );
-      // The confirmation may resolve after the window's role changed; a pick
-      // that started in an owner window must not land once guest-locked.
-      if (!confirmed || isGuestLocked) {
+      if (!confirmed) {
         // Revert the dropdown's internal selection back to the current model.
         dropdownValue = localModel ?? USE_DEFAULT_VALUE;
         return;

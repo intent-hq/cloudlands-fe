@@ -1,14 +1,18 @@
+// @verify-changed-triggers: src/lib/components/workspace/WorkspaceAgentsList.svelte
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import * as BrandedIds from '$shared/types/branded-ids';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import {
+  buildWorkspaceAgentListRows,
   filterWorkspaceAgentRows,
   getDirectChildCounts,
   getFlatWorkspaceAgentRows,
   getVisibleWorkspaceAgentRows,
   shouldVirtualizeWorkspaceAgentRows,
   WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD,
+  type WorkspaceAgentListRow,
+  type WorkspaceAgentListRowOptions,
 } from '../workspace-agents-list-utils';
 
 const TIMESTAMP = '2026-01-01T00:00:00.000Z';
@@ -303,9 +307,18 @@ describe('shouldVirtualizeWorkspaceAgentRows', () => {
     expect(shouldVirtualizeWorkspaceAgentRows(rows)).toBe(false);
   });
 
-  it('never virtualizes when delegations exist (tree heights are variable)', () => {
+  it('still virtualizes when delegations exist (children are uniform rows of the shared row model)', () => {
     const agents = makeFlatAgents(WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD + 5);
     agents.push(makeAgent('delegated', { metadata: { createdByAgentId: 'agent-0' } as any }));
+
+    expect(shouldVirtualizeWorkspaceAgentRows(getFlatWorkspaceAgentRows(agents))).toBe(true);
+  });
+
+  it('does not count delegated children toward the threshold', () => {
+    const agents = makeFlatAgents(WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD);
+    for (let i = 0; i < 5; i++) {
+      agents.push(makeAgent(`child-${i}`, { metadata: { createdByAgentId: 'agent-0' } as any }));
+    }
 
     expect(shouldVirtualizeWorkspaceAgentRows(getFlatWorkspaceAgentRows(agents))).toBe(false);
   });
@@ -333,7 +346,120 @@ describe('shouldVirtualizeWorkspaceAgentRows', () => {
     expect(list).toContain('shouldVirtualizeWorkspaceAgentRows(filteredAgentRows)');
     expect(list).toContain('{:else if shouldUseVirtual}');
     expect(list).toContain('<VirtualList');
-    expect(list).toContain('items={topLevelForegroundAgents}');
+  });
+});
+
+describe('buildWorkspaceAgentListRows', () => {
+  const parent = makeAgent('parent');
+  const childA = makeAgent('child-a', { metadata: { createdByAgentId: 'parent' } as any });
+  const childB = makeAgent('child-b', { metadata: { createdByAgentId: 'parent' } as any });
+  const grandchild = makeAgent('grandchild', { metadata: { createdByAgentId: 'child-a' } as any });
+  const childless = makeAgent('childless');
+  const childrenOf: Record<string, AgentSession[]> = {
+    parent: [childA, childB],
+    'child-a': [grandchild],
+  };
+
+  function options(
+    overrides: Partial<WorkspaceAgentListRowOptions> = {},
+  ): WorkspaceAgentListRowOptions {
+    return {
+      getChildren: (id) => childrenOf[id] ?? [],
+      getCountedChildren: () => undefined,
+      isExpanded: () => false,
+      isRunning: () => false,
+      binSkeletonShown: false,
+      ...overrides,
+    };
+  }
+
+  const shape = (rows: WorkspaceAgentListRow[]) =>
+    rows.map((row) => `${row.kind}:${row.depth}:${row.key}`);
+
+  it('emits an agent row and a collapsed group bar per parent, nothing for a childless agent', () => {
+    expect(shape(buildWorkspaceAgentListRows([parent, childless], options()))).toEqual([
+      'agent:0:agent:parent',
+      'delegatedGroup:0:group:parent',
+      'agent:0:agent:childless',
+    ]);
+  });
+
+  it('nests expanded children (and their own groups) one level deeper', () => {
+    const rows = buildWorkspaceAgentListRows(
+      [parent, childless],
+      options({ isExpanded: (id) => id === 'parent' }),
+    );
+    expect(shape(rows)).toEqual([
+      'agent:0:agent:parent',
+      'delegatedGroup:0:group:parent',
+      'agent:1:agent:child-a',
+      'delegatedGroup:1:group:child-a',
+      'agent:1:agent:child-b',
+      'agent:0:agent:childless',
+    ]);
+    const group = rows[1];
+    expect(group.kind === 'delegatedGroup' && group.expanded).toBe(true);
+  });
+
+  it('counts running loaded children when no daemon count is served', () => {
+    const rows = buildWorkspaceAgentListRows(
+      [parent],
+      options({ isRunning: (id) => id === 'child-b' }),
+    );
+    expect(rows[1]).toMatchObject({ kind: 'delegatedGroup', total: 2, running: 1 });
+  });
+
+  it('renders a count-only group from the daemon count and skeleton rows once expanded', () => {
+    const counted = options({
+      getChildren: () => [],
+      getCountedChildren: (id) => (id === 'parent' ? { total: 3, running: 2 } : undefined),
+    });
+    const collapsed = buildWorkspaceAgentListRows([parent], counted);
+    expect(shape(collapsed)).toEqual(['agent:0:agent:parent', 'delegatedGroup:0:group:parent']);
+    expect(collapsed[1]).toMatchObject({ total: 3, running: 2, expanded: false });
+
+    const expanded = buildWorkspaceAgentListRows([parent], {
+      ...counted,
+      isExpanded: () => true,
+    });
+    expect(shape(expanded)).toEqual([
+      'agent:0:agent:parent',
+      'delegatedGroup:0:group:parent',
+      'delegatedSkeleton:1:skeleton:parent:0',
+      'delegatedSkeleton:1:skeleton:parent:1',
+    ]);
+    expect(expanded[2]).toMatchObject({ parentId: 'parent' });
+
+    // The whole-bin skeleton replaces the per-parent one.
+    expect(
+      shape(
+        buildWorkspaceAgentListRows([parent], {
+          ...counted,
+          isExpanded: () => true,
+          binSkeletonShown: true,
+        }),
+      ),
+    ).toEqual(['agent:0:agent:parent', 'delegatedGroup:0:group:parent']);
+  });
+
+  it('prefers the daemon count while children are partially loaded, then the loaded rows', () => {
+    const partiallyLoaded = buildWorkspaceAgentListRows(
+      [parent],
+      options({
+        getChildren: (id) => (id === 'parent' ? [childA] : []),
+        getCountedChildren: (id) => (id === 'parent' ? { total: 4, running: 3 } : undefined),
+        isExpanded: () => true,
+        isRunning: () => false,
+      }),
+    );
+    expect(partiallyLoaded[1]).toMatchObject({ total: 4, running: 3 });
+    expect(shape(partiallyLoaded).slice(2)).toEqual(['agent:1:agent:child-a']);
+
+    const loaded = buildWorkspaceAgentListRows(
+      [parent],
+      options({ getCountedChildren: () => undefined, isRunning: (id) => id === 'child-a' }),
+    );
+    expect(loaded[1]).toMatchObject({ total: 2, running: 1 });
   });
 });
 
@@ -378,16 +504,19 @@ describe('getVisibleWorkspaceAgentRows', () => {
     const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
 
     // Per-parent groups start collapsed (default expanded only while the
-    // workspace-level Delegated bin is open); an active search shows every group.
+    // workspace-level Delegated bin is open on a daemon without orphaned
+    // counts); an active search shows every group. Matched operand-wise so
+    // Prettier line wrapping does not affect the assertion.
     expect(list).toContain('let toggledDelegationIds = $state(new Set<string>())');
-    expect(list).toContain(
-      'const delegatedGroupsDefaultExpanded = $derived(hasLazyBins && showDelegatedAgents)',
+    expect(list).toMatch(
+      /const delegatedGroupsDefaultExpanded = \$derived\(\s*hasLazyBins && !hasOrphanedCounts && showDelegatedAgents,?\s*\)/,
     );
     expect(list).toContain('if (hasActiveSearch) return true;');
     expect(list).toContain(
       'return toggledDelegationIds.has(agentId) !== delegatedGroupsDefaultExpanded;',
     );
-    expect(list).toContain('const isExpanded = isDelegationExpanded(agent.id)');
-    expect(list).toContain('children.filter((child) => isAgentRunning(child.id))');
+    // The row model reads that state through the builder's callbacks.
+    expect(list).toContain('isExpanded: isDelegationExpanded,');
+    expect(list).toContain('isRunning: isAgentRunning,');
   });
 });

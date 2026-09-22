@@ -2116,7 +2116,7 @@
   {/if}
 
   <!-- Editor Container -->
-  <div class="editor-container flex relative flex-1 overflow-hidden">
+  <div class="editor-container flex flex-col min-h-0 relative flex-1 overflow-hidden">
     <!-- Version History View -->
     <section
       class="note-content-container flex-1 pt-6 overflow-y-auto"

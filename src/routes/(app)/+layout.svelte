@@ -32,6 +32,7 @@
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
+  import { registerWorkspaceSpacesShortcut } from '$features/workspace/utils/workspace-spaces-shortcut';
   import { WORKSPACE_TAB_MOVED_EVENT } from '$features/workspace/utils/workspace-tab-move-event';
   import AuggieSetupGate from '$lib/components/AuggieSetupGate.svelte';
   import CommandPalette from '$lib/components/CommandPalette.svelte';
@@ -162,6 +163,7 @@
   import InviteConsentModal from '$lib/components/modals/InviteConsentModal.svelte';
   import type { InviteConsentShowPayload } from '$shared/ipc/invite-consent';
   import InviteNoticeHost from '$features/invite-notice/InviteNoticeHost.svelte';
+  import InviteProgressHost from '$features/invite-progress/InviteProgressHost.svelte';
   import type { InterruptedAgent } from '$lib/client/app-client';
   import { LiveAppClient } from '$lib/client/live/live-app-client';
   import { workspaceIdFromRoute } from '$lib/utils/workspace-route-context';
@@ -614,16 +616,9 @@
       action: openCommandPalette,
     });
     // Cmd+O (Mac) / Ctrl+O (Win/Linux) -> toggle all spaces sidebar panel
-    const toggleAllSpaces = () => {
-      appStore.dispatch(togglePanel('all-workspaces'));
-    };
-    register({
-      key: 'o',
-      meta: true,
-      shortcutId: 'global.toggle-spaces',
-      description: 'Toggle All Spaces (Mac)', // i18n-ignore (shortcut registry metadata, not rendered in UI)
-      skipInEditableElements: true,
-      action: toggleAllSpaces,
+    registerWorkspaceSpacesShortcut(paletteShortcuts, {
+      toggleSpaces: () => appStore.dispatch(togglePanel('all-workspaces')),
+      resolveBinding: getEffectiveShortcut,
     });
     // Cmd+T is registered by registerWorkspaceTabShortcuts (New Panel)
     // F12 - Go to Definition (dispatches event for Monaco editor to handle)
@@ -1173,6 +1168,9 @@
 
   <!-- Invite notice (intent://invite join failed / plaintext credential warning) -->
   <InviteNoticeHost />
+
+  <!-- Invite progress (spinner + Cancel during the silent phases of an intent://invite join) -->
+  <InviteProgressHost />
 
   {#if import.meta.env.DEV}
     <DebugPanel />

@@ -12,6 +12,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import type { AgentSession, PullRequestInfo, Workspace } from '$shared/types';
   import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
+  import { classifyAgentScope } from '$shared/utils/agent-scope';
   import { onMount } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
@@ -237,13 +238,13 @@
             (item as { id: string }).id,
             (item as { parentAgentId?: unknown }).parentAgentId,
           );
+    // Top-level per the shared `agent-scope` classifier on the session row,
+    // plus the §5.1 summary row's own `parentAgentId` when the summary knows
+    // a parent the session has not hydrated yet.
     return $workspaceAgents$.filter((session) => {
-      const metadata = session.agentMetadata ?? session.metadata ?? {};
       const parent = parents.get(String(session.id));
       return !(
-        session.isBackground ||
-        metadata.isBackground ||
-        metadata.createdByAgentId ||
+        classifyAgentScope(session) !== 'topLevel' ||
         (typeof parent === 'string' && parent) ||
         session.pendingDeleteAt ||
         session.retiredAt ||

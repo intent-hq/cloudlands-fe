@@ -281,10 +281,7 @@ export class KeyboardShortcutManager {
     const inTerminal = isFocusInTerminal(target);
 
     // Don't handle shortcuts when typing in inputs (unless it's a global shortcut)
-    const isInput =
-      target.tagName === 'INPUT' ||
-      target.tagName === 'TEXTAREA' ||
-      target.contentEditable === 'true';
+    const isInput = isFocusInEditableElement(target);
 
     // Build the shortcut key
     const parts: string[] = [];
@@ -319,7 +316,7 @@ export class KeyboardShortcutManager {
 
       // Check if this shortcut should be skipped when in editable elements
       // This allows standard text editing shortcuts (like Cmd+Up/Down) to work
-      if (shortcut.skipInEditableElements && isFocusInEditableElement(target)) {
+      if (shortcut.skipInEditableElements && isInput) {
         return;
       }
 

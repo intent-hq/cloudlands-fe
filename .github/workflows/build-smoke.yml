@@ -1,0 +1,140 @@
+# Build Smoke — packaged-app end-to-end suite (e2e/build-smoke.config.ts).
+#
+# The build-smoke specs launch a PACKAGED Electron app (not the Vite dev
+# server) against the mock ACP agent, so they cannot run inside the PR
+# checks: packaging the app takes the release recipe (`pnpm run dist:linux`,
+# staged intentd sidecar, tailcat) and a 32 GB-class runner. This workflow
+# runs the suite nightly and on demand from an unpacked Linux dir build
+# (`electron-builder --linux dir`) — no AppImage/deb — under xvfb.
+#
+# Not a PR check: `schedule` + `workflow_dispatch` only. The test-suite CI
+# coverage gate (scripts/check-test-suite-ci-coverage.test.ts) resolves
+# `pnpm run test:build-smoke` to this workflow.
+name: Build Smoke
+
+on:
+  schedule:
+    # Nightly at 04:17 UTC, off the :00/:30 crowd.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      grep:
+        description: 'Optional Playwright --grep filter (test title regex)'
+        type: string
+        required: false
+        default: ''
+
+# One run at a time; a dispatch while the nightly is building cancels it.
+concurrency:
+  group: build-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-smoke:
+    name: Build Smoke (linux x64)
+    # gh-linux-8x (GH-hosted, 8-core/32 GB X64): the renderer bundle OOMs
+    # 16 GB runners (monorepo#1340) — same class release-alpha's Linux x64
+    # leg uses. Never downgrade to ubuntu-latest.
+    runs-on: gh-linux-8x
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.3
+          dest: ~/setup-pnpm-${{ runner.name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # intent-hq/intentd is public: the default token covers the release
+      # reads. INTENTD_TARGET is explicit so the staged sidecar matches the
+      # x64 package regardless of the host.
+      - name: Fetch pinned intentd sidecar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INTENTD_TARGET: x86_64-unknown-linux-musl
+        run: node scripts/fetch-sidecar.cjs
+
+      - name: Ensure Xvfb
+        # Electron needs a display. xvfb is preinstalled on the GH-hosted
+        # image; the apt path is a fallback for a bare runner.
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          if command -v xvfb-run >/dev/null 2>&1; then
+            echo "xvfb-run present; skipping apt."
+            exit 0
+          fi
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb
+
+      # `dir:x64` overrides electron-builder.yml's Linux target list with an
+      # unpacked directory (dist-electron/linux-unpacked/); nothing here
+      # needs AppImage/deb. Heap cap and sourcemap flag mirror the
+      # release-alpha Linux x64 leg (monorepo#1340, monorepo#1282).
+      - name: Build unpacked Linux app
+        run: pnpm run dist:linux dir:x64
+        env:
+          NODE_OPTIONS: '--max-old-space-size=12288'
+          INTENT_DISABLE_SOURCEMAPS: '1'
+          INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Locate packaged app
+        id: app
+        run: |
+          set -euo pipefail
+          APP="$GITHUB_WORKSPACE/dist-electron/linux-unpacked/intent"
+          if [ ! -x "$APP" ]; then
+            echo "::error::Packaged app not found at $APP"
+            ls -la dist-electron || true
+            exit 1
+          fi
+          echo "path=$APP" >> "$GITHUB_OUTPUT"
+          echo "Packaged app: $APP"
+
+      # The grep input reaches the shell through env, never through expression
+      # interpolation: a regex such as (a|b) or a|b interpolated into the
+      # command line is parsed by bash (syntax error / command not found).
+      - name: Build smoke tests
+        env:
+          PACKAGED_APP_PATH: ${{ steps.app.outputs.path }}
+          PLAYWRIGHT_HTML_OPEN: never
+          BUILD_SMOKE_GREP: ${{ inputs.grep }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "${BUILD_SMOKE_GREP:-}" ]; then
+            args+=(--grep "$BUILD_SMOKE_GREP")
+          fi
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+            pnpm run test:build-smoke "${args[@]}"
+
+      # e2e-reports/build-smoke/: Electron main/renderer logs + spec screenshots
+      # (written relative to the repo root). e2e/e2e-reports/: Playwright's
+      # outputDir/HTML report (resolved from e2e/build-smoke.config.ts) with
+      # per-failure traces, screenshots and error-context.md.
+      - name: Upload build-smoke reports
+        if: ${{ !cancelled() && failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-smoke-reports
+          path: |
+            e2e-reports/
+            e2e/e2e-reports/
+          if-no-files-found: warn
+          retention-days: 7

@@ -338,11 +338,17 @@ function parseFailure(file: string, error: unknown): string {
   return `${file}${location}: svelte parse error${code}: ${diagnostic}`;
 }
 
-// Every rendered `<Button>` component node in a Svelte file. Parsing (rather than regex over the
-// raw source) keeps HTML comments, `<script>`/`<style>` bodies, and string contents out of scope.
-function buttonComponents(file: string, source: string): AST.Component[] {
+// Every rendered template node of a Svelte file matching `type`/`name`, in source order. Parsing
+// (rather than regex over the raw source) keeps HTML comments, `<script>`/`<style>` bodies, and
+// string contents out of scope.
+function templateNodes<T extends { start: number }>(
+  file: string,
+  source: string,
+  type: string,
+  name: string,
+): T[] {
   const root: AST.Root = parse(source, { modern: true, filename: file });
-  const components: AST.Component[] = [];
+  const matches: T[] = [];
   const stack: unknown[] = [root.fragment];
   while (stack.length) {
     const node = stack.pop();
@@ -351,15 +357,19 @@ function buttonComponents(file: string, source: string): AST.Component[] {
       continue;
     }
     if (!isNode(node)) continue;
-    if (node.type === 'Component' && node.name === 'Button') {
-      components.push(node as unknown as AST.Component);
+    if (node.type === type && node.name === name) {
+      matches.push(node as unknown as T);
     }
     for (const [key, value] of Object.entries(node)) {
       if (key === 'attributes' || key === 'expression' || key === 'metadata') continue;
       if (isNode(value)) stack.push(value);
     }
   }
-  return components.sort((a, b) => a.start - b.start);
+  return matches.sort((a, b) => a.start - b.start);
+}
+
+function buttonComponents(file: string, source: string): AST.Component[] {
+  return templateNodes<AST.Component>(file, source, 'Component', 'Button');
 }
 
 export function buildButtonBackgroundAudit(root = projectRoot): ButtonBackgroundAudit {
@@ -391,6 +401,77 @@ export function buildButtonBackgroundAudit(root = projectRoot): ButtonBackground
       ? findings.map(
           (finding) =>
             `${finding.file}:${finding.line}: <Button> without variant sets ${finding.classes.join(' ')}; Button paints its surface on an inner span that covers class-level backgrounds, so use variant="primary" (or another buttonVariants entry) instead of bg-* on Button`,
+        )
+      : []),
+  ];
+  return { count: findings.length, ceiling, findings, failures };
+}
+
+const PRINCIPAL_AVATAR_COMPONENT = 'src/lib/components/ui/PrincipalAvatar.svelte';
+
+interface RawPrincipalAvatarFinding {
+  file: string;
+  line: number;
+}
+
+export interface RawPrincipalAvatarAudit {
+  count: number;
+  ceiling: number;
+  findings: RawPrincipalAvatarFinding[];
+  failures: string[];
+}
+
+// True when the `<img>` binds its `src` to an expression mentioning `avatarUrl`
+// (`src={user.avatarUrl}`, `src={avatarUrl ?? fallback}`, `src="{person.avatarUrl}"`).
+function bindsAvatarUrl(element: AST.RegularElement, source: string): boolean {
+  for (const attribute of element.attributes) {
+    if (attribute.type !== 'Attribute' || attribute.name !== 'src' || attribute.value === true) {
+      continue;
+    }
+    const parts = Array.isArray(attribute.value) ? attribute.value : [attribute.value];
+    if (
+      parts.some(
+        (part) =>
+          part.type === 'ExpressionTag' && source.slice(part.start, part.end).includes('avatarUrl'),
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Raw `<img src={…avatarUrl…}>` elements outside PrincipalAvatar. A hand-rolled avatar image has
+// no load-failure fallback (a broken image renders where the initial should), so every principal
+// avatar routes through the shared component.
+export function buildRawPrincipalAvatarAudit(root = projectRoot): RawPrincipalAvatarAudit {
+  const findings: RawPrincipalAvatarFinding[] = [];
+  const parseFailures: string[] = [];
+  for (const absolute of walk(path.join(root, 'src')).filter(productionSvelteSource)) {
+    const file = normalizedRelative(root, absolute);
+    if (file === PRINCIPAL_AVATAR_COMPONENT) continue;
+    const source = fs.readFileSync(absolute, 'utf8');
+    if (!source.includes('avatarUrl') || !source.includes('<img')) continue;
+    let images: AST.RegularElement[];
+    try {
+      images = templateNodes<AST.RegularElement>(file, source, 'RegularElement', 'img');
+    } catch (error) {
+      parseFailures.push(parseFailure(file, error));
+      continue;
+    }
+    for (const image of images) {
+      if (!bindsAvatarUrl(image, source)) continue;
+      const line = source.slice(0, image.start).split('\n').length;
+      findings.push({ file, line });
+    }
+  }
+  const ceiling = uiComponentGuardrails.rawPrincipalAvatarImages;
+  const failures = [
+    ...parseFailures,
+    ...(findings.length > ceiling
+      ? findings.map(
+          (finding) =>
+            `${finding.file}:${finding.line}: raw <img> binds src to an avatarUrl expression; hand-rolled avatar images have no load-failure fallback, so render principal avatars with <PrincipalAvatar avatarUrl={…} label={…}> from $lib/components/ui/PrincipalAvatar.svelte instead`,
         )
       : []),
   ];
@@ -722,12 +803,17 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
     const audit = buildButtonBackgroundAudit(root);
     return { stdout: JSON.stringify(audit, null, 2), stderr: '', exitCode: 0 };
   }
+  if (mode === 'principal-avatars') {
+    const audit = buildRawPrincipalAvatarAudit(root);
+    return { stdout: JSON.stringify(audit, null, 2), stderr: '', exitCode: 0 };
+  }
   if (mode === 'check') {
     const failures = [
       ...checkFailures(root, inventory, usesProjectManifest),
       ...rawElementCheckFailures(root, usesProjectManifest),
       ...patternAdoptionCheckFailures(root),
       ...buildButtonBackgroundAudit(root).failures,
+      ...buildRawPrincipalAvatarAudit(root).failures,
     ].sort(sortText);
     if (failures.length) {
       return { stdout: '', stderr: failures.join('\n'), exitCode: 1 };
@@ -744,7 +830,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
       (component) => component.category === 'deletion-candidate',
     ).length;
     return {
-      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0; rawElementViolations=0; patternViolations=0; buttonBackgroundOverrides=0`,
+      stdout: `UI component audit passed; modules=${inventory.components.length}; exports=${exports}; callers=${callers}; deletionCandidates=${deletionCandidates}; boundaryViolations=0; rawElementViolations=0; patternViolations=0; buttonBackgroundOverrides=0; rawPrincipalAvatarImages=0`,
       stderr: '',
       exitCode: 0,
     };
@@ -752,7 +838,7 @@ export function runUiComponentAudit(mode = 'check', rootOverride?: string): UiCo
   return {
     stdout: '',
     stderr:
-      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|raw-elements|patterns|button-backgrounds|check]',
+      'usage: ui-component-audit.ts [inventory|dynamic|boundaries|json|manifest|migrations|internal-imports|raw-controls|raw-elements|patterns|button-backgrounds|principal-avatars|check]',
     exitCode: 2,
   };
 }

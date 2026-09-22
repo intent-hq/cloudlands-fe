@@ -79,6 +79,59 @@ describe('BulkActionConfirmDialog', () => {
     expect(screen.queryByText(/background hook/)).toBeNull();
   });
 
+  it('renders the guest line alone when guests are the only reason to warn', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: {
+        open: true,
+        description: 'Delete all archived spaces?',
+        activeAgentCount: 0,
+        activeHookCount: 0,
+        guestCount: 3,
+      },
+    });
+
+    expect(screen.getByText(/3 guests will be removed from these workspaces/)).toBeTruthy();
+    expect(screen.queryByText(/invite them again/)).toBeNull();
+    expect(screen.queryByText(/active agent/)).toBeNull();
+    expect(screen.queryByText(/background hook/)).toBeNull();
+  });
+
+  it('adds the re-invite reminder to the guest line in archive mode', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: {
+        open: true,
+        description: 'Archive all spaces?',
+        mode: 'archive',
+        activeAgentCount: 2,
+        guestCount: 1,
+      },
+    });
+
+    expect(screen.getByText('2 active agents will be stopped')).toBeTruthy();
+    expect(screen.getByText(/1 guest will be removed from these workspaces/)).toBeTruthy();
+    expect(screen.getByText(/invite them again after unarchiving/)).toBeTruthy();
+  });
+
+  it('omits the guest line when the guest count is zero', async () => {
+    const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;
+
+    render(BulkActionConfirmDialog, {
+      props: {
+        open: true,
+        description: 'Archive all spaces?',
+        mode: 'archive',
+        activeAgentCount: 1,
+        guestCount: 0,
+      },
+    });
+
+    expect(screen.queryByText(/guest/)).toBeNull();
+  });
+
   it('confirms the action even when active work is present', async () => {
     const onConfirm = vi.fn();
     const BulkActionConfirmDialog = (await import('../BulkActionConfirmDialog.svelte')).default;

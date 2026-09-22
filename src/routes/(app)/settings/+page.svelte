@@ -31,7 +31,6 @@
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
-  import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
@@ -52,6 +51,7 @@
     setAgentFontStyle,
     setChatAuroraEnabled,
     setCodeFontFamily,
+    setLabsMultiplayerEnabled,
     setNoteFontStyle,
     setShellTransparencyEnabled,
     setUpdateChannel,
@@ -65,6 +65,7 @@
     selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
+    selectLabsMultiplayerEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -97,6 +98,7 @@
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
+  const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
@@ -122,6 +124,7 @@
     'guest-sessions',
     'setup',
     'advanced',
+    'labs',
     'input',
     'specialists',
   ];
@@ -181,6 +184,9 @@
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
+    labs: 'labs',
+    'labs-multiplayer': 'labs',
+    multiplayer: 'labs',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {
@@ -216,6 +222,7 @@
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
+  let localSettingsRequested = $state(0);
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -408,6 +415,7 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
+    if (resolveHashToTarget(targetId)?.id === 'websocket-api') localSettingsRequested += 1;
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -571,7 +579,9 @@
         <!-- Devices -->
         {#if activeTab === 'devices'}
           <div id="devices" class="scroll-mt-20">
-            <DevicesSettings />
+            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+              <DevicesSettings bind:localSettingsRequested />
+            </div>
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
@@ -582,23 +592,6 @@
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section data-slot="settings-section-body" class="px-6 py-4">
                 <BackendSyncSettings />
-              </section>
-            </div>
-          </div>
-
-          <!-- Remote Access (WebSocket API) -->
-          <div
-            id="websocket-api"
-            data-highlight-id="websocket-api"
-            use:highlightTarget
-            class="scroll-mt-20"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_remoteAccess()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <WebSocketApiSettings />
               </section>
             </div>
           </div>
@@ -1129,6 +1122,44 @@
               </div>
             </div>
           {/if}
+        {/if}
+
+        <!-- Labs -->
+        {#if activeTab === 'labs'}
+          <div id="labs" data-highlight-id="labs" use:highlightTarget>
+            <h2 class="type-title mb-3 text-foreground">
+              {m.settings_section_labs()}
+            </h2>
+            <p class="type-body text-subtle mb-3">
+              {m.settings_labs_disclaimer_description()}
+            </p>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section
+                id="labs-multiplayer"
+                data-highlight-id="labs-multiplayer"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-labs-multiplayer-label-field"
+                  label={m.settings_labs_multiplayer_label()}
+                  description={m.settings_labs_multiplayer_description()}
+                  experimental
+                >
+                  <Switch
+                    id="labs-multiplayer-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$labsMultiplayerEnabled}
+                    onCheckedChange={(enabled) =>
+                      appStore.dispatch(setLabsMultiplayerEnabled(enabled))}
+                    ariaLabel={m.settings_labs_multiplayer_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+            </div>
+          </div>
         {/if}
       </main>
     </div>

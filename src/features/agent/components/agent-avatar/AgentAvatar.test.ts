@@ -1,20 +1,9 @@
 import { cleanup, render, screen } from '@testing-library/svelte';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import AgentAvatar from './AgentAvatar.svelte';
 import { agentAvatarCatalogIdentities } from './agent-avatar.catalog';
 import { getAgentAvatarDesign } from './avatar-design';
 import { agentAvatarGeometry, agentAvatarVariants } from './avatar-size';
-
-const avatarSource = readFileSync(
-  resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatar.svelte'),
-  'utf8',
-);
-const artSource = readFileSync(
-  resolve(process.cwd(), 'src/features/agent/components/agent-avatar/AgentAvatarArt.svelte'),
-  'utf8',
-);
 
 afterEach(cleanup);
 
@@ -44,6 +33,11 @@ describe('AgentAvatar', () => {
       const owner = svg?.querySelector('g[stroke="currentColor"]');
       expect(owner?.getAttribute('stroke-linecap')).toBe('butt');
       expect(owner?.getAttribute('stroke-linejoin')).toBe('miter');
+      expect(
+        svg?.querySelector('[stroke-linecap]:not(g), [stroke-linejoin]:not(g)'),
+        'art children inherit the sharp stroke geometry from the owning group',
+      ).toBeNull();
+      expect(svg?.querySelector('[stroke-linecap="round"], [stroke-linejoin="round"]')).toBeNull();
     },
   );
 
@@ -69,13 +63,8 @@ describe('AgentAvatar', () => {
     const svg = container.querySelector('svg');
     expect([svg?.getAttribute('width'), svg?.getAttribute('height')]).toEqual(['18', '18']);
     expect(svg?.hasAttribute('data-avatar-variant')).toBe(false);
-    expect(avatarSource).toContain('.agent-avatar--legacy {\n    padding: 1px;');
-  });
-
-  it('owns sharp stroke geometry without child overrides', () => {
-    expect(avatarSource).toContain('stroke-linecap="butt"');
-    expect(avatarSource).toContain('stroke-linejoin="miter"');
-    expect(`${avatarSource}\n${artSource}`).not.toMatch(/stroke-line(?:cap|join)=["']round["']/);
+    expect(svg?.style.width).toBe('18px');
+    expect(svg?.style.height).toBe('18px');
   });
 
   it('replaces provider logos with the same seeded vector identity', () => {

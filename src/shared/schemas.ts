@@ -134,6 +134,7 @@ export const WorkspaceSchema = z.object({
   ownerPrincipalId: z.string().optional(),
   myRole: z.enum(['owner', 'collaborator']).optional(),
   memberCount: z.number().int().nonnegative().optional(),
+  openInviteCount: z.number().int().nonnegative().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   archived: z.boolean().optional(),

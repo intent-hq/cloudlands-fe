@@ -292,6 +292,129 @@ describe('selectWorkspaceTabStatuses', () => {
   });
 });
 
+describe('HUD agent scope goes through the shared classifier (§5.5 row-scope bins)', () => {
+  // Both the card row's `topLevel` / `isBackground` and the tab-status
+  // relevance gate fold the §5.1 summary row and the tracked session into one
+  // `AgentScopeInputs`, so they bin a row exactly like `classifyAgentScope`.
+  const PARENT = { id: 'coordinator', name: 'Coordinator', status: 'active' };
+
+  /** ws-1 with the `probe` summary row (+ `extraRows`) and its optional tracked session. */
+  function scopeState(
+    summary: Record<string, unknown>,
+    session: Record<string, unknown> | null,
+    extraRows: Array<Record<string, unknown>> = [],
+  ): StoreState {
+    const agents = [{ id: 'probe', name: 'Probe', status: 'active', ...summary }, ...extraRows];
+    const base = mockState([
+      makeWorkspace('ws-1', {
+        displayStatus: 'in_progress',
+        agentSummary: {
+          count: agents.length,
+          agentIds: agents.map((agent) => String(agent.id)),
+          agents,
+        } as Workspace['agentSummary'],
+      }),
+    ]);
+    return {
+      ...base,
+      agentSessions: {
+        byAgentId: session
+          ? {
+              probe: {
+                status: 'active',
+                isResponding: true,
+                workspaceId: 'ws-1',
+                messages: [],
+                ...session,
+              },
+            }
+          : {},
+        agentIdsByWorkspace: {},
+      },
+    } as StoreState;
+  }
+
+  const probeRow = (state: StoreState) =>
+    selectHudWorkspaceCards.select(state)[0].agents.find((agent) => agent.id === 'probe')!;
+  /** Names the tab-status gate let through as running (`probe` responds in every tracked session). */
+  const gatedRunning = (state: StoreState) =>
+    selectWorkspaceTabStatuses
+      .select(state)
+      ['ws-1']?.categories.find((item) => item.category === 'running')?.agentNames ?? [];
+
+  it('an unparented foreground row is top-level and passes the tab-status gate', () => {
+    const state = scopeState({}, {});
+    expect(probeRow(state)).toMatchObject({ topLevel: true, isBackground: false });
+    expect(gatedRunning(state)).toEqual(['Probe']);
+  });
+
+  it('a summary-row-only child (parentAgentId, nothing on the session) is delegated', () => {
+    const noSession = scopeState({ parentAgentId: 'coordinator' }, null, [PARENT]);
+    expect(probeRow(noSession)).toMatchObject({ topLevel: false, isBackground: false });
+    expect(gatedRunning(noSession)).toEqual([]);
+    const plainSession = scopeState({ parentAgentId: 'coordinator' }, {}, [PARENT]);
+    expect(probeRow(plainSession).topLevel).toBe(false);
+    expect(gatedRunning(plainSession)).toEqual([]);
+  });
+
+  it.each([
+    ['parentAgentId', { parentAgentId: 'coordinator' }],
+    ['metadata.createdByAgentId', { metadata: { createdByAgentId: 'coordinator' } }],
+    ['agentMetadata.createdByAgentId', { agentMetadata: { createdByAgentId: 'coordinator' } }],
+  ])('a session-only child via %s is delegated', (_location, session) => {
+    const state = scopeState({}, session, [PARENT]);
+    expect(probeRow(state).topLevel).toBe(false);
+    expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it.each([
+    ['summary parentAgentId', { parentAgentId: 'probe' }, {}],
+    ['session parentAgentId', {}, { parentAgentId: 'probe' }],
+    ['metadata.createdByAgentId', {}, { metadata: { createdByAgentId: 'probe' } }],
+    ['agentMetadata.createdByAgentId', {}, { agentMetadata: { createdByAgentId: 'probe' } }],
+  ])(
+    'a self-referencing %s is dropped before classification (top-level)',
+    (_f, summary, session) => {
+      const state = scopeState(summary, session);
+      expect(probeRow(state).topLevel).toBe(true);
+      expect(gatedRunning(state)).toEqual(['Probe']);
+    },
+  );
+
+  it('a self-referencing parentAgentId still falls through to a real createdByAgentId', () => {
+    const state = scopeState(
+      { parentAgentId: 'probe' },
+      { metadata: { createdByAgentId: 'coordinator' } },
+      [PARENT],
+    );
+    expect(probeRow(state).topLevel).toBe(false);
+    expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it('a dangling parent (id absent from the summary) still marks the row delegated', () => {
+    const state = scopeState({ parentAgentId: 'left-the-summary' }, {});
+    expect(probeRow(state).topLevel).toBe(false);
+    expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it.each([
+    ['summary isBackground', { isBackground: true }, {}],
+    ['session isBackground', {}, { isBackground: true }],
+    ['metadata.isBackground', {}, { metadata: { isBackground: true } }],
+    ['agentMetadata.isBackground', {}, { agentMetadata: { isBackground: true } }],
+  ])('%s bins an unparented row as background (own bin, gated off)', (_f, summary, session) => {
+    const state = scopeState(summary, session);
+    expect(probeRow(state)).toMatchObject({ topLevel: false, isBackground: true });
+    expect(gatedRunning(state)).toEqual([]);
+  });
+
+  it('a background CHILD is delegated, and stays background', () => {
+    const state = scopeState({ parentAgentId: 'coordinator', isBackground: true }, {}, [PARENT]);
+    expect(probeRow(state)).toMatchObject({ topLevel: false, isBackground: true });
+    expect(gatedRunning(state)).toEqual([]);
+  });
+});
+
 const RAISED_TS = '2026-07-30T12:00:00Z';
 
 /** State with the given workspaces folded through the REAL workspace reducer. */

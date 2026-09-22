@@ -53,6 +53,7 @@
    while the outer lane spans the full editor width. */
 .tiptap-editor.ProseMirror > .node-mermaidBlock,
 .tiptap-editor.ProseMirror > .node-diagram_block {
+  --breakout-padding: var(--space-1);
   position: static;
   left: auto;
   transform: none;
@@ -68,7 +69,19 @@
 /* Cap inner wrapper so very wide SVGs scale down instead of overflowing */
 .tiptap-editor.ProseMirror > .node-mermaidBlock > [data-node-view-wrapper],
 .tiptap-editor.ProseMirror > .node-diagram_block > [data-node-view-wrapper] {
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
+}
+
+/* The note lane owns the safety inset. Do not stack presentation gutters
+   inside it; standalone presentations retain their own padding. */
+.tiptap-editor.ProseMirror
+  > :is(.node-mermaidBlock, .node-diagram_block)
+  > [data-node-view-wrapper]
+  > [data-diagram-presentation]
+  > [data-diagram-presentation-content] {
+  padding-inline: 0;
 }
 
 /* Failed renders have no diagram to show: keep the error card (and its
@@ -81,6 +94,14 @@
   max-width: 100%;
   margin-left: 0;
   margin-right: 0;
+}
+
+.tiptap-editor.ProseMirror
+  > .node-mermaidBlock:has(> [data-node-view-wrapper][data-render-state='error'])
+  > [data-node-view-wrapper]
+  > [data-diagram-presentation]
+  > [data-diagram-presentation-content] {
+  padding-inline: 0;
 }
 
 /* Monospace mode: code blocks don't need breakout since they're already
@@ -117,6 +138,20 @@
   max-width: 100%;
   margin-left: 0;
   margin-right: 0;
+}
+
+/* In narrow notes, successful diagrams may use the prose gutters, but not
+   the icon-sidebar reserve. Failed cards retain their prose alignment. */
+@container (max-width: 600px) {
+  .tiptap-editor-wrapper.with-comments
+    .tiptap-editor.ProseMirror
+    > :is(.node-mermaidBlock, .node-diagram_block):not(
+      :has(> [data-node-view-wrapper][data-render-state='error'])
+    ) {
+    width: calc(100% + 2 * (var(--content-gutter-left) - var(--space-1)));
+    max-width: calc(100% + 2 * (var(--content-gutter-left) - var(--space-1)));
+    margin-inline: calc(var(--space-1) - var(--content-gutter-left));
+  }
 }
 
 /* Preserved selection - shown when editor loses focus but selection should remain visible */
