@@ -110,7 +110,7 @@ test('root and child surfaces remain usable when their preferred width exceeds t
   const fitsViewport = (menu: Locator) =>
     menu.evaluate((element) => {
       const bounds = element.getBoundingClientRect();
-      return bounds.left >= 0 && bounds.right <= innerWidth && bounds.width <= innerWidth - 16;
+      return bounds.left >= 8 && bounds.right <= innerWidth - 8 && bounds.width <= innerWidth - 16;
     });
   await expect.poll(() => fitsViewport(root)).toBe(true);
   await page.getByRole('menuitem', { name: 'More', exact: true }).hover();

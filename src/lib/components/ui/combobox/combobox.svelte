@@ -12,6 +12,7 @@
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
   import { textEntryControlClasses, textEntryHeight } from '../text-entry';
+  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
 
   const uid = $props.id();
 
@@ -628,6 +629,7 @@
       <ComboboxPrimitive.Content
         {side}
         sideOffset={4}
+        collisionPadding={OVERLAY_VIEWPORT_GUTTER}
         data-surface-level={surface}
         class={cn(
           menuOverlay(),

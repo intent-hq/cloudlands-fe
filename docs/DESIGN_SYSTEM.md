@@ -353,9 +353,12 @@ Do not call `stopImmediatePropagation()` or replace the shared keyboard handling
 Both paths must have the same labels, order, grouping, shortcuts, checked state, disabled
 reasons, destructive placement, submenus, and handlers. Only the anchor differs. Keep
 appearance controls separate from tab and panel operations; “Move tab” and “Move panel”
-are distinct capabilities, not duplicate commands. Menus must fit the viewport, scroll
-internally, support keyboard/typeahead navigation, and return focus without stealing it
-from a dialog or destination opened by a command. Verify parity with the same domain model
+are distinct capabilities, not duplicate commands. Dropdowns and submenus must retain at
+least an 8px viewport gutter, including when their trigger sits at an edge. Menu labels
+and descriptions are left-aligned; trailing shortcuts and indicators keep their own slots.
+Menus must fit the viewport, scroll internally, support keyboard/typeahead navigation, and
+return focus without stealing it from a dialog or destination opened by a command.
+Verify parity with the same domain model
 under both invocations, including viewport edges and reduced motion.
 
 #### Deliberate non-menu boundaries

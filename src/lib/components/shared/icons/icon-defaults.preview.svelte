@@ -2,7 +2,7 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
   interface Props {
-    layout?: 'list' | 'submenu';
+    layout?: 'list' | 'submenu' | 'menu';
   }
 
   export const preview = definePreview<Props>({
@@ -10,7 +10,7 @@
     title: 'Shared icon defaults',
     defaultState: 'workspace',
     states: {
-      workspace: { props: { layout: 'list' } },
+      workspace: { props: { layout: 'menu' } },
       submenu: { props: { layout: 'submenu' } },
     },
   });
@@ -26,7 +26,7 @@
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import Fa from 'svelte-fa';
 
-  let { layout = 'list' }: Props = $props();
+  let { layout = 'menu' }: Props = $props();
   let open = $state(false);
   let lastAction = $state('');
 

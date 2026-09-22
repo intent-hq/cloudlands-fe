@@ -7,6 +7,7 @@
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
+  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
 
   const uid = $props.id();
@@ -19,6 +20,7 @@
     portalProps,
     staticPosition,
     sideOffset = 4,
+    collisionPadding = OVERLAY_VIEWPORT_GUTTER,
     onkeydown,
     onfocusin,
     onOpenAutoFocus,
@@ -110,6 +112,7 @@
       data-surface-level={surface}
       class={contentClass}
       {sideOffset}
+      {collisionPadding}
       style="max-height: {maxHeight}"
       onkeydown={handleKeydown}
       onfocusin={handleFocusin}
@@ -128,6 +131,7 @@
     data-surface-level={surface}
     class={contentClass}
     {sideOffset}
+    {collisionPadding}
     style="max-height: {maxHeight}"
     onkeydown={handleKeydown}
     onfocusin={handleFocusin}

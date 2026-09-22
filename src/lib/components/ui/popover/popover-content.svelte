@@ -4,6 +4,7 @@
   import { menuOverlay } from '../menu/menu-recipes';
   import { clampSurface, setSurface, useSurface } from '../surface-context';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
+  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
 
   let {
     class: className,
@@ -11,6 +12,7 @@
     portalProps,
     staticPosition,
     sideOffset = 4,
+    collisionPadding = OVERLAY_VIEWPORT_GUTTER,
     children,
     ...restProps
   }: PopoverPrimitive.ContentProps & {
@@ -45,6 +47,7 @@
       data-surface-level={surface}
       class={contentClass}
       {sideOffset}
+      {collisionPadding}
       {...restProps}
     >
       {@render children?.()}
@@ -56,6 +59,7 @@
     data-surface-level={surface}
     class={contentClass}
     {sideOffset}
+    {collisionPadding}
     {...restProps}
   >
     {@render children?.()}

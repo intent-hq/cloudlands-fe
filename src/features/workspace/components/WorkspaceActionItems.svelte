@@ -53,7 +53,7 @@
         class="text-muted-foreground"
       />{/if}
   </span>
-  <span class="min-w-0 flex-1 truncate" title={action.label}>{action.label}</span>
+  <span class="min-w-0 flex-1 truncate text-left" title={action.label}>{action.label}</span>
   {#if action.shortcut}<span class="ml-4" aria-hidden="true"
       ><ShortcutChip>{formatShortcut(action.shortcut)}</ShortcutChip></span
     >{/if}

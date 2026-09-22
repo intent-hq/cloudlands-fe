@@ -6,6 +6,7 @@
   import { cn } from '$lib/utils';
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
+  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
 
   let {
     wrapperId,
@@ -105,6 +106,7 @@
       data-surface-level={surface}
       side={dropUp ? 'top' : 'bottom'}
       sideOffset={4}
+      collisionPadding={OVERLAY_VIEWPORT_GUTTER}
       class={cn(
         menuOverlay(),
         'w-(--bits-select-anchor-width) max-h-60 rounded-(--radius-medium)',

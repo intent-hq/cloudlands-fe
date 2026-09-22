@@ -7,6 +7,7 @@
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
   import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useStaticOverlay } from '../static-overlay-context.svelte';
+  import { OVERLAY_VIEWPORT_GUTTER } from '../overlay-positioning';
   import { handleMenuPageKey, setMenuTabStop, syncMenuTabStopFromFocus } from './menu-roving-focus';
   import { SUBMENU_CONTEXT, type SubmenuContext } from './submenu-context';
   import { resolveSubmenuSide } from './submenu-placement';
@@ -23,7 +24,7 @@
     side = 'right',
     sideOffset = 4,
     avoidCollisions = true,
-    collisionPadding = 8,
+    collisionPadding = OVERLAY_VIEWPORT_GUTTER,
     onkeydown,
     onfocusin,
     children,
