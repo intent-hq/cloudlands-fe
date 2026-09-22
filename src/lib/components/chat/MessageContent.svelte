@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ContentBlock, ToolUseBlock, MessageRole } from '$shared/types';
+  import type { TextBlockMedia } from '$shared/types/content-block';
   import { dedupeAgentVideoContentBlocks, normalizeAgentVideoContentBlocks } from '$shared/types';
   import {
     classifyToolResults,
@@ -399,17 +400,25 @@
   });
 </script>
 
-{#snippet renderParsedContentBlock(parsedBlock: ParsedContent, insetProse = false)}
+{#snippet renderParsedContentBlock(
+  parsedBlock: ParsedContent,
+  insetProse = false,
+  media: TextBlockMedia | undefined = undefined,
+)}
   {#if insetProse}
     <div class={OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}>
-      {@render renderParsedContentBlockBody(parsedBlock, insetProse)}
+      {@render renderParsedContentBlockBody(parsedBlock, insetProse, media)}
     </div>
   {:else}
-    {@render renderParsedContentBlockBody(parsedBlock, insetProse)}
+    {@render renderParsedContentBlockBody(parsedBlock, insetProse, media)}
   {/if}
 {/snippet}
 
-{#snippet renderParsedContentBlockBody(parsedBlock: ParsedContent, insetProse: boolean)}
+{#snippet renderParsedContentBlockBody(
+  parsedBlock: ParsedContent,
+  insetProse: boolean,
+  media: TextBlockMedia | undefined,
+)}
   {#if parsedBlock.type === 'augment_code_snippet'}
     <AugmentCodeSnippet
       code={parsedBlock.content}
@@ -484,6 +493,7 @@
         {workspaceId}
         taskBlockRenderMode="content"
         chatImageThumbnails
+        {media}
         onFileClick={(path, options) => handleOpenFile({ path, ...options })}
       />
     </div>
@@ -524,7 +534,7 @@
       {:else if parsedContent.length > 0}
         <!-- Render parsed content blocks -->
         {#each parsedContent as renderBlock, parsedBlockIndex (`${parsedKey}-parsed-${parsedBlockIndex}`)}
-          {@render renderParsedContentBlock(renderBlock as ParsedContent, !nested)}
+          {@render renderParsedContentBlock(renderBlock as ParsedContent, !nested, block.media)}
         {/each}
       {:else}
         <!-- Only render fallback if text has content after stripping suggested prompts -->
@@ -540,6 +550,7 @@
               {workspaceId}
               taskBlockRenderMode="content"
               chatImageThumbnails
+              media={block.media}
               onFileClick={(path, options) => handleOpenFile({ path, ...options })}
             />
           </div>
@@ -551,6 +562,8 @@
       <ChatImageBlock
         data={block.data}
         mimeType={block.mimeType}
+        width={block.width}
+        height={block.height}
         dataTruncated={block.dataTruncated === true}
         dataIsThumbnail={block.dataIsThumbnail === true}
         hydrationLoading={imageHydrationLoading(block.id)}

@@ -138,6 +138,92 @@ describe('ChatImageBlock', () => {
     const triggers = screen.getAllByRole('button', { name: /image options/i });
     expect(triggers.some((button) => dialog.contains(button))).toBe(true);
   });
+
+  // §7.1 image dimension sidecar: `width`/`height` reserve the final box
+  // (natural aspect, capped at the container) with a placeholder until decode.
+  it('reserves the intrinsic aspect box and shows a placeholder until the sized image decodes', async () => {
+    const { container } = render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', alt: 'shot.png', width: 1440, height: 900 },
+    });
+
+    const frame = container.querySelector<HTMLElement>('[data-image-sized]')!;
+    expect(frame).not.toBeNull();
+    expect(frame.style.aspectRatio).toBe('1440 / 900');
+    expect(frame.style.width).toBe('min(1440px, 100%)');
+    expect(frame.dataset.loaded).toBe('false');
+
+    const placeholder = screen.getByTestId('media-loading-placeholder');
+    expect(placeholder.textContent).toContain('shot.png');
+
+    const image = screen
+      .getByRole('button', { name: /view shot\.png full size/i })
+      .querySelector('img')!;
+    await fireEvent.load(image);
+
+    expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+    expect(frame.dataset.loaded).toBe('true');
+    // The reserved box is unchanged by the decode — no relayout.
+    expect(frame.style.aspectRatio).toBe('1440 / 900');
+    expect(frame.style.width).toBe('min(1440px, 100%)');
+  });
+
+  it('keeps the revealed frame across a hydration swap once any bytes decoded', async () => {
+    const { container, rerender } = render(ChatImageBlock, {
+      props: {
+        data: pngData,
+        mimeType: 'image/png',
+        alt: 'shot.png',
+        width: 1440,
+        height: 900,
+        dataTruncated: true,
+        dataIsThumbnail: true,
+        onHydrate: vi.fn(),
+      },
+    });
+    const thumbnail = screen
+      .getByRole('button', { name: /load full-size shot\.png/i })
+      .querySelector('img')!;
+    await fireEvent.load(thumbnail);
+    expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+
+    // The original replaces the thumbnail bytes: the placeholder must not
+    // flash over the image already on screen.
+    await rerender({
+      data: `${pngData}AA==`,
+      mimeType: 'image/png',
+      alt: 'shot.png',
+      width: 1440,
+      height: 900,
+    });
+    expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+    expect(container.querySelector<HTMLElement>('[data-image-sized]')!.dataset.loaded).toBe('true');
+  });
+
+  it('renders the legacy layout with no reserved box or placeholder when dimensions are absent', () => {
+    const { container } = render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', alt: 'legacy.png' },
+    });
+
+    expect(container.querySelector('[data-image-sized]')).toBeNull();
+    expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+    const trigger = screen.getByRole('button', { name: /view legacy\.png full size/i });
+    expect(trigger.parentElement!.style.aspectRatio).toBe('');
+    expect(trigger.parentElement!.style.width).toBe('');
+  });
+
+  it('falls back to the legacy layout when only one dimension or a non-positive one is given', () => {
+    const { container, unmount } = render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', alt: 'one.png', width: 1440 },
+    });
+    expect(container.querySelector('[data-image-sized]')).toBeNull();
+    unmount();
+
+    const second = render(ChatImageBlock, {
+      props: { data: pngData, mimeType: 'image/png', alt: 'zero.png', width: 0, height: 900 },
+    });
+    expect(second.container.querySelector('[data-image-sized]')).toBeNull();
+    expect(screen.queryByTestId('media-loading-placeholder')).toBeNull();
+  });
 });
 
 describe('ImageActionsMenu actions', () => {
