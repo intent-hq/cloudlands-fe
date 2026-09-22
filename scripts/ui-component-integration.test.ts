@@ -63,6 +63,8 @@ const canonicalImports = [
   'toggle-group',
   'tooltip',
 ] as const;
+// Single-file components published under their `.svelte` path rather than a folder barrel.
+const canonicalFileImports = ['PrincipalAvatar.svelte'] as const;
 
 describe('Gate C public component contract', () => {
   it('publishes a discoverability API while preserving canonical subpaths', () => {
@@ -88,7 +90,9 @@ describe('Gate C public component contract', () => {
 
   it('aggregates schema-validated source metadata with fixtures and verification owners', () => {
     expect(canonicalComponentManifest.map(({ publicImport }) => publicImport)).toEqual(
-      canonicalImports.map((component) => `$lib/components/ui/${component}`).sort(),
+      [...canonicalImports, ...canonicalFileImports]
+        .map((component) => `$lib/components/ui/${component}`)
+        .sort(),
     );
     for (const component of canonicalComponentManifest) {
       expect(component.fixtures.length, component.publicImport).toBeGreaterThan(0);

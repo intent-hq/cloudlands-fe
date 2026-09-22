@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: pointer-driven zoom/pan viewport covered by __tests__/ZoomPanViewport.test.ts; no catalog fixtures yet -->
+
 <script lang="ts">
   /**
    * ZoomPanViewport - Reusable zoom/pan viewport for arbitrary content

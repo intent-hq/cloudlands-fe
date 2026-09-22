@@ -1,3 +1,5 @@
+<!-- @catalog-exempt: heading element wrapper with no interactive DOM -->
+
 <script lang="ts">
   import { cn } from '$lib/utils';
   import type { Snippet } from 'svelte';
