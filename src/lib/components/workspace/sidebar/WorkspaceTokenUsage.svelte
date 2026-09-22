@@ -10,7 +10,10 @@
    */
   import { onMount, tick } from 'svelte';
   import { writable } from 'svelte/store';
-  import { selectWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-selectors';
+  import {
+    selectWorkspaceTokenUsage,
+    selectWorkspaceTokenUsageCrossFilterRows,
+  } from '$store/renderer/slices/token-usage/token-usage-selectors';
   import { fetchWorkspaceTokenUsage } from '$store/renderer/slices/token-usage/token-usage-slice';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { Button } from '$lib/components/ui/button';
@@ -77,6 +80,7 @@
 
   // ✅ At component init — selectors use getContext(); dispatch uses the configured app store
   const usage$ = selectWorkspaceTokenUsage(workspaceIdStore);
+  const crossFilterRows$ = selectWorkspaceTokenUsageCrossFilterRows(workspaceIdStore);
   const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
 
   onMount(() => {
@@ -92,8 +96,8 @@
 
   const totals = $derived($usage$.totals);
   const processedTokens = $derived(tokenCount(totals));
-  const crossFilterAvailable = $derived($usage$.byAgentModel !== undefined);
-  const crossFilterRows = $derived($usage$.byAgentModel ?? []);
+  const crossFilterAvailable = $derived($crossFilterRows$ !== undefined);
+  const crossFilterRows = $derived($crossFilterRows$ ?? []);
   const crossFilterMessageCount = $derived(
     crossFilterRows.reduce((sum, row) => sum + row.humanMessages + row.agentMessages, 0),
   );

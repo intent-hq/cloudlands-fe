@@ -48,4 +48,43 @@ describe('TokenUsageSchema', () => {
     expect(() => TokenUsageSchema.parse(usageWith([row, row]))).toThrow();
     expect(() => TokenUsageSchema.parse(usageWith([row, { ...row, model: 'model-a' }]))).toThrow();
   });
+
+  it.each(['agentId', 'model'] as const)(
+    'uses ascending UTF-8 byte order for %s without healing input',
+    (field) => {
+      const row = {
+        agentId: 'agent-a',
+        model: 'model-a',
+        totals,
+        humanMessages: 0,
+        agentMessages: 1,
+      };
+      const rows = [
+        { ...row, [field]: '\uE000' },
+        { ...row, [field]: '\u{10000}' },
+      ];
+      expect(TokenUsageSchema.parse(usageWith(rows)).byAgentModel).toEqual(rows);
+      const reversed = [...rows].reverse();
+      expect(TokenUsageSchema.safeParse(usageWith(reversed)).success).toBe(false);
+      expect(reversed).toEqual([rows[1], rows[0]]);
+      expect(TokenUsageSchema.safeParse(usageWith([rows[0], rows[0]])).success).toBe(false);
+    },
+  );
+
+  it('compares tuple fields independently, including prefixes and embedded NULs', () => {
+    const row = { agentId: 'a', model: 'z', totals, humanMessages: 0, agentMessages: 0 };
+    const rows = [
+      row,
+      { ...row, agentId: 'a\0', model: 'a' },
+      { ...row, agentId: 'b', model: 'a' },
+    ];
+    expect(TokenUsageSchema.parse(usageWith(rows)).byAgentModel).toEqual(rows);
+    expect(TokenUsageSchema.safeParse(usageWith([...rows].reverse())).success).toBe(false);
+    const models = [
+      { ...row, model: 'a' },
+      { ...row, model: 'aa' },
+    ];
+    expect(TokenUsageSchema.parse(usageWith(models)).byAgentModel).toEqual(models);
+    expect(TokenUsageSchema.safeParse(usageWith([...models].reverse())).success).toBe(false);
+  });
 });

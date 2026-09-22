@@ -29,20 +29,33 @@ const TokenUsageCrossFilterRowSchema = z
   })
   .passthrough();
 
+const encoder = new TextEncoder();
+
+/** Rust string ordering is lexicographic UTF-8 bytes, not JS UTF-16 code units. */
+function compareUtf8(left: string, right: string): number {
+  const a = encoder.encode(left);
+  const b = encoder.encode(right);
+  for (let index = 0; index < Math.min(a.length, b.length); index++) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return a.length - b.length;
+}
+
 const TokenUsageCrossFilterRowsSchema = z
   .array(TokenUsageCrossFilterRowSchema)
   .superRefine((rows, context) => {
-    let previousKey: string | undefined;
     for (const [index, row] of rows.entries()) {
-      const key = `${row.agentId}\0${row.model}`;
-      if (previousKey !== undefined && key <= previousKey) {
+      const previous = rows[index - 1];
+      if (
+        previous !== undefined &&
+        (compareUtf8(row.agentId, previous.agentId) || compareUtf8(row.model, previous.model)) <= 0
+      ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'byAgentModel rows must be unique and sorted by agentId, then model',
           path: [index],
         });
       }
-      previousKey = key;
     }
   });
 
