@@ -184,6 +184,36 @@ function fakeConsent(decision: 'open' | 'cancel' | 'pending' | null) {
 }
 
 /**
+ * Renderer progress seam (the `connecting` / `opening` dialog). The default
+ * is the inert no-window handle: `cancelled` never settles, so the flow runs
+ * exactly as it did without progress UI.
+ */
+const showInviteProgress = vi.fn();
+vi.mock('../../../../main/invite-progress', () => ({
+  get showInviteProgress() {
+    return showInviteProgress;
+  },
+}));
+
+/** A live progress handle whose Cancel the test presses with `cancel()`. */
+function fakeProgress() {
+  let cancel!: () => void;
+  const handle = {
+    update: vi.fn(),
+    cancelled: new Promise<void>((resolve) => {
+      cancel = resolve;
+    }),
+    dismiss: vi.fn(),
+  };
+  return { handle, cancel };
+}
+
+/** The `phase` of every `showInviteProgress` call, in order. */
+function progressPhases(): string[] {
+  return showInviteProgress.mock.calls.map(([payload]) => (payload as { phase: string }).phase);
+}
+
+/**
  * Renderer notice seam (failure + plaintext warning). Resolving `false` (the
  * default) is the unavailable-renderer path — the flow falls back to the
  * native box, which the pre-existing tests below exercise.
@@ -326,6 +356,7 @@ beforeEach(() => {
   openBackendWindow.mockResolvedValue({ id: 'guest-id' });
   showInviteConsent.mockImplementation(() => fakeConsent(null).prompt);
   showInviteNotice.mockResolvedValue(false);
+  showInviteProgress.mockImplementation(() => fakeProgress().handle);
 });
 
 describe('handleInviteDeepLink', () => {
@@ -2472,6 +2503,381 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
     }
     expect(reasons).toEqual(['denied', 'flow-expired', 'sign-in-failed']);
     expect(showMessageBox).not.toHaveBeenCalled();
+  });
+});
+
+// The progress dialog (`main/invite-progress.ts`) covers the two silent
+// phases: `connecting` from the parsed link to the first consent prompt, and
+// `opening` from the point of no return to the window. Cancel while
+// connecting aborts the join quietly; Cancel while opening only skips the
+// window — the credential is stored and the membership stands.
+describe('handleInviteDeepLink — progress dialog', () => {
+  const RETURNING_SESSION = {
+    id: 'guest-id',
+    label: '192.168.1.10',
+    host: '192.168.1.10',
+    hosts: ['192.168.1.10'],
+    port: 8443,
+    fingerprint: 'AA:BB:CC',
+    tcAddress: null,
+    hostname: null,
+    principalId: 'gh:42',
+    login: 'octocat',
+    tokenEncrypted: true,
+    workspaces: [{ id: 'ws-0', title: 'First workspace' }],
+    updatedAt: 1,
+  };
+  const INSPECTION = { workspaceId: 'ws-1', workspaceTitle: 'Shared workspace' };
+
+  it('connecting: shown before the dial, updated with the host label once up, dismissed before the consent prompt', async () => {
+    const connecting = fakeProgress();
+    const order: string[] = [];
+    showInviteProgress.mockImplementationOnce(() => {
+      order.push('progress:connecting');
+      return connecting.handle;
+    });
+    openInviteConnection.mockImplementation(async () => {
+      order.push('dial');
+      return fakeConnection();
+    });
+    connecting.handle.update.mockImplementation((phase: string, labels: { hostLabel?: string }) =>
+      order.push(`update:${phase}:${labels.hostLabel}`),
+    );
+    connecting.handle.dismiss.mockImplementation(() => order.push('dismiss:connecting'));
+    showInviteConsent.mockImplementation(() => {
+      order.push('consent');
+      return fakeConsent('open').prompt;
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order.slice(0, 5)).toEqual([
+      'progress:connecting',
+      'dial',
+      'update:connecting:192.168.1.10',
+      'dismiss:connecting',
+      'consent',
+    ]);
+    const payload = showInviteProgress.mock.calls[0][0];
+    expect(payload).toEqual({ requestId: expect.any(String), phase: 'connecting' });
+    expect(JSON.stringify(payload)).not.toContain(SECRET);
+    expect(connecting.handle.update).toHaveBeenCalledTimes(1);
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('connecting is dismissed before the native prove box when no renderer shows the consent', async () => {
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    const order: string[] = [];
+    connecting.handle.dismiss.mockImplementation(() => order.push('dismiss:connecting'));
+    showMessageBox.mockImplementation(async () => {
+      order.push('native-box');
+      return { response: 0 };
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order.slice(0, 2)).toEqual(['dismiss:connecting', 'native-box']);
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('connecting is dismissed before the sign-in prompt of a signed-out guest', async () => {
+    signedOutDaemon();
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    const order: string[] = [];
+    connecting.handle.dismiss.mockImplementation(() => order.push('dismiss:connecting'));
+    showInviteConsent.mockImplementation((payload: { mode: string }) => {
+      order.push(`consent:${payload.mode}`);
+      return fakeConsent('open').prompt;
+    });
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    emitAuthChanged('authorized');
+    await pending;
+
+    expect(order.slice(0, 2)).toEqual(['dismiss:connecting', 'consent:sign-in-required']);
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('connecting is dismissed before the failure notice when the dial fails', async () => {
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    openInviteConnection.mockRejectedValue(new InviteTransportError('host-unreachable'));
+    const order: string[] = [];
+    connecting.handle.dismiss.mockImplementation(() => order.push('dismiss:connecting'));
+    showInviteNotice.mockImplementation(async () => {
+      order.push('notice');
+      return true;
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order.slice(0, 2)).toEqual(['dismiss:connecting', 'notice']);
+    expect(showInviteProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel while dialing: the flow ends quietly, the late connection is closed, no notice, the next link is handled', async () => {
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    let releaseDial!: () => void;
+    openInviteConnection.mockReturnValueOnce(
+      new Promise((resolve) => (releaseDial = () => resolve(fakeConnection()))),
+    );
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openInviteConnection).toHaveBeenCalledTimes(1));
+    connecting.cancel();
+    await pending;
+
+    expect(inspect).not.toHaveBeenCalled();
+    expect(challenge).not.toHaveBeenCalled();
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(connecting.handle.dismiss).toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain('User cancelled the invite while connecting');
+    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
+
+    // The dial that completes after the cancel is closed on arrival.
+    releaseDial();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+
+    // The in-flight guard was released.
+    await handleInviteDeepLink(LINK);
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
+  it('cancel while the challenge is in flight: connection closed, nothing proven, no notice', async () => {
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    let releaseChallenge!: () => void;
+    challenge.mockReturnValueOnce(
+      new Promise((resolve) => (releaseChallenge = () => resolve(CHALLENGE))),
+    );
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(challenge).toHaveBeenCalledTimes(1));
+    connecting.cancel();
+    await pending;
+    releaseChallenge();
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(localCalls('github.identityProof.create')).toEqual([]);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain('User cancelled the invite while connecting');
+  });
+
+  it('cancel while a returning guest inspects the invite: connection closed, nothing accepted', async () => {
+    guestFindMatching.mockResolvedValue(RETURNING_SESSION);
+    guestGetDecryptedToken.mockResolvedValue('stored-guest-token-value');
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    inspect.mockReturnValue(new Promise(() => {}));
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(inspect).toHaveBeenCalledTimes(1));
+    connecting.cancel();
+    await pending;
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(accept).not.toHaveBeenCalled();
+    expect(challenge).not.toHaveBeenCalled();
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showInviteNotice).not.toHaveBeenCalled();
+    expect(guestAdd).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+  });
+
+  it('opening (proof path): shown after the consent is dismissed joined, before the store, dismissed after the window opens', async () => {
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    const order: string[] = [];
+    const opening = fakeProgress();
+    showInviteProgress.mockImplementation((payload: { phase: string }) => {
+      order.push(`progress:${payload.phase}`);
+      return payload.phase === 'opening' ? opening.handle : fakeProgress().handle;
+    });
+    prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
+    guestAdd.mockImplementation(async () => {
+      order.push('store');
+      return { id: 'guest-id', tokenEncrypted: true };
+    });
+    openBackendWindow.mockImplementation(async () => {
+      order.push('window');
+      return { id: 'guest-id' };
+    });
+    opening.handle.dismiss.mockImplementation(() => order.push('dismiss:opening'));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order).toEqual([
+      'progress:connecting',
+      'dismiss:joined',
+      'progress:opening',
+      'store',
+      'window',
+      'dismiss:opening',
+    ]);
+    expect(showInviteProgress.mock.calls[1][0]).toEqual({
+      requestId: expect.any(String),
+      phase: 'opening',
+      hostLabel: '192.168.1.10',
+      workspaceTitle: CHALLENGE.workspaceTitle,
+    });
+    expect(JSON.stringify(showInviteProgress.mock.calls[1][0])).not.toContain(TOKEN);
+  });
+
+  it('opening (returning-guest path): shown after the confirm is dismissed joined, dismissed after the window opens', async () => {
+    guestFindMatching.mockResolvedValue(RETURNING_SESSION);
+    guestGetDecryptedToken.mockResolvedValue('stored-guest-token-value');
+    inspect.mockResolvedValue(INSPECTION);
+    accept.mockResolvedValue(CREDENTIAL);
+    const { prompt } = fakeConsent('open');
+    showInviteConsent.mockReturnValue(prompt);
+    const order: string[] = [];
+    const opening = fakeProgress();
+    showInviteProgress.mockImplementation((payload: { phase: string }) => {
+      order.push(`progress:${payload.phase}`);
+      return payload.phase === 'opening' ? opening.handle : fakeProgress().handle;
+    });
+    prompt.dismiss.mockImplementation((outcome: string) => order.push(`dismiss:${outcome}`));
+    guestAdd.mockImplementation(async () => {
+      order.push('store');
+      return { id: 'guest-id', tokenEncrypted: true };
+    });
+    openBackendWindow.mockImplementation(async () => {
+      order.push('window');
+      return { id: 'guest-id' };
+    });
+    opening.handle.dismiss.mockImplementation(() => order.push('dismiss:opening'));
+
+    await handleInviteDeepLink(LINK);
+
+    expect(challenge).not.toHaveBeenCalled();
+    expect(order).toEqual([
+      'progress:connecting',
+      'dismiss:joined',
+      'progress:opening',
+      'store',
+      'window',
+      'dismiss:opening',
+    ]);
+    expect(showInviteProgress.mock.calls[1][0]).toMatchObject({
+      phase: 'opening',
+      hostLabel: '192.168.1.10',
+      workspaceTitle: 'Shared workspace',
+    });
+  });
+
+  it('opening is dismissed when the store write fails, before the failure notice', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    const opening = fakeProgress();
+    showInviteProgress.mockImplementation((payload: { phase: string }) =>
+      payload.phase === 'opening' ? opening.handle : fakeProgress().handle,
+    );
+    guestAdd.mockRejectedValue(new GuestStoreCorruptError());
+    const order: string[] = [];
+    opening.handle.dismiss.mockImplementation(() => order.push('dismiss:opening'));
+    showInviteNotice.mockImplementation(async () => {
+      order.push('notice');
+      return true;
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order).toEqual(['dismiss:opening', 'notice']);
+    expect(openBackendWindow).not.toHaveBeenCalled();
+  });
+
+  it('cancel while opening: the credential is stored, the plaintext warning still shows, the window is not opened', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    const opening = fakeProgress();
+    showInviteProgress.mockImplementation((payload: { phase: string }) =>
+      payload.phase === 'opening' ? opening.handle : fakeProgress().handle,
+    );
+    let releaseStore!: () => void;
+    guestAdd.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseStore = () => resolve({ id: 'guest-id', tokenEncrypted: false });
+      }),
+    );
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(guestAdd).toHaveBeenCalledTimes(1));
+    opening.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseStore();
+    await pending;
+
+    expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
+    // Plaintext warning (native fallback) still shown; no failure notice.
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(showMessageBox.mock.calls[0][0]).toMatchObject({ type: 'warning' });
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(opening.handle.dismiss).toHaveBeenCalled();
+    expect(logLines.join('\n')).toContain(
+      'User closed the join progress dialog; window not opened',
+    );
+    expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('a cancel that lands after the window opened changes nothing', async () => {
+    showInviteConsent.mockReturnValue(fakeConsent('open').prompt);
+    const opening = fakeProgress();
+    showInviteProgress.mockImplementation((payload: { phase: string }) =>
+      payload.phase === 'opening' ? opening.handle : fakeProgress().handle,
+    );
+
+    await handleInviteDeepLink(LINK);
+    opening.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+    expect(opening.handle.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('already a member: connecting is dismissed before the window opens, no opening phase', async () => {
+    guestFindMatching.mockResolvedValue({
+      ...RETURNING_SESSION,
+      workspaces: [{ id: 'ws-1', title: 'Shared workspace' }],
+    });
+    guestGetDecryptedToken.mockResolvedValue('stored-guest-token-value');
+    inspect.mockResolvedValue(INSPECTION);
+    const connecting = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connecting.handle);
+    const order: string[] = [];
+    connecting.handle.dismiss.mockImplementation(() => order.push('dismiss:connecting'));
+    openBackendWindow.mockImplementation(async () => {
+      order.push('window');
+      return { id: 'guest-id' };
+    });
+
+    await handleInviteDeepLink(LINK);
+
+    expect(order.slice(0, 2)).toEqual(['dismiss:connecting', 'window']);
+    expect(progressPhases()).toEqual(['connecting']);
+    expect(guestAdd).not.toHaveBeenCalled();
+  });
+
+  it('the inert no-window handle leaves the flow unchanged: joined and opened, nothing awaited on Cancel', async () => {
+    showInviteProgress.mockReturnValue({
+      update() {},
+      cancelled: new Promise<void>(() => {}),
+      dismiss() {},
+    });
+    await handleInviteDeepLink(LINK);
+    expect(progressPhases()).toEqual(['connecting', 'opening']);
+    expect(guestAdd).toHaveBeenCalledTimes(1);
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
   });
 });
 
