@@ -2690,6 +2690,26 @@ describe('alignment of link syntax the lexer does not account for', () => {
       ],
       ['a title followed by text', '![visible tk87z](u.png "a title" junk)', '', 'after'],
       ['a title no quote closes', '![visible tk87z](u.png "a title)', '', 'after'],
+      [
+        'a reference whose definition leaves an angle bracket unclosed',
+        '![visible tk87z][ref]',
+        '[ref]: <unterminated',
+        'after',
+      ],
+      [
+        'a reference whose definition holds a tab after the colon',
+        '![visible tk87z][ref]',
+        '[ref]:\tu.png',
+        'after',
+      ],
+      [
+        'a reference whose label a definition nests a bracket in',
+        '![visible tk87z][re[f]',
+        '[re[f]: u.png',
+        'after',
+      ],
+      ['a destination holding a vertical tab', '![visible tk87z](not\u000bvalid)', '', 'after'],
+      ['a destination holding a form feed', '![visible tk87z](not\u000cvalid)', '', 'after'],
     ];
     const IMAGES_SHOWN: Array<[string, string, string, 'before' | 'after' | 'end']> = [
       [
@@ -2726,45 +2746,85 @@ describe('alignment of link syntax the lexer does not account for', () => {
       ['a destination and a title', '![alt tk87z](u.png "a title")', '', 'after'],
       ['a destination holding balanced parentheses', '![alt tk87z](a(b)c)', '', 'after'],
       ['an empty destination', '![alt tk87z]()', '', 'after'],
+      ['a destination after a blank', '![alt tk87z]( u.png)', '', 'after'],
+      ['a destination between blanks', '![alt tk87z]( u.png )', '', 'after'],
+      [
+        'a reference whose label escapes a bracket',
+        '![alt tk87z][re\\]f]',
+        '[re\\]f]: https://example.test/i.png',
+        'end',
+      ],
     ];
-    const imageShapedNote = (body: string, definition: string, where: 'before' | 'after' | 'end') =>
-      `${'q'.repeat(129 * 1024)}\n\n${where === 'before' && definition ? `${definition}\n\n` : ''}edit one\n\n${body}\n\n${where === 'after' && definition ? `${definition}\n\n` : ''}- same item\n- same item\n\n[ab](https://sync/ab)\n\n**cd** two${where === 'end' && definition ? `\n\n${definition}` : ''}`;
+    const imageShapedNote = (
+      body: string,
+      definition: string,
+      where: 'before' | 'after' | 'end',
+      pastTheCap = true,
+    ) =>
+      `${pastTheCap ? `${'q'.repeat(129 * 1024)}\n\n` : ''}${where === 'before' && definition ? `${definition}\n\n` : ''}edit one\n\n${body}\n\n${where === 'after' && definition ? `${definition}\n\n` : ''}- same item\n- same item\n\n[ab](https://sync/ab)\n\n**cd** two${where === 'end' && definition ? `\n\n${definition}` : ''}`;
+    // Below the cap the lexer decides what is an image; past it the scan
+    // does. Both must answer as the renderer does — which escapes the `<`
+    // and `>` of a tag before it lexes, so `![alt](<not valid>)` is text to
+    // it where marked alone read an image.
+    const CAPS: Array<[string, boolean]> = [
+      ['past the cap', true],
+      ['below the cap', false],
+    ];
     const IMAGE_SHAPED_CELLS = IMAGE_SHAPED_TEXT.flatMap(([shape, body, definition, where]) =>
-      PROJECTIONS.flatMap(([projection, production]) =>
-        CLOCKS.map(
-          ([when, clock]): [
-            string,
-            string,
-            string,
-            string,
-            string,
-            'before' | 'after' | 'end',
-            boolean | 'comments',
-            Clock,
-            boolean,
-          ] => [
-            shape,
-            projection,
-            when,
-            body,
-            definition,
-            where,
-            production,
-            clock,
-            when === 'within the budget',
-          ],
+      CAPS.flatMap(([cap, pastTheCap]) =>
+        PROJECTIONS.flatMap(([projection, production]) =>
+          CLOCKS.map(
+            ([when, clock]): [
+              string,
+              string,
+              string,
+              string,
+              string,
+              string,
+              'before' | 'after' | 'end',
+              boolean,
+              boolean | 'comments',
+              Clock,
+              boolean,
+            ] => [
+              shape,
+              cap,
+              projection,
+              when,
+              body,
+              definition,
+              where,
+              pastTheCap,
+              production,
+              clock,
+              when === 'within the budget',
+            ],
+          ),
         ),
       ),
     );
 
     it.each(IMAGE_SHAPED_CELLS)(
-      'shows %s as written past the cap, projected by %s %s',
-      async (_shape, _projection, _when, body, definition, where, production, clock, exact) => {
-        const markdown = imageShapedNote(body, definition, where);
+      'shows %s as written %s, projected by %s %s',
+      async (
+        _shape,
+        _cap,
+        _projection,
+        _when,
+        body,
+        definition,
+        where,
+        pastTheCap,
+        production,
+        clock,
+        exact,
+      ) => {
+        const markdown = imageShapedNote(body, definition, where, pastTheCap);
         const plain = await projectWithEditor(markdown, production);
-        expect(plain).toContain(body);
+        // The editor shows a form feed as a blank.
+        expect(plain).toContain(body.replace(/\f/g, ' '));
         const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
-        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        if (pastTheCap) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
         expectSameLine(plain, markdown, map, 'edit one', 'edit one');
         if (exact) {
           expectExactRun(plain, markdown, map, 'visible tk87z', 0, 0);
@@ -2784,42 +2844,60 @@ describe('alignment of link syntax the lexer does not account for', () => {
     );
 
     const IMAGES_SHOWN_CELLS = IMAGES_SHOWN.flatMap(([shape, body, definition, where]) =>
-      PROJECTIONS.flatMap(([projection, production]) =>
-        CLOCKS.map(
-          ([when, clock]): [
-            string,
-            string,
-            string,
-            string,
-            string,
-            'before' | 'after' | 'end',
-            boolean | 'comments',
-            Clock,
-            boolean,
-          ] => [
-            shape,
-            projection,
-            when,
-            body,
-            definition,
-            where,
-            production,
-            clock,
-            when === 'within the budget',
-          ],
+      CAPS.flatMap(([cap, pastTheCap]) =>
+        PROJECTIONS.flatMap(([projection, production]) =>
+          CLOCKS.map(
+            ([when, clock]): [
+              string,
+              string,
+              string,
+              string,
+              string,
+              string,
+              'before' | 'after' | 'end',
+              boolean,
+              boolean | 'comments',
+              Clock,
+              boolean,
+            ] => [
+              shape,
+              cap,
+              projection,
+              when,
+              body,
+              definition,
+              where,
+              pastTheCap,
+              production,
+              clock,
+              when === 'within the budget',
+            ],
+          ),
         ),
       ),
     );
 
     it.each(IMAGES_SHOWN_CELLS)(
-      'hides %s past the cap, and pairs the items after it with their own lines, projected by %s %s',
-      async (_shape, _projection, _when, body, definition, where, production, clock, exact) => {
-        const markdown = imageShapedNote(body, definition, where);
+      'hides %s %s, and pairs the items after it with their own lines, projected by %s %s',
+      async (
+        _shape,
+        _cap,
+        _projection,
+        _when,
+        body,
+        definition,
+        where,
+        pastTheCap,
+        production,
+        clock,
+        exact,
+      ) => {
+        const markdown = imageShapedNote(body, definition, where, pastTheCap);
         const plain = await projectWithEditor(markdown, production);
         expect(plain).not.toContain('alt');
         expect(plain).not.toContain('https');
         const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
-        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        if (pastTheCap) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
         expectSameLine(plain, markdown, map, 'edit one', 'edit one');
         if (exact) {
           for (let k = 0; k < 2; k += 1) expectExactRun(plain, markdown, map, 'same item', k, k);

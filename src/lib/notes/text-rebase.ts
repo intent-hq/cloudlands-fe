@@ -1,5 +1,7 @@
 import { diffArrays, diffChars } from 'diff';
+import { Lexer, type Links, type Tokenizer } from 'marked';
 import { normalizeAnchorPositions } from '$lib/utils/anchor-normalization';
+import { escapeHtmlTags } from '$lib/utils/markdown-processor';
 import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
 
 /**
@@ -817,14 +819,17 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * `<sub>`, `<sup>` it renders (`HIDDEN_HTML`), which are read off the
  * lexer's `html` tokens.
  *
- * The lexer is the renderer's own, configured as the renderer configures it.
- * It reads the source with its line endings rewritten to `\n`
+ * The lexer is the renderer's own, configured as the renderer configures it,
+ * and reads the source as the renderer hands it over: with the tags it
+ * escapes gone (`shadowEscapedTags`), so `![alt](<not valid>)` is text to
+ * both where marked alone reads an image. It reads the source with its line
+ * endings rewritten to `\n`
  * (`LINE_ENDING`), so a range it hides is found in that text and carried
  * back to the source by the count of `\r\n` pairs shortened before it
  * (`sourceShifts`); a hidden run never holds a line break, so one count
  * places both of its ends. The lexer runs up to `MAX_LEXED_LENGTH`; a longer
  * source is not lexed, and nothing in it is masked but its comments, link
- * definitions and code span backticks, which a scan places
+ * definitions, images and code span backticks, which a scan places
  * (`maskHiddenBlocks`; a note the
  * renderer reads as HTML is masked by a scan whatever its length), so
  * every line of it that holds link syntax is unanchorable, and so is a line
@@ -840,8 +845,9 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  */
 function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
-  const lexed = computeHiddenMask(markdown);
-  const text = lexed ?? maskHiddenBlocks(markdown);
+  const shadow = shadowEscapedTags(markdown);
+  const lexed = computeHiddenMask(markdown, shadow);
+  const text = lexed ?? maskHiddenBlocks(markdown, shadow);
   const splits: number[] = [];
   for (const split of markdown.matchAll(LINE_SPLIT)) splits.push(split.index);
   const mask = {
@@ -853,18 +859,66 @@ function maskHidden(markdown: string): Mask {
   return mask;
 }
 
-/** `markdown` masked, or `undefined` when its hidden text could not be accounted for. */
-function computeHiddenMask(markdown: string): string | undefined {
+/** A character that opens no syntax, ends no destination and is no blank: what an escaped `<` or `>` reads as. */
+const ESCAPED_ANGLE = '\uFFFD';
+/** The `<` of a tag the renderer may escape: `<`, an optional `/`, blanks and a letter. */
+const TAG_OPEN = /<\/?\s*[a-zA-Z]/;
+
+/**
+ * `markdown` as marked reads it once the renderer has escaped the tags it
+ * shows as written (`escapeHtmlTags`: `<b>` becomes `&lt;b&gt;`, while a
+ * comment, `<br>`, `<sub>`, `<sup>` and the tags of a code span, a fence or
+ * a formula stay), code unit for code unit: each `<` and `>` escaped is
+ * `ESCAPED_ANGLE` instead, so the shadow keeps every offset of the source
+ * and what marked makes of it is what the renderer shows — `![alt](<a b>)`
+ * an image to marked, text to the renderer and on the shadow. The escaping
+ * is quadratic in the tags left open after the last `>` of the note, which
+ * close nothing, so it runs up to that `>` and the rest is kept as written;
+ * a code span or fence the cut splits is protected by the renderer and not
+ * here, which differs only inside code, where nothing is masked. `markdown`
+ * itself when it holds no tag, or when the escaping did more than replace
+ * `<` and `>`.
+ */
+function shadowEscapedTags(markdown: string): string {
+  if (!TAG_OPEN.test(markdown)) return markdown;
+  const cut = markdown.lastIndexOf('>') + 1;
+  const escaped = escapeHtmlTags(markdown.slice(0, cut));
+  let out = '';
+  let pos = 0;
+  let j = 0;
+  for (let i = 0; i < cut; i += 1) {
+    const code = markdown.charCodeAt(i);
+    if (code === escaped.charCodeAt(j)) {
+      j += 1;
+      continue;
+    }
+    if (code === 60 && escaped.startsWith('&lt;', j)) j += 4;
+    else if (code === 62 && escaped.startsWith('&gt;', j)) j += 4;
+    else return markdown;
+    out += markdown.slice(pos, i) + ESCAPED_ANGLE;
+    pos = i + 1;
+  }
+  if (j !== escaped.length) return markdown;
+  return out + markdown.slice(pos);
+}
+
+/**
+ * `markdown` masked, or `undefined` when its hidden text could not be
+ * accounted for. `shadow` is `markdown` as the renderer hands it to marked
+ * (`shadowEscapedTags`): the lexer reads it, and every range it hides is an
+ * offset range of `markdown` too.
+ */
+function computeHiddenMask(markdown: string, shadow: string): string | undefined {
   if (isHtmlNote(markdown)) return maskHtmlTags(markdown);
   if (markdown.length > MAX_LEXED_LENGTH) return undefined;
   HIDDEN_HTML.lastIndex = 0;
   if (!HIDEABLE.test(markdown) && !HIDDEN_HTML.test(markdown) && !markdown.includes('`')) {
     return markdown;
   }
-  let source = markdown;
-  if (markdown.includes(COMMENT_ANCHOR)) {
-    const normalized = normalizeAnchorPositions(markdown);
-    if (normalized.length === markdown.length) source = normalized;
+  let source = shadow;
+  if (shadow.includes(COMMENT_ANCHOR)) {
+    const normalized = normalizeAnchorPositions(shadow);
+    if (normalized.length === shadow.length) source = normalized;
   }
   const lexed = source.replace(LINE_ENDING, '\n');
   const shifts = lexed.length === source.length ? undefined : sourceShifts(source, lexed);
@@ -879,7 +933,7 @@ function computeHiddenMask(markdown: string): string | undefined {
   // A source the lexer rewrote beyond its line endings has no exact offsets.
   if (top.text !== lexed) return undefined;
   const ranges: Array<[number, number]> = [];
-  const lexedMarkdown = source === markdown ? lexed : markdown.replace(LINE_ENDING, '\n');
+  const lexedMarkdown = source === shadow ? lexed : shadow.replace(LINE_ENDING, '\n');
   collectHidden(tokens, top, 0, lexedMarkdown, ranges);
   if (ranges.length === 0) return markdown;
   if (shifts) {
@@ -1043,14 +1097,16 @@ const FENCE_CLOSE = /^[ \t>]*(?:`{3,}|~{3,})[ \t\r]*$/gm;
 const BLANK_LINE = /\n[ \t\r]*\n/g;
 /** A code unit that is not a line break. */
 const NOT_BREAK = /[^\n\r]/g;
+/** The `\r` the lexer drops from a `\r\n`; the scan reads it as a blank. */
+const CARRIAGE_RETURN = /\r/g;
 
 /**
- * `markdown` the lexer did not read with the hidden text a scan can place —
+ * `source` the lexer did not read with the hidden text a scan can place —
  * a comment (`<!--` … `-->`, or to the end of the note when none closes it;
  * a comment anchor excepted, as in `HIDDEN_HTML`), an image the renderer
  * shows (`imageAt`: on one line, whole, as `collectHiddenInLink` hides it —
  * the editor shows no text of it), a link reference definition whole
- * (`definitionHidden`) and the backticks of a code span — replaced by U+0000
+ * (`definitionAt`) and the backticks of a code span — replaced by U+0000
  * code unit for code unit, its line breaks kept, as the lexer's mask is laid
  * (`hide`). A reference image is masked only when a definition of the note
  * resolves its label — wherever the definition lies, so the images are
@@ -1064,6 +1120,12 @@ const NOT_BREAK = /[^\n\r]/g;
  * none is — nor is a line holding an image alone, which has no plain-text
  * line either. A link's destination is not masked — its line is
  * unanchorable instead (`unanchorableLines`).
+ *
+ * The scan reads `shadow` — `source` as the renderer hands it to marked
+ * (`shadowEscapedTags`), each `\r` a blank as the lexer drops it from a
+ * `\r\n` — and lets the renderer's own tokenizer decide what an image or a
+ * definition is, on the text the scan bounds for it; both keep every offset
+ * of `source`, and the mask is laid on `source`.
  *
  * What the renderer shows as written is not hidden, and the scan passes over
  * it as the lexer would: a fenced code block (a fence of three or more
@@ -1084,11 +1146,16 @@ const NOT_BREAK = /[^\n\r]/g;
  * definition is one only where a block may open (`startsBlock`): a `[` on
  * the line after a paragraph's, an item's or a quote's continues that
  * paragraph, and the line is shown as written. One linear scan: a `-->`, a
- * closing quote, a fence line or a closing run of a length none of lies
- * ahead is not searched for again, and a title or a code span is closed
- * before the next blank line or not at all.
+ * fence line or a closing run of a length none of lies ahead is not
+ * searched for again; a code span is closed before the next blank line or
+ * not at all, and so is a definition's title (`definitionAt`): the text a
+ * definition is read on ends at the next blank line, and the lines a
+ * candidate that is none reaches continue its paragraph, where no other is
+ * tried, so no text is read twice.
  */
-function maskHiddenBlocks(markdown: string): string {
+function maskHiddenBlocks(source: string, shadow: string): string {
+  const markdown = shadow.includes('\r') ? shadow.replace(CARRIAGE_RETURN, ' ') : shadow;
+  const tokenizer = scanTokenizer();
   /** The `[start, end)` ranges to mask, flattened, in order. */
   const masked: number[] = [];
   /** The reference images, in order, each masked at the end when `labels` holds its label. */
@@ -1103,12 +1170,6 @@ function maskHiddenBlocks(markdown: string): string {
   const nextBlankLine = memoisedSearch(markdown, BLANK_LINE);
   const nextFenceClose = memoisedSearch(markdown, FENCE_CLOSE);
   const closes = new Map<string, (at: number) => number>();
-  const nextTitleClose = (closer: number) => {
-    const quote = String.fromCharCode(closer);
-    let next = closes.get(quote);
-    if (!next) closes.set(quote, (next = memoisedIndexOf(markdown, quote)));
-    return next;
-  };
   const nextSpanClose = (run: string) => {
     let next = closes.get(run);
     if (!next)
@@ -1150,19 +1211,23 @@ function maskHiddenBlocks(markdown: string): string {
     } else if (found.charCodeAt(0) === 92) {
       // An escaped character: shown as written.
     } else if (found === '![') {
-      const image = imageAt(markdown, at, lineEnd);
+      const image = tokenizer && imageAt(tokenizer, markdown.slice(at, lineEnd));
       if (image) {
-        if (image.label === undefined) mask(at, image.end);
-        else images.push({ start: at, end: image.end, label: image.label });
-        end = image.end;
+        if (image.label === undefined) mask(at, at + image.length);
+        else images.push({ start: at, end: at + image.length, label: image.label });
+        end = at + image.length;
       }
     } else if (found.endsWith('[')) {
-      if (startsBlock(markdown, at, blockEnd)) {
-        const hidden = definitionHidden(markdown, end - 1, nextTitleClose, nextBlankLine);
-        if (hidden) {
-          labels.add(normalizeLabel(markdown.slice(end, markdown.indexOf(']', end))));
-          mask(hidden[0], hidden[1]);
-          end = hidden[1];
+      if (tokenizer && startsBlock(markdown, lineStart, blockEnd)) {
+        const blank = nextBlankLine(at);
+        const definition = definitionAt(
+          tokenizer,
+          markdown.slice(lineStart, blank === -1 ? markdown.length : blank),
+        );
+        if (definition) {
+          labels.add(definition.label);
+          mask(lineStart + definition.start, lineStart + definition.end);
+          end = lineStart + definition.end;
           blockEnd = end;
         }
       }
@@ -1216,7 +1281,7 @@ function maskHiddenBlocks(markdown: string): string {
   let out = '';
   let pos = 0;
   const hide = (start: number, end: number) => {
-    out += markdown.slice(pos, start) + markdown.slice(start, end).replace(NOT_BREAK, '\u0000');
+    out += source.slice(pos, start) + source.slice(start, end).replace(NOT_BREAK, '\u0000');
     pos = end;
   };
   let image = 0;
@@ -1230,158 +1295,85 @@ function maskHiddenBlocks(markdown: string): string {
     hideImagesBefore(masked[k]);
     hide(masked[k], masked[k + 1]);
   }
-  hideImagesBefore(markdown.length);
-  return out + markdown.slice(pos);
-}
-
-/** A reference label as marked matches it to a definition: blanks run together, lower-cased, not trimmed. */
-function normalizeLabel(label: string): string {
-  return label.replace(/\s+/g, ' ').toLowerCase();
+  hideImagesBefore(source.length);
+  return out + source.slice(pos);
 }
 
 /**
- * Whether `text` from `start` to `end` is a reference label as marked reads
- * one (its `ref`): not blank, no bracket in it but one a `\` escapes.
+ * The renderer's own tokenizer, to read an image or a definition as the
+ * renderer reads it: marked's, configured as the renderer configures it, its
+ * rules bound by a lexer of the same options. A copy of the options is bound,
+ * so the lexer the mask runs (`computeHiddenMask`) keeps its own.
+ * `undefined` when marked could not make one, and the scan masks no image
+ * and no definition.
  */
-function isReferenceLabel(text: string, start: number, end: number): boolean {
-  let blank = true;
-  for (let at = start; at < end; at += 1) {
-    const code = text.charCodeAt(at);
-    if (code === 92) at += 1;
-    else if (code === 91 || code === 93) return false;
-    if (blank && !isSpace(code)) blank = false;
+function scanTokenizer(): Tokenizer | undefined {
+  try {
+    hiddenTextLexer ??= createTiptapTaskListMarked();
+    const options = { ...hiddenTextLexer.defaults };
+    return new Lexer(options).options.tokenizer ?? undefined;
+  } catch {
+    return undefined;
   }
-  return !blank;
 }
 
+/** A link every label resolves to: what a reference image needs to be read as one, whatever the note defines. */
+const ANY_LINK = { href: '', title: '' };
+
 /**
- * The image the renderer shows whose `![` opens at `at` of `text`, on the
- * line ending at `lineEnd`, as marked reads it: its `end`, and the `label`
- * a definition must resolve for a reference image (`![alt][ref]`, or
- * `![alt][]` and `![alt]` on their alt text) — `undefined` for an inline
- * image, whose destination and title parse (`inlineImageEnd`). Marked tries
- * the inline form first, then the full reference, then the alt text alone,
- * so `![alt](not valid)` and `![alt][re[f]` are the shortcut `![alt]`
- * followed by text. `undefined` when the line holds no image the renderer
- * could show — an alt text not closed on the line, or holding a bracket
- * where a label allows none — and the text is shown as written. An alt
- * text may nest brackets (`\` escaping the next character).
+ * The image `text` opens with as marked reads it — its `length`, and the
+ * `label` a definition of the note must resolve for a reference image
+ * (`![alt][ref]`, `![alt][]` and `![alt]` on their alt text; `undefined` for
+ * an inline image) — or `undefined` when `text` opens with no image. The
+ * renderer's own tokenizer reads it, in the renderer's order: the inline
+ * form first (`link`), then a reference (`reflink`, given a `links` every
+ * label resolves in, so the label is read whether or not the note defines
+ * it) — so `![alt](not valid)` is the shortcut image `![alt]` to both, and
+ * image-shaped text the renderer shows as written is masked by neither.
  */
 function imageAt(
+  tokenizer: Tokenizer,
   text: string,
-  at: number,
-  lineEnd: number,
-): { end: number; label: string | undefined } | undefined {
-  let i = at + 2;
-  let nested = false;
-  for (let depth = 0; ; i += 1) {
-    if (i >= lineEnd) return undefined;
-    const code = text.charCodeAt(i);
-    if (code === 92) i += 1;
-    else if (code === 91) {
-      depth += 1;
-      nested = true;
-    } else if (code === 93) {
-      if (depth === 0) break;
-      depth -= 1;
-    }
+): { length: number; label: string | undefined } | undefined {
+  const inline = tokenizer.link(text);
+  if (inline) {
+    return inline.type === 'image' ? { length: inline.raw.length, label: undefined } : undefined;
   }
-  const next = text.charCodeAt(i + 1);
-  if (next === 40) {
-    const end = inlineImageEnd(text, i + 2, lineEnd);
-    if (end !== -1) return { end, label: undefined };
-  } else if (next === 91) {
-    let close = i + 2;
-    while (close < lineEnd && text.charCodeAt(close) !== 93) {
-      if (text.charCodeAt(close) === 92) close += 1;
-      close += 1;
-    }
-    if (close < lineEnd && isReferenceLabel(text, i + 2, close)) {
-      return { end: close + 1, label: normalizeLabel(text.slice(i + 2, close)) };
-    }
-    if (close === i + 2 && !nested && isReferenceLabel(text, at + 2, i)) {
-      return { end: close + 1, label: normalizeLabel(text.slice(at + 2, i)) };
-    }
-  }
-  if (nested || !isReferenceLabel(text, at + 2, i)) return undefined;
-  return { end: i + 1, label: normalizeLabel(text.slice(at + 2, i)) };
+  let label: string | undefined;
+  const links = new Proxy({} as Links, {
+    get(_links, name) {
+      if (typeof name !== 'string') return undefined;
+      label = name;
+      return ANY_LINK;
+    },
+  });
+  const reference = tokenizer.reflink(text, links);
+  if (reference?.type !== 'image' || label === undefined) return undefined;
+  return { length: reference.raw.length, label };
 }
 
 /**
- * The end of the inline image whose destination opens at `from` of `text` —
- * right after `](` — on the line ending at `lineEnd`, as marked reads it:
- * past blanks, a destination in angle brackets (no blank, `<` or `>` in it
- * but one a `\` escapes) or a run of characters that are no blank, then
- * blanks and a title (`"…"`, `'…'` or `(…)`, `\` escaping the next
- * character) or none, blanks, and the `)`. Marked takes the destination
- * run whole when the `)` follows it, else up to the last `)` in the run,
- * and ends the image at the first `)` in the destination no `(` before it
- * opened (`![alt](a)b)` is the image `![alt](a)` and the text `b)`) — so
- * the run is read up to that `)` at most, and a line of many images is
- * read once; a destination that closes some `(` but not all is no image.
- * `-1` when the line holds no such image.
+ * The link reference definition `text` opens with as marked reads it (`def`)
+ * — the `[start, end)` of the text the editor hides of it, past the blanks
+ * that open it and short of the line break that ends it, and the `label` as
+ * marked matches a reference to it — or `undefined` when `text` opens with
+ * none. The label is hidden with the rest: its letters would otherwise pair
+ * with a plain-text line's in a diff. `text` reaches the next blank line at
+ * most, which no definition spans, so no text past it is read as part of
+ * one.
  */
-function inlineImageEnd(text: string, from: number, lineEnd: number): number {
-  let start = from;
-  while (start < lineEnd && isBlank(text.charCodeAt(start))) start += 1;
-  if (text.charCodeAt(start) === 60) {
-    let close = start + 1;
-    for (; ; close += 1) {
-      if (close >= lineEnd) return -1;
-      const code = text.charCodeAt(close);
-      if (code === 92) close += 1;
-      else if (code === 62) break;
-      else if (code === 60 || isBlank(code)) return -1;
-    }
-    return imageClose(text, close + 1, lineEnd);
-  }
-  let run = start;
-  let depth = 0;
-  let last = -1;
-  for (; run < lineEnd; run += 1) {
-    const code = text.charCodeAt(run);
-    if (isBlank(code)) break;
-    if (code === 92) run += 1;
-    else if (code === 40) depth += 1;
-    else if (code === 41) {
-      if (depth === 0) return start === from ? run + 1 : -1;
-      depth -= 1;
-      last = run;
-    }
-  }
-  const end = imageClose(text, run, lineEnd);
-  if (end !== -1) return last !== -1 && depth > 0 ? -1 : end;
-  if (last === -1) return -1;
-  for (let j = start; j < last; j += 1) {
-    const code = text.charCodeAt(j);
-    if (code === 92) j += 1;
-    else if (code === 41) return -1;
-  }
-  return last + 1;
-}
-
-/**
- * The end of the inline image whose destination ends at `from` of `text`, on
- * the line ending at `lineEnd`: past blanks, a title and blanks, or blanks
- * alone, and the `)`; `-1` when none closes it so.
- */
-function imageClose(text: string, from: number, lineEnd: number): number {
-  let at = from;
-  while (at < lineEnd && isBlank(text.charCodeAt(at))) at += 1;
-  if (text.charCodeAt(at) === 41) return at + 1;
-  if (at === from) return -1;
-  const quote = text.charCodeAt(at);
-  const closer = quote === 34 || quote === 39 ? quote : quote === 40 ? 41 : -1;
-  if (closer === -1) return -1;
-  for (at += 1; ; at += 1) {
-    if (at >= lineEnd) return -1;
-    const code = text.charCodeAt(at);
-    if (code === 92) at += 1;
-    else if (code === closer) break;
-  }
-  at += 1;
-  while (at < lineEnd && isBlank(text.charCodeAt(at))) at += 1;
-  return text.charCodeAt(at) === 41 ? at + 1 : -1;
+function definitionAt(
+  tokenizer: Tokenizer,
+  text: string,
+): { start: number; end: number; label: string } | undefined {
+  const definition = tokenizer.def(text);
+  if (!definition) return undefined;
+  const raw = definition.raw;
+  return {
+    start: raw.length - raw.trimStart().length,
+    end: raw.trimEnd().length,
+    label: definition.tag,
+  };
 }
 
 /** Whether `at` of `text` sits at a line start, at most three blanks after it. */
@@ -1576,76 +1568,6 @@ function startsBlock(text: string, lineStart: number, blockEnd: number): boolean
   while (at < lineStart - 1 && (isBlank(text.charCodeAt(at)) || text.charCodeAt(at) === 13))
     at += 1;
   return at >= lineStart - 1;
-}
-
-/**
- * The `[start, end)` of the text the editor hides of the link reference
- * definition whose label opens at `bracket`: the label — its letters would
- * otherwise pair with a plain-text line's in a diff — and what follows its
- * `]:` — blanks, a destination (on the line, or alone on the next), and a
- * title (`"…"`, `'…'` or `(…)`, on the line or on the next, over line
- * breaks, closed before the next blank line by a quote no `\` precedes, with
- * blanks alone after it on its line) — or `undefined` when the line is no
- * definition: a label not closed on its line, no destination, or text after
- * the destination on its line that is no title. Text on the next line that
- * is no title is a paragraph of its own; the definition ends at its
- * destination.
- */
-function definitionHidden(
-  text: string,
-  bracket: number,
-  nextTitleClose: (closer: number) => (at: number) => number,
-  nextBlankLine: (at: number) => number,
-): [number, number] | undefined {
-  let label = bracket + 1;
-  while (label < text.length && text.charCodeAt(label) !== 93 && text.charCodeAt(label) !== 10) {
-    label += 1;
-  }
-  if (label === bracket + 1 || text.charCodeAt(label) !== 93 || text.charCodeAt(label + 1) !== 58) {
-    return undefined;
-  }
-  const start = label + 2;
-  const destination = skipBlanks(text, start, true);
-  let destinationEnd = destination;
-  while (destinationEnd < text.length && !isSpace(text.charCodeAt(destinationEnd))) {
-    destinationEnd += 1;
-  }
-  if (destinationEnd === destination) return undefined;
-  const afterDestination = skipBlanks(text, destinationEnd, false);
-  const onLine = afterDestination < text.length && !isBreak(text.charCodeAt(afterDestination));
-  const title = onLine ? afterDestination : skipBlanks(text, destinationEnd, true);
-  const quote = text.charCodeAt(title);
-  const closer = quote === 34 || quote === 39 ? quote : quote === 40 ? 41 : -1;
-  if (closer !== -1) {
-    const nextClose = nextTitleClose(closer);
-    let close = nextClose(title + 1);
-    while (close !== -1 && text.charCodeAt(close - 1) === 92) close = nextClose(close + 1);
-    const blank = nextBlankLine(title);
-    if (close !== -1 && (blank === -1 || close < blank)) {
-      const lineEnd = skipBlanks(text, close + 1, false);
-      if (lineEnd >= text.length || isBreak(text.charCodeAt(lineEnd))) return [bracket, close + 1];
-    }
-  }
-  return onLine ? undefined : [bracket, destinationEnd];
-}
-
-/** Past the blanks of `text` from `at` — and, with `oneBreak`, one line break and the blanks after it. */
-function skipBlanks(text: string, at: number, oneBreak: boolean): number {
-  while (at < text.length && isBlank(text.charCodeAt(at))) at += 1;
-  if (!oneBreak || at >= text.length || !isBreak(text.charCodeAt(at))) return at;
-  at += text.charCodeAt(at) === 13 && text.charCodeAt(at + 1) === 10 ? 2 : 1;
-  while (at < text.length && isBlank(text.charCodeAt(at))) at += 1;
-  return at;
-}
-
-/** Whether `code` is a line break's `\n` or `\r`. */
-function isBreak(code: number): boolean {
-  return code === 10 || code === 13;
-}
-
-/** Whether `code` is a blank or a line break. */
-function isSpace(code: number): boolean {
-  return isBlank(code) || isBreak(code);
 }
 
 /**
