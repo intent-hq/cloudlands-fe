@@ -394,8 +394,10 @@
       description="The selected workspaces will move to the archive."
       confirmText="Archive workspaces"
       variant="destructive"
+      mode="archive"
       activeAgentCount={2}
       activeHookCount={1}
+      guestCount={3}
     />
   {:else if state === 'quit-confirmation-modal'}
     <QuitConfirmationModal open static payload={quitPayload} />

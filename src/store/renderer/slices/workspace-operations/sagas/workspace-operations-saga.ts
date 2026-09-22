@@ -140,15 +140,21 @@ function getSingleWorkspaceActiveWork(workspaceId: string): Promise<ActiveWorkNa
   return getActiveWorkNames(workspaceId, { includeLocalChanges: true });
 }
 
-// Bulk flows count only agents/hooks — open PRs never change bulk counts and
-// local changes are never fetched (no `workspace.localChanges` fan-out).
-function countActiveWork(items: ActiveWorkNames[]): { agentCount: number; hookCount: number } {
+// Bulk flows count agents/hooks and the guests read off the stored workspace
+// rows — open PRs never change bulk counts and local changes are never fetched
+// (no `workspace.localChanges` fan-out).
+function countActiveWork(items: ActiveWorkNames[]): {
+  agentCount: number;
+  hookCount: number;
+  guestCount: number;
+} {
   return items.reduce(
     (counts, item) => ({
       agentCount: counts.agentCount + item.agentNames.length,
       hookCount: counts.hookCount + item.hookNames.length,
+      guestCount: counts.guestCount + item.guests.collaboratorCount + item.guests.openInviteCount,
     }),
-    { agentCount: 0, hookCount: 0 },
+    { agentCount: 0, hookCount: 0, guestCount: 0 },
   );
 }
 
@@ -544,7 +550,7 @@ function* bulkDeleteArchived(): SagaGenerator<void> {
     return;
   }
   const counts = countActiveWork(yield* collectActiveWork(targets));
-  if (counts.agentCount > 0 || counts.hookCount > 0) {
+  if (counts.agentCount > 0 || counts.hookCount > 0 || counts.guestCount > 0) {
     yield* put(
       openBulkDeleteWarningConfirm({ repoKey, workspaceCount: targets.length, ...counts }),
     );

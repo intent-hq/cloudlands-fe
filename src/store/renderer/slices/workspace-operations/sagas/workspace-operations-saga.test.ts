@@ -792,7 +792,15 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
     expect(guarded.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openBulkDeleteWarningConfirm',
-      payload: [{ repoKey: 'intent-hq/repo', workspaceCount: 3, agentCount: 2, hookCount: 1 }],
+      payload: [
+        {
+          repoKey: 'intent-hq/repo',
+          workspaceCount: 3,
+          agentCount: 2,
+          hookCount: 1,
+          guestCount: 0,
+        },
+      ],
     });
     guarded.send(confirmBulkDeleteWarning());
     await vi.advanceTimersByTimeAsync(50);
@@ -809,6 +817,65 @@ describe('workspaceOperationsSaga', () => {
     expect(guarded.state().workspace.pendingDeletions).toEqual({});
     guarded.task.cancel();
     await guarded.task.toPromise();
+  });
+
+  it('gates bulk delete-archived behind the warning when only guests would be removed', async () => {
+    mocks.getActiveWorkNames.mockImplementation((workspaceId: string) =>
+      Promise.resolve(
+        workspaceId === 'ws-2'
+          ? { ...noActiveWork, guests: { collaboratorCount: 0, openInviteCount: 1 } }
+          : { ...noActiveWork, guests: { collaboratorCount: 2, openInviteCount: 0 } },
+      ),
+    );
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
+    const run = harness([
+      workspace('ws-1', WorkspaceStatusEnum.Archived),
+      workspace('ws-2', WorkspaceStatusEnum.Archived),
+    ]);
+    run.send(openBulkDeleteArchivedConfirm('intent-hq/repo'));
+    run.send(confirmBulkDeleteArchived());
+    await settle();
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled();
+    expect(run.dispatch.mock.calls.flat()).toContainEqual({
+      type: 'workspaceOperations/openBulkDeleteWarningConfirm',
+      payload: [
+        {
+          repoKey: 'intent-hq/repo',
+          workspaceCount: 2,
+          agentCount: 0,
+          hookCount: 0,
+          guestCount: 3,
+        },
+      ],
+    });
+    expect(run.state().workspaceOperations.bulkDeleteGuestCount).toBe(3);
+    run.send(confirmBulkDeleteWarning());
+    await settle();
+    expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(2);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('sums guests across the targeted workspaces into the bulk archive confirm', async () => {
+    mocks.getActiveWorkNames.mockImplementation((workspaceId: string) =>
+      Promise.resolve(
+        workspaceId === 'ws-1'
+          ? {
+              ...noActiveWork,
+              agentNames: ['Ada'],
+              guests: { collaboratorCount: 1, openInviteCount: 1 },
+            }
+          : { ...noActiveWork, guests: { collaboratorCount: 1, openInviteCount: 0 } },
+      ),
+    );
+    const run = harness([workspace('ws-1'), workspace('ws-2')]);
+    run.send(openBulkArchiveConfirm('intent-hq/repo'));
+    await settle();
+    expect(run.state().workspaceOperations.bulkArchiveActiveAgentCount).toBe(1);
+    expect(run.state().workspaceOperations.bulkArchiveActiveHookCount).toBe(0);
+    expect(run.state().workspaceOperations.bulkArchiveGuestCount).toBe(3);
+    run.task.cancel();
+    await run.task.toPromise();
   });
 
   it('removes a repository, reports invoke failure, and no-ops without a pending path', async () => {
