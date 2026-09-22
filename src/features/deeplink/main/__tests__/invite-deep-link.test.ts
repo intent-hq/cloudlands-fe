@@ -278,11 +278,35 @@ const CREDENTIAL = {
 /** `github.connect` result (PROTOCOL §5.27): the guest's own device flow. */
 const CONNECT = {
   ok: true,
+  flowId: 'flow-1',
   userCode: 'ABCD-1234',
   verificationUri: 'https://github.com/login/device',
   expiresIn: 900,
   interval: 5,
 };
+/**
+ * The guest daemon's single device-flow slot (PROTOCOL §5.27): `github.connect`
+ * hands a still-pending flow back with the same `flowId`, and a
+ * `github.cancelAuth { flowId }` naming any other flow is a no-op
+ * (`cancelled: false`) that leaves the pending flow polling.
+ */
+let liveFlowId: string | null = null;
+let startedFlows = 0;
+function startDeviceFlow(flowId = `flow-${++startedFlows}`): typeof CONNECT {
+  liveFlowId = flowId;
+  return { ...CONNECT, flowId };
+}
+/** `github.connect` on the modelled slot: a new flow, or the pending one again. */
+function connectDeviceFlow(): typeof CONNECT {
+  return liveFlowId === null ? startDeviceFlow() : { ...CONNECT, flowId: liveFlowId };
+}
+function cancelDeviceFlow(params: unknown): { ok: true; cancelled: boolean } {
+  const flowId = (params as { flowId?: unknown } | undefined)?.flowId;
+  if (flowId !== undefined && flowId !== liveFlowId) return { ok: true, cancelled: false };
+  const cancelled = liveFlowId !== null;
+  liveFlowId = null;
+  return { ok: true, cancelled };
+}
 const PROOF = { gistId: 'gist0123abc', login: 'octocat' };
 
 /** A local daemon refusal with a bounded `error.data.code` (PROTOCOL §9). */
@@ -310,8 +334,10 @@ function signedInDaemon(): void {
   onLocal('github.getUser', () => ({ user: { login: 'octocat' } }));
   onLocal('github.identityProof.create', () => PROOF);
   onLocal('github.identityProof.delete', () => ({ ok: true }));
-  onLocal('github.connect', () => CONNECT);
-  onLocal('github.cancelAuth', () => ({ ok: true, cancelled: true }));
+  liveFlowId = null;
+  startedFlows = 0;
+  onLocal('github.connect', connectDeviceFlow);
+  onLocal('github.cancelAuth', cancelDeviceFlow);
   onLocal('github.authStatus', () => ({ isConfigured: false, deviceFlow: { status: 'pending' } }));
 }
 
@@ -327,7 +353,6 @@ function signedOutDaemon(): void {
     if (!signedIn) throw localRefusal('github-not-connected');
     return PROOF;
   });
-  onLocal('github.connect', () => CONNECT);
   notificationListeners.clear();
   const listener: NotificationHandler = (n) => {
     const event = (n.params as { event?: { type?: string; data?: { status?: string } } }).event;
@@ -1215,11 +1240,26 @@ describe('handleInviteDeepLink — sign-in required', () => {
     await handleInviteDeepLink(LINK);
 
     expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
-    expect(localCalls('github.cancelAuth')).toHaveLength(1);
+    // The cancel is scoped to the flow `github.connect` started (§5.27).
+    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth', { flowId: 'flow-1' }]]);
+    expect(liveFlowId).toBeNull();
     expect(openExternal).not.toHaveBeenCalled();
     expect(showInviteConsent).toHaveBeenCalledTimes(1);
     expect(guestAdd).not.toHaveBeenCalled();
     expect(showMessageBox).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel against a daemon whose github.connect carries no flowId: the unscoped call', async () => {
+    const { flowId: _flowId, ...legacyConnect } = CONNECT;
+    onLocal('github.connect', () => legacyConnect);
+    const signIn = fakeConsent('cancel');
+    showInviteConsent.mockReturnValue(signIn.prompt);
+
+    await handleInviteDeepLink(LINK);
+
+    expect(signIn.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('cancelled');
+    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth']]);
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -2854,7 +2894,8 @@ describe('handleInviteDeepLink — progress dialog', () => {
     let releaseConnect!: () => void;
     onLocal(
       'github.connect',
-      () => new Promise((resolve) => (releaseConnect = () => resolve(CONNECT))),
+      () =>
+        new Promise((resolve) => (releaseConnect = () => resolve(startDeviceFlow('flow-late')))),
     );
 
     const pending = handleInviteDeepLink(LINK);
@@ -2873,9 +2914,15 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(logLines.join('\n')).toContain('User cancelled the invite while connecting');
     expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
 
-    // A device flow that starts after the cancel is aborted on arrival.
+    // A device flow that starts after the cancel is aborted on arrival — the
+    // cancel scoped to that flow's `flowId` (§5.27).
     releaseConnect();
-    await vi.waitFor(() => expect(localCalls('github.cancelAuth')).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(localCalls('github.cancelAuth')).toEqual([
+        ['github.cancelAuth', { flowId: 'flow-late' }],
+      ]),
+    );
+    expect(liveFlowId).toBeNull();
   });
 
   it('a device flow start cancelled during one invite does not abort the flow a later invite is showing', async () => {
@@ -2884,12 +2931,16 @@ describe('handleInviteDeepLink — progress dialog', () => {
     showInviteProgress.mockReturnValueOnce(connectingA.handle);
     let releaseConnectA!: () => void;
     let connects = 0;
+    // A's flow is superseded before its start resolves: the daemon hands B
+    // its own live flow, and A's late result names a flow that is no longer
+    // the pending one.
+    const flowA = { ...CONNECT, flowId: 'flow-a' };
     onLocal('github.connect', () => {
       connects += 1;
       if (connects === 1) {
-        return new Promise((resolve) => (releaseConnectA = () => resolve(CONNECT)));
+        return new Promise((resolve) => (releaseConnectA = () => resolve(flowA)));
       }
-      return CONNECT;
+      return startDeviceFlow('flow-b');
     });
     const signIn = fakeConsent('pending');
     const prove = fakeConsent('open');
@@ -2908,10 +2959,15 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(localCalls('github.connect')).toHaveLength(2);
     expect(showInviteConsent.mock.calls[0][0]).toMatchObject({ mode: 'sign-in-required' });
 
-    // A's start arrives late: B owns the live flow, so nothing is cancelled.
+    // A's start arrives late: its cancel names A's flow, not B's, so the
+    // daemon leaves B's live flow polling.
     releaseConnectA();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(localCalls('github.cancelAuth')).toEqual([]);
+    await vi.waitFor(() =>
+      expect(localCalls('github.cancelAuth')).toEqual([
+        ['github.cancelAuth', { flowId: 'flow-a' }],
+      ]),
+    );
+    expect(liveFlowId).toBe('flow-b');
     expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
 
     // B completes normally.
@@ -2924,7 +2980,7 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(prove.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('joined');
     expect(guestAdd).toHaveBeenCalledWith(expect.objectContaining({ token: TOKEN }));
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
-    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(localCalls('github.cancelAuth')).toHaveLength(1);
     expect(logLines.join('\n')).not.toContain('Invite deep link handling failed');
   });
 

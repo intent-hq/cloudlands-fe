@@ -100,10 +100,11 @@ describe('githubAuthSaga', () => {
     await run.task.toPromise();
   });
 
-  it('cancels polling on disconnect and ignores the late completion', async () => {
+  it('cancels polling on disconnect, scoping the cancel to the started flow, and ignores the late completion', async () => {
     let resolveCheck!: (value: unknown) => void;
     mocks.startAuth.mockResolvedValue({
       success: true,
+      flowId: 'flow-1',
       userCode: 'ABCD',
       verificationUri: 'https://github.test',
       expiresIn: 900,
@@ -135,7 +136,7 @@ describe('githubAuthSaga', () => {
     });
     await settle();
 
-    expect(mocks.cancelAuth.mock.calls).toEqual([[]]);
+    expect(mocks.cancelAuth.mock.calls).toEqual([[{ flowId: 'flow-1' }]]);
     expect(run.dispatched).toEqual([
       { type: 'githubAuth/setAuthenticating', payload: [true] },
       { type: 'githubAuth/setOAuthInfo', payload: { oauthUrl: null, needsScopeUpdate: false } },
@@ -143,6 +144,7 @@ describe('githubAuthSaga', () => {
         type: 'githubAuth/setDeviceFlowInfo',
         payload: [
           {
+            flowId: 'flow-1',
             userCode: 'ABCD',
             verificationUri: 'https://github.test',
             expiresIn: 900,
@@ -152,6 +154,29 @@ describe('githubAuthSaga', () => {
       },
       { type: 'githubAuth/authCancelled', payload: [] },
     ]);
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('cancels a flow started without a flowId (older daemon) with the unscoped call', async () => {
+    mocks.startAuth.mockResolvedValue({
+      success: true,
+      userCode: 'ABCD',
+      verificationUri: 'https://github.test',
+      expiresIn: 900,
+      interval: 5,
+    });
+    mocks.checkAuthComplete.mockResolvedValue({ success: true, data: { isComplete: false } });
+    mocks.cancelAuth.mockResolvedValue({ success: true });
+    const run = harness();
+    run.channel.put(startGitHubAuth());
+    await settle();
+    expect(run.state().deviceFlow).not.toHaveProperty('flowId');
+    run.channel.put(cancelGitHubAuth());
+    await settle();
+
+    expect(mocks.cancelAuth.mock.calls).toEqual([[]]);
+    expect(run.state().deviceFlow).toBeNull();
     run.task.cancel();
     await run.task.toPromise();
   });
