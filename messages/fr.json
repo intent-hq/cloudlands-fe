@@ -878,6 +878,7 @@
   "ui_imageActionsMenu_pathCopied_label": "Chemin copié dans le presse-papiers",
   "ui_imageActionsMenu_imageCopied_label": "Image copiée dans le presse-papiers",
   "ui_imageActionsMenu_linkCopied_label": "Lien copié dans le presse-papiers",
+  "ui_mediaLoadingPlaceholder_title_label": "Chargement de l’image…",
   "ui_mediaUnavailable_title_label": "Média indisponible",
   "ui_mediaUnavailable_missing_description": "Le fichier est introuvable.",
   "ui_mediaUnavailable_unsupported_description": "Ce type de fichier n’est pas pris en charge.",

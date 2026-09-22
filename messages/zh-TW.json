@@ -878,6 +878,7 @@
   "ui_imageActionsMenu_pathCopied_label": "路徑已複製到剪貼簿",
   "ui_imageActionsMenu_imageCopied_label": "圖片已複製到剪貼簿",
   "ui_imageActionsMenu_linkCopied_label": "連結已複製到剪貼簿",
+  "ui_mediaLoadingPlaceholder_title_label": "正在載入圖片…",
   "ui_mediaUnavailable_title_label": "媒體無法使用",
   "ui_mediaUnavailable_missing_description": "檔案遺失。",
   "ui_mediaUnavailable_unsupported_description": "不支援此檔案類型。",
