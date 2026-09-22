@@ -2925,6 +2925,46 @@ describe('handleInviteDeepLink — progress dialog', () => {
     expect(liveFlowId).toBeNull();
   });
 
+  it('a late github.connect without flowId (older daemon) is not cancelled unscoped: a later invite keeps its flow', async () => {
+    signedOutDaemon();
+    const connectingA = fakeProgress();
+    showInviteProgress.mockReturnValueOnce(connectingA.handle);
+    let releaseConnectA!: () => void;
+    let connects = 0;
+    const { flowId: _flowId, ...legacyConnect } = CONNECT;
+    onLocal('github.connect', () => {
+      connects += 1;
+      if (connects === 1) {
+        return new Promise((resolve) => (releaseConnectA = () => resolve(legacyConnect)));
+      }
+      return startDeviceFlow('flow-b');
+    });
+    const signIn = fakeConsent('pending');
+    showInviteConsent.mockReturnValueOnce(signIn.prompt);
+
+    const pendingA = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(localCalls('github.connect')).toHaveLength(1));
+    connectingA.cancel();
+    await pendingA;
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+
+    const pendingB = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(showInviteConsent).toHaveBeenCalledTimes(1));
+    expect(localCalls('github.connect')).toHaveLength(2);
+
+    // A's late result cannot be scoped, so no cancel is sent at all: an
+    // unscoped one would abort B's live flow.
+    releaseConnectA();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(localCalls('github.cancelAuth')).toEqual([]);
+    expect(liveFlowId).toBe('flow-b');
+    expect(signIn.prompt.dismiss).not.toHaveBeenCalled();
+
+    signIn.decide('cancel');
+    await pendingB;
+    expect(localCalls('github.cancelAuth')).toEqual([['github.cancelAuth', { flowId: 'flow-b' }]]);
+  });
+
   it('a device flow start cancelled during one invite does not abort the flow a later invite is showing', async () => {
     signedOutDaemon();
     const connectingA = fakeProgress();

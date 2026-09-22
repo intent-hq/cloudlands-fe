@@ -5,6 +5,8 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   call,
   delay,
+  fork,
+  join,
   put,
   race,
   take,
@@ -13,7 +15,10 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 
-import { selectGitHubAuthDeviceFlow } from '../github-auth-selectors';
+import {
+  selectGitHubAuthDeviceFlow,
+  selectGitHubAuthIsAuthenticating,
+} from '../github-auth-selectors';
 import {
   authCancelled,
   authCompleted,
@@ -112,9 +117,15 @@ function* initialize(): SagaGenerator<void> {
     // reconnect (intent#5206) keeps the old token valid while the user
     // authorizes, and a settings remount must not drop the in-flight code.
     if (validPendingFlow(state.deviceFlow)) {
+      // `authStatus.deviceFlow` carries no `flowId`; keep the one a local
+      // `github.connect` returned for the same code so the cancel stays scoped
+      // across a remount.
+      const local = yield* selectGitHubAuthDeviceFlow.effect();
+      const flowId = local?.userCode === state.deviceFlow.userCode ? local.flowId : undefined;
       yield* put(setAuthenticating(true));
       yield* put(
         setDeviceFlowInfo({
+          ...(typeof flowId === 'string' ? { flowId } : {}),
           userCode: state.deviceFlow.userCode,
           verificationUri: state.deviceFlow.verificationUri,
           expiresIn: state.deviceFlow.expiresIn,
@@ -133,13 +144,41 @@ function* initialize(): SagaGenerator<void> {
   }
 }
 
+type StartAuthSettled =
+  { result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> } | { error: unknown };
+
+/** `startAuth` as a joinable task whose failure settles instead of aborting the parent. */
+function* requestStartAuth(options?: StartAuthOptions): SagaGenerator<StartAuthSettled> {
+  try {
+    return { result: yield* call([githubAuthClient, githubAuthClient.startAuth], options) };
+  } catch (error) {
+    return { error };
+  }
+}
+
 function* start(options?: StartAuthOptions): SagaGenerator<void> {
   yield* put(setAuthenticating(true));
+  // A cancel while `github.connect` is still awaiting has no id to scope to,
+  // so it is recorded here and sent once the result names the flow.
+  let cancelRequested = false;
   try {
-    const result: Awaited<ReturnType<typeof githubAuthClient.startAuth>> = yield* call(
-      [githubAuthClient, githubAuthClient.startAuth],
-      options,
-    );
+    const pending = yield* fork(requestStartAuth, options);
+    const raced = yield* race({
+      settled: join(pending),
+      cancelRequested: take(cancelGitHubAuth),
+    });
+    cancelRequested = raced.cancelRequested !== undefined;
+    const settled = raced.settled ?? (yield* join(pending));
+    if ('error' in settled) throw settled.error;
+    const { result } = settled;
+    if (cancelRequested && result.success && !result.alreadyAuthenticated) {
+      yield* call(cancelFlow, result.flowId);
+      return;
+    }
+    if (cancelRequested && !result.success) {
+      yield* put(authCancelled());
+      return;
+    }
     if (!result.success) {
       yield* put(setGitHubAuthError(result.error || m.githubAuth_service_startFailed_error()));
       return;
@@ -170,6 +209,10 @@ function* start(options?: StartAuthOptions): SagaGenerator<void> {
       }),
     );
   } catch (error) {
+    if (cancelRequested) {
+      yield* put(authCancelled());
+      return;
+    }
     const message = error instanceof Error ? error.message : m.githubAuth_service_unknown_error();
     yield* put(
       setGitHubAuthError(
@@ -181,11 +224,12 @@ function* start(options?: StartAuthOptions): SagaGenerator<void> {
   }
 }
 
-function* cancelAuth(): SagaGenerator<void> {
+/**
+ * Send `github.cancelAuth`, scoped to `flowId` when `github.connect` returned
+ * one (§5.27). The unscoped call is only the older-daemon fallback.
+ */
+function* cancelFlow(flowId: string | undefined): SagaGenerator<void> {
   try {
-    // Scope the cancel to the flow `github.connect` started (§5.27); a flow
-    // resumed from `authStatus` carries no id and gets the unscoped call.
-    const flowId = (yield* selectGitHubAuthDeviceFlow.effect())?.flowId;
     const result: Awaited<ReturnType<typeof githubAuthClient.cancelAuth>> =
       typeof flowId === 'string'
         ? yield* call([githubAuthClient, githubAuthClient.cancelAuth], { flowId })
@@ -196,6 +240,14 @@ function* cancelAuth(): SagaGenerator<void> {
     logger.error('Failed to cancel GitHub auth', error);
     yield* put(setGitHubAuthError(m.githubAuth_service_cancelFailed_error()));
   }
+}
+
+function* cancelAuth(): SagaGenerator<void> {
+  const deviceFlow = yield* selectGitHubAuthDeviceFlow.effect();
+  // Authenticating with no codes yet: `start` is awaiting `github.connect` and
+  // sends the cancel itself once the flow has an id.
+  if (deviceFlow === null && (yield* selectGitHubAuthIsAuthenticating.effect())) return;
+  yield* call(cancelFlow, deviceFlow?.flowId);
 }
 
 function* logout(): SagaGenerator<void> {

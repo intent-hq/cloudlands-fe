@@ -619,18 +619,28 @@ type SignInResult = { kind: 'signed-in'; login: string } | { kind: 'cancelled' }
 
 /**
  * Abort the device flow `github.connect` started, best effort. The cancel is
- * scoped to that flow's `flowId` (PROTOCOL §5.27): a `github.connect` cancelled
- * while pending may resolve after a later invite already shows its own flow,
- * and the daemon then leaves that newer flow alone. A daemon that returned no
- * `flowId` gets the unscoped call.
+ * scoped to that flow's `flowId` (PROTOCOL §5.27) whenever the daemon returned
+ * one; the unscoped call is the fallback for a daemon that did not, and only
+ * on the user's direct Cancel of the flow being shown (`cancelSignIn`).
  */
-function cancelDeviceFlow(client: JsonRpcClient, start: GithubConnectResult | undefined): void {
-  const flowId = start?.flowId;
+function cancelDeviceFlow(client: JsonRpcClient, start: GithubConnectResult): void {
+  const { flowId } = start;
   const cancel =
     typeof flowId === 'string'
       ? client.request('github.cancelAuth', { flowId })
       : client.request('github.cancelAuth');
   void cancel.catch(() => {});
+}
+
+/**
+ * A `github.connect` that resolved after the `connecting` dialog was cancelled
+ * is aborted on arrival — but only when it can be scoped: it may land after a
+ * later invite already shows its own flow, and an unscoped cancel would abort
+ * that newer flow instead. A late result without `flowId` is left alone (the
+ * code expires on its own, or the next `github.connect` adopts it).
+ */
+function cancelLateDeviceFlow(client: JsonRpcClient, late: GithubConnectResult): void {
+  if (typeof late.flowId === 'string') cancelDeviceFlow(client, late);
 }
 
 /**
@@ -643,7 +653,8 @@ function cancelDeviceFlow(client: JsonRpcClient, start: GithubConnectResult | un
  * to the flow's `flowId`, best effort). Resolves with the login the daemon is
  * now signed in as. The `github.connect` start is raced against the
  * `connecting` dialog's Cancel while that dialog is still up (a device flow
- * that starts after the cancel is aborted on arrival); once the dialog was
+ * that starts after the cancel is aborted on arrival when it carries a
+ * `flowId`); once the dialog was
  * dismissed by the first prompt its Cancel never settles and the wait is a
  * plain await.
  */
@@ -657,7 +668,7 @@ async function signInToGitHub(
   let start: GithubConnectResult;
   try {
     start = await connecting.wait(client.request<GithubConnectResult>('github.connect'), (late) =>
-      cancelDeviceFlow(client, late),
+      cancelLateDeviceFlow(client, late),
     );
   } catch (error) {
     if (error instanceof InviteCancelledError) throw error;
