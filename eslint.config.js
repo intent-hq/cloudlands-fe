@@ -691,6 +691,42 @@ export default [
       ],
     },
   },
+  // The root layout is shared by the product app shell and the /sandbox component
+  // catalog: it starts the store lifecycle and loads the global stylesheet, and
+  // nothing more. Host code — the Electron bridge, the live daemon client, the
+  // browser mock-store seeding — belongs to the (app) layout, so a catalog page
+  // never boots a daemon connection or the mock bootstrap. The shared CT-module
+  // path is repeated so this override does not drop that restriction;
+  // src/lib/component-catalog/catalog-shell.test.ts asserts the matrix against
+  // this effective config.
+  {
+    files: ['src/routes/+layout.svelte'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [ctSharedModuleRestrictedImportPath],
+          patterns: [
+            {
+              group: internalModuleImportPatterns('$lib', 'lib/electron-bridge'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not reach the Electron bridge. Host wiring belongs in src/routes/(app)/+layout.svelte.',
+            },
+            {
+              group: internalModuleImportPatterns('$lib', 'lib/client/live/live-app-client'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not construct the live daemon client. Host wiring belongs in src/routes/(app)/+layout.svelte.',
+            },
+            {
+              group: internalModuleImportPatterns('$store', 'store/renderer/mock-bootstrap'),
+              message:
+                'The root layout is shared with the /sandbox catalog and must not seed the browser mock store. Host wiring belongs in src/routes/(app)/+layout.svelte.',
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Type-aware lint for Electron main-process + preload code. An unawaited
   // promise inside a try/catch silently succeeds: the Electron 42→44 bump made
   // `clipboard.writeText()` async and the WRITE_CLIPBOARD handler kept
