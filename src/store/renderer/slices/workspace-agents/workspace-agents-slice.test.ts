@@ -638,6 +638,12 @@ describe('workspace-agents selectors', () => {
       metadata: { createdByAgentId: 'agent-primary' } as AgentSession['metadata'],
       messages: [{ id: 'delegated', role: 'user', timestamp: '2026-03-19T03:00:00.000Z' }],
     } as AgentSession;
+    const wireDelegated = {
+      ...mockAgent('agent-wire-delegated'),
+      parentAgentId: 'agent-primary' as AgentSession['parentAgentId'],
+      isBackground: false,
+      messages: [{ id: 'wire-delegated', role: 'user', timestamp: '2026-03-19T06:00:00.000Z' }],
+    } as AgentSession;
     const child = {
       ...mockAgent('agent-child'),
       parentSessionId: 'agent-primary' as AgentSession['parentSessionId'],
@@ -645,7 +651,10 @@ describe('workspace-agents selectors', () => {
     } as AgentSession;
 
     expect(
-      resolveEmptyLayoutAgent([background, metadataBackground, delegated, child, primary], WS_1),
+      resolveEmptyLayoutAgent(
+        [background, metadataBackground, delegated, wireDelegated, child, primary],
+        WS_1,
+      ),
     ).toBe(primary);
   });
 

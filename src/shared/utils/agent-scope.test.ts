@@ -14,7 +14,10 @@ import {
 const PARENT = 'agent-11111111-1111-4111-8111-111111111111';
 const LEGACY_PARENT = 'agent-22222222-2222-4222-8222-222222222222';
 
-type Row = Pick<AgentSession, 'parentAgentId' | 'isBackground' | 'metadata' | 'parentSessionId'>;
+type Row = Pick<
+  AgentSession,
+  'parentAgentId' | 'isBackground' | 'metadata' | 'agentMetadata' | 'parentSessionId'
+>;
 
 const row = (fields: Partial<Row> = {}): Row => ({ ...fields }) as Row;
 const meta = (fields: Record<string, unknown>) => fields as AgentSession['metadata'];
@@ -58,6 +61,16 @@ describe('classifyAgentScope (§5.5 row-scope partition)', () => {
       bin: 'delegated',
     },
     {
+      name: 'legacy createdByAgentId under the alternative agentMetadata location',
+      agent: row({ agentMetadata: meta({ createdByAgentId: LEGACY_PARENT }) }),
+      bin: 'delegated',
+    },
+    {
+      name: 'no parent, agentMetadata.isBackground: true',
+      agent: row({ agentMetadata: meta({ isBackground: true }) }),
+      bin: 'background',
+    },
+    {
       name: 'fork-only row (parentSessionId, no parent agent), not background',
       agent: row({ parentSessionId: PARENT }),
       bin: 'topLevel',
@@ -96,6 +109,9 @@ describe('agentDelegationParentOf (§5.5 delegatedCounts byParent key)', () => {
     ).toBe(PARENT);
     expect(
       agentDelegationParentOf(row({ metadata: meta({ createdByAgentId: LEGACY_PARENT }) })),
+    ).toBe(LEGACY_PARENT);
+    expect(
+      agentDelegationParentOf(row({ agentMetadata: meta({ createdByAgentId: LEGACY_PARENT }) })),
     ).toBe(LEGACY_PARENT);
   });
 
