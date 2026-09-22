@@ -172,7 +172,8 @@ describe('editorial conversation presentation contract', () => {
     expect(message).toContain(': USER_MESSAGE_SURFACE_CLASS}');
     expect(message).not.toContain('rounded-lg border border-border/60 bg-accent/40');
     expect(message).toContain(': USER_MESSAGE_TEXT_CLASS}');
-    expect(message).toContain('<div class="type-body text-pretty text-foreground">');
+    // Message body/action containment is measured by message-action-dates.ct.spec.ts,
+    // rather than coupling this suite to the body's literal class list.
     expect(markdown).toContain('font-size: var(--text-body-size)');
     expect(markdown).toContain('font-weight: var(--text-body-strong-weight)');
   });
@@ -279,14 +280,11 @@ describe('editorial conversation presentation contract', () => {
     expect(avatar).toContain('(onclick ? m.chat_msgAttribution_openAgent_title');
   });
 
-  it('reveals message and suggestion actions for keyboard focus as well as hover', () => {
-    const message = source('src/lib/components/chat/ChatMessage.svelte');
-    const actionSurface = source('src/lib/components/chat/message-action-surface.ts');
+  // Message action hover/focus, clickability and activation are exercised against
+  // production ChatMessage in message-action-dates.ct.spec.ts.
+  it('reveals suggestion actions for keyboard focus as well as hover', () => {
     const suggestions = source('src/lib/components/chat/SuggestedPrompts.svelte');
 
-    expect(actionSurface).toContain('group-focus-within:pointer-events-auto');
-    expect(actionSurface).toContain('group-focus-within:opacity-100');
-    expect(message).toContain('class="absolute right-1 z-10');
     expect(suggestions).toContain('group-focus-within:opacity-100');
     expect(suggestions).toContain('focus-visible:opacity-100');
     expect(suggestions).toContain('icon={faArrowRight}');

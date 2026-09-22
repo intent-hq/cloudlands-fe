@@ -85,6 +85,7 @@ for (const role of ['user', 'assistant'] as const) {
       );
       await action.focus();
       await expect(toolbar).toHaveCSS('opacity', '1');
+      await action.click({ trial: true });
       await testInfo.attach('message-actions', {
         body: await component.screenshot(),
         contentType: 'image/png',
