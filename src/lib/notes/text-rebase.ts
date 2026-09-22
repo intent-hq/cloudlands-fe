@@ -145,7 +145,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
   const out: Hunk[] = [];
   if (from === markdown) return out;
   const deadline = performance.now() + ALIGNMENT_BUDGET_MS;
-  const { text: to, unanchorable, splits } = maskHidden(markdown);
+  const { text: to, unanchorable, spelled, splits } = maskHidden(markdown);
   let fromPos = 0;
   let toPos = 0;
   let cursor = 0;
@@ -211,7 +211,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
     }
     if (at !== -1) {
       const length = commonRun(from, anchor, to, at);
-      refine(out, from, to, fromPos, anchor, toPos, at, deadline, unanchorable);
+      refine(out, from, to, fromPos, anchor, toPos, at, deadline, unanchorable, spelled);
       fromPos = anchor + length;
       toPos = at + length;
       cursor = fromPos;
@@ -247,7 +247,7 @@ function anchoredHunks(from: string, markdown: string): Hunk[] {
       cursor = pieces && !declined ? cursor + tokenLength(from, cursor) : lineEnd + 1;
     }
   }
-  refine(out, from, to, fromPos, from.length, toPos, to.length, deadline, unanchorable);
+  refine(out, from, to, fromPos, from.length, toPos, to.length, deadline, unanchorable, spelled);
   return out;
 }
 
@@ -754,13 +754,15 @@ let hiddenTextLexer: ReturnType<typeof createTiptapTaskListMarked> | undefined;
 /**
  * The markdown as the alignment reads it: `text` with the hidden runs masked,
  * `unanchorable` the sorted, flattened `[start, end)` ranges of the lines
- * of `text` that no anchor may land on, and `splits` the sorted offsets of
- * the images (`![`), each of which the editor may split a plain-text line at
- * (see `LineWalk`).
+ * of `text` that no anchor may land on, `spelled` the sorted offsets of the
+ * `<` and `>` the renderer shows as `&lt;` and `&gt;` spelled out
+ * (`spelledAngles`), and `splits` the sorted offsets of the images (`![`),
+ * each of which the editor may split a plain-text line at (see `LineWalk`).
  */
 interface Mask {
   text: string;
   unanchorable: number[];
+  spelled: number[];
   splits: number[];
 }
 
@@ -822,8 +824,11 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * The lexer is the renderer's own, configured as the renderer configures it,
  * and reads the source as the renderer hands it over: with the tags it
  * escapes gone (`shadowEscapedTags`), so `![alt](<not valid>)` is text to
- * both where marked alone reads an image. It reads the source with its line
- * endings rewritten to `\n`
+ * both where marked alone reads an image; a source whose escaping cannot be
+ * shadowed is handed to marked in no form — the lexer does not run, and the
+ * scan masks no image and no definition (a wrong shadow could hide text the
+ * renderer shows; a missing one only seals a line). It reads the source with
+ * its line endings rewritten to `\n`
  * (`LINE_ENDING`), so a range it hides is found in that text and carried
  * back to the source by the count of `\r\n` pairs shortened before it
  * (`sourceShifts`); a hidden run never holds a line break, so one count
@@ -853,6 +858,7 @@ function maskHidden(markdown: string): Mask {
   const mask = {
     text,
     unanchorable: unanchorableLines(text, lexed === undefined),
+    spelled: shadow === undefined || shadow === markdown ? [] : spelledAngles(markdown, shadow),
     splits,
   };
   lastMask = { markdown, mask };
@@ -863,23 +869,29 @@ function maskHidden(markdown: string): Mask {
 const ESCAPED_ANGLE = '\uFFFD';
 /** The `<` of a tag the renderer may escape: `<`, an optional `/`, blanks and a letter. */
 const TAG_OPEN = /<\/?\s*[a-zA-Z]/;
+/** A blank the renderer's escaping drops: any `\s`, as its tag pattern reads them. */
+const DROPPED_BLANK = /\s/;
 
 /**
  * `markdown` as marked reads it once the renderer has escaped the tags it
  * shows as written (`escapeHtmlTags`: `<b>` becomes `&lt;b&gt;`, while a
  * comment, `<br>`, `<sub>`, `<sup>` and the tags of a code span, a fence or
  * a formula stay), code unit for code unit: each `<` and `>` escaped is
- * `ESCAPED_ANGLE` instead, so the shadow keeps every offset of the source
- * and what marked makes of it is what the renderer shows — `![alt](<a b>)`
- * an image to marked, text to the renderer and on the shadow. The escaping
- * is quadratic in the tags left open after the last `>` of the note, which
- * close nothing, so it runs up to that `>` and the rest is kept as written;
- * a code span or fence the cut splits is protected by the renderer and not
- * here, which differs only inside code, where nothing is masked. `markdown`
- * itself when it holds no tag, or when the escaping did more than replace
- * `<` and `>`.
+ * `ESCAPED_ANGLE` instead, and so is each blank the escaping drops between
+ * a `<` and its tag name (`< span>` reaches marked as `&lt;span&gt;`, and
+ * `![alt](< a>)` as the image `![alt](&lt;a&gt;)` — blanks, a line break
+ * among them, that are on the shadow no blank either), so the shadow keeps
+ * every offset of the source and what marked makes of it is what the
+ * renderer shows — `![alt](<a b>)` an image to marked, text to the renderer
+ * and on the shadow. The escaping is quadratic in the tags left open after
+ * the last `>` of the note, which close nothing, so it runs up to that `>`
+ * and the rest is kept as written; a code span or fence the cut splits is
+ * protected by the renderer and not here, which differs only inside code,
+ * where nothing is masked. `markdown` itself when it holds no tag;
+ * `undefined` when the escaping did more than that, which no shadow
+ * reflects — the source is then handed to marked in no form (`maskHidden`).
  */
-function shadowEscapedTags(markdown: string): string {
+function shadowEscapedTags(markdown: string): string | undefined {
   if (!TAG_OPEN.test(markdown)) return markdown;
   const cut = markdown.lastIndexOf('>') + 1;
   const escaped = escapeHtmlTags(markdown.slice(0, cut));
@@ -894,23 +906,49 @@ function shadowEscapedTags(markdown: string): string {
     }
     if (code === 60 && escaped.startsWith('&lt;', j)) j += 4;
     else if (code === 62 && escaped.startsWith('&gt;', j)) j += 4;
-    else return markdown;
+    else if (!DROPPED_BLANK.test(markdown[i])) return undefined;
     out += markdown.slice(pos, i) + ESCAPED_ANGLE;
     pos = i + 1;
   }
-  if (j !== escaped.length) return markdown;
+  if (j !== escaped.length) return undefined;
   return out + markdown.slice(pos);
+}
+
+/**
+ * The sorted offsets of the `<` and `>` of `markdown` the renderer shows
+ * spelled out, as `&lt;` and `&gt;`: those it escapes (`ESCAPED_ANGLE` on
+ * `shadow`, where `markdown` has the angle bracket) right after a
+ * backslash — the escaping leaves the backslash before the `&`, and marked
+ * reads `\&lt;` as an escaped `&` followed by `lt;`; a backslash itself
+ * escaped (`\\<b>`) escapes nothing. The letters of the spelling are on the
+ * plain-text line and on no source line, so a source line is paired by its
+ * letters with them (`textLines`).
+ */
+function spelledAngles(markdown: string, shadow: string): number[] {
+  const spelled: number[] = [];
+  for (
+    let at = shadow.indexOf(ESCAPED_ANGLE);
+    at !== -1;
+    at = shadow.indexOf(ESCAPED_ANGLE, at + 1)
+  ) {
+    const code = markdown.charCodeAt(at);
+    if (code !== 60 && code !== 62) continue;
+    let backslashes = 0;
+    while (markdown.charCodeAt(at - 1 - backslashes) === 92) backslashes += 1;
+    if (backslashes % 2 === 1) spelled.push(at);
+  }
+  return spelled;
 }
 
 /**
  * `markdown` masked, or `undefined` when its hidden text could not be
  * accounted for. `shadow` is `markdown` as the renderer hands it to marked
  * (`shadowEscapedTags`): the lexer reads it, and every range it hides is an
- * offset range of `markdown` too.
+ * offset range of `markdown` too; without one the lexer does not run.
  */
-function computeHiddenMask(markdown: string, shadow: string): string | undefined {
+function computeHiddenMask(markdown: string, shadow: string | undefined): string | undefined {
   if (isHtmlNote(markdown)) return maskHtmlTags(markdown);
-  if (markdown.length > MAX_LEXED_LENGTH) return undefined;
+  if (shadow === undefined || markdown.length > MAX_LEXED_LENGTH) return undefined;
   HIDDEN_HTML.lastIndex = 0;
   if (!HIDEABLE.test(markdown) && !HIDDEN_HTML.test(markdown) && !markdown.includes('`')) {
     return markdown;
@@ -1125,7 +1163,9 @@ const CARRIAGE_RETURN = /\r/g;
  * (`shadowEscapedTags`), each `\r` a blank as the lexer drops it from a
  * `\r\n` — and lets the renderer's own tokenizer decide what an image or a
  * definition is, on the text the scan bounds for it; both keep every offset
- * of `source`, and the mask is laid on `source`.
+ * of `source`, and the mask is laid on `source`. Without a shadow the scan
+ * reads `source` and masks no image and no definition: what either is
+ * depends on the escaping, and text the renderer shows must stay visible.
  *
  * What the renderer shows as written is not hidden, and the scan passes over
  * it as the lexer would: a fenced code block (a fence of three or more
@@ -1153,9 +1193,10 @@ const CARRIAGE_RETURN = /\r/g;
  * candidate that is none reaches continue its paragraph, where no other is
  * tried, so no text is read twice.
  */
-function maskHiddenBlocks(source: string, shadow: string): string {
-  const markdown = shadow.includes('\r') ? shadow.replace(CARRIAGE_RETURN, ' ') : shadow;
-  const tokenizer = scanTokenizer();
+function maskHiddenBlocks(source: string, shadow: string | undefined): string {
+  const text = shadow ?? source;
+  const markdown = text.includes('\r') ? text.replace(CARRIAGE_RETURN, ' ') : text;
+  const tokenizer = shadow === undefined ? undefined : scanTokenizer();
   /** The `[start, end)` ranges to mask, flattened, in order. */
   const masked: number[] = [];
   /** The reference images, in order, each masked at the end when `labels` holds its label. */
@@ -1853,7 +1894,8 @@ function hide(
 /**
  * Append the replaced spans of `from[fromStart, fromEnd)` → `to[toStart, toEnd)`
  * to `out`. A region that meets an `unanchorable` line of `to` is diffed
- * line by line (`refineByLine`); any other region is diffed whole
+ * line by line (`refineByLine`, which pairs the lines by their letters,
+ * `spelled` angle brackets included); any other region is diffed whole
  * (`diffRegion`).
  */
 function refine(
@@ -1866,11 +1908,35 @@ function refine(
   toEnd: number,
   deadline: number,
   unanchorable: number[],
+  spelled: number[],
 ): void {
   if (overlaps(unanchorable, toStart, toEnd)) {
-    refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
+    refineByLine(
+      out,
+      from,
+      to,
+      fromStart,
+      fromEnd,
+      toStart,
+      toEnd,
+      deadline,
+      unanchorable,
+      spelled,
+    );
   } else {
-    diffRegion(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable, true);
+    diffRegion(
+      out,
+      from,
+      to,
+      fromStart,
+      fromEnd,
+      toStart,
+      toEnd,
+      deadline,
+      unanchorable,
+      spelled,
+      true,
+    );
   }
 }
 
@@ -1903,6 +1969,7 @@ function diffRegion(
   toEnd: number,
   deadline: number,
   unanchorable: number[],
+  spelled: number[],
   split: boolean,
 ): void {
   let prefix = 0;
@@ -1938,7 +2005,18 @@ function diffRegion(
   // gap of that pairing is emitted as is.
   const abandon = () => {
     if (split) {
-      refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
+      refineByLine(
+        out,
+        from,
+        to,
+        fromStart,
+        fromEnd,
+        toStart,
+        toEnd,
+        deadline,
+        unanchorable,
+        spelled,
+      );
     } else {
       out.push(whole);
     }
@@ -1962,7 +2040,18 @@ function diffRegion(
   // Nothing inside a long region anchored, so the region is not diffed whole
   // but split; a pair or a gap of the split is diffed however long.
   if (split && (fromEnd - fromStart > MAX_REFINE_LENGTH || toEnd - toStart > MAX_REFINE_LENGTH)) {
-    refineByLine(out, from, to, fromStart, fromEnd, toStart, toEnd, deadline, unanchorable);
+    refineByLine(
+      out,
+      from,
+      to,
+      fromStart,
+      fromEnd,
+      toStart,
+      toEnd,
+      deadline,
+      unanchorable,
+      spelled,
+    );
     return;
   }
   const words = withinBudget(deadline, (timeout) =>
@@ -2054,9 +2143,10 @@ function refineByLine(
   toEnd: number,
   deadline: number,
   unanchorable: number[],
+  spelled: number[],
 ): void {
   const fragments = textLines(from, fromStart, fromEnd, true);
-  const lines = textLines(to, toStart, toEnd, false, unanchorable).filter((line) =>
+  const lines = textLines(to, toStart, toEnd, false, unanchorable, spelled).filter((line) =>
     isTextLine(to, line.start, line.end),
   );
   let tokenizer: Tokenizer | undefined | null = null;
@@ -2065,7 +2155,7 @@ function refineByLine(
   const gap = (fromA: number, fromB: number, toA: number, toB: number) => {
     if (fromA === fromB && toA === toB) return;
     if (!overlaps(unanchorable, toA, toB)) {
-      diffRegion(out, from, to, fromA, fromB, toA, toB, deadline, unanchorable, false);
+      diffRegion(out, from, to, fromA, fromB, toA, toB, deadline, unanchorable, spelled, false);
       return;
     }
     const lastEnd = lastOverlapEnd(unanchorable, toA, toB);
@@ -2096,7 +2186,19 @@ function refineByLine(
     const fromA = fragments[first].start;
     const fromB = fragments[last].end;
     gap(fromPos, fromA, toPos, line.start);
-    diffRegion(out, from, to, fromA, fromB, line.start, line.end, deadline, unanchorable, false);
+    diffRegion(
+      out,
+      from,
+      to,
+      fromA,
+      fromB,
+      line.start,
+      line.end,
+      deadline,
+      unanchorable,
+      spelled,
+      false,
+    );
     fromPos = fromB;
     toPos = line.end;
   }
@@ -2265,7 +2367,10 @@ function linkAt(tokenizer: Tokenizer, text: string): { length: number; text: str
 
 /**
  * The lines of `text[start, end)` that are not blank, without their breaks:
- * `\n`, and with `hardBreaks` U+FFFC too.
+ * `\n`, and with `hardBreaks` U+FFFC too. A markdown line is keyed by the
+ * letters of the text it shows as far as the renderer spells one of its
+ * characters out (`spelled`: `\<` is shown as `&lt;`), so that its
+ * plain-text line's letters are a subsequence of its own.
  */
 function textLines(
   text: string,
@@ -2273,9 +2378,11 @@ function textLines(
   end: number,
   hardBreaks: boolean,
   unanchorable: number[] = [],
+  spelled: number[] = [],
 ): TextLine[] {
   const lines: TextLine[] = [];
   let pos = start;
+  let next = spelled.length === 0 ? 0 : lowerBound(spelled, start);
   while (pos < end) {
     let lineEnd = text.indexOf('\n', pos);
     if (lineEnd === -1 || lineEnd > end) lineEnd = end;
@@ -2283,8 +2390,23 @@ function textLines(
       const hardBreak = text.indexOf('\uFFFC', pos);
       if (hardBreak !== -1 && hardBreak < lineEnd) lineEnd = hardBreak;
     }
+    while (next < spelled.length && spelled[next] < pos) next += 1;
     if (lineEnd > pos) {
-      const letters = lineLetters(text.slice(pos, lineEnd));
+      let line = text.slice(pos, lineEnd);
+      if (next < spelled.length && spelled[next] < lineEnd) {
+        let out = '';
+        let from = pos;
+        for (; next < spelled.length && spelled[next] < lineEnd; next += 1) {
+          const at = spelled[next];
+          const code = text.charCodeAt(at);
+          // A spelled angle bracket inside a hidden run is masked, and shown as nothing.
+          if (code !== 60 && code !== 62) continue;
+          out += text.slice(from, at) + (code === 60 ? '&lt;' : '&gt;');
+          from = at + 1;
+        }
+        line = out + text.slice(from, lineEnd);
+      }
+      const letters = lineLetters(line);
       if (letters !== '') {
         lines.push({
           start: pos,

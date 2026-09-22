@@ -2682,8 +2682,50 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // masked whole, and the items after it pair with their own lines.
     // (Masked by its shape alone, the visible text left its own line in
     // both directions: forward to the line break before it, back to the
-    // next line's start.)
-    const IMAGE_SHAPED_TEXT: Array<[string, string, string, 'before' | 'after' | 'end']> = [
+    // next line's start.) The renderer escapes a tag before it lexes and
+    // drops the blanks after its `<`, so the text it shows may differ from
+    // the source (`shown`, the body otherwise): `< not valid>` is shown as
+    // `<not valid>`, a tag holding a blank anywhere in the note changes
+    // nothing about the image, and `\<` is shown as `&lt;` spelled out.
+    type ImageShape = [string, string, string, 'before' | 'after' | 'end', string?];
+    const RENDERER_REWRITTEN: ImageShape[] = [
+      [
+        'a destination in angle brackets after a blank',
+        '![visible tk87z](< not valid>)',
+        '',
+        'after',
+        '![visible tk87z](<not valid>)',
+      ],
+      [
+        'a destination in angle brackets after a tab',
+        '![visible tk87z](<\tnot valid>)',
+        '',
+        'after',
+        '![visible tk87z](<not valid>)',
+      ],
+      [
+        'a destination in angle brackets holding a blank, a tag holding a blank before it',
+        '< span>before</span>\n\n![visible tk87z](<not valid>)',
+        '',
+        'after',
+        '![visible tk87z](<not valid>)',
+      ],
+      [
+        'a destination in angle brackets holding a blank, a tag holding a blank after it',
+        '![visible tk87z](<not valid>)',
+        '< span>after</span>',
+        'after',
+      ],
+      [
+        'a destination in escaped angle brackets',
+        '![visible tk87z](\\<not valid\\>)',
+        '',
+        'after',
+        '![visible tk87z](&lt;not valid&gt;)',
+      ],
+    ];
+    const IMAGE_SHAPED_TEXT: ImageShape[] = [
+      ...RENDERER_REWRITTEN,
       ['a reference no definition resolves', '![visible tk87z][missing]', '', 'after'],
       ['a collapsed reference no definition resolves', '![visible tk87z][]', '', 'after'],
       ['a shortcut reference no definition resolves', '![visible tk87z]', '', 'after'],
@@ -2778,8 +2820,12 @@ describe('alignment of link syntax the lexer does not account for', () => {
       definition: string,
       where: 'before' | 'after' | 'end',
       pastTheCap = true,
+      eol = '\n',
     ) =>
-      `${pastTheCap ? `${'q'.repeat(129 * 1024)}\n\n` : ''}${where === 'before' && definition ? `${definition}\n\n` : ''}edit one\n\n${body}\n\n${where === 'after' && definition ? `${definition}\n\n` : ''}- same item\n- same item\n\n[ab](https://sync/ab)\n\n**cd** two${where === 'end' && definition ? `\n\n${definition}` : ''}`;
+      `${pastTheCap ? `${'q'.repeat(129 * 1024)}\n\n` : ''}${where === 'before' && definition ? `${definition}\n\n` : ''}edit one\n\n${body}\n\n${where === 'after' && definition ? `${definition}\n\n` : ''}- same item\n- same item\n\n[ab](https://sync/ab)\n\n**cd** two${where === 'end' && definition ? `\n\n${definition}` : ''}`.replace(
+        /\n/g,
+        eol,
+      );
     // Below the cap the lexer decides what is an image; past it the scan
     // does. Both must answer as the renderer does — which escapes the `<`
     // and `>` of a tag before it lexes, so `![alt](<not valid>)` is text to
@@ -2788,25 +2834,33 @@ describe('alignment of link syntax the lexer does not account for', () => {
       ['past the cap', true],
       ['below the cap', false],
     ];
-    const IMAGE_SHAPED_CELLS = IMAGE_SHAPED_TEXT.flatMap(([shape, body, definition, where]) =>
-      CAPS.flatMap(([cap, pastTheCap]) =>
-        PROJECTIONS.flatMap(([projection, production]) =>
-          CLOCKS.map(
-            ([when, clock]): [
-              string,
-              string,
-              string,
-              string,
-              string,
-              string,
-              'before' | 'after' | 'end',
-              boolean,
-              boolean | 'comments',
-              Clock,
-              boolean,
-            ] => [
+    type ImageShapedCell = [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      'before' | 'after' | 'end',
+      boolean,
+      boolean | 'comments',
+      Clock,
+      boolean,
+      string,
+      string,
+    ];
+    const imageShapedCells = (
+      shapes: ImageShape[],
+      eol: string,
+      ending: string,
+      clocks: Array<[string, Clock]> = CLOCKS,
+    ) =>
+      shapes.flatMap(([shape, body, definition, where, shown]) =>
+        CAPS.flatMap(([cap, pastTheCap]) =>
+          PROJECTIONS.flatMap(([projection, production]) =>
+            clocks.map(([when, clock]): ImageShapedCell => [
               shape,
-              cap,
+              `${cap}${ending}`,
               projection,
               when,
               body,
@@ -2816,11 +2870,25 @@ describe('alignment of link syntax the lexer does not account for', () => {
               production,
               clock,
               when === 'within the budget',
-            ],
+              shown ?? body,
+              eol,
+            ]),
           ),
         ),
+      );
+    // Past the deadline, the repeated items of a CRLF note map to the break
+    // after their line whatever the paragraph before them holds (plain text
+    // included) — a limit the image shapes do not reach; that clock is
+    // covered by the LF cells.
+    const IMAGE_SHAPED_CELLS = [
+      ...imageShapedCells(IMAGE_SHAPED_TEXT, '\n', ''),
+      ...imageShapedCells(
+        RENDERER_REWRITTEN,
+        '\r\n',
+        ' with CRLF line endings',
+        CLOCKS.filter(([when]) => when === 'within the budget'),
       ),
-    );
+    ];
 
     it.each(IMAGE_SHAPED_CELLS)(
       'shows %s as written %s, projected by %s %s',
@@ -2836,11 +2904,13 @@ describe('alignment of link syntax the lexer does not account for', () => {
         production,
         clock,
         exact,
+        shown,
+        eol,
       ) => {
-        const markdown = imageShapedNote(body, definition, where, pastTheCap);
+        const markdown = imageShapedNote(body, definition, where, pastTheCap, eol);
         const plain = await projectWithEditor(markdown, production);
         // The editor shows a form feed as a blank.
-        expect(plain).toContain(body.replace(/\f/g, ' '));
+        expect(plain).toContain(shown.replace(/\f/g, ' '));
         const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
         if (pastTheCap) expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
         expectSameLine(plain, markdown, map, 'edit one', 'edit one');
