@@ -2040,17 +2040,22 @@ describe('alignment of link syntax the lexer does not account for', () => {
 
     // Hidden text that spans lines among 600 link lines past the cap: a
     // comment whose body is on lines of its own, a reference definition whose
-    // title is, a comment no `-->` closes. Past the cap the lexer does not
-    // read the note; the scan that masks its comments and definitions masks
-    // them line by line, line breaks kept, so none of their lines is a
-    // candidate for a pair, under any clock. (Read one line at a time, a
-    // comment's `<!--` and body lines and a definition's title lines were
-    // text lines with no plain-text line of their own: as candidates, more
-    // of them than the pairing looks ahead put every link line after them
-    // off its own plain-text line — 600 of 600 lines wrong, within the
-    // budget and past the deadline alike; a body within the lookahead was
-    // skipped, and a comment at the end swallowed nothing.)
+    // title is, a comment no `-->` closes, a comment after a fence no fence
+    // closes that the quote or item holding it ends. Past the cap the lexer
+    // does not read the note; the scan that masks its comments and
+    // definitions masks them line by line, line breaks kept, so none of
+    // their lines is a candidate for a pair, under any clock. (Read one line
+    // at a time, a comment's `<!--` and body lines and a definition's title
+    // lines were text lines with no plain-text line of their own: as
+    // candidates, more of them than the pairing looks ahead put every link
+    // line after them off its own plain-text line — 600 of 600 lines wrong,
+    // within the budget and past the deadline alike; a body within the
+    // lookahead was skipped, and a comment at the end swallowed nothing. A
+    // fence in a quote or an item ran to the end of the note, and the
+    // comment after the container was shown, its lines candidates again.)
     const XY = '[xy](https://ab/xy)';
+    const FENCE = '```';
+    const TILDES = '~~~';
     const links = (count: number) => Array.from({ length: count }, () => XY).join('\n');
     const comment = (body: number) =>
       `<!--\n${Array.from({ length: body }, (_, k) => `sync ${k}`).join('\n')}\n-->`;
@@ -2079,6 +2084,30 @@ describe('alignment of link syntax the lexer does not account for', () => {
       [
         'a comment never closed at the end',
         `${links(600)}\n\n**ab**\n\n<!--\n${Array.from({ length: 9 }, (_, k) => `sync ${k}`).join('\n')}\nnever closed`,
+      ],
+      [
+        'a comment after a tilde fence a quote ends',
+        `${XY}\n\n> ${TILDES}html\n> visible body\n\n${comment(9)}\n${links(599)}\n\n**ab**`,
+      ],
+      [
+        'a comment after a fence a quote ends',
+        `${XY}\n\n> ${FENCE}html\n> visible body\n\n${comment(9)}\n${links(599)}\n\n**ab**`,
+      ],
+      [
+        'a comment after a fence a quote ends at a lazy line',
+        `${XY}\n\n> ${TILDES}html\n> visible body\nlazy line\n${comment(9)}\n${links(599)}\n\n**ab**`,
+      ],
+      [
+        'a comment after a tilde fence an item ends',
+        `${XY}\n\n- ${TILDES}html\n  visible body\n\n${comment(9)}\n${links(599)}\n\n**ab**`,
+      ],
+      [
+        'a comment after a fence an item ends',
+        `${XY}\n\n- ${FENCE}html\n  visible body\n\n${comment(9)}\n${links(599)}\n\n**ab**`,
+      ],
+      [
+        'a comment after a fence the next item ends',
+        `${XY}\n\n- ${TILDES}html\n  visible body\n- next item\n\n${comment(9)}\n${links(599)}\n\n**ab**`,
       ],
     ];
     const HIDDEN_BLOCK_CELLS = HIDDEN_BLOCKS.flatMap(([kind, note]) =>
@@ -2181,8 +2210,6 @@ describe('alignment of link syntax the lexer does not account for', () => {
     // masked the rest of the note, the link line with it. Shown, a whole-line
     // comment in a fence and a definition-shaped line after a paragraph were
     // still no text lines, so every line after them paired one line short.)
-    const FENCE = '```';
-    const TILDES = '~~~';
     const VISIBLE_BLOCKS: Array<[string, string]> = [
       ['a comment in an indented code block', '    <!-- visible body -->'],
       ['a comment no `-->` closes in an indented code block', '    <!-- visible body'],

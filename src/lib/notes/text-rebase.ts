@@ -905,7 +905,8 @@ const NOT_BREAK = /[^\n\r]/g;
  * quote and item markers of the line (`fenceIndent`), a backtick fence's
  * info string holding no backtick; closed by a line of the same character
  * alone, at least as long, indented at most three more columns than the
- * fence was past its markers, or running to the end of the note), an
+ * fence was past its markers, or running to the end of the quote or item
+ * that holds it (`containerEnd`) or of the note), an
  * indented code block (lines of four columns of blanks or more, from the
  * line after a blank one or the note's first to the next line of fewer that
  * is not blank; `indentedCodeEnd`), a code span (a run of backticks closed
@@ -997,7 +998,8 @@ function maskHiddenBlocks(markdown: string): string {
         (fenceChar === 126 || length >= 3) &&
         (fenceChar === 126 || !markdown.slice(end, lineEnd).includes('`'));
       if (isFence) {
-        const offset = columnsPastQuote(markdown, lineStart, at) - indent;
+        const columns = columnsPastQuote(markdown, lineStart, at);
+        const offset = columns - indent;
         let close = nextFenceClose(lineEnd + 1);
         while (close !== -1) {
           let closeRun = close;
@@ -1014,6 +1016,11 @@ function maskHiddenBlocks(markdown: string): string {
           close = nextFenceClose(close + 1);
         }
         end = close === -1 ? markdown.length : lineEndAt(close);
+        const quotes = quotesOf(markdown, lineStart, at);
+        if (quotes > 0 || offset > 0) {
+          const exit = containerEnd(markdown, lineEnd + 1, end, quotes, offset > 0 ? columns : -1);
+          if (exit !== -1) end = exit;
+        }
         blockEnd = end;
       } else if (fenceChar === 96) {
         const close = nextSpanClose(found)(end);
@@ -1117,6 +1124,79 @@ function fenceIndent(text: string, lineStart: number, at: number): number {
     } else return -1;
   }
   return columns;
+}
+
+/** The `>` of `text` between `from` and `to`. */
+function quotesOf(text: string, from: number, to: number): number {
+  let quotes = 0;
+  for (let at = from; at < to; at += 1) if (text.charCodeAt(at) === 62) quotes += 1;
+  return quotes;
+}
+
+/**
+ * What ends an item at a line of few blanks, as the renderer's list rule has
+ * it: a bullet, a fence, a `#`, an HTML tag or comment, a `>` or a thematic
+ * break.
+ */
+const ITEM_INTERRUPT =
+  /(?:[*+-]|\d{1,9}[.)])(?:[ \t]|$)|`{3}|~{3}|#|<(?:[a-z].*>|!--)|>|(?:(?:- *){3,}|(?:_ *){3,}|(?:\* *){3,})$/imy;
+/** A line of an item's content that a less indented line ends the item after: a fence, a `#` or a thematic break. */
+const CONTENT_BLOCK = /`{3}|~{3}|#|(?:(?:- *){3,}|(?:_ *){3,}|(?:\* *){3,})$/my;
+
+/**
+ * The start of the first line of `text` from `from` — before `until` — that
+ * ends the quote and item a fence opened in, `quotes` quote markers deep,
+ * the item's content at column `itemIndent` (`-1` in no item); `-1` when
+ * none does. The renderer ends a fence none closes with its container, and
+ * reads the note on past it as written: a quote ends at a line with fewer
+ * `>` than the fence's; an item at a line of fewer columns than its content
+ * that a blank line, an indented code line, a fence, a `#` or a thematic
+ * break precedes, or that opens a block of its own within three blanks
+ * (`ITEM_INTERRUPT`) — any other continues the item lazily.
+ */
+function containerEnd(
+  text: string,
+  from: number,
+  until: number,
+  quotes: number,
+  itemIndent: number,
+): number {
+  let blankBefore = false;
+  let codeBefore = true;
+  for (let start = from; start < until;) {
+    let at = start;
+    for (let q = 0; q < quotes; q += 1) {
+      const blanks = at;
+      while (at - blanks < 3 && text.charCodeAt(at) === 32) at += 1;
+      if (text.charCodeAt(at) !== 62) return start;
+      at += 1;
+      if (text.charCodeAt(at) === 32) at += 1;
+    }
+    if (itemIndent !== -1) {
+      if (isBlankLine(text, at)) {
+        blankBefore = true;
+        codeBefore = false;
+      } else {
+        const indent = indentOf(text, at);
+        let content = at;
+        while (isBlank(text.charCodeAt(content))) content += 1;
+        if (indent <= Math.min(3, itemIndent - 1)) {
+          ITEM_INTERRUPT.lastIndex = content;
+          if (ITEM_INTERRUPT.test(text)) return start;
+        }
+        if (indent < itemIndent) {
+          if (blankBefore || codeBefore) return start;
+          codeBefore = false;
+        } else {
+          CONTENT_BLOCK.lastIndex = content;
+          codeBefore = indent - itemIndent >= 4 || CONTENT_BLOCK.test(text);
+        }
+      }
+    }
+    const lineEnd = text.indexOf('\n', start);
+    start = lineEnd === -1 ? text.length : lineEnd + 1;
+  }
+  return -1;
 }
 
 /** The columns from the last `>` of `text` between `from` and `to` — or `from` — to `to`. */
