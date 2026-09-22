@@ -584,9 +584,10 @@ const HTML_LINE = /^[ \t]*<(?![ \t\r\n]|!--anchor:)|<!--(?!anchor:)/gm;
  * source on every token): 16k one-link paragraphs of 128 KB lex in ~170 ms,
  * one 128 KB paragraph of 18k links in ~60 ms, and a 1 MB note of dense
  * links takes over half a second with the math tokenizers or without. A
- * longer source is not masked at all — unless the renderer reads it as HTML,
- * whose mask is a linear scan (`maskHtmlTags`), not the lexer; see
- * `maskHidden` for what holds then.
+ * longer source is not lexed: its comments and link definitions are masked
+ * by a linear scan (`maskHiddenBlocks`), as are the tags of a note the
+ * renderer reads as HTML (`maskHtmlTags`); see `maskHidden` for what holds
+ * then.
  */
 const MAX_LEXED_LENGTH = 128 * 1024;
 /** A comment anchor; the editor renders it where `normalizeAnchorPositions` moves it. */
@@ -666,8 +667,9 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  * back to the source by the count of `\r\n` pairs shortened before it
  * (`sourceShifts`); a hidden run never holds a line break, so one count
  * places both of its ends. The lexer runs up to `MAX_LEXED_LENGTH`; a longer
- * source is not lexed and nothing in it is masked (a note the renderer reads
- * as HTML excepted: its tags are found by a scan, whatever its length), so
+ * source is not lexed, and nothing in it is masked but its comments and
+ * link definitions, which a scan places (`maskHiddenBlocks`; a note the
+ * renderer reads as HTML is masked by a scan whatever its length), so
  * every line of it that holds link syntax is unanchorable, and so is a line
  * the renderer may read as HTML (`HTML_LINE`): each reaches the
  * diff alone, bounded by its own line (`refineByLine` pairs the lines of
@@ -681,12 +683,13 @@ let lastMask: { markdown: string; mask: Mask } | undefined;
  */
 function maskHidden(markdown: string): Mask {
   if (lastMask?.markdown === markdown) return lastMask.mask;
-  const text = computeHiddenMask(markdown);
+  const lexed = computeHiddenMask(markdown);
+  const text = lexed ?? maskHiddenBlocks(markdown);
   const splits: number[] = [];
   for (const split of markdown.matchAll(LINE_SPLIT)) splits.push(split.index);
   const mask = {
-    text: text ?? markdown,
-    unanchorable: unanchorableLines(text ?? markdown, text === undefined),
+    text,
+    unanchorable: unanchorableLines(text, lexed === undefined),
     splits,
   };
   lastMask = { markdown, mask };
@@ -851,6 +854,152 @@ function memoisedIndexOf(text: string, needle: string): (at: number) => number {
     }
     return found;
   };
+}
+
+/** `memoisedIndexOf` for a global `pattern`: the index of its next match at or past `at`. */
+function memoisedSearch(text: string, pattern: RegExp): (at: number) => number {
+  let found = -1;
+  let exhausted = false;
+  return (at: number) => {
+    if (exhausted) return -1;
+    if (found < at) {
+      pattern.lastIndex = at;
+      const match = pattern.exec(text);
+      if (match) found = match.index;
+      else exhausted = true;
+    }
+    return exhausted ? -1 : found;
+  };
+}
+
+/** What opens hidden text the scan places: a comment, or a label at a line start. */
+const HIDDEN_BLOCK_OPENER = /<!--|^[ \t]{0,3}\[/gm;
+/** The two breaks of a blank line; no definition title spans one. */
+const BLANK_LINE = /\n[ \t\r]*\n/g;
+/** A code unit that is not a line break. */
+const NOT_BREAK = /[^\n\r]/g;
+
+/**
+ * `markdown` the lexer did not read with the hidden text a scan can place —
+ * a comment (`<!--` … `-->`, or to the end of the note when none closes it;
+ * a comment anchor excepted, as in `HIDDEN_HTML`) and the destination and
+ * title of a link reference definition (`definitionHidden`) — replaced by
+ * U+0000 code unit for code unit, its line breaks kept, as the lexer's mask
+ * is laid (`hide`). A comment's body and a definition's title are the hidden
+ * text that spans lines: left as written, each of their lines reads as a
+ * text line (`isTextLine`) with no plain-text line of its own, and the
+ * pairing of a run of sealed lines counts it as one (`refineByLine`,
+ * `LineWalk`); masked, none is. A link's destination is not masked — its
+ * line is unanchorable instead (`unanchorableLines`). One linear scan: a
+ * `-->` or a closing quote none of lies ahead is not searched for again, and
+ * a title is closed before the next blank line or not at all.
+ */
+function maskHiddenBlocks(markdown: string): string {
+  let out = '';
+  let pos = 0;
+  const nextCommentClose = memoisedIndexOf(markdown, '-->');
+  const nextBlankLine = memoisedSearch(markdown, BLANK_LINE);
+  const titleCloses = new Map<number, (at: number) => number>();
+  const nextTitleClose = (closer: number) => {
+    let next = titleCloses.get(closer);
+    if (!next)
+      titleCloses.set(closer, (next = memoisedIndexOf(markdown, String.fromCharCode(closer))));
+    return next;
+  };
+  const mask = (start: number, end: number) => {
+    out += markdown.slice(pos, start) + markdown.slice(start, end).replace(NOT_BREAK, '\u0000');
+    pos = end;
+  };
+  HIDDEN_BLOCK_OPENER.lastIndex = 0;
+  let opener = HIDDEN_BLOCK_OPENER.exec(markdown);
+  while (opener) {
+    let end = opener.index + opener[0].length;
+    if (opener[0] === '<!--') {
+      if (!markdown.startsWith(COMMENT_ANCHOR, opener.index)) {
+        const close = nextCommentClose(end);
+        end = close === -1 ? markdown.length : close + 3;
+        mask(opener.index, end);
+      }
+    } else {
+      const hidden = definitionHidden(markdown, end - 1, nextTitleClose, nextBlankLine);
+      if (hidden) {
+        mask(hidden[0], hidden[1]);
+        end = hidden[1];
+      }
+    }
+    HIDDEN_BLOCK_OPENER.lastIndex = end;
+    opener = HIDDEN_BLOCK_OPENER.exec(markdown);
+  }
+  return out + markdown.slice(pos);
+}
+
+/**
+ * The `[start, end)` of the text the editor hides of the link reference
+ * definition whose label opens at `bracket`: what follows its `]:` — blanks,
+ * a destination (on the line, or alone on the next), and a title (`"…"`,
+ * `'…'` or `(…)`, on the line or on the next, over line breaks, closed
+ * before the next blank line by a quote no `\` precedes, with blanks alone
+ * after it on its line) — or `undefined` when the line is no definition: a
+ * label not closed on its line, no destination, or text after the
+ * destination on its line that is no title. Text on the next line that is
+ * no title is a paragraph of its own; the definition ends at its
+ * destination.
+ */
+function definitionHidden(
+  text: string,
+  bracket: number,
+  nextTitleClose: (closer: number) => (at: number) => number,
+  nextBlankLine: (at: number) => number,
+): [number, number] | undefined {
+  let label = bracket + 1;
+  while (label < text.length && text.charCodeAt(label) !== 93 && text.charCodeAt(label) !== 10) {
+    label += 1;
+  }
+  if (label === bracket + 1 || text.charCodeAt(label) !== 93 || text.charCodeAt(label + 1) !== 58) {
+    return undefined;
+  }
+  const start = label + 2;
+  const destination = skipBlanks(text, start, true);
+  let destinationEnd = destination;
+  while (destinationEnd < text.length && !isSpace(text.charCodeAt(destinationEnd))) {
+    destinationEnd += 1;
+  }
+  if (destinationEnd === destination) return undefined;
+  const afterDestination = skipBlanks(text, destinationEnd, false);
+  const onLine = afterDestination < text.length && !isBreak(text.charCodeAt(afterDestination));
+  const title = onLine ? afterDestination : skipBlanks(text, destinationEnd, true);
+  const quote = text.charCodeAt(title);
+  const closer = quote === 34 || quote === 39 ? quote : quote === 40 ? 41 : -1;
+  if (closer !== -1) {
+    const nextClose = nextTitleClose(closer);
+    let close = nextClose(title + 1);
+    while (close !== -1 && text.charCodeAt(close - 1) === 92) close = nextClose(close + 1);
+    const blank = nextBlankLine(title);
+    if (close !== -1 && (blank === -1 || close < blank)) {
+      const lineEnd = skipBlanks(text, close + 1, false);
+      if (lineEnd >= text.length || isBreak(text.charCodeAt(lineEnd))) return [start, close + 1];
+    }
+  }
+  return onLine ? undefined : [start, destinationEnd];
+}
+
+/** Past the blanks of `text` from `at` — and, with `oneBreak`, one line break and the blanks after it. */
+function skipBlanks(text: string, at: number, oneBreak: boolean): number {
+  while (at < text.length && isBlank(text.charCodeAt(at))) at += 1;
+  if (!oneBreak || at >= text.length || !isBreak(text.charCodeAt(at))) return at;
+  at += text.charCodeAt(at) === 13 && text.charCodeAt(at + 1) === 10 ? 2 : 1;
+  while (at < text.length && isBlank(text.charCodeAt(at))) at += 1;
+  return at;
+}
+
+/** Whether `code` is a line break's `\n` or `\r`. */
+function isBreak(code: number): boolean {
+  return code === 10 || code === 13;
+}
+
+/** Whether `code` is a blank or a line break. */
+function isSpace(code: number): boolean {
+  return isBlank(code) || isBreak(code);
 }
 
 /**

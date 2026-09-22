@@ -2038,6 +2038,87 @@ describe('alignment of link syntax the lexer does not account for', () => {
       60_000,
     );
 
+    // Hidden text that spans lines among 600 link lines past the cap: a
+    // comment whose body is on lines of its own, a reference definition whose
+    // title is, a comment no `-->` closes. Past the cap the lexer does not
+    // read the note; the scan that masks its comments and definitions masks
+    // them line by line, line breaks kept, so none of their lines is a
+    // candidate for a pair, under any clock. (Read one line at a time, a
+    // comment's `<!--` and body lines and a definition's title lines were
+    // text lines with no plain-text line of their own: as candidates, more
+    // of them than the pairing looks ahead put every link line after them
+    // off its own plain-text line — 600 of 600 lines wrong, within the
+    // budget and past the deadline alike; a body within the lookahead was
+    // skipped, and a comment at the end swallowed nothing.)
+    const XY = '[xy](https://ab/xy)';
+    const links = (count: number) => Array.from({ length: count }, () => XY).join('\n');
+    const comment = (body: number) =>
+      `<!--\n${Array.from({ length: body }, (_, k) => `sync ${k}`).join('\n')}\n-->`;
+    const definition = (lines: number) =>
+      `[id]: https://sync/id\n  "title spanning\n${Array.from({ length: lines - 2 }, (_, k) => `  sync ${k}\n`).join('')}  lines"`;
+    const HIDDEN_BLOCKS: Array<[string, string]> = [
+      ['a comment of one body line', `${XY}\n${comment(1)}\n${links(599)}\n\n**ab**`],
+      ['a comment of nine body lines', `${XY}\n${comment(9)}\n${links(599)}\n\n**ab**`],
+      ['a comment of fifty body lines', `${XY}\n${comment(50)}\n${links(599)}\n\n**ab**`],
+      [
+        'a comment between every two links',
+        `${Array.from({ length: 600 }, () => XY).join(`\n${comment(9)}\n`)}\n\n**ab**`,
+      ],
+      [
+        'a definition with a title over two lines',
+        `${XY}\n\n${definition(2)}\n\n${links(599)}\n\n**ab**`,
+      ],
+      [
+        'a definition with a title over ten lines',
+        `${XY}\n\n${definition(10)}\n\n${links(599)}\n\n**ab**`,
+      ],
+      [
+        'a mix of comments and definitions',
+        `${XY}\n${comment(2)}\n\n${definition(2)}\n\n<!-- sync -->\n${comment(9)}\n${links(299)}\n\n${definition(10)}\n\n${links(300)}\n\n**ab**`,
+      ],
+      [
+        'a comment never closed at the end',
+        `${links(600)}\n\n**ab**\n\n<!--\n${Array.from({ length: 9 }, (_, k) => `sync ${k}`).join('\n')}\nnever closed`,
+      ],
+    ];
+    const HIDDEN_BLOCK_CELLS = HIDDEN_BLOCKS.flatMap(([kind, note]) =>
+      PROJECTIONS.flatMap(([projection, production]) =>
+        [...CLOCKS, ['under the natural clock', (fn) => fn()] as [string, Clock]].map(
+          ([when, clock]): [string, string, string, string, boolean, Clock] => [
+            kind,
+            projection,
+            when,
+            note,
+            production,
+            clock,
+          ],
+        ),
+      ),
+    );
+
+    it.each(HIDDEN_BLOCK_CELLS)(
+      'keeps 600 link lines bounded by their own plain-text lines beside %s, projected by %s %s',
+      async (_kind, _projection, _when, note, production, clock) => {
+        const markdown = `${'q'.repeat(129 * 1024)}\n\n${note}`;
+        const plain = await projectWithEditor(markdown, production);
+        expect(plain).not.toContain('https');
+        expect(plain).not.toContain('sync');
+        expect(plain).not.toContain('title');
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        const plainLines = linesHolding(plain, 'xy', /\n|\uFFFC/g);
+        expect(plainLines).toHaveLength(600);
+        expectLinesBounded(map, plainLines, linesHolding(markdown, '](', /\n/g));
+        expectSameLine(plain, markdown, map, 'ab', '**ab**');
+        const hidden = markdown.indexOf('never closed');
+        if (hidden !== -1) {
+          expect(map.bToA(hidden)).toBeGreaterThanOrEqual(plain.lastIndexOf('ab'));
+          expect(map.bToA(hidden)).toBeLessThanOrEqual(plain.length);
+        }
+      },
+      60_000,
+    );
+
     // A run of lines the editor shows no text of — comments, or reference
     // definitions — before a sealed link line, longer than the greedy pairing
     // looks ahead. Such a line is no candidate for a pair (`isTextLine`), so
