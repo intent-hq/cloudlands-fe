@@ -61,6 +61,55 @@
   let timestampUpdateInterval: number | null = null;
 
   /**
+   * Pointer-driven label placement for the hovered span (intent-hq/intent#5575).
+   * `top` is relative to the span; `shiftX` pushes the right-anchored label
+   * back inside the clipping `#editor-content` panel when the space left of
+   * the gutter is narrower than the label. Reset on pointer leave.
+   */
+  let hoverLabel: { key: string; top: number; shiftX: number } | null = $state(null);
+
+  function spanKey(span: SpanIndicator): string {
+    return span.positions.join(',');
+  }
+
+  function trackPointer(event: PointerEvent, span: SpanIndicator) {
+    const spanEl = event.currentTarget as HTMLElement;
+    const labelEl = spanEl.querySelector<HTMLElement>(':scope > [data-attribution-label]');
+    if (!labelEl) return;
+
+    const spanRect = spanEl.getBoundingClientRect();
+    const labelRect = labelEl.getBoundingClientRect();
+    const clipRect = document.getElementById('editor-content')?.getBoundingClientRect();
+
+    // Vertical: center the label on the pointer, clamped to the span and to
+    // the visible panel (the panel clamp wins when the span is taller than it).
+    let minTop = 0;
+    let maxTop = span.height - labelRect.height;
+    if (clipRect) {
+      minTop = Math.max(minTop, clipRect.top - spanRect.top);
+      maxTop = Math.min(maxTop, clipRect.bottom - labelRect.height - spanRect.top);
+    }
+    const centered = event.clientY - spanRect.top - labelRect.height / 2;
+    const top = maxTop < minTop ? minTop : Math.min(Math.max(centered, minTop), maxTop);
+
+    // Horizontal: the label hangs off the span's right edge; when that would
+    // start it left of the panel edge, shift it right just enough to be visible.
+    let shiftX = 0;
+    if (clipRect) {
+      const unshiftedLeft = spanRect.right - labelRect.width;
+      shiftX = Math.max(0, clipRect.left - unshiftedLeft);
+    }
+
+    hoverLabel = { key: spanKey(span), top, shiftX };
+  }
+
+  function resetPointer(span: SpanIndicator) {
+    if (hoverLabel?.key === spanKey(span)) {
+      hoverLabel = null;
+    }
+  }
+
+  /**
    * Tunable parameter for absolute recency window (in minutes)
    * Edits within this window get a brightness boost
    */
@@ -474,6 +523,7 @@
 <div class="absolute left-0 top-0 w-6 h-full pointer-events-none z-10">
   {#each spans as span (span.positions.join(','))}
     {@const isClickable = span.author?.type === 'agent'}
+    {@const hover = hoverLabel?.key === spanKey(span) ? hoverLabel : null}
     <div
       class="absolute left-0 pointer-events-auto group/span"
       class:cursor-pointer={isClickable}
@@ -483,8 +533,12 @@
       style:height="{span.height}px"
       title={span.tooltip}
       aria-label={span.ariaLabel}
+      data-attribution-span
       onclick={isClickable ? (e) => handleSpanClick(e, span) : undefined}
       onkeydown={isClickable ? (e) => handleSpanKeydown(e, span) : undefined}
+      onpointerenter={(e) => trackPointer(e, span)}
+      onpointermove={(e) => trackPointer(e, span)}
+      onpointerleave={() => resetPointer(span)}
       role={isClickable ? 'button' : undefined}
       tabindex={isClickable ? 0 : undefined}
     >
@@ -495,7 +549,9 @@
       <!-- Avatar and label for spans (shown on hover) -->
       <div
         class="flex flex-row items-center gap-1 leading-none absolute right-0 pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/span:opacity-100 transition-opacity duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
-        style:top="{span.labelTop - span.top}px"
+        style:top="{hover ? hover.top : span.labelTop - span.top}px"
+        style:transform={hover && hover.shiftX > 0 ? `translateX(${hover.shiftX}px)` : undefined}
+        data-attribution-label
       >
         {#if span.author?.type === 'agent'}
           <AgentAvatar variant="standard" agentId={span.author.id} />
