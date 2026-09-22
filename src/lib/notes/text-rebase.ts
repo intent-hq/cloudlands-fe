@@ -311,8 +311,6 @@ class LineWalk {
   letters = '';
   /** The `[start, end)` of every text line ended, flattened, in order. */
   private readonly ended: number[] = [];
-  /** The letters of the text lines ended, by index, once asked for. */
-  private readonly endedLetters: string[] = [];
   /** The next line of `plain` a line may be paired with. */
   private plainLine = 0;
   private pos: number;
@@ -338,7 +336,6 @@ class LineWalk {
       this.linesWithHardBreaks = 0;
       this.letters = '';
       this.ended.length = 0;
-      this.endedLetters.length = 0;
       this.plainLine = 0;
       this.nextSplit = lowerBound(this.splits, this.start);
     }
@@ -350,7 +347,7 @@ class LineWalk {
       if (split) this.nextSplit += 1;
       else if (code !== 10 && code !== 0xfffc) continue;
       if (isTextLine(text, lineStart, i)) {
-        const paired = plain ? this.pairPlainLine(plain, lettersOf(text, lineStart, i)) : -1;
+        const paired = plain ? this.pairPlainLine(plain, lineStart, i) : -1;
         if (paired === -1 || !plain) {
           if (split) continue;
           if (this.plainLine < (plain?.ended.length ?? 0) >> 1) this.plainLine += 1;
@@ -373,27 +370,23 @@ class LineWalk {
   }
 
   /**
-   * The first line of `plain` from `plainLine` on holding `letters`, or -1.
-   * The search is short — a mention's plain line or two is the most an
-   * ordinary line skips — so a run of markdown lines with no plain-text
-   * lines of their own (an HTML block) does not read the whole plain text
-   * over for each of them.
+   * The first line of `plain` from `plainLine` on holding the letters of
+   * `text[start, end)`, or -1. The search is short — a mention's plain line
+   * or two is the most an ordinary line skips — so a run of markdown lines
+   * with no plain-text lines of their own (an HTML block) does not read the
+   * whole plain text over for each of them, and the lines are compared in
+   * place (`sameLetters`): every text line of the markdown is paired, and a
+   * walk restarted redoes it, so the walk allocates nothing per line.
    */
-  private pairPlainLine(plain: LineWalk, letters: string): number {
-    const end = Math.min(plain.ended.length >> 1, this.plainLine + PAIR_LOOKAHEAD);
-    for (let k = this.plainLine; k < end; k += 1) {
-      if (plain.lettersOfLine(k) === letters) return k;
+  private pairPlainLine(plain: LineWalk, start: number, end: number): number {
+    const last = Math.min(plain.ended.length >> 1, this.plainLine + PAIR_LOOKAHEAD);
+    for (let k = this.plainLine; k < last; k += 1) {
+      if (
+        sameLetters(this.text, start, end, plain.text, plain.ended[2 * k], plain.ended[2 * k + 1])
+      )
+        return k;
     }
     return -1;
-  }
-
-  /** The letters of the `k`th text line ended, computed once. */
-  private lettersOfLine(k: number): string {
-    return (this.endedLetters[k] ??= lettersOf(
-      this.text,
-      this.ended[2 * k],
-      this.ended[2 * k + 1],
-    ));
   }
 
   /** Whether the `k`th text line ended was ended at U+FFFC. */
@@ -407,6 +400,62 @@ const PAIR_LOOKAHEAD = 8;
 
 function lettersOf(text: string, start: number, end: number): string {
   return text.slice(start, end).replace(NOT_LETTER, '');
+}
+
+/**
+ * Whether `a[aStart, aEnd)` and `b[bStart, bEnd)` hold the same letters —
+ * `lettersOf(a, …) === lettersOf(b, …)` without the slices, the replace or
+ * the strings: two pointers step over the code points, skip the ones that
+ * are not letters, and stop at the first that differ.
+ */
+function sameLetters(
+  a: string,
+  aStart: number,
+  aEnd: number,
+  b: string,
+  bStart: number,
+  bEnd: number,
+): boolean {
+  let i = aStart;
+  let j = bStart;
+  for (;;) {
+    let x = -1;
+    while (i < aEnd) {
+      const code = a.codePointAt(i) as number;
+      i += code > 0xffff ? 2 : 1;
+      if (isLetter(code)) {
+        x = code;
+        break;
+      }
+    }
+    let y = -1;
+    while (j < bEnd) {
+      const code = b.codePointAt(j) as number;
+      j += code > 0xffff ? 2 : 1;
+      if (isLetter(code)) {
+        y = code;
+        break;
+      }
+    }
+    if (x !== y) return false;
+    if (x === -1) return true;
+  }
+}
+
+/** A code point that is a letter (`\p{L}`), as the one-code-point string. */
+const LETTER = /^\p{L}$/u;
+/** Whether a code point outside ASCII is a letter, once tested. */
+const letterByCode = new Map<number, boolean>();
+
+/** Whether the code point `code` is a letter — `\p{L}`, as `lettersOf` keeps. */
+function isLetter(code: number): boolean {
+  if (code < 128) return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+  let letter = letterByCode.get(code);
+  if (letter === undefined) {
+    letter = LETTER.test(String.fromCodePoint(code));
+    letterByCode.set(code, letter);
+  }
+  return letter;
 }
 
 /** The index of the first element of sorted `values` that is `>= at`. */
