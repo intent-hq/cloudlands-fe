@@ -474,6 +474,30 @@ describe('handleInviteDeepLink', () => {
     expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
   });
 
+  // The daemon's tunnel-only invite omits `host` entirely (no empty `host=`):
+  // the link must still parse to `hosts: []` and dial the tunnel.
+  it('link with no host parameter (tunnel-only, tc mandatory) dials the tunnel and stores by tc address', async () => {
+    openInviteConnection.mockResolvedValue(fakeConnection({ host: 'tc-key-abc', via: 'tunnel' }));
+    await handleInviteDeepLink(
+      `intent://invite?v=1&port=8443&fp=AA:BB:CC&inviteId=inv-1&secret=${SECRET}&tc=tc-key-abc`,
+    );
+    expect(openInviteConnection).toHaveBeenCalledWith({
+      hosts: [],
+      port: 8443,
+      fingerprint: 'AA:BB:CC',
+      tcAddress: 'tc-key-abc',
+    });
+    expect(guestAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: 'tc-key-abc',
+        hosts: [],
+        tcAddress: 'tc-key-abc',
+        token: TOKEN,
+      }),
+    );
+    expect(openBackendWindow).toHaveBeenCalledWith('guest-id');
+  });
+
   it('warns when the credential had to be stored in plaintext, then still opens the window', async () => {
     guestAdd.mockResolvedValue({ id: 'guest-id', tokenEncrypted: false });
     await handleInviteDeepLink(LINK);

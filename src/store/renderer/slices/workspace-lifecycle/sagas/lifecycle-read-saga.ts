@@ -72,7 +72,6 @@ import {
   addAgent,
   adjustDelegatedParentCount,
   adjustScopeCount,
-  agentDelegationParentOf,
   fetchBackgroundAgentsRequested,
   fetchDelegatedAgentsRequested,
   fetchRetiredAgentsRequested,
@@ -91,6 +90,7 @@ import {
   setScopeCounts,
   type LazyAgentListBin,
 } from '../../workspace-agents/workspace-agents-slice';
+import { agentDelegationParentOf } from '$shared/utils/agent-scope';
 import {
   selectActiveAgentId,
   selectBackgroundAgentsLoaded,

@@ -879,9 +879,9 @@ describe('WorkspaceAgentsList single-line rows', () => {
     expect(onLoadDelegated).toHaveBeenLastCalledWith();
   });
 
-  it('renders the per-parent bar above the virtualization threshold (counted group disables the flat virtual path)', async () => {
+  it('renders the per-parent bar inside the virtual path above the threshold (counted group keeps virtualization)', async () => {
     const agents = Array.from({ length: 21 }, (_, index) =>
-      makeAgent(`parent-${index}`, { name: `Parent ${index}` }),
+      makeAgent(`parent-${String(index).padStart(2, '0')}`, { name: `Parent ${index}` }),
     );
     const [first] = agents;
     appStore.dispatch(bulkUpsertSessions(agents));
@@ -898,26 +898,34 @@ describe('WorkspaceAgentsList single-line rows', () => {
       expect(view.container.querySelector(`[data-agent-panel-row="${first.id}"]`)).toBeTruthy(),
     );
 
-    // Count-first, before any delegated row is loaded: the bar is present with
-    // the daemon numbers, which the uniform-row virtual path cannot render.
+    // Count-first, before any delegated row is loaded: the list is virtualized
+    // AND the bar renders with the daemon numbers, as a row of the same list.
+    await waitFor(() => expect(view.container.querySelector('[data-index]')).toBeTruthy());
     const bar = view.container.querySelector<HTMLElement>(
       `[data-agent-delegation-toggle="${first.id}"]`,
     );
     expect(bar?.textContent).toContain('1 / 2 delegated running');
     expect(bar?.getAttribute('aria-expanded')).toBe('false');
+    expect(bar?.closest('[data-index]')).toBeTruthy();
     expect(view.container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(1);
-    expect(view.container.querySelector('[data-index]')).toBeNull();
+    for (const slot of view.container.querySelectorAll<HTMLElement>('[data-index]')) {
+      expect(slot.style.height).toBe('40px');
+    }
     expect(onLoadDelegated).not.toHaveBeenCalled();
 
-    // Expanding the bar requests only that parent's children.
+    // Expanding the bar requests only that parent's children; the skeleton
+    // rows render as virtual slots too.
     await fireEvent.click(bar!);
     expect(onLoadDelegated).toHaveBeenCalledTimes(1);
     expect(onLoadDelegated).toHaveBeenLastCalledWith(first.id);
-    expect(
-      view.container.querySelector(`[data-agent-delegation-loading="${first.id}"]`),
-    ).toBeTruthy();
+    const skeleton = view.container.querySelector<HTMLElement>(
+      `[data-agent-delegation-loading="${first.id}"]`,
+    );
+    expect(skeleton).toBeTruthy();
+    expect(skeleton?.closest('[data-index]')).toBeTruthy();
 
-    // Whole-bin hydration: the bar stays in place and now reads from the rows.
+    // Whole-bin hydration: the bar stays in place and now reads from the rows,
+    // and the children render as indented virtual slots.
     const children = ['child-a', 'child-b'].map((id) =>
       makeAgent(id, {
         name: id,
@@ -936,11 +944,17 @@ describe('WorkspaceAgentsList single-line rows', () => {
     );
     expect(hydratedBar?.getAttribute('aria-expanded')).toBe('true');
     expect(hydratedBar?.textContent).toContain('2 delegated');
-    expect(view.container.querySelector(`[data-agent-panel-row="${children[0].id}"]`)).toBeTruthy();
+    expect(view.container.querySelector(`[data-agent-delegation-loading]`)).toBeNull();
+    const childRow = view.container.querySelector<HTMLElement>(
+      `[data-agent-panel-row="${children[0].id}"]`,
+    );
+    expect(childRow).toBeTruthy();
+    expect(childRow?.closest('[data-index]')).toBeTruthy();
     expect(view.container.querySelector(`[data-agent-panel-row="${children[1].id}"]`)).toBeTruthy();
+    expect(view.container.querySelector('[data-index]')).toBeTruthy();
     expect(onLoadDelegated).toHaveBeenCalledTimes(1);
 
-    // A childless list of the same size still virtualizes.
+    // A childless list of the same size virtualizes without any bar.
     await view.rerender({
       agents,
       workspaceId,
@@ -950,6 +964,100 @@ describe('WorkspaceAgentsList single-line rows', () => {
     });
     await waitFor(() => expect(view.container.querySelector('[data-index]')).toBeTruthy());
     expect(view.container.querySelector('[data-agent-delegation-toggle]')).toBeNull();
+  });
+
+  it('renders the same row-kind sequence through the virtual and nested paths (shared row model parity)', async () => {
+    // One fixture: a count-only parent, a parent with loaded children, then
+    // childless parents. Zero-padded ids fix the sibling order.
+    const counted = makeAgent('parent-00', { name: 'Counted parent' });
+    const loaded = makeAgent('parent-01', { name: 'Loaded parent' });
+    const rest = Array.from({ length: 19 }, (_, index) =>
+      makeAgent(`parent-${String(index + 2).padStart(2, '0')}`, { name: `Parent ${index + 2}` }),
+    );
+    const children = ['child-a', 'child-b'].map((id) =>
+      makeAgent(id, {
+        name: id,
+        metadata: { createdByAgentId: loaded.id } as AgentSession['metadata'],
+      }),
+    );
+    const parents = [counted, loaded, ...rest];
+    appStore.dispatch(bulkUpsertSessions([...parents, ...children]));
+    const baseProps = {
+      workspaceId,
+      delegatedCounts: { running: 1, byParent: { [counted.id]: { total: 2, running: 1 } } },
+      loadedDelegatedParentIds: { [loaded.id]: true },
+      onLoadDelegated: vi.fn(),
+    };
+    const rowKinds = (root: HTMLElement) =>
+      Array.from(root.querySelectorAll<HTMLElement>('[data-agent-list-row]')).map(
+        (row) => row.dataset.agentListRow,
+      );
+    // Independent oracle for the fixture (both groups expanded): each parent
+    // row, its group bar when it has children, then the expanded children.
+    const oracle = (parentCount: number) => [
+      'agent',
+      'delegatedGroup',
+      'delegatedSkeleton',
+      'delegatedSkeleton',
+      'agent',
+      'delegatedGroup',
+      'agent',
+      'agent',
+      ...Array.from({ length: parentCount - 2 }, () => 'agent'),
+    ];
+
+    async function expandGroups(root: HTMLElement) {
+      for (const parent of [counted, loaded]) {
+        const bar = root.querySelector<HTMLElement>(
+          `[data-agent-delegation-toggle="${parent.id}"]`,
+        );
+        expect(bar).toBeTruthy();
+        await fireEvent.click(bar!);
+        expect(bar?.getAttribute('aria-expanded')).toBe('true');
+      }
+    }
+
+    // Above the threshold: the flat virtual path.
+    const virtual = render(WorkspaceAgentsList, {
+      props: {
+        ...baseProps,
+        agents: [...parents, ...children],
+        scopeCounts: { topLevel: parents.length, delegated: 4, background: 0 },
+      },
+    });
+    await waitFor(() => expect(virtual.container.querySelector('[data-index]')).toBeTruthy());
+    await expandGroups(virtual.container);
+    const virtualKinds = rowKinds(virtual.container);
+    // The window shows a strict prefix of the rows: parity is on that prefix.
+    expect(virtualKinds.length).toBeGreaterThan(8);
+    expect(virtualKinds.length).toBeLessThan(oracle(parents.length).length);
+    expect(virtualKinds).toEqual(oracle(parents.length).slice(0, virtualKinds.length));
+    for (const kind of virtualKinds) {
+      expect(
+        virtual.container.querySelector(`[data-index] [data-agent-list-row="${kind}"]`),
+      ).toBeTruthy();
+    }
+    cleanup();
+
+    // Same fixture minus one childless parent (at the threshold): the nested path.
+    const nestedParents = parents.slice(0, -1);
+    const nested = render(WorkspaceAgentsList, {
+      props: {
+        ...baseProps,
+        agents: [...nestedParents, ...children],
+        scopeCounts: { topLevel: nestedParents.length, delegated: 4, background: 0 },
+      },
+    });
+    await waitFor(() =>
+      expect(nested.container.querySelector(`[data-agent-panel-row="${counted.id}"]`)).toBeTruthy(),
+    );
+    expect(nested.container.querySelector('[data-index]')).toBeNull();
+    await expandGroups(nested.container);
+    const nestedKinds = rowKinds(nested.container);
+    expect(nestedKinds).toEqual(oracle(nestedParents.length));
+
+    // The two paths agree on every row they both render.
+    expect(nestedKinds.slice(0, virtualKinds.length)).toEqual(virtualKinds);
   });
 
   it('virtualizes the retired bin above the threshold', async () => {

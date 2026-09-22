@@ -8,6 +8,7 @@ import type {
   AgentScopeCounts,
 } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
+import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 import { createAction, createAsyncAction } from '@augmentcode/themis/utils/store/create-action';
 import { createReducer } from '@augmentcode/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
@@ -172,7 +173,7 @@ function reconcileWorkspaceAgentSnapshot(
   const allIdSet = new Set(mergedIds);
 
   const diskForegroundAgentIds = agents
-    .filter((agent) => !isBackgroundAgent(agent))
+    .filter((agent) => !isBackgroundAgentSession(agent))
     .map((agent) => agent.id);
   const diskForegroundIdSet = new Set(diskForegroundAgentIds.map((id) => String(id)));
   const foregroundAgentIds = mergeUniqueAgentIds(
@@ -208,44 +209,6 @@ function reconcileWorkspaceAgentSnapshot(
   };
 }
 
-function isBackgroundAgent(agent: AgentSession): boolean {
-  return agent.isBackground === true || agent.metadata?.isBackground === true;
-}
-
-/**
- * The `agent.list` bin a non-retired session partitions into (§5.5 row scope):
- * any parented row is `delegated` (a background CHILD is delegated, not
- * background), an unparented background agent is `background`, everything
- * else is `topLevel`. Parentage is exactly `agentDelegationParentOf` — the
- * `parent_agent_id` the daemon partitions by — so a row classifies as
- * delegated iff it has a `byParent` key to count under; the fork marker
- * `parentSessionId` is a session reference, not a parent agent, and never
- * parents a row. Retired sessions are their own bin and never classify here —
- * callers check `retiredAt` first.
- */
-export function agentListBinOf(agent: AgentSession): AgentListBin {
-  if (agentDelegationParentOf(agent) !== null) {
-    return 'delegated';
-  }
-  return isBackgroundAgent(agent) ? 'background' : 'topLevel';
-}
-
-/**
- * The `delegatedCounts.byParent` key a delegated row counts under (§5.5): the
- * wire `parentAgentId` the daemon groups by, with `metadata.createdByAgentId`
- * (older rows) as the fallback. `null` for an unparented row — including a
- * fork carrying only `parentSessionId`.
- */
-export function agentDelegationParentOf(agent: AgentSession): string | null {
-  if (typeof agent.parentAgentId === 'string' && agent.parentAgentId.length > 0) {
-    return String(agent.parentAgentId);
-  }
-  if (typeof agent.metadata?.createdByAgentId === 'string' && agent.metadata.createdByAgentId) {
-    return agent.metadata.createdByAgentId;
-  }
-  return null;
-}
-
 function mergeUniqueAgentIds(existing: AgentId[], additions: AgentId[]): AgentId[] {
   const existingIds = new Set(existing.map((id) => String(id)));
   const merged = [...existing];
@@ -268,7 +231,7 @@ function removeAgentId(existing: AgentId[], agentId: string): AgentId[] {
 }
 
 function syncForegroundAgentId(existing: AgentId[], agent: AgentSession): AgentId[] {
-  return isBackgroundAgent(agent)
+  return isBackgroundAgentSession(agent)
     ? removeAgentId(existing, String(agent.id))
     : mergeUniqueAgentIds(existing, [agent.id]);
 }

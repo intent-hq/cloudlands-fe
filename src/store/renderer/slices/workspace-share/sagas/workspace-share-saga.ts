@@ -237,9 +237,10 @@ function* loadShareData(): SagaGenerator<void> {
 /**
  * Inline error for a failed `workspace.invite.create`: the pin failure names
  * the login; `listener-down` (Remote access off, so the daemon cannot serve
- * an invite) tells the owner what to turn on; `guest-limit` (the cap was
- * spent between the dialog's read and the create) names the cap; anything
- * else stays generic.
+ * an invite) and `tunnel-down` (the Tailcat tunnel is off, so no tunnel-only
+ * link can be minted) each name the one setting to turn on; `guest-limit`
+ * (the cap was spent between the dialog's read and the create) names the
+ * cap; anything else stays generic.
  */
 function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: string): string {
   switch (code) {
@@ -247,6 +248,8 @@ function createInviteErrorMessage(code: ShareFailure['code'], requestedPin: stri
       return m.workspace_share_pinUnknown_error({ login: `@${requestedPin}` });
     case 'listener-down':
       return m.workspace_share_listenerDown_error();
+    case 'tunnel-down':
+      return m.workspace_share_tunnelDown_error();
     case 'guest-limit':
       return m.workspace_share_guestLimit_error();
     default:
