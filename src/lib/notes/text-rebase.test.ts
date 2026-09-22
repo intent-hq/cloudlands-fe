@@ -37,12 +37,39 @@ vi.mock('diff', async (importOriginal) => {
 /**
  * Run `fn` with the alignment deadline out of reach: `performance.now` is
  * frozen, so an exactness assertion cannot flip to the clamped fallback on a
- * loaded runner. Timing bounds are asserted in separate tests.
+ * loaded runner. Bounds on the work done are asserted with `onSteppedClock`.
  */
 function withoutDeadline<T>(fn: () => T): T {
   const now = vi.spyOn(performance, 'now').mockReturnValue(0);
   try {
     return fn();
+  } finally {
+    now.mockRestore();
+  }
+}
+
+/**
+ * The alignment budget (250 ms) as reads of the stepped clock of
+ * `onSteppedClock`: an alignment that reads it fewer times never met its
+ * deadline.
+ */
+const BUDGET_READS = 250_000;
+
+/**
+ * Run `fn` on a stepped clock: `performance.now` advances a microsecond a
+ * read, so the alignment budget is a count of reads rather than of wall time,
+ * and a loaded runner cannot flip an exactness assertion (a wall-clock bound
+ * of 100 ms measured 129 ms on a CI runner). Returns `fn`'s result and the
+ * reads — the clock is read once per line of the anchor loop, once per
+ * pairing row and once per diff, so the count bounds that work as a duration
+ * would, without its noise; work between two reads it does not bound.
+ */
+function onSteppedClock<T>(fn: () => T): [result: T, reads: number] {
+  let reads = 0;
+  const now = vi.spyOn(performance, 'now').mockImplementation(() => 0.001 * reads++);
+  try {
+    const result = fn();
+    return [result, reads];
   } finally {
     now.mockRestore();
   }
@@ -418,13 +445,12 @@ describe('plain-text ↔ markdown alignment of a large note', () => {
     expect(note.samples.length).toBeGreaterThan(1000);
   });
 
-  it('aligns a ≥150 KB note in well under a second', () => {
+  it('aligns a ≥150 KB note inside the budget', () => {
     const note = largeNote;
-    const started = performance.now();
-    const { bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
-    const elapsed = performance.now() - started;
-    // Generous CI bound; the alignment itself takes tens of milliseconds.
-    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
+    const [{ bToA }, reads] = onSteppedClock(() =>
+      createBidirectionalOffsetMapper(note.plain, note.markdown),
+    );
+    expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
     expect(bToA(note.markdown.length)).toBe(note.plain.length);
   });
 
@@ -482,10 +508,10 @@ describe('plain-text ↔ markdown alignment of a note formatted on every line', 
   });
 
   it('aligns inside the budget', () => {
-    const started = performance.now();
-    const { bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
-    const elapsed = performance.now() - started;
-    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
+    const [{ bToA }, reads] = onSteppedClock(() =>
+      createBidirectionalOffsetMapper(note.plain, note.markdown),
+    );
+    expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
     expect(bToA(note.markdown.length)).toBe(note.plain.length);
   });
 
@@ -548,10 +574,10 @@ describe('plain-text ↔ markdown alignment of one long formatted paragraph', ()
   });
 
   it('aligns inside the budget', () => {
-    const started = performance.now();
-    const { bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
-    const elapsed = performance.now() - started;
-    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
+    const [{ bToA }, reads] = onSteppedClock(() =>
+      createBidirectionalOffsetMapper(note.plain, note.markdown),
+    );
+    expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
     expect(bToA(note.markdown.length)).toBe(note.plain.length);
   });
 
@@ -1169,12 +1195,9 @@ describe('alignment of link syntax the lexer does not account for', () => {
       const plain = await projectWithEditor(markdown, true);
       expect(plain).not.toContain('](');
       expect(plain).toContain('$x$');
-      const started = performance.now();
-      const map = createBidirectionalOffsetMapper(plain, markdown);
+      const [map, reads] = onSteppedClock(() => createBidirectionalOffsetMapper(plain, markdown));
+      expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
       expect(map.aToB(1)).toBe(1);
-      const elapsed = performance.now() - started;
-      // Generous CI bound; the alignment itself takes tens of milliseconds.
-      expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
       expectBetweenAnchors(plain, markdown, map, 'caret render', 'caret [render', '\n');
       expectExactRun(plain, markdown, map, 'sel', 0, 1);
       expectExactRun(plain, markdown, map, 'ection daemon', 0, 0);
@@ -1744,7 +1767,9 @@ describe('alignment of link syntax the lexer does not account for', () => {
   // note holds: a tag never closed, or a comment never closed, is looked for
   // once, not once per opener, and so are the `>` and the line break that end
   // a tag whose quote is never closed. (The regular expression it replaces
-  // took 2.7 s on 128 KB of `<a` and 165 s on 1 MB.)
+  // took 2.7 s on 128 KB of `<a` and 165 s on 1 MB: the scan runs between
+  // two clock reads, so a return to it fails the test's timeout, not the
+  // read bound.)
   it.each<[string, string, string]>([
     ['tags never closed', '<a'.repeat(512 * 1024), ''],
     ['comments never closed', '<!--'.repeat(256 * 1024), ''],
@@ -1762,12 +1787,10 @@ describe('alignment of link syntax the lexer does not account for', () => {
       'sync edit selection\n'.repeat(32 * 1024).trimEnd(),
     ],
   ])(
-    'masks a 1 MB note the renderer reads as HTML with %s in linear time',
+    'masks a 1 MB note the renderer reads as HTML with %s inside the budget',
     (_case, markdown, plain) => {
-      const started = performance.now();
-      const map = createBidirectionalOffsetMapper(plain, markdown);
-      const elapsed = performance.now() - started;
-      expect(elapsed).toBeLessThan(400);
+      const [map, reads] = onSteppedClock(() => createBidirectionalOffsetMapper(plain, markdown));
+      expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
       if (plain !== '') {
         expect(map.aToB(1)).toBe(markdown.indexOf('sync') + 1);
         expect(map.bToA(markdown.indexOf('edit') + 2)).toBe(plain.indexOf('edit') + 2);
@@ -1875,10 +1898,8 @@ describe('alignment of link syntax the lexer does not account for', () => {
       const markdown = `\`${visible}\``;
       const plain = await projectWithEditor(markdown, true);
       expect(plain).toBe(visible);
-      const started = performance.now();
-      const map = createBidirectionalOffsetMapper(plain, markdown);
-      const elapsed = performance.now() - started;
-      expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(100);
+      const [map, reads] = onSteppedClock(() => createBidirectionalOffsetMapper(plain, markdown));
+      expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
       expect([map.aToB(100), map.bToA(101)]).toEqual([101, 100]);
       for (let offset = 1; offset < plain.length; offset += 97) {
         expect([map.aToB(offset), map.bToA(offset + 1)], `@ ${offset}`).toEqual([
@@ -1901,10 +1922,10 @@ describe('alignment of link syntax the lexer does not account for', () => {
     const markdown = `\`${visible}\``;
     const plain = await projectWithEditor(markdown, true);
     expect(plain).toBe(visible);
-    const started = performance.now();
-    const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
-    const elapsed = performance.now() - started;
-    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(100);
+    const [{ aToB, bToA }, reads] = onSteppedClock(() =>
+      createBidirectionalOffsetMapper(plain, markdown),
+    );
+    expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
     for (let offset = 1; offset < plain.length; offset += 1009) {
       expect([aToB(offset), bToA(offset + 1)], `@ ${offset}`).toEqual([offset + 1, offset]);
     }
@@ -2120,10 +2141,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
         const markdown = `${'q'.repeat(129 * 1024)}\n\n${'[xy](https://ab/xy)\n'.repeat(count)}\n**ab**`;
         const plain = await projectWithEditor(markdown, true);
         expect(plain).not.toContain('https');
-        const started = performance.now();
         const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
-        const elapsed = performance.now() - started;
-        expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(1_000);
         expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
         expectLinesBounded(
           map,
@@ -3455,10 +3473,8 @@ describe('alignment of blocks that never anchor', () => {
 
   it.each([150, 1024])('gives up on a %i KB pair inside the budget', (kilobytes) => {
     const [a, b] = unanchorable(kilobytes * 1024);
-    const started = performance.now();
-    const { aToB, bToA } = createBidirectionalOffsetMapper(a, b);
-    const elapsed = performance.now() - started;
-    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(600);
+    const [{ aToB, bToA }, reads] = onSteppedClock(() => createBidirectionalOffsetMapper(a, b));
+    expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
     expectMonotonic(aToB, a.length, b.length, 1009);
     expectMonotonic(bToA, b.length, a.length, 1009);
     expect(aToB(0)).toBe(0);
@@ -3898,11 +3914,11 @@ describe('alignment over a corpus of small notes', () => {
     const markdown = atoms.map(([md]) => md).join('');
     const plain = await projectWithEditor(markdown);
     expect(plain).toBe(atoms.map(([, p]) => p).join(''));
-    const started = performance.now();
-    const { aToB, bToA } = createBidirectionalOffsetMapper(plain, markdown);
+    const [{ aToB, bToA }, reads] = onSteppedClock(() =>
+      createBidirectionalOffsetMapper(plain, markdown),
+    );
+    expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
     expect(aToB(1)).toBe(1);
-    const elapsed = performance.now() - started;
-    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
     const failures: string[] = [];
     for (const [p, m] of interiorPairs(atoms)) {
       if (aToB(p) !== m || bToA(m) !== p) {
@@ -3957,13 +3973,13 @@ describe('alignment when the diff budget is exhausted', () => {
     expect(degraded.bToA(markdown.indexOf('more'))).toBe(plain.indexOf(' words here'));
   });
 
-  it('still aligns the large note quickly', () => {
+  it('still aligns the large note inside the budget', () => {
     jsdiff.abort = true;
     const note = largeNote;
-    const started = performance.now();
-    const { aToB, bToA } = createBidirectionalOffsetMapper(note.plain, note.markdown);
-    const elapsed = performance.now() - started;
-    expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(300);
+    const [{ aToB, bToA }, reads] = onSteppedClock(() =>
+      createBidirectionalOffsetMapper(note.plain, note.markdown),
+    );
+    expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
     expect(bToA(note.markdown.length)).toBe(note.plain.length);
     const exact = note.samples.filter(([p, m]) => aToB(p) === m && bToA(m) === p).length;
     expect(exact, `${exact} of ${note.samples.length} samples exact`).toBeGreaterThan(0);
