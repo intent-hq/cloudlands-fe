@@ -1275,7 +1275,10 @@ const FORMULA = '\u0000';
  * not at all, and so is a definition's title (`definitionAt`): the text a
  * definition is read on ends at the next blank line, and the lines a
  * candidate that is none reaches continue its paragraph, where no other is
- * tried, so no text is read twice.
+ * tried, so no text is read twice; the line breaks a span drops are found
+ * by one search resumed from span to span, not one from each span's
+ * opening run to the line's end (a line of 16 000 spans read 512 million
+ * units).
  */
 function maskHiddenBlocks(source: string, shadow: string | undefined): string {
   const text = shadow ?? source;
@@ -1296,6 +1299,8 @@ function maskHiddenBlocks(source: string, shadow: string | undefined): string {
   const nextCommentClose = memoisedIndexOf(markdown, '-->');
   const nextBlankLine = memoisedSearch(markdown, BLANK_LINE);
   const nextFenceClose = memoisedSearch(markdown, FENCE_CLOSE);
+  /** The next line break at or past a code span's opening run: one search per line, not per span. */
+  const nextLineBreak = memoisedIndexOf(markdown, '\n');
   /** `markdown` with each formula's code units `FORMULA`; found once, at the first opener outside code. */
   let formulas: string | undefined;
   const formulaEnd = (at: number) => {
@@ -1410,10 +1415,10 @@ function maskHiddenBlocks(source: string, shadow: string | undefined): string {
         if (close !== -1 && (blank === -1 || close < blank)) {
           mask(at, end);
           mask(close, close + length);
-          for (let brk = markdown.indexOf('\n', end); brk !== -1 && brk < close;) {
+          for (let brk = nextLineBreak(end); brk !== -1 && brk < close;) {
             if (source.charCodeAt(brk - 1) === 13) dropped.push(brk - 1);
             dropped.push(brk);
-            brk = markdown.indexOf('\n', brk + 1);
+            brk = nextLineBreak(brk + 1);
           }
           end = close + length;
         }

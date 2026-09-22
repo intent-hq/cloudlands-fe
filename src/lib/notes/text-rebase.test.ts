@@ -2923,6 +2923,50 @@ describe('alignment of link syntax the lexer does not account for', () => {
       }
     }, 60_000);
 
+    // A line of 1000, 4000 and 16 000 code spans after the paragraph that
+    // puts the note past the cap is read in units proportional to its length
+    // on every clock. (The line breaks a span drops were sought from each
+    // span's opening run to the line's end, so each span of the line read the
+    // whole rest of it: 512 million units of 16 000 spans, half a second on
+    // an expired clock.) A fourfold line may read sixfold, not sixteenfold;
+    // within the budget each span's text maps exactly.
+    it('reads a line of many code spans in units proportional to its length', async () => {
+      const paragraph = 'q'.repeat(129 * 1024);
+      const notes = await Promise.all(
+        [1000, 4000, 16_000].map(async (spans) => {
+          const markdown = `${paragraph}\n\n${Array.from({ length: spans }, () => '`x`').join(' ')}`;
+          const plain = await projectWithEditor(markdown, true);
+          expect(plain).toBe(`${paragraph}\n${Array.from({ length: spans }, () => 'x').join(' ')}`);
+          return { spans, plain, markdown };
+        }),
+      );
+      const unitsRead = notes.map(({ spans, plain, markdown }) => {
+        const [map, units] = countingUnitsRead(() =>
+          withExpiredDeadline(() => createBidirectionalOffsetMapper(plain, markdown)),
+        );
+        expect(map.aToB(paragraph.length - 1), `${spans} spans past the deadline`).toBe(
+          paragraph.length - 1,
+        );
+        return units;
+      });
+      const growth = `${unitsRead.join(' / ')} units of ${notes.map((n) => n.spans).join(' / ')} spans`;
+      expect(unitsRead[1], growth).toBeLessThan(unitsRead[0] * 6);
+      expect(unitsRead[2], growth).toBeLessThan(unitsRead[1] * 6);
+      const { spans, plain, markdown } = notes[0];
+      const [map, reads] = onSteppedClock(() => createBidirectionalOffsetMapper(plain, markdown));
+      expect(reads, `${reads} clock reads`).toBeLessThan(BUDGET_READS);
+      // The k-th `x` of the line: after k blanks in the plain text; in the
+      // markdown after k blanks, the 3k backticks before them and its own.
+      const lineStart = paragraph.length + 1;
+      for (let k = 1; k < spans; k += 37) {
+        const p = lineStart + 2 * k;
+        const m = lineStart + 2 + 4 * k;
+        expect(map.bToA(m), `markdown ${m} back`).toBe(p);
+        expect(map.bToA(map.aToB(p)), `plain ${p} round trip`).toBe(p);
+        expect(markdown.slice(map.aToB(p), m + 1), `plain ${p} forward`).toMatch(/^`?x$/);
+      }
+    }, 60_000);
+
     // Images alone on their lines before a run of identical items. The
     // editor shows no text of an image, so its line has no plain-text line
     // of its own; past the cap the scan masks the image whole, as the lexer
