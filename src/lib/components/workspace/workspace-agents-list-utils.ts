@@ -1,6 +1,7 @@
 import type { AgentDelegatedParentCounts, AgentSession } from '$shared/types';
 import { getAgentAttentionRequest } from '$shared/utils/agent-attention';
 import { isAgentRunningState, toAgentRuntimeStateInput } from '$shared/utils/agent-runtime-state';
+import { agentDelegationParentOf, isBackgroundAgentSession } from '$shared/utils/agent-scope';
 import { normalizeSidebarSearchText, sidebarSearchMatches } from './sidebar/sidebar-search';
 
 export interface FlatWorkspaceAgentRow {
@@ -98,10 +99,6 @@ export function buildWorkspaceAgentListRows(
   return rows;
 }
 
-export function isBackgroundAgentSession(agent: AgentSession): boolean {
-  return !!(agent.isBackground || agent.metadata?.isBackground);
-}
-
 export function isCoordinatorAgentSession(agent: AgentSession): boolean {
   return (agent.metadata?.specialist ?? agent.agentMetadata?.specialist) === 'spec-writer';
 }
@@ -126,19 +123,6 @@ export function shouldVirtualizeWorkspaceAgentRows(rows: FlatWorkspaceAgentRow[]
     topLevelForegroundCount += 1;
   }
   return topLevelForegroundCount > WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD;
-}
-
-/**
- * The wire `parentAgentId` (§5.5 — the daemon's bin partition key) wins;
- * `metadata.createdByAgentId` remains the fallback for older rows.
- */
-function getParentAgentId(agent: AgentSession): AgentSession['id'] | undefined {
-  if (typeof agent.parentAgentId === 'string' && agent.parentAgentId.length > 0) {
-    return agent.parentAgentId;
-  }
-  return typeof agent.metadata?.createdByAgentId === 'string'
-    ? (agent.metadata.createdByAgentId as AgentSession['id'])
-    : undefined;
 }
 
 function getAgentRecency(agent: AgentSession): number {
@@ -240,7 +224,7 @@ export function getFlatWorkspaceAgentRows(agents: AgentSession[]): FlatWorkspace
   const childrenByParent = new Map<string, AgentSession[]>();
 
   for (const agent of dedupedAgents) {
-    const parentId = getParentAgentId(agent);
+    const parentId = agentDelegationParentOf(agent);
     if (parentId && agentIds.has(parentId)) {
       delegatedIds.add(agent.id);
       const children = childrenByParent.get(parentId) ?? [];
