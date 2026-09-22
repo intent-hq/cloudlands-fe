@@ -20,6 +20,13 @@ import { installConsoleTeardownGuard } from './helpers/console-teardown-guard';
 installConsoleTeardownGuard();
 
 const mockPage = vi.hoisted(() => ({ pathname: '/workspace/new' }));
+// Mock factories run lazily on first import, so they double as a probe of the
+// app-only modules the (app) layout graph must pull in.
+const appGraph = vi.hoisted(() => ({
+  seedersLoaded: false,
+  actionKeyHudLoaded: false,
+  seededBeforeAppLifecycle: null as boolean | null,
+}));
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(() => Promise.resolve()),
@@ -44,10 +51,16 @@ vi.mock('$store/renderer/root-store-lifecycle', () => ({
   startRootStoreLifecycle: () => () => {},
 }));
 vi.mock('$store/renderer/app-store-lifecycle', () => ({
-  startAppStoreLifecycle: () => () => {},
+  startAppStoreLifecycle: () => {
+    appGraph.seededBeforeAppLifecycle = appGraph.seedersLoaded;
+    return () => {};
+  },
 }));
 vi.mock('$store/renderer/sagas', () => ({ startAllAppSagas: () => [] }));
-vi.mock('$store/renderer/seeders', () => ({}));
+vi.mock('$store/renderer/seeders', () => {
+  appGraph.seedersLoaded = true;
+  return {};
+});
 vi.mock('$features/layout/tab-types/register-all', () => ({ registerAllTabTypes: () => {} }));
 vi.mock('$features/backend/splash-gate', () => ({
   dismissSplashElement: () => {},
@@ -78,9 +91,10 @@ vi.mock('$features/hardware-console/prompt-picker/RadialPromptPickerOverlay.svel
 vi.mock('$features/hardware-console/encoder/EncoderCycleHud.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
-vi.mock('$features/hardware-console/actions/ActionKeyHud.svelte', async () => ({
-  default: (await import('./mocks/Marker.svelte')).default,
-}));
+vi.mock('$features/hardware-console/actions/ActionKeyHud.svelte', async () => {
+  appGraph.actionKeyHudLoaded = true;
+  return { default: (await import('./mocks/Marker.svelte')).default };
+});
 vi.mock('$lib/components/CommandPalette.svelte', async () => ({
   default: (await import('./mocks/Marker.svelte')).default,
 }));
@@ -141,6 +155,7 @@ import {
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { workspaceTabsHydrated } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectBootRouteGateResolved } from '$store/renderer/slices/setup-prompt/setup-prompt-selectors';
+import { selectActiveWorkspaceIds } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import { setBootRoutePathnameForTesting } from '$lib/utils/boot-route-gate';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
@@ -184,5 +199,11 @@ describe('(app)/+layout.svelte boot-route setup gate (regression)', () => {
 
     expect(goto).toHaveBeenCalledWith('/workspace/ws-1', { replaceState: true });
     expect(selectBootRouteGateResolved.select(appStore.state)).toBe(true);
+    // The landing workspace is opened as a tab so the strip matches the route.
+    expect(selectActiveWorkspaceIds.select(appStore.state)).toEqual(['ws-1']);
+    // The app route group owns the store seeders (loaded before the app
+    // lifecycle starts) and the action HUD; the root layout does not.
+    expect(appGraph.seededBeforeAppLifecycle).toBe(true);
+    expect(appGraph.actionKeyHudLoaded).toBe(true);
   });
 });

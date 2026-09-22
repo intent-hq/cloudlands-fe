@@ -10,7 +10,7 @@
  * are never cleared, and stale values re-applied after mount (parent
  * hydration) are cleared too.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -156,6 +156,11 @@ vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
 
 vi.mock('$lib/components/ui/dropdown-menu.svelte', async () => ({
   default: (await import('./mocks/MockDropdownMenu.svelte')).default,
+}));
+
+// The specialist menu items need a bits-ui menu root; render their content inline.
+vi.mock('$lib/components/ui/menu', async () => ({
+  Item: (await import('./mocks/MockComponent.svelte')).default,
 }));
 
 vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () => ({
@@ -805,5 +810,87 @@ describe('InitialAgentPicker stale model override clearing', () => {
     });
 
     await waitFor(() => expect(teamPickerDefault()).toBe('store-model'));
+  });
+});
+
+describe('InitialAgentPicker specialist dropdown', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.fileSpecialistsLoaded$.set(false);
+    mocks.hydrated$.set(true);
+    mocks.specialists$.set([]);
+    mocks.effortLevelsByModel = {};
+    mocks.providerModelsByProviderId = {};
+    mocks.availableModels = [];
+    mocks.availableModelsProviderId = '';
+    mocks.getProviderAvailability.mockImplementation(() => new Promise(() => {}));
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  /** The specialist trigger inside the single-agent card shows the displayed specialist. */
+  function specialistTrigger() {
+    return within(modeCards().single).getByRole('button', { name: /General/ });
+  }
+
+  const manageSpecialistsItem = () => screen.queryByText(/manage specialists/i);
+
+  it('selects single-agent mode instead of opening the menu while in team mode', async () => {
+    const onTeamModeChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: 'spec-writer', isTeamMode: true, onTeamModeChange },
+    });
+
+    const trigger = specialistTrigger();
+    expect(trigger.getAttribute('aria-haspopup')).toBeNull();
+    expect(trigger.tabIndex).toBe(-1);
+
+    await fireEvent.click(trigger);
+    await flush();
+
+    const { single, team } = modeCards();
+    expect(single.getAttribute('aria-pressed')).toBe('true');
+    expect(team.getAttribute('aria-pressed')).toBe('false');
+    expect(onTeamModeChange).toHaveBeenCalledWith(false);
+    expect(manageSpecialistsItem()).toBeNull();
+
+    // Once single-agent mode is active the trigger carries the menu contract.
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(trigger.tabIndex).toBe(0);
+  });
+
+  it('opens the specialist menu without leaving single-agent mode', async () => {
+    const onTeamModeChange = vi.fn();
+    render(InitialAgentPicker, {
+      props: { selectedSpecialist: null, isTeamMode: false, onTeamModeChange },
+    });
+
+    const trigger = specialistTrigger();
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(manageSpecialistsItem()).toBeNull();
+
+    await fireEvent.click(trigger);
+    await flush();
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(manageSpecialistsItem()).not.toBeNull();
+    expect(modeCards().single.getAttribute('aria-pressed')).toBe('true');
+    expect(onTeamModeChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps both model pickers inline and bounded by the modal collision boundary', () => {
+    render(InitialAgentPicker, { props: { selectedSpecialist: 'spec-writer', isTeamMode: true } });
+
+    const pickers = screen.getAllByTestId('mock-model-picker');
+    expect(pickers).toHaveLength(2);
+    for (const picker of pickers) {
+      expect(picker.getAttribute('data-portal')).toBe('false');
+      expect(picker.getAttribute('data-collision-boundary')).toBe(
+        '[data-model-picker-collision-boundary]',
+      );
+    }
   });
 });

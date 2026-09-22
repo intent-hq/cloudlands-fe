@@ -1,5 +1,3 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -1178,21 +1176,54 @@ describe('FileTabType Redux integration', () => {
     expect(screen.getByRole('button', { name: 'packages/p5/src/app.ts' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'packages/p6/src/app.ts' })).toBeNull();
   });
-});
 
-describe('FileTabType content-save wiring', () => {
-  const source = readFileSync(
-    join(process.cwd(), 'src/features/layout/tab-types/FileTabType.svelte'),
-    'utf-8',
-  );
+  it('leaves auto-save scheduling to filesWriteSaga instead of a local debounce', async () => {
+    renderFileTab();
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await waitFor(() => expect(editor.value).toBe('console.log("loaded");'));
 
-  it('delegates debounce and teardown flush ownership to filesWriteSaga', () => {
-    expect(source).not.toContain('AUTO_SAVE_DELAY_MS');
-    expect(source).not.toContain('autoSaveTimeoutId');
-    expect(source).not.toContain("from '$features/files/files-write-service'");
-    expect(source).toContain(
-      'appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content))',
+    vi.useFakeTimers();
+    try {
+      dispatchMock.mockClear();
+      await fireEvent.input(editor, { target: { value: 'console.log("edited");' } });
+      expect(actionMocks.updateFileContent).toHaveBeenCalledWith(
+        'ws-1',
+        'src/main.ts',
+        'console.log("edited");',
+      );
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flushes a pending dirty edit through the write saga when the tab unmounts', async () => {
+    const { unmount } = renderFileTab();
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await waitFor(() => expect(editor.value).toBe('console.log("loaded");'));
+
+    await fireEvent.input(editor, { target: { value: 'console.log("edited");' } });
+    expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
+
+    unmount();
+
+    expect(actionMocks.saveFileContentRequested).toHaveBeenCalledExactlyOnceWith(
+      'ws-1',
+      'src/main.ts',
+      '/repo/src/main.ts',
+      'console.log("edited");',
     );
-    expect(source).toContain('saveFileContentRequested(wsId, filePath, absolutePath, content)');
+  });
+
+  it('does not issue a save when a clean tab unmounts', async () => {
+    const { unmount } = renderFileTab();
+    const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
+    await waitFor(() => expect(editor.value).toBe('console.log("loaded");'));
+
+    unmount();
+
+    expect(actionMocks.saveFileContentRequested).not.toHaveBeenCalled();
   });
 });

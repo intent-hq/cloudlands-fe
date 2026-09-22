@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import * as BrandedIds from '$shared/types/branded-ids';
 import { AgentStatus, type AgentSession } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
+import { store as appStore } from '$store/renderer/store';
+import {
+  bulkUpsertSessions,
+  removeSession,
+} from '$store/renderer/slices/agent-session/agent-session-slice';
+import WorkspaceAgentsList from '../WorkspaceAgentsList.svelte';
 import {
   buildWorkspaceAgentListRows,
   filterWorkspaceAgentRows,
@@ -201,24 +208,6 @@ describe('getFlatWorkspaceAgentRows', () => {
       'idle-b',
     ]);
   });
-
-  it('keeps the sidebar hierarchy with compact delegated group controls', () => {
-    const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
-    const sidebar = readFileSync(
-      'src/lib/components/workspace/MultiSelectTabbedSidebar.svelte',
-      'utf8',
-    );
-
-    expect(list).toContain('data-agent-delegation-toggle={agent.id}');
-    expect(list).toContain('m.workspace_agentsList_delegatedRunning_label');
-    expect(list).toContain('m.workspace_overviewTimeline_yourAgents_label');
-    expect(list).toContain('panelRow');
-    expect(list).toContain('hidePreview');
-    expect(list).not.toContain('AgentAvatarWithState');
-    expect(list).toContain('<LazyAgentCard');
-    expect(list).not.toContain('View agent tree');
-    expect(sidebar).not.toContain('Agent orchestration');
-  });
 });
 
 describe('filterWorkspaceAgentRows', () => {
@@ -336,15 +325,6 @@ describe('shouldVirtualizeWorkspaceAgentRows', () => {
     agents.push(makeAgent('coordinator', { metadata: { specialist: 'spec-writer' } as any }));
 
     expect(shouldVirtualizeWorkspaceAgentRows(getFlatWorkspaceAgentRows(agents))).toBe(false);
-  });
-
-  it('renders large flat lists through VirtualList in WorkspaceAgentsList', () => {
-    const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
-
-    expect(list).toContain("import VirtualList from '$lib/components/ui/VirtualList.svelte'");
-    expect(list).toContain('shouldVirtualizeWorkspaceAgentRows(filteredAgentRows)');
-    expect(list).toContain('{:else if shouldUseVirtual}');
-    expect(list).toContain('<VirtualList');
   });
 });
 
@@ -498,22 +478,193 @@ describe('getVisibleWorkspaceAgentRows', () => {
       'standalone',
     ]);
   });
+});
 
-  it('defaults parent groups to collapsed until explicitly expanded', () => {
-    const list = readFileSync('src/lib/components/workspace/WorkspaceAgentsList.svelte', 'utf8');
+describe('WorkspaceAgentsList rendering', () => {
+  const workspaceId = 'workspace-1';
+  const mountedIds: string[] = [];
 
-    // Per-parent groups start collapsed (default expanded only while the
-    // workspace-level Delegated bin is open); an active search shows every group.
-    expect(list).toContain('let toggledDelegationIds = $state(new Set<string>())');
-    expect(list).toContain(
-      'const delegatedGroupsDefaultExpanded = $derived(hasLazyBins && showDelegatedAgents)',
+  function mount(id: string, overrides: Partial<AgentSession> = {}): AgentSession {
+    mountedIds.push(id);
+    return makeAgent(id, {
+      backendSessionId: `backend-${id}`,
+      status: AgentStatus.Idle,
+      ...overrides,
+    });
+  }
+
+  const panelRows = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll<HTMLElement>('[data-agent-panel-row]'));
+  const rowFor = (root: HTMLElement, id: string) =>
+    root.querySelector<HTMLElement>(`[data-agent-panel-row="${id}"]`);
+  const groupToggleFor = (root: HTMLElement, id: string) =>
+    root.querySelector<HTMLElement>(`[data-agent-delegation-toggle="${id}"]`);
+
+  beforeEach(() => {
+    appStore.init();
+    vi.stubGlobal('IntersectionObserver', undefined);
+    vi.stubGlobal('ResizeObserver', undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    for (const id of mountedIds.splice(0)) appStore.dispatch(removeSession(id));
+    vi.unstubAllGlobals();
+  });
+
+  it('renders the sidebar hierarchy as single-line rows with compact delegated group controls', async () => {
+    const coordinator = mount('coordinator', {
+      name: 'Coordinator',
+      metadata: { specialist: 'spec-writer' } as AgentSession['metadata'],
+    });
+    const child = mount('child', {
+      name: 'Delegated child',
+      metadata: { createdByAgentId: coordinator.id } as AgentSession['metadata'],
+    });
+    const standalone = mount('standalone', {
+      name: 'Standalone',
+      lastAgentResponse: 'preview for standalone',
+    });
+    const agents = [coordinator, child, standalone];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const { container } = render(WorkspaceAgentsList, {
+      props: { agents, workspaceId, runningAgentIds: [child.id] },
+    });
+
+    await waitFor(() => expect(rowFor(container, coordinator.id)).toBeTruthy());
+    // Coordinator workspaces render the two section headers around the nested list.
+    expect(
+      Array.from(container.querySelectorAll('[data-agent-list-row="header"]')).map((header) =>
+        header.textContent?.trim(),
+      ),
+    ).toEqual([
+      m.workspace_agentsList_coordinator_label(),
+      m.workspace_overviewTimeline_yourAgents_label(),
+    ]);
+
+    // Every row is the compact panel row: one row tall, no preview, and the
+    // nested path defers each card through the lazy wrapper.
+    expect(panelRows(container).map((row) => row.dataset.agentPanelRow)).toEqual([
+      coordinator.id,
+      standalone.id,
+    ]);
+    for (const row of panelRows(container)) {
+      expect(row.className).toContain('h-10');
+      expect(row.closest('[data-lazy-agent-card]')).toBeTruthy();
+    }
+    expect(container.querySelector('[data-testid="agent-card-preview"]')).toBeNull();
+    expect(container.querySelector('[data-testid="agent-card-preview-row"]')).toBeNull();
+    expect(container.textContent).not.toContain('preview for');
+    expect(container.textContent).not.toContain('View agent tree');
+    expect(container.textContent).not.toContain('Agent orchestration');
+
+    // The per-parent control is a compact bar keyed by the parent id that
+    // reports the running count while collapsed and expands to the child.
+    const toggle = groupToggleFor(container, coordinator.id);
+    expect(toggle).toBeTruthy();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle?.querySelector('[data-agent-avatar-with-state]')).toBeNull();
+    expect(toggle?.querySelector('[data-agent-avatar]')).toBeNull();
+    expect(toggle?.textContent).toContain(
+      m.workspace_agentsList_delegatedRunning_label({ running: '1', total: '1' }),
     );
-    expect(list).toContain('if (hasActiveSearch) return true;');
-    expect(list).toContain(
-      'return toggledDelegationIds.has(agentId) !== delegatedGroupsDefaultExpanded;',
+    expect(rowFor(container, child.id)).toBeNull();
+    await fireEvent.click(toggle!);
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle?.textContent).toContain(m.workspace_agentsList_delegated_label({ count: '1' }));
+    expect(rowFor(container, child.id)).toBeTruthy();
+    expect(container.querySelectorAll('[data-agent-delegation-toggle]')).toHaveLength(1);
+  });
+
+  it('renders large flat lists through the virtual path and keeps smaller or coordinator lists nested', async () => {
+    const flat = Array.from({ length: WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD * 2 }, (_, i) =>
+      mount(`agent-${String(i).padStart(2, '0')}`, { name: `Agent ${i}` }),
     );
-    // The row model reads that state through the builder's callbacks.
-    expect(list).toContain('isExpanded: isDelegationExpanded,');
-    expect(list).toContain('isRunning: isAgentRunning,');
+    appStore.dispatch(bulkUpsertSessions(flat));
+    const props = { agents: flat, workspaceId, searchQuery: '' };
+    const view = render(WorkspaceAgentsList, { props });
+
+    await waitFor(() => expect(view.container.querySelector('[data-index]')).toBeTruthy());
+    const slots = view.container.querySelectorAll<HTMLElement>('[data-index]');
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.length).toBeLessThan(flat.length);
+    for (const row of panelRows(view.container)) expect(row.closest('[data-index]')).toBeTruthy();
+
+    // The size decision follows the filtered rows: a search that narrows the
+    // list below the threshold falls back to the nested list.
+    await view.rerender({ ...props, searchQuery: 'Agent 1' });
+    await waitFor(() => expect(view.container.querySelector('[data-index]')).toBeNull());
+    expect(panelRows(view.container).length).toBeGreaterThan(0);
+
+    // At the threshold the nested list renders every row directly.
+    const atThreshold = flat.slice(0, WORKSPACE_AGENTS_VIRTUALIZATION_THRESHOLD);
+    await view.rerender({ ...props, agents: atThreshold });
+    await waitFor(() => expect(panelRows(view.container)).toHaveLength(atThreshold.length));
+    expect(view.container.querySelector('[data-index]')).toBeNull();
+
+    // A coordinator workspace keeps the nested list for its section headers.
+    const coordinator = mount('coordinator', {
+      name: 'Coordinator',
+      metadata: { specialist: 'spec-writer' } as AgentSession['metadata'],
+    });
+    appStore.dispatch(bulkUpsertSessions([coordinator]));
+    await view.rerender({ ...props, agents: [...flat, coordinator] });
+    await waitFor(() => expect(rowFor(view.container, coordinator.id)).toBeTruthy());
+    expect(view.container.querySelector('[data-index]')).toBeNull();
+    expect(view.container.querySelectorAll('[data-agent-list-row="header"]')).toHaveLength(2);
+  });
+
+  it('defaults parent groups to collapsed until explicitly expanded', async () => {
+    const parent = mount('parent', { name: 'Parent' });
+    const child = mount('child', {
+      name: 'Needle child',
+      metadata: { createdByAgentId: parent.id } as AgentSession['metadata'],
+    });
+    const agents = [parent, child];
+    appStore.dispatch(bulkUpsertSessions(agents));
+    const props = { agents, workspaceId, searchQuery: '' };
+    const view = render(WorkspaceAgentsList, { props });
+    const { container } = view;
+
+    // Collapsed by default; the toggle is the only way to reveal the child.
+    await waitFor(() => expect(rowFor(container, parent.id)).toBeTruthy());
+    const toggle = groupToggleFor(container, parent.id);
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(rowFor(container, child.id)).toBeNull();
+    await fireEvent.click(toggle!);
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(rowFor(container, child.id)).toBeTruthy();
+    await fireEvent.click(toggle!);
+    await waitFor(() => expect(rowFor(container, child.id)).toBeNull());
+
+    // An active search shows every group regardless of its toggle state.
+    await view.rerender({ ...props, searchQuery: 'needle' });
+    await waitFor(() => expect(rowFor(container, child.id)).toBeTruthy());
+    expect(groupToggleFor(container, parent.id)?.getAttribute('aria-expanded')).toBe('true');
+    await view.rerender(props);
+    await waitFor(() => expect(rowFor(container, child.id)).toBeNull());
+    expect(groupToggleFor(container, parent.id)?.getAttribute('aria-expanded')).toBe('false');
+
+    // Lazy-bin mode: opening the workspace-level Delegated bin flips the
+    // default to expanded, and a per-parent toggle still collapses its own group.
+    const lazyProps = {
+      ...props,
+      scopeCounts: { topLevel: 1, delegated: 1, background: 0 },
+      delegatedAgentsLoaded: true,
+      onLoadDelegated: vi.fn(),
+    };
+    await view.rerender(lazyProps);
+    await waitFor(() =>
+      expect(container.querySelector('[data-agent-delegated-toggle]')).toBeTruthy(),
+    );
+    expect(groupToggleFor(container, parent.id)).toBeNull();
+    expect(rowFor(container, child.id)).toBeNull();
+    await fireEvent.click(container.querySelector('[data-agent-delegated-toggle]')!);
+    await waitFor(() => expect(rowFor(container, child.id)).toBeTruthy());
+    const lazyToggle = groupToggleFor(container, parent.id);
+    expect(lazyToggle?.getAttribute('aria-expanded')).toBe('true');
+    await fireEvent.click(lazyToggle!);
+    expect(lazyToggle?.getAttribute('aria-expanded')).toBe('false');
+    await waitFor(() => expect(rowFor(container, child.id)).toBeNull());
   });
 });
