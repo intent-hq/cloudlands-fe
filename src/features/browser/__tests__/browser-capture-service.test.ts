@@ -89,7 +89,35 @@ describe('BrowserCaptureService path boundaries', () => {
     if (previousWorkspaceRoot === undefined) delete process.env.WORKSPACES_BASE_DIR;
     else process.env.WORKSPACES_BASE_DIR = previousWorkspaceRoot;
     await fs.rm(tempRoot, { recursive: true, force: true });
+    vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('records the real session start time in session.json after a captured step (#5643)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const startedAt = new Date('2026-09-22T06:00:00.000Z');
+    const endedAt = new Date('2026-09-22T06:05:00.000Z');
+    vi.setSystemTime(startedAt);
+
+    const session = await browserCapture.startSession({
+      workspaceId: 'workspace-a',
+      name: 'start-time-session',
+    });
+    expect(session.startTime).toBe(startedAt.toISOString());
+
+    await browserCapture.captureStep(session.id, 'workspace-a', 'first-step');
+
+    vi.setSystemTime(endedAt);
+    const result = await browserCapture.endSession(session.id, 'workspace-a');
+
+    expect(result.metadata.startTime).toBe(startedAt.toISOString());
+    expect(result.metadata.endTime).toBe(endedAt.toISOString());
+    expect(result.metadata.stepCount).toBe(1);
+    const written = JSON.parse(
+      await fs.readFile(path.join(session.outputDir, 'session.json'), 'utf-8'),
+    ) as { startTime: string; endTime: string };
+    expect(written.startTime).toBe(startedAt.toISOString());
+    expect(written.endTime).toBe(endedAt.toISOString());
   });
 
   it('rejects an empty snapshot screenshot before creating screenshot.jpg', async () => {
