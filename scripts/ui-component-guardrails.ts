@@ -51,4 +51,8 @@ export const uiComponentGuardrails = {
     settingsForm: 1,
   },
   rawControls: { button: 0, input: 0, select: 0, textarea: 0 },
+  // Raw `<img src={…avatarUrl…}>` outside `src/lib/components/ui/PrincipalAvatar.svelte`. A
+  // hand-rolled avatar image has no load-failure fallback (cloudlands-fe#2774 review), so every
+  // principal avatar renders through the shared PrincipalAvatar component.
+  rawPrincipalAvatarImages: 0,
 } as const;
