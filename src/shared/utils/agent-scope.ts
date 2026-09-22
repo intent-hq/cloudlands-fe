@@ -18,8 +18,8 @@
  * the top-level-only product gates (unread dot, Replace Agent, empty-layout
  * primary agent, "Delegated by" labels) — so per-parent counts, rendered
  * groups and those gates can never disagree about which bin a row is in.
- * The §5.1 `agentSummary` rows the HUD reads are a different shape and keep
- * their own summary-side check (`hud-selectors` `isTopLevelAgent`).
+ * The HUD goes through it too: `hud-selectors` folds each §5.1
+ * `agentSummary` row and its tracked session into one `AgentScopeInputs`.
  *
  * Dependency-light per AGENTS.md: pure functions, no stores or services.
  */

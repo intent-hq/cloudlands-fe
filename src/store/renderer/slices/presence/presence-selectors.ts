@@ -65,15 +65,21 @@ const toPerson = (
 export const hasOtherPresence = (people: readonly PresencePerson[]): boolean =>
   people.some((person) => person.online && !person.self);
 
+/** Row order of the sidebar presence stack: owner, then online members, then offline ones. */
+const presenceRowRank = (person: PresencePerson): number =>
+  person.owner ? 0 : person.online ? 1 : 2;
+
 /**
  * The circles of the workspace sidebar's presence row: every OTHER accepted
  * member of a SHARED workspace (`memberCount > 1`; the owner included, this
- * window's own principal left out) in `workspace.members.list` order, online
- * when the roster lists them, viewing when that roster row has a focus item.
- * Offline members stay listed (the stack draws them greyscale), so the row
- * shows the whole membership even while this window is the only one online.
- * An unshared workspace, one whose membership was not read yet, or an
- * unknown own principal shows nothing.
+ * window's own principal left out), online when the roster lists them,
+ * viewing when that roster row has a focus item. The owner leads (online or
+ * not), then the other online members, then the offline ones, each group
+ * keeping its `workspace.members.list` order. Offline members stay listed
+ * (the stack draws them greyscale), so the row shows the whole membership
+ * even while this window is the only one online. An unshared workspace, one
+ * whose membership was not read yet, or an unknown own principal shows
+ * nothing.
  */
 export const selectWorkspacePresencePeople = store.createSelector<
   [workspaceId: string],
@@ -94,7 +100,8 @@ export const selectWorkspacePresencePeople = store.createSelector<
         viewing: (online?.focus.length ?? 0) > 0,
         self: false,
       });
-    });
+    })
+    .sort((a, b) => presenceRowRank(a) - presenceRowRank(b));
   return people.length > 0 ? people : NO_PEOPLE;
 });
 
