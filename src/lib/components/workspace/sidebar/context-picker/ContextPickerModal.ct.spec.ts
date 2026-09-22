@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../../test/ct-test';
 import ContextPickerModal from './ContextPickerModal.svelte';
 
 test('context picker preserves a translucent full-screen backdrop', async ({

@@ -27,6 +27,10 @@ export const selectLocalChangesForDelete = store.createSelector((state) => {
   return state.workspaceOperations.localChangesForDelete;
 });
 
+export const selectGuestsForDelete = store.createSelector((state) => {
+  return state.workspaceOperations.guestsForDelete;
+});
+
 export const selectShowArchiveWarning = store.createSelector((state) => {
   return state.workspaceOperations.showArchiveWarning;
 });
@@ -47,6 +51,10 @@ export const selectOpenPrsForArchive = store.createSelector((state): OpenPrWarni
 
 export const selectLocalChangesForArchive = store.createSelector((state) => {
   return state.workspaceOperations.localChangesForArchive;
+});
+
+export const selectGuestsForArchive = store.createSelector((state) => {
+  return state.workspaceOperations.guestsForArchive;
 });
 
 export const selectShowBulkArchiveConfirm = store.createSelector((state) => {
@@ -82,6 +90,10 @@ export const selectBulkActiveHookCount = store.createSelector((state) => {
 
 export const selectBulkOpenPrCount = store.createSelector((state) => {
   return state.workspaceOperations.bulkOpenPrCount;
+});
+
+export const selectBulkGuestCount = store.createSelector((state) => {
+  return state.workspaceOperations.bulkGuestCount;
 });
 
 export const selectBulkPreflightReady = store.createSelector((state) => {

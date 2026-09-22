@@ -478,4 +478,31 @@ describe('ProviderCard auggie link-out click behavior', () => {
     expect(props.onSelect).toHaveBeenCalledWith('auggie');
     expect(openExternal).not.toHaveBeenCalled();
   });
+
+  it.each(['title', 'docs'])(
+    'opens only docs when the %s control is activated',
+    async (control) => {
+      const props = { ...baseProps(), provider: auggieProvider() };
+      const { getByRole } = render(ProviderCard, { props });
+      const button = getByRole('button', {
+        name: control === 'title' ? 'Auggie' : /Open.*docs/i,
+        exact: control === 'title',
+      });
+      expect(await fireEvent.keyDown(button, { key: 'Enter' })).toBe(true);
+      expect(props.onSelect).not.toHaveBeenCalled();
+      await fireEvent.click(button);
+      await waitFor(() =>
+        expect(openExternal).toHaveBeenCalledExactlyOnceWith({ url: AUGGIE_DOCS_URL }),
+      );
+      expect(props.onSelect).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['Enter', ' '])('selects the ready card itself with %s', async (key) => {
+    const props = { ...baseProps(), provider: auggieProvider() };
+    const { container } = render(ProviderCard, { props });
+    await fireEvent.keyDown(card(container), { key });
+    expect(props.onSelect).toHaveBeenCalledExactlyOnceWith('auggie');
+    expect(openExternal).not.toHaveBeenCalled();
+  });
 });

@@ -22,6 +22,7 @@
 </script>
 
 <script lang="ts">
+  import type { IconWeight } from 'phosphor-svelte';
   import {
     resolveEditorFallbackIcon,
     resolveEditorIcon,
@@ -60,6 +61,7 @@
 
   interface Props {
     layout?: 'list' | 'submenu';
+    iconWeight?: IconWeight;
     filePath?: string;
     workspaceId?: string;
     isDirectory?: boolean;
@@ -84,6 +86,7 @@
 
   let {
     layout = 'list',
+    iconWeight,
     filePath = '',
     workspaceId = '',
     isDirectory = true,
@@ -624,7 +627,7 @@
 <div class="w-full overflow-hidden">
   {#if showFileActions && layout === 'submenu'}
     <Menu.Sub>
-      <Menu.SubTrigger icon={faUpRightFromSquare}>
+      <Menu.SubTrigger icon={faUpRightFromSquare} {iconWeight}>
         <span class="min-w-0 flex-1 truncate">{m.ui_openCombo_openInApp_tooltip()}</span>
       </Menu.SubTrigger>
       <Menu.SubContent class="w-60">
@@ -644,7 +647,7 @@
                 {:else}
                   <Fa
                     icon={resolveEditorFallbackIcon(editor.category)}
-                    size="12"
+                    size="16"
                     class="opacity-50"
                   />
                 {/if}
@@ -657,7 +660,7 @@
 
           <Menu.Item onclick={openWithOther}>
             <span class={iconSlotClass} aria-hidden="true">
-              <Fa icon={faUpRightFromSquare} size="12" class="opacity-50" />
+              <Fa icon={faUpRightFromSquare} size="16" class="opacity-50" />
             </span>
             <span class="min-w-0 flex-1 truncate">{m.ui_workspaceActions_chooseApp_label()}</span>
           </Menu.Item>
@@ -665,7 +668,7 @@
         {/if}
 
         <Menu.Item onclick={copyAbsolutePath}>
-          <span class="{iconSlotClass} text-xs font-black font-mono opacity-50" aria-hidden="true">
+          <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50" aria-hidden="true">
             {isWindowsPlatform() ? '\\' : '/'}
           </span>
           <span class="min-w-0 flex-1 truncate">
@@ -675,8 +678,9 @@
 
         {#if !isWorkspaceRoot}
           <Menu.Item onclick={copyWorkspacePath}>
-            <span class="{iconSlotClass} text-xs font-black font-mono opacity-50" aria-hidden="true"
-              >./</span
+            <span
+              class="{iconSlotClass} text-xs font-normal font-mono opacity-50"
+              aria-hidden="true">./</span
             >
             <span class="min-w-0 flex-1 truncate">
               {m.ui_workspaceActions_copyRelativePath_label()}
@@ -687,7 +691,7 @@
         {#if showFileNameCopy && !isDirectory}
           <Menu.Item onclick={copyFileName}>
             <span class={iconSlotClass} aria-hidden="true">
-              <Fa icon={faFile} size="12" class="opacity-50" />
+              <Fa icon={faFile} size="16" class="opacity-50" />
             </span>
             <span class="min-w-0 flex-1 truncate">
               {m.ui_workspaceActions_copyFileName_label()}
@@ -720,7 +724,7 @@
               {:else}
                 <Fa
                   icon={resolveEditorFallbackIcon(editor.category)}
-                  size="12"
+                  size="16"
                   class="opacity-50"
                 />
               {/if}
@@ -741,7 +745,7 @@
           size="sm"
         >
           <span class={iconSlotClass}>
-            <Fa icon={faUpRightFromSquare} size="12" class="opacity-50" />
+            <Fa icon={faUpRightFromSquare} size="16" class="opacity-50" />
           </span>
           <span class="truncate min-w-0" title={m.ui_workspaceActions_chooseApp_label()}
             >{m.ui_workspaceActions_chooseApp_label()}</span
@@ -754,7 +758,7 @@
     <!-- Copy Actions -->
     <div class="space-y-0.5">
       <Button variant="ghost" onclick={copyAbsolutePath} class={menuItemClass} size="sm">
-        <span class="{iconSlotClass} text-xs font-black font-mono opacity-50">
+        <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50">
           {isWindowsPlatform() ? '\\' : '/'}
         </span>
         <span class="truncate min-w-0" title={m.ui_workspaceActions_copyAbsolutePath_label()}
@@ -764,7 +768,7 @@
 
       {#if !isWorkspaceRoot}
         <Button variant="ghost" onclick={copyWorkspacePath} class={menuItemClass} size="sm">
-          <span class="{iconSlotClass} text-xs font-black font-mono opacity-50">./</span>
+          <span class="{iconSlotClass} text-xs font-normal font-mono opacity-50">./</span>
           <span class="truncate min-w-0" title={m.ui_workspaceActions_copyRelativePath_label()}
             >{m.ui_workspaceActions_copyRelativePath_label()}</span
           >
@@ -774,7 +778,7 @@
       {#if showFileNameCopy && !isDirectory}
         <Button variant="ghost" onclick={copyFileName} class={menuItemClass} size="sm">
           <span class={iconSlotClass}>
-            <Fa icon={faFile} size="12" class="opacity-50" />
+            <Fa icon={faFile} size="16" class="opacity-50" />
           </span>
           <span class="truncate min-w-0" title={m.ui_workspaceActions_copyFileName_label()}
             >{m.ui_workspaceActions_copyFileName_label()}</span
@@ -802,7 +806,7 @@
           {#if action.iconSnippet}
             {@render action.iconSnippet()}
           {:else if action.icon}
-            <Fa icon={action.icon} size="12" class="opacity-50" />
+            <Fa icon={action.icon} size="16" class="opacity-50" />
           {/if}
         </span>
         <span class="truncate min-w-0" title={action.label}>{action.label}</span>
@@ -843,7 +847,7 @@
   {#if showArchiveOption && (onArchive || onUnarchive)}
     <Button variant="ghost" onclick={handleArchive} class={menuItemClass} size="sm">
       <span class={iconSlotClass}>
-        <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="12" class="opacity-50" />
+        <Fa icon={isArchived ? faBoxOpen : faBoxArchive} size="16" class="opacity-50" />
       </span>
       <span
         class="truncate"
@@ -866,7 +870,7 @@
       size="sm"
     >
       <span class={iconSlotClass}>
-        <Fa icon={faTrash} size="12" class="opacity-50" />
+        <Fa icon={faTrash} size="16" class="opacity-50" />
       </span>
       <span class="truncate min-w-0" title={m.ui_workspaceActions_deleteSpace_label()}
         >{m.ui_workspaceActions_deleteSpace_label()}</span
@@ -888,7 +892,7 @@
         {#if isDeletingFile}
           <IntentMarkLoader size={12} class="opacity-50" />
         {:else}
-          <Fa icon={faTrash} size="12" class="opacity-50" />
+          <Fa icon={faTrash} size="16" class="opacity-50" />
         {/if}
       </span>
       <span class="truncate min-w-0" title={m.ui_workspaceActions_deleteFile_label()}

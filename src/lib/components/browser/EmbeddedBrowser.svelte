@@ -27,6 +27,10 @@
   import { selectPendingBrowserZoom } from '$store/renderer/slices/browser/browser-selectors';
   import { selectMostRecentAgentTab } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import {
+    acquireBrowserTabMount,
+    releaseBrowserTabMount,
+  } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import {
     createEmbeddedBrowserNavigationSyncState,
     navigateEmbeddedBrowserWebview,
     reconcileEmbeddedBrowserLoadCompletion,
@@ -50,6 +54,7 @@
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
+  import { describeUrlForLog } from '$shared/utils/sanitize-credentials';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import { invoke } from '$lib/electron-bridge';
@@ -158,6 +163,20 @@
 
   // Electron webview types are unavailable in the renderer build.
   let webviewRef: EmbeddedBrowserWebview | null = $state(null);
+
+  // Lease the actual DOM mount, not the workspace or selected tab. Retained
+  // guests stay authoritative while inactive; tabs evicted by the panel cache
+  // relinquish ownership so the offscreen host can serve them instead.
+  $effect(() => {
+    if (!webviewRef || !tabId) return;
+    const mountedTabId = tabId;
+    const leaseId = crypto.randomUUID();
+    untrack(() => appStore.dispatch(acquireBrowserTabMount(mountedTabId, leaseId)));
+    return () => {
+      untrack(() => appStore.dispatch(releaseBrowserTabMount(mountedTabId, leaseId)));
+    };
+  });
+
   // displayUrl tracks the loaded URL and can differ from prop `url` after navigation.
   // Initialize from url prop so it's correct on first render (intentionally captures initial value)
   // svelte-ignore state_referenced_locally - intentional: we want initial value, effect syncs later changes
@@ -183,6 +202,12 @@
 
   // Flag to hide webview during URL switch to force recreation
   let isRecreatingWebview = $state(false);
+
+  // Set when the guest webContents was destroyed under a mounted <webview>
+  // (e.g. the page called window.close()). The dead element is unmounted and
+  // an error banner is shown until the user explicitly navigates or reloads;
+  // nothing reloads automatically so a self-closing page cannot loop.
+  let isGuestDestroyed = $state(false);
 
   // Track the current URL that the webview should load.
   // Initialize from url prop if valid, otherwise use about:blank. The browser
@@ -552,6 +577,26 @@
     webviewListeners.push({ event, handler });
   }
 
+  // Synchronous probe of the guest the element holds RIGHT NOW.
+  // getWebContentsId() only reads the cached guestInstanceId and throws
+  // while it is unset (WebViewImpl.reset() ran on disconnect): 'none'.
+  // getURL() additionally round-trips through invokeSync and throws when
+  // the main process no longer knows that guest: 'dead'. A result, even an
+  // empty string, means a 'live' guest.
+  function probeGuest(target: EmbeddedBrowserWebview): 'none' | 'live' | 'dead' {
+    try {
+      target.getWebContentsId();
+    } catch {
+      return 'none';
+    }
+    try {
+      target.getURL?.();
+      return 'live';
+    } catch {
+      return 'dead';
+    }
+  }
+
   function setupWebviewListeners() {
     if (!webviewRef) return;
 
@@ -566,6 +611,47 @@
       webviewReady = true;
       syncCompletedWebviewNavigation(displayUrl);
       updateNavigationState();
+    });
+
+    // The guest webContents is gone (window.close(), guest crash cleanup).
+    // Every later webview method call would throw, so drop the element and
+    // surface a recoverable error state instead of a dead blank frame.
+    //
+    // Reparenting (panel drag) also destroys the guest, and that `destroyed`
+    // DOES reach this element (Electron 44, lib/renderer/web-view/*):
+    // disconnectedCallback deregisters the IPC channel, detaches the guest
+    // and reset() clears guestInstanceId; connectedCallback re-registers the
+    // SAME viewInstanceId channel and creates a new guest. The old guest's
+    // `destroyed` is forwarded by lib/browser/guest-view-manager
+    // sendToEmbedder to that channel in a later IPC task, i.e. after the
+    // element is connected again — with no ordering guarantee relative to
+    // the new guest's attach or dom-ready. The event carries no guest id,
+    // so instead of comparing ids we probe the guest the element holds NOW:
+    // none yet (replacement still being created) or a live one (attached or
+    // already ready) means this `destroyed` is stale. A self-closed guest
+    // never runs reset(), so its element keeps the dead id — the only case
+    // that is a page close.
+    addWebviewListener('destroyed', () => {
+      const target = webviewRef;
+      const guest = target ? probeGuest(target) : 'none';
+      if (!target?.isConnected || guest !== 'dead') {
+        logger.debug('Ignoring destroyed event for a replaced guest', { tabId, guest });
+        return;
+      }
+      // Origin + path only: OAuth close pages carry codes/tokens in the URL.
+      logger.warn('Webview guest was destroyed', {
+        tabId,
+        url: describeUrlForLog(currentWebviewUrl),
+      });
+      cleanupWebviewListeners();
+      webviewReady = false;
+      isLoading = false;
+      isPickingElement = false;
+      canGoBack = false;
+      canGoForward = false;
+      lastRegisteredWebContentsId = undefined;
+      errorMessage = m.browser_embedded_pageClosed_error();
+      isGuestDestroyed = true;
     });
 
     // Navigation events - the webview reports the URL it actually loaded,
@@ -719,11 +805,20 @@
     }
   }
 
+  function safeWebviewUrl(): string | undefined {
+    try {
+      return webviewRef?.getURL?.();
+    } catch {
+      // Guest already destroyed
+      return undefined;
+    }
+  }
+
   function syncCompletedWebviewNavigation(requestedUrl: string) {
     const completedUrl = reconcileEmbeddedBrowserLoadCompletion(
       navigationSync,
       requestedUrl,
-      webviewRef?.getURL?.(),
+      safeWebviewUrl(),
     );
     if (!completedUrl) return;
     displayUrl = completedUrl;
@@ -790,6 +885,7 @@
         isRecreatingWebview = true;
         await tick(); // Wait for webview to be removed from DOM
         currentWebviewUrl = targetUrl;
+        isGuestDestroyed = false;
         isRecreatingWebview = false;
         webviewReady = false;
       }
@@ -822,6 +918,12 @@
   }
 
   function refresh() {
+    // A destroyed guest has no element to reload; mount a fresh one instead.
+    if (isGuestDestroyed) {
+      const targetUrl = currentWebviewUrl !== 'about:blank' ? currentWebviewUrl : displayUrl;
+      if (targetUrl) void loadUrl(targetUrl);
+      return;
+    }
     // Only reload if webview is ready (dom-ready has fired)
     // Otherwise we get: "The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called"
     if (!webviewReady || !webviewRef) return;
@@ -835,7 +937,7 @@
   }
 
   function currentLoadedUrl(): string {
-    const loadedUrl = webviewRef?.getURL?.();
+    const loadedUrl = safeWebviewUrl();
     if (loadedUrl && loadedUrl !== 'about:blank') return loadedUrl;
     return currentWebviewUrl !== 'about:blank' ? currentWebviewUrl : '';
   }
@@ -1111,11 +1213,14 @@
         <img src={faviconUrl} alt="" class="size-5 shrink-0 rounded-sm" data-browser-page-favicon />
       {/if}
 
-      <div class="relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-background px-2">
+      <div
+        class="relative flex h-8 min-w-0 flex-1 items-center rounded-md bg-background"
+        data-browser-address-surface
+      >
         {#if isEditingUrl}
           <form
             onsubmit={handleFormSubmit}
-            class="relative z-10 flex h-full min-w-0 flex-1 items-center"
+            class="relative z-10 flex h-full min-w-0 flex-1 items-center px-2"
           >
             <Input
               bind:this={urlInputRef}
@@ -1135,9 +1240,9 @@
         {:else}
           <Button
             type="button"
-            variant="ghost"
+            variant="plain"
             size="sm"
-            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+            class="relative z-10 flex h-full min-w-0 flex-1 cursor-text items-center gap-1.5 rounded-md px-5 text-left outline-none hover:bg-hover active:bg-active focus-visible:ring-1 focus-visible:ring-focus-ring"
             onclick={() => void focusUrlInput()}
             aria-label={m.browser_embedded_editAddress_ariaLabel()}
           >
@@ -1217,7 +1322,10 @@
 
   <!-- Browser content -->
   <div class="flex-1 relative overflow-hidden">
-    {#if isUrlValid && !isRecreatingWebview}
+    {#if isGuestDestroyed}
+      <!-- Guest destroyed: the banner above carries the message; the address bar and refresh recover -->
+      <div class="h-full bg-muted/30" data-browser-guest-destroyed></div>
+    {:else if isUrlValid && !isRecreatingWebview}
       <BrowserDeviceFrame
         {viewport}
         onViewportChange={(nextViewport) => onViewportChange?.(nextViewport)}

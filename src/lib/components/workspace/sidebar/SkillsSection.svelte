@@ -81,12 +81,12 @@
       <div class="size-3.5 rounded flex items-center justify-center shrink-0">
         <Fa
           icon={isGlobal ? faGlobe : faPuzzlePiece}
-          size="xs"
+          size={14}
           class="text-muted-foreground opacity-70"
         />
       </div>
       <div class="flex-1 min-w-0">
-        <span class="text-sm truncate block text-foreground">
+        <span class="type-body font-normal truncate block text-foreground">
           {skill.name}
         </span>
       </div>

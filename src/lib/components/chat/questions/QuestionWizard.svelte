@@ -15,6 +15,7 @@
   import { AskUserQuestions } from '$lib/components/ui/ask-user-questions';
   import type { AskUserAnswer, AskUserQuestion } from '$lib/components/ui/ask-user-questions';
   import { Button } from '$lib/components/ui/button';
+  import { crispOut, springIn } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import DismissQuestionsConfirmDialog from './DismissQuestionsConfirmDialog.svelte';
   import {
@@ -66,9 +67,9 @@
   const primitiveQuestions = $derived<AskUserQuestion[]>(
     questions.map((question) => ({
       id: question.attachmentId,
-      header: question.header,
       title: question.question,
       description: question.explanation,
+      layout: 'stacked',
       options: question.options.map((option, optionIndex) => ({
         id: String(optionIndex),
         title: option.label,
@@ -206,15 +207,44 @@
   function handleBack(currentIndex: number) {
     if (!completed) idx = Math.max(0, currentIndex - 1);
   }
+
+  let root = $state<HTMLDivElement>();
+  let expandedElement = $state<HTMLDivElement>();
+  let collapsedElement = $state<HTMLDivElement>();
+  let previousBounds: DOMRect | undefined;
+
+  $effect.pre(() => {
+    // Keep the outgoing surface at its last screen position while the host reflows.
+    previousBounds = (collapsed ? expandedElement : collapsedElement)?.getBoundingClientRect();
+  });
+
+  function enterState(node: HTMLElement, expanded: boolean) {
+    // Svelte can reuse an outgoing branch when a disclosure is toggled rapidly.
+    node.inert = false;
+    node.removeAttribute('aria-hidden');
+    for (const property of ['position', 'width', 'left', 'top'])
+      node.style.removeProperty(property);
+    return springIn(node, {
+      tier: 'moderate',
+      y: expanded ? 8 : 4,
+      scale: expanded ? 0.96 : 0.98,
+    });
+  }
+
+  function exitState(node: HTMLElement) {
+    const bounds = previousBounds ?? node.getBoundingClientRect();
+    node.inert = true;
+    node.setAttribute('aria-hidden', 'true');
+    node.style.position = 'absolute';
+    node.style.width = `${bounds.width}px`;
+    const origin = root?.getBoundingClientRect();
+    node.style.left = `${bounds.left - (origin?.left ?? bounds.left)}px`;
+    node.style.top = `${bounds.top - (origin?.top ?? bounds.top)}px`;
+    return crispOut(node, { tier: 'moderate', y: 8, scale: 0.98 });
+  }
 </script>
 
-{#snippet headerActions()}
-  <Button
-    variant="ghost-light"
-    size="xs"
-    title={m.chat_questionWizard_hide_tooltip()}
-    onclick={() => onToggleCollapsed?.(true)}>{m.chat_questionWizard_hide_label()}</Button
-  >
+{#snippet dismissAction()}
   {#if onDismiss}
     <Button
       variant="ghost"
@@ -226,63 +256,92 @@
   {/if}
 {/snippet}
 
+{#snippet footerActions()}
+  <Button
+    variant="ghost-light"
+    size="xs"
+    title={m.chat_questionWizard_hide_tooltip()}
+    onclick={() => onToggleCollapsed?.(true)}>{m.chat_questionWizard_hide_label()}</Button
+  >
+  {@render dismissAction()}
+{/snippet}
+
 <div
+  bind:this={root}
   class={collapsed
-    ? 'min-w-0 overflow-hidden rounded-(--radius-large) border border-border bg-card'
-    : 'min-w-0'}
+    ? 'relative w-full min-w-0 text-left'
+    : 'relative w-full max-w-160 min-w-0 text-left'}
+  style:--focus-ring="var(--muted-foreground)"
   data-question-wizard
   role="group"
   aria-label={m.chat_questionWizard_title()}
 >
   {#if collapsed}
-    <div class="flex min-w-0 w-full items-center">
+    <div
+      bind:this={collapsedElement}
+      data-question-state="collapsed"
+      class="flex w-full min-w-0 items-center rounded-(--radius-large) border border-border bg-card"
+      in:enterState={false}
+      out:exitState
+    >
       <Button
-        variant="ghost"
-        class="h-auto min-w-0 flex-1 justify-start rounded-none px-3 py-2.5 sm:px-4"
+        variant="plain"
+        wrapContent={false}
+        class="h-auto min-w-0 flex-1 justify-start gap-2 px-3 py-2.5 text-left sm:px-4"
+        aria-expanded={false}
         onclick={() => onToggleCollapsed?.(false)}
       >
-        <span class="type-caption font-medium text-foreground">{m.chat_questionWizard_title()}</span
-        >
-        <span class="type-caption text-muted-foreground">{questions.length}</span>
-        <span class="ml-auto min-w-0 truncate type-caption text-muted-foreground">
+        <span class="flex min-w-0 flex-1 items-center gap-1">
+          <span class="truncate type-caption font-medium text-foreground"
+            >{m.chat_questionWizard_title()}</span
+          >
+          <span class="shrink-0 type-caption text-muted-foreground">{questions.length}</span>
+        </span>
+        <span class="min-w-0 max-w-[40%] truncate type-caption text-muted-foreground">
           {m.chat_questionWizard_clickToExpand_label()}
         </span>
       </Button>
       {#if onDismiss}
-        <Button
-          variant="ghost"
-          class="h-auto rounded-none px-3 py-2.5 text-danger"
-          title={m.chat_questionWizard_dismiss_tooltip()}
-          onclick={() => (confirmingDismiss = true)}>{m.chat_questionWizard_dismiss_label()}</Button
-        >
+        <div class="shrink-0 pr-1 sm:pr-2">
+          {@render dismissAction()}
+        </div>
       {/if}
     </div>
   {:else}
-    <AskUserQuestions
-      questions={primitiveQuestions}
-      currentIndex={idx}
-      answers={primitiveAnswers}
-      onCurrentIndexChange={(nextIndex) => {
-        if (!completed) idx = nextIndex;
-      }}
-      onAnswersChange={handleAnswersChange}
-      onComplete={handleComplete}
-      showBack={multiStep}
-      onBack={handleBack}
-      backLabel={m.chat_questionWizard_back_label()}
-      showCounter={multiStep}
-      alwaysShowSkip
-      showOtherSubmit
-      exclusiveOther
-      clearOnSkip
-      globalKeyboardShortcuts
-      restoreFocusOnNavigate
-      disabled={completed || confirmingDismiss}
-      {headerActions}
-      skipLabel={m.chat_questionWizard_skip_label()}
-      class="max-w-none"
-      data-testid="question-wizard-card"
-    />
+    <div
+      bind:this={expandedElement}
+      data-question-state="expanded"
+      class="w-full origin-bottom"
+      in:enterState={true}
+      out:exitState
+    >
+      <AskUserQuestions
+        questions={primitiveQuestions}
+        currentIndex={idx}
+        answers={primitiveAnswers}
+        onCurrentIndexChange={(nextIndex) => {
+          if (!completed) idx = nextIndex;
+        }}
+        onAnswersChange={handleAnswersChange}
+        onComplete={handleComplete}
+        showBack={multiStep}
+        onBack={handleBack}
+        backLabel={m.chat_questionWizard_back_label()}
+        showCounter={multiStep}
+        alwaysShowSkip
+        showOtherSubmit
+        exclusiveOther
+        clearOnSkip
+        globalKeyboardShortcuts
+        restoreFocusOnNavigate
+        disabled={completed || confirmingDismiss || collapsed}
+        {footerActions}
+        class="max-w-none max-h-[var(--question-max-height,60dvh)] overflow-y-auto bg-popover [box-shadow:none]!"
+        skipLabel={m.chat_questionWizard_skip_label()}
+        size="compact"
+        data-testid="question-wizard-card"
+      />
+    </div>
   {/if}
 </div>
 

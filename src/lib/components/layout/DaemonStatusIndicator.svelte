@@ -72,7 +72,11 @@
   // Re-exported for existing importers; the implementation lives in the
   // dependency-light util so non-layout consumers (e.g. Settings → Devices)
   // can share it without importing this component.
-  import { formatConnectionLabel } from '$lib/utils/connection-label';
+  import {
+    formatConnectionLabel,
+    formatGuestSessionAddress,
+    formatGuestSessionLabel,
+  } from '$lib/utils/connection-label';
   export { formatConnectionLabel };
 </script>
 
@@ -88,7 +92,13 @@
   import { cn } from '$lib/utils';
   import { formatTransportLabel } from '$lib/utils/daemon-status-format';
   import Fa from 'svelte-fa';
-  import { faPlus, faCheck, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
+  import {
+    faPlus,
+    faCheck,
+    faChevronRight,
+    faTriangleExclamation,
+    faUsers,
+  } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
@@ -96,6 +106,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import AgentMemoryBreakdownDialog from './AgentMemoryBreakdownDialog.svelte';
   import CertMismatchModal from './CertMismatchModal.svelte';
   import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
   import {
@@ -108,6 +119,8 @@
     selectUnslothStopping,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import {
+    agentMemoryBreakdownClosed,
+    agentMemoryBreakdownOpened,
     pollSystemStatus,
     pollUnslothStatus,
     stopUnslothRequested,
@@ -130,6 +143,11 @@
     forgetConnectionRequested,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+  import {
+    selectGuestSessions,
+    selectGuestSessionsConnectedIds,
+    selectGuestSessionsOpenIds,
+  } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import {
     CONNECTION_ACCENT_CLASSES,
     resolveConnectionAccent,
@@ -155,8 +173,12 @@
   const protocolMismatchModal$ = selectProtocolMismatchModal();
 
   let dropdownOpen = $state(false);
+  let menuBody = $state<HTMLDivElement | null>(null);
+  // Align the details surface to the parent menu, not its inset first row.
+  const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
   let liveUptimeSeconds = $state<number | undefined>(undefined);
   let stopUnslothDialogOpen = $state(false);
+  let agentMemoryDialogOpen = $state(false);
 
   const healthIconColors: Record<DaemonHealth, string> = {
     healthy: 'text-subtle',
@@ -387,11 +409,45 @@
     appStore.dispatch(stopUnslothRequested());
   }
 
+  // --- Agent memory breakdown ---------------------------------------------
+
+  // Agent-attributed memory from the last system.status poll. Null hides the
+  // row: older daemons omit the field, and a new daemon reports null until
+  // its first process-tree sample.
+  const agentMemoryBytes = $derived($stats$?.agentMemoryBytes ?? null);
+
+  function openAgentMemoryBreakdown() {
+    dropdownOpen = false;
+    agentMemoryDialogOpen = true;
+    appStore.dispatch(agentMemoryBreakdownOpened());
+  }
+
+  // The dialog routes every dismissal (Escape, X, backdrop) and the single
+  // Close button through onClose; both stop the refresh cadence and drop the
+  // stored usage.
+  function closeAgentMemoryBreakdown() {
+    agentMemoryDialogOpen = false;
+    appStore.dispatch(agentMemoryBreakdownClosed());
+  }
+
   // --- Multi-backend connect: menu actions -------------------------------
 
   function openDevicesSettings() {
     dropdownOpen = false;
     void navigateToSettings({ tab: 'devices' });
+  }
+
+  // Hosts joined as a GUEST (multiplayer w4) — a separate block from the
+  // paired devices above: the only status a guest sees is whether its pooled
+  // client is live, so the row carries "connected" / "not connected" and
+  // nothing else (no health, no version, no owner-only controls).
+  const guestSessions$ = selectGuestSessions();
+  const guestOpenIds$ = selectGuestSessionsOpenIds();
+  const guestConnectedIds$ = selectGuestSessionsConnectedIds();
+
+  function openGuestSessionsSettings() {
+    dropdownOpen = false;
+    void navigateToSettings({ tab: 'guest-sessions' });
   }
 
   const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
@@ -406,7 +462,9 @@
    * Dispatch a connection open. A `secret-unavailable` resolution (the stored
    * access token cannot be read — keychain locked or entry gone) is a failure,
    * not a success (#3783): surface it and route to Devices settings, where the
-   * token can be re-entered.
+   * token can be re-entered. A guest session's token cannot be re-entered
+   * (leave the host and rejoin from a new invite), so it routes to Guest
+   * Sessions settings instead.
    */
   async function openConnectionOrRecover(id: string) {
     try {
@@ -414,6 +472,16 @@
       appStore.dispatch(action);
       const result = await action.promise;
       if (result.status === 'secret-unavailable') {
+        const guest = $guestSessions$.find((session) => session.id === id);
+        if (guest) {
+          toast.error(
+            m.layout_daemonStatus_guestSecretUnavailable_error({
+              label: formatGuestSessionLabel(guest),
+            }),
+          );
+          void navigateToSettings({ tab: 'guest-sessions' });
+          return;
+        }
         toast.error(
           m.layout_daemonStatus_secretUnavailable_error({ label: connectionDisplayLabel(id) }),
         );
@@ -478,10 +546,9 @@
     <Button
       {...props}
       variant="ghost-light"
-      class={cn(
-        'flex items-center justify-center h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer',
-        currentRemoteName ? 'gap-1.5 px-1.5' : 'w-6',
-      )}
+      size={currentRemoteName ? 'compact' : 'icon-compact'}
+      wrapContent={false}
+      class={cn('hover:bg-muted/50 rounded', currentRemoteName && 'gap-1.5 px-1.5')}
       aria-label={triggerAriaLabel}
     >
       {#if currentRemoteName}
@@ -503,12 +570,18 @@
       between the 224px floor and a 320px cap. At the cap the Connection
       row's min-w-0 truncate takes over instead of widening the menu.
     -->
-    <div class="min-w-56 w-max max-w-80">
+    <div bind:this={menuBody} class="min-w-56 w-max max-w-80">
       <Menu.Sub>
         <Menu.SubTrigger class="w-full cursor-pointer text-xs px-3 py-1.5">
           {detailsStatusLabel}
         </Menu.SubTrigger>
-        <Menu.SubContent side="left" align="start" class="min-w-56 w-max max-w-80 px-0">
+        <Menu.SubContent
+          side="left"
+          align="start"
+          customAnchor={menuAnchor}
+          collisionPadding={8}
+          class="min-w-56 w-max max-w-80 px-0"
+        >
           <Header class="px-3 pt-1.5 pb-1" size={6}>{m.layout_daemonStatus_header()}</Header>
 
           {#if $health$ === 'down'}
@@ -555,25 +628,29 @@
               {#if $stats$}
                 <div class="h-px bg-border my-1"></div>
 
-                <!-- Agent slots -->
-                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
-                  <span class="font-mono">
-                    {$stats$.agents}/{$stats$.maxAgents ?? '?'}
-                  </span>
-                </div>
+                <!-- Agent slots (administrator-only; omitted from the collaborator projection) -->
+                {#if $stats$.agents !== undefined}
+                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                    <span class="text-subtle">{m.layout_daemonStatus_agentSlots_label()}</span>
+                    <span class="tabular-nums">
+                      {$stats$.agents}/{$stats$.maxAgents ?? '?'}
+                    </span>
+                  </div>
+                {/if}
 
-                <!-- Connected clients -->
-                <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
-                  <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
-                  <span class="font-mono">{$stats$.clients}</span>
-                </div>
+                <!-- Connected clients (administrator-only; omitted from the collaborator projection) -->
+                {#if $stats$.clients !== undefined}
+                  <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                    <span class="text-subtle">{m.layout_daemonStatus_wssClients_label()}</span>
+                    <span class="tabular-nums">{$stats$.clients}</span>
+                  </div>
+                {/if}
 
                 <!-- Transport -->
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                   <span class="text-subtle shrink-0">{m.layout_daemonStatus_transport_label()}</span
                   >
-                  <span class="font-mono text-xs min-w-0 truncate">
+                  <span class="text-xs min-w-0 truncate">
                     {$stats$.listenMode}{$stats$.port ? `:${$stats$.port}` : ''}
                   </span>
                 </div>
@@ -604,7 +681,7 @@
                           >
                             <Fa icon={faTriangleExclamation} />
                           </span>
-                          <span class="font-mono text-xs min-w-0 truncate" title={$stats$.version}
+                          <span class="text-xs min-w-0 truncate" title={$stats$.version}
                             >{$stats$.version}</span
                           >
                         </span>
@@ -615,7 +692,7 @@
                       <span class="text-subtle shrink-0"
                         >{m.layout_daemonStatus_version_label()}</span
                       >
-                      <span class="font-mono text-xs min-w-0 truncate" title={$stats$.version}
+                      <span class="text-xs min-w-0 truncate" title={$stats$.version}
                         >{$stats$.version}</span
                       >
                     </div>
@@ -626,7 +703,7 @@
                 {#if $stats$.protocolVersion !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_protocol_label()}</span>
-                    <span class="font-mono text-xs">{$stats$.protocolVersion}</span>
+                    <span class="text-xs">{$stats$.protocolVersion}</span>
                   </div>
                 {/if}
 
@@ -634,7 +711,7 @@
                 {#if liveUptimeSeconds !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatUptime(liveUptimeSeconds)}</span
                     >
                   </div>
@@ -644,7 +721,7 @@
                 {#if $stats$.cpuPercent !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatCpu($stats$.cpuPercent)}</span
                     >
                   </div>
@@ -654,9 +731,40 @@
                 {#if $stats$.memoryBytes !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatMemory($stats$.memoryBytes)}</span
                     >
+                  </div>
+                {/if}
+
+                <!--
+                  Agent memory (only once the daemon has sampled it). Clickable:
+                  opens the per-agent breakdown dialog. Same in-menu Button
+                  pattern as the Stop server action below; the wrapping div
+                  gives the row a box for the parent's vertical rhythm, which
+                  the Button's own display:contents wrapper would otherwise skip.
+                -->
+                {#if agentMemoryBytes !== null}
+                  <div>
+                    <Button
+                      variant="ghost"
+                      wrapContent={false}
+                      class="w-full flex justify-between gap-2 text-xs whitespace-nowrap hover:bg-muted/50 rounded px-1 -mx-1 py-0 h-auto min-h-0 font-normal cursor-pointer"
+                      aria-label={m.layout_daemonStatus_agentMemory_ariaLabel({
+                        memory: formatMemory(agentMemoryBytes),
+                      })}
+                      onclick={openAgentMemoryBreakdown}
+                    >
+                      <span class="text-subtle">{m.layout_daemonStatus_agentMemory_label()}</span>
+                      <span class="flex items-center gap-1.5">
+                        <span class="tabular-nums text-xs" aria-live="off"
+                          >{formatMemory(agentMemoryBytes)}</span
+                        >
+                        <span class="text-subtle" aria-hidden="true">
+                          <Fa icon={faChevronRight} size="xs" />
+                        </span>
+                      </span>
+                    </Button>
                   </div>
                 {/if}
 
@@ -684,7 +792,8 @@
                           >
                             <Fa icon={faTriangleExclamation} />
                           </span>
-                          <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span
+                          <span class="tabular-nums text-xs" aria-live="off"
+                            >{workspaceDiskValue}</span
                           >
                         </span>
                       </div>
@@ -692,7 +801,7 @@
                   {:else}
                     <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                       <span class="text-subtle">{m.layout_daemonStatus_workspaceDisk_label()}</span>
-                      <span class="font-mono text-xs" aria-live="off">{workspaceDiskValue}</span>
+                      <span class="tabular-nums text-xs" aria-live="off">{workspaceDiskValue}</span>
                     </div>
                   {/if}
                 {/if}
@@ -700,8 +809,7 @@
                 <!-- Host OS/Arch -->
                 <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                   <span class="text-subtle shrink-0">{m.layout_daemonStatus_host_label()}</span>
-                  <span class="font-mono text-xs min-w-0 truncate">{$stats$.os}/{$stats$.arch}</span
-                  >
+                  <span class="text-xs min-w-0 truncate">{$stats$.os}/{$stats$.arch}</span>
                 </div>
 
                 <!-- FE connection mode -->
@@ -711,7 +819,7 @@
                     <span class="text-subtle shrink-0"
                       >{m.layout_daemonStatus_connection_label()}</span
                     >
-                    <span class="font-mono text-xs min-w-0 truncate" title={transportLabel}
+                    <span class="text-xs min-w-0 truncate" title={transportLabel}
                       >{transportLabel}</span
                     >
                   </div>
@@ -721,7 +829,7 @@
                       >{m.layout_daemonStatus_connection_label()}</span
                     >
                     <!-- i18n-ignore (transport mode identifier) -->
-                    <span class="font-mono text-xs text-subtle">unknown</span>
+                    <span class="text-xs text-subtle">unknown</span>
                   </div>
                 {/if}
               {:else}
@@ -747,7 +855,7 @@
                       {#snippet content()}
                         <span>{$unslothStatus$.repoId}</span>
                       {/snippet}
-                      <span class="font-mono text-xs truncate max-w-32">{unslothModelLabel}</span>
+                      <span class="text-xs truncate max-w-32">{unslothModelLabel}</span>
                     </Tooltip>
                   </div>
                 {/if}
@@ -758,7 +866,7 @@
                     <span class="text-subtle">{m.layout_daemonStatus_phase_label()}</span>
                     <span
                       class={cn(
-                        'font-mono text-xs',
+                        'text-xs',
                         $unslothStatus$.phase === 'ready' ? 'text-green-500' : 'text-warning-ink',
                       )}
                     >
@@ -771,7 +879,7 @@
                 {#if $unslothStatus$.port !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_port_label()}</span>
-                    <span class="font-mono text-xs">{$unslothStatus$.port}</span>
+                    <span class="tabular-nums text-xs">{$unslothStatus$.port}</span>
                   </div>
                 {/if}
 
@@ -779,7 +887,7 @@
                 {#if $unslothStatus$.uptimeSecs !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_uptime_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatUptime($unslothStatus$.uptimeSecs)}</span
                     >
                   </div>
@@ -789,7 +897,7 @@
                 {#if $unslothStatus$.cpuPercent !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_cpu_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatCpu($unslothStatus$.cpuPercent)}</span
                     >
                   </div>
@@ -799,7 +907,7 @@
                 {#if $unslothStatus$.memoryBytes !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_memory_label()}</span>
-                    <span class="font-mono text-xs" aria-live="off"
+                    <span class="tabular-nums text-xs" aria-live="off"
                       >{formatMemory($unslothStatus$.memoryBytes)}</span
                     >
                   </div>
@@ -809,7 +917,7 @@
                 {#if $unslothStatus$.attachedAgentCount !== undefined}
                   <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                     <span class="text-subtle">{m.layout_daemonStatus_attachedAgents_label()}</span>
-                    <span class="font-mono text-xs">{$unslothStatus$.attachedAgentCount}</span>
+                    <span class="tabular-nums text-xs">{$unslothStatus$.attachedAgentCount}</span>
                   </div>
                 {/if}
 
@@ -847,20 +955,22 @@
               class="w-full cursor-pointer text-xs px-2 py-1.5"
               onSelect={() => handleOpenConnection(conn.id)}
             >
-              {#if !conn.isLocal && accent !== null}
-                <span
-                  class={cn('size-2 shrink-0 rounded-full', CONNECTION_ACCENT_CLASSES[accent])}
-                  aria-hidden="true"
-                  data-connection-accent={accent}
-                ></span>
-              {/if}
-              <DeviceIcon record={conn} size={16} class="text-foreground" />
+              {#snippet leading()}
+                <DeviceIcon record={conn} size={16} class="text-foreground" />
+              {/snippet}
               <span class="min-w-0 flex-1 truncate">
                 {conn.isLocal
                   ? m.layout_daemonStatus_localConnection_label()
                   : formatConnectionLabel(conn)}
               </span>
               <span class="flex items-center gap-1.5 shrink-0">
+                {#if !conn.isLocal && accent !== null}
+                  <span
+                    class={cn('size-2 shrink-0 rounded-full', CONNECTION_ACCENT_CLASSES[accent])}
+                    aria-hidden="true"
+                    data-connection-accent={accent}
+                  ></span>
+                {/if}
                 {#if ($certWarningsById$[conn.id]?.length ?? 0) > 0}
                   {@const certWarningHosts = $certWarningsById$[conn.id]
                     .map((w) => w.host)
@@ -922,17 +1032,77 @@
             </Menu.Item>
           {/each}
         {/if}
-        <Button
-          variant="ghost-light"
-          class="w-full text-left text-xs hover:bg-muted/50 rounded px-2 py-1.5 transition-colors cursor-pointer flex items-center gap-2"
-          onclick={openDevicesSettings}
-        >
-          <span class="text-subtle"><Fa icon={faPlus} /></span>
+        <Menu.Item class="w-full cursor-pointer text-xs px-2 py-1.5" onSelect={openDevicesSettings}>
+          {#snippet leading()}
+            <span class="text-subtle"><Fa icon={faPlus} /></span>
+          {/snippet}
           {hasSavedRemoteConnections
             ? m.layout_daemonStatus_manageDevices_action()
             : m.layout_daemonStatus_connectAnotherDevice_action()}
-        </Button>
+        </Menu.Item>
       </div>
+
+      <!-- Guest sessions (hosts joined through an invite) — shown only once joined -->
+      {#if $guestSessions$.length > 0}
+        <div class="h-px bg-border my-1"></div>
+        <div class="px-1 pb-1" data-testid="daemon-status-guest-sessions">
+          <Header class="px-2 pt-1.5 pb-0.5" size={6}
+            >{m.layout_daemonStatus_guestSessions_header()}</Header
+          >
+          {#each $guestSessions$ as session (session.id)}
+            {@const isCurrent = session.id === $currentConnectionId$}
+            {@const open = $guestOpenIds$.includes(session.id)}
+            {@const connected = open && $guestConnectedIds$.includes(session.id)}
+            {@const guestAddress = formatGuestSessionAddress(session)}
+            <Menu.Item
+              class="w-full cursor-pointer text-xs px-2 py-1.5"
+              onSelect={() => handleOpenConnection(session.id)}
+            >
+              <span class="text-foreground shrink-0" aria-hidden="true"><Fa icon={faUsers} /></span>
+              <span class="min-w-0 flex-1 truncate">
+                {formatGuestSessionLabel(session)}
+                <!-- Mirrors the remote-connection `hostname (host:port)` shape:
+                     the dialled tc address / host stays visible once the
+                     captured machine name takes over as the primary label. -->
+                {#if guestAddress !== null}
+                  <span class="text-subtle" data-guest-address={guestAddress}>({guestAddress})</span
+                  >
+                {/if}
+              </span>
+              <span class="flex items-center gap-1.5 shrink-0">
+                <!-- Status only for a host with a window (pooled client); a
+                     joined host that was never opened has no status. -->
+                {#if open}
+                  <span
+                    class={connected ? 'text-green-600 dark:text-green-500' : 'text-subtle'}
+                    data-guest-connected={connected}
+                  >
+                    {connected
+                      ? m.layout_daemonStatus_guestSession_connected_label()
+                      : m.layout_daemonStatus_guestSession_notConnected_label()}
+                  </span>
+                {/if}
+                {#if isCurrent}
+                  <span
+                    class="text-green-500"
+                    role="img"
+                    aria-label={m.layout_daemonStatus_connectionActive_label()}
+                  >
+                    <Fa icon={faCheck} />
+                  </span>
+                {/if}
+              </span>
+            </Menu.Item>
+          {/each}
+          <Menu.Item
+            class="w-full cursor-pointer text-xs px-2 py-1.5"
+            onSelect={openGuestSessionsSettings}
+          >
+            <span class="text-subtle" aria-hidden="true"><Fa icon={faUsers} /></span>
+            {m.layout_daemonStatus_manageGuestSessions_action()}
+          </Menu.Item>
+        </div>
+      {/if}
     </div>
   {/snippet}
 </DropdownMenu>
@@ -947,6 +1117,11 @@
     variant="destructive"
     onConfirm={confirmStopUnsloth}
   />
+{/if}
+
+<!-- Mounted per open so the breakdown starts collapsed every time. -->
+{#if agentMemoryDialogOpen}
+  <AgentMemoryBreakdownDialog onClose={closeAgentMemoryBreakdown} />
 {/if}
 
 <!-- Cert-mismatch failure modal — driven by the connections:cert-mismatch push. -->

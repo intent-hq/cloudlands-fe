@@ -64,11 +64,30 @@ vi.mock('../main/browser-capture-service', () => ({
   },
 }));
 
-// Mock the daemon client used by the owner display-name lookup (agent.list).
+// Mock the daemon client used by the owner display-name lookup — one
+// `agent.get` point read per distinct owner id (intent#5531).
 const mockBackendRequest = vi.fn();
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockBackendRequest }),
 }));
+
+/** Answer `agent.get` from a name table; unknown ids reject like the daemon's not-found. */
+function mockAgentNames(names: Record<string, string>) {
+  mockBackendRequest.mockImplementation((method: string, params?: unknown) => {
+    if (method !== 'agent.get') return Promise.reject(new Error(`unexpected ${method}`));
+    const { agentId } = params as { agentId: string };
+    const name = names[agentId];
+    return name === undefined
+      ? Promise.reject(
+          Object.assign(new Error('agent not found'), {
+            rpcCode: -32602,
+            code: 'not-found',
+            data: { code: 'not-found' },
+          }),
+        )
+      : Promise.resolve({ agent: { id: agentId, name } });
+  });
+}
 
 // Workspace-visibility probe for the workspace-inactive warning
 // (monorepo#3045). Defaults to "visible" so focus-bearing actions carry no
@@ -90,6 +109,7 @@ describe('browser-action-executor', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBackendRequest.mockReset();
   });
 
   // =========================================================================
@@ -392,12 +412,7 @@ describe('browser-action-executor', () => {
 
       it("scope defaults to 'all' and every tab carries owner + sizing + display info", async () => {
         await mockThreeTabs();
-        mockBackendRequest.mockResolvedValueOnce({
-          agents: [
-            { id: 'agent-1', name: 'Alice' },
-            { id: 'agent-2', name: 'Bob' },
-          ],
-        });
+        mockAgentNames({ 'agent-1': 'Alice', 'agent-2': 'Bob' });
 
         const result = await executeActions(
           { actions: [{ action: 'listTabs' }] },
@@ -407,7 +422,17 @@ describe('browser-action-executor', () => {
         );
 
         expect(result.success).toBe(true);
-        expect(mockBackendRequest).toHaveBeenCalledWith('agent.list', { workspaceId: 'ws-1' });
+        // One point read per distinct owner — never a workspace agent.list.
+        expect(mockBackendRequest).toHaveBeenCalledTimes(2);
+        expect(mockBackendRequest).toHaveBeenCalledWith('agent.get', {
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+        });
+        expect(mockBackendRequest).toHaveBeenCalledWith('agent.get', {
+          agentId: 'agent-2',
+          workspaceId: 'ws-1',
+        });
+        expect(mockBackendRequest).not.toHaveBeenCalledWith('agent.list', expect.anything());
         expect(result.results[0]?.result).toEqual([
           {
             tabId: 'tab-mine',
@@ -489,7 +514,7 @@ describe('browser-action-executor', () => {
           ],
           stale: false,
         });
-        mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+        mockAgentNames({ 'agent-1': 'Alice' });
 
         const result = await executeActions(
           { actions: [{ action: 'listTabs' }] },
@@ -535,7 +560,7 @@ describe('browser-action-executor', () => {
           ],
           stale: false,
         });
-        mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+        mockAgentNames({ 'agent-1': 'Alice' });
 
         const result = await executeActions(
           { actions: [{ action: 'listTabs' }] },
@@ -553,7 +578,7 @@ describe('browser-action-executor', () => {
 
       it("scope 'mine' returns only the caller's tabs", async () => {
         await mockThreeTabs();
-        mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+        mockAgentNames({ 'agent-1': 'Alice' });
 
         const result = await executeActions(
           { actions: [{ action: 'listTabs', scope: 'mine' }] },
@@ -567,7 +592,7 @@ describe('browser-action-executor', () => {
         expect(tabs.map((t) => t.tabId)).toEqual(['tab-mine']);
       });
 
-      it("scope 'unclaimed' returns only unowned tabs and skips the agent.list lookup", async () => {
+      it("scope 'unclaimed' returns only unowned tabs and skips the owner-name lookup", async () => {
         await mockThreeTabs();
 
         const result = await executeActions(
@@ -607,9 +632,9 @@ describe('browser-action-executor', () => {
         expect(result.error).toContain('Invalid action sequence');
       });
 
-      it('owner display names are best-effort: a failing agent.list keeps the owner ids', async () => {
+      it('owner display names are best-effort: a failing agent.get keeps the owner ids', async () => {
         await mockThreeTabs();
-        mockBackendRequest.mockRejectedValueOnce(new Error('daemon offline'));
+        mockBackendRequest.mockRejectedValue(new Error('daemon offline'));
 
         const result = await executeActions(
           { actions: [{ action: 'listTabs' }] },
@@ -622,6 +647,27 @@ describe('browser-action-executor', () => {
         const tabs = result.results[0]?.result as Array<Record<string, unknown>>;
         expect(tabs[0]).toMatchObject({ ownerAgentId: 'agent-1', mode: 'emulated' });
         expect(tabs[0]).not.toHaveProperty('ownerAgentName');
+        expect(tabs[1]).toMatchObject({ ownerAgentId: 'agent-2' });
+        expect(tabs[1]).not.toHaveProperty('ownerAgentName');
+      });
+
+      it('a per-owner failure only blanks that owner: other owners keep their names', async () => {
+        await mockThreeTabs();
+        // agent-2 was deleted (structured not-found); agent-1 resolves.
+        mockAgentNames({ 'agent-1': 'Alice' });
+
+        const result = await executeActions(
+          { actions: [{ action: 'listTabs' }] },
+          undefined,
+          'agent-1',
+          'ws-1',
+        );
+
+        expect(result.success).toBe(true);
+        const tabs = result.results[0]?.result as Array<Record<string, unknown>>;
+        expect(tabs[0]).toMatchObject({ ownerAgentId: 'agent-1', ownerAgentName: 'Alice' });
+        expect(tabs[1]).toMatchObject({ ownerAgentId: 'agent-2' });
+        expect(tabs[1]).not.toHaveProperty('ownerAgentName');
       });
 
       it('reports the service-derived effective size for a visible owned fit tab', async () => {
@@ -645,7 +691,7 @@ describe('browser-action-executor', () => {
           width: 640,
           height: 420,
         });
-        mockBackendRequest.mockResolvedValueOnce({ agents: [] });
+        mockAgentNames({});
 
         const result = await executeActions(
           { actions: [{ action: 'listTabs' }] },
@@ -863,7 +909,7 @@ describe('browser-action-executor', () => {
     it("is owner-only: another agent's tab returns the structured not-owner error", async () => {
       const { embeddedBrowserCdp } = await import('../main/embedded-browser-cdp-service');
       await mockTabs([hiddenOwnedTab]);
-      mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+      mockAgentNames({ 'agent-1': 'Alice' });
 
       const result = await executeActions(
         { actions: [{ action: 'showTab', tabId: 'tab-hidden' }] },
@@ -1512,6 +1558,7 @@ describe('browser-action-executor', () => {
       );
 
       expect(result.success).toBe(true);
+      expect(embeddedBrowserCdp.listAllTabs).toHaveBeenCalledWith('workspace-a', 'tab-hidden');
       expect(embeddedBrowserCdp.evaluate).toHaveBeenCalled();
       expect(result.results[0]?.warning).toContain('not currently visible');
     });
@@ -3011,8 +3058,8 @@ describe('browser-action-executor', () => {
       expect(embeddedBrowserCdp.listAllTabs).not.toHaveBeenCalled();
     });
 
-    it('resolves owner display names once per batch — N opens share one agent.list', async () => {
-      mockBackendRequest.mockResolvedValueOnce({ agents: [{ id: 'agent-1', name: 'Alice' }] });
+    it('resolves owner display names once per owner per batch — N opens share one agent.get', async () => {
+      mockAgentNames({ 'agent-1': 'Alice' });
       mockOpenTabFn
         .mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-a' })
         .mockReturnValueOnce({ success: true, message: 'opened', tabId: 'tab-b' });
@@ -3031,7 +3078,10 @@ describe('browser-action-executor', () => {
 
       expect(result.success).toBe(true);
       expect(mockBackendRequest).toHaveBeenCalledTimes(1);
-      expect(mockBackendRequest).toHaveBeenCalledWith('agent.list', { workspaceId: 'ws-1' });
+      expect(mockBackendRequest).toHaveBeenCalledWith('agent.get', {
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+      });
       // Both opens still carry the resolved name (10th arg).
       expect(mockOpenTabFn.mock.calls[0][9]).toBe('Alice');
       expect(mockOpenTabFn.mock.calls[1][9]).toBe('Alice');

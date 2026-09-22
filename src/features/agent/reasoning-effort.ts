@@ -21,6 +21,16 @@ import { reconcileReasoningEffort } from './utils/reconcile-reasoning-effort';
 
 const logger = createLogger('ReasoningEffort');
 
+export type ReasoningEffortWriteOptions = {
+  /**
+   * Re-read after the awaited RPC settles, before the failure rollback and
+   * toast: when it returns `false` the caller has lost the right to mutate
+   * the session (a guest lock flipped mid-flight) and the rollback is skipped.
+   * The optimistic write at entry is the caller's to guard.
+   */
+  canMutate?: () => boolean;
+};
+
 /**
  * Apply a reasoning-effort level to a session. `effort` is the level string,
  * or `null` to clear back to the provider default. Resolves `true` when the
@@ -31,6 +41,7 @@ export async function applyReasoningEffort(
   workspaceId: string,
   effort: string | null,
   previousEffort: string | null,
+  options?: ReasoningEffortWriteOptions,
 ): Promise<boolean> {
   appStore.dispatch(updateSession(agentId, { reasoningEffort: effort }));
 
@@ -66,6 +77,7 @@ export async function applyReasoningEffort(
   if (result.success) return true;
 
   logger.error('Failed to set reasoning effort', { agentId, error: result.error });
+  if (options?.canMutate && !options.canMutate()) return false;
   // Only roll back if nothing else moved the field meanwhile — a later change
   // (or a daemon `agent:updated`) that landed during the call is authoritative.
   const current = appStore.state?.agentSessions?.byAgentId?.[agentId]?.reasoningEffort ?? null;
@@ -83,10 +95,11 @@ export async function reconcileAgentReasoningEffort(
   workspaceId: string,
   currentEffort: string | null | undefined,
   supportedEfforts: readonly string[] | null | undefined,
+  options?: ReasoningEffortWriteOptions,
 ): Promise<boolean> {
   const previousEffort = currentEffort ?? null;
   const nextEffort = reconcileReasoningEffort(previousEffort, supportedEfforts);
 
   if (nextEffort === previousEffort) return true;
-  return applyReasoningEffort(agentId, workspaceId, nextEffort, previousEffort);
+  return applyReasoningEffort(agentId, workspaceId, nextEffort, previousEffort, options);
 }

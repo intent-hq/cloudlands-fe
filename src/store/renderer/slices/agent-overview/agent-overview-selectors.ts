@@ -39,6 +39,7 @@ import {
 } from '$lib/components/agent-overview/graph-helpers';
 import { getItems } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { AgentSession, Note } from '$shared/types';
+import { agentDelegationParentOf, classifyAgentScope } from '$shared/utils/agent-scope';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
 // ============================================================================
@@ -143,9 +144,7 @@ function computeGraphState(
   // STEP 1: Find coordinator agent
   let coordinatorId: string | null = null;
   for (const [agentId, session] of Object.entries(agents)) {
-    const parentId =
-      (session.metadata?.createdByAgentId as string) || (session as any).parentAgentId || null;
-    if (!parentId && !session.isBackground) {
+    if (classifyAgentScope(session) === 'topLevel') {
       coordinatorId = agentId;
       break;
     }
@@ -155,8 +154,7 @@ function computeGraphState(
   for (const [agentId, session] of Object.entries(agents)) {
     if (nodeMap.has(agentId)) continue;
 
-    const parentId =
-      (session.metadata?.createdByAgentId as string) || (session as any).parentAgentId || null;
+    const parentId: string | null = agentDelegationParentOf(session);
 
     const streamingState = getStreamingState(session);
     // Use canonical agent-session selectors for graph-level derived status;

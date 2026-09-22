@@ -132,7 +132,7 @@
     onInteractOutside={(event) => !dismissOnInteractOutside && event.preventDefault()}
   >
     <Form onSubmit={submit} busy={isBusy} {enterKey} {modEnter}>
-      <Dialog.Header>
+      <Dialog.Header class="mb-0">
         <Dialog.Title id={titleId}>{title}</Dialog.Title>
         {#if description}<Dialog.Description id={descriptionId}>{description}</Dialog.Description
           >{/if}

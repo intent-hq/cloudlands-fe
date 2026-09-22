@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Button from '../components/ui/button/button.svelte';
-import { preview as buttonPreview } from '../components/ui/button/button.preview';
+import { preview as buttonPreview } from '../components/ui/button/button.preview.svelte';
 import CatalogScene from './CatalogScene.svelte';
 
 const mocks = vi.hoisted(() => ({

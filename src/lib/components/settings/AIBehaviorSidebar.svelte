@@ -1,7 +1,7 @@
 <script lang="ts">
-  import Fa from 'svelte-fa';
-  import { faPlus } from '@fortawesome/free-solid-svg-icons';
+  import PlusIcon from 'phosphor-svelte/lib/PlusIcon';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
+  import { ListRow } from '$lib/components/patterns/collection';
   import {
     filterSpecialistsByGitHubAuth,
     selectFileSpecialists,
@@ -68,7 +68,7 @@
 
   <Button
     bind:ref={specialistButtonRefs[specialist.id]}
-    variant="ghost"
+    variant="plain"
     id={`specialist-${specialist.id}`}
     type="button"
     onclick={() => onSelect({ type: 'specialist', id: specialist.id })}
@@ -76,51 +76,58 @@
     data-settings-agent-row
     active={isSelected({ type: 'specialist', id: specialist.id })}
     aria-current={isSelected({ type: 'specialist', id: specialist.id }) ? 'page' : undefined}
-    class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left type-body transition-colors
+    class="h-auto w-full min-w-0 justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active
       {isSelected({ type: 'specialist', id: specialist.id })
-      ? 'bg-muted font-medium text-foreground shadow-xs'
-      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+      ? 'bg-foreground/5 text-foreground'
+      : 'text-muted-foreground'}"
   >
-    <AgentAvatar
-      agentId={specialist.id}
-      specialist={specialist.id}
-      variant="compact"
-      class="shrink-0"
-    />
-    <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-1.5">
-        <span class="truncate">{specialist.name}</span>
-        {#if hasOverrides}
-          <span
-            data-specialist-modified-marker
-            aria-hidden="true"
-            class="text-ui shrink-0 leading-none text-muted-foreground"
-          >
-            *
-          </span>
-        {/if}
-        {#if sourceLabel === 'Project'}
-          <Tooltip
-            content={m.settings_aiBehavior_sidebar_projectBadgeTooltip()}
-            side="right"
-            delayDuration={400}
-          >
+    <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
+      {#snippet leading()}
+        <AgentAvatar
+          agentId={specialist.id}
+          specialist={specialist.id}
+          variant="compact"
+          class="shrink-0"
+        />
+      {/snippet}
+      {#snippet title()}
+        <span
+          data-settings-sidebar-label
+          class="flex min-w-0 items-center gap-1.5 type-body font-normal"
+        >
+          <span class="truncate">{specialist.name}</span>
+          {#if hasOverrides}
             <span
-              class="type-caption shrink-0 rounded bg-muted px-1 py-0.5 font-medium text-muted-foreground"
+              data-specialist-modified-marker
+              aria-hidden="true"
+              class="text-ui shrink-0 leading-none text-muted-foreground"
             >
-              {m.settings_aiBehavior_sidebar_projectBadge()}
+              *
             </span>
-          </Tooltip>
-        {/if}
-      </div>
-    </div>
+          {/if}
+          {#if sourceLabel === 'Project'}
+            <Tooltip
+              content={m.settings_aiBehavior_sidebar_projectBadgeTooltip()}
+              side="right"
+              delayDuration={400}
+            >
+              <span
+                class="type-caption shrink-0 rounded bg-muted px-1 py-0.5 font-medium text-muted-foreground"
+              >
+                {m.settings_aiBehavior_sidebar_projectBadge()}
+              </span>
+            </Tooltip>
+          {/if}
+        </span>
+      {/snippet}
+    </ListRow>
   </Button>
 {/each}
 
 <!-- Create button - flows after specialists -->
 <Button
   bind:ref={createSpecialistButtonRef}
-  variant="ghost"
+  variant="plain"
   id="create-specialist"
   type="button"
   onclick={() => onSelect({ type: 'create-specialist' })}
@@ -128,11 +135,21 @@
   data-settings-agent-row
   active={isSelected({ type: 'create-specialist' })}
   aria-current={isSelected({ type: 'create-specialist' }) ? 'page' : undefined}
-  class="flex h-auto w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg !px-2.5 !py-2 text-left type-body transition-colors
+  class="h-auto w-full min-w-0 justify-start rounded-lg p-0 text-left type-caption font-normal hover:bg-hover active:bg-active
     {isSelected({ type: 'create-specialist' })
-    ? 'bg-muted font-medium text-foreground shadow-xs'
-    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
+    ? 'bg-foreground/5 text-foreground'
+    : 'text-muted-foreground'}"
 >
-  <Fa icon={faPlus} class="h-3 w-3 shrink-0" />
-  <span class="truncate">{m.settings_aiBehavior_sidebar_createSpecialist()}</span>
+  <ListRow class="min-h-8 w-full gap-2 px-3 py-0">
+    {#snippet leading()}
+      <span class="flex size-4 shrink-0 items-center justify-center">
+        <PlusIcon size={16} weight="regular" />
+      </span>
+    {/snippet}
+    {#snippet title()}
+      <span data-settings-sidebar-label class="block truncate type-body font-normal">
+        {m.settings_aiBehavior_sidebar_createSpecialist()}
+      </span>
+    {/snippet}
+  </ListRow>
 </Button>

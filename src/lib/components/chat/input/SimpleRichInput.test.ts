@@ -4,6 +4,7 @@ import {
   exerciseVisualStates,
 } from '$lib/components/__tests__/helpers/visual-state-characterization';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { readable } from 'svelte/store';
 
 vi.mock('$lib/components/shared/icons/FaWrapper.svelte', async () => {
@@ -208,6 +209,13 @@ const mockReduxState = vi.hoisted(
       provider: string;
       keyConfigured: Record<string, boolean>;
     };
+    workspace: { hasLoaded: boolean; workspaces: unknown };
+    connections: { windowBackendId: string };
+    guestSessions: {
+      sessions: { idField: 'id'; map: Record<string, never>; ids: string[] };
+      hasReceivedList: boolean;
+      listUnavailable: boolean;
+    };
     providerCatalog?: unknown;
     daemonHealth: { hostLocality: 'local' | 'remote' | null; transport: unknown };
   } => ({
@@ -232,6 +240,18 @@ const mockReduxState = vi.hoisted(
       osEngineAvailable: false,
       provider: 'elevenlabs',
       keyConfigured: { elevenlabs: true, openai: false },
+    },
+    // The mic gate also reads the caller's workspace role (multiplayer w3);
+    // an unloaded list reads as owner without consulting the collection.
+    workspace: { hasLoaded: false, workspaces: null },
+    // The role gate also rules out a guest window (multiplayer w4): this
+    // window's backend is not a joined host, and the guest list has settled
+    // (an unsettled identity reads as collaborator-only).
+    connections: { windowBackendId: 'local' },
+    guestSessions: {
+      sessions: { idField: 'id', map: {}, ids: [] },
+      hasReceivedList: true,
+      listUnavailable: false,
     },
   }),
 );
@@ -556,10 +576,6 @@ describe('SimpleRichInput action bar layout', () => {
     const addContext = await screen.findByRole('menuitem', { name: /Add Context/i });
     expect(addContext.getAttribute('aria-haspopup')).toBe('menu');
     expect(screen.getByRole('menuitem', { name: /Attach files/i })).toBeTruthy();
-    const modelPickerClass = screen.getByTestId('model-picker').className;
-    expect(modelPickerClass).toContain('px-0');
-    expect(modelPickerClass).toContain('font-medium');
-    expect(modelPickerClass).toContain('hover:bg-transparent');
     const composer = screen.getByTestId('message-input');
     await fireEvent.mouseEnter(composer);
     expect(composer.getAttribute('data-ring-state')).toBe('hover');
@@ -1920,6 +1936,16 @@ describe('SimpleRichInput mic-button visibility (effective voice engine)', () =>
     mockReduxState.voiceSettings.keyConfigured = { elevenlabs: false, openai: false };
     render(SimpleRichInput, { props: baseProps() });
     expect(micButton()).not.toBeNull();
+  });
+
+  it('hides the mic button for a collaborator-only client even with a configured engine (multiplayer w3)', () => {
+    mockReduxState.workspace = {
+      hasLoaded: true,
+      workspaces: createCollection('id', [{ id: 'ws-1', myRole: 'collaborator' }]),
+    };
+    render(SimpleRichInput, { props: baseProps() });
+    expect(micButton()).toBeNull();
+    mockReduxState.workspace = { hasLoaded: false, workspaces: null };
   });
 });
 

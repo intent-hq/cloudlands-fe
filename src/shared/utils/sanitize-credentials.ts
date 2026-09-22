@@ -87,3 +87,17 @@ export function sanitizeCommandForDisplay(command: string): string {
 
   return result;
 }
+
+/**
+ * Reduce a URL to origin + pathname for diagnostic logs: userinfo, query and
+ * fragment are dropped so OAuth codes/tokens never reach the log file.
+ * Unparseable input yields an empty string.
+ */
+export function describeUrlForLog(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`.substring(0, 100);
+  } catch {
+    return '';
+  }
+}

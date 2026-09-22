@@ -14,8 +14,11 @@ import { store as appStore } from '$store/renderer/store';
 import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { setActiveProvider } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { setChiefCollapsed } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import type { AgentSession } from '$shared/types';
+import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import ChiefCard from '../cards/ChiefCard.svelte';
 
 vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
@@ -30,6 +33,9 @@ describe('ChiefCard auto-start provider gate', () => {
 
   beforeEach(() => {
     appStore.init();
+    // A settled owner window: the guest session list hydrated with no joined
+    // host. The guest-window case below replaces it with a joined host.
+    appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
 
     launchActions = [];
@@ -84,6 +90,55 @@ describe('ChiefCard auto-start provider gate', () => {
       dispatchSpy.mock.calls.some(([action]) => action?.type === 'sidebarNav/setChiefCollapsed'),
     ).toBe(false);
     expect(appStore.state.sidebarNav.isChiefCollapsed).toBe(true);
+  });
+
+  it('skips the auto-start and withholds new/delete thread in a guest window', async () => {
+    // A guest window: the window's backend is a joined host, so `agent.create`
+    // / `agent.delete` are refused (-32003) and the affordances are withheld.
+    const host: GuestSessionRecord = {
+      id: 'guest-host-1',
+      label: 'studio.local',
+      host: '10.0.0.5',
+      hosts: ['10.0.0.5'],
+      port: 8443,
+      fingerprint: 'AB:CD',
+      tcAddress: null,
+      hostname: 'studio',
+      principalId: 'principal-1',
+      login: 'octocat',
+      tokenEncrypted: true,
+      workspaces: [],
+      updatedAt: 1,
+    };
+    appStore.dispatch(
+      guestSessionsListReceived({ sessions: [host], openIds: [host.id], connectedIds: [host.id] }),
+    );
+    appStore.dispatch(
+      connectionsListReceived({
+        connections: [
+          {
+            id: host.id,
+            label: host.label,
+            host: host.host,
+            port: host.port,
+            fingerprint: host.fingerprint,
+            isLocal: false,
+          },
+        ],
+        activeId: host.id,
+        windowBackendId: host.id,
+      }),
+    );
+    appStore.dispatch(setActiveProvider('auggie'));
+
+    render(ChiefCard, { props: { expanded: true, embedded: true, collapsed: false } });
+
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(launchActions).toHaveLength(0);
+    expect(
+      screen.queryByRole('button', { name: m.layout_chiefCard_newThread_tooltip() }),
+    ).toBeNull();
   });
 
   it('expands the preference and creates a thread when the expanded + is clicked', async () => {

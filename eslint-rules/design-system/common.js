@@ -10,8 +10,11 @@ const utilityBoundaryEnd = String.raw`(?=$|[\s"'\x60])`;
 const variants = String.raw`(?:[^\s:"'\x60]+:)*`;
 const arbitraryColor = String.raw`(#[\da-fA-F]{3,8}|(?:rgba?|hsla?)\([^\]\r\n]+\))`;
 
+const arbitraryMotion = String.raw`(?:duration|ease)-\[(?!var\()[^\]\r\n]+\]`;
+const tailwindMotionScale = String.raw`duration-(?:\d+|initial)|ease-(?:linear|in-out|in|out|initial)`;
+
 const motionUtility = new RegExp(
-  String.raw`${utilityBoundaryStart}(${variants}(?:duration|ease)-\[(?!var\()[^\]\r\n]+\])${utilityBoundaryEnd}`,
+  String.raw`${utilityBoundaryStart}(${variants}!?(?:${arbitraryMotion}|${tailwindMotionScale})!?)${utilityBoundaryEnd}`,
   'g',
 );
 const arbitraryColorUtility = new RegExp(
@@ -123,11 +126,5 @@ export const namedColorAllowlist = [
       'text-gray-400',
       'text-gray-500',
     ],
-  },
-  {
-    name: 'change-visualization-diff-palette',
-    files: ['src/lib/components/file-tracking/change-set-visualization/FileColumn.svelte'],
-    colors: ['#0B2916', '#220B09', '#331513', '#7CE2A1', '#F79697'],
-    utilities: [],
   },
 ];

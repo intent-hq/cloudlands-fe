@@ -57,7 +57,7 @@ registerMockSeeder('agents', async ({ store, client, workspaceId, getWorkspaceId
   });
 
   // Populate the agent-session slice (byAgentId + workspace index).
-  store.dispatch(bulkUpsertSessions(agents));
+  store.dispatch(bulkUpsertSessions(agents, { listProjection: true }));
   // Track agent IDs in the workspace-agents slice (agentIds + foreground).
   for (const agent of agents) {
     store.dispatch(upsertSession(agent));

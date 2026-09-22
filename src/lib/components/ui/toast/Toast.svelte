@@ -75,22 +75,6 @@
         if (closeButton && toastElement.lastElementChild !== closeButton) {
           toastElement.append(closeButton);
         }
-
-        const isFront = toastElement.dataset.front === 'true';
-        const existingCount = toastElement.querySelector<HTMLElement>(
-          ':scope > [data-toast-stack-count]',
-        );
-        if (!isFront || visibleToasts.length < 2) {
-          existingCount?.remove();
-          continue;
-        }
-
-        const stackCount = existingCount ?? document.createElement('span');
-        stackCount.dataset.toastStackCount = '';
-        stackCount.className = 'toast-stack-count';
-        const countLabel = m.ui_toast_stackMore_label({ count: visibleToasts.length - 1 });
-        if (stackCount.textContent !== countLabel) stackCount.textContent = countLabel;
-        if (!existingCount) toastElement.insertBefore(stackCount, closeButton ?? null);
       }
     };
     const observer = new MutationObserver(updateVisibleToastCount);
@@ -165,7 +149,7 @@
 
 {#if showClearAll}
   <Button
-    variant="ghost"
+    variant="secondary"
     size="lg"
     class={staticPosition ? 'toast-clear-all toast-clear-all-static' : 'toast-clear-all'}
     onclick={clearVisibleToasts}
@@ -266,16 +250,57 @@
     margin-top: 0.25rem;
   }
 
-  :global([data-sonner-toast][data-type='loading'] [data-content]) {
-    flex-direction: row !important;
-    align-items: baseline;
-    gap: 0 !important;
+  /* Standard toasts share one header row, independent of description height.
+     Empty action tracks collapse; margins belong only to controls that exist. */
+  :global([data-sonner-toast][data-styled='true']) {
+    --toast-header-height: 1.5rem;
+    display: grid !important;
+    align-items: start !important;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    column-gap: 0 !important;
+    row-gap: 0 !important;
   }
 
-  :global([data-sonner-toast][data-type='loading'] [data-description]) {
-    margin-top: 0;
-    margin-left: 0.25rem;
-    font-size: var(--toast-description-size);
+  :global([data-sonner-toast][data-styled='true']:has([data-button], .toast-undo-action)) {
+    --toast-header-height: var(--toast-action-height);
+  }
+
+  :global([data-sonner-toast][data-styled='true'] > [data-content]) {
+    display: contents !important;
+  }
+
+  :global([data-sonner-toast][data-styled='true'] > [data-icon]) {
+    grid-area: 1 / 1;
+    margin-top: calc((var(--toast-header-height) - 1rem) / 2) !important;
+    margin-right: calc(var(--space-1) * 2.5) !important;
+  }
+
+  :global([data-sonner-toast][data-styled='true'] [data-title]) {
+    grid-area: 1 / 2;
+    margin-top: max(0px, calc((var(--toast-header-height) - var(--toast-title-size) * 1.35) / 2));
+  }
+
+  :global([data-sonner-toast][data-styled='true'] [data-description]) {
+    grid-row: 2;
+    grid-column: 2 / -1;
+  }
+
+  :global([data-sonner-toast][data-styled='true'] > button:not([data-close-button])),
+  :global([data-sonner-toast][data-styled='true'] .toast-undo-action) {
+    grid-area: 1 / 4;
+    margin-left: calc(var(--space-1) * 2.5) !important;
+  }
+
+  :global([data-sonner-toast][data-styled='true'] > button[data-cancel]) {
+    grid-column: 3;
+  }
+
+  :global([data-sonner-toast][data-styled='true'] > [data-close-button]) {
+    grid-area: 1 / 5;
+    position: static !important;
+    transform: none !important;
+    margin-top: calc((var(--toast-header-height) - 1.5rem) / 2) !important;
+    margin-left: var(--space-2);
   }
 
   :global([data-sonner-toast] [data-content]),
@@ -375,47 +400,50 @@
     --toast-close-button-transform: translateY(-50%);
   }
 
-  :global(.toast-stack-count) {
-    margin-left: auto;
-    margin-right: 2.5rem;
-    color: hsl(var(--muted-foreground));
-    font-size: 0.875rem;
-    white-space: nowrap;
-  }
-
   :global([data-sonner-toast][data-expanded='false'][data-front='false'][data-visible='true']) {
     filter: saturate(0.8) brightness(0.96);
   }
 
+  /* Sonner conceals standard children when a rear card takes the front card's
+     height, but custom components opt out of its styled-content selector. Keep
+     their card peek while hiding text/actions until hover or hotkey expansion. */
+  :global([data-sonner-toast][data-styled='false'][data-expanded='false'][data-front='false'] > *) {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* display:contents has no box for Sonner's parent opacity rule to conceal. */
+  :global(
+    [data-sonner-toast][data-styled='true'][data-expanded='false'][data-front='false']
+      [data-content]
+      > *
+  ),
+  :global(
+    [data-sonner-toast][data-styled='true'][data-expanded='false'][data-front='false']
+      .toast-undo-action
+  ) {
+    opacity: 0;
+    pointer-events: none;
+  }
+
   :global(.toast-clear-all) {
     position: fixed;
-    left: calc(1rem + min(22rem, calc(100vw - clamp(2rem, 8vw, 4rem))));
-    bottom: 1rem;
+    left: var(--space-4);
+    bottom: var(--space-4);
     z-index: 1000000000;
-    transform: translateX(-100%);
-    color: hsl(var(--muted-foreground));
   }
 
   :global(.toast-clear-all.toast-clear-all-static) {
     position: relative;
     inset: auto;
-    margin-top: 0.5rem;
-    margin-left: auto;
-    transform: none;
+    margin-top: var(--space-2);
+    margin-right: auto;
   }
 
   :global(.toast-clear-all:focus-visible) {
     outline: 1px solid hsl(var(--focus-ring));
     outline-offset: 2px;
     box-shadow: none;
-  }
-
-  @media (max-width: 600px) {
-    :global(.toast-clear-all) {
-      left: 1rem;
-      bottom: 1rem;
-      transform: none;
-    }
   }
 
   :global(.sonner-loading-bar) {

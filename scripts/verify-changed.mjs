@@ -4,7 +4,15 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'n
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape as escapeGlob, globSync } from 'glob';
+import {
+  CT_TEST_DIR,
+  ctGeometryScene,
+  hasCtSpecSuffix,
+  isCtSpec,
+} from '../playwright/ct-spec-pattern.mjs';
+import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
+import { isCtContractPath } from './ct-contract-paths.mjs';
 import { pnpmInvocation } from './pnpm-launcher.mjs';
 import {
   acquireVerificationLock,
@@ -53,13 +61,11 @@ const FORMAT_EXTENSIONS = new Set([
   '.yml',
 ]);
 const UNIT_TEST_RE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
-const CT_TEST_RE = /\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/;
-// Mirrors playwright.config.ts (testDir ./test, testMatch **/*.spec.ts, testIgnore),
-// playwright-ct.config.ts (testDir ./src) and the runner-owned excludes in
-// vitest.config.ts / tests/integration/vitest.integration.config.ts.
-const PLAYWRIGHT_TEST_RE = /^test\/.*\.spec\.ts$/;
-const PLAYWRIGHT_MANUAL_RE =
-  /(?:^|\/)(?:catalog-manual-review\.capture|current-main-baseline)\.spec\.ts$/;
+// Mirrors the runner-owned excludes in vitest.config.ts /
+// tests/integration/vitest.integration.config.ts. Neither Playwright pattern is
+// mirrored: `isCtSpec` and playwright-ct.config.ts both read
+// playwright/ct-spec-pattern.mjs; `isRootSpec` / `isIgnoredRootSpec` and
+// playwright.config.ts both read playwright/root-spec-pattern.mjs.
 const VISUAL_TEST_RE = /\.visual\.spec\.ts$/;
 const INTEGRATION_TEST_RE = /^tests\/integration\/.*\.test\.ts$/;
 const VITEST_EXCLUDED_RE = /(?:^|\/)remote-(?:env|git)\.test\.ts$/;
@@ -69,6 +75,15 @@ const FULL_RISK_FILES = new Set([
   'svelte.config.js',
   'vite.config.mjs',
   'vitest.config.ts',
+]);
+// Files that decide which root specs playwright.config.ts runs: the config and the
+// modules it reads its testDir/testMatch/testIgnore from (root-spec-pattern.mjs
+// builds on ct-spec-pattern.mjs's matchers). The pull_request workflow's root
+// relevance step names the same set (`Evaluate root Playwright relevance`).
+const ROOT_PLAYWRIGHT_CONFIG_FILES = new Set([
+  'playwright.config.ts',
+  'playwright/root-spec-pattern.mjs',
+  'playwright/ct-spec-pattern.mjs',
 ]);
 
 function slash(path) {
@@ -158,16 +173,33 @@ function gitNames(args, root) {
     .map((file) => slash(file));
 }
 
+const DEFAULT_BASE = 'origin/main';
+
+function gitRevision(args, root) {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
 function mergeBase(ref, root) {
   try {
-    return execFileSync('git', ['merge-base', ref, 'HEAD'], {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
+    return gitRevision(['merge-base', ref, 'HEAD'], root);
   } catch (error) {
     const detail = String(error?.stderr ?? error?.message ?? error).trim();
     throw new Error(`cannot resolve --base ${ref}: ${detail}`, { cause: error });
+  }
+}
+
+// True when HEAD has commits that `ref` does not; false when `ref` cannot be
+// resolved (no remote-tracking ref, detached fixture), so the caller can fall
+// back to the plain "nothing to verify" exit instead of throwing.
+function isAheadOf(ref, root) {
+  try {
+    return mergeBase(ref, root) !== gitRevision(['rev-parse', 'HEAD'], root);
+  } catch {
+    return false;
   }
 }
 
@@ -191,8 +223,8 @@ export function collectChangedFiles(root = REPO_ROOT, options = {}) {
 
 function listCtTests(root) {
   const files = [];
-  walk(resolve(root, 'src'), root, files);
-  return files.filter((file) => CT_TEST_RE.test(file));
+  walk(resolve(root, CT_TEST_DIR), root, files);
+  return files.filter(isCtSpec);
 }
 
 function importTargets(source, testPath, root) {
@@ -218,10 +250,9 @@ function importTargets(source, testPath, root) {
 }
 
 function geometrySnapshotTargets(testPath, root, readText) {
-  const match = testPath.match(/^(.*\/)?([^/]+)\.geometry\.ct\.(?:test|spec)\.[cm]?[jt]sx?$/);
-  if (!match) return new Set();
-  const directory = match[1] ?? '';
-  const scene = match[2];
+  const geometry = ctGeometryScene(testPath);
+  if (!geometry) return new Set();
+  const { directory, scene } = geometry;
   const targets = new Set([
     `${directory}__geometry__/${scene}.geometry.json`,
     ...['svelte', 'ts', 'tsx', 'js', 'mjs'].map(
@@ -241,6 +272,20 @@ function geometrySnapshotTargets(testPath, root, readText) {
   return targets;
 }
 
+// A CT spec usually mounts a host/harness `.svelte` that composes the component
+// under test, so follow one hop through each directly imported `.svelte` file
+// and add the `.svelte` files it imports (mirrors `geometrySnapshotTargets`).
+function hostComponentTargets(targets, root, readText) {
+  const hosted = new Set();
+  for (const host of [...targets].filter((target) => target.endsWith('.svelte'))) {
+    if (!existsSync(resolve(root, host))) continue;
+    for (const imported of importTargets(readText(host), host, root)) {
+      if (imported.endsWith('.svelte')) hosted.add(imported);
+    }
+  }
+  return hosted;
+}
+
 export function findRelatedCtTests(files, options = {}) {
   const root = options.root ?? REPO_ROOT;
   const ctTests = options.ctTests ?? listCtTests(root);
@@ -254,6 +299,7 @@ export function findRelatedCtTests(files, options = {}) {
   for (const test of ctTests) {
     if (selected.has(test)) continue;
     const targets = importTargets(readText(test), test, root);
+    for (const hosted of hostComponentTargets(targets, root, readText)) targets.add(hosted);
     const geometryTargets = geometrySnapshotTargets(test, root, readText);
     if (files.some((file) => geometryTargets.has(file))) selected.add(test);
     else if (sourceFiles.some((file) => targets.has(file))) selected.add(test);
@@ -266,15 +312,18 @@ function isExisting(file, root) {
 }
 
 export function testRunner(file) {
+  // Before UNIT_TEST_RE: Playwright discovers specs case-insensitively, so a
+  // `.CT.SPEC.TS` under src/ or a `.SPEC.ts` under test/ is a Playwright spec
+  // although no unit-test pattern sees it.
+  if (isCtSpec(file)) return 'ct';
+  if (isRootSpec(file)) return 'playwright';
+  if (isIgnoredRootSpec(file)) return 'manual';
   if (!UNIT_TEST_RE.test(file)) return null;
-  if (file.startsWith('test/')) {
-    if (!PLAYWRIGHT_TEST_RE.test(file) || PLAYWRIGHT_MANUAL_RE.test(file)) return 'manual';
-    return 'playwright';
-  }
+  if (file.startsWith(`${ROOT_TEST_DIR}/`)) return 'manual';
   if (file.startsWith('tests/integration/')) {
     return INTEGRATION_TEST_RE.test(file) ? 'integration' : 'manual';
   }
-  if (CT_TEST_RE.test(file)) return file.startsWith('src/') ? 'ct' : 'manual';
+  if (hasCtSpecSuffix(file)) return 'manual';
   if (VISUAL_TEST_RE.test(file) || VITEST_EXCLUDED_RE.test(file)) return 'manual';
   return 'vitest';
 }
@@ -389,7 +438,7 @@ export function createVerificationPlan(files, options = {}) {
   const directUnit = [...new Set([...directTests('vitest'), ...deletedUnitDirectories])];
   const relatedSources = existing.filter(
     (file) =>
-      /^(?:src|scripts)\//.test(file) &&
+      /^(?:src|scripts|playwright)\//.test(file) &&
       CODE_EXTENSIONS.has(extname(file)) &&
       !UNIT_TEST_RE.test(file),
   );
@@ -419,9 +468,10 @@ export function createVerificationPlan(files, options = {}) {
     if (file === 'tsconfig.json') boundaries.add('renderer');
     else if (file === 'tsconfig.main.json') boundaries.add('main');
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
-    else if (file === 'playwright-ct.config.ts' || file.startsWith('playwright/')) fullCt = true;
-    else if (file === 'playwright.config.ts') fullPlaywright = true;
+    else if (ROOT_PLAYWRIGHT_CONFIG_FILES.has(file)) fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
+    // Shared with the pull_request workflow's test-ct relevance step.
+    if (isCtContractPath(file)) fullCt = true;
 
     const known =
       CODE_EXTENSIONS.has(extname(file)) ||
@@ -439,7 +489,6 @@ export function createVerificationPlan(files, options = {}) {
       boundaries.add('main');
       boundaries.add('preload');
       svelteCheck = true;
-      if (file === 'package.json' || file === 'pnpm-lock.yaml') fullCt = true;
     }
   }
 
@@ -724,15 +773,24 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const args = parseArgs(argv);
   if (args.help) {
     log('Usage: pnpm run verify:changed -- [--dry-run] [--base <ref>] [paths...]');
+    log(
+      `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
+    );
     return 0;
   }
-  const files = args.paths.length
+  let base = args.base;
+  let files = args.paths.length
     ? expandInputPaths(args.paths, root)
-    : collectChangedFiles(root, { base: args.base });
+    : collectChangedFiles(root, { base });
+  if (!args.paths.length && !base && files.length === 0 && isAheadOf(DEFAULT_BASE, root)) {
+    base = DEFAULT_BASE;
+    log(`verify:changed: worktree clean; verifying commits since merge-base with ${base}`);
+    files = collectChangedFiles(root, { base });
+  }
   if (!args.paths.length && files.length === 0) {
-    const hint = args.base
-      ? ` and no files changed relative to the merge-base with ${args.base}`
-      : "; pass --base origin/main to verify this branch's commits against main";
+    const hint = base
+      ? ` and no files changed relative to the merge-base with ${base}`
+      : `; pass --base ${DEFAULT_BASE} to verify this branch's commits against main`;
     log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
     return 2;
   }

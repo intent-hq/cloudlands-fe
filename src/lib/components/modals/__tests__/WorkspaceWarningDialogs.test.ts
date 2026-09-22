@@ -13,11 +13,13 @@ const { dispatch, selectorState } = vi.hoisted(() => ({
     activeHookNamesForDelete: [] as string[],
     openPrsForDelete: [] as unknown[],
     localChangesForDelete: null,
+    guestsForDelete: null,
     showArchiveWarning: false,
     runningAgentsForArchive: [] as string[],
     activeHookNamesForArchive: [] as string[],
     openPrsForArchive: [] as unknown[],
     localChangesForArchive: null,
+    guestsForArchive: null,
     showBulkArchiveConfirm: false,
     showBulkDeleteConfirm: false,
     pendingBulkWorkspaceIds: [] as string[],
@@ -26,6 +28,7 @@ const { dispatch, selectorState } = vi.hoisted(() => ({
     bulkActiveAgentCount: 0,
     bulkActiveHookCount: 0,
     bulkOpenPrCount: 0,
+    bulkGuestCount: 0,
     bulkPreflightReady: false,
   },
 }));
@@ -47,11 +50,13 @@ vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-select
     selectActiveHookNamesForDelete: selector('activeHookNamesForDelete'),
     selectOpenPrsForDelete: selector('openPrsForDelete'),
     selectLocalChangesForDelete: selector('localChangesForDelete'),
+    selectGuestsForDelete: selector('guestsForDelete'),
     selectShowArchiveWarning: selector('showArchiveWarning'),
     selectRunningAgentsForArchive: selector('runningAgentsForArchive'),
     selectActiveHookNamesForArchive: selector('activeHookNamesForArchive'),
     selectOpenPrsForArchive: selector('openPrsForArchive'),
     selectLocalChangesForArchive: selector('localChangesForArchive'),
+    selectGuestsForArchive: selector('guestsForArchive'),
     selectShowBulkArchiveConfirm: selector('showBulkArchiveConfirm'),
     selectShowBulkDeleteConfirm: selector('showBulkDeleteConfirm'),
     selectPendingBulkWorkspaceIds: selector('pendingBulkWorkspaceIds'),
@@ -60,6 +65,7 @@ vi.mock('$store/renderer/slices/workspace-operations/workspace-operations-select
     selectBulkActiveAgentCount: selector('bulkActiveAgentCount'),
     selectBulkActiveHookCount: selector('bulkActiveHookCount'),
     selectBulkOpenPrCount: selector('bulkOpenPrCount'),
+    selectBulkGuestCount: selector('bulkGuestCount'),
     selectBulkPreflightReady: selector('bulkPreflightReady'),
   };
 });
@@ -77,9 +83,39 @@ describe('WorkspaceWarningDialogs bulk confirmations', () => {
     selectorState.bulkActiveAgentCount = 0;
     selectorState.bulkActiveHookCount = 0;
     selectorState.bulkOpenPrCount = 0;
+    selectorState.bulkGuestCount = 0;
     selectorState.bulkPreflightReady = false;
   });
   afterEach(cleanup);
+
+  it.each(['archive', 'delete'] as const)(
+    'warns about a guests-only group for %s',
+    async (kind) => {
+      selectorState.showBulkArchiveConfirm = kind === 'archive';
+      selectorState.showBulkDeleteConfirm = kind === 'delete';
+      selectorState.bulkGuestCount = 3;
+      selectorState.bulkPreflightReady = true;
+      selectorState.pendingBulkGroupLabel = 'Shared';
+      selectorState.pendingBulkWorkspaces = [
+        { id: 'ws-1', title: 'Shared workspace', status: 'Active' },
+      ];
+      const WorkspaceWarningDialogs = (await import('../WorkspaceWarningDialogs.svelte')).default;
+      render(WorkspaceWarningDialogs);
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText(/3 guests will be removed/)).toBeTruthy();
+      expect(within(dialog).queryByText(/invite them again/) !== null).toBe(kind === 'archive');
+      expect(within(dialog).queryByText(/will be stopped|will be cancelled/)).toBeNull();
+      await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      expect(
+        dispatch.mock.calls.some(
+          ([action]) =>
+            action.type ===
+            `workspaceOperations/${kind === 'archive' ? 'confirmBulkArchive' : 'confirmBulkDelete'}`,
+        ),
+      ).toBe(false);
+    },
+  );
 
   it('renders the pending archive count and dispatches the confirm action', async () => {
     selectorState.showBulkArchiveConfirm = true;

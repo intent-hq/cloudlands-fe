@@ -14,6 +14,8 @@
     variant?: ButtonVariant;
     initialFocus?: 'confirm' | 'cancel';
     body?: Snippet;
+    /** Picks the guest-removal note: archive adds the re-invite reminder. */
+    mode?: 'delete' | 'archive';
     /** Streaming agents across the targeted workspaces that the action would stop. */
     activeAgentCount?: number;
     /** Active background hooks across the targeted workspaces that the action would cancel. */
@@ -22,6 +24,8 @@
     openPrCount?: number;
     /** Whether active-work preflight has resolved for the current target snapshot. */
     preflightReady?: boolean;
+    /** Collaborators + open invites across the targeted workspaces that the action would remove. */
+    guestCount?: number;
     onConfirm?: () => void;
     onCancel?: () => void;
   }
@@ -35,15 +39,19 @@
     variant = 'default',
     initialFocus = 'confirm',
     body,
-    activeAgentCount = 0,
-    activeHookCount = 0,
     openPrCount = 0,
     preflightReady = true,
+    mode = 'delete',
+    activeAgentCount = 0,
+    activeHookCount = 0,
+    guestCount = 0,
     onConfirm,
     onCancel,
   }: Props = $props();
 
-  const hasActiveWork = $derived(activeAgentCount > 0 || activeHookCount > 0 || openPrCount > 0);
+  const hasActiveWork = $derived(
+    activeAgentCount > 0 || activeHookCount > 0 || openPrCount > 0 || guestCount > 0,
+  );
 
   function close() {
     open = false;
@@ -107,6 +115,20 @@
               {openPrCount === 1
                 ? m.modals_deleteWarning_openPrs_one({ count: formatInteger(openPrCount) })
                 : m.modals_deleteWarning_openPrs_many({ count: formatInteger(openPrCount) })}
+            </p>
+          {/if}
+          {#if guestCount > 0}
+            <p class="type-body text-muted-foreground font-normal">
+              {guestCount === 1
+                ? m.modals_bulkActionConfirm_guestsRemoved_one({
+                    count: formatInteger(guestCount),
+                  })
+                : m.modals_bulkActionConfirm_guestsRemoved_many({
+                    count: formatInteger(guestCount),
+                  })}
+              {#if mode === 'archive'}
+                {m.modals_bulkActionConfirm_guestsReinvite_description()}
+              {/if}
             </p>
           {/if}
         </div>

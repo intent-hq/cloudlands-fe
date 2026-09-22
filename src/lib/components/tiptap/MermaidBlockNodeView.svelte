@@ -247,6 +247,8 @@
         <Button
           type="button"
           variant="ghost"
+          size="icon-compact"
+          iconOnly
           class="hover-btn"
           onclick={openCodeView}
           title={m.tiptap_mermaidBlock_editCode_tooltip()}
@@ -256,6 +258,8 @@
         <Button
           type="button"
           variant="ghost"
+          size="icon-compact"
+          iconOnly
           class="hover-btn"
           onclick={openFullscreen}
           title={m.tiptap_mermaidBlock_fullscreen_tooltip()}
@@ -311,19 +315,14 @@
     transition: opacity var(--spring-moderate) var(--spring-moderate-ease);
   }
 
+  /* Sizing comes from the Button `icon-compact` size (square, zero padding). */
   :global(.hover-btn) {
-    width: 1.75rem;
-    height: 1.75rem;
-    padding: 0;
     background: rgb(0 0 0 / 0.6);
     border: none;
     border-radius: 0.375rem;
     color: white;
     cursor: pointer;
     transition: background var(--spring-moderate) var(--spring-moderate-ease);
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 
   :global(.hover-btn:hover) {

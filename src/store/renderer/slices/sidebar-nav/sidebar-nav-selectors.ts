@@ -110,8 +110,6 @@ export const selectShowCreateModal = store.createSelector(
   (state) => state.sidebarNav.showCreateModal,
 );
 
-export const selectDraftPrompt = store.createSelector((state) => state.sidebarNav.draftPrompt);
-
 export const selectAllSpacesViewMode = store.createSelector(
   (state) => state.sidebarNav.allSpacesViewMode,
 );

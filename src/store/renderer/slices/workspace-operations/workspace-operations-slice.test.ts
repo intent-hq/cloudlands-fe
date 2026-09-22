@@ -62,11 +62,14 @@ function makeWorkspace(id: string, title: string): Workspace {
     updatedAt: '2026-01-01T00:00:00Z',
   };
 }
+const guests = { collaboratorCount: 2, openInviteCount: 1 };
 
 describe('workspaceOperationsReducer', () => {
-  it('starts with no local-changes data for either warning', () => {
+  it('starts with no local-changes or guest data for either warning', () => {
     expect(initialState.localChangesForDelete).toBeNull();
     expect(initialState.localChangesForArchive).toBeNull();
+    expect(initialState.guestsForDelete).toBeNull();
+    expect(initialState.guestsForArchive).toBeNull();
   });
 
   it('opens and clears the delete warning state', () => {
@@ -78,6 +81,7 @@ describe('workspaceOperationsReducer', () => {
         hookNames: ['ci-watch'],
         openPrs: [openPr],
         localChanges,
+        guests,
       }),
     );
 
@@ -87,7 +91,9 @@ describe('workspaceOperationsReducer', () => {
     expect(opened.activeHookNamesForDelete).toEqual(['ci-watch']);
     expect(getItems(opened.openPrsForDelete)).toEqual([openPr]);
     expect(opened.localChangesForDelete).toEqual(localChanges);
+    expect(opened.guestsForDelete).toEqual(guests);
     expect(opened.localChangesForArchive).toBeNull();
+    expect(opened.guestsForArchive).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
 
@@ -97,9 +103,10 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.activeHookNamesForDelete).toEqual([]);
     expect(getItems(closed.openPrsForDelete)).toEqual([]);
     expect(closed.localChangesForDelete).toBeNull();
+    expect(closed.guestsForDelete).toBeNull();
   });
 
-  it('opens the delete warning with null local changes when none were supplied', () => {
+  it('opens the delete warning with null local changes and guests when none were supplied', () => {
     const opened = workspaceOperationsReducer(
       initialState,
       openDeleteWarning({
@@ -112,6 +119,7 @@ describe('workspaceOperationsReducer', () => {
 
     expect(opened.showDeleteWarning).toBe(true);
     expect(opened.localChangesForDelete).toBeNull();
+    expect(opened.guestsForDelete).toBeNull();
   });
 
   it('opens and clears the archive warning state', () => {
@@ -123,6 +131,7 @@ describe('workspaceOperationsReducer', () => {
         hookNames: ['pr-watch'],
         openPrs: [{ ...openPr, status: 'Draft' as const, mergeConflicts: true }],
         localChanges,
+        guests,
       }),
     );
 
@@ -134,7 +143,9 @@ describe('workspaceOperationsReducer', () => {
       { ...openPr, status: 'Draft', mergeConflicts: true },
     ]);
     expect(opened.localChangesForArchive).toEqual(localChanges);
+    expect(opened.guestsForArchive).toEqual(guests);
     expect(opened.localChangesForDelete).toBeNull();
+    expect(opened.guestsForDelete).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeArchiveWarning());
 
@@ -144,6 +155,7 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.activeHookNamesForArchive).toEqual([]);
     expect(getItems(closed.openPrsForArchive)).toEqual([]);
     expect(closed.localChangesForArchive).toBeNull();
+    expect(closed.guestsForArchive).toBeNull();
   });
 
   it('opens the archive warning with null local changes when the RPC failed', () => {
@@ -224,11 +236,13 @@ describe('workspaceOperationsReducer', () => {
         agentCount: 9,
         hookCount: 8,
         openPrCount: 7,
+        guestCount: 6,
         token: firstOpen.bulkComputeToken,
       }),
     );
     expect(afterStale.bulkActiveAgentCount).toBe(0);
     expect(afterStale.bulkActiveHookCount).toBe(0);
+    expect(afterStale.bulkGuestCount).toBe(0);
 
     const afterWrongKind = workspaceOperationsReducer(
       afterStale,
@@ -237,11 +251,13 @@ describe('workspaceOperationsReducer', () => {
         agentCount: 7,
         hookCount: 6,
         openPrCount: 5,
+        guestCount: 4,
         token: reopened.bulkComputeToken,
       }),
     );
     expect(afterWrongKind.bulkActiveAgentCount).toBe(0);
     expect(afterWrongKind.bulkActiveHookCount).toBe(0);
+    expect(afterWrongKind.bulkGuestCount).toBe(0);
 
     const afterFresh = workspaceOperationsReducer(
       afterWrongKind,
@@ -250,13 +266,30 @@ describe('workspaceOperationsReducer', () => {
         agentCount: 2,
         hookCount: 1,
         openPrCount: 3,
+        guestCount: 4,
         token: reopened.bulkComputeToken,
       }),
     );
     expect(afterFresh.bulkActiveAgentCount).toBe(2);
     expect(afterFresh.bulkActiveHookCount).toBe(1);
     expect(afterFresh.bulkOpenPrCount).toBe(3);
+    expect(afterFresh.bulkGuestCount).toBe(4);
     expect(afterFresh.bulkPreflightReady).toBe(true);
+    const closed = workspaceOperationsReducer(afterFresh, closeBulkDeleteConfirm());
+    expect(closed.bulkGuestCount).toBe(0);
+    expect(
+      workspaceOperationsReducer(
+        closed,
+        bulkActiveWorkComputed({
+          kind: 'delete',
+          agentCount: 0,
+          hookCount: 0,
+          openPrCount: 0,
+          guestCount: 9,
+          token: reopened.bulkComputeToken,
+        }),
+      ),
+    ).toBe(closed);
   });
 
   it('tracks a single in-flight bulk operation and rejects another dialog open', () => {

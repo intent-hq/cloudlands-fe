@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../test/ct-test';
 import CatalogSystemPage from './CatalogSystemPage.svelte';
 
 test('replay moves every spring across its track on every click', async ({ mount, page }) => {

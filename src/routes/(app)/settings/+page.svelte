@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SettingsFieldRow } from '$lib/components/patterns/settings';
+  import { SettingsFieldRow, SettingsSection } from '$lib/components/patterns/settings';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import {
@@ -10,14 +10,14 @@
     installUpdate,
     simulateSetState,
   } from '$store/renderer/slices/auto-update/auto-update-slice';
-  import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
+  import AdministratorSettings from '$lib/components/settings/AdministratorSettings.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
     type AIBehaviorView,
   } from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import { SettingsPage, type SettingsTab } from '$lib/components/patterns/settings';
-  import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
+  import GuestSessionsSettings from '$lib/components/settings/GuestSessionsSettings.svelte';
   import BackendSyncSettings from '$lib/components/settings/BackendSyncSettings.svelte';
   import VoiceSettings from '$lib/components/settings/VoiceSettings.svelte';
   import GitWorkspaceSettings from '$lib/components/settings/GitWorkspaceSettings.svelte';
@@ -26,18 +26,14 @@
   import LanguageSettings from '$lib/components/settings/LanguageSettings.svelte';
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
-  import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
-  import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import HardwareConsoleSettings from '$lib/components/settings/HardwareConsoleSettings.svelte';
-  import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import WorkspaceApiSettings from '$lib/components/settings/WorkspaceApiSettings.svelte';
   import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import AgentFeaturesSettings from '$lib/components/settings/AgentFeaturesSettings.svelte';
-  import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
   import { keepToggleSelected } from '$lib/components/settings/utils/keep-toggle-selected';
   import Button from '$lib/components/ui/button/button.svelte';
   import CopyButton from '$lib/components/ui/CopyButton.svelte';
@@ -45,6 +41,8 @@
   import { Switch } from '$lib/components/ui/switch';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { selectDaemonTransport } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectIsCollaboratorOnlyClient } from '$store/renderer/slices/workspace/workspace-selectors';
+  import { selectWindowIdentitySettled } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
   import { selectThemePreference } from '$store/renderer/slices/theme/theme-selectors';
   import { requestThemePreferenceChange } from '$store/renderer/slices/theme/theme-slice';
   import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
@@ -53,6 +51,7 @@
     setAgentFontStyle,
     setChatAuroraEnabled,
     setCodeFontFamily,
+    setLabsMultiplayerEnabled,
     setNoteFontStyle,
     setShellTransparencyEnabled,
     setUpdateChannel,
@@ -66,6 +65,7 @@
     selectCodeFontFamilyLabel,
     selectCodeFontOptions,
     selectIsNoteMonospace,
+    selectLabsMultiplayerEnabled,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -76,16 +76,14 @@
   import { m } from '$shared/paraglide/messages.js';
   import { resolveHashToTarget } from '$shared/app-ui-targets';
 
-  import { isMacPlatform } from '$lib/utils/shortcuts';
+  import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
   import { navigateBackFromSettings } from '$lib/utils/workspace-navigation';
   import { workspaceIdFromRouteParam } from '$lib/utils/workspace-route-context';
-  import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { onMount, untrack } from 'svelte';
-  import Fa from 'svelte-fa';
   import { store as appStore } from '$store/renderer/store';
 
   const isReadyToInstall$ = selectIsReadyToInstall();
@@ -100,8 +98,11 @@
   const codeFontOptions = selectCodeFontOptions();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
+  const labsMultiplayerEnabled = selectLabsMultiplayerEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
+  const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
+  const windowIdentitySettled$ = selectWindowIdentitySettled();
 
   // UDS socket path of the connected intentd; null hides the Connection section
   // (external-ws, unknown transport, or missing target).
@@ -120,8 +121,10 @@
     'providers',
     'connections',
     'devices',
+    'guest-sessions',
     'setup',
     'advanced',
+    'labs',
     'input',
     'specialists',
   ];
@@ -146,6 +149,8 @@
     'backend-sync': 'devices',
     'websocket-api': 'devices',
     'remote-access': 'devices',
+    'guest-sessions': 'guest-sessions',
+    sharing: 'guest-sessions',
     voice: 'input',
     'keyboard-shortcuts': 'input',
     'git-workspace': 'setup',
@@ -153,6 +158,7 @@
     shell: 'setup',
     workspace: 'setup',
     notifications: 'app-behavior',
+    licenses: 'app-behavior',
     updates: 'app-behavior',
     language: 'display',
     theme: 'display',
@@ -178,6 +184,9 @@
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
+    labs: 'labs',
+    'labs-multiplayer': 'labs',
+    multiplayer: 'labs',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {
@@ -213,6 +222,7 @@
   }
 
   let activeTab = $state<SettingsTab>(getInitialTab());
+  let localSettingsRequested = $state(0);
   let contentScroll: HTMLDivElement;
 
   function resetContentScroll() {
@@ -235,6 +245,20 @@
       window.history.replaceState({}, '', url.toString());
     }
   }
+
+  // Provider keys and GitHub/Linear/Sentry connections are administrator-owned
+  // daemon state (multiplayer w3): a collaborator-only client cannot read or
+  // change them, so those sections are withheld and their tabs redirect. The
+  // redirect waits for the window identity to settle: during boot the
+  // collaborator-only default is a safe placeholder, not an answer, and
+  // redirecting on it would drop a `?tab=providers` deep link for an
+  // administrator (intent-hq/intent#5514).
+  const hiddenTabs = $derived<readonly SettingsTab[]>(
+    $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [],
+  );
+  $effect(() => {
+    if ($windowIdentitySettled$ && hiddenTabs.includes(activeTab)) setActiveTab('display');
+  });
 
   // Keep the rendered pane in sync when SvelteKit navigates within the mounted settings page.
   $effect(() => {
@@ -313,7 +337,6 @@
 
   // Check if we're in development mode
   const isDevMode = import.meta.env.DEV;
-  const isMac = isMacPlatform();
 
   // Hardware section: hidden where WebHID is missing entirely. In Electron
   // (silent grants, so getDevices() reflects physical presence) it is further
@@ -326,8 +349,6 @@
   const showHardwareSection = $derived(
     webHidAvailable && (!isElectronPlatform() || hardwareDevicePresent),
   );
-
-  const backLabel = $derived(m.settings_back_back());
 
   // Component refs for reset functionality
   let gitWorkspaceSettingsRef: GitWorkspaceSettings | undefined = $state();
@@ -394,6 +415,7 @@
     }
     if (typeof window === 'undefined' || !window.location.hash) return;
     const targetId = window.location.hash.slice(1);
+    if (resolveHashToTarget(targetId)?.id === 'websocket-api') localSettingsRequested += 1;
 
     // Switch to the correct tab if needed
     const targetTab = resolveHashTab(targetId);
@@ -484,22 +506,7 @@
 </script>
 
 {#snippet sidebarHeader()}
-  <div class="px-5 pt-8 pb-3">
-    <!-- Back button with keyboard shortcut -->
-    <Button
-      variant="ghost"
-      onclick={navigateBackFromSettings}
-      class="group flex items-center gap-1.5 type-body text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-    >
-      <Fa icon={faArrowLeft} class="type-caption opacity-50 mr-1" />
-      <span>{backLabel}</span>
-      <kbd
-        class="type-caption ml-2 px-1.5 py-0.5 font-medium bg-muted text-muted-foreground border border-border rounded"
-      >
-        {isMac ? '⌘' : 'Ctrl'},
-      </kbd>
-    </Button>
-  </div>
+  <SettingsSidebarBack onBack={navigateBackFromSettings} />
 {/snippet}
 
 {#snippet agentsNavigation()}
@@ -539,15 +546,6 @@
       class="mt-1.5 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
       >{m.settings_footer_support()}</a
     >
-    <!-- tailcat ships bundled (resources/tailcat, BSD-3-Clause); its license
-           text is packaged next to the binary as tailcat.LICENSE. -->
-    <a
-      href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="mt-1 block cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-      >{m.settings_footer_tailcatAttribution()}</a
-    >
   </div>
 {/snippet}
 
@@ -556,6 +554,7 @@
   {activeTab}
   onSelect={setActiveTab}
   {agentsNavigation}
+  {hiddenTabs}
   {sidebarHeader}
   {sidebarFooter}
 >
@@ -568,77 +567,25 @@
       <main
         class="mx-auto flex min-h-full {activeTab === 'specialists'
           ? 'max-w-6xl xl:h-full xl:min-h-0 xl:py-8'
-          : 'max-w-4xl'} flex-col pr-8 pl-6 py-6 [&>*:last-child]:mb-0"
+          : 'max-w-4xl'} flex-col gap-6 pr-8 pl-6 py-6"
         aria-labelledby="settings-page-title"
       >
         <h1 id="settings-page-title" class="sr-only">{m.settings_page_title()}</h1>
-        <!-- Providers -->
-        {#if activeTab === 'providers'}
-          <div
-            id="providers"
-            data-highlight-id="providers"
-            use:highlightTarget
-            class="mb-6 scroll-mt-20"
-          >
-            <ProviderSelector />
-          </div>
-          <div
-            id="utility-default-model"
-            data-highlight-id="utility-default-model"
-            use:highlightTarget
-            class="mb-6"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_defaults()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <DefaultAgentModelSettings workspaceId={settingsWorkspaceId} />
-              </section>
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <h3 class="type-title mb-5 text-foreground">
-                  {m.settings_section_quickActions()}
-                </h3>
-                <BackgroundAgentSettings />
-              </section>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Connections -->
-        {#if activeTab === 'connections'}
-          <div
-            id="integrations"
-            data-highlight-id="integrations"
-            use:highlightTarget
-            class="mb-6 scroll-mt-20"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_tab_accounts()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <ConnectionsSettings />
-              </section>
-            </div>
-          </div>
-
-          <div id="mcp-servers" data-highlight-id="mcp-servers" use:highlightTarget class="mb-6">
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_mcpServers()}
-            </h2>
-            <McpServersSettings />
-          </div>
+        <!-- Providers / Connections (administrator-owned; withheld from collaborator-only clients) -->
+        {#if (activeTab === 'providers' || activeTab === 'connections') && !hiddenTabs.includes(activeTab)}
+          <AdministratorSettings tab={activeTab} workspaceId={settingsWorkspaceId} />
         {/if}
 
         <!-- Devices -->
         {#if activeTab === 'devices'}
-          <div id="devices" class="mb-6 scroll-mt-20">
-            <DevicesSettings />
+          <div id="devices" class="scroll-mt-20">
+            <div id="websocket-api" data-highlight-id="websocket-api" use:highlightTarget>
+              <DevicesSettings bind:localSettingsRequested />
+            </div>
           </div>
 
           <!-- Backend sync (iCloud Keychain) -->
-          <div id="backend-sync" class="mb-6 scroll-mt-20">
+          <div id="backend-sync" class="scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_backendSync()}
             </h2>
@@ -648,22 +595,12 @@
               </section>
             </div>
           </div>
+        {/if}
 
-          <!-- Remote Access (WebSocket API) -->
-          <div
-            id="websocket-api"
-            data-highlight-id="websocket-api"
-            use:highlightTarget
-            class="mb-6 scroll-mt-20"
-          >
-            <h2 class="type-title mb-3 text-foreground">
-              {m.settings_section_remoteAccess()}
-            </h2>
-            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-              <section data-slot="settings-section-body" class="px-6 py-4">
-                <WebSocketApiSettings />
-              </section>
-            </div>
+        <!-- Guest sessions (multiplayer w4: hosting roster + joined hosts) -->
+        {#if activeTab === 'guest-sessions'}
+          <div id="guest-sessions" class="scroll-mt-20">
+            <GuestSessionsSettings />
           </div>
         {/if}
 
@@ -699,7 +636,7 @@
         <!-- Display -->
         {#if activeTab === 'display'}
           <!-- Theme -->
-          <div id="theme" data-highlight-id="appearance" use:highlightTarget class="mb-6">
+          <div id="theme" data-highlight-id="appearance" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_appearance()}
             </h2>
@@ -780,15 +717,15 @@
                 id="reduce-motion-on-battery"
                 data-highlight-id="reduce-motion-on-battery"
                 use:highlightTarget
-                class="px-6 py-5"
+                data-slot="settings-section-body"
+                class="px-6 py-4"
               >
                 <ReduceMotionOnBatterySettings />
               </section>
             </div>
           </div>
 
-          <!-- Font Style -->
-          <div id="font-style" data-highlight-id="font-style" use:highlightTarget class="mb-6">
+          <div id="font-style" data-highlight-id="font-style" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_fontStyle()}
             </h2>
@@ -805,7 +742,7 @@
                   label={m.settings_font_notes_label()}
                 >
                   {#snippet descriptionContent()}<span
-                      class="type-body text-subtle mt-0.5 transition-all duration-200"
+                      class="type-body text-subtle mt-0.5 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                       class:font-mono={$isNoteMonospace}
                     >
                       {m.settings_font_notes_description()}
@@ -838,7 +775,7 @@
                   label={m.settings_font_agentChat_label()}
                 >
                   {#snippet descriptionContent()}<span
-                      class="type-body text-subtle mt-0.5 transition-all duration-200"
+                      class="type-body text-subtle mt-0.5 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
                       class:font-mono={$agentFontStyle === 'monospace'}
                     >
                       {m.settings_font_agentChat_description()}
@@ -895,7 +832,7 @@
           </div>
 
           <!-- Language -->
-          <div id="language" data-highlight-id="language" use:highlightTarget class="mb-6">
+          <div id="language" data-highlight-id="language" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_language_section_title()}
             </h2>
@@ -910,7 +847,7 @@
         <!-- App Behavior -->
         {#if activeTab === 'app-behavior'}
           <!-- Updates -->
-          <div id="updates" data-highlight-id="updates" use:highlightTarget class="mb-6">
+          <div id="updates" data-highlight-id="updates" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_updates()}
             </h2>
@@ -940,7 +877,7 @@
             </div>
           </div>
 
-          <div id="open-in" data-highlight-id="open-in" use:highlightTarget class="mb-6">
+          <div id="open-in" data-highlight-id="open-in" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_openIn()}
             </h2>
@@ -950,12 +887,7 @@
               </section>
             </div>
           </div>
-          <div
-            id="github-link-action"
-            data-highlight-id="github-link-action"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="github-link-action" data-highlight-id="github-link-action" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_githubLinks_section_title()}
             </h2>
@@ -966,6 +898,18 @@
             </div>
           </div>
           <NotificationSettings />
+
+          <SettingsSection id="licenses" title={m.settings_licenses_title_label()}>
+            <div class="px-6 py-4">
+              <a
+                href="https://github.com/tailscale/tailcat/blob/main/LICENSE"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="type-body cursor-pointer text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                >{m.settings_licenses_tailcat_description()}</a
+              >
+            </div>
+          </SettingsSection>
         {/if}
 
         <!-- Agent Behavior -->
@@ -974,7 +918,7 @@
             id="global-instructions"
             data-highlight-id="global-instructions"
             use:highlightTarget
-            class="mb-6 min-w-0"
+            class="min-w-0"
           >
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_globalInstructions()}
@@ -990,12 +934,7 @@
 
         <!-- Input -->
         {#if activeTab === 'input'}
-          <div
-            id="keyboard-shortcuts"
-            data-highlight-id="keyboard-shortcuts"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="keyboard-shortcuts" data-highlight-id="keyboard-shortcuts" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_keyboardShortcuts()}
             </h2>
@@ -1004,7 +943,7 @@
             </div>
           </div>
 
-          <div id="voice" data-highlight-id="voice" use:highlightTarget class="mb-6 scroll-mt-20">
+          <div id="voice" data-highlight-id="voice" use:highlightTarget class="scroll-mt-20">
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_voice()}
             </h2>
@@ -1019,12 +958,7 @@
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
           <!-- Agent Backend -->
-          <div
-            id="agent-backend"
-            data-highlight-id="agent-backend"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="agent-backend" data-highlight-id="agent-backend" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_agentBackend()}
             </h2>
@@ -1036,12 +970,7 @@
           </div>
 
           <!-- Tool Output & Retention (anchor id kept as workspace-api for deep links) -->
-          <div
-            id="workspace-api"
-            data-highlight-id="workspace-api"
-            use:highlightTarget
-            class="mb-6"
-          >
+          <div id="workspace-api" data-highlight-id="workspace-api" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_workspaceApi()}
             </h2>
@@ -1050,7 +979,7 @@
 
           <!-- Connection (UDS only; hidden for WS/unknown transports) -->
           {#if udsSocketPath}
-            <div id="connection" data-highlight-id="connection" use:highlightTarget class="mb-6">
+            <div id="connection" data-highlight-id="connection" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_connection()}
               </h2>
@@ -1074,7 +1003,7 @@
 
           <!-- Hardware / Creator Micro (only when a supported device is detectable) -->
           {#if showHardwareSection}
-            <div id="hardware" data-highlight-id="hardware" use:highlightTarget class="mb-6">
+            <div id="hardware" data-highlight-id="hardware" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 {m.settings_section_hardware()}
               </h2>
@@ -1083,7 +1012,7 @@
           {/if}
 
           <!-- Data -->
-          <div id="data" data-highlight-id="data" use:highlightTarget class="mb-6">
+          <div id="data" data-highlight-id="data" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_data()}
             </h2>
@@ -1091,7 +1020,7 @@
           </div>
 
           <!-- Reset -->
-          <div id="reset" data-highlight-id="general" use:highlightTarget class="mb-6">
+          <div id="reset" data-highlight-id="general" use:highlightTarget>
             <h2 class="type-title mb-3 text-foreground">
               {m.settings_section_reset()}
             </h2>
@@ -1116,7 +1045,7 @@
 
           <!-- Developer Section (only in dev mode; dev-only UI is not translated) -->
           {#if isDevMode}
-            <div id="developer" data-highlight-id="developer" use:highlightTarget class="mb-6">
+            <div id="developer" data-highlight-id="developer" use:highlightTarget>
               <h2 class="type-title mb-3 text-foreground">
                 <!-- i18n-ignore (dev-only) -->
                 Developer
@@ -1193,6 +1122,44 @@
               </div>
             </div>
           {/if}
+        {/if}
+
+        <!-- Labs -->
+        {#if activeTab === 'labs'}
+          <div id="labs" data-highlight-id="labs" use:highlightTarget>
+            <h2 class="type-title mb-3 text-foreground">
+              {m.settings_section_labs()}
+            </h2>
+            <p class="type-body text-subtle mb-3">
+              {m.settings_labs_disclaimer_description()}
+            </p>
+            <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+              <section
+                id="labs-multiplayer"
+                data-highlight-id="labs-multiplayer"
+                use:highlightTarget
+                data-slot="settings-section-body"
+                class="px-6 py-4"
+              >
+                <SettingsFieldRow
+                  id="settings-labs-multiplayer-label-field"
+                  label={m.settings_labs_multiplayer_label()}
+                  description={m.settings_labs_multiplayer_description()}
+                  experimental
+                >
+                  <Switch
+                    id="labs-multiplayer-switch"
+                    size="sm"
+                    class="mb-auto"
+                    checked={$labsMultiplayerEnabled}
+                    onCheckedChange={(enabled) =>
+                      appStore.dispatch(setLabsMultiplayerEnabled(enabled))}
+                    ariaLabel={m.settings_labs_multiplayer_label()}
+                  />
+                </SettingsFieldRow>
+              </section>
+            </div>
+          </div>
         {/if}
       </main>
     </div>

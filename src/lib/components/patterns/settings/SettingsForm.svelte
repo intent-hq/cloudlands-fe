@@ -15,12 +15,14 @@
     custom = {},
     descriptions = {},
     embedded = false,
+    compact = true,
   }: {
     schema: SettingsSchema;
     searchQuery?: string;
     custom?: SettingsCustomControls;
     descriptions?: SettingsDescriptionSnippets;
     embedded?: boolean;
+    compact?: boolean;
   } = $props();
   const sections = $derived(
     schema.sections
@@ -45,13 +47,14 @@
     {@const error = resolveSetting(entry.error, undefined)}
     {@const status = resolveSetting(entry.status, undefined)}
     <SettingsFieldRow
-      compact
+      {compact}
       id={entry.id}
       label={entry.label}
       description={entry.description}
       descriptionContent={descriptions[entry.id]}
       controlOnly={entry.kind === 'custom' && entry.layout === 'full-width'}
       htmlFor={hasLabelTarget(entry.kind) ? controlId : undefined}
+      activateLabel={entry.kind === 'select'}
       {disabled}
       {busy}
       {error}
@@ -76,7 +79,7 @@
         {#if entry.kind === 'custom'}
           {#if custom[entry.id]}{@render custom[entry.id](context)}{/if}
         {:else}
-          <SettingsControl {entry} {context} />
+          <SettingsControl {entry} {context} {compact} />
         {/if}
       {/snippet}
     </SettingsFieldRow>
@@ -84,13 +87,13 @@
 {/snippet}
 
 {#if embedded}
-  <div data-slot="settings-form" class="min-w-0 divide-y divide-border">
+  <div data-slot="settings-form" class="@container/settings-form min-w-0 divide-y divide-border">
     {#each sections as section (section.id)}
       {@render rows(section.entries)}
     {/each}
   </div>
 {:else}
-  <div data-slot="settings-form" class="min-w-0 space-y-10">
+  <div data-slot="settings-form" class="@container/settings-form min-w-0 space-y-10">
     {#each sections as section (section.id)}
       <SettingsSection id={section.id} title={section.title} description={section.description}>
         {@render rows(section.entries)}

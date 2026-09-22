@@ -267,6 +267,25 @@ describe('Chief PR-monitor subscription ownership', () => {
     expect(backendUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('renders a prMonitor.list row carrying pausedUntil as paused through the real saga', async () => {
+    const paused: PrMonitorRow = {
+      ...monitor(),
+      lastPolledAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+      pausedUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+      lastError: 'forge rate limit hit; polling paused',
+    };
+    vi.mocked(backendRequest).mockResolvedValue({ monitors: [paused] });
+    render(EventSubscriptionsCard, { workspaceId: CHIEF_WORKSPACE_ID, agentId: AGENT });
+    const summary = await waitFor(() => screen.getByTestId('monitored-pr-summary'));
+    expect(summary.closest('[data-monitor-state]')?.getAttribute('data-monitor-paused')).toBe(
+      'true',
+    );
+    await fireEvent.click(summary);
+    expect(screen.getByTestId('monitored-pr-readiness').textContent).toMatch(
+      /^Monitoring paused until .* \(GitHub rate limit\); last checked 12 minutes ago\.$/,
+    );
+  });
+
   it('does not acquire subscriptions for isolated catalog previews', async () => {
     const view = render(EventSubscriptionsCard, {
       workspaceId: CHIEF_WORKSPACE_ID,

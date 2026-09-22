@@ -63,7 +63,7 @@
   }
 
   function handleGitHubReconnect() {
-    appStore.dispatch(startGitHubAuth());
+    appStore.dispatch(startGitHubAuth({ reconnect: true }));
   }
 </script>
 

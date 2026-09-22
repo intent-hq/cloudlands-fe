@@ -49,6 +49,7 @@
   } from '$store/renderer/slices/terminals/terminals-slice';
 
   import {
+    selectIsWorkspaceCollaborator,
     selectWorkspaceById,
     selectWorkspaceActivePullRequest,
   } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -62,10 +63,8 @@
 
   import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
-  import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import { writable } from 'svelte/store';
-  import Fa from 'svelte-fa';
   import {
     constructPrUrl as constructPrUrlUtil,
     computeTotalStats,
@@ -80,6 +79,7 @@
   } from '$store/renderer/slices/git-roots/git-roots-selectors';
   import GitRootBrowser from './GitRootBrowser.svelte';
   import BranchDisplay from './BranchDisplay.svelte';
+  import ChangesRefreshAction from './ChangesRefreshAction.svelte';
   import CommitDrawer from './CommitDrawer.svelte';
   import CommitsTimeline from './CommitsTimeline.svelte';
   import MergePanel from './MergePanel.svelte';
@@ -103,6 +103,8 @@
     onOpenCodeReview?: () => void;
     openPanelTabs?: PanelTab[];
     activePanelTab?: PanelTab | null;
+    /** Mount the selected root's existing refresh control in the sidebar header. */
+    onRefreshActionChange?: (action: Snippet | undefined) => void;
   }
 
   let {
@@ -117,7 +119,14 @@
     onOpenCodeReview,
     openPanelTabs = [],
     activePanelTab,
+    onRefreshActionChange,
   }: Props = $props();
+
+  let secondaryRefreshAction = $state<Snippet>();
+  $effect(() => {
+    onRefreshActionChange?.(refreshAction);
+    return () => onRefreshActionChange?.(undefined);
+  });
 
   const workspaceIdStore = writable('');
   $effect(() => {
@@ -125,6 +134,23 @@
   });
 
   const workspace = selectWorkspaceById(workspaceIdStore);
+
+  // Multiplayer role gate for the whole Changes tab. A collaborator may only
+  // call the member class of the daemon's capability matrix (intentd
+  // `capability.rs` / transport `COLLABORATOR_METHODS`): git.stage / unstage /
+  // discard / push / pull / fetch and reads. Everything routed through
+  // `accept-changes.*` (commit, push-commits, undo, rebase, merge, PR create,
+  // reset-to-trunk), `github.*`, `workspace.setAutoCommit`, `workspace.archive`
+  // and the protected `workspace.update` fields (`branch`, `baseRef`,
+  // `baseCommitSha`) is owner-only, so those controls are not rendered for a
+  // collaborator. `selectIsWorkspaceCollaborator` fails closed — a guest window
+  // (multiplayer w4) reads as collaborator whatever `myRole` the row carries,
+  // as does every window until its identity has settled — while a missing
+  // `myRole` in a settled owner window is treated as owner, like the rest of
+  // the sidebar. Threaded to children as a prop.
+  const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const isOwner = $derived(!$isCollaborator$);
+
   const acceptChangesState$ = selectAcceptChangesState(workspaceIdStore);
   const pendingAutoAction$ = selectPendingAutoAction(workspaceIdStore);
   const postMergeState$ = selectPostMergeState(workspaceIdStore);
@@ -440,8 +466,11 @@
         Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
           appStore.dispatch(refreshRequested(workspaceId)),
-          // Also refresh aheadOfTrunk, hasRemote, and isContentMergedToTrunk for merged state detection
-          Promise.resolve(appStore.dispatch(refreshAcceptChangesStatus(workspaceId))),
+          // Also refresh aheadOfTrunk, hasRemote, and isContentMergedToTrunk for merged state detection.
+          // accept-changes.getStatus is refused for a collaborator, so only the owner dispatches it.
+          ...(isOwner
+            ? [Promise.resolve(appStore.dispatch(refreshAcceptChangesStatus(workspaceId)))]
+            : []),
         ]),
         timeoutPromise,
       ]);
@@ -543,6 +572,9 @@
     // queued (unconsumed) until the selection returns to primary; reading
     // the flag here re-runs the effect on that switch (monorepo#2053).
     const browsingSecondaryRoot = isBrowsingSecondaryRoot;
+    // Every auto-action routes through an owner-only RPC (accept-changes.*):
+    // a collaborator consumes the action without firing it.
+    const owner = isOwner;
     untrack(() => {
       if (ac.commitMessage && ac.commitMessage !== commitMessage) {
         commitMessage = ac.commitMessage;
@@ -551,6 +583,7 @@
       // Handle pending auto-actions
       if (pending && !browsingSecondaryRoot) {
         appStore.dispatch(setPendingAutoAction(workspaceId, null));
+        if (!owner) return;
         if (pending.action === 'commit') {
           isCommitting = true;
           handleCommit(pending.workspaceId);
@@ -620,6 +653,7 @@
     isContentMergedToTrunk,
     hasNewWorkAfterMerge,
     isPRMerged,
+    isOwner,
     onOpenFullPanel,
     onOpenChange,
   });
@@ -703,6 +737,14 @@
     // Don't handle if we're in an input or textarea
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      return;
+    }
+    // Summary controls own their native button and picker keyboard interactions.
+    if (
+      target.closest(
+        '[data-branch-summary], [data-changes-summary-count], [data-testid="git-root-selector"]',
+      )
+    ) {
       return;
     }
 
@@ -996,8 +1038,9 @@
     if (change) onOpenChange?.(change, event);
   }
 
-  // Determine if trunk can be changed (only before first push)
-  const canChangeTrunk = $derived(!hasPushedCommits && unpushedCount === 0);
+  // Determine if trunk can be changed: only before the first push, and only
+  // by the owner — `baseRef` is not collaborator-editable on `workspace.update`.
+  const canChangeTrunk = $derived(isOwner && !hasPushedCommits && unpushedCount === 0);
 
   // Track if we're in the middle of a workspace switch to disable animations
   let isWorkspaceSwitching = $state(false);
@@ -1023,6 +1066,14 @@
     });
   });
 </script>
+
+{#snippet refreshAction()}
+  {#if isBrowsingSecondaryRoot}
+    {@render secondaryRefreshAction?.()}
+  {:else if hasLoadedForWorkspace}
+    <ChangesRefreshAction disabled={isRefreshingGitStatus} onclick={handleRefreshGitStatus} />
+  {/if}
+{/snippet}
 
 <div class="flex flex-col h-full flex-1 min-h-0 max-h-full">
   <div class="flex-1 flex flex-col min-h-0">
@@ -1059,6 +1110,9 @@
         <GitRootBrowser
           {workspaceId}
           onSelectedRootChange={(entry) => (selectedSecondaryRoot = entry)}
+          onRefreshActionChange={onRefreshActionChange
+            ? (action) => (secondaryRefreshAction = action)
+            : undefined}
         />
 
         {#if isBrowsingSecondaryRoot}
@@ -1081,20 +1135,19 @@
         {/if}
 
         {#if !isBrowsingSecondaryRoot}
-          <BranchDisplay {workspaceId} {trunkBranch} {repoPath} {repoType} {canChangeTrunk} />
+          <BranchDisplay
+            {workspaceId}
+            {trunkBranch}
+            {repoPath}
+            {repoType}
+            {canChangeTrunk}
+            {isOwner}
+          />
 
-          <div class="relative flex items-center mb-2 pl-4 h-7">
-            <Button
-              variant="ghost"
-              type="button"
-              size="icon-compact"
-              class="absolute -left-1 w-5 p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer z-10"
-              onclick={handleRefreshGitStatus}
-              disabled={isRefreshingGitStatus}
-              title={m.workspace_sidebarChanges_refreshGitStatus_tooltip()}
-            >
-              <Fa icon={faArrowsRotate} class="size-3! text-subtle" />
-            </Button>
+          <div class="relative flex items-center mb-2 h-7" data-changes-summary-count>
+            {#if !onRefreshActionChange}
+              {@render refreshAction()}
+            {/if}
 
             <!-- View All Changes Button -->
             {#if hasAnyChanges}
@@ -1169,6 +1222,7 @@
               {onOpenNote}
               {openPanelTabs}
               {activePanelTab}
+              {isOwner}
               onFileClicked={(path, staged) => {
                 focusedFile = { path, staged };
                 if (selectedFiles.size > 0) {
@@ -1178,15 +1232,18 @@
               }}
             />
 
-            <CommitDrawer
-              {workspaceId}
-              bind:commitMessage
-              bind:isCommitting
-              bind:commitDrawerOpen
-              {hasStaged}
-              {stagedChanges}
-              onCommit={() => handleCommit()}
-            />
+            <!-- Commit runs through accept-changes.execute (owner-only) -->
+            {#if isOwner}
+              <CommitDrawer
+                {workspaceId}
+                bind:commitMessage
+                bind:isCommitting
+                bind:commitDrawerOpen
+                {hasStaged}
+                {stagedChanges}
+                onCommit={() => handleCommit()}
+              />
+            {/if}
 
             <!-- COMMITS SECTION -->
             <CommitsTimeline
@@ -1194,6 +1251,7 @@
               {activeFilePath}
               {activeFileStaged}
               pullRequestCount={pullRequests.length}
+              {isOwner}
             />
 
             {#snippet mergePanelContent()}
@@ -1234,8 +1292,9 @@
               bind:this={prSectionRef}
             />
 
-            <!-- Post-merge options - shown when workspace is completed (commits merged to trunk) -->
-            {#if (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash) && !hasNewWorkAfterMerge}
+            <!-- Post-merge options - shown when workspace is completed (commits merged to trunk).
+                 Reset-to-trunk / archive / new space are owner-only. -->
+            {#if isOwner && (isMergedToTrunk || (areAllPRsMerged && !hasResetToTrunk) || isContentMergedToTrunk) && (!mergeHeadSha || mergeHeadSha === allCommits[0]?.hash) && !hasNewWorkAfterMerge}
               <PostMergeActions {workspaceId} {hasNoLocalChanges} {trunkBranch} />
             {/if}
           </div>

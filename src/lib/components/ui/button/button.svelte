@@ -58,7 +58,7 @@
   );
   const surfaceClass = $derived(
     cn(
-      'pointer-events-none absolute inset-0 transition-[box-shadow,background-color,filter] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
+      'pointer-events-none absolute inset-0 -z-10 transition-[box-shadow,background-color,filter] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
       (active ? activeButtonSurfaceVariants : buttonSurfaceVariants)[variant],
     ),
   );
@@ -217,7 +217,8 @@
 {/if}
 
 <style>
-  :global([data-slot='button-content'] svg) {
+  /* Icons drawn at their own stroke scale opt out with `data-owns-stroke` (#5294). */
+  :global([data-slot='button-content'] svg:not([data-owns-stroke])) {
     stroke-width: 1.5;
   }
 
@@ -237,7 +238,7 @@
     flex-shrink: 0;
   }
 
-  :global([data-slot='button']:hover [data-slot='button-content'] svg) {
+  :global([data-slot='button']:hover [data-slot='button-content'] svg:not([data-owns-stroke])) {
     stroke-width: 2;
   }
 </style>

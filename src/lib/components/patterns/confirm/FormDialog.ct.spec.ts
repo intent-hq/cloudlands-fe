@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import FormDialog from './FormDialog.svelte';
 import DestructiveConfirm from './DestructiveConfirm.svelte';
 
@@ -63,21 +63,38 @@ for (const tag of ['input', 'textarea'] as const) {
   });
 }
 
-test('ignore preserves native submit-button activation', async ({ mount, page }) => {
+test('ignore preserves native submit-button activation', async ({ mount, page }, testInfo) => {
   let submitted = 0;
+  let cancelled = 0;
   await mount(FormDialog, {
     props: {
       open: true,
       title: 'Explicit submit',
       submitLabel: 'Save',
+      cancelLabel: 'Cancel',
       enterKey: 'ignore',
       onSubmit: () => {
         submitted++;
       },
+      onCancel: () => {
+        cancelled++;
+      },
     },
   });
-  await page.getByRole('button', { name: 'Save', exact: true }).press('Enter');
+  // Bits queues initial autofocus on the first tabbable (Cancel). Let it finish
+  // before moving to Save, so it cannot redirect our native Enter activation.
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+  const save = page.getByRole('button', { name: 'Save', exact: true });
+  await save.focus();
+  await expect(save).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect.poll(() => submitted).toBe(1);
+  expect(cancelled).toBe(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await testInfo.attach('native-submit-keeps-dialog-open', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
 });
 
 for (const enterKey of ['submit', 'ignore'] as const) {

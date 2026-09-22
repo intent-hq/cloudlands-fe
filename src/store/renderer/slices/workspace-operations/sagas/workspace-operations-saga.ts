@@ -111,12 +111,21 @@ function workspacesForIds(workspaceIds: string[], workspaces: Workspace[]): Work
   });
 }
 
-function hasActiveWork({ agentNames, hookNames, openPrs, localChanges }: ActiveWorkNames): boolean {
+// Single-workspace gating: guests alone (collaborators or open invites) open
+// the warning too, since archive/delete removes them from the workspace.
+function hasActiveWork({
+  agentNames,
+  hookNames,
+  openPrs,
+  localChanges,
+  guests,
+}: ActiveWorkNames): boolean {
   return (
     agentNames.length > 0 ||
     hookNames.length > 0 ||
     openPrs.length > 0 ||
-    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges)
+    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges) ||
+    guests.collaboratorCount + guests.openInviteCount > 0
   );
 }
 
@@ -125,20 +134,22 @@ function getSingleWorkspaceActiveWork(workspaceId: string): Promise<ActiveWorkNa
   return getActiveWorkNames(workspaceId, { includeLocalChanges: true });
 }
 
-// Bulk flows use cached agents/hooks/open PRs but never fetch local changes
+// Bulk flows count agents/hooks/open PRs and guests but never fetch local changes
 // (no `workspace.localChanges` fan-out).
 function countActiveWork(items: ActiveWorkNames[]): {
   agentCount: number;
   hookCount: number;
   openPrCount: number;
+  guestCount: number;
 } {
   return items.reduce(
     (counts, item) => ({
       agentCount: counts.agentCount + item.agentNames.length,
       hookCount: counts.hookCount + item.hookNames.length,
       openPrCount: counts.openPrCount + item.openPrs.length,
+      guestCount: counts.guestCount + item.guests.collaboratorCount + item.guests.openInviteCount,
     }),
-    { agentCount: 0, hookCount: 0, openPrCount: 0 },
+    { agentCount: 0, hookCount: 0, openPrCount: 0, guestCount: 0 },
   );
 }
 

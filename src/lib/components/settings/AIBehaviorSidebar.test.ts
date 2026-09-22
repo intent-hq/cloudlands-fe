@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -77,20 +77,29 @@ describe('AIBehaviorSidebar', () => {
     expect(container.querySelector('[data-state="active"]')).toBeNull();
   });
 
-  it('does not override the Button focus contract on agent rows', () => {
+  it('renders each specialist row with a compact named-variant avatar', () => {
     const { container } = render(AIBehaviorSidebar, {
       activeView: { type: 'specialist', id: 'implementor' },
       onSelect: vi.fn(),
     });
+    const avatar = container.querySelector<SVGElement>(
+      '#specialist-implementor [data-agent-avatar]',
+    );
+    expect(avatar?.getAttribute('data-avatar-variant')).toBe('compact');
+    expect(avatar?.style.width).toBe('');
+  });
 
-    const rows = [...container.querySelectorAll<HTMLElement>('[data-settings-agent-row]')];
-    expect(rows).toHaveLength(2);
-    for (const row of rows) {
-      const focusClasses = [...row.classList].filter((className) =>
-        className.startsWith('focus-visible:'),
-      );
-      expect(focusClasses.some((className) => className.includes('ring-'))).toBe(false);
-      expect(focusClasses).not.toContain('focus-visible:outline-none');
-    }
+  it('dispatches distinct specialist and creation selections', async () => {
+    const onSelect = vi.fn();
+    const { container } = render(AIBehaviorSidebar, {
+      activeView: { type: 'specialist', id: 'implementor' },
+      onSelect,
+    });
+
+    await fireEvent.click(container.querySelector('#specialist-implementor')!);
+    expect(onSelect).toHaveBeenLastCalledWith({ type: 'specialist', id: 'implementor' });
+    await fireEvent.click(container.querySelector('#create-specialist')!);
+    expect(onSelect).toHaveBeenLastCalledWith({ type: 'create-specialist' });
+    expect(onSelect).toHaveBeenCalledTimes(2);
   });
 });

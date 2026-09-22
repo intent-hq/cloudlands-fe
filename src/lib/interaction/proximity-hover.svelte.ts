@@ -93,16 +93,52 @@ export function createProximityHover(
     if (pointerPosition) activeIndex = nearestItemIndex(pointerPosition, itemRects, axis);
   };
 
+  const getContainerScale = (rect: DOMRect) => {
+    const style = getComputedStyle(container);
+    const pixels = (value: string) => Number.parseFloat(value) || 0;
+    // offsetWidth/Height round fractional layout pixels, which would invent a
+    // scale even on an untransformed menu. Use the resolved border-box dimensions.
+    const borderBox = style.boxSizing === 'border-box';
+    const width =
+      Number.parseFloat(style.width) +
+      (borderBox
+        ? 0
+        : pixels(style.paddingLeft) +
+          pixels(style.paddingRight) +
+          pixels(style.borderLeftWidth) +
+          pixels(style.borderRightWidth));
+    const height =
+      Number.parseFloat(style.height) +
+      (borderBox
+        ? 0
+        : pixels(style.paddingTop) +
+          pixels(style.paddingBottom) +
+          pixels(style.borderTopWidth) +
+          pixels(style.borderBottomWidth));
+    // Computed lengths serialize to a few decimals while rects keep the full
+    // layout fraction, so an untransformed menu can read as scale 0.999998.
+    // Snap that noise to 1; a real entrance scale is orders of magnitude larger.
+    const snapUnit = (scale: number) => (Math.abs(scale - 1) < 1e-3 ? 1 : scale);
+    return {
+      x: snapUnit(width > 0 ? rect.width / width || 1 : 1),
+      y: snapUnit(height > 0 ? rect.height / height || 1 : 1),
+    };
+  };
+
   const measure = () => {
     const containerRect = container.getBoundingClientRect();
+    // Rects are viewport pixels (including an ancestor's entrance scale); the
+    // overlay and scroll offsets use local CSS pixels. Keep both in one space.
+    const { x: scaleX, y: scaleY } = getContainerScale(containerRect);
     const next: (ItemRect | undefined)[] = [];
     for (const [index, element] of items) {
       const rect = element.getBoundingClientRect();
       next[index] = {
-        top: rect.top - containerRect.top - container.clientTop + container.scrollTop,
-        left: rect.left - containerRect.left - container.clientLeft + container.scrollLeft,
-        width: rect.width,
-        height: rect.height,
+        top: (rect.top - containerRect.top) / scaleY - container.clientTop + container.scrollTop,
+        left:
+          (rect.left - containerRect.left) / scaleX - container.clientLeft + container.scrollLeft,
+        width: rect.width / scaleX,
+        height: rect.height / scaleY,
       };
     }
     itemRects = next;
@@ -122,9 +158,11 @@ export function createProximityHover(
   };
   const handlePointerMove = (event: PointerEvent) => {
     const containerRect = container.getBoundingClientRect();
+    const { x: scaleX, y: scaleY } = getContainerScale(containerRect);
     pointerPosition = {
-      x: event.clientX - containerRect.left - container.clientLeft + container.scrollLeft,
-      y: event.clientY - containerRect.top - container.clientTop + container.scrollTop,
+      x:
+        (event.clientX - containerRect.left) / scaleX - container.clientLeft + container.scrollLeft,
+      y: (event.clientY - containerRect.top) / scaleY - container.clientTop + container.scrollTop,
     };
     if (frame !== undefined) cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => {

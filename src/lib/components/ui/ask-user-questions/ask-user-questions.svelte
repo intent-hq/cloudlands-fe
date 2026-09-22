@@ -41,6 +41,8 @@
     showBack = false,
     backLabel = DEFAULT_BACK_LABEL,
     headerActions,
+    footerActions,
+    centered = false,
     showCounter = true,
     alwaysShowSkip = false,
     showOtherSubmit = false,
@@ -117,7 +119,9 @@
     isMulti || isFreeText || (showOtherSubmit && allowOther && otherText.trim().length > 0),
   );
   const showBackAction = $derived(showBack && safeIndex > 0);
-  const showFooter = $derived(showBackAction || showSkip || showSubmit || Boolean(freeTextError));
+  const showFooter = $derived(
+    Boolean(footerActions) || showBackAction || showSkip || showSubmit || Boolean(freeTextError),
+  );
 
   $effect(() => {
     if (controlledAnswers !== undefined) latestAnswers = controlledAnswers;
@@ -504,11 +508,23 @@
 {/snippet}
 
 {#snippet arrowRight()}
-  <svg class="hidden size-3.5 sm:block" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+  <svg class="size-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
     <path
       d="m6.5 3.5 4.5 4.5-4.5 4.5M3 8h8"
       stroke="currentColor"
       stroke-width="1.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </svg>
+{/snippet}
+
+{#snippet skipArrow()}
+  <svg class="size-3.5 text-muted-foreground" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <path
+      d="M3 5v3a3 3 0 0 0 3 3h6m-3-3 3 3-3 3"
+      stroke="currentColor"
+      stroke-width="1.25"
       stroke-linecap="round"
       stroke-linejoin="round"
     />
@@ -540,25 +556,19 @@
       <!-- i18n-ignore (reference primitive empty-state default) -->
       <p class="p-5 text-[13px] text-muted-foreground">No questions.</p>
     {:else}
-      <div
-        data-slot="ask-user-questions-metadata"
-        class={cn(
-          'flex items-center text-muted-foreground',
-          compact
-            ? 'px-4.5 pt-2.5 pb-1.5 type-caption sm:px-5 sm:pt-3'
-            : 'px-5 pt-3.5 pb-2 type-caption sm:px-5 sm:pt-4',
-        )}
-      >
-        {#if showCounter}
+      {#if showCounter}
+        <div
+          data-slot="ask-user-questions-metadata"
+          class={cn(
+            'flex items-center text-muted-foreground type-caption',
+            centered && 'justify-center text-center',
+            compact ? 'px-5 pt-2.5 pb-1.5' : 'px-5 pt-3.5 pb-2 sm:pt-4',
+          )}
+        >
           <!-- i18n-ignore (reference primitive progress label) -->
           <span class="shrink-0 tabular-nums">Question {safeIndex + 1} of {questions.length}</span>
-        {/if}
-        {#if headerActions}
-          <span class="ml-auto flex shrink-0 items-center gap-1">
-            {@render headerActions()}
-          </span>
-        {/if}
-      </div>
+        </div>
+      {/if}
 
       <div use:animatedHeight={true}>
         <div class="grid">
@@ -566,23 +576,69 @@
             <div
               data-animated-height-target
               class={cn(
-                'col-start-1 row-start-1 flex flex-col gap-2',
-                compact ? 'px-4.5 sm:px-5' : 'px-5',
+                'col-start-1 row-start-1 flex flex-col gap-2 px-5',
+                !showCounter && (compact ? 'pt-2.5' : 'pt-3.5'),
                 showFooter ? 'pb-1' : compact ? 'pb-2 sm:pb-2.5' : 'pb-2.5 sm:pb-3',
               )}
               in:stepIn
               out:stepOut
             >
+              <div
+                class={cn(
+                  'flex min-w-0 gap-x-2 gap-y-1',
+                  centered ? 'flex-col items-center text-center' : 'flex-wrap items-start',
+                )}
+                data-slot="ask-user-questions-header"
+              >
+                {#if question.header}
+                  <p
+                    class={cn(
+                      'min-w-0 break-words type-caption text-muted-foreground',
+                      centered ? 'w-full' : 'grow basis-48',
+                    )}
+                  >
+                    {question.header}
+                  </p>
+                {:else}
+                  <h3
+                    id={titleId}
+                    class={cn(
+                      'min-w-0 break-words text-[16px] font-semibold leading-snug text-foreground',
+                      centered ? 'w-full' : 'grow basis-48',
+                    )}
+                  >
+                    {question.title}
+                  </h3>
+                {/if}
+                {#if headerActions}
+                  <span
+                    class={cn(
+                      'flex max-w-full shrink-0 flex-wrap items-center gap-1',
+                      centered ? 'justify-center' : 'ml-auto justify-end',
+                    )}
+                  >
+                    {@render headerActions()}
+                  </span>
+                {/if}
+              </div>
               {#if question.header}
-                <p class="type-caption text-muted-foreground">
-                  {question.header}
-                </p>
+                <h3
+                  id={titleId}
+                  class={cn(
+                    'break-words text-[16px] font-semibold leading-snug text-foreground',
+                    centered && 'text-center',
+                  )}
+                >
+                  {question.title}
+                </h3>
               {/if}
-              <h3 id={titleId} class="text-[16px] font-semibold leading-snug text-foreground">
-                {question.title}
-              </h3>
               {#if question.description}
-                <p class="text-xs leading-snug text-muted-foreground">
+                <p
+                  class={cn(
+                    'break-words text-xs leading-snug text-muted-foreground',
+                    centered && 'text-center',
+                  )}
+                >
                   {question.description}
                 </p>
               {/if}
@@ -657,6 +713,8 @@
                     {@const id = optionId(option, optionIndex)}
                     {@const selected = selectedIds.includes(id)}
                     {@const chipPosition = question.chipPosition ?? 'right'}
+                    {@const hasStackedDescription =
+                      question.layout === 'stacked' && Boolean(option.description?.trim())}
                     <!-- svelte-ignore a11y_no_noninteractive_tabindex (the runtime role is radio or checkbox) -->
                     <div
                       use:registerRow={optionIndex}
@@ -676,10 +734,10 @@
                         'group/question-row relative z-10 flex cursor-pointer select-none',
                         compact ? 'px-2.5' : 'px-3',
                         chipPosition === 'left' ? 'gap-2' : 'gap-3',
-                        question.layout === 'stacked' ? 'items-start' : 'items-center',
-                        question.layout === 'stacked'
+                        hasStackedDescription ? 'items-start' : 'items-center',
+                        hasStackedDescription
                           ? compact
-                            ? 'min-h-12 py-1.5'
+                            ? 'min-h-12 py-1'
                             : 'min-h-14 py-2'
                           : compact
                             ? 'min-h-8 py-1'
@@ -709,7 +767,7 @@
                           class={cn(
                             'relative inline-flex shrink-0 items-center justify-center',
                             compact ? 'size-6' : 'size-7',
-                            question.layout === 'stacked' && '-mt-px',
+                            hasStackedDescription && '-mt-px',
                           )}
                         >
                           <span
@@ -735,15 +793,7 @@
                               aria-hidden="true"
                               class="absolute inset-0 inline-flex scale-75 items-center justify-center rounded-(--radius-small) bg-primary text-primary-foreground opacity-0 transition-[opacity,transform] duration-spring-fast ease-spring-fast group-hover/question-row:scale-100 group-hover/question-row:opacity-100 group-focus/question-row:scale-100 group-focus/question-row:opacity-100 motion-reduce:transition-none"
                             >
-                              <svg class="size-3.5" viewBox="0 0 16 16" fill="none"
-                                ><path
-                                  d="m6.5 3.5 4.5 4.5-4.5 4.5"
-                                  stroke="currentColor"
-                                  stroke-width="1.75"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                /></svg
-                              >
+                              {@render arrowRight()}
                             </span>
                           {/if}
                         </span>
@@ -752,19 +802,14 @@
                       {#if chipPosition === 'left'}{@render chip()}{/if}
                       <span
                         class={cn(
-                          'min-w-0 flex-1 leading-snug',
+                          'min-w-0 flex-1 break-words leading-snug',
                           compact ? 'text-xs' : 'type-caption',
                           question.layout === 'stacked'
                             ? 'flex flex-col gap-0.5'
                             : 'inline-flex items-center',
                         )}
                       >
-                        <span
-                          class={cn(
-                            'text-foreground transition-[font-weight] duration-spring-fast ease-spring-fast motion-reduce:transition-none',
-                            selected ? 'font-semibold' : 'font-medium',
-                          )}>{option.title}</span
-                        >
+                        <span class="font-normal text-foreground">{option.title}</span>
                         {#if option.description}
                           {#if question.layout !== 'stacked'}<span aria-hidden="true">&nbsp;</span
                             >{/if}
@@ -786,15 +831,7 @@
                             aria-hidden="true"
                             class="absolute inset-0 inline-flex scale-75 items-center justify-center rounded-(--radius-small) bg-primary text-primary-foreground opacity-0 transition-[opacity,transform] duration-spring-fast ease-spring-fast group-hover/question-row:scale-100 group-hover/question-row:opacity-100 group-focus/question-row:scale-100 group-focus/question-row:opacity-100 motion-reduce:transition-none"
                           >
-                            <svg class="size-3.5" viewBox="0 0 16 16" fill="none"
-                              ><path
-                                d="m6.5 3.5 4.5 4.5-4.5 4.5"
-                                stroke="currentColor"
-                                stroke-width="1.75"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                              /></svg
-                            >
+                            {@render arrowRight()}
                           </span>
                         </span>
                       {/if}
@@ -830,6 +867,7 @@
                       {/if}
                       <Textarea
                         bind:ref={otherInput}
+                        noFocusStyle
                         rows={1}
                         value={otherText}
                         placeholder={question.otherPlaceholder ?? DEFAULT_OTHER_PLACEHOLDER}
@@ -874,8 +912,22 @@
               {/if}
               {#if showFooter}
                 <div class={cn('pt-1', compact ? 'pb-1.5' : 'pb-2')}>
-                  <div class="-mx-2 flex items-center justify-between gap-2 sm:-mx-3">
-                    <div class="relative flex min-w-0 flex-1 items-center gap-2">
+                  <div
+                    data-slot="ask-user-questions-footer"
+                    class={cn(
+                      '-mx-2 flex flex-wrap items-center gap-2 sm:-mx-3',
+                      centered ? 'justify-center' : 'justify-between',
+                    )}
+                  >
+                    <div
+                      class={cn(
+                        'relative flex min-w-0 max-w-full flex-wrap items-center gap-1',
+                        centered
+                          ? !footerActions && !showBackAction && !freeTextError && 'hidden'
+                          : 'flex-1',
+                      )}
+                    >
+                      {@render footerActions?.()}
                       {#if showBackAction}
                         <span
                           in:scale={{ tier: 'fast' }}
@@ -902,7 +954,12 @@
                         </p>
                       {/if}
                     </div>
-                    <div class="relative flex items-center gap-2">
+                    <div
+                      class={cn(
+                        'relative flex min-w-0 max-w-full flex-wrap items-center gap-2',
+                        centered && 'justify-center',
+                      )}
+                    >
                       {#if showSkip}
                         <span
                           in:scale={{ tier: 'fast' }}
@@ -911,7 +968,7 @@
                           <Button
                             variant="ghost"
                             size="sm"
-                            trailingIcon={arrowRight}
+                            trailingIcon={skipArrow}
                             class="pr-3 sm:pr-[6px]"
                             {disabled}
                             onclick={skip}>{skipLabel}</Button

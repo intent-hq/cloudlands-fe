@@ -141,6 +141,7 @@ function requireBrowserClient(value: unknown, method: string): WorkspaceBrowserC
 
 export class LiveWorkspacesClient implements WorkspacesClient {
   private readonly listRequests = new Map<boolean, Promise<Workspace[]>>();
+  private readonly getRequests = new Map<string, Promise<Workspace | null>>();
 
   list(options?: { includeArchived?: boolean }): Promise<Workspace[]> {
     const includeArchived = options?.includeArchived === true;
@@ -166,16 +167,35 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return request;
   }
 
-  async get(id: string): Promise<Workspace | null> {
-    const result = await backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
+  /**
+   * `workspace.get` (§5.1), single-flighted per workspace id: every caller —
+   * `open`, the workspace-load saga, and the on-demand detail hydration
+   * helpers — shares one in-flight request, so overlapping reads never fan
+   * out into duplicate RPCs. The entry clears once the request settles either
+   * way, so a rejected read never poisons later ones.
+   */
+  get(id: string): Promise<Workspace | null> {
+    const existing = this.getRequests.get(id);
+    if (existing) return existing;
+
+    const request = backendRequest<{ workspace?: unknown } | unknown>('workspace.get', {
       workspaceId: id,
+    }).then((result) => {
+      const raw =
+        result && typeof result === 'object' && 'workspace' in result
+          ? (result as { workspace?: unknown }).workspace
+          : result;
+      if (!raw || typeof raw !== 'object') return null;
+      return normalizeWorkspace(raw as Record<string, unknown>);
     });
-    const raw =
-      result && typeof result === 'object' && 'workspace' in result
-        ? (result as { workspace?: unknown }).workspace
-        : result;
-    if (!raw || typeof raw !== 'object') return null;
-    return normalizeWorkspace(raw as Record<string, unknown>);
+    this.getRequests.set(id, request);
+    const clearRequest = () => {
+      if (this.getRequests.get(id) === request) {
+        this.getRequests.delete(id);
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
   }
 
   // The daemon owns watcher/monitoring start-up that the legacy main-process

@@ -275,11 +275,12 @@
 <StreamingTypingIndicator
   visible={thinkingVisible}
   message={statusMessage}
+  showMessage={Boolean(error)}
   lifecycleMessage={latestStatusEvent?.message}
   elapsed={elapsedTime}
   onHoverChange={(hovered) => (thinkingHovered = hovered)}
   variant={markVariant}
-  class="mt-2 {className}"
+  class="mt-[var(--space-3)] {className}"
 />
 
 {#if queueWait && queueWaitMessage}

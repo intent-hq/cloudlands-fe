@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
+import type { InviteProgressAction } from '../shared/ipc/invite-progress';
 import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
 import {
@@ -1095,6 +1096,38 @@ export const VoiceTranscribeLocalSchema = z.object({
 
 export const ConnectionsListSchema = EmptySchema;
 
+/** `guest-sessions:list`: no params; the result never carries a token. */
+export const GuestSessionsListSchema = EmptySchema;
+
+/** `guest-sessions:leave`: the guest session id to revoke on the host and forget locally. */
+export const GuestSessionsLeaveSchema = z.object({
+  id: z.string().min(1, 'Guest session id is required'),
+});
+
+/** `guest-sessions:leave-workspace`: leave one workspace on a joined host and drop it locally. */
+export const GuestSessionsLeaveWorkspaceSchema = z.object({
+  id: z.string().min(1, 'Guest session id is required'),
+  workspaceId: z.string().min(1, 'Workspace id is required'),
+});
+
+/**
+ * `presence:report`: one window's focus set + typing target (multiplayer w5),
+ * merged per backend in main into a single `presence.update`.
+ */
+export const PresenceReportSchema = z.object({
+  focus: z.array(
+    z.object({
+      workspaceId: z.string().min(1, 'Workspace id is required'),
+      agentId: z.string().min(1).optional(),
+      noteId: z.string().min(1).optional(),
+    }),
+  ),
+  typing: z
+    .object({ agentId: z.string().min(1, 'Agent id is required') })
+    .nullable()
+    .optional(),
+});
+
 export const ConnectionsCaptureFingerprintSchema = z.object({
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().positive('Port must be a positive integer'),
@@ -1194,4 +1227,54 @@ export const QuitConfirmationAckSchema = z.object({
 export const QuitConfirmationResponseSchema = z.object({
   requestId: z.string().min(1, 'Request ID is required'),
   proceed: z.boolean(),
+});
+
+// ============================================================================
+// Invite Consent Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite GitHub identity
+// prompt. The payload contract (all four channels) is documented in
+// `src/shared/ipc/invite-consent.ts`.
+// ============================================================================
+
+export const InviteConsentAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteConsentResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  action: z.enum(['open', 'cancel']),
+});
+
+// ============================================================================
+// Invite Progress Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite progress dialog.
+// The payload contract (all five channels) is documented in
+// `src/shared/ipc/invite-progress.ts`.
+// ============================================================================
+
+export const InviteProgressAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteProgressResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+  action: z.literal('cancel' satisfies InviteProgressAction),
+});
+
+// ============================================================================
+// Invite Notice Schemas
+//
+// Renderer → main payloads for the renderer-rendered invite failure /
+// plaintext-credential notice. The payload contract (all four channels) is
+// documented in `src/shared/ipc/invite-notice.ts`.
+// ============================================================================
+
+export const InviteNoticeAckSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
+});
+
+export const InviteNoticeResponseSchema = z.object({
+  requestId: z.string().min(1, 'Request ID is required'),
 });

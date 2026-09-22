@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import ChatUtilitySpacingHost from './ChatUtilitySpacingHost.svelte';
 
 const states = [

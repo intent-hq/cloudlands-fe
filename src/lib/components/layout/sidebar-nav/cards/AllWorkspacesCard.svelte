@@ -609,7 +609,7 @@
             <WorkspaceCard
               {workspace}
               variant="compact"
-              showTime={false}
+              showTime={true}
               isUnread={_isUnread(workspace)}
               isPinned={$pinnedIds$.includes(workspace.id)}
               trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -684,7 +684,7 @@
                     <WorkspaceCard
                       {workspace}
                       variant="compact"
-                      showTime={false}
+                      showTime={true}
                       isUnread={_isUnread(workspace)}
                       isPinned={$pinnedIds$.includes(workspace.id)}
                       trailingLabel={workspace.status === WorkspaceStatusEnum.Archived
@@ -745,7 +745,6 @@
                 onclick={() => toggleStatusGroup(group.id)}
                 onkeydown={(event) => event.stopPropagation()}
               >
-                <span class="size-3.5 shrink-0" aria-hidden="true"></span>
                 <Header size={4} class="min-w-0 flex-1 truncate">{group.label}</Header>
                 <Fa
                   icon={faChevronDown}
@@ -762,7 +761,7 @@
                 <WorkspaceCard
                   {workspace}
                   variant="compact"
-                  showTime={false}
+                  showTime={true}
                   isUnread={_isUnread(workspace)}
                   isPinned={$pinnedIds$.includes(workspace.id)}
                   trailingLabel={workspace.status === WorkspaceStatusEnum.Archived

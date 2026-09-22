@@ -276,9 +276,15 @@ import { QUESTION_RESOURCE_MIME_TYPE, type Question } from '$shared/types/questi
 import { refreshWorkspaceSubscriptionEntriesRequested } from '$store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice';
 import {
   setAgents,
+  setDelegatedCounts,
   setRetiredCount,
+  setScopeCounts,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-import { selectRetiredCount } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import {
+  selectDelegatedCounts,
+  selectRetiredCount,
+  selectScopeCounts,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -338,6 +344,8 @@ function readAssistantMessages(): AgentMessage[] {
 
 const WS = 'ws-bridge-1';
 const AGENT = 'agent-bridge-1';
+/** The hydration read's wire params (§5.5 row scope: the top-level bin). */
+const TOP_LEVEL_LIST = { workspaceId: WS, scope: 'topLevel' };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const stopRouterDependencies: Array<() => void> = [];
 
@@ -667,6 +675,103 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(session?.status).toBe(AgentStatus.RuntimeIdle);
     // The canonical Thinking driver is genuinely resolved.
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  // Prompt turns: the daemon's turn-start budget re-check queues the agent
+  // AFTER the send path already flipped isStreaming (chatSendStarted), and a
+  // prompt turn never emits agent:stream:start — so if agent:process:resumed
+  // is lost, only stream evidence can retire the hint.
+  describe('a queue hint set after chatSendStarted (prompt turn) is retired by stream evidence', () => {
+    const queueAfterSend = () => {
+      seedSession({ status: AgentStatus.Active });
+      appStore.dispatch(chatSendStarted(AGENT, WS));
+      expect(readSession()?.isStreaming).toBe(true);
+      appStore.dispatch(setProcessQueueHint(AGENT, 2, 8, 'memory-budget'));
+      expect(readSession()?.processQueueHint).toEqual({
+        waiting: true,
+        used: 2,
+        cap: 8,
+        reason: 'memory-budget',
+      });
+    };
+
+    it('agent:tool:call clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:tool:call', {
+          agentId: AGENT,
+          toolName: 'Read',
+          toolKind: 'file',
+          toolCallId: 't1',
+          input: { path: 'src/lib.rs' },
+          status: 'started',
+          messageId: MESSAGE_ID,
+          blockIndex: 1,
+          blockId: `${MESSAGE_ID}:1`,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+      expect(readSession()?.isStreaming).toBe(true);
+    });
+
+    it('agent:stream:chunk clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:stream:chunk', {
+          agentId: AGENT,
+          messageId: MESSAGE_ID,
+          blockIndex: 0,
+          blockId: `${MESSAGE_ID}:0`,
+          blockType: 'text',
+          content: 'Hello',
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+    });
+
+    it('agent:stream:status clears the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:stream:status', {
+          agentId: AGENT,
+          workspaceId: WS,
+          phase: 'prompt',
+          message: 'Sent prompt…',
+          level: 'info',
+          timestamp: 1_700_000_000_000,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint).toBeUndefined();
+    });
+
+    it('a canonical agent:status-changed tick carrying isResponding alone keeps the hint', async () => {
+      queueAfterSend();
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(
+        notification('agent:status-changed', {
+          agentId: AGENT,
+          status: 'responding',
+          isActive: true,
+          isResponding: true,
+        }),
+      );
+
+      expect(readSession()?.processQueueHint?.waiting).toBe(true);
+    });
   });
 
   it('ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags', async () => {
@@ -2663,6 +2768,42 @@ describe('daemonEventsBridge (interrupt regression — interrupted deltas stay v
     expect(resolveStoppedIndicatorLabel(assistantMessages[0])).toEqual({
       kind: 'preempted-by-message',
     });
+  });
+
+  it('startup-window preemption (§7.2 interrupt stream:end WITHOUT messageId): the un-named accumulator finalizes clean — no Stopped indicator on a turn the daemon never marked (intent-hq/intent#5380)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // The accumulator holds the previous turn's blocks under MESSAGE_ID.
+    streamPartialTurn(handler);
+    expectPartialBlocksIntact(readAssistantMessages()[0]);
+
+    // An interrupt-priority send lands while the daemon has NO live-turn slot
+    // to flush (turn startup after a process eviction, §7.2 "pre-first-token
+    // stop"): the emit carries `stopReason` + `interruptReason` but no
+    // `messageId`, because no interrupted row was persisted. Nothing in the
+    // daemon's transcript names MESSAGE_ID as interrupted. Documented §7.2
+    // payload only — the daemon never emits `streamId`.
+    handler(
+      notification('agent:stream:end', {
+        agentId: AGENT,
+        stopReason: 'interrupted',
+        interruptReason: 'preempted_by_message',
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expectPartialBlocksIntact(assistantMessages[0]);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+    expect(assistantMessages[0].metadata?.interrupted).toBeUndefined();
+    expect(assistantMessages[0].metadata?.stopReason).toBeUndefined();
+    expect(assistantMessages[0].metadata?.interruptReason).toBeUndefined();
+    expect(shouldShowStoppedIndicator({ message: assistantMessages[0], isStreaming: false })).toBe(
+      false,
+    );
   });
 
   it('agent preemption mid-stream (§7.2 interruptedBy agent): the reason-specific label resolves LIVE without a reload', async () => {
@@ -4902,6 +5043,28 @@ describe('daemonEventsBridge (agent:attention-requested → showAgentAttentionTo
     );
   });
 
+  it('forwards the §5.5 notificationsMuted stamp verbatim (present only when true)', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:attention-requested', {
+        workspaceId: WS,
+        agentId: AGENT,
+        agentName: 'auggie',
+        kind: 'blocker',
+        reason: 'Sandbox is broken',
+        notificationsMuted: true,
+      }),
+    );
+    await flush();
+
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledTimes(1);
+    expect(showAgentAttentionToastSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ notificationsMuted: true }),
+    );
+  });
+
   it('falls back to the envelope workspaceId/timestamp when the payload omits them', async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -5631,9 +5794,9 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     handler(notification('agent:deleted', { agentId: 'agent-unknown-retired' }));
     await flush();
 
-    // The re-baseline rides the canonical default read (`agent.list`, which
-    // serves `retiredCount` on every read) — not a local guess.
-    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', { workspaceId: WS });
+    // The re-baseline rides the canonical hydration read (`agent.list`, which
+    // serves `retiredCount` + `scopeCounts` on every read) — not a local guess.
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
   });
 
   it('agent:deleted on a known NON-retired row leaves the retired count alone without a refetch', async () => {
@@ -5646,7 +5809,393 @@ describe('daemonEventsBridge (agent:retired/restored/deleted → lazy Retired bi
     await flush();
 
     expect(retiredCountOf(WS)).toBe(2);
-    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', { workspaceId: WS });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+});
+
+describe('daemonEventsBridge (agent lifecycle → collapsed bin counts, §5.5 scopeCounts)', () => {
+  const COUNTS = { topLevel: 2, delegated: 3, background: 1 };
+  const PARENT = 'agent-bridge-parent';
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    refreshAgentSessionAfterEventSpy.mockReset();
+    refreshAgentSessionAfterEventSpy.mockImplementation(() => Promise.resolve());
+    ensureAgentSessionSpy.mockReset();
+    ensureAgentSessionSpy.mockImplementation(() => Promise.resolve());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    await primeBridge();
+    appStore.dispatch(setScopeCounts(WS, COUNTS));
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  const scopeCountsOf = () => selectScopeCounts.select(appStore.state, WS);
+
+  it('agent:created nudges the fetched row into its bin — delegated for a parented row, background for an unparented background one', async () => {
+    const handler = capturedHandlers[0]!;
+    // The event payload carries only the id; the bin is read off the row the
+    // read-service seam hydrates (simulate the successful `agent.get`).
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({ id: 'agent-child' as never, metadata: { createdByAgentId: PARENT } as never });
+    });
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({ id: 'agent-bg' as never, isBackground: true });
+    });
+    handler(notification('agent:created', { agentId: 'agent-bg' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4, background: 2 });
+
+    // A background CHILD is delegated, not background (§5.5 partition).
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({
+        id: 'agent-bg-child' as never,
+        isBackground: true,
+        metadata: { createdByAgentId: PARENT } as never,
+      });
+    });
+    handler(notification('agent:created', { agentId: 'agent-bg-child' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ topLevel: 2, delegated: 5, background: 2 });
+  });
+
+  it('agent:created counts an id this client already holds exactly once (own create upserts the row before the event; duplicates are neutral)', async () => {
+    // The `agent.create` response upserted the row before the event landed:
+    // the row is uncounted in the daemon-served baseline, so the first event
+    // still nudges its bin; the re-delivery does not.
+    seedSession({ isBackground: true });
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:created', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 2 });
+
+    handler(notification('agent:created', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 2 });
+  });
+
+  it('two agent:created deliveries in flight at once for the same id nudge the bin once', async () => {
+    const handler = capturedHandlers[0]!;
+    // Both deliveries share the read-service's single-flight fetch, which
+    // settles only after both handlers have run.
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementation(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    expect(ensureAgentSessionSpy).toHaveBeenCalledTimes(2);
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+  });
+
+  it('agent:created does not nudge a bin an authoritative agent.list baseline re-counted while the detail read was in flight', async () => {
+    const handler = capturedHandlers[0]!;
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementationOnce(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    // A hydration read settles meanwhile and already counts the new child.
+    appStore.dispatch(setScopeCounts(WS, { ...COUNTS, delegated: 4 }));
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+
+    // A later create with no intervening baseline still nudges.
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      seedSession({
+        id: 'agent-child-2' as never,
+        metadata: { createdByAgentId: PARENT } as never,
+      });
+    });
+    handler(notification('agent:created', { agentId: 'agent-child-2' }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 5 });
+  });
+
+  it('agent:created does not nudge a bin when an equal-valued authoritative baseline landed while the detail read was in flight', async () => {
+    const handler = capturedHandlers[0]!;
+    let resolveFetch: (() => void) | undefined;
+    const fetch = new Promise<void>((resolve) => {
+      resolveFetch = () => {
+        seedSession({
+          id: 'agent-child' as never,
+          metadata: { createdByAgentId: PARENT } as never,
+        });
+        resolve();
+      };
+    });
+    ensureAgentSessionSpy.mockImplementationOnce(() => fetch);
+
+    handler(notification('agent:created', { agentId: 'agent-child' }));
+    // A hydration read settles meanwhile with the delegated bin numerically
+    // unchanged (the new child replaced a retired row in the same bin). It is
+    // still the fresh baseline that already counts the row.
+    appStore.dispatch(setScopeCounts(WS, { ...COUNTS }));
+    resolveFetch?.();
+    await flush();
+
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:created whose fetch yields no row (deleted meanwhile) leaves the counts alone', async () => {
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:created', { agentId: 'agent-vanished' }));
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith('agent-vanished');
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:deleted on a known non-retired row nudges its bin down in lockstep with its removal', async () => {
+    seedSession({ metadata: { createdByAgentId: PARENT } as never });
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+    await flush();
+
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('agent:deleted on a known retired row leaves the bin counts alone (retired rows are their own bin)', async () => {
+    seedSession({ retiredAt: '2026-01-01T12:00:00.000Z' });
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:deleted', { agentId: AGENT }));
+    await flush();
+
+    expect(scopeCountsOf()).toEqual(COUNTS);
+  });
+
+  it('agent:retired moves a known row out of its bin and agent:restored moves it back', async () => {
+    seedSession({ isBackground: true });
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+
+    // The bin does not depend on `retiredAt`, so the restored row re-enters
+    // the same bin it left.
+    seedSession({ isBackground: true, retiredAt: '2026-01-01T12:00:00.000Z' });
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual(COUNTS);
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('a re-delivered agent:retired / agent:restored is count-neutral for both bins; the next real transition still applies', async () => {
+    seedSession({ isBackground: true });
+    appStore.dispatch(setRetiredCount(WS, 0));
+    const handler = capturedHandlers[0]!;
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+    // The metadata refresh still runs for every delivery.
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledTimes(2);
+
+    // A restore this client issued clears `retiredAt` locally before the
+    // event lands (agent-mutation saga); the counts still owe the transition.
+    seedSession({ isBackground: true });
+    handler(notification('agent:restored', { agentId: AGENT }));
+    handler(notification('agent:restored', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual(COUNTS);
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(0);
+
+    handler(notification('agent:retired', { agentId: AGENT }));
+    await flush();
+    expect(scopeCountsOf()).toEqual({ ...COUNTS, background: 0 });
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+  });
+
+  it('agent:retired / agent:restored for an id with no local session re-baselines via a hydrate (collapsed-bin row)', async () => {
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: 'agent-never-loaded' }));
+    await flush();
+
+    // No local guess at the bin — the counts re-baseline from the daemon read.
+    expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+  });
+
+  it('never refetches for an unknown retire on a workspace holding no scopeCounts (older daemon)', async () => {
+    appStore.dispatch(setScopeCounts(WS, null));
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler(notification('agent:retired', { agentId: 'agent-never-loaded' }));
+    await flush();
+
+    expect(scopeCountsOf()).toBeNull();
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', TOP_LEVEL_LIST);
+    // The retired-count nudge is unchanged on that path.
+    expect(selectRetiredCount.select(appStore.state, WS)).toBe(1);
+  });
+
+  // §5.5 delegatedCounts: the same lifecycle events nudge the row's parent
+  // total so `Σ byParent[*].total` stays in lockstep with `scopeCounts.delegated`.
+  describe('per-parent delegatedCounts move in lockstep with the delegated bin', () => {
+    const DELEGATED = {
+      running: 1,
+      byParent: {
+        [PARENT]: { total: 2, running: 1 },
+        'agent-other-parent': { total: 1, running: 0 },
+      },
+    };
+    const delegatedCountsOf = () => selectDelegatedCounts.select(appStore.state, WS);
+
+    beforeEach(() => {
+      appStore.dispatch(setDelegatedCounts(WS, DELEGATED));
+    });
+
+    it('agent:created on a delegated row adds one to its parent (wire parentAgentId first, createdByAgentId fallback) and nothing to a top-level or background row', async () => {
+      const handler = capturedHandlers[0]!;
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-child' as never, parentAgentId: PARENT as never });
+      });
+      handler(notification('agent:created', { agentId: 'agent-child' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 4 });
+      expect(delegatedCountsOf()).toEqual({
+        ...DELEGATED,
+        byParent: { ...DELEGATED.byParent, [PARENT]: { total: 3, running: 1 } },
+      });
+
+      // A parent with no entry yet gains one with `running: 0`.
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({
+          id: 'agent-child-2' as never,
+          metadata: { createdByAgentId: 'agent-new-parent' } as never,
+        });
+      });
+      handler(notification('agent:created', { agentId: 'agent-child-2' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 5 });
+      expect(delegatedCountsOf()?.byParent['agent-new-parent']).toEqual({ total: 1, running: 0 });
+
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-bg' as never, isBackground: true });
+      });
+      handler(notification('agent:created', { agentId: 'agent-bg' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 5, background: 2 });
+      expect(Object.keys(delegatedCountsOf()?.byParent ?? {})).toHaveLength(3);
+    });
+
+    it('agent:deleted on a known delegated row takes one from its parent and drops a parent reaching zero', async () => {
+      seedSession({ parentAgentId: PARENT as never });
+      const handler = capturedHandlers[0]!;
+      handler(notification('agent:deleted', { agentId: AGENT }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+      expect(delegatedCountsOf()?.byParent[PARENT]).toEqual({ total: 1, running: 1 });
+
+      seedSession({
+        id: 'agent-only-child' as never,
+        parentAgentId: 'agent-other-parent' as never,
+      });
+      handler(notification('agent:deleted', { agentId: 'agent-only-child' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 1 });
+      expect(delegatedCountsOf()?.byParent).toEqual({ [PARENT]: { total: 1, running: 1 } });
+    });
+
+    it('agent:retired moves a known delegated row out of its parent total and agent:restored moves it back; running is never nudged', async () => {
+      seedSession({ parentAgentId: PARENT as never });
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:retired', { agentId: AGENT }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+      expect(delegatedCountsOf()?.byParent[PARENT]).toEqual({ total: 1, running: 1 });
+
+      seedSession({ parentAgentId: PARENT as never, retiredAt: '2026-01-01T12:00:00.000Z' });
+      handler(notification('agent:restored', { agentId: AGENT }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      expect(delegatedCountsOf()).toEqual(DELEGATED);
+    });
+
+    it('a nudge is a no-op on a workspace holding no delegatedCounts (daemon predating the field) while the bin still moves', async () => {
+      appStore.dispatch(setDelegatedCounts(WS, null));
+      seedSession({ parentAgentId: PARENT as never });
+      const handler = capturedHandlers[0]!;
+
+      handler(notification('agent:deleted', { agentId: AGENT }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, delegated: 2 });
+      expect(delegatedCountsOf()).toBeNull();
+    });
+
+    it('a fork-only row (parentSessionId, no parent agent) never moves the delegated bin without a byParent key — Σ byParent[*].total stays equal to scopeCounts.delegated across create, delete, retire and restore', async () => {
+      const sumByParent = () =>
+        Object.values(delegatedCountsOf()?.byParent ?? {}).reduce((n, e) => n + e.total, 0);
+      const handler = capturedHandlers[0]!;
+      expect(sumByParent()).toBe(COUNTS.delegated);
+
+      ensureAgentSessionSpy.mockImplementationOnce(async () => {
+        seedSession({ id: 'agent-fork' as never, parentSessionId: 'agent-primary' as never });
+      });
+      handler(notification('agent:created', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel + 1 });
+      expect(delegatedCountsOf()).toEqual(DELEGATED);
+      expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
+
+      handler(notification('agent:retired', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      handler(notification('agent:restored', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual({ ...COUNTS, topLevel: COUNTS.topLevel + 1 });
+
+      handler(notification('agent:deleted', { agentId: 'agent-fork' }));
+      await flush();
+      expect(scopeCountsOf()).toEqual(COUNTS);
+      expect(delegatedCountsOf()).toEqual(DELEGATED);
+      expect(sumByParent()).toBe(scopeCountsOf()?.delegated);
+    });
   });
 });
 describe('daemonEventsBridge (note:* wire contract → applyNoteFromEvent)', () => {
@@ -6026,29 +6575,82 @@ describe('daemonEventsBridge (workspace:deleted → purge agent/chat state)', ()
 
   afterEach(() => vi.clearAllMocks());
 
-  it('fires navigateAwayIfViewing for the deleted workspace (#766 live-mode navigation path)', async () => {
+  async function resetTabStrip(): Promise<void> {
+    const { loadWorkspaceTabsState } =
+      await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(
+      loadWorkspaceTabsState({
+        openTabs: [],
+        currentTabId: null,
+        pinnedTabs: [],
+        unsavedTabs: [],
+        optimisticTabs: [],
+        tabOrder: [],
+      }),
+    );
+  }
+
+  function readTabStrip(): { openTabs: Record<string, boolean>; currentTabId: string | null } {
+    return (
+      appStore.state as {
+        tabState: { openTabs: Record<string, boolean>; currentTabId: string | null };
+      }
+    ).tabState;
+  }
+
+  function deletedNotification(workspaceId: string): { method: string; params?: unknown } {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: `evt-workspace-deleted-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:deleted',
+          actor: { type: 'user', id: 'u1' },
+          data: { workspaceId },
+        },
+      },
+    };
+  }
+
+  it('closes the deleted workspace tab while it is the current tab (#766 live-mode navigation path)', async () => {
     // Unlike the workspace-list snapshot diff (legacy-mode only — the
     // delta-subscription layer suppresses legacy refetches under live-state,
     // monorepo#775), this events.event route fires in BOTH modes, so it is the
     // path that actually covers "deleted by another client" in production.
+    await resetTabStrip();
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(WS));
+    expect(readTabStrip().currentTabId).toBe(WS);
     await primeBridge();
-    const handler = capturedHandlers[0]!;
 
-    handler({
-      method: 'events.event',
-      params: {
-        event: {
-          id: 'evt-workspace-deleted-nav',
-          workspaceId: WS,
-          timestamp: '2026-01-02T00:00:00.000Z',
-          type: 'workspace:deleted',
-          actor: { type: 'user', id: 'u1' },
-          data: { workspaceId: WS },
-        },
-      },
-    });
+    capturedHandlers[0]!(deletedNotification(WS));
+    await flush();
 
-    expect(navigateAwayIfViewingSpy).toHaveBeenCalledWith(WS);
+    expect(readTabStrip().openTabs[WS]).toBeUndefined();
+    expect(readTabStrip().currentTabId).not.toBe(WS);
+  });
+
+  it('closes the deleted workspace tab while it sits in the background behind another tab', async () => {
+    // A guest's last shared workspace deleted by its owner while the guest is
+    // looking at another tab: the closure must not depend on the route being
+    // the deleted workspace (the on-screen-only helper would leave it open).
+    await resetTabStrip();
+    const { openWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
+    appStore.dispatch(openWorkspaceTab(WS));
+    appStore.dispatch(openWorkspaceTab(OTHER_WS));
+    expect(readTabStrip().currentTabId).toBe(OTHER_WS);
+    expect(readTabStrip().openTabs[WS]).toBe(true);
+    await primeBridge();
+
+    capturedHandlers[0]!(deletedNotification(WS));
+    await flush();
+
+    expect(readTabStrip().openTabs[WS]).toBeUndefined();
+    expect(readTabStrip().openTabs[OTHER_WS]).toBe(true);
+    expect(readTabStrip().currentTabId).toBe(OTHER_WS);
+    expect(navigateAwayIfViewingSpy).not.toHaveBeenCalled();
   });
 
   it('purges agent-session, workspace-agents, and chat-state for the deleted workspace', async () => {
@@ -6291,9 +6893,11 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     expect(after.agentSessions.agentIdsByWorkspace[RECYCLED_WS]).toBeUndefined();
     expect(after.chatState.byAgentId[STALE_AGENT]).toBeUndefined();
     expect(after.workspaceAgents.byWorkspaceId[RECYCLED_WS]?.agentIds ?? []).toEqual([]);
-    // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5).
+    // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5);
+    // default hydration reads the top-level scope.
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: RECYCLED_WS,
+      scope: 'topLevel',
     });
   });
 
@@ -6318,9 +6922,10 @@ describe('daemonEventsBridge (workspace:created → recycled-ID purge + rehydrat
     });
     await flush();
 
-    expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', {
-      workspaceId: FRESH_WS,
-    });
+    expect(backendRequestSpy).not.toHaveBeenCalledWith(
+      'agent.list',
+      expect.objectContaining({ workspaceId: FRESH_WS }),
+    );
   });
 
   // intent-hq/monorepo#3558: a workspace created/imported by ANOTHER client on
@@ -6904,6 +7509,7 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
     // Reconcile refetch also runs — covers a window that never held a snapshot.
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
+      scope: 'topLevel',
     });
   });
 
@@ -7009,6 +7615,7 @@ describe('daemonEventsBridge (delete grace window schedule/cancel events, monore
 
     expect(backendRequestSpy).toHaveBeenCalledWith('agent.list', {
       workspaceId: PENDING_WS,
+      scope: 'topLevel',
     });
   });
 
@@ -8002,6 +8609,210 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     const ws = await readWorkspace();
     // The wire null must drop the stale asset reference rather than retain it.
     expect(ws.statusImageAssetId).toBeUndefined();
+  });
+
+  it('merges the memberCount carried by a membership-changing delta (multiplayer w4)', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §5.1: invite redeem / member remove publish `workspace:updated`
+    // with `{ members: true, memberCount }` — the non-column flags are dropped,
+    // the post-change count lands on the entity.
+    handler(updatedNotification({ members: true, addedPrincipalId: 'p-bob', memberCount: 2 }));
+
+    const ws = await readWorkspace();
+    expect(ws.memberCount).toBe(2);
+    expect(ws.branch).toBe('main');
+    expect((ws as Record<string, unknown>).members).toBeUndefined();
+  });
+
+  it('merges an openInviteCount when an invite delta carries one', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ invites: true, openInviteCount: 3 }));
+
+    const ws = await readWorkspace();
+    expect(ws.openInviteCount).toBe(3);
+    expect(ws.branch).toBe('main');
+    expect((ws as Record<string, unknown>).invites).toBeUndefined();
+  });
+
+  // Regression (cloudlands-fe#2776 verifier): `workspace.invite.create` /
+  // `.revoke` publish only `{ invites: true }` (PROTOCOL multiplayer
+  // "Events"), so the stored row's `openInviteCount` cannot be kept current
+  // from the delta alone — the single archive/delete warning, which gates on
+  // that count, would miss a fresh invite (or warn about a revoked one) until
+  // an unrelated full list read. A roster / invite delta now re-reads the one
+  // workspace's membership summary through the running lifecycle read saga
+  // (`workspace.get`, single-flight + trailing coalesce), and the production
+  // warning path is driven end-to-end with no manual row re-seed or list
+  // refresh in between.
+  describe('membership summary convergence → archive / delete warning gating', () => {
+    let daemonRow: { memberCount: number; openInviteCount: number };
+    let stopOperationsSaga: (() => void) | undefined;
+
+    const workspaceGetRequests = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'workspace.get');
+
+    async function seedListedWorkspace(row: {
+      memberCount: number;
+      openInviteCount: number;
+    }): Promise<void> {
+      daemonRow = { ...row };
+      await seedWorkspace();
+      const { bulkUpdateWorkspaceEntities, updateWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(WS_UPD, row)]));
+      backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method !== 'workspace.get') return undefined;
+        expect(params).toEqual({ workspaceId: WS_UPD });
+        // PROTOCOL §5.1: every `workspace.get` row carries the summary
+        // re-derived from the store at serve time.
+        return Promise.resolve({
+          workspace: {
+            id: WS_UPD,
+            title: 'Original',
+            branch: 'main',
+            status: 'Active',
+            memberCount: daemonRow.memberCount,
+            openInviteCount: daemonRow.openInviteCount,
+          },
+        });
+      });
+      await primeBridge();
+    }
+
+    async function settleReads(): Promise<void> {
+      await flush();
+      await flush();
+      await flush();
+    }
+
+    beforeEach(async () => {
+      const { workspaceOperationsSaga } =
+        await import('$store/renderer/slices/workspace-operations/sagas/workspace-operations-saga');
+      stopOperationsSaga = appStore.runSaga(workspaceOperationsSaga);
+    });
+
+    afterEach(async () => {
+      stopOperationsSaga?.();
+      stopOperationsSaga = undefined;
+      const { closeArchiveWarning, closeDeleteWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      appStore.dispatch(closeArchiveWarning());
+      appStore.dispatch(closeDeleteWarning());
+      const { removeWorkspaceEntity } =
+        await import('$store/renderer/slices/workspace/workspace-slice');
+      appStore.dispatch(removeWorkspaceEntity(WS_UPD));
+    });
+
+    it('an invite created after a zero-count list load opens the archive warning naming the invite', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 0 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const { requestArchiveWorkspace } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      const { selectGuestsForArchive, selectShowArchiveWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-selectors');
+      const handler = capturedHandlers[0]!;
+
+      // Another client minted an invite: the daemon now serves one open
+      // invite, and the wire delta says only that invites changed.
+      daemonRow.openInviteCount = 1;
+      handler(updatedNotification({ invites: true }));
+      await settleReads();
+
+      expect(workspaceGetRequests()).toHaveLength(1);
+      expect((await readWorkspace()).openInviteCount).toBe(1);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 1 },
+      });
+
+      appStore.dispatch(requestArchiveWorkspace(WS_UPD));
+      await settleReads();
+
+      expect(selectShowArchiveWarning.select(appStore.state)).toBe(true);
+      expect(selectGuestsForArchive.select(appStore.state)).toEqual({
+        collaboratorCount: 0,
+        openInviteCount: 1,
+      });
+    });
+
+    it('revoking the last invite clears the count so the delete warning no longer opens for guests', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 1 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const { requestDeleteWorkspace } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
+      const { selectShowDeleteWarning } =
+        await import('$store/renderer/slices/workspace-operations/workspace-operations-selectors');
+      const handler = capturedHandlers[0]!;
+
+      daemonRow.openInviteCount = 0;
+      handler(updatedNotification({ invites: true }));
+      await settleReads();
+
+      expect((await readWorkspace()).openInviteCount).toBe(0);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 0 },
+      });
+
+      appStore.dispatch(requestDeleteWorkspace(WS_UPD));
+      await settleReads();
+
+      // No guests and no other active work: the delete proceeds straight to
+      // the undo toast path instead of the warning dialog.
+      expect(selectShowDeleteWarning.select(appStore.state)).toBe(false);
+    });
+
+    it('archive teardown frames converge the row so an unarchived workspace shows no stale guests', async () => {
+      await seedListedWorkspace({ memberCount: 3, openInviteCount: 2 });
+      const { getActiveWorkNames } = await import('$lib/utils/delete-warning-utils');
+      const handler = capturedHandlers[0]!;
+
+      // intentd archive: one `members.remove` frame per collaborator (each
+      // carrying the post-change `memberCount`), one `{ invites: true }` for
+      // the revoked invites, then the archive delta itself; unarchive does
+      // not restore guests.
+      daemonRow = { memberCount: 1, openInviteCount: 0 };
+      handler(
+        updatedNotification({ members: true, removedPrincipalId: 'p-alice', memberCount: 2 }),
+      );
+      handler(updatedNotification({ members: true, removedPrincipalId: 'p-bob', memberCount: 1 }));
+      handler(updatedNotification({ invites: true }));
+      handler(
+        updatedNotification({
+          archived: true,
+          status: 'Archived',
+          archivedAt: '2026-07-25T12:00:00.000Z',
+        }),
+      );
+      await settleReads();
+      handler(updatedNotification({ archived: false, status: 'Active', archivedAt: null }));
+      await settleReads();
+
+      // Three delta frames, at most one in-flight read plus one trailing.
+      expect(workspaceGetRequests().length).toBeLessThanOrEqual(2);
+      const ws = await readWorkspace();
+      expect(ws.status).toBe('Active');
+      expect(ws.memberCount).toBe(1);
+      expect(ws.openInviteCount).toBe(0);
+      await expect(getActiveWorkNames(WS_UPD)).resolves.toMatchObject({
+        guests: { collaboratorCount: 0, openInviteCount: 0 },
+      });
+    });
+
+    it('a delta without roster or invite flags issues no membership read', async () => {
+      await seedListedWorkspace({ memberCount: 1, openInviteCount: 0 });
+      const handler = capturedHandlers[0]!;
+
+      handler(updatedNotification({ title: 'Renamed' }));
+      handler(updatedNotification({ statusMessage: 'Working' }));
+      await settleReads();
+
+      expect(workspaceGetRequests()).toHaveLength(0);
+    });
   });
 });
 
@@ -9499,6 +10310,50 @@ describe('daemonEventsBridge (agent:last-message §6.5 — preview projections a
     expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(false);
   });
 
+  it('keeps hasUnread=false for a muted foreground agent (notificationsMuted, PROTOCOL §5.5) on an assistant echo', async () => {
+    seedSession({ notificationsMuted: true, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'muted work done',
+      }),
+    );
+    await flush();
+
+    const session = appStore.state.agentSessions.byAgentId[AGENT]!;
+    expect(session.hasUnread).toBe(false);
+    // The preview projections still apply — only the unread dot is suppressed.
+    expect(session.lastAgentResponse).toBe('muted work done');
+    expect(session.lastMessageId).toBe('msg-a6');
+  });
+
+  it('derives hasUnread=true for the same assistant echo when the agent is not muted (control)', async () => {
+    seedSession({ notificationsMuted: false, hasUnread: false });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:last-message', {
+        agentId: AGENT,
+        messageId: 'msg-a6',
+        role: 'assistant',
+        lastMessageRole: 'assistant',
+        lastMessageId: 'msg-a6',
+        lastAgentResponse: 'unmuted work done',
+      }),
+    );
+    await flush();
+
+    expect(appStore.state.agentSessions.byAgentId[AGENT]!.hasUnread).toBe(true);
+  });
+
   it('keeps hasUnread=false for a delegated child agent on an assistant echo', async () => {
     seedSession({
       metadata: { createdByAgentId: 'agent-parent' },
@@ -9900,19 +10755,89 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
   });
 
+  // Regression (fe#2440 verifier): invites/members changed while the
+  // connection was down never re-emit, so the open Share dialog and tracked
+  // hover rosters are invalidated on reconnect — once per workspace, and
+  // only for workspaces actually holding sharing state.
+  describe('sharing invalidation on reconnect (fe#2440)', () => {
+    // Runs first: tracked rosters outlive the dialog, so the seeded case below
+    // would otherwise leave sharing state behind for this one to find.
+    it('issues no sharing invalidation when nothing holds sharing state', async () => {
+      const { shareMembershipChanged } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(WS);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+      expect(
+        dispatchSpy.mock.calls.some(
+          ([action]) => (action as { type: string }).type === shareMembershipChanged.type,
+        ),
+      ).toBe(false);
+    });
+
+    it('invalidates the open Share dialog target and each tracked hover roster once', async () => {
+      const { openShareDialog, shareMembershipChanged, shareRosterRequested, closeShareDialog } =
+        await import('$store/renderer/slices/workspace-share/workspace-share-slice');
+      appStore.dispatch(openShareDialog({ workspaceId: 'ws-share-dialog', workspaceTitle: 'D' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-hover' }));
+      appStore.dispatch(shareRosterRequested({ workspaceId: 'ws-share-dialog' }));
+      const originalDispatch = appStore.dispatch;
+      const dispatchSpy = vi.fn(originalDispatch);
+      const dispatchGetterSpy = vi.spyOn(appStore, 'dispatch', 'get').mockReturnValue(dispatchSpy);
+      try {
+        await refreshDaemonEventsAfterReconnect(null);
+      } finally {
+        dispatchGetterSpy.mockRestore();
+      }
+
+      const invalidations = dispatchSpy.mock.calls
+        .map(([action]) => action as { type: string; payload: unknown })
+        .filter((action) => action.type === shareMembershipChanged.type)
+        .map((action) => action.payload);
+      expect(invalidations).toEqual(
+        expect.arrayContaining([
+          [{ workspaceId: 'ws-share-dialog' }],
+          [{ workspaceId: 'ws-share-hover' }],
+        ]),
+      );
+      expect(invalidations).toHaveLength(2);
+      appStore.dispatch(closeShareDialog());
+    });
+  });
+
   describe('failure-registry reconciliation on reconnect (#2806)', () => {
     beforeEach(() => clearAgentFailureRegistry());
     afterEach(() => clearAgentFailureRegistry());
 
+    // The daemon's structured not-found rejection for `agent.get` (§9:
+    // -32602 with `error.data.code: "not-found"`), as the live transport
+    // surfaces it.
+    const agentNotFound = () =>
+      Object.assign(new Error('agent not found'), {
+        rpcCode: -32602,
+        code: 'not-found',
+        data: { code: 'not-found' },
+      });
+    const agentGetCalls = () =>
+      backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.get');
+
     it('drops registry entries whose agent no longer exists on the daemon', async () => {
       // agent:deleted fired while the connection was down — the registry
-      // still holds the stale entry. The reconnect refresh must verify
-      // surviving entries against agent.list and drop the vanished one.
+      // still holds the stale entry. The reconnect refresh must verify each
+      // surviving entry with agent.get and drop the vanished one.
       recordAgentFailure({ agentId: 'agent-gone', workspaceId: WS, error: 'spawn failed' });
       recordAgentFailure({ agentId: 'agent-alive', workspaceId: WS, error: 'spawn failed' });
-      backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') {
-          return Promise.resolve({ agents: [{ id: 'agent-alive', workspaceId: WS }] });
+      backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method === 'agent.get') {
+          const { agentId } = params as { agentId: string };
+          return agentId === 'agent-gone'
+            ? Promise.reject(agentNotFound())
+            : Promise.resolve({ agent: { id: agentId, workspaceId: WS } });
         }
         return Promise.resolve({});
       });
@@ -9922,36 +10847,40 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-alive']);
     });
 
-    it('issues ONE agent.list per distinct workspace — no per-entry fan-out', async () => {
+    it('issues ONE agent.get point read per entry — never a workspace agent.list (intent#5531)', async () => {
       recordAgentFailure({ agentId: 'agent-a', workspaceId: 'ws-multi-1', error: 'boom' });
       recordAgentFailure({ agentId: 'agent-b', workspaceId: 'ws-multi-1', error: 'boom' });
       recordAgentFailure({ agentId: 'agent-c', workspaceId: 'ws-multi-2', error: 'boom' });
       backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') return Promise.resolve({ agents: [] });
+        if (method === 'agent.get') return Promise.reject(agentNotFound());
         return Promise.resolve({});
       });
 
       await refreshDaemonEventsAfterReconnect(null);
 
-      const listCalls = backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.list');
-      expect(listCalls.map(([, params]) => params)).toEqual(
-        expect.arrayContaining([{ workspaceId: 'ws-multi-1' }, { workspaceId: 'ws-multi-2' }]),
+      expect(agentGetCalls().map(([, params]) => params)).toEqual(
+        expect.arrayContaining([
+          { agentId: 'agent-a', workspaceId: 'ws-multi-1' },
+          { agentId: 'agent-b', workspaceId: 'ws-multi-1' },
+          { agentId: 'agent-c', workspaceId: 'ws-multi-2' },
+        ]),
       );
-      expect(listCalls).toHaveLength(2);
+      expect(agentGetCalls()).toHaveLength(3);
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', expect.anything());
       expect(listAgentFailureEntries()).toHaveLength(0);
     });
 
-    it('keeps a failure recorded while agent.list was in flight (mid-flight addition race)', async () => {
-      // An agent spawned + failed during the post-reconnect burst is absent
-      // from the in-flight list result; the identity guard (snapshot
-      // convention, same as retryAgent's) must keep it — dropping it would
+    it('keeps a failure recorded while agent.get was in flight (mid-flight addition race)', async () => {
+      // An agent spawned + failed during the post-reconnect burst was never
+      // read; the snapshot taken before the reads bounds what can be dropped
+      // (same identity-guard convention as retryAgent's) — dropping it would
       // silently dismiss a legitimate failure toast.
       recordAgentFailure({ agentId: 'agent-stale', workspaceId: WS, error: 'boom' });
-      let resolveList: ((value: unknown) => void) | undefined;
+      let rejectGet: ((reason: unknown) => void) | undefined;
       backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') {
-          return new Promise((resolve) => {
-            resolveList = resolve;
+        if (method === 'agent.get') {
+          return new Promise((_resolve, reject) => {
+            rejectGet = reject;
           });
         }
         return Promise.resolve({});
@@ -9959,21 +10888,22 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
 
       const refresh = refreshDaemonEventsAfterReconnect(null);
       await new Promise((resolve) => setTimeout(resolve, 0));
-      // New failure lands while the list is in flight — not in survivorIds.
+      // New failure lands while the read is in flight — never verified.
       recordAgentFailure({ agentId: 'agent-new', workspaceId: WS, error: 'boom' });
-      resolveList!({ agents: [] });
+      rejectGet!(agentNotFound());
       await refresh;
 
       expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-new']);
+      expect(agentGetCalls()).toHaveLength(1);
     });
 
-    it('keeps an entry replaced mid-flight (re-failure while the list was pending)', async () => {
+    it('keeps an entry replaced mid-flight (re-failure while the read was pending)', async () => {
       recordAgentFailure({ agentId: 'agent-re', workspaceId: WS, error: 'first failure' });
-      let resolveList: ((value: unknown) => void) | undefined;
+      let rejectGet: ((reason: unknown) => void) | undefined;
       backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') {
-          return new Promise((resolve) => {
-            resolveList = resolve;
+        if (method === 'agent.get') {
+          return new Promise((_resolve, reject) => {
+            rejectGet = reject;
           });
         }
         return Promise.resolve({});
@@ -9982,9 +10912,9 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       const refresh = refreshDaemonEventsAfterReconnect(null);
       await new Promise((resolve) => setTimeout(resolve, 0));
       // The same agent re-fails mid-flight: the registry now holds a FRESH
-      // entry object the stale list result must not erase.
+      // entry object the stale not-found result must not erase.
       recordAgentFailure({ agentId: 'agent-re', workspaceId: WS, error: 'second failure' });
-      resolveList!({ agents: [] });
+      rejectGet!(agentNotFound());
       await refresh;
 
       const entries = listAgentFailureEntries();
@@ -9992,16 +10922,25 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       expect(entries[0]!.error).toBe('second failure');
     });
 
-    it('keeps entries when agent.list resolves without a verifiable agents array', async () => {
-      // A malformed response (missing/non-array `agents`) proves nothing
-      // about deletion — treating it as a verified empty list would drop
-      // every entry in the workspace. Unverifiable ≠ deleted.
-      recordAgentFailure({ agentId: 'agent-a', workspaceId: 'ws-mal-1', error: 'boom' });
-      recordAgentFailure({ agentId: 'agent-b', workspaceId: 'ws-mal-2', error: 'boom' });
+    it('drops on a structured not-found but keeps on a transient error (unverifiable ≠ deleted)', async () => {
+      recordAgentFailure({ agentId: 'agent-deleted', workspaceId: WS, error: 'boom' });
+      recordAgentFailure({ agentId: 'agent-unreachable', workspaceId: WS, error: 'boom' });
+      // Same rpcCode as not-found but WITHOUT the structured code: a generic
+      // invalid-params rejection proves nothing about deletion.
+      recordAgentFailure({ agentId: 'agent-invalid', workspaceId: WS, error: 'boom' });
       backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
-        if (method === 'agent.list') {
-          const { workspaceId } = params as { workspaceId: string };
-          return Promise.resolve(workspaceId === 'ws-mal-1' ? {} : { agents: null });
+        if (method === 'agent.get') {
+          const { agentId } = params as { agentId: string };
+          if (agentId === 'agent-deleted') return Promise.reject(agentNotFound());
+          if (agentId === 'agent-invalid') {
+            return Promise.reject(
+              Object.assign(new Error('invalid params'), {
+                rpcCode: -32602,
+                code: 'INVALID_PARAMS',
+              }),
+            );
+          }
+          return Promise.reject(new Error('transport down'));
         }
         return Promise.resolve({});
       });
@@ -10009,29 +10948,75 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       await refreshDaemonEventsAfterReconnect(null);
 
       expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual([
-        'agent-a',
-        'agent-b',
+        'agent-unreachable',
+        'agent-invalid',
       ]);
     });
 
-    it('keeps entries when agent.list fails for their workspace (fail-safe)', async () => {
-      recordAgentFailure({ agentId: 'agent-unknown', workspaceId: WS, error: 'boom' });
+    // A match here DELETES a failure entry, so the classifier is the strict
+    // §9 pair (-32602 AND data.code "not-found") — not the shared
+    // isAgentNotFoundError, whose message fallback would let an unstructured
+    // "not found" rejection erase a legitimate failure toast.
+    it('keeps an entry on a not-found LOOKALIKE that lacks the structured discriminator', async () => {
+      recordAgentFailure({ agentId: 'agent-message-only', workspaceId: WS, error: 'boom' });
+      recordAgentFailure({ agentId: 'agent-string-code-only', workspaceId: WS, error: 'boom' });
+      recordAgentFailure({ agentId: 'agent-wrong-rpc-code', workspaceId: WS, error: 'boom' });
+      recordAgentFailure({ agentId: 'agent-deleted', workspaceId: WS, error: 'boom' });
+      backendRequestSpy.mockImplementation((method: string, params?: unknown) => {
+        if (method !== 'agent.get') return Promise.resolve({});
+        const { agentId } = params as { agentId: string };
+        switch (agentId) {
+          // Right rpcCode, "not found" message, no data.code at all.
+          case 'agent-message-only':
+            return Promise.reject(Object.assign(new Error('Agent not found'), { rpcCode: -32602 }));
+          // Right rpcCode, string code only (lossy re-wrap dropped `data`).
+          case 'agent-string-code-only':
+            return Promise.reject(
+              Object.assign(new Error('Agent not found'), {
+                rpcCode: -32602,
+                code: 'not-found',
+              }),
+            );
+          // Structured data.code under a different numeric code.
+          case 'agent-wrong-rpc-code':
+            return Promise.reject(
+              Object.assign(new Error('Agent not found'), {
+                rpcCode: -32000,
+                code: 'not-found',
+                data: { code: 'not-found' },
+              }),
+            );
+          default:
+            return Promise.reject(agentNotFound());
+        }
+      });
+
+      await refreshDaemonEventsAfterReconnect(null);
+
+      expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual([
+        'agent-message-only',
+        'agent-string-code-only',
+        'agent-wrong-rpc-code',
+      ]);
+    });
+
+    it('keeps an entry whose agent.get resolves (the agent still exists)', async () => {
+      recordAgentFailure({ agentId: 'agent-alive', workspaceId: WS, error: 'boom' });
       backendRequestSpy.mockImplementation((method: string) => {
-        if (method === 'agent.list') return Promise.reject(new Error('transport down'));
+        if (method === 'agent.get') return Promise.resolve({ agent: { id: 'agent-alive' } });
         return Promise.resolve({});
       });
 
       await refreshDaemonEventsAfterReconnect(null);
 
-      // Unverifiable ≠ deleted: the entry survives and live events converge it.
-      expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-unknown']);
+      expect(listAgentFailureEntries().map((entry) => entry.agentId)).toEqual(['agent-alive']);
     });
 
     it('skips the reconciliation entirely when the registry is empty', async () => {
       await refreshDaemonEventsAfterReconnect(null);
 
-      const listCalls = backendRequestSpy.mock.calls.filter(([method]) => method === 'agent.list');
-      expect(listCalls).toHaveLength(0);
+      expect(agentGetCalls()).toHaveLength(0);
+      expect(backendRequestSpy).not.toHaveBeenCalledWith('agent.list', expect.anything());
     });
   });
 

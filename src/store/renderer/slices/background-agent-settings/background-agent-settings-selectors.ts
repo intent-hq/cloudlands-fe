@@ -13,17 +13,6 @@ export const selectBgTypeOverrides = store.createSelector(
   },
 );
 
-/** Select the effective model for a background agent type */
-export const selectModelForType = store.createSelector(
-  (state, type: BackgroundAgentType): string => {
-    const override = state.backgroundAgentSettings.typeOverrides[type];
-    if (override && override.length > 0) {
-      return override;
-    }
-    return state.backgroundAgentSettings.defaultModel;
-  },
-);
-
 /** Select whether a type has a custom override */
 export const selectHasOverride = store.createSelector(
   (state, type: BackgroundAgentType): boolean => {

@@ -52,7 +52,11 @@ import {
   acquireChatInterestLease,
   releaseChatInterestLease,
 } from '$features/agent/utils/chat-interest-leases';
-import { bulkUpsertSessions, upsertSession } from '../../agent-session/agent-session-slice';
+import {
+  bulkUpsertSessions,
+  markAgentDetailHydrated,
+  upsertSession,
+} from '../../agent-session/agent-session-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { cleanupDeletedAgentTabs } from '../../workspace-agents/sagas/deleted-agent-cleanup';
@@ -162,6 +166,7 @@ function* hydrateChatTranscriptSaga(request: ChatRequest): SagaGenerator<Hydrate
     const hydrated = { ...session, messages: preserved };
     yield* put(bulkUpsertSessions([hydrated]));
     yield* put(upsertSession(hydrated));
+    yield* put(markAgentDetailHydrated(agentId));
 
     // SOLE SOURCE: wait (bounded) for the standing subscription's seq-0
     // snapshot. `chatTranscriptSnapshotApplied` is dispatched by the

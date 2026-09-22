@@ -26,6 +26,7 @@
     selectScriptOutput,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { removeScript } from '$store/renderer/slices/scripts/scripts-slice';
   import { scriptOutputTailText } from '$lib/utils/script-output-text';
   import { TerminalThemeManager } from '$features/terminal/terminal-theme-manager';
@@ -63,6 +64,9 @@
   const script$ = selectScriptById(workspaceIdStore, scriptIdStore);
   const runtime$ = selectScriptRuntime(workspaceIdStore, scriptIdStore);
   const output$ = selectScriptOutput(workspaceIdStore, scriptIdStore);
+  // "Ask AI to Fix" creates an agent (`agent.create`), refused (-32003) for a
+  // collaborator connection: the affordance is withheld.
+  const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
   // Canonical code-font preference: used to construct the read-only xterm
   // and to update its font option later without disposing/replaying output.
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
@@ -327,15 +331,17 @@
           >{m.terminal_scriptOutput_buildFailed_label({ exitCode: $runtime$.exitCode ?? 0 })}</span
         >
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        class="h-7 text-xs bg-background border border-border text-danger"
-        onclick={handleAskAgent}
-      >
-        <Fa icon={faWandMagicSparkles} size="sm" class="mr-1.5" />
-        {m.terminal_scriptOutput_askAiToFix_label()}
-      </Button>
+      {#if !$hidesAgentLifecycleActions$}
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-7 text-xs bg-background border border-border text-danger"
+          onclick={handleAskAgent}
+        >
+          <Fa icon={faWandMagicSparkles} size="sm" class="mr-1.5" />
+          {m.terminal_scriptOutput_askAiToFix_label()}
+        </Button>
+      {/if}
     </div>
   {/if}
 

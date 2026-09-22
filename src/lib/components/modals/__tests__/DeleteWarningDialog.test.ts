@@ -401,8 +401,139 @@ describe('DeleteWarningDialog', () => {
     });
   });
 
-  it('cancels the dialog when Escape is pressed inside the dialog', async () => {
+  describe('guests', () => {
+    it('renders no guests section and the ordinary copy when there are no guests', async () => {
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
+          guests: { collaboratorCount: 0, openInviteCount: 0 },
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_deleteWarning_title() }),
+      ).toBeTruthy();
+      expect(screen.queryByText(m.modals_deleteWarning_guests_description())).toBeNull();
+      expect(screen.queryByText(m.modals_deleteWarning_permanent_guests_description())).toBeNull();
+    });
+
+    it('lists collaborators and open invites beside active work and keeps the stop-work copy', async () => {
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
+          guests: { collaboratorCount: 2, openInviteCount: 1 },
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_deleteWarning_title() }),
+      ).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_guests_description())).toBeTruthy();
+      expect(
+        screen.getByText(m.modals_deleteWarning_guests_collaborators_many({ count: '2' })),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(m.modals_deleteWarning_guests_openInvites_one({ count: '1' })),
+      ).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_permanent_description())).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_permanent_guests_description())).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: m.modals_deleteWarning_confirm_label() }),
+      ).toBeTruthy();
+    });
+
+    it('uses the guests-only delete copy when guests are the only reason for the dialog', async () => {
+      const onDeleteAnyway = vi.fn();
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          guests: { collaboratorCount: 1, openInviteCount: 0 },
+          onDeleteAnyway,
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_deleteWarning_guestsOnly_title() }),
+      ).toBeTruthy();
+      expect(screen.getByText(m.modals_deleteWarning_guestsOnly_description())).toBeTruthy();
+      expect(screen.queryByText(m.modals_deleteWarning_description())).toBeNull();
+      expect(
+        screen.getByText(m.modals_deleteWarning_guests_collaborators_one({ count: '1' })),
+      ).toBeTruthy();
+      expect(screen.queryByText(/open invite/)).toBeNull();
+      expect(screen.getByText(m.modals_deleteWarning_permanent_guests_description())).toBeTruthy();
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.modals_deleteWarning_guestsOnly_confirm_label() }),
+      );
+
+      expect(onDeleteAnyway).toHaveBeenCalledOnce();
+    });
+
+    it('adds the re-invite note in archive mode alongside active work', async () => {
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          mode: 'archive' as const,
+          hookNames: ['ci-watch'],
+          guests: { collaboratorCount: 0, openInviteCount: 3 },
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_archiveWarning_title() }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(m.modals_deleteWarning_guests_openInvites_many({ count: '3' })),
+      ).toBeTruthy();
+      expect(screen.queryByText(/collaborator/)).toBeNull();
+      expect(screen.getByText(m.modals_archiveWarning_note_description())).toBeTruthy();
+      expect(screen.getByText(m.modals_archiveWarning_note_guests_description())).toBeTruthy();
+      expect(screen.queryByText(m.modals_deleteWarning_permanent_guests_description())).toBeNull();
+    });
+
+    it('uses the guests-only archive copy and only the re-invite note when guests alone gate the archive', async () => {
+      const onDeleteAnyway = vi.fn();
+      const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
+
+      render(DeleteWarningDialog, {
+        props: {
+          open: true,
+          mode: 'archive' as const,
+          guests: { collaboratorCount: 2, openInviteCount: 0 },
+          onDeleteAnyway,
+        },
+      });
+
+      expect(
+        await screen.findByRole('dialog', { name: m.modals_archiveWarning_guestsOnly_title() }),
+      ).toBeTruthy();
+      expect(screen.getByText(m.modals_archiveWarning_guestsOnly_description())).toBeTruthy();
+      expect(screen.queryByText(m.modals_archiveWarning_description())).toBeNull();
+      expect(screen.getByText(m.modals_archiveWarning_note_guests_description())).toBeTruthy();
+      expect(screen.queryByText(m.modals_archiveWarning_note_description())).toBeNull();
+
+      await fireEvent.click(
+        screen.getByRole('button', { name: m.modals_archiveWarning_guestsOnly_confirm_label() }),
+      );
+
+      expect(onDeleteAnyway).toHaveBeenCalledOnce();
+    });
+  });
+
+  it.each(['Escape', 'Cancel', 'close'])('cancels without deleting via %s', async (action) => {
     const onCancel = vi.fn();
+    const onDeleteAnyway = vi.fn();
     const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 
     render(DeleteWarningDialog, {
@@ -410,6 +541,7 @@ describe('DeleteWarningDialog', () => {
         open: true,
         agents: [{ id: 'one', name: 'Agent One', state: 'running' }],
         onCancel,
+        onDeleteAnyway,
       },
     });
 
@@ -417,9 +549,18 @@ describe('DeleteWarningDialog', () => {
       name: m.modals_deleteWarning_title(),
     });
 
-    await fireEvent.keyDown(dialog, { key: 'Escape' });
+    if (action === 'Escape') {
+      await fireEvent.keyDown(dialog, { key: 'Escape' });
+    } else {
+      await fireEvent.click(
+        screen.getByRole('button', {
+          name: action === 'Cancel' ? 'Cancel' : 'Close delete warning dialog',
+        }),
+      );
+    }
 
     expect(onCancel).toHaveBeenCalledOnce();
+    expect(onDeleteAnyway).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

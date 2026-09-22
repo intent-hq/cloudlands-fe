@@ -41,6 +41,8 @@
     portal?: boolean;
     /** Render the open panel in normal flow without portal or positioning observers. */
     staticPosition?: boolean;
+    /** Disable panel and row transitions for immediate keyboard/filter flows. */
+    animate?: boolean;
     /** Optional containing boundary for collision-aware inline content. */
     collisionBoundary?: string | HTMLElement | null;
     /** Space kept between collision-aware content and its boundary. */
@@ -79,7 +81,7 @@
     onopenchange?: (open: boolean) => void;
     /** Custom trigger snippet */
     trigger?: Snippet<[{ open: boolean; value: string | string[] | undefined }]>;
-    /** Custom item rendering */
+    /** Non-interactive option content; supplemental controls belong in header or footer. */
     item?: Snippet<[DropdownItemProps]>;
     /** Custom group header rendering */
     groupHeader?: Snippet<[DropdownGroupProps]>;
@@ -100,6 +102,7 @@
     placeholder = m.ui_dropdown_select_placeholder(),
     portal = false,
     staticPosition = false,
+    animate = true,
     collisionBoundary = null,
     collisionPadding = 8,
     searchable = true,
@@ -126,6 +129,16 @@
     empty,
     defaultHighlightValue,
   }: Props = $props();
+
+  function panelEnter(...args: Parameters<typeof springIn>) {
+    return animate ? springIn(...args) : { duration: 0 };
+  }
+  function panelExit(...args: Parameters<typeof crispOut>) {
+    return animate ? crispOut(...args) : { duration: 0 };
+  }
+  function rowTransition(...args: Parameters<typeof slide>) {
+    return animate ? slide(...args) : { duration: 0 };
+  }
 
   // For portal positioning, we need to track trigger position
   let triggerRef = $state.raw<HTMLButtonElement | null>(null);
@@ -263,24 +276,31 @@
     return allOptions.find((o) => o.value === value)?.label;
   });
 
-  async function handleTriggerClick() {
+  function handleTriggerClick() {
     if (disabled) return;
     if (open) {
       handleClose();
       return;
     }
+    void openAndFocusSearch();
+  }
 
-    // Pre-compute highlight so the first render is correct
-    highlightedIndex = findHighlightIndex();
-
-    open = true;
-    onopenchange?.(true);
+  /** Open without toggling and focus search, including programmatic keyboard entry. */
+  export async function openAndFocusSearch() {
+    if (disabled) return;
+    if (!open) {
+      // Pre-compute highlight so the first render is correct
+      highlightedIndex = findHighlightIndex();
+      open = true;
+      onopenchange?.(true);
+    }
 
     if ((portal || collisionBoundary) && triggerRef) {
       updateContentPosition();
     }
 
     await tick();
+    if (!open || disabled) return;
 
     if (portal || collisionBoundary) {
       updateContentPosition();
@@ -499,6 +519,13 @@
   // Handle keyboard
   function handleKeyDown(e: KeyboardEvent) {
     if (!open) return;
+    // Composed controls own selection keys; an unconsumed Escape dismisses this layer.
+    if (
+      e.target instanceof Element &&
+      e.target.closest('[data-dropdown-header], [data-dropdown-footer]') &&
+      (e.key !== 'Escape' || e.defaultPrevented)
+    )
+      return;
 
     switch (e.key) {
       case 'ArrowDown':
@@ -685,8 +712,8 @@
         bind:this={inlineContentRef}
         use:pinOpenWidth
         style:width={openedWidth === undefined ? undefined : `${openedWidth}px`}
-        in:springIn={menuOverlayTransition.enter}
-        out:crispOut={menuOverlayTransition.exit}
+        in:panelEnter={menuOverlayTransition.enter}
+        out:panelExit={menuOverlayTransition.exit}
         class={cn(
           menuOverlay(),
           'absolute z-50 min-w-full w-max',
@@ -713,8 +740,8 @@
       bind:this={portalContentRef}
       use:pinOpenWidth
       style:width={openedWidth === undefined ? undefined : `${openedWidth}px`}
-      in:springIn={menuOverlayTransition.enter}
-      out:crispOut={menuOverlayTransition.exit}
+      in:panelEnter={menuOverlayTransition.enter}
+      out:panelExit={menuOverlayTransition.exit}
       class={cn(menuOverlay(), 'w-max flex flex-col', contentClass)}
       style={portalStyle}
       data-side={inlineSide}
@@ -729,7 +756,10 @@
 {#snippet dropdownContent(isPortal: boolean)}
   <!-- Header -->
   {#if header}
-    <div class={cn('border-b border-border', isPortal && 'shrink-0', headerClass)}>
+    <div
+      data-dropdown-header
+      class={cn('border-b border-border', isPortal && 'shrink-0', headerClass)}
+    >
       {@render header()}
     </div>
   {/if}
@@ -798,7 +828,7 @@
     {#if groups.length > 0}
       <!-- Grouped options -->
       {#each filteredGroups as group, groupIndex (group.key)}
-        <div transition:slide={{ tier: 'fast' }}>
+        <div transition:rowTransition={{ tier: 'fast' }}>
           {#if groupHeader}
             {@render groupHeader({ group, groupIndex })}
           {:else if group.label}
@@ -815,7 +845,7 @@
           {/if}
 
           {#each group.options as option (option.value)}
-            <div transition:slide={{ tier: 'fast' }}>
+            <div transition:rowTransition={{ tier: 'fast' }}>
               {@render optionItem(option)}
             </div>
           {/each}
@@ -824,7 +854,7 @@
     {:else}
       <!-- Flat options -->
       {#each filteredOptions as option (option.value)}
-        <div transition:slide={{ tier: 'fast' }}>
+        <div transition:rowTransition={{ tier: 'fast' }}>
           {@render optionItem(option)}
         </div>
       {/each}
@@ -854,7 +884,10 @@
 
   <!-- Footer -->
   {#if footer}
-    <div class={cn('border-t border-border', isPortal ? 'shrink-0' : 'px-2 py-2.5')}>
+    <div
+      data-dropdown-footer
+      class={cn('border-t border-border', isPortal ? 'shrink-0' : 'px-2 py-2.5')}
+    >
       {@render footer()}
     </div>
   {/if}
@@ -867,6 +900,9 @@
     highlightedIndex >= 0 &&
     highlightedIndex < selectableOptions.length &&
     selectableOptions[highlightedIndex]?.value === option.value}
+  {@const submenuOpen =
+    option.type === 'submenu' && !!option.children?.length && openSubmenu === option.value}
+  {@const submenuId = `${uid}-submenu-${encodeURIComponent(option.value)}`}
   <!-- Separator type -->
   {#if option.type === 'separator'}
     <div class="my-1 h-px bg-border"></div>
@@ -897,6 +933,7 @@
         aria-expanded={popupRole === 'menu' && option.type === 'submenu'
           ? openSubmenu === option.value
           : undefined}
+        aria-controls={submenuOpen ? submenuId : undefined}
         tabindex={isHighlighted && !option.disabled ? 0 : -1}
       >
         {#if item}
@@ -967,14 +1004,15 @@
         {/if}
       </Button>
 
-      <!-- Submenu (rendered in portal for proper positioning) -->
+      <!-- Submenu (rendered in portal for proper positioning; owned via the trigger's aria-controls) -->
       {#if option.type === 'submenu' && option.children?.length && openSubmenu === option.value}
         <Portal zIndex={101}>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
+            id={submenuId}
             data-submenu
-            in:springIn={menuOverlayTransition.enter}
-            out:crispOut={menuOverlayTransition.exit}
+            in:panelEnter={menuOverlayTransition.enter}
+            out:panelExit={menuOverlayTransition.exit}
             class={cn(
               menuOverlay(),
               'min-w-45 overflow-hidden rounded-md border border-border',

@@ -88,4 +88,50 @@ describe('createProximityHover', () => {
     secondAction?.destroy?.();
     hover.destroy();
   });
+
+  function measureWithComputedSize(
+    containerRect: { width: number; height: number },
+    computed: { width: string; height: string },
+  ) {
+    const container = document.createElement('div');
+    const item = document.createElement('div');
+    vi.stubGlobal('getComputedStyle', (element: Element) =>
+      element === container
+        ? { boxSizing: 'border-box', width: computed.width, height: computed.height }
+        : { boxSizing: 'border-box', width: '', height: '' },
+    );
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      left: 50,
+      ...containerRect,
+    } as DOMRect);
+    vi.spyOn(item, 'getBoundingClientRect').mockReturnValue({
+      top: 110,
+      left: 55,
+      width: 50,
+      height: 20,
+    } as DOMRect);
+    const hover = createProximityHover(container);
+    const action = proximityItem(item, { hover, index: 0 });
+    const rect = hover.itemRects[0];
+    action?.destroy?.();
+    hover.destroy();
+    return rect;
+  }
+
+  it('ignores sub-pixel drift between computed size and rect on an untransformed container', () => {
+    // Chromium serializes computed lengths to 3 decimals; the rect keeps 175.96875.
+    expect(
+      measureWithComputedSize(
+        { width: 175.96875, height: 200.96875 },
+        { width: '175.969px', height: '200.969px' },
+      ),
+    ).toEqual({ top: 10, left: 5, width: 50, height: 20 });
+  });
+
+  it('still unscales rects under a genuine ancestor transform', () => {
+    expect(
+      measureWithComputedSize({ width: 100, height: 200 }, { width: '200px', height: '400px' }),
+    ).toEqual({ top: 20, left: 10, width: 100, height: 40 });
+  });
 });

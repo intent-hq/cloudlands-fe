@@ -109,7 +109,7 @@
 
       <!-- Progress fill -->
       <div
-        class="absolute left-0 h-1 bg-foreground/20 rounded-full transition-[width] duration-75"
+        class="absolute left-0 h-1 bg-foreground/20 rounded-full transition-[width] duration-spring-fast ease-spring-fast motion-reduce:transition-none"
         style="width: {progress}%"
       ></div>
 

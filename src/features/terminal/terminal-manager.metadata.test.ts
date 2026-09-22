@@ -5,6 +5,7 @@ import { m } from '$shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  backendRequest: vi.fn(),
   state: {} as unknown,
 }));
 
@@ -26,8 +27,16 @@ vi.mock('$store/renderer/store', () => ({
 
 vi.mock('./TerminalAdapter', () => ({ TerminalAdapter: vi.fn() }));
 vi.mock('./terminal-buffer-manager', () => ({ TerminalBufferManager: vi.fn() }));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: mocks.backendRequest,
+}));
+vi.mock('$lib/client', async () => {
+  const { LiveTerminalsClient } = await import('$lib/client/live/live-terminals-client');
+  return { appClient: { terminals: new LiveTerminalsClient() } };
+});
 
 import { terminalManager } from './terminal-manager.svelte';
+import { LiveTerminalsClient } from '$lib/client/live/live-terminals-client';
 
 const WS = 'ws-1';
 
@@ -80,4 +89,31 @@ describe('terminalManager.loadTerminalMetadata display-name localization', () =>
     const [meta] = terminalManager.loadTerminalMetadata(WS);
     expect(meta.title).toBe('npm run dev');
   });
+});
+
+it('kills a restored terminal without an adapter so the next daemon list stays empty', async () => {
+  let alive = true;
+  mocks.backendRequest.mockImplementation(async (method: string) => {
+    if (method === 'terminal.kill') {
+      alive = false;
+      return { ok: true };
+    }
+    if (method === 'terminal.list') {
+      return {
+        terminals: alive ? [{ id: 'pty-restored', name: 'Terminal', cwd: '/tmp' }] : [],
+        daemonBootId: 'boot-1',
+      };
+    }
+    throw new Error(`Unexpected method: ${method}`);
+  });
+  const client = new LiveTerminalsClient();
+  expect((await client.list(WS)).terminals).toHaveLength(1);
+  expect(terminalManager.hasTerminal('pty-restored')).toBe(false);
+
+  terminalManager.disposeTerminal('pty-restored');
+
+  expect(mocks.backendRequest).toHaveBeenCalledWith('terminal.kill', {
+    terminalId: 'pty-restored',
+  });
+  expect((await client.list(WS)).terminals).toEqual([]);
 });

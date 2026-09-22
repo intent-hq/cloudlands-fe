@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/experimental-ct-svelte';
+import { expect, test } from '../../../../test/ct-test';
 import SuggestedPromptsGeometryHost from './SuggestedPromptsGeometryHost.svelte';
 
 const scenarios = [
@@ -60,6 +60,7 @@ for (const scenario of scenarios) {
           labelColor: labelStyle.color,
           hintWeight: hintStyle.fontWeight,
           hintFontSize: hintStyle.fontSize,
+          hintBackground: hintStyle.backgroundColor,
           rowOpacity: rowStyle.opacity,
           hintOpacity: hintStyle.opacity,
         };
@@ -88,6 +89,7 @@ for (const scenario of scenarios) {
       fontWeight: '400',
       hintWeight: '400',
       hintFontSize: '13px',
+      hintBackground: 'rgba(0, 0, 0, 0)',
       rowOpacity: '1',
       hintOpacity: '1',
     });
@@ -108,5 +110,72 @@ for (const scenario of scenarios) {
     expect(promptGlyphBox?.height).toBeCloseTo(toolGlyphBox!.height, 1);
     expect(promptSlotBox?.width).toBeCloseTo(20 * scenario.zoom, 1);
     expect(promptGlyphBox?.width).toBeCloseTo(16 * scenario.zoom, 1);
+    await shortRow.locator('[data-suggested-prompt-text]').focus();
+    await shortRow.locator('[data-suggested-prompt-text]').press('Enter');
+    await expect(component.getByTestId('selected-prompt')).toHaveText('Review the change.');
+  });
+
+  test(`keeps edit actions aligned without reflow in ${scenario.name}`, async ({ mount, page }) => {
+    const component = await mount(SuggestedPromptsGeometryHost, { props: scenario });
+    const rows = component.locator('[data-suggested-prompt-row]');
+    await expect(rows).toHaveCount(2);
+    await page.evaluate(() => document.fonts.ready);
+
+    for (let index = 0; index < 2; index += 1) {
+      const row = rows.nth(index);
+      const edit = row.getByRole('button', { name: 'Edit in input' });
+      const send = row.locator('[data-suggested-prompt-text]');
+      const prompt = await send.textContent();
+      const readGeometry = () =>
+        row.evaluate((element) => {
+          const box = (target: Element) => {
+            const { x, y, width, height } = target.getBoundingClientRect();
+            return { x, y, width, height };
+          };
+          const arrow = box(element.querySelector('[data-suggested-prompt-icon] svg')!);
+          const button = element.querySelector('button')!;
+          const pencil = box(button.querySelector('svg')!);
+          return {
+            row: box(element),
+            label: box(element.querySelector('[data-suggested-prompt-label]')!),
+            hint: box(element.querySelector('[data-suggested-prompt-hint]')!),
+            button: box(button),
+            centerDelta: Math.abs(pencil.y + pencil.height / 2 - (arrow.y + arrow.height / 2)),
+          };
+        });
+
+      await page.mouse.move(0, 0);
+      await expect(edit).toHaveCSS('opacity', '0');
+      const resting = await readGeometry();
+      expect(resting.centerDelta).toBeLessThan(0.6 * scenario.zoom);
+      expect(resting.button.width).toBeCloseTo(28 * scenario.zoom, 1);
+      expect(resting.button.height).toBeCloseTo(28 * scenario.zoom, 1);
+      expect(resting.hint.x + resting.hint.width).toBeLessThanOrEqual(resting.button.x);
+
+      await row.hover();
+      await expect(edit).toHaveCSS('opacity', '1');
+      expect(await readGeometry()).toEqual(resting);
+      await edit.hover();
+      await expect(page.getByRole('tooltip')).toBeVisible();
+      await edit.click();
+      await expect(component.getByTestId('edited-prompt')).toHaveText(prompt!);
+      await expect(component.getByTestId('edit-count')).toHaveText(String(index * 2 + 1));
+      await expect(component.getByTestId('selection-count')).toHaveText(String(index));
+
+      await page.mouse.move(0, 0);
+      await send.focus();
+      await send.press('Tab');
+      await expect(edit).toBeFocused();
+      await expect(edit).toHaveCSS('opacity', '1');
+      expect(await readGeometry()).toEqual(resting);
+      await edit.press('Space');
+      await expect(component.getByTestId('edit-count')).toHaveText(String(index * 2 + 2));
+      await expect(component.getByTestId('selection-count')).toHaveText(String(index));
+      await send.focus();
+      await send.press('Enter');
+      await expect(component.getByTestId('selected-prompt')).toHaveText(prompt!);
+      await expect(component.getByTestId('selection-count')).toHaveText(String(index + 1));
+      await expect(component.getByTestId('edit-count')).toHaveText(String(index * 2 + 2));
+    }
   });
 }

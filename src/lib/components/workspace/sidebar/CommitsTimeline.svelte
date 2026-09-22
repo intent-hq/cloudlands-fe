@@ -91,6 +91,10 @@
     activeFilePath?: string | null;
     activeFileStaged?: boolean | null;
     pullRequestCount?: number;
+    /** Owner-only controls (push / undo via `accept-changes.execute`, amend
+     * via `system.executeCommand`, base-commit context menu via
+     * `workspace.update`) render only when true. */
+    isOwner?: boolean;
   }
 
   let {
@@ -98,6 +102,7 @@
     activeFilePath = null,
     activeFileStaged = null,
     pullRequestCount = 0,
+    isOwner = true,
   }: Props = $props();
 
   // Redux selectors at component init
@@ -216,6 +221,7 @@
 
   // Context menu handlers
   function handleCommitContextMenu(e: MouseEvent, commitHash: string) {
+    if (!isOwner) return;
     e.preventDefault();
     e.stopPropagation();
     commitContextMenu = { x: e.clientX, y: e.clientY, commitHash };
@@ -398,7 +404,7 @@
     commit: { hash: string; message: string },
     index: number,
   ) {
-    if (canAmendCommit(index)) {
+    if (isOwner && canAmendCommit(index)) {
       e.stopPropagation();
       e.preventDefault();
       startEditingCommit(commit);
@@ -846,33 +852,38 @@
                 >
                   <Fa icon={faArrowUpRightFromSquare} size="xs" class="text-subtle" />
                 </Button>
-                <!-- Undo push button - absolutely positioned to overlap cloud icon -->
-                <div
-                  class="{!isOperatingOnThis &&
-                    'opacity-0'} group-hover:opacity-100 transition-opacity"
-                >
-                  <Button
-                    variant="ghost-light"
-                    size="icon-xs"
-                    onclick={() => handleUndoPush(index)}
-                    disabled={isPushing || undoState.undoing}
-                    tooltip={getUndoTooltip(index)}
-                    tooltipSide="top"
+                <!-- Undo push button - absolutely positioned to overlap cloud icon
+                     (accept-changes.execute, owner-only) -->
+                {#if isOwner}
+                  <div
+                    class="{!isOperatingOnThis &&
+                      'opacity-0'} group-hover:opacity-100 transition-opacity"
                   >
-                    {#if isOperatingOnThis && undoState.undoing}
-                      <IntentMarkLoader size={12} class="text-subtle" />
-                    {:else}
-                      <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
-                    {/if}
-                  </Button>
-                </div>
-              {:else}
-                <!-- Undo commit button for unpushed commits -->
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      data-testid="commit-undo-push-button"
+                      onclick={() => handleUndoPush(index)}
+                      disabled={isPushing || undoState.undoing}
+                      tooltip={getUndoTooltip(index)}
+                      tooltipSide="top"
+                    >
+                      {#if isOperatingOnThis && undoState.undoing}
+                        <IntentMarkLoader size={12} class="text-subtle" />
+                      {:else}
+                        <Fa icon={faRotateLeft} size="xs" class="text-ghost" />
+                      {/if}
+                    </Button>
+                  </div>
+                {/if}
+              {:else if isOwner}
+                <!-- Undo commit button for unpushed commits (accept-changes.execute, owner-only) -->
                 <Button
                   variant="ghost-light"
                   size="icon-xs"
                   class="{!isOperatingOnThis &&
                     'opacity-0!'} group-hover:opacity-100! transition-opacity shrink-0"
+                  data-testid="commit-undo-button"
                   onclick={() => handleUndoCommit(index)}
                   disabled={isPushing || undoState.undoing || undoState.undoingCommit}
                   tooltip={getUndoCommitTooltip(index)}
@@ -891,6 +902,7 @@
                     size="icon-xs"
                     class="{!isOperatingOnThis &&
                       'opacity-0!'} group-hover:opacity-100! transition-opacity shrink-0"
+                    data-testid="commit-push-button"
                     onclick={() => handlePushCommits(index)}
                     disabled={isPushing || undoState.undoing || undoState.undoingCommit}
                     tooltip={getPushTooltip(index)}
@@ -938,8 +950,15 @@
   {#if $ftBoundarySha$}
     <Button
       variant="ghost"
-      class="group/boundary relative w-full cursor-pointer {allCommits.length > 0 ? 'mt-2' : ''}"
+      size="compact"
+      wrapContent={false}
+      class="group/boundary relative h-auto min-h-8 w-full justify-start gap-2 px-1 py-2 {allCommits.length >
+      0
+        ? 'mt-2'
+        : ''}"
       disabled={$ftLoadingOlderCommits$}
+      aria-expanded={olderCommits.length > 0}
+      aria-busy={$ftLoadingOlderCommits$}
       onclick={() => {
         if (olderCommits.length > 0) {
           appStore.dispatch(ftClearOlderCommits(workspaceId));
@@ -948,26 +967,26 @@
         }
       }}
     >
-      <div
-        class="relative flex items-center gap-2 px-1 pr-3 w-fit bg-sidebar mr-auto py-2 z-10 group-hover/boundary:opacity-100 {olderCommits.length >
-        0
-          ? 'opacity-100'
-          : 'opacity-0'}"
+      <span
+        class="relative flex shrink-0 items-center gap-1.5 text-ui text-subtle select-none"
+        data-commit-boundary-label
       >
-        <span class="flex items-center gap-1.5 text-ui text-subtle bg-sidebar select-none">
-          {m.workspace_commitsTimeline_workspaceStart_label()}
-          {#if $ftLoadingOlderCommits$}
-            <IntentMarkLoader size={12} class="opacity-50" />
-          {:else}
-            <Fa
-              icon={faChevronDown}
-              size="xs"
-              class="opacity-50 transition-transform {olderCommits.length > 0 ? '' : 'rotate-90'}"
-            />
-          {/if}
-        </span>
-      </div>
-      <div class="absolute top-4.5 left-0 right-0 flex-1 border-t border-border"></div>
+        {m.workspace_commitsTimeline_workspaceStart_label()}
+        {#if $ftLoadingOlderCommits$}
+          <IntentMarkLoader size={12} class="opacity-50" />
+        {:else}
+          <Fa
+            icon={faChevronDown}
+            size="xs"
+            class="opacity-50 transition-transform {olderCommits.length > 0 ? '' : 'rotate-90'}"
+          />
+        {/if}
+      </span>
+      <span
+        class="relative h-px min-w-0 flex-1 bg-border"
+        aria-hidden="true"
+        data-commit-boundary-divider
+      ></span>
     </Button>
   {/if}
 

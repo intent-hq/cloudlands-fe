@@ -302,6 +302,60 @@ export class AuthRejectedError extends Error {
 }
 
 /**
+ * Retry cadence the client falls back to when a 503 cap refusal carries no
+ * usable `Retry-After`: transient but not something a prompt retry resolves —
+ * a seat frees only when another guest connection closes — so bounded and
+ * slow, never tight.
+ */
+export const CONNECTION_LIMIT_RETRY_DEFAULT_MS = 30_000;
+/** Clamp bounds for a daemon-supplied `Retry-After` on the cap refusal. */
+export const CONNECTION_LIMIT_RETRY_MIN_MS = 5_000;
+export const CONNECTION_LIMIT_RETRY_MAX_MS = 300_000;
+
+/**
+ * Raised when a pin-verified `wss` upgrade is refused with HTTP 503 by the
+ * daemon's guest connection cap (`sharing.maxGuestConnections` /
+ * `sharing.maxConnectionsPerGuest`, intent-hq/intentd#1917). Transient —
+ * a seat frees when another guest connection closes — so the client keeps
+ * retrying, but on a slow bounded cadence, and the UI names the cap instead
+ * of the generic reconnect copy.
+ */
+export class ConnectionLimitError extends Error {
+  /**
+   * How long the daemon asked the client to wait before re-presenting the
+   * upgrade (its `Retry-After` header, already clamped by
+   * {@link parseRetryAfterMs}); the default cadence when the header was absent
+   * or unparseable.
+   */
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs: number = CONNECTION_LIMIT_RETRY_DEFAULT_MS) {
+    // i18n-ignore (main-process error message for logs, not renderer copy)
+    super('WebSocket upgrade refused with HTTP 503 (connection limit reached)');
+    this.name = 'ConnectionLimitError';
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/**
+ * Parse the `Retry-After` header of a 503 cap refusal into a retry delay.
+ * Only the delta-seconds form is honored (the daemon never sends an HTTP
+ * date here); the value is clamped to [5, 300] s, and anything absent or
+ * unparseable falls back to {@link CONNECTION_LIMIT_RETRY_DEFAULT_MS}.
+ */
+export function parseRetryAfterMs(header: string | string[] | undefined): number {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (raw === undefined) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  const seconds = Number(trimmed);
+  if (!Number.isFinite(seconds)) return CONNECTION_LIMIT_RETRY_DEFAULT_MS;
+  return Math.min(
+    CONNECTION_LIMIT_RETRY_MAX_MS,
+    Math.max(CONNECTION_LIMIT_RETRY_MIN_MS, seconds * 1000),
+  );
+}
+
+/**
  * Normalize a certificate SHA-256 fingerprint to the daemon's canonical form
  * (PROTOCOL §1.2): colon-separated **uppercase** hex byte pairs. Accepts any
  * mix of case and separators (Node's `fingerprint256` is already colon-hex
@@ -348,8 +402,9 @@ function peerFingerprint(response: IncomingMessage): string {
  * (PROTOCOL §2.1) with a `?token=` query fallback. An upgrade rejected with
  * HTTP 401/403 (bad token / WS API disabled, PROTOCOL §2.1) destroys the
  * stream with a distinct {@link AuthRejectedError} instead of a generic
- * transport error. The `upgrade`/`unexpected-response` pin checks are kept as
- * defense-in-depth behind the handshake-level pin.
+ * transport error, and HTTP 503 (guest connection cap) with a
+ * {@link ConnectionLimitError}. The `upgrade`/`unexpected-response` pin
+ * checks are kept as defense-in-depth behind the handshake-level pin.
  */
 function createWssSocket(config: BackendConnectionConfig): Duplex {
   const { host, port, token, fingerprint } = config;
@@ -393,6 +448,10 @@ function createWssSocket(config: BackendConnectionConfig): Duplex {
     const statusCode = response.statusCode ?? 0;
     if (statusCode === 401 || statusCode === 403) {
       duplex.destroy(new AuthRejectedError(statusCode));
+      return;
+    }
+    if (statusCode === 503) {
+      duplex.destroy(new ConnectionLimitError(parseRetryAfterMs(response.headers['retry-after'])));
       return;
     }
     duplex.destroy(new Error(`Unexpected server response: ${statusCode}`));
@@ -512,6 +571,10 @@ export function raceDuplexSockets(
   let settled = false;
   let pendingCount = attempts.length;
   let lastError: Error | null = null;
+  // A typed cap refusal seen on any candidate: the client keys its slow retry
+  // cadence on this class, so it must survive later generic failures (and the
+  // race timeout) from the other candidates.
+  let limitError: ConnectionLimitError | null = null;
   const candidates: Duplex[] = [];
   const candidateHosts = new Map<Duplex, string>();
   const candidateVias = new Map<Duplex, ConnectedVia>();
@@ -589,14 +652,17 @@ export function raceDuplexSockets(
 
   // Prefer surfacing observed cert mismatches over a generic failure when the
   // race produces no winner (#1746): the aggregate carries every per-host
-  // mismatch, with expected/actual mirroring the first one.
-  const preferCertError = (fallback: Error): Error =>
-    mismatches.length > 0
-      ? new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches])
-      : fallback;
+  // mismatch, with expected/actual mirroring the first one. Failing that, a
+  // typed connection-limit refusal beats a generic failure.
+  const preferTypedError = (fallback: Error): Error => {
+    if (mismatches.length > 0) {
+      return new PinMismatchError(mismatches[0].expected, mismatches[0].actual, [...mismatches]);
+    }
+    return limitError ?? fallback;
+  };
 
   const timer = setTimeout(
-    () => failRace(preferCertError(new Error(`connection race timed out after ${timeoutMs}ms`))),
+    () => failRace(preferTypedError(new Error(`connection race timed out after ${timeoutMs}ms`))),
     timeoutMs,
   );
   timer.unref?.();
@@ -609,11 +675,12 @@ export function raceDuplexSockets(
     if (error instanceof PinMismatchError) {
       recordMismatch(host, error);
     } else {
+      if (error instanceof ConnectionLimitError) limitError ??= error;
       lastError = error;
     }
     pendingCount -= 1;
     if (pendingCount <= 0) {
-      failRace(preferCertError(lastError ?? new Error('no candidate hosts to connect')));
+      failRace(preferTypedError(lastError ?? new Error('no candidate hosts to connect')));
     }
   };
 

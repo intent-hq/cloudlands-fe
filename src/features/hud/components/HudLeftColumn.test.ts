@@ -19,6 +19,7 @@ import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-s
 import { workspaceDeleted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import type { AgentSession, Workspace, WorkspaceId } from '$shared/types';
 import { WorkspaceStatus } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 import HudLeftColumn from './HudLeftColumn.svelte';
 
@@ -193,6 +194,24 @@ describe('HudLeftColumn WORKSPACES-BY-STATE waiting row', () => {
     flushSync();
 
     expect(waitingRow().textContent).toContain('0');
+  });
+});
+
+describe('HudLeftColumn SYSTEM panel header', () => {
+  it('renders no meta text next to the title, even for a failed fleet', async () => {
+    render(HudLeftColumn, { props: { nowMs: NOW_MS } });
+
+    appStore.dispatch(
+      setWorkspaceEntity(workspaceWithAgents('ws-1', [{ id: 'a-0', status: 'error' }], 'failed')),
+    );
+    await waitFor(() => {
+      flushSync();
+      expect(blinks(failedRow())).toBe(true);
+    });
+
+    const title = m.hud_system_title();
+    const header = screen.getByText(title).closest('header') as HTMLElement;
+    expect(header.textContent?.trim()).toBe(title);
   });
 });
 

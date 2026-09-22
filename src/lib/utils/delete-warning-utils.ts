@@ -4,6 +4,7 @@
 
 import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
 import type { BackgroundHook } from '$features/hooks/background-hooks-service';
+import { ensureWorkspacePullRequestPool } from '$features/workspace/workspace-detail-hydration';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { constructPrUrl } from '$lib/components/workspace/sidebar/sidebar-changes-utils';
 import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
@@ -11,6 +12,7 @@ import { selectBackgroundHooks } from '$store/renderer/slices/background-hooks/b
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 import type {
+  GuestsWarning,
   LocalChangesWarning,
   OpenPrWarningItem,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
@@ -75,9 +77,25 @@ export async function getActiveHookNames(workspaceId: string): Promise<string[]>
 }
 
 export type {
+  GuestsWarning,
   LocalChangesWarning,
   OpenPrWarningItem,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-types';
+
+/**
+ * Summarise the guests an archive/delete would remove from the workspace row's
+ * membership summary (PROTOCOL §5.1): collaborators are the accepted members
+ * minus the owner (floored at 0), plus the unredeemed invites. Both read as 0
+ * on an unknown row or an older daemon that omits the fields.
+ * @param workspaceId - The workspace ID to check
+ */
+export function getGuestsSummary(workspaceId: string): GuestsWarning {
+  const workspace = selectWorkspaceById.select(appStore.state, workspaceId);
+  return {
+    collaboratorCount: Math.max(0, (workspace?.memberCount ?? 0) - 1),
+    openInviteCount: workspace?.openInviteCount ?? 0,
+  };
+}
 
 /**
  * Collect the workspace's unmerged PRs (status Open/Draft) from the Redux
@@ -143,20 +161,25 @@ export async function getLocalChanges(workspaceId: string): Promise<LocalChanges
   }
 }
 
-/** Streaming agent names, active hook names, open PRs, and local changes for one workspace, for gating. */
+/** Streaming agent names, active hook names, open PRs, local changes, and guests for one workspace, for gating. */
 export interface ActiveWorkNames {
   agentNames: string[];
   hookNames: string[];
   openPrs: OpenPrWarningItem[];
   /** `null` when not requested (bulk flows) or when the RPC failed. */
   localChanges: LocalChangesWarning | null;
+  guests: GuestsWarning;
 }
 
 /**
  * Collect the in-flight work (streaming agents and active background hooks)
  * that a workspace archive/delete would stop, plus its unmerged (Open/Draft)
- * PRs and — only when `includeLocalChanges` is set — its local git changes.
+ * PRs, the guests it would remove (read off the stored row, no RPC) and —
+ * only when `includeLocalChanges` is set — its local git changes.
  * Bulk flows leave it off so they never fan out `workspace.localChanges`.
+ * The open-PR count needs the full pool, so a `workspace.list`-capped
+ * `pullRequests` row (`pullRequestsTotal` above the stored count) is
+ * completed via one `workspace.get` first; complete rows issue no read.
  * @param workspaceId - The workspace ID to check
  */
 export async function getActiveWorkNames(
@@ -166,11 +189,13 @@ export async function getActiveWorkNames(
   const [hookNames, localChanges] = await Promise.all([
     getActiveHookNames(workspaceId),
     includeLocalChanges ? getLocalChanges(workspaceId) : Promise.resolve(null),
+    ensureWorkspacePullRequestPool(workspaceId),
   ]);
   return {
     agentNames: getRunningAgentNames(workspaceId),
     hookNames,
     openPrs: getOpenPrItems(workspaceId),
     localChanges,
+    guests: getGuestsSummary(workspaceId),
   };
 }

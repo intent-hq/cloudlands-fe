@@ -23,8 +23,11 @@
     selectActiveHookNamesForDelete,
     selectBulkActiveAgentCount,
     selectBulkActiveHookCount,
+    selectBulkGuestCount,
     selectBulkOpenPrCount,
     selectBulkPreflightReady,
+    selectGuestsForArchive,
+    selectGuestsForDelete,
     selectLocalChangesForArchive,
     selectLocalChangesForDelete,
     selectOpenPrsForArchive,
@@ -55,6 +58,9 @@
   );
   const localChangesForDelete$ = untrack(() =>
     staticData ? readable(undefined) : selectLocalChangesForDelete(),
+  );
+  const guestsForDelete$ = untrack(() =>
+    staticData ? readable(undefined) : selectGuestsForDelete(),
   );
   const showArchiveWarning$ = untrack(() =>
     staticData ? readable(undefined) : selectShowArchiveWarning(),
@@ -95,6 +101,12 @@
   const bulkPreflightReady$ = untrack(() =>
     staticData ? readable(undefined) : selectBulkPreflightReady(),
   );
+  const bulkGuestCount$ = untrack(() =>
+    staticData ? readable(undefined) : selectBulkGuestCount(),
+  );
+  const guestsForArchive$ = untrack(() =>
+    staticData ? readable(undefined) : selectGuestsForArchive(),
+  );
 </script>
 
 {#if staticData}
@@ -107,6 +119,7 @@
     hookNames={$activeHookNamesForDelete$}
     openPrs={$openPrsForDelete$}
     localChanges={$localChangesForDelete$}
+    guests={$guestsForDelete$}
     onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
     onCancel={() => appStore.dispatch(closeDeleteWarning())}
   />
@@ -119,11 +132,13 @@
     hookNames={$activeHookNamesForArchive$}
     openPrs={$openPrsForArchive$}
     localChanges={$localChangesForArchive$}
+    guests={$guestsForArchive$}
     onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
     onCancel={() => appStore.dispatch(closeArchiveWarning())}
   />
   <BulkActionConfirmDialog
     open={$showBulkArchiveConfirm$}
+    mode="archive"
     title={m.modals_bulkArchive_title({ group: $pendingBulkGroupLabel$ ?? '' })}
     description={$pendingBulkWorkspaces$.length === 1
       ? m.modals_bulkArchive_description_one({
@@ -135,6 +150,7 @@
     confirmText={m.modals_bulkArchive_confirm_label()}
     activeAgentCount={$bulkActiveAgentCount$}
     activeHookCount={$bulkActiveHookCount$}
+    guestCount={$bulkGuestCount$}
     openPrCount={$bulkOpenPrCount$}
     preflightReady={$bulkPreflightReady$}
     onConfirm={() => appStore.dispatch(confirmBulkArchive())}
@@ -160,6 +176,7 @@
     initialFocus="cancel"
     activeAgentCount={$bulkActiveAgentCount$}
     activeHookCount={$bulkActiveHookCount$}
+    guestCount={$bulkGuestCount$}
     openPrCount={$bulkOpenPrCount$}
     preflightReady={$bulkPreflightReady$}
     onConfirm={() => appStore.dispatch(confirmBulkDelete())}

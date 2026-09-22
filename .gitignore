@@ -81,6 +81,10 @@ test-harness-report.json
 *.tmp
 *.temp
 .cache
+# Port-keyed Playwright CT bundle caches (playwright/.cache-<CT_PORT>, see
+# playwright/ct-port.ts). Must stay ignored: CI's "Build CT bundle" step
+# runs --only-changed=HEAD, which scans untracked non-ignored files.
+playwright/.cache-*
 .eslintcache
 
 # Debug files
@@ -102,10 +106,13 @@ test-harness-report.json
 
 # Workspace data directories (should be in ~/.workspaces, not in repo)
 .workspaces/
-# UUID-based workspace directories
-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
-# Simpler pattern for UUID directories
-*-*-*-*-*/
+# UUID-based workspace directories. Both rules are anchored to the package root: knip
+# applies gitignore patterns to files as well as directories, so the unanchored simple
+# form hid every source file with four or more hyphens in its name from
+# `pnpm lint:dead-code`, and nothing writes UUID directories below the package root.
+/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
+# Simpler pattern for UUID directories.
+/*-*-*-*-*/
 trace.json
 
 native/IntentDynamicIsland/.build

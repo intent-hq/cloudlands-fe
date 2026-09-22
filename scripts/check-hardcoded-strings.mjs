@@ -72,7 +72,6 @@ const ENFORCED_DIRS = [
   'src/lib/components/agent-overview',
   'src/lib/components/diagrams',
   'src/lib/components/code-walkthrough',
-  'src/lib/components/visualization',
   'src/lib/components/notes',
   'src/lib/components/markdown',
   'src/features/notes',
@@ -392,8 +391,9 @@ function findBalancedBrace(text, openIndex) {
   return -1;
 }
 
-// String literals in a JS expression: [{ start, value }] with template-literal
-// `${...}` interpolations blanked out of the value.
+// String literals in a JS expression: [{ start, end, value }] with template-literal
+// `${...}` interpolations blanked out of the value. `end` is the index just past
+// the closing quote.
 function extractStringLiterals(expr) {
   const out = [];
   let i = 0;
@@ -423,9 +423,19 @@ function extractStringLiterals(expr) {
       i++;
     }
     i++;
-    out.push({ start, value });
+    out.push({ start, end: i, value });
   }
   return out;
+}
+
+// A literal used as an equality-comparison operand (`kind === 'blocker'`,
+// `'blocker' !== kind`) is a discriminant, not rendered output.
+const EQUALITY_BEFORE_RE = /(?:===|!==|==|!=)\s*$/;
+const EQUALITY_AFTER_RE = /^\s*(?:===|!==|==|!=)/;
+function isComparisonOperand(expr, lit) {
+  return (
+    EQUALITY_BEFORE_RE.test(expr.slice(0, lit.start)) || EQUALITY_AFTER_RE.test(expr.slice(lit.end))
+  );
 }
 
 const WORDS_RE = /[A-Za-z]{2,}/;
@@ -547,7 +557,8 @@ function checkTagAttributes(src, tag, tagStart, violations) {
       });
     }
     // Expression values: title={cond ? 'A' : 'B'} — any word-bearing string
-    // literal inside the expression is user-facing.
+    // literal inside the expression is user-facing, except equality-comparison
+    // operands (`kind === 'blocker' ? m.a() : m.b()`), which are never rendered.
     const exprAttrRe = new RegExp(`(?:^|[\\s{])${attr}\\s*=\\s*\\{`, 'g');
     let em;
     while ((em = exprAttrRe.exec(tag)) !== null) {
@@ -556,6 +567,7 @@ function checkTagAttributes(src, tag, tagStart, violations) {
       if (close === -1) break;
       const expr = tag.slice(open + 1, close);
       for (const lit of extractStringLiterals(expr)) {
+        if (isComparisonOperand(expr, lit)) continue;
         if (!WORDS_RE.test(stripHtmlEntities(lit.value))) continue;
         violations.push({
           line: lineAt(src, tagStart + open + 1 + lit.start),

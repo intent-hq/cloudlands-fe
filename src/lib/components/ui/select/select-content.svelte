@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getContext, type Snippet } from 'svelte';
+  import { getContext, tick, type Snippet } from 'svelte';
   import { Select as SelectPrimitive } from 'bits-ui';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import { menuOverlay } from '../menu/menu-recipes';
@@ -35,7 +35,15 @@
     triggerId: string;
     listboxId: string;
     staticPosition: boolean;
+    open: boolean;
   }>('canonical-select');
+
+  async function restoreTriggerFocusOnEscape() {
+    // bits-ui leaves focus in place; searchable consumers can move it into content.
+    const trigger = document.getElementById(select.triggerId);
+    await tick();
+    if (!select.open && trigger?.isConnected) trigger.focus({ preventScroll: true });
+  }
 
   function withoutListboxSemantics(props: Record<string, unknown>) {
     const { role: _role, tabindex: _tabindex, ...contentProps } = props;
@@ -81,6 +89,7 @@
 {#if select.staticPosition}
   <SelectPrimitive.ContentStatic
     preventScroll={false}
+    onEscapeKeydown={restoreTriggerFocusOnEscape}
     data-slot="select-content"
     data-static-position
     data-surface-level={surface}
@@ -91,6 +100,7 @@
 {:else}
   <SelectPrimitive.Portal disabled={!usePortal}>
     <SelectPrimitive.Content
+      onEscapeKeydown={restoreTriggerFocusOnEscape}
       data-slot="select-content"
       data-surface-level={surface}
       side={dropUp ? 'top' : 'bottom'}

@@ -174,10 +174,10 @@
   description={m.settings_aiBehavior_modelOptions_description()}
   compact
 >
-  <div class="flex flex-col gap-2">
+  <div class="flex min-w-0 flex-col gap-2">
     {#each rows as row, index (row.key)}
-      <div class="flex items-center gap-2">
-        <div class="shrink-0">
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <div class="min-w-0 max-w-full">
           <ModelPicker
             selectedModel={pickerModelId(row) || undefined}
             onModelChange={(model, pick) => handleModelChange(index, model, pick)}
@@ -201,7 +201,7 @@
             }
           }}
           placeholder={m.settings_aiBehavior_modelOptions_hint_placeholder()}
-          class="min-w-0 flex-1"
+          class="min-w-0 flex-1 basis-32"
         />
         <Button
           variant="ghost"
@@ -216,9 +216,15 @@
       </div>
     {/each}
 
-    <Button variant="link" size="sm" type="button" onclick={addRow} class="w-fit justify-start">
-      <Fa icon={faPlus} class="size-3" />
+    <Button
+      variant="link"
+      size="sm"
+      type="button"
+      onclick={addRow}
+      class="w-fit justify-start px-0"
+    >
       {m.settings_aiBehavior_modelOptions_add()}
+      {#snippet trailingIcon()}<Fa icon={faPlus} class="size-3" />{/snippet}
     </Button>
   </div>
 </SettingsFieldRow>

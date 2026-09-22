@@ -167,7 +167,11 @@
             <!-- Server Name & Type -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span class="text-sm truncate {isEnabled ? 'text-foreground' : 'text-subtle'}">
+                <span
+                  class="type-body font-normal truncate {isEnabled
+                    ? 'text-foreground'
+                    : 'text-subtle'}"
+                >
                   {server.name}
                 </span>
                 {#if serverError && isEnabled}

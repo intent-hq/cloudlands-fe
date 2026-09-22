@@ -7,7 +7,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrMonitorRow } from '$features/pr-monitor/pr-monitor-service';
 import type { AgentMessage, AgentSession, ContentBlock, Workspace } from '$shared/types';
 import { PullRequestStatus, WorkspaceStatusEnum } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import type { PresenceMember } from '$shared/types/presence';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
+import type { WorkspaceMember } from '$store/renderer/slices/guest-sessions/guest-sessions-types';
+import {
+  initialState as presenceInitialState,
+  presenceMembersReceived,
+  presenceOwnPrincipalReceived,
+  presenceReducer,
+  presenceRosterReceived,
+} from '$store/renderer/slices/presence/presence-slice';
+import { selectWorkspacePresencePeople } from '$store/renderer/slices/presence/presence-selectors';
+import type { StoreState } from '$store/renderer/types';
+import { createCollection } from '@augmentcode/themis/utils/collections/collection-utils';
 import { warmImport } from '../../../../test/warm-import';
 
 const mocks = vi.hoisted(() => {
@@ -16,6 +29,8 @@ const mocks = vi.hoisted(() => {
   const agentSessionsByWorkspace: Record<string, AgentSession[]> = {};
   const agentPreviewsById: Record<string, { kind: string; text?: string }> = {};
   const prMonitors: PrMonitorRow[] = [];
+  /** The store state the app-store mock serves; the card reads nothing from it by default. */
+  const storeState: { state: unknown } = { state: {} };
   const createWorkspaceReadable =
     <T>(resolve: (workspaceId: string) => T) =>
     (workspaceIdStore: { subscribe: (run: (value: string) => void) => () => void }) => ({
@@ -29,6 +44,7 @@ const mocks = vi.hoisted(() => {
     agentSessionsByWorkspace,
     agentPreviewsById,
     prMonitors,
+    storeState,
     createWorkspaceReadable,
   };
 });
@@ -43,7 +59,10 @@ vi.mock('$features/agent/services/active-streams-tracker', () => ({
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } =
     await import('$store/renderer/utils/test-helpers/store-mock');
-  return createAppStoreMockModule({ state: () => ({}), dispatch: mocks.dispatch });
+  return createAppStoreMockModule({
+    state: () => mocks.storeState.state,
+    dispatch: mocks.dispatch,
+  });
 });
 
 vi.mock('$store/renderer/slices/pr-monitor/pr-monitor-selectors', () => ({
@@ -175,6 +194,7 @@ describe('WorkspaceHoverCard', () => {
     for (const record of [mocks.agentSessionsByWorkspace, mocks.agentPreviewsById]) {
       for (const key of Object.keys(record)) delete record[key];
     }
+    mocks.storeState.state = {};
   });
 
   it('keeps pull request numbers and status visible in the pull request column', async () => {
@@ -603,5 +623,56 @@ describe('WorkspaceHoverCard', () => {
     expect(container.querySelector('[data-workspace-hover-card-branch]')).toBeNull();
     expect(container.textContent).not.toContain('undefined');
     expect(container.textContent).not.toContain('null');
+  });
+
+  // Who is in a shared workspace shows in the workspace sidebar's presence row
+  // (WorkspaceProgressCard); the card lists agents and pull requests only.
+  it('lists no people even while someone else is present in the shared workspace', async () => {
+    const identity = (principalId: string) => ({
+      principalId,
+      login: principalId,
+      displayName: null,
+      avatarUrl: null,
+    });
+    const accepted = (principalId: string, role: WorkspaceMember['role']): WorkspaceMember => ({
+      ...identity(principalId),
+      role,
+      addedAt: '2026-09-14T12:00:00Z',
+    });
+    const online = (principalId: string): PresenceMember => ({
+      ...identity(principalId),
+      focus: [{ workspaceId: 'ws-1' }],
+      typing: [],
+    });
+    const presence = [
+      presenceMembersReceived('ws-1', [accepted('me', 'owner'), accepted('other', 'collaborator')]),
+      presenceRosterReceived({ workspaceId: 'ws-1', members: [online('me'), online('other')] }),
+      presenceOwnPrincipalReceived('me'),
+    ].reduce((state, action) => presenceReducer(state, action), presenceInitialState);
+    const state = {
+      presence,
+      workspace: {
+        workspaces: createCollection('id', [
+          { ...baseWorkspace, id: WorkspaceId('ws-1'), ownerPrincipalId: 'me', memberCount: 2 },
+        ]),
+      },
+    } as unknown as StoreState;
+    // The sidebar's people selector does see the other person in this state.
+    expect(selectWorkspacePresencePeople.select(state, 'ws-1')).toHaveLength(1);
+    mocks.storeState.state = state;
+    mocks.agentSessionsByWorkspace['ws-1'] = [agent('active', 'Noah', 'running')];
+
+    const { container } = await renderHoverCard({
+      myRole: 'owner',
+      memberCount: 2,
+      agentSummary: { agentIds: ['active'] },
+    });
+    await tick();
+
+    expect(container.querySelector('[data-workspace-hover-card-people]')).toBeNull();
+    expect(container.querySelector('[data-presence-avatar]')).toBeNull();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(container.textContent).not.toContain('other');
   });
 });

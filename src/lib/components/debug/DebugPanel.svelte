@@ -308,7 +308,7 @@
   <div
     class="fixed bottom-4 right-4 z-50 w-96 bg-background border border-border rounded-lg shadow-xl flex flex-col {isCollapsed
       ? 'max-h-[44px]'
-      : 'max-h-[400px]'} transition-all duration-200"
+      : 'max-h-[400px]'} transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
   >
     <!-- Content (shown when not collapsed) -->
     {#if !isCollapsed}
@@ -322,11 +322,12 @@
 
           <Button
             type="button"
-            class="w-full h-7 px-2 rounded-md text-xs font-medium {isSimulatingCreation
-              ? 'bg-danger hover:bg-danger/90 text-danger-background'
+            variant={isSimulatingCreation
+              ? 'destructive'
               : isOnCreationPage
-                ? 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-                : 'bg-primary text-primary-foreground hover:bg-primary/90'} transition-colors flex items-center justify-center gap-1.5"
+                ? 'secondary'
+                : 'primary'}
+            class="w-full h-7 px-2 text-xs font-medium gap-1.5"
             onclick={() => {
               logger.info('[Debug] Button clicked!');
               toggleCreationSimulation();
@@ -606,25 +607,26 @@
       </div>
       <div class="flex items-center gap-1">
         <Button
-          size="sm"
+          size="icon-compact"
+          iconOnly
           variant="ghost"
           onclick={(e) => {
             e.stopPropagation();
             handleReset();
           }}
           title={m.settings_reset_button()}
-          class="h-7 w-7 p-0"
         >
           <Fa icon={faRotate} size="xs" />
         </Button>
         <Button
-          size="sm"
+          size="icon-compact"
+          iconOnly
           variant="ghost"
           onclick={(e) => {
             e.stopPropagation();
             handleClose();
           }}
-          class="h-7 w-7 p-0"
+          aria-label={m.debug_panel_close_ariaLabel()}
         >
           <Fa icon={faTimes} size="xs" />
         </Button>

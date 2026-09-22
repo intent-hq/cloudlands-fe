@@ -107,7 +107,7 @@ describe('Button', () => {
   });
 
   it('renders press-collapse, forced-active, icon, loading, and contextual-size states', () => {
-    const { container } = render(ButtonHarness);
+    render(ButtonHarness);
     const contextual = screen.getByRole('button', { name: 'Contextual action' });
     const explicit = screen.getByRole('button', { name: 'Explicit action' });
     const active = screen.getByRole('button', { name: 'Active action' });
@@ -137,7 +137,19 @@ describe('Button', () => {
     expect(loader?.getAttribute('data-playing')).toBe('true');
     expect(loader?.getAttribute('width')).toBe('16');
     expect(loader?.getAttribute('class')).toContain('size-4!');
-    expect(container.querySelectorAll('[data-slot="button-surface"]')).toHaveLength(5);
+  });
+
+  it('activates once when clicking an unwrapped content label', async () => {
+    render(ButtonHarness);
+    const button = screen.getByRole('button', { name: 'Raw content action' });
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    expect(screen.getByTestId('raw-clicks').textContent).toBe('0');
+
+    await fireEvent.click(screen.getByTestId('raw-label'));
+
+    expect(screen.getByTestId('raw-clicks').textContent).toBe('1');
+    expect(document.activeElement).toBe(button);
   });
 
   it('lets a caller replace the default caption role with body typography', () => {

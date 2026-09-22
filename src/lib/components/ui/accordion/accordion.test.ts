@@ -28,14 +28,24 @@ describe('Accordion', () => {
     expect(second.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('keeps content mounted and delegates panel height to animatedHeight', () => {
+  it('keeps content mounted and delegates panel height to an inner animatedHeight wrapper', () => {
     const { getByText } = render(AccordionHarness);
     const firstPanel = getByText('First panel').closest('[data-accordion-content]') as HTMLElement;
     const secondPanel = getByText('Second panel').closest(
       '[data-accordion-content]',
     ) as HTMLElement;
-    expect(firstPanel?.style.overflow).toBe('clip');
-    expect(secondPanel?.style.height).toBe('0px');
+    const firstMotion = getByText('First panel').closest(
+      '[data-accordion-content-motion]',
+    ) as HTMLElement;
+    const secondMotion = getByText('Second panel').closest(
+      '[data-accordion-content-motion]',
+    ) as HTMLElement;
+    expect(firstPanel.contains(firstMotion)).toBe(true);
+    expect(firstPanel).not.toBe(firstMotion);
+    expect(firstPanel.style.height).toBe('');
+    expect(secondPanel.style.height).toBe('');
+    expect(firstMotion.style.overflow).toBe('clip');
+    expect(secondMotion.style.height).toBe('0px');
   });
 
   it('publishes catalog metadata for both selection modes and reduced motion', () => {

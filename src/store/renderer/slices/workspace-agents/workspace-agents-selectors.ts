@@ -1,5 +1,6 @@
 import { store } from '../../store';
 import type { AgentId, AgentSession } from '$shared/types';
+import { classifyAgentScope } from '$shared/utils/agent-scope';
 import type { StoreState } from '../../types';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
 import { emptyWorkspaceAgentState } from './workspace-agents-slice';
@@ -90,6 +91,84 @@ export const selectIsLoadingRetiredAgents = store.createSelector((state, wsId: s
   return getWorkspaceAgentState(state, wsId).isLoadingRetiredAgents;
 });
 
+/**
+ * Daemon-served per-bin counts (`scopeCounts`, §5.5 row scope) for the
+ * Delegated / Background bin toggles; `null` when the daemon served none
+ * (old daemon — the all-rows read, no lazy bins).
+ */
+export const selectScopeCounts = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).scopeCounts;
+});
+
+/**
+ * Bumped each time a hydration read installs an authoritative count baseline
+ * (`setScopeCounts`); a deferred count adjustment captured under an older
+ * generation is stale and must be dropped.
+ */
+export const selectScopeCountsGeneration = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).scopeCountsGeneration;
+});
+
+/** True once the on-demand `scope: "delegated"` read has hydrated the delegated rows. */
+export const selectDelegatedAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).delegatedAgentsLoaded;
+});
+
+/** True while the on-demand delegated read is in flight. */
+export const selectIsLoadingDelegatedAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingDelegatedAgents;
+});
+
+/**
+ * Daemon-served per-parent delegated counts (`delegatedCounts`, §5.5) for the
+ * collapsed per-parent delegated groups; `null` when the daemon served none.
+ */
+export const selectDelegatedCounts = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).delegatedCounts;
+});
+
+/**
+ * True once one parent's direct children are hydrated — by the per-parent
+ * read (`scope: "delegated"` + `parentAgentId`) or by the whole-bin read,
+ * which covers every parent.
+ */
+export const selectDelegatedParentLoaded = store.createSelector(
+  (state, wsId: string, parentAgentId: string) => {
+    const workspaceState = getWorkspaceAgentState(state, wsId);
+    return (
+      workspaceState.delegatedAgentsLoaded ||
+      workspaceState.loadedDelegatedParentIds[parentAgentId] === true
+    );
+  },
+);
+
+/** True while that parent's per-parent delegated read is in flight. */
+export const selectIsLoadingDelegatedParent = store.createSelector(
+  (state, wsId: string, parentAgentId: string) => {
+    return getWorkspaceAgentState(state, wsId).loadingDelegatedParentIds[parentAgentId] === true;
+  },
+);
+
+/** The parents whose per-parent delegated read has landed (not the whole-bin flag). */
+export const selectLoadedDelegatedParentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).loadedDelegatedParentIds;
+});
+
+/** The parents whose per-parent delegated read is in flight. */
+export const selectLoadingDelegatedParentIds = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).loadingDelegatedParentIds;
+});
+
+/** True once the on-demand `scope: "background"` read has hydrated the background rows. */
+export const selectBackgroundAgentsLoaded = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).backgroundAgentsLoaded;
+});
+
+/** True while the on-demand background read is in flight. */
+export const selectIsLoadingBackgroundAgents = store.createSelector((state, wsId: string) => {
+  return getWorkspaceAgentState(state, wsId).isLoadingBackgroundAgents;
+});
+
 function byCreatedOrder(left: AgentSession, right: AgentSession): number {
   const leftTime = new Date(left.createdAt).getTime();
   const rightTime = new Date(right.createdAt).getTime();
@@ -151,6 +230,10 @@ export function resolveEmptyLayoutAgent(
       );
     if (initialAgent) return initialAgent;
   }
+  // The primary candidate must be a top-level row (shared `agent-scope` bin —
+  // neither delegated nor background). Forked sessions (`parentSessionId`) are
+  // excluded as a separate rule: a fork is not delegated, but it is a
+  // continuation of another session rather than the workspace's own primary.
   const orderedPrimaryAgents = agents
     .filter(
       (agent) =>
@@ -161,10 +244,8 @@ export function resolveEmptyLayoutAgent(
         agent.isInitialAgent !== true &&
         agent.metadata?.isInitialAgent !== true &&
         agent.agentMetadata?.isInitialAgent !== true &&
-        agent.isBackground !== true &&
-        agent.metadata?.isBackground !== true &&
-        !agent.parentSessionId &&
-        typeof agent.metadata?.createdByAgentId !== 'string',
+        classifyAgentScope(agent) === 'topLevel' &&
+        !agent.parentSessionId,
     )
     .sort(byCreatedOrder);
   let newestAgent: AgentSession | null = null;

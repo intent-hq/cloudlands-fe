@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
   import { untrack } from 'svelte';
+  import WebSocketApiSettings from './WebSocketApiSettings.svelte';
   import {
     Button,
     Input,
@@ -87,6 +88,7 @@
   let cloudRemovalPending = $state(false);
   let cloudRemovalConfirmed = $state(false);
   let busy = $state<'update' | 'test' | null>(null);
+  let daemonUpdating = $state(false);
   let feedbackOperation = $state<'update' | 'test' | null>(null);
   let feedback = $state<{ kind: 'success' | 'error' | 'progress'; message: string } | null>(null);
   let connectionError = $state(false);
@@ -143,8 +145,8 @@
       detectHosts !== savedDetectHosts ||
       pushToCloud !== savedPushToCloud,
   );
-  // Behind-pin marker: reflects the last captured daemonVersion, so it shows
-  // even while disconnected. The i18n message prepends "v" — strip any
+  // Warning eligibility reflects the last captured daemonVersion; the view
+  // attaches it only to a displayed connected version. The message prepends "v" — strip any
   // daemon-reported prefix so a valid v-prefixed version never renders "vv".
   const daemonBehindTooltip = $derived.by(() => {
     const pinnedVersion = $pinnedVersion$;
@@ -161,11 +163,20 @@
       ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
       : []),
     ...(canUpdateDaemon
-      ? [{ id: 'update', label: m.layout_daemonStatus_update_action(), icon: faArrowsRotate }]
+      ? [
+          {
+            id: 'update',
+            label: daemonUpdating
+              ? m.settings_devices_updating_label()
+              : m.layout_daemonStatus_update_action(),
+            icon: faArrowsRotate,
+            disabled: daemonUpdating,
+          },
+        ]
       : []),
+    { id: 'edit', label: m.settings_devices_edit_label(), icon: faPen },
     ...(!device.isLocal
       ? [
-          { id: 'edit', label: m.settings_devices_edit_label(), icon: faPen },
           {
             id: 'remove',
             label: m.settings_devices_remove_label(),
@@ -243,6 +254,8 @@
   }
 
   async function requestDaemonUpdate() {
+    if (daemonUpdating) return;
+    daemonUpdating = true;
     try {
       const action = updateBackendRequested(device.id);
       appStore.dispatch(action);
@@ -250,6 +263,8 @@
     } catch {
       // Outcomes (success and every failure mode) surface as saga-owned
       // toasts; nothing more to do here.
+    } finally {
+      daemonUpdating = false;
     }
   }
 
@@ -262,7 +277,8 @@
         void requestDaemonUpdate();
         break;
       case 'edit':
-        onOpenPanel('edit');
+        if (panelMode === 'edit') closePanel();
+        else onOpenPanel('edit');
         break;
       case 'remove':
         onRequestRemove(device);
@@ -297,7 +313,7 @@
 
   function statusClass(status: ConnectionOpenStatus): string {
     return status === 'connected'
-      ? 'bg-green-500'
+      ? 'bg-success'
       : status === 'connecting'
         ? 'bg-warning'
         : 'bg-muted-foreground/50';
@@ -507,58 +523,45 @@
 </script>
 
 <article
-  class="group/collection-row"
+  class={cn('group/collection-row', !device.isLocal && 'border-t border-border')}
   aria-labelledby={`device-${device.id}-name`}
   aria-busy={busy !== null}
 >
   <ListRow class="px-4 sm:px-5">
     {#snippet leading()}
-      <span
-        class={cn(
-          'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-          statusClass(openStatus),
-        )}
-        role="status"
-        aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
-      ></span>
-      <DeviceIcon record={device} size={20} class="text-foreground" />
+      <span class="flex items-center gap-3">
+        <span
+          class={cn(
+            'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
+            statusClass(openStatus),
+          )}
+          role="status"
+          aria-label={m.settings_devices_status_ariaLabel({ status: statusLabel(openStatus) })}
+        ></span>
+        <DeviceIcon record={device} size={20} class="text-foreground" />
+      </span>
     {/snippet}
     {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
     {#snippet meta()}
-      <span class="flex items-center gap-2">
-        {#if openStatus === 'connected' && device.intentdVersion}<span>{device.intentdVersion}</span
-          >{/if}
+      {#if openStatus === 'connected' && device.intentdVersion}
         {#if daemonBehindTooltip}
-          <Tooltip content={daemonBehindTooltip} class="self-center">
-            <span
-              class="block size-2 rounded-full bg-warning"
-              role="img"
-              aria-label={daemonBehindTooltip}
-            ></span>
+          <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
+            <span>{device.intentdVersion}</span>
           </Tooltip>
+        {:else}
+          <span>{device.intentdVersion}</span>
         {/if}
-      </span>
+      {/if}
     {/snippet}
     {#snippet trailing()}
-      {#if device.isLocal}
-        <DeviceIconPicker
-          record={device}
-          bind:value={localDeviceIcon}
-          disabled={busy !== null}
-          portal={true}
-          class="w-48 shrink-0"
-          onchange={(value) => void updateLocalDeviceIcon(value)}
-        />
-      {/if}
-      {#if !device.isLocal || canUpdateDaemon}
-        <RowActions
-          actions={rowActions}
-          onAction={handleRowAction}
-          visibleCount={0}
-          overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
-          bind:overflowTriggerRef={actionsButton}
-        />
-      {/if}
+      <RowActions
+        alwaysVisible
+        actions={rowActions}
+        onAction={handleRowAction}
+        visibleCount={0}
+        overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: displayName })}
+        bind:overflowTriggerRef={actionsButton}
+      />
     {/snippet}
   </ListRow>
 
@@ -568,7 +571,25 @@
     </p>
   {/if}
 
-  {#if panelMode === 'edit'}
+  {#if device.isLocal}
+    <div class="px-4 pb-4 sm:px-5">
+      <WebSocketApiSettings expanded={panelMode === 'edit'} onEnabled={() => onOpenPanel('edit')}>
+        <SettingsFieldRow id="local-device-icon" label={m.settings_devices_icon_label()}>
+          {#snippet control()}
+            <DeviceIconPicker
+              record={device}
+              bind:value={localDeviceIcon}
+              disabled={busy !== null}
+              portal={true}
+              onchange={(value) => void updateLocalDeviceIcon(value)}
+            />
+          {/snippet}
+        </SettingsFieldRow>
+      </WebSocketApiSettings>
+    </div>
+  {/if}
+
+  {#if panelMode === 'edit' && !device.isLocal}
     <form
       class="space-y-4 border-t border-border bg-muted/20 px-4 py-4 sm:px-5"
       aria-label={m.settings_devices_editForm_ariaLabel({ name: displayName })}
@@ -684,7 +705,6 @@
             bind:value={deviceIcon}
             disabled={busy !== null}
             portal={true}
-            class="w-full"
           />
         </div>
       </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
+  import * as Menu from '$lib/components/ui/menu';
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
 
@@ -685,11 +686,12 @@
         bind:open={specialistDropdownOpen}
         align="start"
         side="bottom"
-        contentClass="p-0!"
+        contentClass="p-1 w-80 max-w-[calc(100vw-1rem)]"
       >
         {#snippet trigger({ props })}
           <Button
             {...isTeamMode ? {} : props}
+            variant="ghost"
             type="button"
             tabindex={isTeamMode ? -1 : 0}
             onclick={(e) => {
@@ -710,7 +712,8 @@
               icon={currentSpecialistInfo?.icon}
             />
             <div class="flex flex-col min-w-0 flex-1">
-              <span class="type-caption font-medium! text-foreground">{specialistDisplayLabel}</span
+              <span class="type-caption font-medium! text-foreground truncate"
+                >{specialistDisplayLabel}</span
               >
               <span class="type-caption text-subtle truncate">{specialistDisplayDescription}</span>
             </div>
@@ -719,41 +722,35 @@
         {/snippet}
 
         {#snippet content()}
-          <div class="min-w-[220px] max-h-[300px] overflow-y-auto">
+          <div class="min-w-0 max-h-[300px] overflow-y-auto">
             <!-- General (blank) option -->
-            <Button
-              variant="ghost"
-              wrapContent={false}
-              type="button"
+            <Menu.Item
               class="specialist-option {selectedSpecialist === null ||
               (selectedSpecialist && isTeamRoleId(selectedSpecialist))
                 ? 'specialist-option-selected'
                 : ''}"
-              onclick={() => handleSpecialistSelect(null)}
+              onSelect={() => handleSpecialistSelect(null)}
             >
               <AgentAvatar agentId="blank" variant="standard" />
-              <div class="flex flex-col min-w-0">
-                <span class="type-caption font-medium! text-foreground"
+              <div class="flex flex-col min-w-0 flex-1">
+                <span class="type-caption text-foreground"
                   >{m.workspace_initialAgentPicker_general_label()}</span
                 >
-                <span class="type-caption text-subtle"
+                <span class="type-caption text-subtle truncate"
                   >{m.workspace_initialAgentPicker_noSpecializedBehavior_description()}</span
                 >
               </div>
-            </Button>
+            </Menu.Item>
 
             {#if customSpecialists.length > 0}
               <div class="h-px bg-border"></div>
 
               {#each customSpecialists as specialist (specialist.id)}
-                <Button
-                  variant="ghost"
-                  wrapContent={false}
-                  type="button"
+                <Menu.Item
                   class="specialist-option {selectedSpecialist === specialist.id
                     ? 'specialist-option-selected'
                     : ''}"
-                  onclick={() => handleSpecialistSelect(specialist.id)}
+                  onSelect={() => handleSpecialistSelect(specialist.id)}
                 >
                   <AgentAvatar
                     agentId="blank"
@@ -761,27 +758,24 @@
                     specialist={specialist.id}
                     icon={specialist.icon}
                   />
-                  <div class="flex flex-col min-w-0">
-                    <span class="type-caption font-medium! text-foreground">{specialist.name}</span>
+                  <div class="flex flex-col min-w-0 flex-1">
+                    <span class="type-caption text-foreground truncate">{specialist.name}</span>
                     <span class="type-caption text-subtle truncate">{specialist.description}</span>
                   </div>
-                </Button>
+                </Menu.Item>
               {/each}
             {/if}
 
             <!-- Create new specialist link -->
-            <Button
-              variant="ghost"
-              wrapContent={false}
-              type="button"
+            <Menu.Item
               class="specialist-option sticky bottom-0 border-t! border-border bg-background! z-10 text-subtle"
-              onclick={openSpecialistSettings}
+              onSelect={openSpecialistSettings}
             >
               <Fa icon={faPlus} class="size-3! opacity-60" />
               <span class="type-caption"
                 >{m.workspace_initialAgentPicker_manageSpecialists_label()}</span
               >
-            </Button>
+            </Menu.Item>
           </div>
         {/snippet}
       </DropdownMenu>
@@ -945,20 +939,15 @@
     width: 100%;
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-background);
+    border-radius: var(--radius-medium);
+    background: transparent;
     cursor: pointer;
     text-align: left;
-  }
-
-  :global(.specialist-trigger:hover) {
-    background: var(--color-muted);
   }
 
   :global(.specialist-trigger:focus-visible) {
     outline: none;
     border-color: var(--color-foreground);
-    background: var(--color-muted);
   }
 
   :global(.specialist-option) {
@@ -969,13 +958,13 @@
     align-items: center;
     gap: 0.75rem;
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: 0.5rem;
     border: none;
     background: transparent;
     cursor: pointer;
     text-align: left;
-    border-radius: 0.25rem;
-    transition: background-color 0.1s ease;
+    border-radius: var(--radius-row);
+    transition: background-color var(--motion-fast);
   }
 
   :global(.specialist-option:hover) {

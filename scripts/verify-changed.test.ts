@@ -1,7 +1,16 @@
 // @verify-changed-triggers: vitest.config.ts, playwright.config.ts, test/actions-status-visual.spec.ts
 
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +30,7 @@ import {
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
+import { lockOwner } from './verification-lock.mjs';
 
 const requireFromTest = createRequire(import.meta.url);
 
@@ -84,6 +94,10 @@ function branchWithCommit(root: string, file = 'src/committed.ts') {
   git(root, 'checkout', '-q', '-b', 'feature');
   commitFile(root, file, 'feature');
   return file;
+}
+
+function trackOriginMain(root: string, ref = 'refs/heads/main') {
+  git(root, 'update-ref', 'refs/remotes/origin/main', ref);
 }
 
 function deferred() {
@@ -154,9 +168,10 @@ describe('verify-changed arguments and paths', () => {
     expect(() => parseArgs(['--base', '--dry-run'])).toThrow('--base');
   });
 
-  it('collects committed branch files only when a base is given', () => {
+  it('collectChangedFiles includes committed branch files only when a base is given', () => {
     const root = gitRepository();
     const committed = branchWithCommit(root);
+    trackOriginMain(root);
     writeFileSync(join(root, 'src/untracked.ts'), '');
 
     expect(collectChangedFiles(root)).toEqual(['src/untracked.ts']);
@@ -355,6 +370,67 @@ describe('verification planning', () => {
     expect(deletedPlan.checks.map((check) => check.id)).toContain('vitest-ui-invariants');
   });
 
+  it('runs the full component suite for CT-contract paths and nothing else', () => {
+    const root = fixtureRoot({
+      'src/app.css': "@import '$lib/styles/tokens.css';",
+      'src/lib/styles/tokens.css': ':root { --color: red; }',
+      'scripts/run-ct-tests.mjs': '',
+      'playwright-ct.config.ts': '',
+      'playwright/index.ts': '',
+      'src/lib/component-catalog/capture-stability.ts': '',
+      'src/lib/component-catalog/geometry-probe.ts': '',
+      'src/lib/component-catalog/preview-definition.ts': '',
+      'src/lib/component-catalog/catalog.ts': '',
+      'src/foo.test.ts': '',
+      'src/lib/example.ts': '',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [] }).checks.map((check) => check.id);
+    for (const file of [
+      'src/lib/styles/tokens.css',
+      'src/lib/styles/removed.css',
+      'src/app.css',
+      'scripts/run-ct-tests.mjs',
+      'playwright-ct.config.ts',
+      'playwright/index.ts',
+      'src/lib/component-catalog/capture-stability.ts',
+      'src/lib/component-catalog/geometry-probe.ts',
+      'src/lib/component-catalog/preview-definition.ts',
+      'package.json',
+      'pnpm-lock.yaml',
+    ]) {
+      expect(ids([file]), file).toContain('ct-full');
+      expect(ids([file]), file).not.toContain('ct-related');
+    }
+    for (const file of [
+      'src/foo.test.ts',
+      'src/lib/example.ts',
+      'src/lib/component-catalog/catalog.ts',
+      'scripts/verify-changed.mjs',
+    ]) {
+      expect(ids([file]), file).not.toContain('ct-full');
+      expect(ids([file]), file).not.toContain('ct-related');
+    }
+  });
+
+  it('keeps CT specs and geometry goldens on the related lane, not the full suite', () => {
+    const geometryTest = 'src/lib/components/ui/button/button.geometry.ct.spec.ts';
+    const golden = 'src/lib/components/ui/button/__geometry__/button.geometry.json';
+    const root = fixtureRoot({
+      [geometryTest]: "import Preview from './button.preview.svelte';",
+      'src/lib/components/ui/button/button.preview.svelte': '<button />',
+      [golden]: '{}',
+    });
+    const ids = (files: string[]) =>
+      createVerificationPlan(files, { root, ctTests: [geometryTest] }).checks.map(
+        (check) => check.id,
+      );
+    for (const file of [geometryTest, golden]) {
+      expect(ids([file]), file).toContain('ct-related');
+      expect(ids([file]), file).not.toContain('ct-full');
+    }
+  });
+
   describe('suites declaring verify:changed triggers', () => {
     const driftTest = 'scripts/inline-ipc-channels.test.ts';
     const catalogTest = 'src/lib/components/__tests__/catalog.test.ts';
@@ -546,6 +622,24 @@ describe('verification planning', () => {
     expect(plan.checks.map((check) => check.id)).toContain('svelte-check');
   });
 
+  it('selects a component test through the Svelte components its host imports, one hop only', () => {
+    const root = fixtureRoot({
+      'src/lib/__tests__/progress.ct.spec.ts': "import Host from './ProgressHost.svelte';",
+      'src/lib/__tests__/ProgressHost.svelte':
+        "import Progress from '../Progress.svelte';\nimport { fixtures } from './fixtures';",
+      'src/lib/__tests__/fixtures.ts': '',
+      'src/lib/Progress.svelte': "import Button from './Button.svelte';",
+      'src/lib/Button.svelte': '<button />',
+    });
+    const ctTests = ['src/lib/__tests__/progress.ct.spec.ts'];
+    const options = { root, ctTests };
+
+    expect(findRelatedCtTests(['src/lib/__tests__/ProgressHost.svelte'], options)).toEqual(ctTests);
+    expect(findRelatedCtTests(['src/lib/Progress.svelte'], options)).toEqual(ctTests);
+    expect(findRelatedCtTests(['src/lib/__tests__/fixtures.ts'], options)).toEqual([]);
+    expect(findRelatedCtTests(['src/lib/Button.svelte'], options)).toEqual([]);
+  });
+
   it('selects scene geometry for previews, fixtures, snapshots, and imported components', () => {
     const geometryTest = 'src/lib/components/workspace/workspace-hover-card.geometry.ct.spec.ts';
     const root = fixtureRoot({
@@ -658,8 +752,15 @@ describe('verification planning', () => {
   it('classifies test paths by the runner that owns them', () => {
     expect(testRunner('test/splash-loader.spec.ts')).toBe('playwright');
     expect(testRunner('test/nested/geometry.spec.ts')).toBe('playwright');
+    // playwright.config.ts `testIgnore` names (playwright/root-spec-pattern.mjs) run
+    // only through playwright.manual.config.ts, so they are not the Playwright lane.
     expect(testRunner('test/current-main-baseline.spec.ts')).toBe('manual');
     expect(testRunner('test/catalog-manual-review.capture.spec.ts')).toBe('manual');
+    expect(testRunner('test/electron-browser-lifetime.spec.ts')).toBe('manual');
+    expect(testRunner('test/nested/electron-browser-lifetime.spec.ts')).toBe('manual');
+    // Playwright matches testMatch with nocase + dot, so these are root specs too.
+    expect(testRunner('test/Foo.SPEC.ts')).toBe('playwright');
+    expect(testRunner('test/.hidden/x.spec.ts')).toBe('playwright');
     expect(testRunner('test/actions-status-visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.visual.spec.ts')).toBe('playwright');
     expect(testRunner('test/added.ct.spec.ts')).toBe('playwright');
@@ -675,6 +776,16 @@ describe('verification planning', () => {
     expect(testRunner('tests/unit/edge-cases.test.ts')).toBe('vitest');
     expect(testRunner('src/test/factories/__tests__/workspace.factory.test.ts')).toBe('vitest');
     expect(testRunner('src/lib/__tests__/button.ct.spec.ts')).toBe('ct');
+    // Playwright matches testMatch with nocase + dot, so these are CT specs too.
+    expect(testRunner('src/.fixtures/button.ct.spec.ts')).toBe('ct');
+    expect(testRunner('src/.hidden.ct.spec.ts')).toBe('ct');
+    expect(testRunner('src/button.CT.spec.ts')).toBe('ct');
+    expect(testRunner('src/button.CT.SPEC.TS')).toBe('ct');
+    // Only the files playwright-ct.config.ts discovers (`**/*.ct.spec.ts`) are
+    // CT; vitest.config.ts excludes just that pattern, so a `.ct.test.ts` under
+    // `src/` is a Vitest suite, not a CT one.
+    expect(testRunner('src/x/y.ct.test.ts')).toBe('vitest');
+    expect(testRunner('src/x/y.ct.spec.tsx')).toBe('vitest');
     expect(testRunner('scripts/verify-changed.test.ts')).toBe('vitest');
     expect(testRunner('src/lib/example.ts')).toBeNull();
   });
@@ -902,6 +1013,16 @@ describe('verification planning', () => {
     }
   });
 
+  it('feeds playwright/ sources to vitest related so their colocated suites run', () => {
+    const root = fixtureRoot({
+      'playwright/ct-spec-pattern.mjs': 'export const CT_TEST_DIR = "src";',
+      'playwright/ct-spec-pattern.test.ts': "import './ct-spec-pattern.mjs';",
+    });
+    const plan = createVerificationPlan(['playwright/ct-spec-pattern.mjs'], { root, ctTests: [] });
+    const related = plan.checks.find((check) => check.id === 'vitest-related');
+    expect(related?.args).toContain('playwright/ct-spec-pattern.mjs');
+  });
+
   it('runs the whole Playwright browser suite when its config changes', () => {
     const root = fixtureRoot({ 'playwright.config.ts': '', 'test/a.spec.ts': '' });
     const plan = createVerificationPlan(['playwright.config.ts', 'test/a.spec.ts'], {
@@ -913,6 +1034,25 @@ describe('verification planning', () => {
     expect(ids).not.toContain('playwright-direct');
     expect(plan.fallbackReasons).toEqual([]);
   });
+
+  // playwright.config.ts reads testDir/testMatch/testIgnore from these modules, so
+  // a change there can reroute root discovery the same way a config edit does.
+  it.each(['playwright/root-spec-pattern.mjs', 'playwright/ct-spec-pattern.mjs'])(
+    'runs the whole Playwright browser suite when %s changes',
+    (module) => {
+      const root = fixtureRoot({ [module]: 'export const ROOT_TEST_DIR = "test";' });
+      const plan = createVerificationPlan([module], { root, ctTests: [] });
+      const ids = plan.checks.map((check) => check.id);
+      expect(ids).toContain('playwright-full');
+      expect(plan.fallbackReasons).toEqual([]);
+    },
+  );
+
+  it('does not run the whole Playwright browser suite for other playwright/ sources', () => {
+    const root = fixtureRoot({ 'playwright/ct-port.ts': 'export const CT_PORT = 3100;' });
+    const plan = createVerificationPlan(['playwright/ct-port.ts'], { root, ctTests: [] });
+    expect(plan.checks.map((check) => check.id)).not.toContain('playwright-full');
+  });
 });
 
 describe('empty change set guard', () => {
@@ -921,8 +1061,7 @@ describe('empty change set guard', () => {
     return { lines, options: { log: (line: string) => lines.push(line) } };
   }
 
-  it('exits 2 with the --base hint when a clean worktree collects nothing', async () => {
-    const root = gitRepository();
+  async function expectNothingToVerify(root: string) {
     for (const argv of [[], ['--dry-run']]) {
       const { lines, options } = capture();
       expect(await runCli(argv, root, options), argv.join(' ')).toBe(2);
@@ -930,6 +1069,64 @@ describe('empty change set guard', () => {
       expect(lines[0]).toContain('nothing to verify');
       expect(lines[0]).toContain('pass --base origin/main');
     }
+  }
+
+  it('exits 2 with the --base hint when a clean worktree has no origin/main ref', async () => {
+    await expectNothingToVerify(gitRepository());
+  });
+
+  it('exits 2 with the --base hint when a clean worktree is not ahead of origin/main', async () => {
+    const root = gitRepository();
+    trackOriginMain(root);
+    await expectNothingToVerify(root);
+
+    branchWithCommit(root);
+    trackOriginMain(root, 'refs/heads/feature');
+    await expectNothingToVerify(root);
+  });
+
+  it('exits 2 without throwing when a clean branch is ahead but origin/main is missing', async () => {
+    const root = gitRepository();
+    branchWithCommit(root);
+    await expectNothingToVerify(root);
+  });
+
+  it('defaults to origin/main as the base on a clean branch that is ahead of it', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    for (const argv of [[], ['--dry-run']]) {
+      const { lines, options } = capture();
+      const planned: string[][] = [];
+      const gates = {
+        checkNode: () => ({ ok: true, reason: null }),
+        checkDeps: () => ({ ok: true, reason: null }),
+        ensureI18n: async () => ({ ok: true, reason: null }),
+        runPlan: async (plan: { files: string[] }) => {
+          planned.push(plan.files);
+        },
+      };
+      expect(await runCli(argv, root, { ...options, ...gates }), argv.join(' ')).toBe(0);
+      expect(lines[0]).toBe(
+        'verify:changed: worktree clean; verifying commits since merge-base with origin/main',
+      );
+      expect(lines).toContain(`  - ${committed}`);
+      expect(lines.some((line) => /verify:changed: [1-9][0-9]* check\(s\)/.test(line))).toBe(true);
+      expect(lines.some((line) => line.includes('nothing to verify'))).toBe(false);
+      expect(planned).toEqual(argv.includes('--dry-run') ? [] : [[committed]]);
+    }
+  });
+
+  it('verifies the working-tree set without the fallback when changes are uncommitted', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run'], root, options)).toBe(0);
+    expect(lines).toContain('  - src/untracked.ts');
+    expect(lines).not.toContain(`  - ${committed}`);
+    expect(lines.some((line) => line.includes('worktree clean'))).toBe(false);
   });
 
   it('omits the hint when --base was already supplied', async () => {
@@ -1064,12 +1261,10 @@ describe('expensive-check coordination', () => {
     const lockPath = join(parent, 'lock');
     const cwd = '/current/worktree';
     const release = await acquireVerificationLock({ lockPath, timeoutMs: 15, pollMs: 5, cwd });
-    expect(JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'))).toMatchObject({
-      pid: process.pid,
-      cwd,
-    });
+    expect(lockOwner(lockPath)).toMatchObject({ pid: process.pid, cwd });
     release();
-    expect(() => readFileSync(join(lockPath, 'owner.json'), 'utf8')).toThrow();
+    expect(existsSync(lockPath)).toBe(false);
+    expect(readdirSync(parent)).toEqual([]);
   });
 
   it('times out without removing or stopping a live owner', async () => {
@@ -1082,13 +1277,58 @@ describe('expensive-check coordination', () => {
     await expect(acquireVerificationLock({ lockPath, timeoutMs: 15, pollMs: 5 })).rejects.toThrow(
       new RegExp(`owner pid ${process.pid} cwd ${ownerCwd}; waited [0-9]+ms`),
     );
-    expect(JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8')).token).toBe('other');
+    expect(lockOwner(lockPath).token).toBe('other');
+  });
+
+  it('reclaims a lock whose owner process is gone', async () => {
+    const lockPath = temporaryDirectory();
+    const deadPid = spawnSync(process.execPath, ['-e', '0']).pid;
+    writeFileSync(
+      join(lockPath, 'owner-dead.json'),
+      JSON.stringify({ pid: deadPid, cwd: '/gone', token: 'dead' }),
+    );
+
+    const release = await acquireVerificationLock({ lockPath, timeoutMs: 15, pollMs: 5 });
+    expect(lockOwner(lockPath).pid).toBe(process.pid);
+    release();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('never removes a lock another contender re-created while reclaiming the same stale owner', async () => {
+    const lockPath = temporaryDirectory();
+    writeFileSync(join(lockPath, 'owner-dead.json'), 'not json');
+    let inspections = 0;
+
+    await expect(
+      acquireVerificationLock({
+        lockPath,
+        timeoutMs: 15,
+        pollMs: 5,
+        statLock(path: string) {
+          // Between this contender judging the owner stale and acting on it, another
+          // contender finishes the same reclaim and acquires the lock.
+          if (inspections++ === 0) {
+            rmSync(path, { recursive: true, force: true });
+            mkdirSync(path);
+            writeFileSync(
+              join(path, 'owner-fresh.json'),
+              JSON.stringify({ pid: process.pid, cwd: '/other/worktree', token: 'fresh' }),
+            );
+          }
+          return { mtimeMs: Date.now() - 5 * 60 * 60 * 1000 } as ReturnType<typeof statSync>;
+        },
+      }),
+    ).rejects.toThrow(new RegExp(`owner pid ${process.pid} cwd /other/worktree; waited [0-9]+ms`));
+
+    expect(inspections).toBe(1);
+    expect(lockOwner(lockPath).token).toBe('fresh');
   });
 
   it('retries when the lock disappears before its metadata can be inspected', async () => {
     const parent = temporaryDirectory();
     const lockPath = join(parent, 'lock');
     mkdirSync(lockPath);
+    writeFileSync(join(lockPath, 'owner.json'), 'not json');
 
     const release = await acquireVerificationLock({
       lockPath,
@@ -1100,12 +1340,13 @@ describe('expensive-check coordination', () => {
       },
     });
 
-    expect(readFileSync(join(lockPath, 'owner.json'), 'utf8')).toContain(String(process.pid));
+    expect(lockOwner(lockPath).pid).toBe(process.pid);
     release();
   });
 
   it('preserves unexpected lock inspection errors', async () => {
     const lockPath = temporaryDirectory();
+    writeFileSync(join(lockPath, 'owner.json'), 'not json');
     const error = Object.assign(new Error('lock inspection failed'), { code: 'EACCES' });
 
     await expect(
@@ -1123,6 +1364,9 @@ describe('expensive-check coordination', () => {
   it('uses per-kind keys and bounded default waits', () => {
     expect(verificationLockKey(testCheck('ct', 'ct'), {})).toBe('ct-3100');
     expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '03101' })).toBe('ct-3101');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' 3102 ' })).toBe('ct-3102');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: '' })).toBe('ct-3100');
+    expect(verificationLockKey(testCheck('ct', 'ct'), { CT_PORT: ' ' })).toBe('ct-3100');
     expect(verificationLockKey(testCheck('vitest', 'vitest-full'), {})).toBe('vitest-full');
     expect(verificationLockKey(testCheck('tsc', null), {})).toBeNull();
     expect(lockTimeout('ct-3100', undefined)).toBe(240_000);

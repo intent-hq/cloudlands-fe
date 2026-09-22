@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   getBackendClientForConnection: vi.fn(),
   getBackendIdForIpcSender: vi.fn(),
   getPrimaryBackendId: vi.fn(),
+  getConnectedDaemonProtocolVersion: vi.fn(),
   onBackendNotification: vi.fn(),
   onBackendReconnected: vi.fn(),
 }));
@@ -50,6 +51,7 @@ vi.mock('../../backend/main/backend.ipc', () => ({
   getLocalBackendClient: mocks.getBackendClient,
   getBackendIdForIpcSender: mocks.getBackendIdForIpcSender,
   getPrimaryBackendId: mocks.getPrimaryBackendId,
+  getConnectedDaemonProtocolVersion: mocks.getConnectedDaemonProtocolVersion,
   // Used by the workspace-forward-cleanup service behind the provider seam.
   onBackendNotification: mocks.onBackendNotification,
   onBackendReconnected: mocks.onBackendReconnected,
@@ -59,9 +61,25 @@ vi.mock('../../../main/window', () => ({
 }));
 vi.mock('../../backend/main/tunnel-manager', () => ({
   TunnelManager: mocks.TunnelManager,
+  TunnelForbiddenError: class TunnelForbiddenError extends Error {},
 }));
 vi.mock('../../backend/main/direct-relay', () => ({
   DirectRelay: mocks.DirectRelay,
+}));
+// The pooled-saved-remote cases drive the handler through the renderer's
+// `resolveBrowserLinkForOpen`, whose presentation deps (svelte-sonner toasts
+// via `notify`, the multi-MB compiled Paraglide bundle) are not under test
+// here. Unmocked, their cold transform+import (~7-8 s unloaded) runs inside
+// the first such test body and blows the 30 s budget on a cold cache or a
+// loaded host (intent-hq/intent#5228).
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), warning: vi.fn() },
+}));
+vi.mock('$shared/paraglide/messages.js', () => ({
+  m: {
+    browser_embedded_resolveFailed_error: () => 'resolve failed',
+    browser_linkOpen_loopbackAmbiguity_warning: () => 'loopback ambiguity',
+  },
 }));
 
 type IpcHandler = (event: unknown, data: unknown) => Promise<any>;
@@ -105,6 +123,7 @@ describe('browser:resolve-url IPC handler', () => {
       getConfig: () => ({ transport: 'tcp', host: '10.0.0.5' }),
     });
     mocks.getBackendClientForConnection.mockImplementation(() => mocks.getBackendClient());
+    mocks.getConnectedDaemonProtocolVersion.mockReturnValue(null);
     mocks.onBackendNotification.mockImplementation(() => () => {});
     mocks.onBackendReconnected.mockImplementation(() => () => {});
     mocks.forwardPort.mockResolvedValue(45678);
@@ -316,8 +335,20 @@ describe('browser:resolve-url IPC handler', () => {
     expect(mocks.TunnelManager).toHaveBeenCalledTimes(1);
     expect(mocks.DirectRelay).not.toHaveBeenCalled();
     expect(mocks.forwardPort).toHaveBeenCalledWith(8080);
-    const tunnelOptions = mocks.TunnelManager.mock.calls[0][0] as { getConfig: () => unknown };
+    const tunnelOptions = mocks.TunnelManager.mock.calls[0][0] as {
+      getConfig: () => unknown;
+      getProtocolVersion: () => string | null;
+    };
     expect(tunnelOptions.getConfig()).toEqual(remoteConfig);
+    // The CREDIT gate reads the ORIGINATING backend's live hello version,
+    // re-evaluated on each call so a tunnel reconnect sees an upgrade.
+    mocks.getConnectedDaemonProtocolVersion.mockImplementation((id: string) =>
+      id === 'remote-saved' ? '10.4' : null,
+    );
+    expect(tunnelOptions.getProtocolVersion()).toBe('10.4');
+    expect(mocks.getConnectedDaemonProtocolVersion).toHaveBeenLastCalledWith('remote-saved');
+    mocks.getConnectedDaemonProtocolVersion.mockReturnValue(null);
+    expect(tunnelOptions.getProtocolVersion()).toBeNull();
     expect(resolved).toEqual({
       url: 'http://127.0.0.1:54321/script-output',
       requestedUrl,

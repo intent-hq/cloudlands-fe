@@ -807,6 +807,18 @@ describe('persistence key on the daemon bag', () => {
         'cycle-unread-agents',
       ],
     ],
+    [
+      'pre-close-tab (ACT09 switch-window-layouts) defaults',
+      [
+        'new-workspace',
+        'new-agent',
+        'see-spec',
+        'switch-window-layouts',
+        'push-to-talk',
+        'cycle-open-windows',
+        'cycle-unread-agents',
+      ],
+    ],
   ])(
     'migrates a persisted CM2 mapping equal to the %s and writes it back',
     async (_label, priorDefaults) => {

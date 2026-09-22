@@ -20,7 +20,6 @@ export const dropdownMetadata = parseUiComponentMetadata({
     'src/lib/component-catalog/renderers/PopoversCatalogPreview.svelte',
     'src/lib/components/chat/input/ModelPicker.svelte',
     'src/lib/components/chat/input/ModelPickerGroupHeader.svelte',
-    'src/lib/components/chat/input/ModelPickerOptionItem.svelte',
     'src/lib/components/chat/input/model-picker-groups.ts',
     'src/lib/components/chat/input/model-picker-utils.ts',
     'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',

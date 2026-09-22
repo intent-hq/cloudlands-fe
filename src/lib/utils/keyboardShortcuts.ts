@@ -155,6 +155,8 @@ export interface KeyboardShortcut {
   ignoreRepeat?: boolean;
   /** Checked before preventing the event, so route-scoped shortcuts remain native elsewhere. */
   enabled?: () => boolean;
+  /** Let local handlers claim the event before running this fallback shortcut. */
+  preferLocal?: boolean;
   /**
    * Fires even when focus is inside an xterm terminal. The terminal adapter handles its own
    * Mod+T/W/J/F/K, so only set this on shortcuts xterm does not consume.
@@ -173,6 +175,15 @@ export class KeyboardShortcutManager {
   private dynamicShortcuts: KeyboardShortcut[] = [];
   private enabled = false;
   private boundHandler: ((e: KeyboardEvent) => void) | null = null;
+  private localFallbacks = new WeakMap<KeyboardEvent, KeyboardShortcut>();
+  private boundLocalFallback = (event: KeyboardEvent): void => {
+    const shortcut = this.localFallbacks.get(event);
+    this.localFallbacks.delete(event);
+    if (!shortcut || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    shortcut.action();
+  };
 
   constructor() {
     this.boundHandler = this.handleKeyDown.bind(this);
@@ -239,6 +250,8 @@ export class KeyboardShortcutManager {
     if (this.enabled && this.boundHandler) {
       // Must pass the same capture option used in addEventListener
       window.removeEventListener('keydown', this.boundHandler, true);
+      window.removeEventListener('keydown', this.boundLocalFallback);
+      this.localFallbacks = new WeakMap();
       this.enabled = false;
     }
   }
@@ -268,10 +281,7 @@ export class KeyboardShortcutManager {
     const inTerminal = isFocusInTerminal(target);
 
     // Don't handle shortcuts when typing in inputs (unless it's a global shortcut)
-    const isInput =
-      target.tagName === 'INPUT' ||
-      target.tagName === 'TEXTAREA' ||
-      target.contentEditable === 'true';
+    const isInput = isFocusInEditableElement(target);
 
     // Build the shortcut key
     const parts: string[] = [];
@@ -306,7 +316,7 @@ export class KeyboardShortcutManager {
 
       // Check if this shortcut should be skipped when in editable elements
       // This allows standard text editing shortcuts (like Cmd+Up/Down) to work
-      if (shortcut.skipInEditableElements && isFocusInEditableElement(target)) {
+      if (shortcut.skipInEditableElements && isInput) {
         return;
       }
 
@@ -318,6 +328,16 @@ export class KeyboardShortcutManager {
         : e.ctrlKey || e.metaKey || e.altKey; // On Win/Linux, Ctrl is also global
 
       if (!isInput || isGlobalShortcut || shortcut.global) {
+        if (shortcut.preferLocal) {
+          this.localFallbacks.set(e, shortcut);
+          // Re-append during capture so even window-level panel handlers mounted
+          // after this manager run first. A local preventDefault or stopped
+          // propagation owns the chord; otherwise the fallback runs before the
+          // browser's default action, without a timer or redispatching the key.
+          window.removeEventListener('keydown', this.boundLocalFallback);
+          window.addEventListener('keydown', this.boundLocalFallback);
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         shortcut.action();
