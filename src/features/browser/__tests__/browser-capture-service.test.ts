@@ -103,13 +103,13 @@ describe('BrowserCaptureService path boundaries', () => {
       workspaceId: 'workspace-a',
       name: 'start-time-session',
     });
-    expect(session.startTime).toBe(startedAt.toISOString());
 
     await browserCapture.captureStep(session.id, 'workspace-a', 'first-step');
 
     vi.setSystemTime(endedAt);
     const result = await browserCapture.endSession(session.id, 'workspace-a');
 
+    expect(session.startTime).toBe(startedAt.toISOString());
     expect(result.metadata.startTime).toBe(startedAt.toISOString());
     expect(result.metadata.endTime).toBe(endedAt.toISOString());
     expect(result.metadata.stepCount).toBe(1);
@@ -118,6 +118,9 @@ describe('BrowserCaptureService path boundaries', () => {
     ) as { startTime: string; endTime: string };
     expect(written.startTime).toBe(startedAt.toISOString());
     expect(written.endTime).toBe(endedAt.toISOString());
+    await expect(
+      browserCapture.getSummary('workspace-a', session.captureId),
+    ).resolves.toMatchObject({ url: 'https://example.test/page', title: 'Example' });
   });
 
   it('rejects an empty snapshot screenshot before creating screenshot.jpg', async () => {
