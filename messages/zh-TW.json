@@ -5793,6 +5793,7 @@
   "deeplink_inviteError_proofScopeMissing": "此 Intent 的 GitHub 登入缺少身分證明所需的 gist 權限。請重新登入 GitHub，然後重新開啟連結。",
   "deeplink_inviteError_proofGithubUnreachable": "無法連線 GitHub 以發佈身分證明。請檢查網路連線後重試。",
   "deeplink_inviteError_proofFailed": "無法建立身分證明。請重新開啟連結重試。",
+  "deeplink_inviteError_githubRateLimited": "GitHub 正在暫時限制此帳戶的請求，目前無法建立身分證明。請稍候片刻，然後重新開啟連結。",
   "deeplink_invitePlaintext_title": "憑證已以未加密方式儲存",
   "deeplink_invitePlaintext_message": "此電腦上系統加密不可用，因此訪客憑證以未加密方式儲存。若這對你很重要，請忘記此工作階段，並在加密可用後重新加入。",
   "rules_service_listFailed_error": "列出規則失敗",

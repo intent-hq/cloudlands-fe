@@ -1512,6 +1512,108 @@ describe('handleInviteDeepLink — sign-in required', () => {
     expect(prove).not.toHaveBeenCalled();
     expect(logLines.join('\n')).toContain('"proofCode":"github-not-connected"');
   });
+
+  // A GitHub rate limit is not "not signed in": signing in again cannot help,
+  // so the join fails with its own reason and no prompt is ever shown
+  // (intent-hq/intent#5627).
+  it('a rate-limited github.getUser probe: the rate-limit failure, no consent or sign-in prompt, no device flow', async () => {
+    showInviteNotice.mockResolvedValue(true);
+    onLocal('github.getUser', () => {
+      throw localRefusal('rate-limited');
+    });
+    await handleInviteDeepLink(LINK);
+    expect(showInviteConsent).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(localCalls('github.connect')).toHaveLength(0);
+    expect(localCalls('github.identityProof.create')).toHaveLength(0);
+    expect(prove).not.toHaveBeenCalled();
+    expect(showInviteNotice).toHaveBeenCalledTimes(1);
+    expect(showInviteNotice.mock.calls[0][0]).toMatchObject({
+      kind: 'failed',
+      reason: 'github-rate-limited',
+    });
+    expect(close).toHaveBeenCalled();
+    const allLogs = logLines.join('\n');
+    expect(allLogs).toContain('"proofCode":"rate-limited"');
+    expect(allLogs).not.toContain(SECRET);
+  });
+
+  it('a rate-limited proof after a completed sign-in: the rate-limit failure, not "not signed in", no second sign-in prompt', async () => {
+    showInviteNotice.mockResolvedValue(true);
+    signedOutDaemon();
+    onLocal('github.identityProof.create', () => {
+      throw localRefusal('rate-limited');
+    });
+    const signIn = fakeConsent('open');
+    const prove2 = fakeConsent('open');
+    showInviteConsent.mockReturnValueOnce(signIn.prompt).mockReturnValueOnce(prove2.prompt);
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    emitAuthChanged('authorized');
+    await pending;
+
+    expect(showInviteConsent).toHaveBeenCalledTimes(2);
+    expect(localCalls('github.connect')).toHaveLength(1);
+    expect(prove2.prompt.dismiss).toHaveBeenCalledExactlyOnceWith('failed');
+    expect(prove).not.toHaveBeenCalled();
+    expect(showInviteNotice.mock.calls[0][0]).toMatchObject({
+      kind: 'failed',
+      reason: 'github-rate-limited',
+    });
+  });
+
+  it('a rate-limited github.getUser probe after the sign-in completed: the rate-limit failure, not sign-in-failed', async () => {
+    showInviteNotice.mockResolvedValue(true);
+    signedOutDaemon();
+    let probes = 0;
+    onLocal('github.getUser', () => {
+      if (probes++ === 0) return { user: null };
+      throw localRefusal('rate-limited');
+    });
+    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    emitAuthChanged('authorized');
+    await pending;
+
+    expect(showInviteConsent).toHaveBeenCalledTimes(1);
+    expect(localCalls('github.identityProof.create')).toHaveLength(0);
+    expect(prove).not.toHaveBeenCalled();
+    expect(showInviteNotice.mock.calls[0][0]).toMatchObject({
+      kind: 'failed',
+      reason: 'github-rate-limited',
+    });
+    expect(logLines.join('\n')).not.toContain('"flowCode":"sign-in-failed"');
+  });
+
+  it('any other github.getUser failure still reads as not signed in: the sign-in prompt is shown', async () => {
+    signedOutDaemon();
+    let signedIn = false;
+    onLocal('github.getUser', () => {
+      if (!signedIn) throw localRefusal('github-not-connected');
+      return { user: { login: 'octocat' } };
+    });
+    notificationListeners.add((n) => {
+      const event = (n.params as { event?: { type?: string; data?: { status?: string } } }).event;
+      if (event?.type === 'github:auth-changed' && event.data?.status === 'authorized')
+        signedIn = true;
+    });
+    showInviteConsent.mockImplementation(() => fakeConsent('open').prompt);
+
+    const pending = handleInviteDeepLink(LINK);
+    await vi.waitFor(() => expect(openExternal).toHaveBeenCalledTimes(1));
+    emitAuthChanged('authorized');
+    await pending;
+
+    expect(showInviteConsent.mock.calls[0][0]).toMatchObject({
+      mode: 'sign-in-required',
+      reason: 'not-connected',
+    });
+    expect(prove).toHaveBeenCalledTimes(1);
+    expect(guestAdd).toHaveBeenCalledTimes(1);
+  });
 });
 
 // The prompt reads `Join “<title>” on <host>`: the host is the daemon's pretty
@@ -2417,6 +2519,22 @@ describe('handleInviteDeepLink — renderer notice modal', () => {
           throw new Error(`gist failed: secret=${SECRET}`);
         }),
       'proof-failed',
+    ],
+    [
+      'the guest daemon is rate limited by GitHub at the probe',
+      () =>
+        onLocal('github.getUser', () => {
+          throw localRefusal('rate-limited');
+        }),
+      'github-rate-limited',
+    ],
+    [
+      'the guest daemon is rate limited by GitHub at the proof',
+      () =>
+        onLocal('github.identityProof.create', () => {
+          throw localRefusal('rate-limited');
+        }),
+      'github-rate-limited',
     ],
     [
       'workspace full',

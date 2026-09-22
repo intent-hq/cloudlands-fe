@@ -26,7 +26,9 @@
  *    reduces to `isConfigured`, but returning the login the prove prompt
  *    names). Not signed in — or, later, a token that predates the
  *    `gist` scope the proof needs (`github-scope-missing`) — puts the consent
- *    modal in its `sign-in-required` state: the guest's own `github.connect`
+ *    modal in its `sign-in-required` state (a `rate-limited` probe is NOT
+ *    "not signed in": it fails the join with its own reason, since signing
+ *    in again cannot help): the guest's own `github.connect`
  *    device flow (code copied to the clipboard; "Open GitHub" opens the URL)
  *    is awaited from the moment the code is shown — a code entered on another
  *    device completes the sign-in without the button — while the modal shows
@@ -174,14 +176,18 @@ class InviteFlowError extends Error {
 
 /**
  * The guest daemon's documented `error.data.code` values for
- * `github.identityProof.create` / `.delete` (intentd #1967). Like the host's
- * invite codes, the closed set is the only daemon-authored text that leaves
+ * `github.identityProof.create` / `.delete` (intentd #1967), plus
+ * `rate-limited` — GitHub rate limiting the daemon's API calls (primary or
+ * secondary limit, REST or GraphQL), which `github.getUser` and the proof
+ * calls all report (intent-hq/intent#5627). Like the host's invite codes, the
+ * closed set is the only daemon-authored text that leaves
  * {@link IdentityProofError}; anything else maps to `null`.
  */
 const IDENTITY_PROOF_ERROR_CODES = [
   'github-not-connected',
   'github-scope-missing',
   'github-unreachable',
+  'rate-limited',
 ] as const;
 
 type IdentityProofErrorCode = (typeof IDENTITY_PROOF_ERROR_CODES)[number];
@@ -737,12 +743,19 @@ function waitForSignIn(
   return { status, stop };
 }
 
-/** The GitHub login the guest's own daemon is signed in as, or `null` when it is not. */
+/**
+ * The GitHub login the guest's own daemon is signed in as, or `null` when it
+ * is not. A `rate-limited` refusal is neither: the account may well be signed
+ * in, and a sign-in prompt would not help — it throws so the join fails with
+ * that reason instead. Any other error reads as not signed in.
+ */
 async function readLocalLogin(client: JsonRpcClient): Promise<string | null> {
   try {
     const result = await client.request<{ user?: { login?: unknown } | null }>('github.getUser');
     return nonBlank(result?.user?.login) ?? null;
-  } catch {
+  } catch (error) {
+    const refusal = IdentityProofError.from(error);
+    if (refusal.proofCode === 'rate-limited') throw refusal;
     return null;
   }
 }
@@ -1175,6 +1188,8 @@ function classifyProofFailure(error: IdentityProofError): InviteFailureReason {
       return 'proof-scope-missing';
     case 'github-unreachable':
       return 'proof-github-unreachable';
+    case 'rate-limited':
+      return 'github-rate-limited';
     case null:
       return 'proof-failed';
   }
