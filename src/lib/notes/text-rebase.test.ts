@@ -42,6 +42,20 @@ function withoutDeadline<T>(fn: () => T): T {
   }
 }
 
+/**
+ * Run `fn` with the alignment deadline already spent: the clock reads 0 when
+ * the deadline is set and far past it on every later read, so every diff and
+ * search is declined and the alignment degrades the whole way.
+ */
+function withExpiredDeadline<T>(fn: () => T): T {
+  const now = vi.spyOn(performance, 'now').mockReturnValueOnce(0).mockReturnValue(1e9);
+  try {
+    return fn();
+  } finally {
+    now.mockRestore();
+  }
+}
+
 /** A markdown piece and whether the editor projects it into the plain text. */
 type Piece = [markdown: string, shared: boolean];
 
@@ -1377,9 +1391,10 @@ describe('alignment of link syntax the lexer does not account for', () => {
   // collapsed. Below the cap the tag is masked and every run is exact. Past
   // it the tag's line is sealed, and no run of the one plain-text line
   // anchors past the sealed text it opens with (a plain-text line anchors
-  // only on the markdown line it is the text of), so the note is one
-  // replaced span: nothing maps into the URL, and the URL maps to the end of
-  // the plain text — its own line's — never into the paragraph.
+  // only on the markdown line it is the text of), so the note is one gap
+  // that holds a sealed line: nothing maps into the URL, and the URL maps to
+  // the end of the plain text before its line — the start, its line being
+  // the first — never into the paragraph.
   it.each<[string, string, boolean]>([
     ['with no filler', '', false],
     ['with no filler', '', true],
@@ -1404,7 +1419,7 @@ describe('alignment of link syntax the lexer does not account for', () => {
           mapped <= 0 || mapped >= paragraphEnd,
           `bToA(${offset}) = ${mapped} inside the URL lands in the text`,
         ).toBe(true);
-        if (where === 'past the cap') expect(mapped, `bToA(${offset})`).toBe(plain.length);
+        if (where === 'past the cap') expect(mapped, `bToA(${offset})`).toBe(0);
       }
       for (let offset = 0; offset <= plain.length; offset += 1) {
         const mapped = map.aToB(offset);
@@ -1705,6 +1720,110 @@ describe('alignment of link syntax the lexer does not account for', () => {
       60_000,
     );
   });
+
+  // A run of hundreds of link lines past the cap, each sealed and each the
+  // text of one plain-text line. The pairing search is bounded by the product
+  // of the two line counts (2^18 cells): at 513 lines it is unaffordable, and
+  // a spent deadline declines it — and every diff — at any count. Whichever
+  // way the lines are paired, a sealed line stays bounded by its own pair:
+  // no offset inside a link line maps outside its plain-text line, and none
+  // inside the plain-text line maps outside its link line.
+  describe('a run of sealed lines the pairing search cannot afford', () => {
+    /** The `[start, end)` of every line of `text` that holds `needle`, breaks excluded. */
+    function linesHolding(text: string, needle: string, breaks: RegExp): Array<[number, number]> {
+      const lines: Array<[number, number]> = [];
+      let start = 0;
+      for (const match of text.matchAll(breaks)) {
+        if (text.slice(start, match.index).includes(needle)) lines.push([start, match.index]);
+        start = match.index + match[0].length;
+      }
+      if (text.slice(start).includes(needle)) lines.push([start, text.length]);
+      return lines;
+    }
+
+    /** Every offset strictly inside the k-th line of one side maps inside the k-th line of the other. */
+    function expectLinesBounded(
+      map: ReturnType<typeof createBidirectionalOffsetMapper>,
+      plainLines: Array<[number, number]>,
+      markdownLines: Array<[number, number]>,
+    ) {
+      expect(plainLines.length).toBe(markdownLines.length);
+      const escaped: string[] = [];
+      for (let k = 0; k < markdownLines.length; k += 1) {
+        const [pStart, pEnd] = plainLines[k];
+        const [mStart, mEnd] = markdownLines[k];
+        for (let offset = mStart + 1; offset < mEnd; offset += 1) {
+          const mapped = map.bToA(offset);
+          if (mapped < pStart || mapped > pEnd)
+            escaped.push(`bToA(${offset}) = ${mapped} on line ${k}`);
+        }
+        for (let offset = pStart + 1; offset < pEnd; offset += 1) {
+          const mapped = map.aToB(offset);
+          if (mapped < mStart || mapped > mEnd)
+            escaped.push(`aToB(${offset}) = ${mapped} on line ${k}`);
+        }
+      }
+      expect(escaped, escaped.slice(0, 8).join('\n')).toEqual([]);
+    }
+
+    type Clock = <T>(fn: () => T) => T;
+    const CLOCKS: Array<[string, Clock]> = [
+      ['within the budget', withoutDeadline],
+      ['past the deadline', withExpiredDeadline],
+    ];
+    const RUNS = [257, 513, 600];
+    const RUN_CELLS = RUNS.flatMap((count) =>
+      CLOCKS.map(([when, clock]): [number, string, Clock] => [count, when, clock]),
+    );
+
+    it.each(RUN_CELLS)(
+      'keeps each of %i link lines bounded by its own plain-text line %s',
+      async (count, _when, clock) => {
+        const markdown = `${'q'.repeat(129 * 1024)}\n\n${'[xy](https://ab/xy)\n'.repeat(count)}\n**ab**`;
+        const plain = await projectWithEditor(markdown, true);
+        expect(plain).not.toContain('https');
+        const started = performance.now();
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        const elapsed = performance.now() - started;
+        expect(elapsed, `alignment took ${elapsed.toFixed(0)} ms`).toBeLessThan(1_000);
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectLinesBounded(
+          map,
+          linesHolding(plain, 'xy', /\n|\uFFFC/g),
+          linesHolding(markdown, '](', /\n/g),
+        );
+        expectSameLine(plain, markdown, map, 'ab', '**ab**');
+      },
+      60_000,
+    );
+
+    // A comment between every three link lines: the renderer drops it, so the
+    // markdown has more lines than the plain text and the lines are not paired
+    // by position; the product of the counts is past the search's bound, so
+    // they are paired greedily in order — the comment lines deleted, each
+    // link line paired with the plain-text line of its own label.
+    it.each(CLOCKS)(
+      'pairs each link line with its own plain-text line when the counts differ %s',
+      async (_when, clock) => {
+        const run = Array.from({ length: 600 }, (_, k) =>
+          k % 3 === 2 ? `[xy](https://ab/xy)\n<!-- sync -->` : '[xy](https://ab/xy)',
+        ).join('\n');
+        const markdown = `${'q'.repeat(129 * 1024)}\n\n${run}\n\n**ab**`;
+        const plain = await projectWithEditor(markdown, true);
+        expect(plain).not.toContain('https');
+        expect(plain).not.toContain('sync');
+        const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+        expectExactRun(plain, markdown, map, 'qqqqqqqq', 0, 0);
+        expectLinesBounded(
+          map,
+          linesHolding(plain, 'xy', /\n|\uFFFC/g),
+          linesHolding(markdown, '](', /\n/g),
+        );
+        expectSameLine(plain, markdown, map, 'ab', '**ab**');
+      },
+      60_000,
+    );
+  });
 });
 
 describe('alignment past the cap of notes drawn from every line shape', () => {
@@ -1788,6 +1907,16 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
       blocks.push(block);
       length += block.length + 2;
     }
+    // Past the cap, a run of 300 to 1000 link lines, a comment among every
+    // eight: hundreds of sealed lines whose counts differ, more than the
+    // pairing search can afford from about 512 on.
+    const run = 300 + Math.floor(next() * 701);
+    blocks.push(
+      Array.from({ length: run }, (_, k) =>
+        k % 8 === 7 ? `<!-- ${w()} ${tok()} -->` : `[${w()} ${tok()}](${url()})`,
+      ).join('\n'),
+      text[0](),
+    );
     return blocks.join('\n\n');
   }
 
@@ -1831,6 +1960,9 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
     return undefined;
   }
 
+  // Within the budget, and again with the deadline spent — every diff and
+  // pairing search declined, the alignment degraded the whole way — since
+  // the sealed lines must stay bounded by their own text whatever the budget.
   it.each([1, 2, 3])(
     'never maps a plain-text line into a line of syntax, nor a syntax line out of its own text (seed %i)',
     async (seed) => {
@@ -1842,63 +1974,82 @@ describe('alignment past the cap of notes drawn from every line shape', () => {
       expect(plain).toContain('<div>');
       expect(plain).not.toContain('](');
       expect(plain).not.toContain('<!--');
-      const map = withoutDeadline(() => createBidirectionalOffsetMapper(plain, markdown));
-      const markdownLines = linesOf(markdown, /\n/g, (line) => SYNTAX.test(line));
-      const tokenLines = new Map<string, Line>();
-      for (const [token] of markdown.matchAll(/tk\d+z/g)) {
-        const line = lineStrictlyAround(markdownLines, markdown.indexOf(token) + 1);
-        if (line) tokenLines.set(token, line);
-      }
-      // A plain-text line is syntax when it holds the token of a syntax line.
-      const plainLines = linesOf(plain, /\n|\uFFFC/g, (line) => {
-        const tokens = line.match(/tk\d+z/g) ?? [];
-        return tokens.some((token) => tokenLines.get(token)?.syntax);
-      });
-      const violations: string[] = [];
-      const seen = new Set<Line>();
-      for (const [token, line] of tokenLines) {
-        const at = plain.indexOf(token);
-        if (at === -1) continue;
-        const plainLine = lineStrictlyAround(plainLines, at + 1);
-        if (!plainLine || seen.has(plainLine)) continue;
-        seen.add(plainLine);
-        if (!line.syntax) {
-          for (let offset = plainLine.start + 1; offset < plainLine.end; offset += 1) {
-            const target = lineStrictlyAround(markdownLines, map.aToB(offset));
-            if (target?.syntax) {
-              violations.push(
-                `aToB(${offset}) on ${JSON.stringify(plain.slice(plainLine.start, plainLine.end))} → ${JSON.stringify(markdown.slice(target.start, target.end))}`,
-              );
-            }
-          }
-        }
-      }
-      for (const line of new Set(tokenLines.values())) {
-        const tokens = markdown.slice(line.start, line.end).match(/tk\d+z/g) ?? [];
-        const own = tokens
-          .map((token) => plain.indexOf(token))
-          .filter((at) => at !== -1)
-          .map((at) => lineStrictlyAround(plainLines, at + 1))
-          .filter((plainLine): plainLine is Line => plainLine !== undefined);
-        if (own.length === 0) continue;
-        const [ownStart, ownEnd] = [
-          Math.min(...own.map((l) => l.start)),
-          Math.max(...own.map((l) => l.end)),
-        ];
-        for (let offset = line.start + 1; offset < line.end; offset += 1) {
-          const mapped = map.bToA(offset);
-          const target = lineStrictlyAround(plainLines, mapped);
-          if (line.syntax ? mapped < ownStart || mapped > ownEnd : target?.syntax) {
+      const violations = [
+        ...syntaxViolations(plain, markdown, withoutDeadline).map((v) => `within the budget: ${v}`),
+        ...syntaxViolations(plain, markdown, withExpiredDeadline).map(
+          (v) => `past the deadline: ${v}`,
+        ),
+      ];
+      expect(violations.length, violations.slice(0, 12).join('\n')).toBe(0);
+    },
+    180_000,
+  );
+
+  /**
+   * Every plain-text line that maps into a line of syntax it is not the text
+   * of, and every offset of a syntax line that maps out of its own text, in
+   * the alignment of `plain` with `markdown` run under `clock`.
+   */
+  function syntaxViolations(
+    plain: string,
+    markdown: string,
+    clock: <T>(fn: () => T) => T,
+  ): string[] {
+    const map = clock(() => createBidirectionalOffsetMapper(plain, markdown));
+    const markdownLines = linesOf(markdown, /\n/g, (line) => SYNTAX.test(line));
+    const tokenLines = new Map<string, Line>();
+    for (const [token] of markdown.matchAll(/tk\d+z/g)) {
+      const line = lineStrictlyAround(markdownLines, markdown.indexOf(token) + 1);
+      if (line) tokenLines.set(token, line);
+    }
+    // A plain-text line is syntax when it holds the token of a syntax line.
+    const plainLines = linesOf(plain, /\n|\uFFFC/g, (line) => {
+      const tokens = line.match(/tk\d+z/g) ?? [];
+      return tokens.some((token) => tokenLines.get(token)?.syntax);
+    });
+    const violations: string[] = [];
+    const seen = new Set<Line>();
+    for (const [token, line] of tokenLines) {
+      const at = plain.indexOf(token);
+      if (at === -1) continue;
+      const plainLine = lineStrictlyAround(plainLines, at + 1);
+      if (!plainLine || seen.has(plainLine)) continue;
+      seen.add(plainLine);
+      if (!line.syntax) {
+        for (let offset = plainLine.start + 1; offset < plainLine.end; offset += 1) {
+          const target = lineStrictlyAround(markdownLines, map.aToB(offset));
+          if (target?.syntax) {
             violations.push(
-              `bToA(${offset}) on ${JSON.stringify(markdown.slice(line.start, line.end))} → ${mapped} ${target ? JSON.stringify(plain.slice(target.start, target.end)) : 'at a break'}`,
+              `aToB(${offset}) on ${JSON.stringify(plain.slice(plainLine.start, plainLine.end))} → ${JSON.stringify(markdown.slice(target.start, target.end))}`,
             );
           }
         }
       }
-      expect(violations.length, violations.slice(0, 12).join('\n')).toBe(0);
-    },
-    120_000,
-  );
+    }
+    for (const line of new Set(tokenLines.values())) {
+      const tokens = markdown.slice(line.start, line.end).match(/tk\d+z/g) ?? [];
+      const own = tokens
+        .map((token) => plain.indexOf(token))
+        .filter((at) => at !== -1)
+        .map((at) => lineStrictlyAround(plainLines, at + 1))
+        .filter((plainLine): plainLine is Line => plainLine !== undefined);
+      if (own.length === 0) continue;
+      const [ownStart, ownEnd] = [
+        Math.min(...own.map((l) => l.start)),
+        Math.max(...own.map((l) => l.end)),
+      ];
+      for (let offset = line.start + 1; offset < line.end; offset += 1) {
+        const mapped = map.bToA(offset);
+        const target = lineStrictlyAround(plainLines, mapped);
+        if (line.syntax ? mapped < ownStart || mapped > ownEnd : target?.syntax) {
+          violations.push(
+            `bToA(${offset}) on ${JSON.stringify(markdown.slice(line.start, line.end))} → ${mapped} ${target ? JSON.stringify(plain.slice(target.start, target.end)) : 'at a break'}`,
+          );
+        }
+      }
+    }
+    return violations;
+  }
 
   it.each([1, 2, 3])(
     'maps every token of the note exactly, in both directions (seed %i)',

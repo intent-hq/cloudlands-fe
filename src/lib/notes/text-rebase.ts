@@ -125,7 +125,9 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  * (`Mask.unanchorable`): its text reaches a diff only, and that diff is
  * bounded by the line (`refineByLine`).
  * The mask, the anchor loop and every diff share one deadline: past it, the
- * remaining text is emitted as one replaced span. A surrogate pair never straddles a
+ * remaining text is emitted as one replaced span, except that a region with
+ * an unanchorable line is still paired line by line, with no diff, so the
+ * line stays bounded by its own text. A surrogate pair never straddles a
  * span boundary: anchors, trimmed prefixes and tokens stop outside pairs and
  * jsdiff's `diffChars` treats a pair as one character.
  *
@@ -1155,18 +1157,26 @@ function diffRegion(
  * diff of the whole region would have chosen.
  *
  * The lines of plain text (`\n` or U+FFFC ends one; a blank line is not
- * one) are paired with the lines of markdown by their text, not by count
- * (`pairLines`): the letters of a plain line are those of its markdown line
- * with the syntax gone, so they are a subsequence of it, and a run of plain
- * lines an inline leaf split is paired with the one markdown line that holds
- * them all. A markdown line no plain line is the text of — a fence, a
+ * one) are paired with the lines of markdown by their text, not by count:
+ * the letters of a plain line are those of its markdown line with the
+ * syntax gone, so they are a subsequence of it, and a run of plain lines an
+ * inline leaf split is paired with the one markdown line that holds them
+ * all. As many plain lines as markdown lines, each the text of the line at
+ * its own position, are paired in one pass (`pairPositionally`); otherwise
+ * the pairing that accounts for the most letters is searched (`pairLines`),
+ * and when that search is unaffordable the lines are paired greedily in
+ * order (`pairGreedily`) — every way linear or bounded, never a diff of the
+ * region whole, so that a sealed line is bounded by its own pair whatever
+ * the budget. A markdown line no plain line is the text of — a fence, a
  * setext underline, a comment, a line of a note the renderer collapsed — is
  * deleted against nothing, and a plain line no markdown line accounts for is
- * inserted. Each pair is diffed alone (`diffRegion`), and so is each gap
- * between pairs unless a sealed line lies in it: that gap is emitted as one
- * replaced span, never diffed, so a position of its plain text maps to the
- * gap's end and a position of the sealed line to the end of the plain text
- * before it — neither into the other.
+ * inserted. Each pair is diffed alone (`diffRegion`; past the deadline the
+ * pair is one replaced span, still bounded by its lines), and so is each gap
+ * between pairs unless a sealed line lies in it: that gap is never diffed —
+ * its markdown up to the end of its last sealed line is deleted against
+ * nothing, and its plain text replaces what follows — so a position of its
+ * plain text maps to the gap's end and a position of the sealed line to the
+ * end of the plain text before it, neither into the other.
  */
 function refineByLine(
   out: Hunk[],
@@ -1187,11 +1197,19 @@ function refineByLine(
       diffRegion(out, from, to, fromA, fromB, toA, toB, deadline, unanchorable);
       return;
     }
-    out.push({ fromStart: fromA, fromEnd: fromB, toStart: toA, toEnd: toB });
+    const sealedEnd = Math.min(lastOverlapEnd(unanchorable, toA, toB), toB);
+    out.push({ fromStart: fromA, fromEnd: fromA, toStart: toA, toEnd: sealedEnd });
+    if (fromA < fromB || sealedEnd < toB) {
+      out.push({ fromStart: fromA, fromEnd: fromB, toStart: sealedEnd, toEnd: toB });
+    }
   };
+  const pairs =
+    pairPositionally(fragments, lines) ??
+    pairLines(fragments, lines, deadline) ??
+    pairGreedily(fragments, lines);
   let fromPos = fromStart;
   let toPos = toStart;
-  for (const [first, last, line] of pairLines(fragments, lines, deadline)) {
+  for (const [first, last, line] of pairs) {
     const fromA = fragments[first].start;
     const fromB = fragments[last].end;
     gap(fromPos, fromA, toPos, line.start);
@@ -1200,6 +1218,22 @@ function refineByLine(
     toPos = line.end;
   }
   gap(fromPos, fromEnd, toPos, toEnd);
+}
+
+/** The end of the last of the sorted, flattened `ranges` that overlaps `[start, end)`, or `start`. */
+function lastOverlapEnd(ranges: number[], start: number, end: number): number {
+  let low = 0;
+  let high = ranges.length >> 1;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (ranges[2 * mid + 1] <= start) low = mid + 1;
+    else high = mid;
+  }
+  let last = start;
+  for (let range = low; range < ranges.length >> 1 && ranges[2 * range] < end; range += 1) {
+    last = ranges[2 * range + 1];
+  }
+  return last;
 }
 
 /** A line of text without its break, the letters and digits on it, and whether it is sealed. */
@@ -1248,6 +1282,28 @@ function textLines(
   return lines;
 }
 
+/** A run `fragments[first..last]` of plain-text lines that is the text of the markdown `line`. */
+type LinePair = [first: number, last: number, line: TextLine];
+
+/** Most fragments `pairLines` pairs with one line, and `pairGreedily` too. */
+const MAX_RUN_LENGTH = 127;
+
+/**
+ * The pairs of the plain-text `fragments` with the markdown `lines` when
+ * there are as many of each and every fragment's letters are a subsequence
+ * of the letters of the line at its own position; `undefined` otherwise.
+ * One pass over the letters, whatever the budget.
+ */
+function pairPositionally(fragments: TextLine[], lines: TextLine[]): LinePair[] | undefined {
+  if (fragments.length !== lines.length) return undefined;
+  const pairs: LinePair[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (subsequenceEnd(lines[i].letters, fragments[i].letters, 0) === -1) return undefined;
+    pairs.push([i, i, lines[i]]);
+  }
+  return pairs;
+}
+
 /** Most `fragments × lines` the pairing searches; past it, or past the deadline, nothing is paired. */
 const MAX_PAIRING_CELLS = 1 << 18;
 
@@ -1260,55 +1316,66 @@ const MAX_PAIRING_CELLS = 1 << 18;
  * to the line's outranks one whose letters the syntax on the line pads, and
  * a pair on a line the mask accounted for outranks one on a sealed line —
  * so a paragraph beside a link line is never taken for the text of the link
- * line when it has a line of its own. A dynamic programme over the two
- * sequences; empty once the search would exceed `MAX_PAIRING_CELLS` or the
- * `deadline`, which the caller degrades safely.
+ * line when it has a line of its own — and among pairings equal in all that,
+ * one of more pairs: each fragment on a line of its own rather than in a run
+ * on the line before, whose hidden destination may repeat its letters
+ * (`[xy](https://ab/xy)` fits `xy` twice). A dynamic programme over the two
+ * sequences; `undefined` once the search would exceed `MAX_PAIRING_CELLS`
+ * or the `deadline`, which the caller pairs greedily instead.
  */
 function pairLines(
   fragments: TextLine[],
   lines: TextLine[],
   deadline: number,
-): Array<[number, number, TextLine]> {
+): LinePair[] | undefined {
   const n = fragments.length;
   const m = lines.length;
-  if (n === 0 || m === 0 || n * m > MAX_PAIRING_CELLS) return [];
+  if (n === 0 || m === 0) return [];
+  if (n * m > MAX_PAIRING_CELLS) return undefined;
   const width = m + 1;
   // Best letters accounted for by `fragments[0, i)` and `lines[0, k)`; -1 unreached.
   const best = new Int32Array((n + 1) * width).fill(-1);
+  // The pairs of the best.
+  const count = new Int32Array((n + 1) * width);
   // How the best was reached: -1 skipped a fragment, -2 skipped a line, r ≥ 0 paired a run of r + 1 fragments.
   const via = new Int8Array((n + 1) * width);
+  const better = (score: number, pairs: number, cell: number) =>
+    score > best[cell] || (score === best[cell] && pairs > count[cell]);
   best[0] = 0;
   for (let i = 0; i <= n; i += 1) {
-    if (performance.now() >= deadline) return [];
+    if (performance.now() >= deadline) return undefined;
     for (let k = 0; k <= m; k += 1) {
       const cell = i * width + k;
-      if (i > 0 && best[cell - width] > best[cell]) {
+      if (i > 0 && better(best[cell - width], count[cell - width], cell)) {
         best[cell] = best[cell - width];
+        count[cell] = count[cell - width];
         via[cell] = -1;
       }
-      if (k > 0 && best[cell - 1] > best[cell]) {
+      if (k > 0 && better(best[cell - 1], count[cell - 1], cell)) {
         best[cell] = best[cell - 1];
+        count[cell] = count[cell - 1];
         via[cell] = -2;
       }
       if (best[cell] < 0 || i === n || k === m) continue;
       const line = lines[k];
       let at = 0;
       let letters = 0;
-      for (let j = i; j < n && j - i < 127; j += 1) {
+      for (let j = i; j < n && j - i < MAX_RUN_LENGTH; j += 1) {
         at = subsequenceEnd(line.letters, fragments[j].letters, at);
         if (at === -1) break;
         letters += fragments[j].letters.length;
         const rank = letters === line.letters.length ? 2 : line.sealed ? 0 : 1;
         const score = best[cell] + 3 * letters + rank;
         const target = (j + 1) * width + k + 1;
-        if (score > best[target]) {
+        if (better(score, count[cell] + 1, target)) {
           best[target] = score;
+          count[target] = count[cell] + 1;
           via[target] = j - i;
         }
       }
     }
   }
-  const pairs: Array<[number, number, TextLine]> = [];
+  const pairs: LinePair[] = [];
   let i = n;
   let k = m;
   while (i > 0 || k > 0) {
@@ -1322,6 +1389,88 @@ function pairLines(
     }
   }
   return pairs.reverse();
+}
+
+/** Most lines, or fragments, `pairGreedily` looks ahead over for the pair of one that fits none at hand. */
+const GREEDY_LOOKAHEAD = 8;
+
+/**
+ * The pairs of the plain-text `fragments` with the markdown `lines` found in
+ * one pass, in order on both sides, when `pairLines` is unaffordable: a
+ * fragment is paired with the line at hand when it is the text of it — and
+ * the run extended over the fragments that follow it on that line, short of
+ * one that is the text of a line just ahead, unless it completes the line's
+ * letters (a hidden destination may repeat the letters of the line beside
+ * it, `[xy](https://ab/xy)`) — unless its letters are those of the next line
+ * whole and not of this one, when the line at hand is deleted (a fit on a
+ * line that holds more letters than the fragment, sealed or not, is not
+ * preferred to one on the line at hand: a token fits many a longer line). A
+ * fragment that is not the text of the line at hand is the text of one of
+ * the next `GREEDY_LOOKAHEAD` lines, or one of the next fragments is the
+ * text of the line: whichever fit is nearer decides which side is skipped up
+ * to it — the line a definition, a comment or an underline is on holds no
+ * text — and when neither is found within reach one of each is skipped.
+ * Bounded by the letters of both sequences, not their product, so a sealed
+ * line among hundreds is still bounded by its own pair.
+ */
+function pairGreedily(fragments: TextLine[], lines: TextLine[]): LinePair[] {
+  const pairs: LinePair[] = [];
+  const fits = (i: number, k: number) =>
+    subsequenceEnd(lines[k].letters, fragments[i].letters, 0) !== -1;
+  /** How far past `k` the nearest of the next `GREEDY_LOOKAHEAD` lines `fragments[i]` fits is, or 0. */
+  const lineAhead = (i: number, k: number) => {
+    for (let d = 1; d <= GREEDY_LOOKAHEAD && k + d < lines.length; d += 1) {
+      if (fits(i, k + d)) return d;
+    }
+    return 0;
+  };
+  let i = 0;
+  let k = 0;
+  while (i < fragments.length && k < lines.length) {
+    const fragment = fragments[i];
+    const line = lines[k];
+    let at = subsequenceEnd(line.letters, fragment.letters, 0);
+    if (at === -1) {
+      const skipLines = lineAhead(i, k);
+      let skipFragments = 0;
+      for (let d = 1; d <= GREEDY_LOOKAHEAD && i + d < fragments.length; d += 1) {
+        if (fits(i + d, k)) {
+          skipFragments = d;
+          break;
+        }
+      }
+      if (skipLines > 0 && (skipFragments === 0 || skipLines <= skipFragments)) k += skipLines;
+      else if (skipFragments > 0) i += skipFragments;
+      else {
+        i += 1;
+        k += 1;
+      }
+      continue;
+    }
+    if (
+      k + 1 < lines.length &&
+      fragment.letters !== line.letters &&
+      fragment.letters === lines[k + 1].letters
+    ) {
+      k += 1;
+      continue;
+    }
+    let j = i;
+    let letters = fragment.letters.length;
+    while (j + 1 < fragments.length && j - i + 1 < MAX_RUN_LENGTH) {
+      const next = fragments[j + 1];
+      const end = subsequenceEnd(line.letters, next.letters, at);
+      if (end === -1) break;
+      letters += next.letters.length;
+      if (letters !== line.letters.length && lineAhead(j + 1, k) > 0) break;
+      at = end;
+      j += 1;
+    }
+    pairs.push([i, j, line]);
+    i = j + 1;
+    k += 1;
+  }
+  return pairs;
 }
 
 /** Where `needle` ends as a subsequence of `text` searched from `at`, or -1. */
