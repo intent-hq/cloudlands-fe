@@ -384,6 +384,7 @@
       }}
       hookNames={['Watch release build']}
       openPrs={[{ number: 418, title: 'Refine modal catalog', status: 'Open', url: '' }]}
+      guests={{ collaboratorCount: 2, openInviteCount: 1 }}
     />
   {:else if state === 'bulk-action-confirm-dialog'}
     <BulkActionConfirmDialog

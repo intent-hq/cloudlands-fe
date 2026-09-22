@@ -38,10 +38,14 @@ const localChanges = {
   hasUncommittedChanges: true,
 };
 
+const guests = { collaboratorCount: 2, openInviteCount: 1 };
+
 describe('workspaceOperationsReducer', () => {
-  it('starts with no local-changes data for either warning', () => {
+  it('starts with no local-changes or guest data for either warning', () => {
     expect(initialState.localChangesForDelete).toBeNull();
     expect(initialState.localChangesForArchive).toBeNull();
+    expect(initialState.guestsForDelete).toBeNull();
+    expect(initialState.guestsForArchive).toBeNull();
   });
 
   it('opens and clears the delete warning state', () => {
@@ -53,6 +57,7 @@ describe('workspaceOperationsReducer', () => {
         hookNames: ['ci-watch'],
         openPrs: [openPr],
         localChanges,
+        guests,
       }),
     );
 
@@ -62,7 +67,9 @@ describe('workspaceOperationsReducer', () => {
     expect(opened.activeHookNamesForDelete).toEqual(['ci-watch']);
     expect(getItems(opened.openPrsForDelete)).toEqual([openPr]);
     expect(opened.localChangesForDelete).toEqual(localChanges);
+    expect(opened.guestsForDelete).toEqual(guests);
     expect(opened.localChangesForArchive).toBeNull();
+    expect(opened.guestsForArchive).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
 
@@ -72,9 +79,10 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.activeHookNamesForDelete).toEqual([]);
     expect(getItems(closed.openPrsForDelete)).toEqual([]);
     expect(closed.localChangesForDelete).toBeNull();
+    expect(closed.guestsForDelete).toBeNull();
   });
 
-  it('opens the delete warning with null local changes when none were supplied', () => {
+  it('opens the delete warning with null local changes and guests when none were supplied', () => {
     const opened = workspaceOperationsReducer(
       initialState,
       openDeleteWarning({
@@ -87,6 +95,7 @@ describe('workspaceOperationsReducer', () => {
 
     expect(opened.showDeleteWarning).toBe(true);
     expect(opened.localChangesForDelete).toBeNull();
+    expect(opened.guestsForDelete).toBeNull();
   });
 
   it('opens and clears the archive warning state', () => {
@@ -98,6 +107,7 @@ describe('workspaceOperationsReducer', () => {
         hookNames: ['pr-watch'],
         openPrs: [{ ...openPr, status: 'Draft' as const, mergeConflicts: true }],
         localChanges,
+        guests,
       }),
     );
 
@@ -109,7 +119,9 @@ describe('workspaceOperationsReducer', () => {
       { ...openPr, status: 'Draft', mergeConflicts: true },
     ]);
     expect(opened.localChangesForArchive).toEqual(localChanges);
+    expect(opened.guestsForArchive).toEqual(guests);
     expect(opened.localChangesForDelete).toBeNull();
+    expect(opened.guestsForDelete).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeArchiveWarning());
 
@@ -119,6 +131,7 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.activeHookNamesForArchive).toEqual([]);
     expect(getItems(closed.openPrsForArchive)).toEqual([]);
     expect(closed.localChangesForArchive).toBeNull();
+    expect(closed.guestsForArchive).toBeNull();
   });
 
   it('opens the archive warning with null local changes when the RPC failed', () => {

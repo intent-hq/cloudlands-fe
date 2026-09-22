@@ -5,7 +5,11 @@ import {
   type Collection,
 } from '@augmentcode/themis/utils/collections/collection-utils';
 import type { WorkspaceProposalApplyPayload } from '$shared/app-workspace-operations';
-import type { LocalChangesWarning, OpenPrWarningItem } from './workspace-operations-types';
+import type {
+  GuestsWarning,
+  LocalChangesWarning,
+  OpenPrWarningItem,
+} from './workspace-operations-types';
 
 export type WorkspaceOperationsState = {
   showDeleteWarning: boolean;
@@ -15,12 +19,15 @@ export type WorkspaceOperationsState = {
   openPrsForDelete: Collection<OpenPrWarningItem, 'number'>;
   /** `null` when the warning has no local-changes data (RPC failed or not fetched). */
   localChangesForDelete: LocalChangesWarning | null;
+  /** `null` when the warning carries no guest counts. */
+  guestsForDelete: GuestsWarning | null;
   showArchiveWarning: boolean;
   pendingArchiveWorkspaceId: string | null;
   runningAgentNamesForArchive: string[];
   activeHookNamesForArchive: string[];
   openPrsForArchive: Collection<OpenPrWarningItem, 'number'>;
   localChangesForArchive: LocalChangesWarning | null;
+  guestsForArchive: GuestsWarning | null;
   showBulkArchiveConfirm: boolean;
   bulkArchiveActiveAgentCount: number;
   bulkArchiveActiveHookCount: number;
@@ -46,12 +53,14 @@ export const initialState: WorkspaceOperationsState = {
   activeHookNamesForDelete: [],
   openPrsForDelete: emptyOpenPrs(),
   localChangesForDelete: null,
+  guestsForDelete: null,
   showArchiveWarning: false,
   pendingArchiveWorkspaceId: null,
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
   openPrsForArchive: emptyOpenPrs(),
   localChangesForArchive: null,
+  guestsForArchive: null,
   showBulkArchiveConfirm: false,
   bulkArchiveActiveAgentCount: 0,
   bulkArchiveActiveHookCount: 0,
@@ -93,6 +102,7 @@ export const openDeleteWarning = createAction<
       hookNames: string[];
       openPrs: OpenPrWarningItem[];
       localChanges?: LocalChangesWarning | null;
+      guests?: GuestsWarning | null;
     },
   ]
 >('workspaceOperations/openDeleteWarning');
@@ -107,6 +117,7 @@ export const openArchiveWarning = createAction<
       hookNames: string[];
       openPrs: OpenPrWarningItem[];
       localChanges?: LocalChangesWarning | null;
+      guests?: GuestsWarning | null;
     },
   ]
 >('workspaceOperations/openArchiveWarning');
@@ -162,7 +173,10 @@ export const confirmRemoveRepo = createAction('workspaceOperations/confirmRemove
 export const workspaceOperationsReducer = createReducer<WorkspaceOperationsState>(initialState);
 workspaceOperationsReducer.with(
   openDeleteWarning,
-  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges }] }) => ({
+  (
+    state,
+    { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges, guests }] },
+  ) => ({
     ...state,
     showDeleteWarning: true,
     pendingDeleteWorkspaceId: workspaceId,
@@ -170,6 +184,7 @@ workspaceOperationsReducer.with(
     activeHookNamesForDelete: hookNames,
     openPrsForDelete: createCollection<OpenPrWarningItem, 'number'>('number', openPrs),
     localChangesForDelete: localChanges ?? null,
+    guestsForDelete: guests ?? null,
   }),
 );
 workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
@@ -180,10 +195,14 @@ workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
   activeHookNamesForDelete: [],
   openPrsForDelete: emptyOpenPrs(),
   localChangesForDelete: null,
+  guestsForDelete: null,
 }));
 workspaceOperationsReducer.with(
   openArchiveWarning,
-  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges }] }) => ({
+  (
+    state,
+    { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges, guests }] },
+  ) => ({
     ...state,
     showArchiveWarning: true,
     pendingArchiveWorkspaceId: workspaceId,
@@ -191,6 +210,7 @@ workspaceOperationsReducer.with(
     activeHookNamesForArchive: hookNames,
     openPrsForArchive: createCollection<OpenPrWarningItem, 'number'>('number', openPrs),
     localChangesForArchive: localChanges ?? null,
+    guestsForArchive: guests ?? null,
   }),
 );
 workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
@@ -201,6 +221,7 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
   activeHookNamesForArchive: [],
   openPrsForArchive: emptyOpenPrs(),
   localChangesForArchive: null,
+  guestsForArchive: null,
 }));
 workspaceOperationsReducer.with(openBulkArchiveConfirm, (state, { payload: [repoKey] }) => ({
   ...state,

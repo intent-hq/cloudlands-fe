@@ -117,12 +117,21 @@ function activeForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
   );
 }
 
-function hasActiveWork({ agentNames, hookNames, openPrs, localChanges }: ActiveWorkNames): boolean {
+// Single-workspace gating: guests alone (collaborators or open invites) open
+// the warning too, since archive/delete removes them from the workspace.
+function hasActiveWork({
+  agentNames,
+  hookNames,
+  openPrs,
+  localChanges,
+  guests,
+}: ActiveWorkNames): boolean {
   return (
     agentNames.length > 0 ||
     hookNames.length > 0 ||
     openPrs.length > 0 ||
-    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges)
+    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges) ||
+    guests.collaboratorCount + guests.openInviteCount > 0
   );
 }
 
